@@ -8,7 +8,6 @@ import { PlayIcon, PauseIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
 import AddToPlaylistMenu from "@/components/AddToPlaylistMenu";
 import TrackMenu from "@/components/TrackMenu";
-import Equalizer from "@/components/Equalizer";
 
 interface TrackRowProps {
   track: Track;
@@ -65,13 +64,7 @@ export default function TrackRow({
             isCurrent ? "text-accent" : ""
           }`}
         >
-          {isCurrent ? (
-            <Equalizer small playing={isPlaying} />
-          ) : index !== undefined ? (
-            index + 1
-          ) : (
-            ""
-          )}
+          {playingThis ? "▶" : index !== undefined ? index + 1 : ""}
         </span>
       </div>
 

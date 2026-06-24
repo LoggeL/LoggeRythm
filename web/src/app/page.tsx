@@ -25,11 +25,8 @@ export default function HomePage() {
   return (
     <div className="flex flex-col gap-10">
       <div>
-        <p className="label-mono mb-1">{"// Now streaming"}</p>
-        <h1 className="text-4xl md:text-5xl font-black tracking-tight text-gradient">
-          Willkommen bei Spotifrei
-        </h1>
-        <p className="text-muted mt-1">Entdecke neue Musik</p>
+        <h1 className="text-3xl font-extrabold mb-1">Willkommen bei Spotifrei</h1>
+        <p className="text-muted">Entdecke neue Musik</p>
       </div>
 
       {recent.length > 0 && (

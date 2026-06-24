@@ -26,10 +26,9 @@ export default function AppShell({
         <Sidebar />
         <main
           ref={mainRef}
-          className="relative flex-1 min-w-0 overflow-y-auto scroll-area bg-background"
+          className="flex-1 min-w-0 overflow-y-auto scroll-area bg-gradient-to-b from-[#1f1a2e] to-background"
         >
-          <div className="cyber-bg" aria-hidden />
-          <div className="relative z-10 px-4 sm:px-6 py-6 max-w-6xl mx-auto pb-28 md:pb-6">
+          <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto pb-28 md:pb-6">
             {children}
           </div>
         </main>

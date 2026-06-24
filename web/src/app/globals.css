@@ -1,25 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  /* surfaces */
-  --background: #08060f;
-  --foreground: #f4f0ff;
-  --panel: #100b1c; /* remapped — bg-panel still works everywhere */
-  --panel-hover: #17112b;
-  --surface-2: #1d1535;
-  --muted: #9a8fc7;
-
-  /* accents */
-  --accent: #ff2bd6; /* magenta (primary) */
-  --accent-hover: #ff63e2;
-  --accent-2: #1fe0ff; /* cyan (secondary) */
-  --accent-grad: linear-gradient(115deg, #ff2bd6 0%, #b14bff 45%, #1fe0ff 100%);
-
-  /* glow + borders */
-  --glow-magenta: 0 0 6px rgba(255, 43, 214, 0.6), 0 0 18px rgba(255, 43, 214, 0.35);
-  --glow-cyan: 0 0 6px rgba(31, 224, 255, 0.6), 0 0 18px rgba(31, 224, 255, 0.35);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
+  --background: #121212;
+  --foreground: #eeeeee;
+  --panel: #181818;
+  --panel-hover: #282828;
+  --accent: #7c5cff;
+  --accent-hover: #9277ff;
+  --muted: #a0a0a0;
 }
 
 @theme inline {
@@ -27,10 +15,8 @@
   --color-foreground: var(--foreground);
   --color-panel: var(--panel);
   --color-panel-hover: var(--panel-hover);
-  --color-surface-2: var(--surface-2);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
-  --color-accent-2: var(--accent-2);
   --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -51,13 +37,13 @@ body {
   box-sizing: border-box;
 }
 
-/* Range slider */
+/* Range slider styling */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
+  background: #4d4d4d;
   cursor: pointer;
 }
 input[type="range"]::-webkit-slider-thumb {
@@ -66,16 +52,14 @@ input[type="range"]::-webkit-slider-thumb {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--accent-2);
-  box-shadow: var(--glow-cyan);
+  background: var(--accent);
 }
 input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border: none;
   border-radius: 50%;
-  background: var(--accent-2);
-  box-shadow: var(--glow-cyan);
+  background: var(--accent);
 }
 
 /* Thin scrollbars */
@@ -83,28 +67,28 @@ input[type="range"]::-moz-range-thumb {
   width: 10px;
 }
 .scroll-area::-webkit-scrollbar-thumb {
-  background: #2a1f44;
+  background: #333;
   border-radius: 5px;
 }
 .scroll-area::-webkit-scrollbar-thumb:hover {
-  background: #3d2d63;
+  background: #555;
 }
 
-/* Keyboard focus */
+/* Keyboard focus visibility */
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--accent-2);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 input[type="range"]::-webkit-slider-thumb:focus-visible {
-  outline: 2px solid var(--accent-2);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* ============ KEYFRAMES ============ */
+/* Skeleton shimmer */
 @keyframes shimmer {
   0% {
     background-position: -400px 0;
@@ -113,6 +97,17 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
     background-position: 400px 0;
   }
 }
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #1d1d1d 25%,
+    #2a2a2a 37%,
+    #1d1d1d 63%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -123,47 +118,6 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
     transform: translateY(0);
   }
 }
-@keyframes gridScroll {
-  from {
-    background-position: 0 0, 0 0;
-  }
-  to {
-    background-position: 0 56px, 0 56px;
-  }
-}
-@keyframes orbPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 10px rgba(255, 43, 214, 0.7), 0 0 22px rgba(31, 224, 255, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 18px rgba(255, 43, 214, 0.95), 0 0 36px rgba(31, 224, 255, 0.6);
-  }
-}
-@keyframes eqBar {
-  0%,
-  100% {
-    transform: scaleY(0.22);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-@keyframes marquee {
-  from {
-    transform: translateX(0);
-  }
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-/* Skeleton shimmer (retinted) */
-.skeleton {
-  background: linear-gradient(90deg, #140d24 25%, #211640 37%, #140d24 63%);
-  background-size: 800px 100%;
-  animation: shimmer 1.4s infinite linear;
-}
 
 /* Hide horizontal scrollbar on shelves */
 .no-scrollbar::-webkit-scrollbar {
@@ -172,155 +126,4 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
-}
-
-/* ============ FIXED BACKGROUND (one layer, app-wide) ============ */
-.cyber-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-.cyber-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(120% 60% at 50% 0%, rgba(255, 43, 214, 0.16), transparent 60%),
-    radial-gradient(80% 50% at 80% 8%, rgba(31, 224, 255, 0.1), transparent 60%),
-    radial-gradient(120% 80% at 50% 0%, transparent 45%, rgba(8, 6, 15, 0.75) 100%),
-    var(--background);
-}
-.cyber-bg::after {
-  content: "";
-  position: absolute;
-  left: -50%;
-  right: -50%;
-  bottom: -10%;
-  height: 70%;
-  background-image:
-    repeating-linear-gradient(to right, rgba(31, 224, 255, 0.16) 0 1px, transparent 1px 56px),
-    repeating-linear-gradient(to bottom, rgba(255, 43, 214, 0.14) 0 1px, transparent 1px 56px);
-  transform: perspective(420px) rotateX(62deg);
-  transform-origin: 50% 100%;
-  -webkit-mask-image: linear-gradient(to top, #000 0%, transparent 75%);
-  mask-image: linear-gradient(to top, #000 0%, transparent 75%);
-  animation: gridScroll 14s linear infinite;
-}
-
-/* ============ UTILITIES ============ */
-@layer utilities {
-  .neon-text {
-    text-shadow: var(--glow-magenta);
-  }
-  .neon-cyan {
-    color: var(--accent-2);
-    text-shadow: var(--glow-cyan);
-  }
-  .text-gradient {
-    background: var(--accent-grad);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  .label-mono {
-    font-family: var(--font-mono), monospace;
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
-    font-size: 11px;
-    line-height: 1.4;
-    color: var(--accent-2);
-    text-shadow: var(--glow-cyan);
-  }
-  .neon-border {
-    border: 1px solid transparent;
-    background:
-      linear-gradient(var(--panel), var(--panel)) padding-box,
-      var(--accent-grad) border-box;
-  }
-  .neon-glow {
-    transition: box-shadow 0.25s ease, transform 0.25s ease, border-color 0.25s ease;
-  }
-  .neon-glow:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 34px rgba(255, 43, 214, 0.22), 0 0 22px rgba(31, 224, 255, 0.16);
-    border-color: rgba(255, 43, 214, 0.45);
-  }
-  .play-ring {
-    background: var(--accent-grad);
-    box-shadow: var(--glow-magenta);
-    transition: filter 0.15s, box-shadow 0.2s, transform 0.08s;
-  }
-  .play-ring:hover {
-    filter: brightness(1.12);
-    box-shadow: 0 0 14px rgba(255, 43, 214, 0.8), 0 0 28px rgba(31, 224, 255, 0.5);
-  }
-  .play-ring:active {
-    transform: translateY(1px) scale(0.96);
-  }
-  .neon-orb {
-    background: radial-gradient(circle at 35% 35%, #ff2bd6, #b14bff 60%, #1fe0ff);
-    animation: orbPulse 2.6s ease-in-out infinite;
-  }
-}
-
-/* ============ LIVE EQUALIZER ============ */
-.eq {
-  display: inline-flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 14px;
-}
-.eq i {
-  width: 3px;
-  height: 14px;
-  transform-origin: bottom;
-  background: var(--accent-2);
-  box-shadow: var(--glow-cyan);
-  border-radius: 1px;
-  animation: eqBar 0.9s ease-in-out infinite;
-}
-.eq i:nth-child(2) {
-  animation-delay: 0.2s;
-}
-.eq i:nth-child(3) {
-  animation-delay: 0.4s;
-}
-.eq.eq-sm {
-  height: 12px;
-}
-.eq.eq-sm i {
-  height: 12px;
-}
-.eq.paused i {
-  animation-play-state: paused;
-  transform: scaleY(0.4);
-}
-
-/* ============ MARQUEE (NowPlaying only) ============ */
-.marquee {
-  overflow: hidden;
-  white-space: nowrap;
-}
-.marquee > .marquee__track {
-  display: inline-block;
-  animation: marquee 16s linear infinite;
-}
-.marquee:hover > .marquee__track {
-  animation-play-state: paused;
-}
-
-/* ============ REDUCED MOTION ============ */
-@media (prefers-reduced-motion: reduce) {
-  .cyber-bg::after,
-  .neon-orb,
-  .eq i,
-  .marquee > .marquee__track,
-  .skeleton {
-    animation: none !important;
-  }
-  .neon-glow:hover {
-    transform: none;
-  }
 }

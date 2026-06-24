@@ -7,7 +7,6 @@ import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
 import QueuePanel from "@/components/QueuePanel";
 import NowPlaying from "@/components/NowPlaying";
-import Equalizer from "@/components/Equalizer";
 import {
   PlayIcon,
   PauseIcon,
@@ -170,7 +169,7 @@ export default function PlayerBar() {
   return (
     <>
       {expanded && track && <NowPlaying onClose={() => setExpanded(false)} />}
-      <footer className="relative h-20 flex-shrink-0 bg-panel border-t border-transparent px-4 flex items-center gap-4 before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-[linear-gradient(90deg,#ff2bd6,#1fe0ff)] before:opacity-70">
+      <footer className="relative h-20 flex-shrink-0 bg-panel border-t border-white/10 px-4 flex items-center gap-4">
         <audio
           ref={audioRef}
           src={trackId ? streamUrl(trackId) : undefined}
@@ -213,12 +212,7 @@ export default function PlayerBar() {
                 )}
               </button>
               <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium text-sm">
-                    {track.title}
-                  </span>
-                  {isPlaying && !error && <Equalizer small />}
-                </div>
+                <div className="truncate font-medium text-sm">{track.title}</div>
                 <div className="truncate text-xs text-muted">
                   {error ? (
                     <span className="text-red-400">{error}</span>
@@ -247,7 +241,7 @@ export default function PlayerBar() {
               aria-pressed={shuffle}
               title="Zufallswiedergabe"
               className={`disabled:opacity-40 transition ${
-                shuffle ? "neon-cyan" : "text-muted hover:text-foreground"
+                shuffle ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
               <ShuffleIcon width={18} height={18} />
@@ -266,7 +260,7 @@ export default function PlayerBar() {
               onClick={toggle}
               disabled={!hasTrack}
               aria-label={isPlaying ? "Pause" : "Abspielen"}
-              className="w-9 h-9 rounded-full play-ring text-white flex items-center justify-center disabled:opacity-40"
+              className="w-9 h-9 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 transition disabled:opacity-40"
             >
               {isBuffering ? (
                 <SpinnerIcon width={20} height={20} className="animate-spin" />
@@ -299,7 +293,7 @@ export default function PlayerBar() {
                     : "Wiederholen aus"
               }
               className={`disabled:opacity-40 transition ${
-                repeat !== "off" ? "neon-cyan" : "text-muted hover:text-foreground"
+                repeat !== "off" ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
               <RepeatGlyph width={18} height={18} />

@@ -40,16 +40,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-gradient-to-b from-[#17112b] to-background p-6 isolate">
-      {track.cover && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={track.cover}
-          alt=""
-          aria-hidden
-          className="pointer-events-none absolute -z-10 inset-0 w-full h-full object-cover opacity-25 blur-[80px] saturate-150"
-        />
-      )}
+    <div className="fixed inset-0 z-[80] flex flex-col bg-gradient-to-b from-[#2a2350] to-background p-6">
       <div className="flex justify-between items-center mb-8">
         <button
           type="button"
@@ -59,7 +50,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         >
           <ChevronDownIcon width={24} height={24} />
         </button>
-        <span className="label-mono">Wird gespielt</span>
+        <span className="text-sm font-semibold text-muted">Wird gespielt</span>
         <span className="w-10" />
       </div>
 
@@ -69,22 +60,15 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
           <img
             src={track.cover}
             alt={track.album}
-            className="w-full max-w-sm aspect-square rounded-xl object-cover ring-1 ring-[var(--border-strong)] shadow-[0_0_60px_rgba(255,43,214,.3)]"
+            className="w-full max-w-sm aspect-square rounded-lg object-cover shadow-2xl"
           />
         ) : (
-          <div className="w-full max-w-sm aspect-square rounded-xl bg-panel-hover" />
+          <div className="w-full max-w-sm aspect-square rounded-lg bg-panel-hover" />
         )}
 
         <div className="w-full max-w-md text-center">
           <div className="flex items-center justify-center gap-3">
-            <h2 className="marquee text-3xl font-black neon-text" aria-label={track.title}>
-              <span className="marquee__track">
-                {track.title}
-                <span className="px-6 text-accent-2">◆</span>
-                {track.title}
-                <span className="px-6 text-accent-2">◆</span>
-              </span>
-            </h2>
+            <h2 className="text-3xl font-extrabold truncate">{track.title}</h2>
             <LikeButton track={track} />
           </div>
           <p className="text-muted mt-1">
@@ -129,7 +113,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={toggleShuffle}
             aria-label="Zufallswiedergabe"
-            className={shuffle ? "neon-cyan" : "text-muted hover:text-foreground"}
+            className={shuffle ? "text-accent" : "text-muted hover:text-foreground"}
           >
             <ShuffleIcon width={22} height={22} />
           </button>
@@ -145,7 +129,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={toggle}
             aria-label={isPlaying ? "Pause" : "Abspielen"}
-            className="w-16 h-16 rounded-full play-ring text-white flex items-center justify-center"
+            className="w-16 h-16 rounded-full bg-foreground text-background flex items-center justify-center hover:scale-105 transition"
           >
             {isPlaying ? (
               <PauseIcon width={30} height={30} />
@@ -165,7 +149,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={cycleRepeat}
             aria-label="Wiederholen"
-            className={repeat !== "off" ? "neon-cyan" : "text-muted hover:text-foreground"}
+            className={repeat !== "off" ? "text-accent" : "text-muted hover:text-foreground"}
           >
             <RepeatGlyph width={22} height={22} />
           </button>

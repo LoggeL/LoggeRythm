@@ -65,9 +65,7 @@ export default function ImportPage() {
 
   return (
     <div>
-      <h1 className="text-4xl font-black tracking-tight text-gradient mb-1">
-        Von Spotify importieren
-      </h1>
+      <h1 className="text-3xl font-extrabold mb-1">Von Spotify importieren</h1>
       <p className="text-muted mb-6">
         Füge einen Spotify-Link (Playlist, Album oder Titel) ein. Die Titel
         werden über Deezer abgespielt.
@@ -84,7 +82,7 @@ export default function ImportPage() {
         <button
           type="submit"
           disabled={resolve.isPending || !url.trim()}
-          className="px-6 py-3 rounded-full play-ring text-white font-semibold disabled:opacity-50"
+          className="px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
         >
           {resolve.isPending ? "Lädt…" : "Auflösen"}
         </button>
@@ -96,31 +94,22 @@ export default function ImportPage() {
 
       {result && (
         <div>
-          <header className="relative flex items-end gap-6 mb-6 isolate">
-            {result.image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={result.image}
-                alt=""
-                aria-hidden
-                className="pointer-events-none absolute -z-10 -top-10 left-0 w-72 h-72 object-cover opacity-40 blur-[60px] saturate-150 rounded-full"
-              />
-            )}
+          <header className="flex items-end gap-6 mb-6">
             {result.image ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={result.image}
                 alt={result.name}
-                className="w-44 h-44 md:w-48 md:h-48 rounded-xl object-cover ring-1 ring-[var(--border-strong)] shadow-[0_0_40px_rgba(255,43,214,.25)]"
+                className="w-40 h-40 rounded-md object-cover shadow-xl"
               />
             ) : (
-              <div className="w-44 h-44 md:w-48 md:h-48 rounded-xl bg-panel-hover" />
+              <div className="w-40 h-40 rounded-md bg-panel-hover" />
             )}
             <div>
-              <p className="label-mono">{TYPE_LABEL[result.type] ?? "Import"}</p>
-              <h2 className="text-5xl md:text-6xl font-black tracking-tight neon-text mb-2">
-                {result.name}
-              </h2>
+              <p className="text-xs uppercase tracking-wide text-muted">
+                {TYPE_LABEL[result.type] ?? "Import"}
+              </p>
+              <h2 className="text-4xl font-extrabold mb-2">{result.name}</h2>
               <p className="text-sm text-muted">
                 {result.matched} von {result.total} Titeln über Deezer gefunden
                 {result.unmatched.length > 0 &&
@@ -134,7 +123,7 @@ export default function ImportPage() {
               type="button"
               onClick={() => playQueue(result.tracks, 0)}
               disabled={result.tracks.length === 0}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full play-ring text-white font-semibold disabled:opacity-40"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
             >
               <PlayIcon /> Alle abspielen
             </button>

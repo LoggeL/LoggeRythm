@@ -97,7 +97,7 @@ export default function SearchPage() {
 
   return (
     <div onBlur={() => commitRecent(query)}>
-      <h1 className="text-4xl font-black tracking-tight text-gradient mb-4">Suche</h1>
+      <h1 className="text-3xl font-extrabold mb-4">Suche</h1>
 
       <div className="mb-5 max-w-xl">
         <div className="flex items-center gap-2 bg-panel rounded-full px-4 py-2 focus-within:ring-2 focus-within:ring-accent">
@@ -129,9 +129,9 @@ export default function SearchPage() {
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`px-4 py-1.5 rounded-full text-sm font-semibold transition ${
+              className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 tab === t.key
-                  ? "neon-border text-foreground neon-text"
+                  ? "bg-foreground text-background"
                   : "bg-panel text-muted hover:text-foreground"
               }`}
             >
