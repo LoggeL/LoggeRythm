@@ -31,3 +31,9 @@ CORS_ORIGINS: list[str] = [
 
 # --- Public Deezer API ---
 DEEZER_PUBLIC_API: str = "https://api.deezer.com"
+
+# --- Spotify (metadata / link resolution via Client Credentials) ---
+SPOTIFY_CLIENT_ID: str = os.getenv("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+# Cap how many tracks we resolve from one Spotify playlist/album.
+SPOTIFY_RESOLVE_LIMIT: int = int(os.getenv("SPOTIFY_RESOLVE_LIMIT", "200"))

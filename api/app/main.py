@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 
 from .config import CORS_ORIGINS
 from .db.session import init_db
-from .routers import auth, browse, follows, likes, playlists, stream
+from .routers import auth, browse, follows, likes, playlists, resolve, stream
 from .services import deezer_client
 
 app = FastAPI(title="Spotifrei API")
@@ -46,3 +46,4 @@ app.include_router(auth.router)
 app.include_router(likes.router)
 app.include_router(playlists.router)
 app.include_router(follows.router)
+app.include_router(resolve.router)

@@ -167,6 +167,50 @@ def add_track(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@router.post("/{playlist_id}/tracks/bulk")
+def add_tracks_bulk(
+    playlist_id: int,
+    tracks: list[Track],
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    pl = _get_owned_playlist(db, playlist_id, user)
+    existing = set(
+        db.scalars(
+            select(PlaylistTrack.deezer_id).where(PlaylistTrack.playlist_id == pl.id)
+        ).all()
+    )
+    pos = db.scalar(
+        select(func.coalesce(func.max(PlaylistTrack.position), -1)).where(
+            PlaylistTrack.playlist_id == pl.id
+        )
+    )
+    pos = pos if pos is not None else -1
+    added = 0
+    for track in tracks:
+        if track.id in existing:
+            continue
+        existing.add(track.id)
+        pos += 1
+        db.add(
+            PlaylistTrack(
+                playlist_id=pl.id,
+                deezer_id=track.id,
+                title=track.title,
+                artist=track.artist,
+                album=track.album,
+                cover_url=track.cover or None,
+                duration_sec=track.duration_sec,
+                position=pos,
+            )
+        )
+        if not pl.cover_url and track.cover:
+            pl.cover_url = track.cover
+        added += 1
+    db.commit()
+    return {"added": added}
+
+
 @router.patch("/{playlist_id}/tracks/order", status_code=status.HTTP_204_NO_CONTENT)
 def reorder_tracks(
     playlist_id: int,

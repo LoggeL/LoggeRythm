@@ -4,7 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useMe, useLogout } from "@/hooks/useAuth";
 import { usePlaylists, useCreatePlaylist } from "@/hooks/useLibrary";
-import { HomeIcon, SearchIcon, LibraryIcon, PlusIcon } from "@/components/icons";
+import {
+  HomeIcon,
+  SearchIcon,
+  LibraryIcon,
+  PlusIcon,
+  ImportIcon,
+} from "@/components/icons";
 
 function NavLink({
   href,
@@ -64,6 +70,11 @@ export default function Sidebar() {
           href="/library"
           icon={<LibraryIcon />}
           label="Deine Bibliothek"
+        />
+        <NavLink
+          href="/import"
+          icon={<ImportIcon />}
+          label="Importieren"
         />
       </nav>
 

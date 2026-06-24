@@ -9,6 +9,7 @@ import type {
   PlaylistSummary,
   PlaylistSearchResult,
   Genre,
+  ResolveResult,
 } from "@/types";
 
 const BASE = "/api";
@@ -151,6 +152,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ deezer_ids: deezerIds }),
     }),
+  addTracksBulk: (id: string, tracks: Track[]) =>
+    req<{ added: number }>(`/playlists/${encodeURIComponent(id)}/tracks/bulk`, {
+      method: "POST",
+      body: JSON.stringify(tracks),
+    }),
+
+  // External link resolution (Spotify -> Deezer-playable)
+  resolve: (url: string) =>
+    req<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`),
 };
 
 export { ApiError };

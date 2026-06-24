@@ -267,6 +267,37 @@ def related_artists(artist_id: str) -> list[dict]:
     return [normalize_artist_summary(a) for a in items]
 
 
+def track_by_isrc(isrc: str) -> dict | None:
+    """Resolve a Deezer track by ISRC (exact cross-catalog match). None if absent."""
+    if not isrc:
+        return None
+    try:
+        data = _public_get(f"/track/isrc:{isrc}")
+    except DeezerClientError:
+        return None
+    if not data or not data.get("id"):
+        return None
+    return normalize_public_track(data)
+
+
+def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
+    """Best-effort map of external metadata to a playable Deezer track.
+
+    Prefers an exact ISRC match; falls back to a text search on artist+title.
+    """
+    hit = track_by_isrc(isrc)
+    if hit:
+        return hit
+    query = f"{artist} {title}".strip()
+    if not query:
+        return None
+    try:
+        results = search_tracks_public(query)
+    except DeezerClientError:
+        return None
+    return results[0] if results else None
+
+
 def album_detail(album_id: str) -> dict:
     data = _public_get(f"/album/{album_id}")
     artist = data.get("artist") or {}

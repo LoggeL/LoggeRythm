@@ -78,3 +78,13 @@ export interface Genre {
   name: string;
   picture: string;
 }
+
+export interface ResolveResult {
+  type: string; // playlist | album | track
+  name: string;
+  image: string;
+  total: number;
+  matched: number;
+  tracks: Track[];
+  unmatched: { title: string; artist: string }[];
+}
