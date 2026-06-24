@@ -9,6 +9,7 @@ import type {
   PlaylistSummary,
   PlaylistSearchResult,
   Genre,
+  GenreDetail,
   ResolveResult,
 } from "@/types";
 
@@ -27,10 +28,12 @@ async function req<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
+  const isForm =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !isForm ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     },
     ...options,
@@ -65,6 +68,7 @@ export const api = {
     req<PlaylistSearchResult[]>(`/search/playlist?q=${encodeURIComponent(q)}`),
   charts: () => req<Track[]>(`/charts`),
   genres: () => req<Genre[]>(`/genres`),
+  genre: (id: string) => req<GenreDetail>(`/genres/${encodeURIComponent(id)}`),
   newReleases: () => req<AlbumSummary[]>(`/new-releases`),
   track: (id: string) => req<Track>(`/tracks/${encodeURIComponent(id)}`),
   album: (id: string) => req<Album>(`/albums/${encodeURIComponent(id)}`),
@@ -158,9 +162,26 @@ export const api = {
       body: JSON.stringify(tracks),
     }),
 
+  uploadPlaylistCover: (id: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req<PlaylistSummary>(`/playlists/${encodeURIComponent(id)}/cover`, {
+      method: "PUT",
+      body: form,
+    });
+  },
+
   // External link resolution (Spotify -> Deezer-playable)
   resolve: (url: string) =>
     req<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`),
+
+  // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached server-side)
+  lyrics: (artist: string, title: string, deezerId?: string) =>
+    req<{ lines: { t: number; text: string }[] | null; synced: boolean }>(
+      `/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(
+        title,
+      )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}`,
+    ),
 };
 
 export { ApiError };

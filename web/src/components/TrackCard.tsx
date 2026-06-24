@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { PlayIcon, PauseIcon } from "@/components/icons";
@@ -25,9 +26,26 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
   }
 
   return (
-    <div className="group relative bg-panel hover:bg-panel-hover rounded-lg p-4 transition cursor-default">
+    <div className="group relative bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift cursor-default">
       <div className="relative mb-3">
-        {track.cover ? (
+        {track.album_id ? (
+          <Link
+            href={`/album/${track.album_id}`}
+            aria-label={`Album ${track.album}`}
+            className="block overflow-hidden rounded-md"
+          >
+            {track.cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={track.cover}
+                alt={track.album}
+                className="w-full aspect-square object-cover rounded-md shadow-lg transition-transform duration-300 group-hover:scale-105"
+              />
+            ) : (
+              <div className="w-full aspect-square rounded-md bg-[#333]" />
+            )}
+          </Link>
+        ) : track.cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={track.cover}
@@ -41,7 +59,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
           type="button"
           onClick={handlePlay}
           aria-label={playingThis ? "Pause" : "Abspielen"}
-          className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition hover:bg-accent-hover hover:scale-105"
+          className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition hover:bg-accent-hover hover:scale-105 press"
         >
           {playingThis ? (
             <PauseIcon width={22} height={22} />
@@ -51,14 +69,34 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
         </button>
       </div>
       <div className="min-w-0">
-        <div
-          className={`truncate font-semibold ${
-            isCurrent ? "text-accent" : "text-foreground"
-          }`}
-        >
-          {track.title}
-        </div>
-        <div className="truncate text-sm text-muted">{track.artist}</div>
+        {track.album_id ? (
+          <Link
+            href={`/album/${track.album_id}`}
+            className={`block truncate font-semibold hover:underline ${
+              isCurrent ? "text-accent" : "text-foreground"
+            }`}
+          >
+            {track.title}
+          </Link>
+        ) : (
+          <div
+            className={`truncate font-semibold ${
+              isCurrent ? "text-accent" : "text-foreground"
+            }`}
+          >
+            {track.title}
+          </div>
+        )}
+        {track.artist_id ? (
+          <Link
+            href={`/artist/${track.artist_id}`}
+            className="block truncate text-sm text-muted hover:underline hover:text-foreground"
+          >
+            {track.artist}
+          </Link>
+        ) : (
+          <div className="truncate text-sm text-muted">{track.artist}</div>
+        )}
       </div>
     </div>
   );

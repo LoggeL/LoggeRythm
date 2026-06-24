@@ -8,15 +8,17 @@ export default function AlbumCard({ album }: { album: AlbumSummary }) {
   return (
     <Link
       href={`/album/${album.id}`}
-      className="group block bg-panel hover:bg-panel-hover rounded-lg p-4 transition"
+      className="group block bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift"
     >
       {album.cover ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={album.cover}
-          alt={album.title}
-          className="w-full aspect-square object-cover rounded-md shadow-lg mb-3"
-        />
+        <div className="mb-3 overflow-hidden rounded-md">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={album.cover}
+            alt={album.title}
+            className="w-full aspect-square object-cover rounded-md shadow-lg transition-transform duration-300 group-hover:scale-105"
+          />
+        </div>
       ) : (
         <div className="w-full aspect-square rounded-md bg-[#333] mb-3" />
       )}

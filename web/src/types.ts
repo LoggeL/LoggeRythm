@@ -79,6 +79,15 @@ export interface Genre {
   picture: string;
 }
 
+export interface GenreDetail {
+  id: string | number;
+  name: string;
+  picture: string;
+  tracks: Track[];
+  albums: AlbumSummary[];
+  artists: ArtistSummary[];
+}
+
 export interface ResolveResult {
   type: string; // playlist | album | track
   name: string;

@@ -11,6 +11,7 @@ import {
   PlusIcon,
   ImportIcon,
 } from "@/components/icons";
+import Logo from "@/components/Logo";
 
 function NavLink({
   href,
@@ -54,10 +55,11 @@ export default function Sidebar() {
     <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black text-foreground gap-2 p-2">
       {/* Logo */}
       <div className="px-4 py-4">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="inline-block w-7 h-7 rounded-full bg-accent" />
+        <Link href="/" className="flex items-center gap-2 hover-lift press">
+          <Logo size={28} />
           <span className="text-xl font-extrabold tracking-tight">
-            Spotifrei
+            <span className="text-foreground">Spoti</span>
+            <span className="text-accent">frei</span>
           </span>
         </Link>
       </div>

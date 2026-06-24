@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import { useLocalJson } from "@/hooks/useLocalJson";
+import Link from "next/link";
 import TrackCard from "@/components/TrackCard";
 import AlbumCard from "@/components/AlbumCard";
 import { CardGridSkeleton } from "@/components/Skeleton";
@@ -30,7 +31,7 @@ export default function HomePage() {
       </div>
 
       {recent.length > 0 && (
-        <section>
+        <section className="animate-in">
           <h2 className="text-2xl font-bold mb-4">Zuletzt gespielt</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
             {recent.slice(0, 6).map((track, i) => (
@@ -44,7 +45,7 @@ export default function HomePage() {
         </section>
       )}
 
-      <section>
+      <section className="animate-in">
         <h2 className="text-2xl font-bold mb-4">Charts</h2>
         {charts.isLoading && <CardGridSkeleton count={10} />}
         {charts.isError && (
@@ -61,7 +62,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section>
+      <section className="animate-in">
         <h2 className="text-2xl font-bold mb-4">Neue Veröffentlichungen</h2>
         {releases.isLoading && <CardGridSkeleton count={10} />}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -72,13 +73,14 @@ export default function HomePage() {
       </section>
 
       {(genres.data ?? []).length > 0 && (
-        <section>
+        <section className="animate-in">
           <h2 className="text-2xl font-bold mb-4">Genres</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
             {(genres.data ?? []).map((g) => (
-              <div
+              <Link
                 key={String(g.id)}
-                className="relative rounded-lg overflow-hidden aspect-[4/3] bg-panel"
+                href={`/genre/${g.id}`}
+                className="relative block rounded-lg overflow-hidden aspect-[4/3] bg-panel hover-lift transition"
               >
                 {g.picture && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -91,7 +93,7 @@ export default function HomePage() {
                 <span className="absolute bottom-2 left-3 font-bold text-lg drop-shadow">
                   {g.name}
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         </section>

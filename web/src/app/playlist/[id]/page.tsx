@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   usePlaylist,
   useRemoveFromPlaylist,
@@ -11,6 +12,8 @@ import {
 } from "@/hooks/useLibrary";
 import { usePlayerStore } from "@/store/player";
 import { useMe } from "@/hooks/useAuth";
+import { api } from "@/lib/api";
+import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon, EditIcon, TrashIcon } from "@/components/icons";
@@ -29,10 +32,30 @@ export default function PlaylistPage({
   const reorder = useReorderPlaylist();
   const updatePlaylist = useUpdatePlaylist();
   const deletePlaylist = useDeletePlaylist();
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  async function onCoverPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      await api.uploadPlaylistCover(id, file);
+      qc.invalidateQueries({ queryKey: ["playlist", id] });
+      qc.invalidateQueries({ queryKey: ["playlists"] });
+      toast.success("Cover aktualisiert.");
+    } catch {
+      toast.error("Cover-Upload fehlgeschlagen.");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   if (isLoading)
     return (
@@ -73,20 +96,43 @@ export default function PlaylistPage({
   }
 
   return (
-    <div>
+    <div className="animate-in">
       <header className="flex items-end gap-6 mb-6">
-        {data.cover_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.cover_url}
-            alt={data.name}
-            className="w-40 h-40 rounded-md object-cover shadow-xl"
-          />
-        ) : (
-          <div className="w-40 h-40 rounded-md bg-gradient-to-br from-accent to-[#3a2a6a] flex items-center justify-center text-5xl shadow-xl">
-            ♪
-          </div>
-        )}
+        <div className="relative w-40 h-40 flex-shrink-0 group">
+          {data.cover_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={data.cover_url}
+              alt={data.name}
+              className="w-40 h-40 rounded-md object-cover shadow-xl"
+            />
+          ) : (
+            <div className="w-40 h-40 rounded-md bg-panel-hover flex items-center justify-center text-5xl shadow-xl">
+              ♪
+            </div>
+          )}
+          {me && (
+            <>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                aria-label="Cover ändern"
+                className="absolute inset-0 rounded-md bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-1 text-sm font-medium disabled:opacity-100"
+              >
+                <EditIcon />
+                {uploading ? "Lädt…" : "Cover ändern"}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                onChange={onCoverPick}
+                className="hidden"
+              />
+            </>
+          )}
+        </div>
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-muted">Playlist</p>
           <h1 className="text-4xl font-extrabold mb-2 truncate">{data.name}</h1>

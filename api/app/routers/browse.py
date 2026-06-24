@@ -8,6 +8,7 @@ from ..schemas.track import (
     ArtistDetail,
     ArtistSummary,
     Genre,
+    GenreDetail,
     PlaylistSearchResult,
     Track,
 )
@@ -88,6 +89,14 @@ async def genres() -> list[dict]:
 async def new_releases() -> list[dict]:
     try:
         return await run_in_threadpool(dc.new_releases)
+    except dc.DeezerClientError as e:
+        raise to_http(e)
+
+
+@router.get("/genres/{genre_id}", response_model=GenreDetail)
+async def genre(genre_id: str) -> dict:
+    try:
+        return await run_in_threadpool(dc.genre_detail, genre_id)
     except dc.DeezerClientError as e:
         raise to_http(e)
 

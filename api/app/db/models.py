@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -106,6 +107,15 @@ class FollowedArtist(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     user: Mapped["User"] = relationship(back_populates="follows")
+
+
+class StoredLyrics(Base):
+    __tablename__ = "stored_lyrics"
+
+    deezer_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    lines_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    synced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
 class StoredTrack(Base):

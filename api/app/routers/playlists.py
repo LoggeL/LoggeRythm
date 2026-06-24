@@ -1,9 +1,15 @@
 """Playlist CRUD and track membership for the current user."""
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import glob
+import os
+import shutil
+
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..config import STORAGE_DIR
 from ..db.models import Playlist, PlaylistTrack, User
 from ..db.session import get_db
 from ..schemas.playlist import (
@@ -16,6 +22,23 @@ from ..schemas.playlist import (
 from ..schemas.track import Track
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
+
+_COVERS_DIR = os.path.join(STORAGE_DIR, "covers")
+_EXT_BY_TYPE = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+
+
+def _remove_cover_files(playlist_id: int) -> None:
+    for f in glob.glob(os.path.join(_COVERS_DIR, f"{playlist_id}.*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
 def _get_owned_playlist(db: Session, playlist_id: int, user: User) -> Playlist:
@@ -123,7 +146,46 @@ def delete_playlist(
     pl = _get_owned_playlist(db, playlist_id, user)
     db.delete(pl)
     db.commit()
+    _remove_cover_files(playlist_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/{playlist_id}/cover", response_model=PlaylistSummary)
+def set_cover(
+    playlist_id: int,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlaylistSummary:
+    pl = _get_owned_playlist(db, playlist_id, user)
+    ext = _EXT_BY_TYPE.get((file.content_type or "").lower())
+    if ext is None:
+        raise HTTPException(
+            status_code=400, detail="Nur Bilddateien (JPG, PNG, WEBP, GIF)."
+        )
+    os.makedirs(_COVERS_DIR, exist_ok=True)
+    _remove_cover_files(playlist_id)
+    path = os.path.join(_COVERS_DIR, f"{playlist_id}{ext}")
+    with open(path, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+    # cache-bust via file mtime so the new image replaces the cached one
+    pl.cover_url = f"/api/playlists/{playlist_id}/cover?v={int(os.path.getmtime(path))}"
+    db.commit()
+    db.refresh(pl)
+    count = db.scalar(
+        select(func.count(PlaylistTrack.id)).where(
+            PlaylistTrack.playlist_id == pl.id
+        )
+    )
+    return _summary(pl, count or 0)
+
+
+@router.get("/{playlist_id}/cover")
+def get_cover(playlist_id: int) -> FileResponse:
+    for f in glob.glob(os.path.join(_COVERS_DIR, f"{playlist_id}.*")):
+        if os.path.isfile(f):
+            return FileResponse(f)
+    raise HTTPException(status_code=404, detail="Kein Cover")
 
 
 @router.post("/{playlist_id}/tracks", status_code=status.HTTP_204_NO_CONTENT)

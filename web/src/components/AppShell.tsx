@@ -6,6 +6,8 @@ import Sidebar from "@/components/Sidebar";
 import PlayerBar from "@/components/PlayerBar";
 import MobileNav from "@/components/MobileNav";
 import Toaster from "@/components/Toast";
+import QueueSidebar from "@/components/QueueSidebar";
+import Lyrics from "@/components/Lyrics";
 
 export default function AppShell({
   children,
@@ -26,13 +28,17 @@ export default function AppShell({
         <Sidebar />
         <main
           ref={mainRef}
-          className="flex-1 min-w-0 overflow-y-auto scroll-area bg-gradient-to-b from-[#1f1a2e] to-background"
+          className="flex-1 min-w-0 overflow-y-auto scroll-area bg-background"
         >
           <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto pb-28 md:pb-6">
-            {children}
+            <div key={pathname} className="animate-in">
+              {children}
+            </div>
           </div>
         </main>
+        <QueueSidebar />
       </div>
+      <Lyrics />
       <PlayerBar />
       <MobileNav />
       <Toaster />

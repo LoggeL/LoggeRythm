@@ -5,7 +5,6 @@ import { usePlayerStore, currentTrack } from "@/store/player";
 import { streamUrl } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
-import QueuePanel from "@/components/QueuePanel";
 import NowPlaying from "@/components/NowPlaying";
 import {
   PlayIcon,
@@ -18,14 +17,19 @@ import {
   RepeatIcon,
   RepeatOneIcon,
   QueueIcon,
+  LyricsIcon,
   SpinnerIcon,
   ChevronDownIcon,
 } from "@/components/icons";
 
 export default function PlayerBar() {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [queueOpen, setQueueOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  const queueOpen = usePlayerStore((s) => s.queueOpen);
+  const toggleQueue = usePlayerStore((s) => s.toggleQueue);
+  const lyricsOpen = usePlayerStore((s) => s.lyricsOpen);
+  const toggleLyrics = usePlayerStore((s) => s.toggleLyrics);
 
   const track = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -321,11 +325,23 @@ export default function PlayerBar() {
           </div>
         </div>
 
-        {/* Queue + Volume */}
+        {/* Lyrics + Queue + Volume */}
         <div className="hidden sm:flex items-center gap-2 w-1/4 justify-end">
           <button
             type="button"
-            onClick={() => setQueueOpen((o) => !o)}
+            onClick={toggleLyrics}
+            aria-label="Songtext"
+            aria-pressed={lyricsOpen}
+            title="Songtext"
+            className={`p-1 rounded-full hover:bg-panel-hover transition ${
+              lyricsOpen ? "text-accent" : "text-muted hover:text-foreground"
+            }`}
+          >
+            <LyricsIcon />
+          </button>
+          <button
+            type="button"
+            onClick={toggleQueue}
             aria-label="Warteschlange"
             aria-pressed={queueOpen}
             title="Warteschlange"
@@ -354,8 +370,6 @@ export default function PlayerBar() {
             aria-label="Lautstärke"
           />
         </div>
-
-        {queueOpen && <QueuePanel onClose={() => setQueueOpen(false)} />}
 
         {/* Mobile expand chevron */}
         {track && (

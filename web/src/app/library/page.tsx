@@ -48,7 +48,7 @@ export default function LibraryPage() {
   ];
 
   return (
-    <div>
+    <div className="animate-in">
       <h1 className="text-3xl font-extrabold mb-4">Deine Bibliothek</h1>
 
       <div className="flex gap-2 mb-6 flex-wrap">
@@ -73,7 +73,7 @@ export default function LibraryPage() {
           <button
             type="button"
             onClick={() => setTab("liked")}
-            className="text-left bg-gradient-to-br from-accent to-[#3a2a6a] rounded-lg p-4 hover:opacity-90 transition"
+            className="hover-lift text-left bg-accent rounded-lg p-4 transition"
           >
             <div className="w-full aspect-square rounded-md bg-white/10 flex items-center justify-center mb-3">
               <HeartIcon filled width={40} height={40} className="text-white" />
@@ -86,7 +86,7 @@ export default function LibraryPage() {
             <Link
               key={String(p.id)}
               href={`/playlist/${p.id}`}
-              className="bg-panel hover:bg-panel-hover rounded-lg p-4 transition"
+              className="hover-lift bg-panel hover:bg-panel-hover rounded-lg p-4 transition"
             >
               {p.cover_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -96,7 +96,7 @@ export default function LibraryPage() {
                   className="w-full aspect-square object-cover rounded-md shadow-lg mb-3"
                 />
               ) : (
-                <div className="w-full aspect-square rounded-md bg-gradient-to-br from-accent to-[#3a2a6a] flex items-center justify-center text-4xl mb-3">
+                <div className="w-full aspect-square rounded-md bg-panel-hover flex items-center justify-center text-4xl mb-3">
                   ♪
                 </div>
               )}

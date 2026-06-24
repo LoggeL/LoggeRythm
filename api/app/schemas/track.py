@@ -41,6 +41,15 @@ class Genre(BaseModel):
     picture: str = ""
 
 
+class GenreDetail(BaseModel):
+    id: str
+    name: str = ""
+    picture: str = ""
+    tracks: list["Track"] = Field(default_factory=list)
+    albums: list["AlbumSummary"] = Field(default_factory=list)
+    artists: list["ArtistSummary"] = Field(default_factory=list)
+
+
 class AlbumDetail(BaseModel):
     id: str
     title: str = ""

@@ -40,7 +40,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col bg-gradient-to-b from-[#2a2350] to-background p-6">
+    <div className="animate-in fixed inset-0 z-[80] flex flex-col bg-background p-6">
       <div className="flex justify-between items-center mb-8">
         <button
           type="button"

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
@@ -7,7 +8,8 @@ import { formatTime } from "@/lib/format";
 import { PlayIcon, PauseIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
 import AddToPlaylistMenu from "@/components/AddToPlaylistMenu";
-import TrackMenu from "@/components/TrackMenu";
+import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
+import ContextMenu from "@/components/ContextMenu";
 
 interface TrackRowProps {
   track: Track;
@@ -34,6 +36,9 @@ export default function TrackRow({
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
 
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const menuItems = useTrackMenuItems(track, onRemove);
+
   const isCurrent = cur?.id === track.id;
   const playingThis = isCurrent && isPlaying;
 
@@ -47,8 +52,16 @@ export default function TrackRow({
     }
   }
 
+  function handleContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setMenuPos({ x: e.clientX, y: e.clientY });
+  }
+
   return (
-    <div className="group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_4fr_3fr_auto] items-center gap-3 px-3 py-2 rounded-md hover:bg-panel-hover transition">
+    <div
+      onContextMenu={handleContextMenu}
+      className="group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_4fr_3fr_auto] items-center gap-3 px-3 py-2 rounded-md hover:bg-panel-hover transition"
+    >
       {/* index / play */}
       <div className="w-8 flex items-center justify-center text-muted text-sm">
         <button
@@ -152,6 +165,15 @@ export default function TrackRow({
         </span>
         <TrackMenu track={track} onRemove={onRemove} />
       </div>
+
+      {menuPos && (
+        <ContextMenu
+          x={menuPos.x}
+          y={menuPos.y}
+          items={menuItems}
+          onClose={() => setMenuPos(null)}
+        />
+      )}
     </div>
   );
 }

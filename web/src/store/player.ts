@@ -57,8 +57,14 @@ interface PlayerState {
   repeat: RepeatMode;
   isBuffering: boolean;
   error: string | null;
+  queueOpen: boolean;
+  lyricsOpen: boolean;
 
   // actions
+  toggleQueue: () => void;
+  setQueueOpen: (v: boolean) => void;
+  toggleLyrics: () => void;
+  setLyricsOpen: (v: boolean) => void;
   playTrack: (track: Track) => void;
   playQueue: (tracks: Track[], startIndex?: number) => void;
   addToQueue: (track: Track) => void;
@@ -105,7 +111,14 @@ export const usePlayerStore = create<PlayerState>()(
       repeat: "off",
       isBuffering: false,
       error: null,
+      queueOpen: false,
+      lyricsOpen: false,
       seekTo: null,
+
+      toggleQueue: () => set({ queueOpen: !get().queueOpen }),
+      setQueueOpen: (v) => set({ queueOpen: v }),
+      toggleLyrics: () => set({ lyricsOpen: !get().lyricsOpen }),
+      setLyricsOpen: (v) => set({ lyricsOpen: v }),
 
       playTrack: (track) => {
         pushRecent(track);

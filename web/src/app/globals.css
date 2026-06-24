@@ -88,34 +88,65 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
   outline-offset: 2px;
 }
 
-/* Skeleton shimmer */
-@keyframes shimmer {
-  0% {
-    background-position: -400px 0;
-  }
-  100% {
-    background-position: 400px 0;
-  }
-}
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    #1d1d1d 25%,
-    #2a2a2a 37%,
-    #1d1d1d 63%
-  );
-  background-size: 800px 100%;
-  animation: shimmer 1.4s infinite linear;
-}
-
+/* ============ ANIMATION FOUNDATION (solid colors, no gradients) ============ */
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Skeleton: solid pulse (no gradient) */
+.skeleton {
+  background: #232323;
+  animation: pulseSoft 1.3s ease-in-out infinite;
+}
+
+@layer utilities {
+  /* entrance */
+  .animate-in {
+    animation: fadeIn 0.28s ease-out both;
+  }
+  .pop-in {
+    animation: popIn 0.24s ease-out both;
+  }
+  /* hover lift for cards/tiles */
+  .hover-lift {
+    transition: transform 0.2s ease, background-color 0.2s ease;
+    will-change: transform;
+  }
+  .hover-lift:hover {
+    transform: translateY(-4px);
+  }
+  /* tactile press for buttons */
+  .press {
+    transition: transform 0.08s ease, filter 0.15s ease, background-color 0.15s ease;
+  }
+  .press:active {
+    transform: scale(0.95);
   }
 }
 
@@ -126,4 +157,15 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .pop-in,
+  .skeleton {
+    animation: none;
+  }
+  .hover-lift:hover {
+    transform: none;
+  }
 }

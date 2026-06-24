@@ -261,6 +261,28 @@ def new_releases() -> list[dict]:
     return [normalize_album_summary(a) for a in items]
 
 
+def genre_detail(genre_id: str) -> dict:
+    info = _public_get(f"/genre/{genre_id}")
+    try:
+        chart = _public_get(f"/chart/{genre_id}")
+    except DeezerClientError:
+        chart = {}
+    tracks = (chart.get("tracks") or {}).get("data") or []
+    albums = (chart.get("albums") or {}).get("data") or []
+    artists = (chart.get("artists") or {}).get("data") or []
+    return {
+        "id": str(info.get("id", genre_id)),
+        "name": info.get("name", "") or "",
+        "picture": info.get("picture_medium")
+        or info.get("picture_big")
+        or info.get("picture", "")
+        or "",
+        "tracks": [normalize_public_track(t) for t in tracks],
+        "albums": [normalize_album_summary(a) for a in albums],
+        "artists": [normalize_artist_summary(a) for a in artists],
+    }
+
+
 def related_artists(artist_id: str) -> list[dict]:
     data = _public_get(f"/artist/{artist_id}/related?limit=12")
     items = data.get("data") or []
