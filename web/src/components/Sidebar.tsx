@@ -26,9 +26,9 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-4 px-3 py-2 rounded-md font-semibold transition ${
+      className={`relative flex items-center gap-4 px-3 py-2 rounded-md font-semibold transition ${
         active
-          ? "text-foreground bg-white/5"
+          ? "text-foreground bg-surface-2 neon-text before:absolute before:left-0 before:inset-y-1.5 before:w-[3px] before:rounded-full before:bg-[linear-gradient(#ff2bd6,#1fe0ff)]"
           : "text-muted hover:text-foreground"
       }`}
     >
@@ -51,13 +51,13 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black text-foreground gap-2 p-2">
+    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black text-foreground gap-2 p-2 relative after:absolute after:right-0 after:inset-y-0 after:w-px after:bg-[linear-gradient(to_bottom,#ff2bd6,#1fe0ff)] after:opacity-60">
       {/* Logo */}
       <div className="px-4 py-4">
         <Link href="/" className="flex items-center gap-2">
-          <span className="inline-block w-7 h-7 rounded-full bg-accent" />
-          <span className="text-xl font-extrabold tracking-tight">
-            Spotifrei
+          <span className="inline-block w-7 h-7 rounded-full neon-orb" />
+          <span className="text-xl font-black tracking-tight text-gradient">
+            SPOTIFREI
           </span>
         </Link>
       </div>
@@ -81,9 +81,7 @@ export default function Sidebar() {
       {/* Library / playlists */}
       <div className="bg-panel rounded-lg p-2 flex-1 min-h-0 flex flex-col">
         <div className="flex items-center justify-between px-2 py-2">
-          <span className="text-sm font-semibold text-muted">
-            Deine Playlists
-          </span>
+          <span className="label-mono">Deine Playlists</span>
           <button
             type="button"
             onClick={handleCreate}
@@ -161,7 +159,7 @@ export default function Sidebar() {
             </Link>
             <Link
               href="/register"
-              className="flex-1 text-center px-3 py-1.5 rounded-full bg-accent text-white hover:bg-accent-hover"
+              className="flex-1 text-center px-3 py-1.5 rounded-full play-ring text-white font-semibold"
             >
               Registrieren
             </Link>

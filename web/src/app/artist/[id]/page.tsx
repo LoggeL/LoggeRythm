@@ -46,20 +46,31 @@ export default function ArtistPage({
 
   return (
     <div>
-      <header className="flex items-end gap-6 mb-6">
+      <header className="relative flex items-end gap-6 mb-6 isolate">
+        {data.picture && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={data.picture}
+            alt=""
+            aria-hidden
+            className="pointer-events-none absolute -z-10 -top-10 left-0 w-72 h-72 object-cover opacity-40 blur-[60px] saturate-150 rounded-full"
+          />
+        )}
         {data.picture ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={data.picture}
             alt={data.name}
-            className="w-40 h-40 rounded-full object-cover shadow-xl"
+            className="w-44 h-44 md:w-48 md:h-48 rounded-full object-cover ring-1 ring-[var(--border-strong)] shadow-[0_0_40px_rgba(255,43,214,.25)]"
           />
         ) : (
-          <div className="w-40 h-40 rounded-full bg-panel-hover" />
+          <div className="w-44 h-44 md:w-48 md:h-48 rounded-full bg-panel-hover" />
         )}
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted">Künstler</p>
-          <h1 className="text-4xl font-extrabold mb-2">{data.name}</h1>
+          <p className="label-mono">Künstler</p>
+          <h1 className="text-5xl md:text-6xl font-black tracking-tight neon-text mb-2">
+            {data.name}
+          </h1>
         </div>
       </header>
 
@@ -68,7 +79,7 @@ export default function ArtistPage({
           type="button"
           onClick={() => playQueue(tracks, 0)}
           disabled={tracks.length === 0}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-full play-ring text-white font-semibold disabled:opacity-40"
         >
           <PlayIcon /> Abspielen
         </button>
@@ -82,7 +93,7 @@ export default function ArtistPage({
           }
           className={`px-5 py-2.5 rounded-full border font-semibold transition ${
             following
-              ? "border-accent text-accent"
+              ? "border-accent text-accent neon-text"
               : "border-white/30 hover:border-white/70"
           }`}
         >

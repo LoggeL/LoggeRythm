@@ -32,7 +32,7 @@ export default function LibraryPage() {
         </p>
         <Link
           href="/login"
-          className="inline-block px-5 py-2 rounded-full bg-accent text-white hover:bg-accent-hover"
+          className="inline-block px-5 py-2 rounded-full play-ring text-white"
         >
           Anmelden
         </Link>
@@ -49,7 +49,9 @@ export default function LibraryPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-extrabold mb-4">Deine Bibliothek</h1>
+      <h1 className="text-4xl font-black tracking-tight text-gradient mb-4">
+        Deine Bibliothek
+      </h1>
 
       <div className="flex gap-2 mb-6 flex-wrap">
         {TABS.map((t) => (
@@ -57,9 +59,9 @@ export default function LibraryPage() {
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold transition ${
               tab === t.key
-                ? "bg-foreground text-background"
+                ? "neon-border text-foreground neon-text"
                 : "bg-panel text-muted hover:text-foreground"
             }`}
           >

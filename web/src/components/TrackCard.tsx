@@ -3,6 +3,7 @@
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { PlayIcon, PauseIcon } from "@/components/icons";
+import Equalizer from "@/components/Equalizer";
 
 interface TrackCardProps {
   track: Track;
@@ -25,7 +26,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
   }
 
   return (
-    <div className="group relative bg-panel hover:bg-panel-hover rounded-lg p-4 transition cursor-default">
+    <div className="group relative bg-panel neon-glow border border-[var(--border)] rounded-xl p-4 cursor-default">
       <div className="relative mb-3">
         {track.cover ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -35,13 +36,18 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
             className="w-full aspect-square object-cover rounded-md shadow-lg"
           />
         ) : (
-          <div className="w-full aspect-square rounded-md bg-[#333]" />
+          <div className="w-full aspect-square rounded-md bg-[#1a1330]" />
+        )}
+        {playingThis && (
+          <span className="absolute top-2 left-2 bg-black/50 rounded px-1.5 py-1">
+            <Equalizer />
+          </span>
         )}
         <button
           type="button"
           onClick={handlePlay}
           aria-label={playingThis ? "Pause" : "Abspielen"}
-          className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition hover:bg-accent-hover hover:scale-105"
+          className="absolute bottom-2 right-2 w-12 h-12 rounded-full play-ring text-white flex items-center justify-center opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition"
         >
           {playingThis ? (
             <PauseIcon width={22} height={22} />
@@ -53,7 +59,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
       <div className="min-w-0">
         <div
           className={`truncate font-semibold ${
-            isCurrent ? "text-accent" : "text-foreground"
+            isCurrent ? "text-accent neon-text" : "text-foreground"
           }`}
         >
           {track.title}
