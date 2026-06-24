@@ -1,0 +1,30 @@
+# Secrets — NEVER commit (contains DEEZER_ARL)
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Backend runtime data
+storage/
+*.db
+*.sqlite
+*.sqlite3
+*.part
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
