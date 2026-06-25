@@ -11,7 +11,6 @@ import {
   useDeletePlaylist,
 } from "@/hooks/useLibrary";
 import { usePlayerStore } from "@/store/player";
-import { useMe } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
@@ -26,7 +25,6 @@ export default function PlaylistPage({
 }) {
   const { id } = use(params);
   const router = useRouter();
-  const { data: me } = useMe();
   const { data, isLoading, isError } = usePlaylist(id);
   const playQueue = usePlayerStore((s) => s.playQueue);
   const removeFromPlaylist = useRemoveFromPlaylist();
@@ -69,6 +67,7 @@ export default function PlaylistPage({
     return <p className="text-red-400">Playlist nicht gefunden.</p>;
 
   const tracks = data.tracks ?? [];
+  const isOwner = !!data.is_owner;
 
   function startEdit() {
     setName(data!.name);
@@ -124,7 +123,7 @@ export default function PlaylistPage({
               ♪
             </div>
           )}
-          {me && (
+          {isOwner && (
             <>
               <button
                 type="button"
@@ -150,7 +149,10 @@ export default function PlaylistPage({
           <p className="text-xs uppercase tracking-wide text-muted">Playlist</p>
           <h1 className="text-4xl font-extrabold mb-2 truncate">{data.name}</h1>
           {data.description && <p className="text-muted">{data.description}</p>}
-          <p className="text-sm text-muted mt-1">{tracks.length} Titel</p>
+          <p className="text-sm text-muted mt-1">
+            {!isOwner && data.owner_name ? `von ${data.owner_name} · ` : ""}
+            {tracks.length} Titel
+          </p>
         </div>
       </header>
 
@@ -163,7 +165,7 @@ export default function PlaylistPage({
         >
           <PlayIcon /> Alle abspielen
         </button>
-        {me && (
+        {isOwner && (
           <>
             <button
               type="button"
@@ -246,11 +248,16 @@ export default function PlaylistPage({
               track={track}
               index={i}
               onPlay={() => playQueue(tracks, i)}
-              onRemove={() =>
-                removeFromPlaylist.mutate({ id, deezerId: String(track.id) })
+              onRemove={
+                isOwner
+                  ? () =>
+                      removeFromPlaylist.mutate({ id, deezerId: String(track.id) })
+                  : undefined
               }
-              onMoveUp={i > 0 ? () => move(i, i - 1) : undefined}
-              onMoveDown={i < tracks.length - 1 ? () => move(i, i + 1) : undefined}
+              onMoveUp={isOwner && i > 0 ? () => move(i, i - 1) : undefined}
+              onMoveDown={
+                isOwner && i < tracks.length - 1 ? () => move(i, i + 1) : undefined
+              }
             />
           ))}
         </div>

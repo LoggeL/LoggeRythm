@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, get_current_user_optional
 from ..config import STORAGE_DIR
 from ..db.models import Playlist, PlaylistTrack, User
 from ..db.session import get_db
@@ -66,7 +66,9 @@ def _pt_to_track(pt: PlaylistTrack) -> Track:
     )
 
 
-def _summary(pl: Playlist, track_count: int) -> PlaylistSummary:
+def _summary(
+    pl: Playlist, track_count: int, owner_name: str | None = None
+) -> PlaylistSummary:
     return PlaylistSummary(
         id=pl.id,
         name=pl.name,
@@ -74,6 +76,7 @@ def _summary(pl: Playlist, track_count: int) -> PlaylistSummary:
         cover_url=pl.cover_url,
         track_count=track_count,
         is_public=pl.is_public,
+        owner_name=owner_name,
     )
 
 
@@ -105,19 +108,47 @@ def create_playlist(
     return _summary(pl, 0)
 
 
+@router.get("/public", response_model=list[PlaylistSummary])
+def public_playlists(
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> list[PlaylistSummary]:
+    """Public, non-empty playlists from other users — for the community shelf."""
+    q = (
+        select(Playlist, func.count(PlaylistTrack.id), User.display_name)
+        .join(PlaylistTrack, PlaylistTrack.playlist_id == Playlist.id)
+        .join(User, User.id == Playlist.user_id)
+        .where(Playlist.is_public.is_(True))
+        .group_by(Playlist.id)
+        .order_by(Playlist.created_at.desc())
+        .limit(24)
+    )
+    if user is not None:
+        q = q.where(Playlist.user_id != user.id)
+    rows = db.execute(q).all()
+    return [_summary(pl, count, owner_name=owner) for pl, count, owner in rows]
+
+
 @router.get("/{playlist_id}", response_model=PlaylistDetail)
 def get_playlist(
     playlist_id: int,
-    user: User = Depends(get_current_user),
+    user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ) -> PlaylistDetail:
-    pl = _get_owned_playlist(db, playlist_id, user)
+    pl = db.get(Playlist, playlist_id)
+    is_owner = pl is not None and user is not None and pl.user_id == user.id
+    # Visible if it's yours or it's public; otherwise hidden.
+    if pl is None or (not is_owner and not pl.is_public):
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    owner = db.get(User, pl.user_id)
     return PlaylistDetail(
         id=pl.id,
         name=pl.name,
         description=pl.description,
         cover_url=pl.cover_url,
         is_public=pl.is_public,
+        is_owner=is_owner,
+        owner_name=owner.display_name if owner else None,
         tracks=[_pt_to_track(pt) for pt in pl.tracks],
     )
 

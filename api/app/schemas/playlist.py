@@ -25,6 +25,7 @@ class PlaylistSummary(BaseModel):
     cover_url: str | None = None
     track_count: int
     is_public: bool = False
+    owner_name: str | None = None
 
 
 class PlaylistDetail(BaseModel):
@@ -33,4 +34,6 @@ class PlaylistDetail(BaseModel):
     description: str | None = None
     cover_url: str | None = None
     is_public: bool = False
+    is_owner: bool = False
+    owner_name: str | None = None
     tracks: list[Track]

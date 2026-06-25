@@ -100,6 +100,7 @@ export interface PlaylistSummary {
   cover_url?: string;
   track_count: number;
   is_public?: boolean;
+  owner_name?: string | null;
 }
 
 export interface Playlist {
@@ -108,6 +109,8 @@ export interface Playlist {
   description?: string;
   cover_url?: string;
   is_public?: boolean;
+  is_owner?: boolean;
+  owner_name?: string | null;
   tracks: Track[];
 }
 

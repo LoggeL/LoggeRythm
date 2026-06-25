@@ -145,6 +145,7 @@ export const api = {
 
   // Playlists
   playlists: () => req<PlaylistSummary[]>(`/playlists`),
+  publicPlaylists: () => req<PlaylistSummary[]>(`/playlists/public`),
   createPlaylist: (name: string, description?: string) =>
     req<PlaylistSummary>(`/playlists`, {
       method: "POST",
