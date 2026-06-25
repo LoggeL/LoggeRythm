@@ -11,6 +11,7 @@ import { useMe, useLogout } from "@/hooks/useAuth";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
+import Modal from "@/components/Modal";
 import type { AdminUser, StorageInfo, InviteInfo } from "@/types";
 
 function formatBytes(bytes: number): string {
@@ -242,29 +243,6 @@ function AdminStorageSection() {
               </p>
             </div>
           )}
-
-          {data.tracks.length === 0 ? (
-            <p className="text-muted">Keine gespeicherten Titel.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {data.tracks.map((t) => (
-                <li
-                  key={t.deezer_id}
-                  className="flex items-center gap-3 bg-background rounded-md px-4 py-2.5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium truncate">{t.title}</div>
-                    <div className="text-sm text-muted truncate">
-                      {t.artist}
-                    </div>
-                  </div>
-                  <span className="text-sm text-muted whitespace-nowrap">
-                    {formatBytes(t.size_bytes)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
         </>
       )}
     </section>
@@ -408,6 +386,38 @@ export default function AccountPage() {
     if (file) uploadAvatar.mutate(file);
   }
 
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ display_name: "", email: "", password: "" });
+
+  function openEdit() {
+    setForm({
+      display_name: me?.display_name ?? "",
+      email: me?.email ?? "",
+      password: "",
+    });
+    setEditing(true);
+  }
+
+  const saveProfile = useMutation({
+    mutationFn: () => {
+      const patch: { display_name?: string; email?: string; password?: string } = {};
+      if (form.display_name && form.display_name !== me?.display_name)
+        patch.display_name = form.display_name;
+      if (form.email && form.email !== me?.email) patch.email = form.email;
+      if (form.password) patch.password = form.password;
+      return api.updateMe(patch);
+    },
+    onSuccess: () => {
+      toast.success("Profil aktualisiert.");
+      qc.invalidateQueries({ queryKey: ["me"] });
+      setEditing(false);
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : "Speichern fehlgeschlagen.",
+      ),
+  });
+
   if (isLoading) {
     return <p className="text-muted">Lädt…</p>;
   }
@@ -464,14 +474,82 @@ export default function AccountPage() {
             <StatusBadge approved={!!me.is_approved} />
           </div>
         </div>
-        <button
-          type="button"
-          onClick={logout}
-          className="press self-start px-4 py-2 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10"
-        >
-          Logout
-        </button>
+        <div className="self-start flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={openEdit}
+            className="press px-4 py-2 rounded-full text-sm font-medium bg-accent text-white hover:bg-accent-hover"
+          >
+            Profil bearbeiten
+          </button>
+          <button
+            type="button"
+            onClick={logout}
+            className="press px-4 py-2 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10"
+          >
+            Logout
+          </button>
+        </div>
       </section>
+
+      <Modal open={editing} onClose={() => setEditing(false)} title="Profil bearbeiten">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveProfile.mutate();
+          }}
+          className="flex flex-col gap-3"
+        >
+          <label className="flex flex-col gap-1 text-sm">
+            Anzeigename
+            <input
+              value={form.display_name}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, display_name: e.target.value }))
+              }
+              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            E-Mail
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Neues Passwort
+            <input
+              type="password"
+              value={form.password}
+              minLength={8}
+              placeholder="Leer lassen, um beizubehalten"
+              onChange={(e) =>
+                setForm((f) => ({ ...f, password: e.target.value }))
+              }
+              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+            />
+          </label>
+          <div className="flex justify-end gap-2 mt-1">
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={saveProfile.isPending}
+              className="press px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
+            >
+              {saveProfile.isPending ? "Speichert…" : "Speichern"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {me.is_admin && <AdminUsersSection />}
       {me.is_admin && <AdminStorageSection />}

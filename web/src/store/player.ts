@@ -402,6 +402,7 @@ export const usePlayerStore = create<PlayerState>()(
         lastVolume: s.lastVolume,
         shuffle: s.shuffle,
         repeat: s.repeat,
+        lyricsOpen: s.lyricsOpen,
       }),
     },
   ),

@@ -99,6 +99,11 @@ export const api = {
       body: JSON.stringify({ email, password, display_name, invite }),
     }),
   logout: () => req<void>(`/auth/logout`, { method: "POST" }),
+  updateMe: (patch: {
+    display_name?: string;
+    email?: string;
+    password?: string;
+  }) => req<User>(`/me`, { method: "PATCH", body: JSON.stringify(patch) }),
 
   // Admin
   adminUsers: () => req<AdminUser[]>(`/admin/users`),

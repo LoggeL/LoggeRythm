@@ -5,9 +5,9 @@ import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime } from "@/lib/format";
-import { PlayIcon, PauseIcon } from "@/components/icons";
+import { toast } from "@/store/toast";
+import { PlayIcon, PauseIcon, PlusIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
-import AddToPlaylistMenu from "@/components/AddToPlaylistMenu";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
 
@@ -35,6 +35,7 @@ export default function TrackRow({
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
+  const addToQueue = usePlayerStore((s) => s.addToQueue);
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuItems = useTrackMenuItems(track, onRemove);
@@ -159,7 +160,18 @@ export default function TrackRow({
           </div>
         )}
         <LikeButton track={track} />
-        <AddToPlaylistMenu track={track} />
+        <button
+          type="button"
+          onClick={() => {
+            addToQueue(track);
+            toast.info("Zur Warteschlange hinzugefügt.");
+          }}
+          aria-label="Zur Warteschlange hinzufügen"
+          title="Zur Warteschlange hinzufügen"
+          className="text-muted hover:text-foreground p-1 rounded-full hover:bg-panel-hover transition press"
+        >
+          <PlusIcon />
+        </button>
         <span className="text-sm text-muted w-10 text-right tabular-nums">
           {formatTime(track.duration_sec)}
         </span>

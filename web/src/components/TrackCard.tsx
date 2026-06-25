@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
-import { PlayIcon, PauseIcon, MoreIcon } from "@/components/icons";
+import { toast } from "@/store/toast";
+import { PlayIcon, PauseIcon, MoreIcon, PlusIcon } from "@/components/icons";
 import { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
 
@@ -18,6 +19,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
+  const addToQueue = usePlayerStore((s) => s.addToQueue);
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuItems = useTrackMenuItems(track);
@@ -80,6 +82,18 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
           ) : (
             <PlayIcon width={22} height={22} />
           )}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            addToQueue(track);
+            toast.info("Zur Warteschlange hinzugefügt.");
+          }}
+          aria-label="Zur Warteschlange hinzufügen"
+          title="Zur Warteschlange hinzufügen"
+          className="absolute top-2 right-12 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-black/80 press"
+        >
+          <PlusIcon />
         </button>
         <button
           type="button"

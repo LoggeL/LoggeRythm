@@ -5,11 +5,11 @@ import shutil
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, hash_password
 from ..config import STORAGE_DIR
 from ..db.models import FollowedArtist, Playlist, PlaylistTrack, User
 from ..db.session import get_db
@@ -35,6 +35,23 @@ class PublicProfile(BaseModel):
     avatar_url: str | None = None
     playlists: list[PlaylistSummary]
     top_artists: list[ArtistSummary]
+
+
+class MeUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    email: EmailStr | None = None
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
+def _user_out(u: User) -> UserOut:
+    return UserOut(
+        id=u.id,
+        email=u.email,
+        display_name=u.display_name,
+        avatar_url=u.avatar_url,
+        is_admin=u.is_admin,
+        is_approved=u.is_approved,
+    )
 
 
 def _remove_avatar_files(user_id: int) -> None:
@@ -73,6 +90,28 @@ def set_avatar(
         is_approved=user.is_approved,
         avatar_url=user.avatar_url,
     )
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    body: MeUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserOut:
+    if body.display_name is not None:
+        user.display_name = body.display_name.strip() or user.display_name
+    if body.email is not None and body.email != user.email:
+        taken = db.scalar(
+            select(User).where(User.email == body.email, User.id != user.id)
+        )
+        if taken is not None:
+            raise HTTPException(status_code=409, detail="E-Mail ist bereits vergeben.")
+        user.email = body.email
+    if body.password:
+        user.password_hash = hash_password(body.password)
+    db.commit()
+    db.refresh(user)
+    return _user_out(user)
 
 
 @router.get("/users/{user_id}/avatar")
