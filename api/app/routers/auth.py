@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import (
     clear_session_cookie,
     create_token,
-    get_current_user,
+    get_current_session_user,
     hash_password,
     set_session_cookie,
     verify_password,
@@ -80,11 +80,6 @@ def login(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
-    if not user.is_approved and not user.is_admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dein Konto wartet noch auf Freigabe durch einen Admin.",
-        )
     set_session_cookie(response, create_token(user.id))
     return _user_out(user)
 
@@ -96,5 +91,5 @@ def logout(response: Response) -> dict:
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: User = Depends(get_current_user)) -> UserOut:
+def me(user: User = Depends(get_current_session_user)) -> UserOut:
     return _user_out(user)

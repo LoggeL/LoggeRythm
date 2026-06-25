@@ -14,8 +14,10 @@ STORAGE_RETENTION_DAYS: int = int(os.getenv("STORAGE_RETENTION_DAYS", "30"))
 
 # --- Database ---
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./spotifrei.db")
+APP_ENV: str = os.getenv("APP_ENV", "development").lower()
 
 # --- Auth ---
+_DEV_JWT_SECRETS = {"", "dev-secret-change-me-in-production", "change-me-in-production"}
 JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-me-in-production")
 JWT_ALGORITHM: str = "HS256"
 JWT_EXPIRE_DAYS: int = 30
@@ -44,3 +46,10 @@ SPOTIFY_CLIENT_ID: str = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 # Cap how many tracks we resolve from one Spotify playlist/album.
 SPOTIFY_RESOLVE_LIMIT: int = int(os.getenv("SPOTIFY_RESOLVE_LIMIT", "200"))
+
+
+def validate_runtime_config() -> None:
+    if APP_ENV in {"prod", "production"} and JWT_SECRET in _DEV_JWT_SECRETS:
+        raise RuntimeError(
+            "JWT_SECRET must be set to a strong unique value when APP_ENV=production."
+        )

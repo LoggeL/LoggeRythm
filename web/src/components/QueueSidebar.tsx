@@ -63,7 +63,7 @@ export default function QueueSidebar() {
     .filter(({ i }) => i > index);
 
   return (
-    <aside className="hidden md:flex flex-col w-80 flex-shrink-0 bg-black/40 border-l border-white/10 overflow-hidden">
+    <aside className="fixed inset-0 z-[70] flex flex-col bg-background md:static md:z-auto md:w-80 md:flex-shrink-0 md:bg-black/40 border-l border-white/10 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-4 flex-shrink-0">
         <h2 className="text-lg font-bold">Warteschlange</h2>
         <div className="flex items-center gap-3">
@@ -79,7 +79,7 @@ export default function QueueSidebar() {
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Warteschlange schließen"
-            className="text-muted hover:text-foreground"
+            className="text-muted hover:text-foreground p-2 -m-2"
           >
             ✕
           </button>

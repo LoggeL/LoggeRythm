@@ -1,7 +1,6 @@
 """Playlist CRUD and track membership for the current user."""
 import glob
 import os
-import shutil
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
@@ -21,6 +20,7 @@ from ..schemas.playlist import (
     PlaylistUpdate,
 )
 from ..schemas.track import Track
+from ..uploads import image_extension, save_image_upload
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
 
@@ -29,17 +29,12 @@ class _VisibilityUpdate(BaseModel):
     is_public: bool
 
 _COVERS_DIR = os.path.join(STORAGE_DIR, "covers")
-_EXT_BY_TYPE = {
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-}
 
 
-def _remove_cover_files(playlist_id: int) -> None:
+def _remove_cover_files(playlist_id: int, keep_path: str | None = None) -> None:
     for f in glob.glob(os.path.join(_COVERS_DIR, f"{playlist_id}.*")):
+        if keep_path is not None and os.path.abspath(f) == os.path.abspath(keep_path):
+            continue
         try:
             os.remove(f)
         except OSError:
@@ -215,16 +210,10 @@ def set_cover(
     db: Session = Depends(get_db),
 ) -> PlaylistSummary:
     pl = _get_owned_playlist(db, playlist_id, user)
-    ext = _EXT_BY_TYPE.get((file.content_type or "").lower())
-    if ext is None:
-        raise HTTPException(
-            status_code=400, detail="Nur Bilddateien (JPG, PNG, WEBP, GIF)."
-        )
-    os.makedirs(_COVERS_DIR, exist_ok=True)
-    _remove_cover_files(playlist_id)
+    ext = image_extension(file.content_type)
     path = os.path.join(_COVERS_DIR, f"{playlist_id}{ext}")
-    with open(path, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    save_image_upload(file, path, ext)
+    _remove_cover_files(playlist_id, keep_path=path)
     # cache-bust via file mtime so the new image replaces the cached one
     pl.cover_url = f"/api/playlists/{playlist_id}/cover?v={int(os.path.getmtime(path))}"
     db.commit()

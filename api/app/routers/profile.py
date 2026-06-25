@@ -1,7 +1,6 @@
 """User profile: avatar upload/serving and public profile pages."""
 import glob
 import os
-import shutil
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -16,17 +15,11 @@ from ..db.session import get_db
 from ..schemas.auth import UserOut
 from ..schemas.playlist import PlaylistSummary
 from ..schemas.track import ArtistSummary
+from ..uploads import image_extension, save_image_upload
 
 router = APIRouter(prefix="/api", tags=["profile"])
 
 _AVATARS_DIR = os.path.join(STORAGE_DIR, "avatars")
-_EXT_BY_TYPE = {
-    "image/jpeg": ".jpg",
-    "image/jpg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-}
 
 
 class PublicProfile(BaseModel):
@@ -54,8 +47,10 @@ def _user_out(u: User) -> UserOut:
     )
 
 
-def _remove_avatar_files(user_id: int) -> None:
+def _remove_avatar_files(user_id: int, keep_path: str | None = None) -> None:
     for f in glob.glob(os.path.join(_AVATARS_DIR, f"{user_id}.*")):
+        if keep_path is not None and os.path.abspath(f) == os.path.abspath(keep_path):
+            continue
         try:
             os.remove(f)
         except OSError:
@@ -68,16 +63,10 @@ def set_avatar(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> UserOut:
-    ext = _EXT_BY_TYPE.get((file.content_type or "").lower())
-    if ext is None:
-        raise HTTPException(
-            status_code=400, detail="Nur Bilddateien (JPG, PNG, WEBP, GIF)."
-        )
-    os.makedirs(_AVATARS_DIR, exist_ok=True)
-    _remove_avatar_files(user.id)
+    ext = image_extension(file.content_type)
     path = os.path.join(_AVATARS_DIR, f"{user.id}{ext}")
-    with open(path, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    save_image_upload(file, path, ext)
+    _remove_avatar_files(user.id, keep_path=path)
     # cache-bust via file mtime so the new image replaces the cached one
     user.avatar_url = f"/api/users/{user.id}/avatar?v={int(os.path.getmtime(path))}"
     db.commit()

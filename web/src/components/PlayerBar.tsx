@@ -217,7 +217,7 @@ export default function PlayerBar() {
   return (
     <>
       {expanded && track && <NowPlaying onClose={() => setExpanded(false)} />}
-      <footer className="relative h-20 flex-shrink-0 bg-panel border-t border-white/10 px-4 flex items-center gap-4">
+      <footer className="relative min-h-24 sm:h-20 flex-shrink-0 bg-panel border-t border-white/10 px-3 sm:px-4 py-2 sm:py-0 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:pb-0 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
         <audio
           ref={audioRef}
           src={trackId ? streamUrl(trackId) : undefined}
@@ -226,7 +226,15 @@ export default function PlayerBar() {
             const d = e.currentTarget.duration;
             if (Number.isFinite(d)) _setDuration(d);
           }}
-          onEnded={_onEnded}
+          onEnded={(e) => {
+            if (repeat === "one") {
+              e.currentTarget.currentTime = 0;
+              _setCurrentTime(0);
+              e.currentTarget.play().catch(() => _onEnded());
+              return;
+            }
+            _onEnded();
+          }}
           onWaiting={() => _setBuffering(true)}
           onStalled={() => _setBuffering(true)}
           onPlaying={() => {
@@ -239,7 +247,7 @@ export default function PlayerBar() {
         />
 
         {/* Track info */}
-        <div className="flex items-center gap-3 w-1/4 min-w-0">
+        <div className="flex items-center gap-3 w-full sm:w-1/4 min-w-0 pr-20 sm:pr-0">
           {track ? (
             <TrackContext track={track} className="contents">
               <button
@@ -253,10 +261,10 @@ export default function PlayerBar() {
                   <img
                     src={track.cover}
                     alt=""
-                    className="w-14 h-14 rounded object-cover hover:opacity-80 transition"
+                    className="w-11 h-11 sm:w-14 sm:h-14 rounded object-cover hover:opacity-80 transition"
                   />
                 ) : (
-                  <div className="w-14 h-14 rounded bg-panel-hover" />
+                  <div className="w-11 h-11 sm:w-14 sm:h-14 rounded bg-panel-hover" />
                 )}
               </button>
               <div className="min-w-0">
@@ -295,8 +303,8 @@ export default function PlayerBar() {
         </div>
 
         {/* Controls + seek */}
-        <div className="flex-1 flex flex-col items-center gap-1 max-w-2xl mx-auto">
-          <div className="flex items-center gap-4">
+        <div className="w-full sm:flex-1 flex flex-col items-center gap-1 sm:max-w-2xl sm:mx-auto">
+          <div className="flex items-center justify-center gap-4">
             <button
               type="button"
               onClick={toggleShuffle}
@@ -304,7 +312,7 @@ export default function PlayerBar() {
               aria-label="Zufallswiedergabe"
               aria-pressed={shuffle}
               title="Zufallswiedergabe"
-              className={`disabled:opacity-40 transition ${
+              className={`hidden sm:inline-flex disabled:opacity-40 transition ${
                 shuffle ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
@@ -356,7 +364,7 @@ export default function PlayerBar() {
                     ? "Alle wiederholen"
                     : "Wiederholen aus"
               }
-              className={`disabled:opacity-40 transition ${
+              className={`hidden sm:inline-flex disabled:opacity-40 transition ${
                 repeat !== "off" ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
@@ -365,7 +373,7 @@ export default function PlayerBar() {
           </div>
 
           <div className="flex items-center gap-2 w-full">
-            <span className="text-xs text-muted w-10 text-right tabular-nums">
+            <span className="hidden min-[380px]:block text-xs text-muted w-10 text-right tabular-nums">
               {formatTime(currentTime)}
             </span>
             <input
@@ -379,7 +387,7 @@ export default function PlayerBar() {
               className="flex-1"
               aria-label="Fortschritt"
             />
-            <span className="text-xs text-muted w-10 tabular-nums">
+            <span className="hidden min-[380px]:block text-xs text-muted w-10 tabular-nums">
               {formatTime(duration)}
             </span>
           </div>
@@ -433,14 +441,27 @@ export default function PlayerBar() {
 
         {/* Mobile expand chevron */}
         {track && (
-          <button
-            type="button"
-            onClick={() => setExpanded(true)}
-            aria-label="Vollbild öffnen"
-            className="sm:hidden text-muted hover:text-foreground p-1"
-          >
-            <ChevronDownIcon className="rotate-180" />
-          </button>
+          <div className="absolute right-3 top-3 flex items-center gap-1 sm:hidden">
+            <button
+              type="button"
+              onClick={toggleQueue}
+              aria-label="Warteschlange"
+              aria-pressed={queueOpen}
+              className={`p-2 rounded-full hover:bg-panel-hover transition ${
+                queueOpen ? "text-accent" : "text-muted hover:text-foreground"
+              }`}
+            >
+              <QueueIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              aria-label="Vollbild öffnen"
+              className="text-muted hover:text-foreground p-2 rounded-full hover:bg-panel-hover"
+            >
+              <ChevronDownIcon className="rotate-180" />
+            </button>
+          </div>
         )}
       </footer>
     </>

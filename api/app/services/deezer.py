@@ -28,12 +28,14 @@ session = None
 license_token = {}
 sound_format = ""
 USER_AGENT = "Mozilla/5.0 (X11; Linux i686; rv:135.0) Gecko/20100101 Firefox/135.0"
+REQUEST_TIMEOUT = (5, 30)
 
 
 def get_user_data() -> tuple[str, str]:
     try:
         user_data = session.get(
-            "https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token="
+            "https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=",
+            timeout=REQUEST_TIMEOUT,
         )
         user_data_json = user_data.json()["results"]
         options = user_data_json["USER"]["OPTIONS"]
@@ -244,7 +246,7 @@ def writeid3v1_1(fo, song):
 
 
 def downloadpicture(pic_idid):
-    resp = session.get(get_picture_link(pic_idid))
+    resp = session.get(get_picture_link(pic_idid), timeout=REQUEST_TIMEOUT)
     return resp.content
 
 
@@ -450,6 +452,7 @@ def get_song_url(track_token: str, quality: int = 3) -> str:
                 ],
             },
             headers={"User-Agent": USER_AGENT},
+            timeout=REQUEST_TIMEOUT,
         )
         response.raise_for_status()
         data = response.json()
@@ -494,7 +497,7 @@ def download_song(song: dict, output_file: str) -> None:
 
     key = calcbfkey(song["SNG_ID"])
     try:
-        with session.get(url, stream=True) as response:
+        with session.get(url, stream=True, timeout=REQUEST_TIMEOUT) as response:
             response.raise_for_status()
             with open(output_file, "w+b") as fo:
                 # Add song cover and first 30 seconds of unencrypted data
@@ -519,7 +522,7 @@ def get_song_infos_from_deezer_website(search_type, id):
     # Deezer403Exception if we are not logged in
 
     url = "https://www.deezer.com/us/{}/{}".format(search_type, id)
-    resp = session.get(url)
+    resp = session.get(url, timeout=REQUEST_TIMEOUT)
     if resp.status_code == 404:
         raise Deezer404Exception("ERROR: Got a 404 for {} from Deezer".format(url))
     if "MD5_ORIGIN" not in resp.text:
@@ -565,7 +568,8 @@ def deezer_search(search, search_type):
     else:
         try:
             resp = session.get(
-                "https://api.deezer.com/search/{}?q={}".format(search_type, search)
+                "https://api.deezer.com/search/{}?q={}".format(search_type, search),
+                timeout=REQUEST_TIMEOUT,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -629,7 +633,7 @@ def parse_deezer_playlist(playlist_id):
         )
 
     url_get_csrf_token = "https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token="
-    req = session.post(url_get_csrf_token)
+    req = session.post(url_get_csrf_token, timeout=REQUEST_TIMEOUT)
     csrf_token = req.json()["results"]["checkForm"]
 
     url_get_playlist_songs = "https://www.deezer.com/ajax/gw-light.php?method=deezer.pagePlaylist&input=3&api_version=1.0&api_token={}".format(
@@ -643,7 +647,7 @@ def parse_deezer_playlist(playlist_id):
         "lang": "de",
         "nb": 500,
     }
-    req = session.post(url_get_playlist_songs, json=data)
+    req = session.post(url_get_playlist_songs, json=data, timeout=REQUEST_TIMEOUT)
     json = req.json()
 
     if len(json["error"]) > 0:
@@ -662,7 +666,8 @@ def get_deezer_favorites(user_id: str) -> Optional[Sequence[int]]:
     if not user_id.isnumeric():
         raise Exception(f"User id '{user_id}' must be numeric")
     resp = session.get(
-        f"https://api.deezer.com/user/{user_id}/tracks?limit=10000000000"
+        f"https://api.deezer.com/user/{user_id}/tracks?limit=10000000000",
+        timeout=REQUEST_TIMEOUT,
     )
     assert (
         resp.status_code == 200
@@ -675,7 +680,7 @@ def get_deezer_favorites(user_id: str) -> Optional[Sequence[int]]:
     # check is set next
 
     while "next" in resp_json.keys():
-        resp = session.get(resp_json["next"])
+        resp = session.get(resp_json["next"], timeout=REQUEST_TIMEOUT)
         assert (
             resp.status_code == 200
         ), f"got invalid status asking for favorite song\n{resp.text}s"

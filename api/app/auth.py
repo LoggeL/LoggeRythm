@@ -92,7 +92,23 @@ def get_current_user_optional(
 def get_current_user(
     user: User | None = Depends(get_current_user_optional),
 ) -> User:
-    """Return the authenticated user or raise 401."""
+    """Return an approved authenticated user or raise 401/403."""
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
+        )
+    if not user.is_approved and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dein Konto wartet noch auf Freigabe durch einen Admin.",
+        )
+    return user
+
+
+def get_current_session_user(
+    user: User | None = Depends(get_current_user_optional),
+) -> User:
+    """Return the cookie user, including pending accounts, or raise 401."""
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"

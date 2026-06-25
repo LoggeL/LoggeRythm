@@ -169,3 +169,33 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
     transform: none;
   }
 }
+
+@media (hover: none), (pointer: coarse) {
+  .group .group-hover\:opacity-100 {
+    opacity: 1;
+  }
+
+  .group .group-hover\:flex {
+    display: flex;
+  }
+
+  .group .group-hover\:hidden {
+    display: none;
+  }
+
+  .group .group-hover\:translate-y-0 {
+    transform: translateY(0);
+  }
+}
+
+.group:focus-within .group-hover\:opacity-100 {
+  opacity: 1;
+}
+
+.group:focus-within .group-hover\:flex {
+  display: flex;
+}
+
+.group:focus-within .group-hover\:hidden {
+  display: none;
+}

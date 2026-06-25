@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 
 from sqlalchemy import select
 
-from .config import CORS_ORIGINS
+from .config import CORS_ORIGINS, validate_runtime_config
 from .db.models import User
 from .db.session import SessionLocal, engine, init_db
 from .routers import (
@@ -130,6 +130,7 @@ def _cleanup_loop() -> None:
 def _startup() -> None:
     import threading
 
+    validate_runtime_config()
     init_db()
     _migrate_user_columns()
     _bootstrap_admin()

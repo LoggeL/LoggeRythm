@@ -31,17 +31,40 @@ def _range_response(path: str, request: Request) -> Response:
 
     m = _RANGE_RE.fullmatch(range_header.strip())
     if not m:
-        raise HTTPException(status_code=416, detail="Invalid Range header")
+        raise HTTPException(
+            status_code=416,
+            detail="Invalid Range header",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
 
     start_s, end_s = m.group(1), m.group(2)
+    if start_s == "" and end_s == "":
+        raise HTTPException(
+            status_code=416,
+            detail="Invalid Range header",
+            headers={"Content-Range": f"bytes */{file_size}"},
+        )
     if start_s == "":
         # suffix range: last N bytes
         length = int(end_s)
+        if length <= 0:
+            raise HTTPException(
+                status_code=416,
+                detail="Requested Range Not Satisfiable",
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
         start = max(file_size - length, 0)
         end = file_size - 1
     else:
-        start = int(start_s)
-        end = int(end_s) if end_s else file_size - 1
+        try:
+            start = int(start_s)
+            end = int(end_s) if end_s else file_size - 1
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=416,
+                detail="Invalid Range header",
+                headers={"Content-Range": f"bytes */{file_size}"},
+            ) from exc
 
     if start > end or start >= file_size:
         raise HTTPException(
