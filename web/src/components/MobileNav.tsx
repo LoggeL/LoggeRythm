@@ -13,7 +13,7 @@ const ITEMS = [
 export default function MobileNav() {
   const pathname = usePathname();
   return (
-    <nav className="md:hidden fixed bottom-20 inset-x-0 z-40 bg-panel/95 backdrop-blur border-t border-white/10 flex justify-around py-2">
+    <nav className="md:hidden flex-shrink-0 z-40 bg-panel/95 backdrop-blur border-t border-white/10 flex justify-around py-2">
       {ITEMS.map(({ href, label, icon: Icon }) => {
         const active = pathname === href;
         return (

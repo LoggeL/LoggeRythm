@@ -1,6 +1,7 @@
 import type {
   Track,
   User,
+  AdminUser,
   Album,
   AlbumSummary,
   Artist,
@@ -87,6 +88,17 @@ export const api = {
       body: JSON.stringify({ email, password, display_name }),
     }),
   logout: () => req<void>(`/auth/logout`, { method: "POST" }),
+
+  // Admin
+  adminUsers: () => req<AdminUser[]>(`/admin/users`),
+  approveUser: (id: string | number) =>
+    req<void>(`/admin/users/${encodeURIComponent(String(id))}/approve`, {
+      method: "PUT",
+    }),
+  deleteUser: (id: string | number) =>
+    req<void>(`/admin/users/${encodeURIComponent(String(id))}`, {
+      method: "DELETE",
+    }),
 
   // Likes
   likes: () => req<Track[]>(`/me/likes`),

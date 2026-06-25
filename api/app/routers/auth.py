@@ -1,6 +1,6 @@
 """Auth endpoints: register, login, logout, me."""
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import (
@@ -19,7 +19,13 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 def _user_out(user: User) -> UserOut:
-    return UserOut(id=user.id, email=user.email, display_name=user.display_name)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        is_admin=user.is_admin,
+        is_approved=user.is_approved,
+    )
 
 
 @router.post("/register", response_model=UserOut)
@@ -31,10 +37,15 @@ def register(
     existing = db.scalar(select(User).where(User.email == body.email))
     if existing is not None:
         raise HTTPException(status_code=409, detail="Email already registered")
+    # The first user to register becomes the admin and is auto-approved.
+    user_count = db.scalar(select(func.count()).select_from(User)) or 0
+    is_first = user_count == 0
     user = User(
         email=body.email,
         password_hash=hash_password(body.password),
         display_name=body.display_name,
+        is_admin=is_first,
+        is_approved=is_first,
     )
     db.add(user)
     db.commit()
@@ -53,6 +64,11 @@ def login(
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
+    if not user.is_approved and not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dein Konto wartet noch auf Freigabe durch einen Admin.",
         )
     set_session_cookie(response, create_token(user.id))
     return _user_out(user)

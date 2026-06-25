@@ -18,3 +18,5 @@ class UserOut(BaseModel):
     id: int
     email: str
     display_name: str | None = None
+    is_admin: bool = False
+    is_approved: bool = False

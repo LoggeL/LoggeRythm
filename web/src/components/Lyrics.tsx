@@ -32,17 +32,6 @@ export default function Lyrics() {
     else break;
   }
 
-  // Always render a fixed 3-row window (prev / current / next).
-  const window: { line: Line | null; isActive: boolean }[] = [-1, 0, 1].map(
-    (off) => {
-      const idx = active + off;
-      return {
-        line: idx >= 0 && idx < lines.length ? lines[idx] : null,
-        isActive: off === 0 && active >= 0,
-      };
-    },
-  );
-
   const hasLyrics = !!track && !isLoading && lines.length > 0;
 
   // Status message when there is no synced karaoke view to show.
@@ -52,8 +41,12 @@ export default function Lyrics() {
       ? "Lädt…"
       : "Kein synchronisierter Songtext gefunden.";
 
+  const LINE_H = 28; // px, matches leading-7
+  const ROWS = 3;
+  const a = active < 0 ? 0 : active;
+
   return (
-    <div className="animate-in flex-shrink-0 bg-panel border-t border-white/10 flex items-stretch">
+    <div className="animate-in flex-shrink-0 bg-gradient-to-t from-black/85 via-black/70 to-black/30 backdrop-blur-sm border-t border-white/10 flex items-stretch">
       <div className="flex-shrink-0 flex items-center px-4 sm:px-6">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">
           Lyrics
@@ -61,22 +54,37 @@ export default function Lyrics() {
       </div>
 
       {hasLyrics ? (
-        <div className="flex-1 min-w-0 h-24 flex flex-col items-center justify-center text-center px-4">
-          {window.map((row, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => row.line && seek(row.line.t)}
-              disabled={!row.line}
-              className={`block w-full truncate leading-7 transition-colors ${
-                row.isActive
-                  ? "text-foreground font-semibold text-base"
-                  : "text-muted/60 text-sm"
-              }`}
-            >
-              {row.line?.text || "♪"}
-            </button>
-          ))}
+        <div
+          className="flex-1 min-w-0 overflow-hidden px-4"
+          style={{ height: LINE_H * ROWS }}
+        >
+          <div
+            className="transition-transform duration-500 ease-out will-change-transform"
+            style={{ transform: `translateY(${(1 - a) * LINE_H}px)` }}
+          >
+            {lines.map((line, i) => {
+              const activeLine = i === active;
+              const dist = Math.abs(i - a);
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => seek(line.t)}
+                  style={{
+                    height: LINE_H,
+                    opacity: activeLine ? 1 : dist === 1 ? 0.55 : 0.3,
+                  }}
+                  className={`flex items-center justify-center w-full truncate text-center text-sm leading-7 transition-all duration-300 ${
+                    activeLine
+                      ? "text-foreground font-semibold"
+                      : "text-muted hover:text-foreground"
+                  }`}
+                >
+                  {line.text || "♪"}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <div className="flex-1 min-w-0 h-10 flex items-center justify-center text-center px-4">

@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
-import { PlayIcon, PauseIcon } from "@/components/icons";
+import { PlayIcon, PauseIcon, MoreIcon } from "@/components/icons";
+import { useTrackMenuItems } from "@/components/TrackMenu";
+import ContextMenu from "@/components/ContextMenu";
 
 interface TrackCardProps {
   track: Track;
@@ -16,6 +19,9 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
 
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const menuItems = useTrackMenuItems(track);
+
   const isCurrent = cur?.id === track.id;
   const playingThis = isCurrent && isPlaying;
 
@@ -25,8 +31,16 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
     else playTrack(track);
   }
 
+  function handleContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setMenuPos({ x: e.clientX, y: e.clientY });
+  }
+
   return (
-    <div className="group relative bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift cursor-default">
+    <div
+      onContextMenu={handleContextMenu}
+      className="group relative bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift cursor-default"
+    >
       <div className="relative mb-3">
         {track.album_id ? (
           <Link
@@ -67,6 +81,18 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
             <PlayIcon width={22} height={22} />
           )}
         </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setMenuPos({ x: r.right, y: r.bottom + 4 });
+          }}
+          aria-label="Weitere Optionen"
+          title="Weitere Optionen"
+          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition hover:bg-black/80"
+        >
+          <MoreIcon />
+        </button>
       </div>
       <div className="min-w-0">
         {track.album_id ? (
@@ -98,6 +124,15 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
           <div className="truncate text-sm text-muted">{track.artist}</div>
         )}
       </div>
+
+      {menuPos && (
+        <ContextMenu
+          x={menuPos.x}
+          y={menuPos.y}
+          items={menuItems}
+          onClose={() => setMenuPos(null)}
+        />
+      )}
     </div>
   );
 }

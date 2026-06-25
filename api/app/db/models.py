@@ -26,6 +26,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     playlists: Mapped[list["Playlist"]] = relationship(

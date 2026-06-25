@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { streamUrl } from "@/lib/api";
 import { formatTime } from "@/lib/format";
@@ -216,14 +217,30 @@ export default function PlayerBar() {
                 )}
               </button>
               <div className="min-w-0">
-                <div className="truncate font-medium text-sm">{track.title}</div>
-                <div className="truncate text-xs text-muted">
-                  {error ? (
+                {track.album_id ? (
+                  <Link
+                    href={`/album/${track.album_id}`}
+                    className="block truncate font-medium text-sm hover:underline"
+                  >
+                    {track.title}
+                  </Link>
+                ) : (
+                  <div className="truncate font-medium text-sm">{track.title}</div>
+                )}
+                {error ? (
+                  <div className="truncate text-xs text-muted">
                     <span className="text-red-400">{error}</span>
-                  ) : (
-                    track.artist
-                  )}
-                </div>
+                  </div>
+                ) : track.artist_id ? (
+                  <Link
+                    href={`/artist/${track.artist_id}`}
+                    className="block truncate text-xs text-muted hover:underline hover:text-foreground"
+                  >
+                    {track.artist}
+                  </Link>
+                ) : (
+                  <div className="truncate text-xs text-muted">{track.artist}</div>
+                )}
               </div>
               <div className="hidden sm:block">
                 <LikeButton track={track} />

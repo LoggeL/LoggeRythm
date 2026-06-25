@@ -14,6 +14,17 @@ export interface User {
   id: string | number;
   email: string;
   display_name: string;
+  is_admin?: boolean;
+  is_approved?: boolean;
+}
+
+export interface AdminUser {
+  id: string | number;
+  email: string;
+  display_name: string;
+  is_admin: boolean;
+  is_approved: boolean;
+  created_at: string;
 }
 
 export interface AlbumSummary {

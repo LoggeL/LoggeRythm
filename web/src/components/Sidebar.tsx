@@ -55,7 +55,7 @@ export default function Sidebar() {
     <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black text-foreground gap-2 p-2">
       {/* Logo */}
       <div className="px-4 py-4">
-        <Link href="/" className="flex items-center gap-2 hover-lift press">
+        <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
           <Logo size={28} />
           <span className="text-xl font-extrabold tracking-tight">
             <span className="text-foreground">Spoti</span>
@@ -142,9 +142,12 @@ export default function Sidebar() {
       <div className="bg-panel rounded-lg p-3">
         {me ? (
           <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-medium truncate">
+            <Link
+              href="/account"
+              className="text-sm font-medium truncate hover:underline"
+            >
               {me.display_name}
-            </span>
+            </Link>
             <button
               type="button"
               onClick={logout}

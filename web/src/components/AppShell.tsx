@@ -30,7 +30,7 @@ export default function AppShell({
           ref={mainRef}
           className="flex-1 min-w-0 overflow-y-auto scroll-area bg-background"
         >
-          <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto pb-28 md:pb-6">
+          <div className="px-4 sm:px-6 py-6 max-w-6xl mx-auto pb-6">
             <div key={pathname} className="animate-in">
               {children}
             </div>
