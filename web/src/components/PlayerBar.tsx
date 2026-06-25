@@ -8,6 +8,7 @@ import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
 import NowPlaying from "@/components/NowPlaying";
+import TrackContext from "@/components/TrackContext";
 import {
   PlayIcon,
   PauseIcon,
@@ -240,7 +241,7 @@ export default function PlayerBar() {
         {/* Track info */}
         <div className="flex items-center gap-3 w-1/4 min-w-0">
           {track ? (
-            <>
+            <TrackContext track={track} className="contents">
               <button
                 type="button"
                 onClick={() => setExpanded(true)}
@@ -287,7 +288,7 @@ export default function PlayerBar() {
               <div className="hidden sm:block">
                 <LikeButton track={track} />
               </div>
-            </>
+            </TrackContext>
           ) : (
             <div className="text-sm text-muted">Nichts wird abgespielt</div>
           )}

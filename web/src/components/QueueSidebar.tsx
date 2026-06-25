@@ -7,6 +7,7 @@ import { formatTime } from "@/lib/format";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon } from "@/components/icons";
+import TrackContext from "@/components/TrackContext";
 
 function GripIcon() {
   return (
@@ -168,6 +169,7 @@ export default function QueueSidebar() {
                   isOver ? "bg-panel-hover ring-1 ring-accent" : ""
                 } ${isDragging ? "opacity-50" : ""}`}
               >
+                <TrackContext track={t} className="contents">
                 <span
                   aria-hidden="true"
                   className="text-muted cursor-grab active:cursor-grabbing flex-shrink-0 opacity-0 group-hover:opacity-100 transition"
@@ -205,6 +207,7 @@ export default function QueueSidebar() {
                 >
                   ✕
                 </button>
+                </TrackContext>
               </li>
             );
           })}
