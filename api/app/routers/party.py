@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db.models import PartyMember, PartySession, PartyTrack, User
 from ..db.session import get_db
-from ..schemas.party import PartyState, PartyTrackOut
+from ..schemas.party import PartyMemberOut, PartyState, PartyTrackOut
 from ..schemas.track import Track
 from pydantic import BaseModel
 
@@ -67,13 +67,24 @@ def _build_state(db: Session, session: PartySession, user: User) -> PartyState:
     db.refresh(session)
     host = db.get(User, session.host_id)
     host_name = _member_display(host) if host is not None else ""
+    avatars = {
+        u.id: u.avatar_url
+        for u in db.scalars(
+            select(User).where(
+                User.id.in_([m.user_id for m in session.members] or [0])
+            )
+        ).all()
+    }
     return PartyState(
         code=session.code,
         name=session.name,
         host_name=host_name,
         is_host=(user.id == session.host_id),
         current_index=session.current_index,
-        members=[m.display_name for m in session.members],
+        members=[
+            PartyMemberOut(name=m.display_name, avatar_url=avatars.get(m.user_id))
+            for m in session.members
+        ],
         tracks=[
             PartyTrackOut(
                 id=t.id,

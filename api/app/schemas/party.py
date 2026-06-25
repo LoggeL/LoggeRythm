@@ -15,11 +15,16 @@ class PartyTrackOut(BaseModel):
     added_by: str = ""
 
 
+class PartyMemberOut(BaseModel):
+    name: str = ""
+    avatar_url: str | None = None
+
+
 class PartyState(BaseModel):
     code: str
     name: str = ""
     host_name: str = ""
     is_host: bool = False
     current_index: int = -1
-    members: list[str] = Field(default_factory=list)
+    members: list[PartyMemberOut] = Field(default_factory=list)
     tracks: list[PartyTrackOut] = Field(default_factory=list)

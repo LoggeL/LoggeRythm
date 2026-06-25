@@ -46,6 +46,7 @@ export interface AdminUser {
   id: string | number;
   email: string;
   display_name: string;
+  avatar_url?: string | null;
   is_admin: boolean;
   is_approved: boolean;
   created_at: string;
@@ -145,13 +146,18 @@ export interface PartyTrack {
   added_by: string;
 }
 
+export interface PartyMember {
+  name: string;
+  avatar_url?: string | null;
+}
+
 export interface PartyState {
   code: string;
   name: string;
   host_name: string;
   is_host: boolean;
   current_index: number;
-  members: string[];
+  members: PartyMember[];
   tracks: PartyTrack[];
 }
 

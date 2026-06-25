@@ -169,6 +169,7 @@ def track_metadata(deezer_id: str) -> dict:
         "id": str(song.get("SNG_ID", deezer_id)),
         "title": song.get("SNG_TITLE", "") or "",
         "artist": song.get("ART_NAME", "") or "",
+        "artist_id": str(song.get("ART_ID", "") or ""),
         "album": song.get("ALB_TITLE", "") or "",
         "album_id": song.get("ALB_ID", "") or "",
         "cover": _cover_from_picture(song.get("ALB_PICTURE")),

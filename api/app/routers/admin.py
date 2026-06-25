@@ -22,6 +22,7 @@ class AdminUser(BaseModel):
     id: int
     email: str
     display_name: str | None = None
+    avatar_url: str | None = None
     is_admin: bool
     is_approved: bool
     created_at: datetime | None = None
@@ -72,6 +73,7 @@ def list_users(
             id=u.id,
             email=u.email,
             display_name=u.display_name,
+            avatar_url=u.avatar_url,
             is_admin=u.is_admin,
             is_approved=u.is_approved,
             created_at=u.created_at,

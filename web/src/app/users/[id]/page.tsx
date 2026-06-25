@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import ArtistCard from "@/components/ArtistCard";
+import Avatar from "@/components/Avatar";
 import { DetailHeaderSkeleton } from "@/components/Skeleton";
 import type { PublicProfile } from "@/types";
 
@@ -24,25 +25,13 @@ export default function UserProfilePage({
   if (isError || !data)
     return <p className="text-red-400">Profil nicht gefunden.</p>;
 
-  const initial = (data.display_name || "?").charAt(0).toUpperCase();
   const playlists = data.playlists ?? [];
   const artists = data.top_artists ?? [];
 
   return (
     <div className="animate-in">
       <header className="flex items-end gap-6 mb-10">
-        {data.avatar_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.avatar_url}
-            alt={data.display_name}
-            className="w-40 h-40 rounded-full object-cover shadow-xl"
-          />
-        ) : (
-          <div className="w-40 h-40 rounded-full bg-accent text-white flex items-center justify-center text-6xl font-extrabold shadow-xl">
-            {initial}
-          </div>
-        )}
+        <Avatar src={data.avatar_url} name={data.display_name} size={128} />
         <div>
           <p className="text-xs uppercase tracking-wide text-muted">Profil</p>
           <h1 className="text-4xl font-extrabold">{data.display_name}</h1>

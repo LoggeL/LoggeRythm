@@ -10,6 +10,7 @@ import {
 import { useMe, useLogout } from "@/hooks/useAuth";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "@/store/toast";
+import Avatar from "@/components/Avatar";
 import type { AdminUser, StorageInfo, InviteInfo } from "@/types";
 
 function formatBytes(bytes: number): string {
@@ -99,6 +100,7 @@ function AdminUsersSection() {
               key={String(u.id)}
               className="flex flex-wrap items-center gap-3 bg-background rounded-md px-4 py-3"
             >
+              <Avatar src={u.avatar_url} name={u.display_name} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium truncate">
@@ -427,8 +429,6 @@ export default function AccountPage() {
     );
   }
 
-  const initial = (me.display_name || me.email || "?").charAt(0).toUpperCase();
-
   return (
     <div className="animate-in flex flex-col gap-8 max-w-3xl">
       <section className="bg-panel rounded-lg p-6 flex items-center gap-5">
@@ -444,20 +444,9 @@ export default function AccountPage() {
           onClick={() => fileInput.current?.click()}
           disabled={uploadAvatar.isPending}
           title="Profilbild ändern"
-          className="press w-20 h-20 flex-shrink-0 rounded-full overflow-hidden disabled:opacity-50"
+          className="press flex-shrink-0 rounded-full overflow-hidden disabled:opacity-50"
         >
-          {me.avatar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={me.avatar_url}
-              alt={me.display_name}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <span className="w-full h-full bg-accent text-white flex items-center justify-center text-3xl font-extrabold">
-              {initial}
-            </span>
-          )}
+          <Avatar src={me.avatar_url} name={me.display_name} size={80} />
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">

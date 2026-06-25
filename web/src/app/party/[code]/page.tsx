@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import { formatTime } from "@/lib/format";
 import { PlayIcon } from "@/components/icons";
+import Avatar from "@/components/Avatar";
 import type { Track } from "@/types";
 
 export default function PartyPage({
@@ -115,10 +116,11 @@ export default function PartyPage({
         <div className="flex flex-wrap gap-2">
           {party.members.map((m) => (
             <span
-              key={m}
-              className="px-3 py-1 rounded-full bg-panel text-sm text-foreground"
+              key={m.name}
+              className="flex items-center gap-2 px-3 py-1 rounded-full bg-panel text-sm text-foreground"
             >
-              {m}
+              <Avatar src={m.avatar_url} name={m.name} size={28} />
+              {m.name}
             </span>
           ))}
         </div>

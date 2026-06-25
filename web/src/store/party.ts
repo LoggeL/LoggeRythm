@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { PartyMember } from "@/types";
 
 interface PartyStoreState {
   code: string | null;
@@ -6,7 +7,7 @@ interface PartyStoreState {
   name: string;
   isHost: boolean;
   currentIndex: number;
-  members: string[];
+  members: PartyMember[];
 
   setParty: (state: {
     code: string;
@@ -14,7 +15,7 @@ interface PartyStoreState {
     name: string;
     isHost: boolean;
     currentIndex: number;
-    members: string[];
+    members: PartyMember[];
   }) => void;
   clearParty: () => void;
 }

@@ -18,6 +18,7 @@ import {
 } from "@/components/icons";
 import Logo from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
+import Avatar from "@/components/Avatar";
 
 function NavLink({
   href,
@@ -166,18 +167,7 @@ export default function Sidebar() {
         {me ? (
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              {me.avatar_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={me.avatar_url}
-                  alt=""
-                  className="w-7 h-7 rounded-full object-cover flex-shrink-0"
-                />
-              ) : (
-                <div className="w-7 h-7 rounded-full bg-panel-hover flex items-center justify-center text-xs font-semibold flex-shrink-0">
-                  {me.display_name.charAt(0).toUpperCase()}
-                </div>
-              )}
+              <Avatar src={me.avatar_url} name={me.display_name} size={28} />
               <Link
                 href="/account"
                 className="text-sm font-medium truncate hover:underline"
