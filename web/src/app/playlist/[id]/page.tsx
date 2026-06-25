@@ -15,6 +15,7 @@ import { useMe } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
+import Modal from "@/components/Modal";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon, EditIcon, TrashIcon } from "@/components/icons";
 
@@ -87,6 +88,18 @@ export default function PlaylistPage({
     router.push("/library");
   }
 
+  async function toggleVisibility() {
+    const next = !data!.is_public;
+    try {
+      await api.setPlaylistVisibility(id, next);
+      qc.invalidateQueries({ queryKey: ["playlist", id] });
+      qc.invalidateQueries({ queryKey: ["playlists"] });
+      toast.success(next ? "Playlist ist jetzt öffentlich." : "Playlist ist jetzt privat.");
+    } catch {
+      toast.error("Sichtbarkeit konnte nicht geändert werden.");
+    }
+  }
+
   function move(from: number, to: number) {
     if (to < 0 || to >= tracks.length) return;
     const ids = tracks.map((t) => String(t.id));
@@ -154,6 +167,13 @@ export default function PlaylistPage({
           <>
             <button
               type="button"
+              onClick={toggleVisibility}
+              className="px-4 py-2 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
+            >
+              {data.is_public ? "Öffentlich" : "Privat"}
+            </button>
+            <button
+              type="button"
               onClick={startEdit}
               aria-label="Playlist bearbeiten"
               title="Bearbeiten"
@@ -174,11 +194,12 @@ export default function PlaylistPage({
         )}
       </div>
 
-      {editing && (
-        <form
-          onSubmit={saveEdit}
-          className="mb-6 bg-panel rounded-lg p-4 max-w-lg flex flex-col gap-3"
-        >
+      <Modal
+        open={editing}
+        onClose={() => setEditing(false)}
+        title="Playlist bearbeiten"
+      >
+        <form onSubmit={saveEdit} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">
             Name
             <input
@@ -213,7 +234,7 @@ export default function PlaylistPage({
             </button>
           </div>
         </form>
-      )}
+      </Modal>
 
       {tracks.length === 0 ? (
         <p className="text-muted">Diese Playlist ist leer.</p>

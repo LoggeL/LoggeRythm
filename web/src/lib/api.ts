@@ -12,6 +12,12 @@ import type {
   Genre,
   GenreDetail,
   ResolveResult,
+  PartyState,
+  StorageInfo,
+  InviteInfo,
+  DeezerPlaylistDetail,
+  PublicProfile,
+  UserStats,
 } from "@/types";
 
 const BASE = "/api";
@@ -82,10 +88,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  register: (email: string, password: string, display_name: string) =>
+  register: (
+    email: string,
+    password: string,
+    display_name: string,
+    invite?: string,
+  ) =>
     req<User>(`/auth/register`, {
       method: "POST",
-      body: JSON.stringify({ email, password, display_name }),
+      body: JSON.stringify({ email, password, display_name, invite }),
     }),
   logout: () => req<void>(`/auth/logout`, { method: "POST" }),
 
@@ -194,6 +205,70 @@ export const api = {
         title,
       )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}`,
     ),
+
+  // Deezer playlist (public) → playable tracks
+  deezerPlaylist: (id: string) =>
+    req<DeezerPlaylistDetail>(`/deezer-playlist/${encodeURIComponent(id)}`),
+
+  // Song radio (seed track → similar tracks)
+  radio: (deezerId: string) =>
+    req<Track[]>(`/radio/${encodeURIComponent(deezerId)}`),
+
+  // Profile / avatar / public profile
+  uploadAvatar: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return req<User>(`/me/avatar`, { method: "PUT", body: form });
+  },
+  publicProfile: (id: string) => req<PublicProfile>(`/users/${encodeURIComponent(id)}`),
+
+  // Play tracking + stats
+  recordPlay: (track: Track) =>
+    req<void>(`/me/plays`, { method: "POST", body: JSON.stringify(track) }),
+  stats: () => req<UserStats>(`/me/stats`),
+
+  // Admin storage overview + invites
+  adminStorage: () => req<StorageInfo>(`/admin/storage`),
+  adminInvites: () => req<InviteInfo[]>(`/admin/invites`),
+  adminCreateInvite: () => req<InviteInfo>(`/admin/invites`, { method: "POST" }),
+
+  // Party mode (collaborative shared queue)
+  createParty: (name?: string) =>
+    req<PartyState>(`/party`, {
+      method: "POST",
+      body: JSON.stringify({ name: name ?? "" }),
+    }),
+  getParty: (code: string) => req<PartyState>(`/party/${encodeURIComponent(code)}`),
+  joinParty: (code: string) =>
+    req<PartyState>(`/party/${encodeURIComponent(code)}/join`, { method: "POST" }),
+  partyAddTrack: (code: string, track: Track) =>
+    req<void>(`/party/${encodeURIComponent(code)}/tracks`, {
+      method: "POST",
+      body: JSON.stringify(track),
+    }),
+  partyRemoveTrack: (code: string, itemId: number) =>
+    req<void>(`/party/${encodeURIComponent(code)}/tracks/${itemId}`, {
+      method: "DELETE",
+    }),
+  partyReorder: (code: string, ids: number[]) =>
+    req<void>(`/party/${encodeURIComponent(code)}/tracks/order`, {
+      method: "PATCH",
+      body: JSON.stringify({ ids }),
+    }),
+  partySetCurrent: (code: string, index: number) =>
+    req<void>(`/party/${encodeURIComponent(code)}/current`, {
+      method: "PATCH",
+      body: JSON.stringify({ index }),
+    }),
+  leaveParty: (code: string) =>
+    req<void>(`/party/${encodeURIComponent(code)}/leave`, { method: "POST" }),
+
+  // Playlist visibility
+  setPlaylistVisibility: (id: string, isPublic: boolean) =>
+    req<PlaylistSummary>(`/playlists/${encodeURIComponent(id)}/visibility`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_public: isPublic }),
+    }),
 };
 
 export { ApiError };

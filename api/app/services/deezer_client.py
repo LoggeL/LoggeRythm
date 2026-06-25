@@ -344,6 +344,20 @@ def album_detail(album_id: str) -> dict:
     }
 
 
+def playlist_detail(playlist_id: str) -> dict:
+    data = _public_get(f"/playlist/{playlist_id}")
+    tracks = (data.get("tracks") or {}).get("data") or []
+    return {
+        "id": str(data.get("id", playlist_id)),
+        "name": data.get("title", "") or "",
+        "cover": data.get("picture_medium")
+        or data.get("picture_big")
+        or data.get("picture", "")
+        or "",
+        "tracks": [normalize_public_track(t) for t in tracks],
+    }
+
+
 def artist_detail(artist_id: str) -> dict:
     data = _public_get(f"/artist/{artist_id}")
     top_data = _public_get(f"/artist/{artist_id}/top?limit=25")

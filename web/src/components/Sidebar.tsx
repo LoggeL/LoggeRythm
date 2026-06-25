@@ -1,9 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useMe, useLogout } from "@/hooks/useAuth";
-import { usePlaylists, useCreatePlaylist } from "@/hooks/useLibrary";
+import {
+  usePlaylists,
+  useCreatePlaylist,
+  useDeletePlaylist,
+} from "@/hooks/useLibrary";
 import {
   HomeIcon,
   SearchIcon,
@@ -12,6 +17,7 @@ import {
   ImportIcon,
 } from "@/components/icons";
 import Logo from "@/components/Logo";
+import ContextMenu from "@/components/ContextMenu";
 
 function NavLink({
   href,
@@ -42,8 +48,13 @@ function NavLink({
 export default function Sidebar() {
   const { data: me } = useMe();
   const logout = useLogout();
+  const router = useRouter();
   const { data: playlists } = usePlaylists(!!me);
   const createPlaylist = useCreatePlaylist();
+  const deletePlaylist = useDeletePlaylist();
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(
+    null,
+  );
 
   async function handleCreate() {
     const name = window.prompt("Name der neuen Playlist?");
@@ -97,20 +108,18 @@ export default function Sidebar() {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={handleCreate}
-          className="mb-2 mx-1 flex items-center gap-2 text-sm text-accent hover:text-accent-hover px-2 py-1"
-        >
-          <PlusIcon /> Playlist erstellen
-        </button>
-
         <div className="flex-1 min-h-0 overflow-auto scroll-area px-1">
           {me ? (
             playlists && playlists.length > 0 ? (
               <ul className="flex flex-col">
                 {playlists.map((p) => (
-                  <li key={String(p.id)}>
+                  <li
+                    key={String(p.id)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setMenu({ x: e.clientX, y: e.clientY, id: String(p.id) });
+                    }}
+                  >
                     <Link
                       href={`/playlist/${p.id}`}
                       className="flex items-center gap-3 px-2 py-2 rounded hover:bg-panel-hover transition"
@@ -156,12 +165,26 @@ export default function Sidebar() {
       <div className="bg-panel rounded-lg p-3">
         {me ? (
           <div className="flex items-center justify-between gap-2">
-            <Link
-              href="/account"
-              className="text-sm font-medium truncate hover:underline"
-            >
-              {me.display_name}
-            </Link>
+            <div className="flex items-center gap-2 min-w-0">
+              {me.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={me.avatar_url}
+                  alt=""
+                  className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-panel-hover flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                  {me.display_name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              <Link
+                href="/account"
+                className="text-sm font-medium truncate hover:underline"
+              >
+                {me.display_name}
+              </Link>
+            </div>
             <button
               type="button"
               onClick={logout}
@@ -187,6 +210,25 @@ export default function Sidebar() {
           </div>
         )}
       </div>
+
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              label: "Öffnen",
+              onClick: () => router.push(`/playlist/${menu.id}`),
+            },
+            {
+              label: "Löschen",
+              danger: true,
+              onClick: () => deletePlaylist.mutate(menu.id),
+            },
+          ]}
+        />
+      )}
     </aside>
   );
 }

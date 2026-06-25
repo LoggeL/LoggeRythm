@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { toast } from "@/store/toast";
+import { api } from "@/lib/api";
 import { MoreIcon } from "@/components/icons";
 import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
 
@@ -29,6 +30,14 @@ export function useTrackMenuItems(
       onClick: () => {
         addToQueue(track);
         toast.info("Zur Warteschlange hinzugefügt.");
+      },
+    },
+    {
+      label: "Song-Radio starten",
+      onClick: async () => {
+        const tracks = await api.radio(String(track.id));
+        usePlayerStore.getState().playQueue(tracks, 0);
+        toast.info("Radio gestartet…");
       },
     },
   ];

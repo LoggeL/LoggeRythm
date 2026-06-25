@@ -8,6 +8,7 @@ import MobileNav from "@/components/MobileNav";
 import Toaster from "@/components/Toast";
 import QueueSidebar from "@/components/QueueSidebar";
 import Lyrics from "@/components/Lyrics";
+import { useMe } from "@/hooks/useAuth";
 
 export default function AppShell({
   children,
@@ -16,6 +17,8 @@ export default function AppShell({
 }) {
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
+  const { data: me } = useMe();
+  const showPlayer = !!me && !!me.is_approved;
 
   // Reset scroll position on route change.
   useEffect(() => {
@@ -38,8 +41,8 @@ export default function AppShell({
         </main>
         <QueueSidebar />
       </div>
-      <Lyrics />
-      <PlayerBar />
+      {showPlayer && <Lyrics />}
+      {showPlayer && <PlayerBar />}
       <MobileNav />
       <Toaster />
     </div>

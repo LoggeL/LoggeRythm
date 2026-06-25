@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePlayerStore, currentTrack } from "@/store/player";
-import { streamUrl } from "@/lib/api";
+import { api, streamUrl } from "@/lib/api";
+import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
 import NowPlaying from "@/components/NowPlaying";
@@ -60,6 +61,20 @@ export default function PlayerBar() {
   const _setError = usePlayerStore((s) => s._setError);
 
   const trackId = track?.id ?? null;
+
+  const { data: me } = useMe();
+  const recordedRef = useRef<string | null>(null);
+
+  // Record a play once per (new) track for approved, logged-in users.
+  useEffect(() => {
+    if (!track || !trackId) return;
+    if (!me?.is_approved) return;
+    if (recordedRef.current === trackId) return;
+    recordedRef.current = trackId;
+    api.recordPlay(track).catch(() => {
+      // ignore record failures
+    });
+  }, [trackId, track, me?.is_approved]);
 
   // Reflect play/pause state.
   useEffect(() => {

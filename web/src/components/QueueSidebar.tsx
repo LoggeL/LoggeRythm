@@ -1,8 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime } from "@/lib/format";
+import { api } from "@/lib/api";
+import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon } from "@/components/icons";
 
 function GripIcon() {
@@ -36,8 +39,21 @@ export default function QueueSidebar() {
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
   const reorderQueue = usePlayerStore((s) => s.reorderQueue);
 
+  const router = useRouter();
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  const [startingParty, setStartingParty] = useState(false);
+
+  const startParty = async () => {
+    setStartingParty(true);
+    try {
+      const party = await api.createParty();
+      router.push(`/party/${party.code}`);
+    } catch {
+      toast.error("Party konnte nicht gestartet werden.");
+      setStartingParty(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -49,14 +65,24 @@ export default function QueueSidebar() {
     <aside className="hidden md:flex flex-col w-80 flex-shrink-0 bg-black/40 border-l border-white/10 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-4 flex-shrink-0">
         <h2 className="text-lg font-bold">Warteschlange</h2>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          aria-label="Warteschlange schließen"
-          className="text-muted hover:text-foreground"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={startParty}
+            disabled={startingParty}
+            className="px-3 py-1 rounded-full bg-accent text-white text-xs font-semibold hover:bg-accent-hover disabled:opacity-40 press"
+          >
+            Party starten
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Warteschlange schließen"
+            className="text-muted hover:text-foreground"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto scroll-area px-3 pb-4 animate-in">

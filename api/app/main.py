@@ -22,8 +22,12 @@ from .routers import (
     follows,
     likes,
     lyrics,
+    party,
     playlists,
+    profile,
+    radio,
     resolve,
+    stats,
     stream,
 )
 from .services import deezer_client
@@ -62,6 +66,18 @@ def _migrate_user_columns() -> None:
             if "is_approved" not in cols:
                 conn.exec_driver_sql(
                     "ALTER TABLE users ADD COLUMN is_approved BOOLEAN NOT NULL DEFAULT 0"
+                )
+            if "avatar_url" not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)")
+            pcols = {
+                row[1]
+                for row in conn.exec_driver_sql(
+                    "PRAGMA table_info(playlists)"
+                ).fetchall()
+            }
+            if "is_public" not in pcols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE playlists ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT 0"
                 )
     except Exception as exc:  # pragma: no cover — never crash startup
         print(f"User column migration skipped: {exc!r}")
@@ -109,3 +125,7 @@ app.include_router(follows.router)
 app.include_router(resolve.router)
 app.include_router(lyrics.router)
 app.include_router(admin.router)
+app.include_router(party.router)
+app.include_router(profile.router)
+app.include_router(radio.router)
+app.include_router(stats.router)

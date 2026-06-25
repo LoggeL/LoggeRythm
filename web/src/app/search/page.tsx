@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
+import { toast } from "@/store/toast";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import TrackRow from "@/components/TrackRow";
 import AlbumCard from "@/components/AlbumCard";
@@ -238,7 +239,15 @@ export default function SearchPage() {
             {playlists
               .slice(0, tab === "playlist" ? playlists.length : 5)
               .map((p) => (
-                <div key={String(p.id)} className="bg-panel rounded-lg p-4">
+                <div
+                  key={String(p.id)}
+                  onClick={async () => {
+                    toast.info("Playlist wird abgespielt…");
+                    const pl = await api.deezerPlaylist(String(p.id));
+                    usePlayerStore.getState().playQueue(pl.tracks, 0);
+                  }}
+                  className="bg-panel rounded-lg p-4 cursor-pointer hover-lift transition"
+                >
                   {p.cover ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img

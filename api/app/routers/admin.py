@@ -1,13 +1,14 @@
 """Admin endpoints: user approval and management (admin-only)."""
+import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
-from ..db.models import User
+from ..db.models import InviteCode, StoredTrack, User
 from ..db.session import get_db
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -20,6 +21,26 @@ class AdminUser(BaseModel):
     is_admin: bool
     is_approved: bool
     created_at: datetime | None = None
+
+
+class StorageItem(BaseModel):
+    deezer_id: str
+    title: str
+    artist: str
+    size_bytes: int
+
+
+class StorageInfo(BaseModel):
+    track_count: int
+    total_bytes: int
+    tracks: list[StorageItem]
+
+
+class InviteInfo(BaseModel):
+    code: str
+    url: str
+    used_by_name: str | None = None
+    created_at: datetime
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
@@ -82,3 +103,73 @@ def delete_user(
         )
     db.delete(user)
     db.commit()
+
+
+@router.get("/storage", response_model=StorageInfo)
+def storage_info(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> StorageInfo:
+    track_count = db.scalar(select(func.count()).select_from(StoredTrack)) or 0
+    total_bytes = db.scalar(select(func.coalesce(func.sum(StoredTrack.size_bytes), 0))) or 0
+    rows = db.scalars(
+        select(StoredTrack).order_by(StoredTrack.created_at.desc()).limit(200)
+    ).all()
+    return StorageInfo(
+        track_count=track_count,
+        total_bytes=total_bytes,
+        tracks=[
+            StorageItem(
+                deezer_id=t.deezer_id,
+                title=t.title,
+                artist=t.artist,
+                size_bytes=t.size_bytes,
+            )
+            for t in rows
+        ],
+    )
+
+
+@router.post("/invites", response_model=InviteInfo)
+def create_invite(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> InviteInfo:
+    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    code = "".join(secrets.choice(alphabet) for _ in range(8))
+    invite = InviteCode(code=code, created_by=admin.id)
+    db.add(invite)
+    db.commit()
+    db.refresh(invite)
+    return InviteInfo(
+        code=invite.code,
+        url="",
+        used_by_name=None,
+        created_at=invite.created_at,
+    )
+
+
+@router.get("/invites", response_model=list[InviteInfo])
+def list_invites(
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[InviteInfo]:
+    invites = db.scalars(
+        select(InviteCode).order_by(InviteCode.created_at.desc())
+    ).all()
+    result: list[InviteInfo] = []
+    for inv in invites:
+        used_by_name: str | None = None
+        if inv.used_by is not None:
+            used_user = db.get(User, inv.used_by)
+            if used_user is not None:
+                used_by_name = used_user.display_name
+        result.append(
+            InviteInfo(
+                code=inv.code,
+                url="",
+                used_by_name=used_by_name,
+                created_at=inv.created_at,
+            )
+        )
+    return result

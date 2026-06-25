@@ -5,6 +5,7 @@ import shutil
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,10 @@ from ..schemas.playlist import (
 from ..schemas.track import Track
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
+
+
+class _VisibilityUpdate(BaseModel):
+    is_public: bool
 
 _COVERS_DIR = os.path.join(STORAGE_DIR, "covers")
 _EXT_BY_TYPE = {
@@ -68,6 +73,7 @@ def _summary(pl: Playlist, track_count: int) -> PlaylistSummary:
         description=pl.description,
         cover_url=pl.cover_url,
         track_count=track_count,
+        is_public=pl.is_public,
     )
 
 
@@ -111,6 +117,7 @@ def get_playlist(
         name=pl.name,
         description=pl.description,
         cover_url=pl.cover_url,
+        is_public=pl.is_public,
         tracks=[_pt_to_track(pt) for pt in pl.tracks],
     )
 
@@ -127,6 +134,25 @@ def update_playlist(
         pl.name = body.name
     if body.description is not None:
         pl.description = body.description
+    db.commit()
+    db.refresh(pl)
+    count = db.scalar(
+        select(func.count(PlaylistTrack.id)).where(
+            PlaylistTrack.playlist_id == pl.id
+        )
+    )
+    return _summary(pl, count or 0)
+
+
+@router.patch("/{playlist_id}/visibility", response_model=PlaylistSummary)
+def set_visibility(
+    playlist_id: int,
+    body: _VisibilityUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlaylistSummary:
+    pl = _get_owned_playlist(db, playlist_id, user)
+    pl.is_public = body.is_public
     db.commit()
     db.refresh(pl)
     count = db.scalar(

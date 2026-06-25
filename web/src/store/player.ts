@@ -4,6 +4,13 @@ import type { Track } from "@/types";
 
 export type RepeatMode = "off" | "all" | "one";
 
+export interface PartyBridge {
+  addToQueue: (t: Track) => void;
+  removeAt: (i: number) => void;
+  reorder: (from: number, to: number) => void;
+  setCurrent: (i: number) => void;
+}
+
 const RECENT_KEY = "sf_recent_tracks";
 const RECENT_MAX = 30;
 
@@ -60,7 +67,12 @@ interface PlayerState {
   queueOpen: boolean;
   lyricsOpen: boolean;
 
+  // party mode bridge: when set, queue edits route to the party
+  partyBridge: PartyBridge | null;
+
   // actions
+  setPartyBridge: (b: PartyBridge | null) => void;
+  setPartyQueue: (tracks: Track[], index: number) => void;
   toggleQueue: () => void;
   setQueueOpen: (v: boolean) => void;
   toggleLyrics: () => void;
@@ -114,6 +126,15 @@ export const usePlayerStore = create<PlayerState>()(
       queueOpen: false,
       lyricsOpen: false,
       seekTo: null,
+      partyBridge: null,
+
+      setPartyBridge: (b) => set({ partyBridge: b }),
+      setPartyQueue: (tracks, index) =>
+        set({
+          queue: tracks,
+          index,
+          duration: tracks[index]?.duration_sec || 0,
+        }),
 
       toggleQueue: () => set({ queueOpen: !get().queueOpen }),
       setQueueOpen: (v) => set({ queueOpen: v }),
@@ -156,6 +177,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       addToQueue: (track) => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.addToQueue(track);
+          return;
+        }
         const { queue, originalQueue, index } = get();
         if (index < 0) {
           get().playTrack(track);
@@ -165,6 +191,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playNext: (track) => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.addToQueue(track);
+          return;
+        }
         const { queue, originalQueue, index } = get();
         if (index < 0) {
           get().playTrack(track);
@@ -176,6 +207,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       removeFromQueue: (i) => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.removeAt(i);
+          return;
+        }
         const { queue, index } = get();
         if (i < 0 || i >= queue.length) return;
         const q = queue.filter((_, idx) => idx !== i);
@@ -190,6 +226,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       reorderQueue: (from, to) => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.reorder(from, to);
+          return;
+        }
         const { queue, index } = get();
         if (from < 0 || from >= queue.length || to < 0 || to >= queue.length) return;
         const q = [...queue];
@@ -203,6 +244,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       jumpTo: (i) => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.setCurrent(i);
+          return;
+        }
         const { queue } = get();
         if (i < 0 || i >= queue.length) return;
         pushRecent(queue[i]);
@@ -229,6 +275,11 @@ export const usePlayerStore = create<PlayerState>()(
       pause: () => set({ isPlaying: false }),
 
       next: () => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.setCurrent(get().index + 1);
+          return;
+        }
         const { index, queue, repeat } = get();
         if (index < 0) return;
         if (index < queue.length - 1) {
@@ -241,6 +292,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       prev: () => {
+        const bridge = get().partyBridge;
+        if (bridge) {
+          bridge.setCurrent(get().index - 1);
+          return;
+        }
         const { index, currentTime } = get();
         if (index < 0) return;
         // If more than 3s in, restart current track

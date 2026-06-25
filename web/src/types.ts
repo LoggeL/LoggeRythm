@@ -16,6 +16,30 @@ export interface User {
   display_name: string;
   is_admin?: boolean;
   is_approved?: boolean;
+  avatar_url?: string | null;
+}
+
+export interface PublicProfile {
+  id: string | number;
+  display_name: string;
+  avatar_url?: string | null;
+  playlists: PlaylistSummary[];
+  top_artists: ArtistSummary[];
+}
+
+export interface StatEntry {
+  key: string;
+  label: string;
+  sublabel?: string;
+  cover?: string;
+  count: number;
+}
+
+export interface UserStats {
+  total_plays: number;
+  top_tracks: StatEntry[];
+  top_artists: StatEntry[];
+  recent: Track[];
 }
 
 export interface AdminUser {
@@ -74,6 +98,7 @@ export interface PlaylistSummary {
   description?: string;
   cover_url?: string;
   track_count: number;
+  is_public?: boolean;
 }
 
 export interface Playlist {
@@ -81,6 +106,7 @@ export interface Playlist {
   name: string;
   description?: string;
   cover_url?: string;
+  is_public?: boolean;
   tracks: Track[];
 }
 
@@ -97,6 +123,56 @@ export interface GenreDetail {
   tracks: Track[];
   albums: AlbumSummary[];
   artists: ArtistSummary[];
+}
+
+export interface DeezerPlaylistDetail {
+  id: string | number;
+  name: string;
+  cover: string;
+  tracks: Track[];
+}
+
+export interface PartyTrack {
+  id: number;
+  deezer_id: string;
+  title: string;
+  artist: string;
+  artist_id?: string | number;
+  album: string;
+  album_id?: string | number;
+  cover: string;
+  duration_sec: number;
+  added_by: string;
+}
+
+export interface PartyState {
+  code: string;
+  name: string;
+  host_name: string;
+  is_host: boolean;
+  current_index: number;
+  members: string[];
+  tracks: PartyTrack[];
+}
+
+export interface StorageItem {
+  deezer_id: string;
+  title: string;
+  artist: string;
+  size_bytes: number;
+}
+
+export interface StorageInfo {
+  track_count: number;
+  total_bytes: number;
+  tracks: StorageItem[];
+}
+
+export interface InviteInfo {
+  code: string;
+  url: string;
+  used_by_name?: string | null;
+  created_at: string;
 }
 
 export interface ResolveResult {

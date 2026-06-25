@@ -115,3 +115,11 @@ async def artist(artist_id: str) -> dict:
         return await run_in_threadpool(dc.artist_detail, artist_id)
     except dc.DeezerClientError as e:
         raise to_http(e)
+
+
+@router.get("/deezer-playlist/{playlist_id}")
+async def deezer_playlist(playlist_id: str) -> dict:
+    try:
+        return await run_in_threadpool(dc.playlist_detail, playlist_id)
+    except dc.DeezerClientError as e:
+        raise to_http(e)

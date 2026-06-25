@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter();
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
+  const invite = searchParams.get("invite");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -20,7 +22,12 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      const user = await api.register(email, password, displayName);
+      const user = await api.register(
+        email,
+        password,
+        displayName,
+        invite ?? undefined,
+      );
       qc.setQueryData(["me"], user);
       qc.invalidateQueries({ queryKey: ["likes"] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
@@ -41,6 +48,11 @@ export default function RegisterPage() {
       <h1 className="text-2xl font-extrabold mb-6 text-center">
         Konto erstellen
       </h1>
+      {invite && (
+        <p className="text-sm text-muted text-center mb-4">
+          Mit Einladung – wird automatisch freigegeben.
+        </p>
+      )}
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           Anzeigename
@@ -91,5 +103,13 @@ export default function RegisterPage() {
         </Link>
       </p>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   );
 }

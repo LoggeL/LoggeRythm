@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export interface ContextMenuItem {
   label: string;
@@ -71,7 +72,9 @@ export default function ContextMenu({
     };
   }, [onClose]);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       ref={ref}
       role="menu"
@@ -99,6 +102,7 @@ export default function ContextMenu({
           <span className="truncate">{it.label}</span>
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   );
 }
