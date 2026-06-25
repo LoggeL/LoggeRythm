@@ -11,6 +11,7 @@ import {
   useDeletePlaylist,
 } from "@/hooks/useLibrary";
 import { usePlayerStore } from "@/store/player";
+import { useDownloads } from "@/hooks/useDownloads";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
@@ -33,6 +34,8 @@ export default function PlaylistPage({
   const deletePlaylist = useDeletePlaylist();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const { isDownloaded, downloadPlaylist, removeDownload, progress, supported } =
+    useDownloads();
 
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
@@ -165,6 +168,35 @@ export default function PlaylistPage({
         >
           <PlayIcon /> Alle abspielen
         </button>
+        {supported && tracks.length > 0 && (
+          progress && progress.id === id ? (
+            <span className="text-sm text-muted">
+              Lädt… {progress.done}/{progress.total}
+            </span>
+          ) : isDownloaded(id) ? (
+            <button
+              type="button"
+              onClick={() => {
+                removeDownload(id, tracks);
+                toast.info("Offline-Download entfernt.");
+              }}
+              className="press px-4 py-2 rounded-full border border-accent text-accent text-sm font-medium"
+            >
+              ✓ Offline
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                downloadPlaylist(id, data.name, tracks);
+                toast.info("Download gestartet…");
+              }}
+              className="press px-4 py-2 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
+            >
+              Herunterladen
+            </button>
+          )
+        )}
         {isOwner && (
           <>
             <button

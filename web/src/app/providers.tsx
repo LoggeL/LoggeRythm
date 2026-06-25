@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export default function Providers({
   children,
@@ -22,6 +23,9 @@ export default function Providers({
   );
 
   return (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    <QueryClientProvider client={client}>
+      <ServiceWorkerRegister />
+      {children}
+    </QueryClientProvider>
   );
 }
