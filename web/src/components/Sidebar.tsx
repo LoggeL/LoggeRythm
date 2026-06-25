@@ -113,14 +113,28 @@ export default function Sidebar() {
                   <li key={String(p.id)}>
                     <Link
                       href={`/playlist/${p.id}`}
-                      className="block px-2 py-2 rounded hover:bg-panel-hover text-sm truncate"
+                      className="flex items-center gap-3 px-2 py-2 rounded hover:bg-panel-hover transition"
                     >
-                      <span className="block truncate font-medium">
-                        {p.name}
-                      </span>
-                      <span className="block truncate text-xs text-muted">
-                        Playlist · {p.track_count} Titel
-                      </span>
+                      {p.cover_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={p.cover_url}
+                          alt=""
+                          className="w-10 h-10 rounded object-cover flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded bg-panel-hover flex items-center justify-center text-muted flex-shrink-0">
+                          ♪
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {p.name}
+                        </span>
+                        <span className="block truncate text-xs text-muted">
+                          Playlist · {p.track_count} Titel
+                        </span>
+                      </div>
                     </Link>
                   </li>
                 ))}
