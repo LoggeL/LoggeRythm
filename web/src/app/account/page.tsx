@@ -146,14 +146,46 @@ function AdminUsersSection() {
 }
 
 function AdminStorageSection() {
+  const qc = useQueryClient();
   const { data, isLoading, error } = useQuery<StorageInfo>({
     queryKey: ["admin-storage"],
     queryFn: api.adminStorage,
   });
+  const cleanup = useMutation({
+    mutationFn: api.adminStorageCleanup,
+    onSuccess: (r) => {
+      toast.success(
+        r.removed
+          ? `${r.removed} Titel entfernt (${formatBytes(r.freed_bytes)} frei).`
+          : "Nichts zu entfernen.",
+      );
+      qc.invalidateQueries({ queryKey: ["admin-storage"] });
+    },
+    onError: () => toast.error("Aufräumen fehlgeschlagen."),
+  });
 
   return (
     <section className="bg-panel rounded-lg p-6">
-      <h2 className="text-xl font-bold mb-4">Speicher</h2>
+      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <h2 className="text-xl font-bold">Speicher</h2>
+        <div className="flex items-center gap-3">
+          {data && (
+            <span className="text-xs text-muted">
+              {data.retention_days > 0
+                ? `Nicht gespielt seit ${data.retention_days} Tagen → automatisch gelöscht`
+                : "Keine automatische Löschung"}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => cleanup.mutate()}
+            disabled={cleanup.isPending}
+            className="press px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover hover:bg-white/10 disabled:opacity-50"
+          >
+            {cleanup.isPending ? "Räumt auf…" : "Jetzt aufräumen"}
+          </button>
+        </div>
+      </div>
 
       {isLoading && <p className="text-muted">Lädt…</p>}
       {error && (
@@ -175,9 +207,39 @@ function AdminStorageSection() {
               <div className="text-2xl font-extrabold">
                 {formatBytes(data.total_bytes)}
               </div>
-              <div className="text-sm text-muted">Gesamtgröße</div>
+              <div className="text-sm text-muted">Belegt (Tracks)</div>
+            </div>
+            <div className="bg-background rounded-md px-4 py-3">
+              <div className="text-2xl font-extrabold">
+                {formatBytes(data.disk_free)}
+              </div>
+              <div className="text-sm text-muted">Frei auf Disk</div>
+            </div>
+            <div className="bg-background rounded-md px-4 py-3">
+              <div className="text-2xl font-extrabold">
+                {formatBytes(data.disk_total)}
+              </div>
+              <div className="text-sm text-muted">Disk gesamt</div>
             </div>
           </div>
+
+          {/* Disk usage bar */}
+          {data.disk_total > 0 && (
+            <div className="mb-4">
+              <div className="h-2 rounded-full bg-background overflow-hidden">
+                <div
+                  className="h-full bg-accent"
+                  style={{
+                    width: `${Math.min(100, (data.disk_used / data.disk_total) * 100)}%`,
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted mt-1">
+                {formatBytes(data.disk_used)} von {formatBytes(data.disk_total)} belegt
+                · {formatBytes(data.disk_free)} frei
+              </p>
+            </div>
+          )}
 
           {data.tracks.length === 0 ? (
             <p className="text-muted">Keine gespeicherten Titel.</p>

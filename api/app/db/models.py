@@ -224,3 +224,5 @@ class StoredTrack(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ready")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    # Updated on every play; tracks not accessed within the retention window are evicted.
+    last_accessed: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)

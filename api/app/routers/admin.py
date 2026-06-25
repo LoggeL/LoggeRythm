@@ -1,5 +1,7 @@
 """Admin endpoints: user approval and management (admin-only)."""
+import os
 import secrets
+import shutil
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -8,8 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
+from ..config import STORAGE_DIR, STORAGE_RETENTION_DAYS
 from ..db.models import InviteCode, StoredTrack, User
 from ..db.session import get_db
+from ..services import storage
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -28,11 +32,16 @@ class StorageItem(BaseModel):
     title: str
     artist: str
     size_bytes: int
+    last_accessed: datetime | None = None
 
 
 class StorageInfo(BaseModel):
     track_count: int
     total_bytes: int
+    disk_total: int
+    disk_used: int
+    disk_free: int
+    retention_days: int
     tracks: list[StorageItem]
 
 
@@ -112,22 +121,36 @@ def storage_info(
 ) -> StorageInfo:
     track_count = db.scalar(select(func.count()).select_from(StoredTrack)) or 0
     total_bytes = db.scalar(select(func.coalesce(func.sum(StoredTrack.size_bytes), 0))) or 0
+    # Free/total space on the filesystem holding the storage directory.
+    os.makedirs(STORAGE_DIR, exist_ok=True)
+    usage = shutil.disk_usage(STORAGE_DIR)
     rows = db.scalars(
-        select(StoredTrack).order_by(StoredTrack.created_at.desc()).limit(200)
+        select(StoredTrack).order_by(StoredTrack.last_accessed.desc()).limit(200)
     ).all()
     return StorageInfo(
         track_count=track_count,
         total_bytes=total_bytes,
+        disk_total=usage.total,
+        disk_used=usage.used,
+        disk_free=usage.free,
+        retention_days=STORAGE_RETENTION_DAYS,
         tracks=[
             StorageItem(
                 deezer_id=t.deezer_id,
                 title=t.title,
                 artist=t.artist,
                 size_bytes=t.size_bytes,
+                last_accessed=t.last_accessed,
             )
             for t in rows
         ],
     )
+
+
+@router.post("/storage/cleanup")
+def storage_cleanup(_admin: User = Depends(require_admin)) -> dict:
+    """Evict stored tracks that are past the retention window now."""
+    return storage.cleanup_old()
 
 
 @router.post("/invites", response_model=InviteInfo)

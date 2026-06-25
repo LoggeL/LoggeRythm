@@ -9,6 +9,8 @@ load_dotenv()
 DEEZER_ARL: str = os.getenv("DEEZER_ARL", "")
 DEEZER_QUALITY: str = os.getenv("DEEZER_QUALITY", "mp3")
 STORAGE_DIR: str = os.getenv("STORAGE_DIR", "storage")
+# Stored tracks not played within this many days are evicted (0 = keep forever).
+STORAGE_RETENTION_DAYS: int = int(os.getenv("STORAGE_RETENTION_DAYS", "30"))
 
 # --- Database ---
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./spotifrei.db")

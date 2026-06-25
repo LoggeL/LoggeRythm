@@ -229,6 +229,10 @@ export const api = {
 
   // Admin storage overview + invites
   adminStorage: () => req<StorageInfo>(`/admin/storage`),
+  adminStorageCleanup: () =>
+    req<{ removed: number; freed_bytes: number }>(`/admin/storage/cleanup`, {
+      method: "POST",
+    }),
   adminInvites: () => req<InviteInfo[]>(`/admin/invites`),
   adminCreateInvite: () => req<InviteInfo>(`/admin/invites`, { method: "POST" }),
 

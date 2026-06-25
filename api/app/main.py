@@ -30,7 +30,7 @@ from .routers import (
     stats,
     stream,
 )
-from .services import deezer_client
+from .services import deezer_client, storage
 
 app = FastAPI(title="Spotifrei API")
 
@@ -79,6 +79,19 @@ def _migrate_user_columns() -> None:
                 conn.exec_driver_sql(
                     "ALTER TABLE playlists ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT 0"
                 )
+            scols = {
+                row[1]
+                for row in conn.exec_driver_sql(
+                    "PRAGMA table_info(stored_tracks)"
+                ).fetchall()
+            }
+            if scols and "last_accessed" not in scols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE stored_tracks ADD COLUMN last_accessed DATETIME"
+                )
+                conn.exec_driver_sql(
+                    "UPDATE stored_tracks SET last_accessed = created_at WHERE last_accessed IS NULL"
+                )
     except Exception as exc:  # pragma: no cover — never crash startup
         print(f"User column migration skipped: {exc!r}")
 
@@ -102,12 +115,28 @@ def _bootstrap_admin() -> None:
         print(f"Admin bootstrap skipped: {exc!r}")
 
 
+def _cleanup_loop() -> None:
+    """Daemon: evict tracks past the retention window every few hours."""
+    import time
+
+    while True:
+        time.sleep(6 * 3600)
+        result = storage.cleanup_old()
+        if result.get("removed"):
+            print(f"Storage cleanup: removed {result['removed']} stale tracks.")
+
+
 @app.on_event("startup")
 def _startup() -> None:
+    import threading
+
     init_db()
     _migrate_user_columns()
     _bootstrap_admin()
     deezer_client.init_session()
+    storage.reconcile()  # backfill DB rows for pre-existing files
+    storage.cleanup_old()  # evict stale tracks on boot
+    threading.Thread(target=_cleanup_loop, daemon=True).start()
     print("Spotifrei API started: DB ready, Deezer session initialized.")
 
 

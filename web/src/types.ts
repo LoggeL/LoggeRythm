@@ -160,11 +160,16 @@ export interface StorageItem {
   title: string;
   artist: string;
   size_bytes: number;
+  last_accessed?: string | null;
 }
 
 export interface StorageInfo {
   track_count: number;
   total_bytes: number;
+  disk_total: number;
+  disk_used: number;
+  disk_free: number;
+  retention_days: number;
   tracks: StorageItem[];
 }
 
