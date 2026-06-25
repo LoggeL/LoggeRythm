@@ -115,6 +115,12 @@ export default function ImportPage() {
                 {result.unmatched.length > 0 &&
                   ` · ${result.unmatched.length} nicht verfügbar`}
               </p>
+              {result.source_total > result.total && (
+                <p className="text-xs text-muted mt-1">
+                  Große Playlist: {result.source_total} Titel insgesamt — die
+                  ersten {result.total} wurden verarbeitet.
+                </p>
+              )}
             </div>
           </header>
 

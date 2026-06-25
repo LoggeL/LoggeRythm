@@ -10,6 +10,7 @@ must call them via starlette.concurrency.run_in_threadpool.
 """
 from __future__ import annotations
 
+import time
 from urllib.parse import quote_plus
 
 import requests
@@ -179,7 +180,12 @@ def track_metadata(deezer_id: str) -> dict:
 
 
 # --- public Deezer API browse (no auth) -----------------------------------
-def _public_get(path: str) -> dict:
+def _public_get(path: str, _retries: int = 3) -> dict:
+    """GET the public Deezer API, retrying with backoff on rate limits.
+
+    Bulk operations (e.g. importing a long playlist) hammer the public API and
+    routinely hit its quota; transparent retry keeps those imports robust.
+    """
     try:
         resp = requests.get(f"{DEEZER_PUBLIC_API}{path}", timeout=15)
         resp.raise_for_status()
@@ -189,7 +195,10 @@ def _public_get(path: str) -> dict:
     if isinstance(data, dict) and "error" in data:
         err = data["error"]
         code = (err or {}).get("code")
-        if code == 4:
+        if code == 4:  # rate limited / quota
+            if _retries > 0:
+                time.sleep(0.6 * (4 - _retries))  # 0.6s, 1.2s, 1.8s
+                return _public_get(path, _retries - 1)
             raise RateLimited(str(err))
         if code in (800, 300):
             raise TrackUnavailable(str(err))

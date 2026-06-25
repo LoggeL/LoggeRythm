@@ -11,7 +11,6 @@ export default function Lyrics() {
   const setOpen = usePlayerStore((s) => s.setLyricsOpen);
   const track = usePlayerStore(currentTrack);
   const currentTime = usePlayerStore((s) => s.currentTime);
-  const seek = usePlayerStore((s) => s.seek);
 
   const { data, isLoading } = useQuery({
     queryKey: ["lyrics", track?.id],
@@ -66,22 +65,18 @@ export default function Lyrics() {
               const activeLine = i === active;
               const dist = Math.abs(i - a);
               return (
-                <button
+                <div
                   key={i}
-                  type="button"
-                  onClick={() => seek(line.t)}
                   style={{
                     height: LINE_H,
                     opacity: activeLine ? 1 : dist === 1 ? 0.55 : 0.3,
                   }}
                   className={`flex items-center justify-center w-full truncate text-center text-sm leading-7 transition-all duration-300 ${
-                    activeLine
-                      ? "text-foreground font-semibold"
-                      : "text-muted hover:text-foreground"
+                    activeLine ? "text-foreground font-semibold" : "text-muted"
                   }`}
                 >
                   {line.text || "♪"}
-                </button>
+                </div>
               );
             })}
           </div>

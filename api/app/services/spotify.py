@@ -126,11 +126,13 @@ def _first_image(images: list | None) -> str:
 
 def get_track(spotify_id: str) -> dict:
     t = _api_get(f"/tracks/{spotify_id}")
+    tracks = [_norm_track(t)]
     return {
         "type": "track",
         "name": t.get("name", "") or "",
         "image": _first_image((t.get("album") or {}).get("images")),
-        "tracks": [_norm_track(t)],
+        "total": len(tracks),
+        "tracks": tracks,
     }
 
 
@@ -148,6 +150,7 @@ def get_album(spotify_id: str) -> dict:
         "type": "album",
         "name": al.get("name", "") or "",
         "image": image,
+        "total": int((al.get("tracks") or {}).get("total", len(tracks)) or len(tracks)),
         "tracks": tracks,
     }
 
@@ -157,7 +160,11 @@ def get_playlist(spotify_id: str) -> dict:
     image = _first_image(pl.get("images"))
     tracks: list[dict] = []
     page = pl.get("tracks") or {}
-    while True:
+    # Real playlist size (so a capped import can be reported honestly).
+    source_total = int(page.get("total", 0) or 0)
+    pages = 0
+    while pages < 250:  # hard ceiling on pagination loops (safety for 10k+)
+        pages += 1
         for it in page.get("items") or []:
             track = it.get("track")
             if track and track.get("type", "track") == "track":
@@ -173,6 +180,7 @@ def get_playlist(spotify_id: str) -> dict:
         "type": "playlist",
         "name": pl.get("name", "") or "",
         "image": image,
+        "total": source_total or len(tracks),
         "tracks": tracks,
     }
 

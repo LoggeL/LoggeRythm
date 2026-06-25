@@ -194,6 +194,7 @@ export interface ResolveResult {
   name: string;
   image: string;
   total: number;
+  source_total: number;
   matched: number;
   tracks: Track[];
   unmatched: { title: string; artist: string }[];
