@@ -66,6 +66,7 @@ interface PlayerState {
   error: string | null;
   queueOpen: boolean;
   lyricsOpen: boolean;
+  radioActive: boolean; // endless "song radio" — auto-extends the queue
 
   // party mode bridge: when set, queue edits route to the party
   partyBridge: PartyBridge | null;
@@ -73,6 +74,8 @@ interface PlayerState {
   // actions
   setPartyBridge: (b: PartyBridge | null) => void;
   setPartyQueue: (tracks: Track[], index: number) => void;
+  setRadioActive: (v: boolean) => void;
+  appendToQueue: (tracks: Track[]) => void;
   toggleQueue: () => void;
   setQueueOpen: (v: boolean) => void;
   toggleLyrics: () => void;
@@ -128,6 +131,8 @@ export const usePlayerStore = create<PlayerState>()(
       seekTo: null,
       partyBridge: null,
 
+      radioActive: false,
+
       setPartyBridge: (b) => set({ partyBridge: b }),
       setPartyQueue: (tracks, index) =>
         set({
@@ -135,6 +140,15 @@ export const usePlayerStore = create<PlayerState>()(
           index,
           duration: tracks[index]?.duration_sec || 0,
         }),
+      setRadioActive: (v) => set({ radioActive: v }),
+      appendToQueue: (tracks) => {
+        if (!tracks.length) return;
+        const { queue, originalQueue } = get();
+        set({
+          queue: [...queue, ...tracks],
+          originalQueue: [...originalQueue, ...tracks],
+        });
+      },
 
       toggleQueue: () => set({ queueOpen: !get().queueOpen }),
       setQueueOpen: (v) => set({ queueOpen: v }),
@@ -151,6 +165,7 @@ export const usePlayerStore = create<PlayerState>()(
           currentTime: 0,
           duration: track.duration_sec || 0,
           error: null,
+          radioActive: false,
         });
       },
 
@@ -173,6 +188,7 @@ export const usePlayerStore = create<PlayerState>()(
           currentTime: 0,
           duration: queue[index]?.duration_sec || 0,
           error: null,
+          radioActive: false,
         });
       },
 

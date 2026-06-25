@@ -65,6 +65,12 @@ export default function PlayerBar() {
   const { data: me } = useMe();
   const recordedRef = useRef<string | null>(null);
 
+  const radioActive = usePlayerStore((s) => s.radioActive);
+  const appendToQueue = usePlayerStore((s) => s.appendToQueue);
+  const queueLen = usePlayerStore((s) => s.queue.length);
+  const index = usePlayerStore((s) => s.index);
+  const radioFetching = useRef(false);
+
   // Record a play once per (new) track for approved, logged-in users.
   useEffect(() => {
     if (!track || !trackId) return;
@@ -75,6 +81,27 @@ export default function PlayerBar() {
       // ignore record failures
     });
   }, [trackId, track, me?.is_approved]);
+
+  // Endless radio: when near the end, pull the next ~5 similar songs
+  // seeded by the current track (so the station keeps evolving).
+  useEffect(() => {
+    if (!radioActive || !track || radioFetching.current) return;
+    if (queueLen - index > 2) return; // still have a buffer
+    radioFetching.current = true;
+    api
+      .radio(String(track.id))
+      .then((more) => {
+        const have = new Set(
+          usePlayerStore.getState().queue.map((t) => String(t.id)),
+        );
+        const fresh = more.filter((t) => !have.has(String(t.id))).slice(0, 5);
+        if (fresh.length) appendToQueue(fresh);
+      })
+      .catch(() => {})
+      .finally(() => {
+        radioFetching.current = false;
+      });
+  }, [radioActive, index, queueLen, track, appendToQueue]);
 
   // Reflect play/pause state.
   useEffect(() => {

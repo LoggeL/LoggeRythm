@@ -35,9 +35,16 @@ export function useTrackMenuItems(
     {
       label: "Song-Radio starten",
       onClick: async () => {
-        const tracks = await api.radio(String(track.id));
-        usePlayerStore.getState().playQueue(tracks, 0);
-        toast.info("Radio gestartet…");
+        try {
+          const tracks = await api.radio(String(track.id));
+          const store = usePlayerStore.getState();
+          // start with the seed track, then the radio mix; endless top-up handled in PlayerBar
+          store.playQueue([track, ...tracks], 0);
+          store.setRadioActive(true);
+          toast.info("Radio gestartet…");
+        } catch {
+          toast.error("Radio konnte nicht gestartet werden.");
+        }
       },
     },
   ];
