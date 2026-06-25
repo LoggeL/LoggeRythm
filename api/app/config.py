@@ -34,6 +34,11 @@ CORS_ORIGINS: list[str] = [
 # --- Public Deezer API ---
 DEEZER_PUBLIC_API: str = "https://api.deezer.com"
 
+# --- Last.fm (external song-similarity source for the radio) ---
+# Free API key from https://www.last.fm/api/account/create — optional; the radio
+# falls back to Deezer's own artist mix when this is empty.
+LASTFM_API_KEY: str = os.getenv("LASTFM_API_KEY", "")
+
 # --- Spotify (metadata / link resolution via Client Credentials) ---
 SPOTIFY_CLIENT_ID: str = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")

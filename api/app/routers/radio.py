@@ -1,13 +1,19 @@
-"""Song-radio endpoint: seed track → a "track mix" of similar songs.
+"""Song-radio endpoint: a "track mix" of similar songs.
 
-Builds a varied mix like Deezer's track mix: the seed artist's radio plus
-top tracks from related artists, deduped and shuffled. Falls back to charts.
+Primary similarity source is Last.fm (track.getSimilar) — its collaborative
+data gives genuinely similar songs across artists; each is resolved to a
+playable Deezer track. Falls back to Deezer's own artist radio + related
+artists' top tracks, then to charts.
 """
 import random
+from concurrent.futures import ThreadPoolExecutor
+
+import requests
 
 from fastapi import APIRouter
 from starlette.concurrency import run_in_threadpool
 
+from ..config import LASTFM_API_KEY
 from ..schemas.track import Track
 from ..services import deezer_client as dc
 from .errors import to_http
@@ -15,16 +21,67 @@ from .errors import to_http
 router = APIRouter(prefix="/api", tags=["radio"])
 
 _MIX_SIZE = 40
+_LASTFM = "https://ws.audioscrobbler.com/2.0/"
 
 
-def _radio(deezer_id: str) -> list[dict]:
-    # Resolve the seed track's artist via the public API (reliable artist id).
+def _seed_meta(deezer_id: str) -> dict:
     try:
-        seed = dc._public_get(f"/track/{deezer_id}")
+        t = dc._public_get(f"/track/{deezer_id}")
+        return t if isinstance(t, dict) else {}
     except dc.DeezerClientError:
-        seed = {}
-    artist_id = (seed.get("artist") or {}).get("id") if isinstance(seed, dict) else None
+        return {}
 
+
+def _lastfm_similar(artist: str, title: str) -> list[dict]:
+    """Ask Last.fm for similar tracks; resolve each to a playable Deezer track."""
+    if not LASTFM_API_KEY or not artist or not title:
+        return []
+    try:
+        resp = requests.get(
+            _LASTFM,
+            params={
+                "method": "track.getsimilar",
+                "artist": artist,
+                "track": title,
+                "api_key": LASTFM_API_KEY,
+                "format": "json",
+                "limit": 40,
+                "autocorrect": 1,
+            },
+            timeout=12,
+        )
+        resp.raise_for_status()
+        sims = (resp.json().get("similartracks") or {}).get("track") or []
+    except (requests.exceptions.RequestException, ValueError):
+        return []
+
+    queries = [
+        f"{(s.get('artist') or {}).get('name', '')} {s.get('name', '')}".strip()
+        for s in sims
+    ]
+    queries = [q for q in queries if q][:30]
+    if not queries:
+        return []
+
+    def _resolve(q: str) -> dict | None:
+        try:
+            hits = dc.search_tracks_public(q)
+        except dc.DeezerClientError:
+            return None
+        return hits[0] if hits else None
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for hit in pool.map(_resolve, queries):
+            if hit and hit["id"] not in seen:
+                seen.add(hit["id"])
+                out.append(hit)
+    return out
+
+
+def _deezer_mix(deezer_id: str, artist_id) -> list[dict]:
+    """Fallback: seed artist radio + related artists' top tracks."""
     pool: list[dict] = []
     seen: set[str] = {str(deezer_id)}
 
@@ -36,29 +93,40 @@ def _radio(deezer_id: str) -> list[dict]:
                 pool.append(dc.normalize_public_track(t))
 
     if artist_id:
-        # Primary source: the seed artist's radio (smart similar-songs list).
         try:
             add(dc._public_get(f"/artist/{artist_id}/radio").get("data"))
         except dc.DeezerClientError:
             pass
-        # Variety: top tracks from related artists → a true "mix".
         try:
             related = dc._public_get(f"/artist/{artist_id}/related?limit=6").get("data") or []
         except dc.DeezerClientError:
             related = []
         for r in related[:6]:
             rid = r.get("id")
-            if not rid:
-                continue
-            try:
-                add(dc._public_get(f"/artist/{rid}/top?limit=5").get("data"))
-            except dc.DeezerClientError:
-                pass
+            if rid:
+                try:
+                    add(dc._public_get(f"/artist/{rid}/top?limit=5").get("data"))
+                except dc.DeezerClientError:
+                    pass
+    return pool
 
+
+def _radio(deezer_id: str) -> list[dict]:
+    seed = _seed_meta(deezer_id)
+    artist = (seed.get("artist") or {}).get("name", "") if isinstance(seed, dict) else ""
+    title = seed.get("title", "") if isinstance(seed, dict) else ""
+    artist_id = (seed.get("artist") or {}).get("id") if isinstance(seed, dict) else None
+
+    # 1) External similarity (Last.fm) → Deezer-playable.
+    pool = _lastfm_similar(artist, title)
+    # 2) Fallback: Deezer's own mix.
+    if not pool:
+        pool = _deezer_mix(deezer_id, artist_id)
+    # 3) Last resort: charts.
     if not pool:
         return dc.charts()
 
-    random.shuffle(pool)  # mix feel, not a single-artist block
+    random.shuffle(pool)
     return pool[:_MIX_SIZE]
 
 
