@@ -12,6 +12,8 @@ class Track(BaseModel):
     cover: str = ""
     duration_sec: int = 0
     preview_url: str | None = None
+    # Deezer popularity rank (0–~1,000,000); 0 when unknown.
+    rank: int = 0
 
 
 class AlbumSummary(BaseModel):

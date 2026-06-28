@@ -8,6 +8,8 @@ export interface Track {
   cover: string;
   duration_sec: number;
   preview_url?: string;
+  /** Deezer popularity rank (0–~1,000,000); 0/undefined when unknown. */
+  rank?: number;
 }
 
 export interface User {

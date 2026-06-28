@@ -99,6 +99,7 @@ export default function ArtistPage({
                 key={track.id}
                 track={track}
                 index={i}
+                showPopularity
                 onPlay={() => playQueue(tracks, i, data.name)}
               />
             ))}

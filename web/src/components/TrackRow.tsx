@@ -12,6 +12,11 @@ import LikeButton from "@/components/LikeButton";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
 
+/** Map a Deezer rank (0–~1,000,000) to a 0–100 popularity percentage. */
+function popularityPct(rank: number): number {
+  return Math.max(2, Math.min(100, Math.round((rank / 1_000_000) * 100)));
+}
+
 interface TrackRowProps {
   track: Track;
   index?: number;
@@ -21,6 +26,8 @@ interface TrackRowProps {
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   showAlbum?: boolean;
+  // Show a Deezer popularity bar (only meaningful for search / artist results).
+  showPopularity?: boolean;
 }
 
 export default function TrackRow({
@@ -31,6 +38,7 @@ export default function TrackRow({
   onMoveUp,
   onMoveDown,
   showAlbum = true,
+  showPopularity = false,
 }: TrackRowProps) {
   const cur = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -163,6 +171,19 @@ export default function TrackRow({
             </button>
           </div>
         )}
+        {showPopularity && track.rank ? (
+          <div
+            className="hidden sm:flex items-center gap-1.5 mr-1"
+            title={`Popularität ${popularityPct(track.rank)}%`}
+          >
+            <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-full bg-accent"
+                style={{ width: `${popularityPct(track.rank)}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
         <LikeButton track={track} />
         <button
           type="button"

@@ -291,6 +291,7 @@ export default function SearchPage() {
                   key={track.id}
                   track={track}
                   index={i}
+                  showPopularity
                   onPlay={() => playQueue(tracks, i)}
                 />
               ))}

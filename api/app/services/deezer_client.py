@@ -94,6 +94,7 @@ def normalize_public_track(t: dict) -> dict:
         or "",
         "duration_sec": int(t.get("duration", 0) or 0),
         "preview_url": t.get("preview") or None,
+        "rank": int(t.get("rank", 0) or 0),
     }
 
 
