@@ -86,7 +86,7 @@ export default function AlbumPage({
       <div className="mb-4">
         <button
           type="button"
-          onClick={() => playQueue(tracks, 0)}
+          onClick={() => playQueue(tracks, 0, data.title)}
           disabled={tracks.length === 0}
           className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
         >
@@ -101,7 +101,7 @@ export default function AlbumPage({
             track={track}
             index={i}
             showAlbum={false}
-            onPlay={() => playQueue(tracks, i)}
+            onPlay={() => playQueue(tracks, i, data.title)}
           />
         ))}
       </div>

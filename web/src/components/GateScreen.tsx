@@ -12,7 +12,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           <Logo size={44} />
           <span className="text-3xl font-black tracking-tight">
             <span className="text-foreground">Spoti</span>
-            <span className="text-accent">frei</span>
+            <span className="text-accent">Frei</span>
           </span>
         </div>
         {children}

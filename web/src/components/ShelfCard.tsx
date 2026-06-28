@@ -59,7 +59,7 @@ export default function ShelfCard({
         className="group relative flex w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] shadow-xl shadow-black/15 hover-lift min-h-[168px]"
       >
         {/* Gradient art on the right half (optionally tinted by the cover). */}
-        <div className="absolute inset-y-0 right-0 w-3/5">
+        <div className="absolute inset-y-0 right-0 w-3/5 overflow-hidden rounded-r-2xl">
           {shelf.cover && (
             // eslint-disable-next-line @next/next/no-img-element
             <img

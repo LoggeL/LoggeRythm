@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
+import { playlistPath } from "@/lib/slugs";
 import { usePlayerStore } from "@/store/player";
 import { useMe } from "@/hooks/useAuth";
 import { useCreatePlaylist } from "@/hooks/useLibrary";
@@ -55,7 +56,7 @@ export default function ImportPanel() {
       });
       const res = await api.addTracksBulk(String(pl.id), result.tracks);
       toast.success(`${res.added} Titel gespeichert.`);
-      router.push(`/playlist/${pl.id}`);
+      router.push(playlistPath(pl));
     } catch {
       toast.error("Speichern fehlgeschlagen.");
     } finally {
@@ -70,18 +71,18 @@ export default function ImportPanel() {
         werden über Deezer abgespielt.
       </p>
 
-      <form onSubmit={submit} className="mb-8 max-w-2xl flex gap-2">
+      <form onSubmit={submit} className="mb-8 max-w-2xl flex flex-col sm:flex-row gap-2">
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://open.spotify.com/playlist/…"
-          className="flex-1 bg-panel border border-white/15 rounded-full px-5 py-3 outline-none focus:border-accent"
+          className="min-w-0 flex-1 bg-panel border border-white/15 rounded-full px-5 py-3 outline-none focus:border-accent"
           autoFocus
         />
         <button
           type="submit"
           disabled={resolve.isPending || !url.trim()}
-          className="px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
+          className="w-full sm:w-auto px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
         >
           {resolve.isPending ? "Lädt…" : "Auflösen"}
         </button>

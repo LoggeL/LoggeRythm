@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spotifrei",
-  description: "Spotifrei – dein freier Musikstreaming-Klon.",
+  title: "SpotiFrei",
+  description: "SpotiFrei – dein freier Musikstreaming-Klon.",
 };
 
 export default function RootLayout({

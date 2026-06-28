@@ -38,7 +38,7 @@ export default function LoginPage() {
   return (
     <div className="max-w-md mx-auto mt-8 bg-panel rounded-lg p-8">
       <h1 className="text-2xl font-extrabold mb-6 text-center">
-        Bei Spotifrei anmelden
+        Bei SpotiFrei anmelden
       </h1>
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">

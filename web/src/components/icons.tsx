@@ -34,6 +34,24 @@ export function PrevIcon(props: IconProps) {
   );
 }
 
+export function DownloadedIcon(props: IconProps) {
+  // Filled disc (currentColor) with a contrasting down arrow — the common
+  // "available offline" marker.
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} {...props}>
+      <circle cx="12" cy="12" r="11" fill="currentColor" />
+      <path
+        d="M12 6.5v7m0 0l-3.2-3.2M12 13.5l3.2-3.2M7.5 17h9"
+        fill="none"
+        stroke="#08130c"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function HeartIcon({
   filled,
   ...props
@@ -197,11 +215,18 @@ export function QueueIcon(props: IconProps) {
       height={18}
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={2.1}
       strokeLinecap="round"
+      strokeLinejoin="round"
       {...props}
     >
-      <path d="M3 6h13M3 12h13M3 18h9M17 14v6M17 20a2 2 0 100-4 2 2 0 000 4z" />
+      <path d="M4 6h9" />
+      <path d="M4 12h7" />
+      <path d="M4 18h8" />
+      <path d="M16 7.5v8.25" />
+      <path d="M16 7.5l4 1.2v8.05" />
+      <circle cx="14.5" cy="18" r="2" />
+      <circle cx="18.5" cy="19" r="2" />
     </svg>
   );
 }
@@ -274,12 +299,18 @@ export function LyricsIcon(props: IconProps) {
       height={18}
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={2.1}
       strokeLinecap="round"
       strokeLinejoin="round"
       {...props}
     >
-      <path d="M4 6h10M4 10h16M4 14h12M4 18h7" />
+      <path d="M5 5h10" />
+      <path d="M5 9h8" />
+      <path d="M5 13h11" />
+      <path d="M5 17h7" />
+      <path d="M18 6v8.5" />
+      <path d="M18 6l2.5.8" />
+      <circle cx="16.5" cy="17" r="2" />
     </svg>
   );
 }

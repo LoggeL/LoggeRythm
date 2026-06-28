@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMe } from "@/hooks/useAuth";
 import { useLikes, usePlaylists } from "@/hooks/useLibrary";
 import { useFollowing } from "@/hooks/useFollows";
+import { playlistPath } from "@/lib/slugs";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
 import ArtistCard from "@/components/ArtistCard";
@@ -85,7 +86,7 @@ export default function LibraryPage() {
           {(playlists ?? []).map((p) => (
             <Link
               key={String(p.id)}
-              href={`/playlist/${p.id}`}
+              href={playlistPath(p)}
               className="hover-lift bg-panel hover:bg-panel-hover rounded-lg p-4 transition"
             >
               {p.cover_url ? (

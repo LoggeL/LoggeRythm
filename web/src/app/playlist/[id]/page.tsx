@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,6 +13,7 @@ import {
 import { usePlayerStore } from "@/store/player";
 import { useDownloads } from "@/hooks/useDownloads";
 import { api } from "@/lib/api";
+import { playlistIdFromParam, playlistPath } from "@/lib/slugs";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
 import Modal from "@/components/Modal";
@@ -24,7 +25,8 @@ export default function PlaylistPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
+  const { id: playlistParam } = use(params);
+  const id = playlistIdFromParam(playlistParam);
   const router = useRouter();
   const { data, isLoading, isError } = usePlaylist(id);
   const playQueue = usePlayerStore((s) => s.playQueue);
@@ -41,6 +43,14 @@ export default function PlaylistPage({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [uploading, setUploading] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    const canonical = playlistPath(data).replace("/playlist/", "");
+    if (!editing && playlistParam !== canonical) {
+      router.replace(`/playlist/${canonical}`);
+    }
+  }, [data, editing, playlistParam, router]);
 
   async function onCoverPick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -112,7 +122,7 @@ export default function PlaylistPage({
 
   return (
     <div className="animate-in">
-      <header className="flex items-end gap-6 mb-6">
+      <header className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6 mb-6">
         <div className="relative w-40 h-40 flex-shrink-0 group">
           {data.cover_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -148,7 +158,7 @@ export default function PlaylistPage({
             </>
           )}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 max-w-full">
           <p className="text-xs uppercase tracking-wide text-muted">Playlist</p>
           <h1 className="text-4xl font-extrabold mb-2 truncate">{data.name}</h1>
           {data.description && <p className="text-muted">{data.description}</p>}
@@ -159,12 +169,12 @@ export default function PlaylistPage({
         </div>
       </header>
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <button
           type="button"
-          onClick={() => playQueue(tracks, 0)}
+          onClick={() => playQueue(tracks, 0, data.name)}
           disabled={tracks.length === 0}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
+          className="inline-flex min-w-0 items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
         >
           <PlayIcon /> Alle abspielen
         </button>
@@ -279,7 +289,7 @@ export default function PlaylistPage({
               key={track.id}
               track={track}
               index={i}
-              onPlay={() => playQueue(tracks, i)}
+              onPlay={() => playQueue(tracks, i, data.name)}
               onRemove={
                 isOwner
                   ? () =>

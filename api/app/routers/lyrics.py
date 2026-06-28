@@ -17,7 +17,7 @@ from ..services import groq, storage
 
 router = APIRouter(prefix="/api", tags=["lyrics"])
 
-_UA = {"User-Agent": "Spotifrei/1.0 (https://github.com/LoggeL/spotifrei)"}
+_UA = {"User-Agent": "SpotiFrei/1.0 (https://github.com/LoggeL/spotifrei)"}
 _LRC_TS = re.compile(r"\[(\d+):(\d{1,2}(?:\.\d+)?)\]")
 
 

@@ -4,6 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { playlistPath } from "@/lib/slugs";
 import ArtistCard from "@/components/ArtistCard";
 import Avatar from "@/components/Avatar";
 import { DetailHeaderSkeleton } from "@/components/Skeleton";
@@ -47,7 +48,7 @@ export default function UserProfilePage({
             {playlists.map((pl) => (
               <Link
                 key={String(pl.id)}
-                href={`/playlist/${pl.id}`}
+                href={playlistPath(pl)}
                 className="group block bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift"
               >
                 {pl.cover_url ? (

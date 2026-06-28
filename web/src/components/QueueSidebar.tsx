@@ -33,6 +33,8 @@ export default function QueueSidebar() {
   const open = usePlayerStore((s) => s.queueOpen);
   const setOpen = usePlayerStore((s) => s.setQueueOpen);
   const queue = usePlayerStore((s) => s.queue);
+  const origins = usePlayerStore((s) => s.origins);
+  const queueContext = usePlayerStore((s) => s.queueContext);
   const index = usePlayerStore((s) => s.index);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const cur = usePlayerStore(currentTrack);
@@ -61,12 +63,93 @@ export default function QueueSidebar() {
   const upcoming = queue
     .map((t, i) => ({ t, i }))
     .filter(({ i }) => i > index);
+  const userUpcoming = upcoming.filter(({ i }) => origins[i] === "user");
+  const contextUpcoming = upcoming.filter(({ i }) => origins[i] !== "user");
+
+  const renderItem = ({ t, i }: { t: (typeof upcoming)[number]["t"]; i: number }) => {
+    const isDragging = dragIndex === i;
+    const isOver = overIndex === i && dragIndex !== null && dragIndex !== i;
+    return (
+      <li
+        key={`${t.id}-${i}`}
+        draggable
+        onDragStart={(e) => {
+          setDragIndex(i);
+          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.setData("text/plain", String(i));
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (overIndex !== i) setOverIndex(i);
+        }}
+        onDragLeave={() => {
+          if (overIndex === i) setOverIndex(null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (dragIndex !== null && dragIndex !== i) {
+            reorderQueue(dragIndex, i);
+          }
+          setDragIndex(null);
+          setOverIndex(null);
+        }}
+        onDragEnd={() => {
+          setDragIndex(null);
+          setOverIndex(null);
+        }}
+        className={`group flex items-center gap-2 px-2 py-2 rounded-xl transition hover:bg-white/[0.06] ${
+          isOver ? "bg-panel-hover ring-1 ring-accent" : ""
+        } ${isDragging ? "opacity-50" : ""}`}
+      >
+        <TrackContext track={t} className="contents">
+          <span
+            aria-hidden="true"
+            className="text-muted cursor-grab active:cursor-grabbing flex-shrink-0 opacity-0 group-hover:opacity-100 transition"
+          >
+            <GripIcon />
+          </span>
+          <button
+            type="button"
+            onClick={() => jumpTo(i)}
+            className="flex items-center gap-3 min-w-0 flex-1 text-left"
+          >
+            {t.cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={t.cover}
+                alt=""
+                className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-lg gradient-violet opacity-80 flex-shrink-0" />
+            )}
+            <div className="min-w-0">
+              <div className="truncate text-sm">{t.title}</div>
+              <div className="truncate text-xs text-muted">{t.artist}</div>
+            </div>
+          </button>
+          <span className="text-xs text-muted tabular-nums">
+            {formatTime(t.duration_sec)}
+          </span>
+          <button
+            type="button"
+            onClick={() => removeFromQueue(i)}
+            aria-label="Entfernen"
+            className="text-muted hover:text-foreground opacity-0 group-hover:opacity-100 transition px-1"
+          >
+            ✕
+          </button>
+        </TrackContext>
+      </li>
+    );
+  };
 
   return (
     <aside
       className={`${
         open ? "fixed inset-0 z-[70] flex" : "hidden"
-      } flex-col bg-background md:static md:z-auto md:flex md:w-[22rem] md:flex-shrink-0 md:m-3 md:ml-0 md:mb-0 md:rounded-[1.35rem] md:bg-white/[0.045] md:backdrop-blur-xl border-l border-white/10 md:border md:shadow-2xl md:shadow-black/25 overflow-hidden`}
+      } flex-col bg-background md:static md:z-auto md:flex md:w-[22rem] md:flex-shrink-0 md:m-3 md:ml-4 xl:ml-5 md:mb-0 md:rounded-[1.35rem] md:bg-white/[0.045] md:backdrop-blur-xl border-l border-white/10 md:border md:shadow-2xl md:shadow-black/25 overflow-hidden`}
     >
       <div className="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0 border-b border-white/5">
         <h2 className="text-lg font-bold">Warteschlange</h2>
@@ -148,91 +231,23 @@ export default function QueueSidebar() {
           </>
         )}
 
-        {upcoming.length > 0 && (
-          <p className="text-xs uppercase tracking-wide text-muted px-2 mb-1">
-            Als Nächstes
-          </p>
+        {userUpcoming.length > 0 && (
+          <>
+            <p className="text-xs uppercase tracking-wide text-muted px-2 mb-1">
+              Als Nächstes in der Warteschlange
+            </p>
+            <ul className="flex flex-col mb-4">{userUpcoming.map(renderItem)}</ul>
+          </>
         )}
-        <ul className="flex flex-col">
-          {upcoming.map(({ t, i }) => {
-            const isDragging = dragIndex === i;
-            const isOver = overIndex === i && dragIndex !== null && dragIndex !== i;
-            return (
-              <li
-                key={`${t.id}-${i}`}
-                draggable
-                onDragStart={(e) => {
-                  setDragIndex(i);
-                  e.dataTransfer.effectAllowed = "move";
-                  e.dataTransfer.setData("text/plain", String(i));
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (overIndex !== i) setOverIndex(i);
-                }}
-                onDragLeave={() => {
-                  if (overIndex === i) setOverIndex(null);
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (dragIndex !== null && dragIndex !== i) {
-                    reorderQueue(dragIndex, i);
-                  }
-                  setDragIndex(null);
-                  setOverIndex(null);
-                }}
-                onDragEnd={() => {
-                  setDragIndex(null);
-                  setOverIndex(null);
-                }}
-                className={`group flex items-center gap-2 px-2 py-2 rounded-xl transition hover:bg-white/[0.06] ${
-                  isOver ? "bg-panel-hover ring-1 ring-accent" : ""
-                } ${isDragging ? "opacity-50" : ""}`}
-              >
-                <TrackContext track={t} className="contents">
-                <span
-                  aria-hidden="true"
-                  className="text-muted cursor-grab active:cursor-grabbing flex-shrink-0 opacity-0 group-hover:opacity-100 transition"
-                >
-                  <GripIcon />
-                </span>
-                <button
-                  type="button"
-                  onClick={() => jumpTo(i)}
-                  className="flex items-center gap-3 min-w-0 flex-1 text-left"
-                >
-                  {t.cover ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={t.cover}
-                      alt=""
-                      className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-lg gradient-violet opacity-80 flex-shrink-0" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="truncate text-sm">{t.title}</div>
-                    <div className="truncate text-xs text-muted">{t.artist}</div>
-                  </div>
-                </button>
-                <span className="text-xs text-muted tabular-nums">
-                  {formatTime(t.duration_sec)}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => removeFromQueue(i)}
-                  aria-label="Entfernen"
-                  className="text-muted hover:text-foreground opacity-0 group-hover:opacity-100 transition px-1"
-                >
-                  ✕
-                </button>
-                </TrackContext>
-              </li>
-            );
-          })}
-        </ul>
+
+        {contextUpcoming.length > 0 && (
+          <>
+            <p className="text-xs uppercase tracking-wide text-muted px-2 mb-1">
+              {queueContext ? `Als Nächstes: ${queueContext}` : "Als Nächstes"}
+            </p>
+            <ul className="flex flex-col">{contextUpcoming.map(renderItem)}</ul>
+          </>
+        )}
       </div>
     </aside>
   );

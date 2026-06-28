@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { playlistPath } from "@/lib/slugs";
 import { usePlayerStore } from "@/store/player";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { useMe } from "@/hooks/useAuth";
@@ -90,7 +91,7 @@ export default function HomePage() {
         <Logo size={22} className="drop-glow" />
         <span className="text-base font-extrabold tracking-tight">
           <span className="text-foreground">Spoti</span>
-          <span className="text-accent">frei</span>
+          <span className="text-accent">Frei</span>
         </span>
       </div>
 
@@ -104,7 +105,7 @@ export default function HomePage() {
       </div>
 
       {/* Chip leiste */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar -mt-4 md:-mt-3">
+      <div className="flex flex-wrap gap-2 -mt-4 md:-mt-3">
         {CHIPS.map((c) => {
           const active = c.key === chip;
           return (
@@ -238,7 +239,7 @@ export default function HomePage() {
                 {(community.data ?? []).map((p) => (
                   <Link
                     key={String(p.id)}
-                    href={`/playlist/${p.id}`}
+                    href={playlistPath(p)}
                     className="block bg-panel/70 border border-white/5 hover:bg-panel-hover rounded-2xl p-4 hover-lift transition"
                   >
                     {p.cover_url ? (

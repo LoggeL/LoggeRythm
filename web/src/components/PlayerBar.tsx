@@ -103,6 +103,15 @@ export default function PlayerBar() {
     });
   }, [trackId, track, me?.is_approved]);
 
+  // Reflect the current song in the browser tab title.
+  useEffect(() => {
+    const base = "SpotiFrei";
+    document.title = track ? `${track.title} • ${track.artist}` : base;
+    return () => {
+      document.title = base;
+    };
+  }, [trackId, track]);
+
   // Endless radio: when near the end, pull the next ~5 similar songs
   // seeded by the current track (so the station keeps evolving).
   useEffect(() => {

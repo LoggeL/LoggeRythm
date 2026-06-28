@@ -6,7 +6,8 @@ import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { toast } from "@/store/toast";
-import { PlayIcon, PauseIcon, PlusIcon } from "@/components/icons";
+import { PlayIcon, PauseIcon, PlusIcon, DownloadedIcon } from "@/components/icons";
+import { useTrackDownloaded } from "@/store/downloads";
 import LikeButton from "@/components/LikeButton";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
@@ -36,6 +37,7 @@ export default function TrackRow({
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
+  const downloaded = useTrackDownloaded(track.id);
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuItems = useTrackMenuItems(track, onRemove);
@@ -104,17 +106,27 @@ export default function TrackRow({
           >
             {track.title}
           </div>
-          <div className="truncate text-sm text-muted">
-            {track.artist_id ? (
-              <Link
-                href={`/artist/${track.artist_id}`}
-                className="hover:underline hover:text-foreground"
+          <div className="flex items-center gap-1.5 text-sm text-muted min-w-0">
+            {downloaded && (
+              <span
+                title="Heruntergeladen"
+                className="inline-flex flex-shrink-0 text-green-500"
               >
-                {track.artist}
-              </Link>
-            ) : (
-              track.artist
+                <DownloadedIcon aria-label="Heruntergeladen" />
+              </span>
             )}
+            <span className="truncate">
+              {track.artist_id ? (
+                <Link
+                  href={`/artist/${track.artist_id}`}
+                  className="hover:underline hover:text-foreground"
+                >
+                  {track.artist}
+                </Link>
+              ) : (
+                track.artist
+              )}
+            </span>
           </div>
         </div>
       </div>

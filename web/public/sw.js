@@ -1,4 +1,4 @@
-/* Spotifrei service worker — conservative offline support.
+/* SpotiFrei service worker — conservative offline support.
  *
  * Online behaviour is unchanged (network-first for navigations + API, so users
  * always get fresh content). Offline support kicks in only for:

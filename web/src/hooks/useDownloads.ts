@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { streamUrl } from "@/lib/api";
+import { refreshDownloadedTracks } from "@/store/downloads";
 import type { Track } from "@/types";
 
 const AUDIO_CACHE = "sf-audio";
@@ -59,6 +60,7 @@ export function useDownloads() {
     }
     setDownloads({ ...downloads, [id]: { name, total: tracks.length } });
     setProgress(null);
+    void refreshDownloadedTracks();
   }
 
   async function removeDownload(id: string, tracks: Track[]) {
@@ -75,6 +77,7 @@ export function useDownloads() {
     const next = { ...downloads };
     delete next[id];
     setDownloads(next);
+    void refreshDownloadedTracks();
   }
 
   return {

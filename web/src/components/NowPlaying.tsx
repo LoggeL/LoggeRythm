@@ -7,8 +7,7 @@ import { usePlayerStore, currentTrack } from "@/store/player";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
-import Logo from "@/components/Logo";
-import Visualizer from "@/components/Visualizer";
+import Visualizer, { RadialVisualizer } from "@/components/Visualizer";
 import EqualizerBars from "@/components/EqualizerBars";
 import {
   PlayIcon,
@@ -76,13 +75,10 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         >
           <ChevronDownIcon width={24} height={24} />
         </button>
-        <div className="flex items-center gap-2">
-          <Logo size={22} className="drop-glow" />
-          <span className="text-base font-extrabold tracking-tight">
-            <span className="text-foreground">Spoti</span>
-            <span className="text-accent">frei</span>
-          </span>
-        </div>
+        <span className="text-base font-extrabold tracking-tight">
+          <span className="text-foreground">Spoti</span>
+          <span className="text-accent">Frei</span>
+        </span>
         <span className="w-10" />
       </div>
 
@@ -289,6 +285,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
 
 function NowPlayingQueue() {
   const queue = usePlayerStore((s) => s.queue);
+  const origins = usePlayerStore((s) => s.origins);
+  const queueContext = usePlayerStore((s) => s.queueContext);
   const index = usePlayerStore((s) => s.index);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const cur = usePlayerStore(currentTrack);
@@ -298,6 +296,36 @@ function NowPlayingQueue() {
   const upcoming = queue
     .map((t, i) => ({ t, i }))
     .filter(({ i }) => i > index);
+  const userUpcoming = upcoming.filter(({ i }) => origins[i] === "user");
+  const contextUpcoming = upcoming.filter(({ i }) => origins[i] !== "user");
+
+  const renderItem = ({ t, i }: { t: (typeof upcoming)[number]["t"]; i: number }) => (
+    <li key={`${t.id}-${i}`}>
+      <button
+        type="button"
+        onClick={() => jumpTo(i)}
+        className="group flex items-center gap-3 w-full px-2 py-2 rounded-lg text-left transition hover:bg-white/5"
+      >
+        {t.cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={t.cover}
+            alt=""
+            className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+          />
+        ) : (
+          <div className="w-10 h-10 rounded-lg gradient-violet opacity-80 flex-shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm">{t.title}</div>
+          <div className="truncate text-xs text-muted">{t.artist}</div>
+        </div>
+        <span className="text-xs text-muted tabular-nums">
+          {formatTime(t.duration_sec)}
+        </span>
+      </button>
+    </li>
+  );
 
   return (
     <div className="hidden lg:flex flex-col min-h-0">
@@ -345,40 +373,23 @@ function NowPlayingQueue() {
           </>
         )}
 
-        {upcoming.length > 0 && (
-          <p className="text-[11px] uppercase tracking-wide text-muted mb-1">
-            Als Nächstes
-          </p>
+        {userUpcoming.length > 0 && (
+          <>
+            <p className="text-[11px] uppercase tracking-wide text-muted mb-1">
+              Als Nächstes in der Warteschlange
+            </p>
+            <ul className="flex flex-col mb-4">{userUpcoming.map(renderItem)}</ul>
+          </>
         )}
-        <ul className="flex flex-col">
-          {upcoming.map(({ t, i }) => (
-            <li key={`${t.id}-${i}`}>
-              <button
-                type="button"
-                onClick={() => jumpTo(i)}
-                className="group flex items-center gap-3 w-full px-2 py-2 rounded-lg text-left transition hover:bg-white/5"
-              >
-                {t.cover ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={t.cover}
-                    alt=""
-                    className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-lg gradient-violet opacity-80 flex-shrink-0" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{t.title}</div>
-                  <div className="truncate text-xs text-muted">{t.artist}</div>
-                </div>
-                <span className="text-xs text-muted tabular-nums">
-                  {formatTime(t.duration_sec)}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+
+        {contextUpcoming.length > 0 && (
+          <>
+            <p className="text-[11px] uppercase tracking-wide text-muted mb-1">
+              {queueContext ? `Als Nächstes: ${queueContext}` : "Als Nächstes"}
+            </p>
+            <ul className="flex flex-col">{contextUpcoming.map(renderItem)}</ul>
+          </>
+        )}
 
         {!cur && upcoming.length === 0 && (
           <p className="text-sm text-muted px-2 py-4">
@@ -455,33 +466,31 @@ function EpicPlayingPanel({
               aria-hidden
               className="absolute inset-x-4 top-1/2 h-48 -translate-y-1/2 rounded-full bg-accent/20 blur-3xl"
             />
-            <Visualizer
-              isPlaying={isPlaying}
-              className="absolute inset-x-6 bottom-[12%] h-44 opacity-90"
-            />
-            <Visualizer
-              isPlaying={isPlaying}
-              className="absolute inset-x-12 top-[10%] h-24 rotate-180 opacity-35"
-            />
-            <div className="relative flex aspect-square w-[min(48vh,22rem)] items-center justify-center rounded-full border border-white/10 bg-black/30 p-4 shadow-[0_0_80px_rgba(124,92,255,0.35)]">
-              <div
-                aria-hidden
-                className="absolute inset-3 rounded-full border border-accent/25"
+            <div className="relative grid aspect-square w-[min(36vh,32rem)] place-items-center">
+              <RadialVisualizer
+                isPlaying={isPlaying}
+                className="pointer-events-none absolute inset-0 z-0 h-full w-full"
               />
-              <div
-                aria-hidden
-                className="absolute inset-8 rounded-full bg-accent/15 blur-2xl"
-              />
-              {track.cover ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={track.cover}
-                  alt={track.album}
-                  className="relative z-10 h-full w-full rounded-full object-cover shadow-2xl"
+              <div className="relative flex aspect-square w-[82%] items-center justify-center rounded-full border border-white/10 bg-black/30 p-[8.5%] shadow-[0_0_80px_rgba(124,92,255,0.35)]">
+                <div
+                  aria-hidden
+                  className="absolute inset-[8%] z-10 rounded-full border border-accent/25"
                 />
-              ) : (
-                <div className="relative z-10 h-full w-full rounded-full gradient-violet opacity-90 shadow-2xl" />
-              )}
+                <div
+                  aria-hidden
+                  className="absolute inset-[18%] z-0 rounded-full bg-accent/15 blur-2xl"
+                />
+                {track.cover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={track.cover}
+                    alt={track.album}
+                    className="relative z-20 h-full w-full rounded-full object-cover shadow-2xl"
+                  />
+                ) : (
+                  <div className="relative z-20 h-full w-full rounded-full gradient-violet opacity-90 shadow-2xl" />
+                )}
+              </div>
             </div>
           </div>
 
@@ -699,13 +708,13 @@ function LyricsPanel({
   });
 
   const lines = data?.lines ?? [];
-  const synced = !!data?.synced;
   const isAiGenerated = !!data?.ai_generated;
+  const hasTimedLines = lines.some((line) => typeof line.t === "number");
 
   // Active line = last line whose timestamp has passed.
   let active = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (!synced) break;
+    if (!hasTimedLines) break;
     if (lines[i].t <= currentTime + 0.15) active = i;
     else break;
   }
@@ -741,8 +750,8 @@ function LyricsPanel({
                 key={i}
                 type="button"
                 ref={isActive ? activeRef : undefined}
-                onClick={() => synced && onSeek(line.t)}
-                disabled={!synced}
+                onClick={() => hasTimedLines && onSeek(line.t)}
+                disabled={!hasTimedLines}
                 className={`block w-full text-left py-2 text-2xl sm:text-3xl font-bold leading-snug transition-all duration-300 ${
                   isActive
                     ? "text-foreground opacity-100"

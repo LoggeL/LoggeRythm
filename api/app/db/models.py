@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for Spotifrei."""
+"""SQLAlchemy ORM models for SpotiFrei."""
 from datetime import datetime, timezone
 
 from sqlalchemy import (

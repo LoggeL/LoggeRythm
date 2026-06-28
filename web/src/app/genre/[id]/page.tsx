@@ -63,7 +63,7 @@ export default function GenrePage({
             <h2 className="text-2xl font-bold">Top-Titel</h2>
             <button
               type="button"
-              onClick={() => playQueue(tracks, 0)}
+              onClick={() => playQueue(tracks, 0, data.name)}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition press"
             >
               <PlayIcon width={16} height={16} /> Abspielen
@@ -75,7 +75,7 @@ export default function GenrePage({
                 key={track.id}
                 track={track}
                 index={i}
-                onPlay={() => playQueue(tracks, i)}
+                onPlay={() => playQueue(tracks, i, data.name)}
               />
             ))}
           </div>

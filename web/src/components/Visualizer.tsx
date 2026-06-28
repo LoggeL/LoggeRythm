@@ -153,6 +153,147 @@ export default function Visualizer({
   );
 }
 
+export function RadialVisualizer({
+  isPlaying,
+  className = "",
+}: {
+  isPlaying: boolean;
+  className?: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const playingRef = useRef(isPlaying);
+  useEffect(() => {
+    playingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx2d = canvas.getContext("2d");
+    if (!ctx2d) return;
+    const cv = canvas;
+    const ctx = ctx2d;
+
+    const reduced =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    const BARS = 112;
+    const heights = new Float32Array(BARS);
+    let freq: Uint8Array<ArrayBuffer> | null = null;
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
+    let raf = 0;
+    let t = 0;
+
+    function resize() {
+      const rect = cv.getBoundingClientRect();
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = Math.max(1, Math.round(rect.width));
+      height = Math.max(1, Math.round(rect.height));
+      cv.width = width * dpr;
+      cv.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      t += 1;
+
+      const analyser = getAnalyser();
+      const playing = playingRef.current;
+      if (analyser && playing) {
+        if (!freq || freq.length !== analyser.frequencyBinCount) {
+          freq = new Uint8Array(analyser.frequencyBinCount);
+        }
+        analyser.getByteFrequencyData(freq);
+      }
+
+      for (let i = 0; i < BARS; i++) {
+        let target: number;
+        if (analyser && playing && freq) {
+          const frac = i / BARS;
+          const bin = Math.floor(Math.pow(frac, 1.25) * freq.length * 0.82);
+          target = freq[bin] / 255;
+        } else if (reduced) {
+          target = 0.08;
+        } else {
+          const phase = t * 0.035 + i * 0.22;
+          target = 0.08 + 0.055 * (0.5 + 0.5 * Math.sin(phase));
+        }
+        const h = heights[i];
+        heights[i] = target > h ? target * 0.58 + h * 0.42 : target * 0.18 + h * 0.82;
+      }
+      draw();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, width, height);
+      const size = Math.min(width, height);
+      const cx = width / 2;
+      const cy = height / 2;
+      const inner = size * 0.35;
+      const maxBar = size * 0.16;
+      const minBar = Math.max(3, size * 0.012);
+      const barWidth = Math.max(2, (Math.PI * 2 * inner) / BARS * 0.38);
+
+      const grad = ctx.createLinearGradient(cx - size / 2, cy, cx + size / 2, cy);
+      grad.addColorStop(0, "#4d3bd6");
+      grad.addColorStop(0.5, "#8b5cff");
+      grad.addColorStop(1, "#ff6ec7");
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = barWidth;
+      ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(124, 92, 255, 0.7)";
+      ctx.shadowBlur = 16;
+
+      for (let i = 0; i < BARS; i++) {
+        const angle = (i / BARS) * Math.PI * 2 - Math.PI / 2;
+        const length = minBar + heights[i] * maxBar;
+        const r1 = inner;
+        const r2 = inner + length;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle) * r1, cy + Math.sin(angle) * r1);
+        ctx.lineTo(cx + Math.cos(angle) * r2, cy + Math.sin(angle) * r2);
+        ctx.stroke();
+      }
+
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(cx, cy, inner - size * 0.035, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(185, 168, 255, 0.16)";
+      ctx.lineWidth = Math.max(1, size * 0.006);
+      ctx.stroke();
+    }
+
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(cv);
+
+    if (reduced) {
+      for (let i = 0; i < BARS; i++) heights[i] = 0.08;
+      draw();
+    } else {
+      raf = requestAnimationFrame(frame);
+    }
+
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className={className}
+      aria-hidden
+      role="presentation"
+    />
+  );
+}
+
 /** Rounded rectangle with rounded top corners only (flat base on the floor). */
 function roundedTopRect(
   ctx: CanvasRenderingContext2D,

@@ -66,7 +66,7 @@ export default function ArtistPage({
       <div className="flex items-center gap-3 mb-8">
         <button
           type="button"
-          onClick={() => playQueue(tracks, 0)}
+          onClick={() => playQueue(tracks, 0, data.name)}
           disabled={tracks.length === 0}
           className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
         >
@@ -99,7 +99,7 @@ export default function ArtistPage({
                 key={track.id}
                 track={track}
                 index={i}
-                onPlay={() => playQueue(tracks, i)}
+                onPlay={() => playQueue(tracks, i, data.name)}
               />
             ))}
           </div>

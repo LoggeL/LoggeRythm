@@ -1,0 +1,161 @@
+{
+  "routes": [
+    "/",
+    "/search",
+    "/library",
+    "/account",
+    "/import",
+    "/status",
+    "/stats",
+    "/playlist/7",
+    "/album/933561281",
+    "/genre/132"
+  ],
+  "widths": [
+    360,
+    390
+  ],
+  "results": [
+    {
+      "route": "/",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/search",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/search",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/library",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/library",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/account",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/account",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/import",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/import",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/status",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/status",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/stats",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/stats",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/playlist/7",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/playlist/7",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/album/933561281",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/album/933561281",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/genre/132",
+      "viewport": 360,
+      "scrollWidth": 360,
+      "overflow": 0,
+      "offenders": []
+    },
+    {
+      "route": "/genre/132",
+      "viewport": 390,
+      "scrollWidth": 390,
+      "overflow": 0,
+      "offenders": []
+    }
+  ],
+  "failures": []
+}

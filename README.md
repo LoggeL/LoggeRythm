@@ -1,6 +1,6 @@
-# Spotifrei
+# SpotiFrei
 
-Spotifrei is a self-hosted, private Spotify-style music app. It pairs a FastAPI backend with a Next.js frontend to deliver full-track playback, browsing, search, playlists, and social features in a polished web player. Audio is sourced from Deezer using an account ARL cookie and decrypted server-side, so it streams complete tracks rather than 30-second previews. **This is an explicitly private / demo project that lives in a legal grey area — it is not intended for public distribution or commercial use.**
+SpotiFrei is a self-hosted, private Spotify-style music app. It pairs a FastAPI backend with a Next.js frontend to deliver full-track playback, browsing, search, playlists, and social features in a polished web player. Audio is sourced from Deezer using an account ARL cookie and decrypted server-side, so it streams complete tracks rather than 30-second previews. **This is an explicitly private / demo project that lives in a legal grey area — it is not intended for public distribution or commercial use.**
 
 ## Architecture
 
@@ -81,4 +81,4 @@ The **first user to register becomes the admin** and is automatically approved. 
 
 ## Legal / Disclaimer
 
-Spotifrei is for **private, personal use only**. It streams audio via Deezer in a way that sits in a legal grey area with respect to Deezer's Terms of Service. Do not distribute it publicly, host it as a service, or use it commercially. You are responsible for ensuring your use complies with all applicable laws and the terms of any third-party services involved.
+SpotiFrei is for **private, personal use only**. It streams audio via Deezer in a way that sits in a legal grey area with respect to Deezer's Terms of Service. Do not distribute it publicly, host it as a service, or use it commercially. You are responsible for ensuring your use complies with all applicable laws and the terms of any third-party services involved.

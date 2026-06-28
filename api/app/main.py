@@ -1,4 +1,4 @@
-"""Spotifrei API — clean REST backend.
+"""SpotiFrei API — clean REST backend.
 
 Wires together browse/stream/auth/likes/playlists routers, the SQLAlchemy DB,
 cookie-based JWT auth and the Deezer adapter. The audio stream/Range logic
@@ -34,7 +34,7 @@ from .routers import (
 )
 from .services import deezer_client, storage
 
-app = FastAPI(title="Spotifrei API")
+app = FastAPI(title="SpotiFrei API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -191,7 +191,7 @@ def _startup() -> None:
     storage.reconcile()  # backfill DB rows for pre-existing files
     storage.cleanup_old()  # evict stale tracks on boot
     threading.Thread(target=_cleanup_loop, daemon=True).start()
-    print("Spotifrei API started: DB ready, Deezer session initialized.")
+    print("SpotiFrei API started: DB ready, Deezer session initialized.")
 
 
 @app.get("/")

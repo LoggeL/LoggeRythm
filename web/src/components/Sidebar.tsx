@@ -18,6 +18,7 @@ import {
 import Logo from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
 import Avatar from "@/components/Avatar";
+import { playlistPath } from "@/lib/slugs";
 
 function NavLink({
   href,
@@ -51,9 +52,12 @@ export default function Sidebar() {
   const { data: playlists } = usePlaylists(!!me);
   const createPlaylist = useCreatePlaylist();
   const deletePlaylist = useDeletePlaylist();
-  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(
-    null,
-  );
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    id: string;
+    path: string;
+  } | null>(null);
 
   async function handleCreate() {
     const name = window.prompt("Name der neuen Playlist?");
@@ -69,7 +73,7 @@ export default function Sidebar() {
           <Logo size={30} className="drop-glow" />
           <span className="text-xl font-extrabold tracking-tight">
             <span className="text-foreground">Spoti</span>
-            <span className="text-accent">frei</span>
+            <span className="text-accent">Frei</span>
           </span>
         </Link>
       </div>
@@ -111,11 +115,16 @@ export default function Sidebar() {
                     key={String(p.id)}
                     onContextMenu={(e) => {
                       e.preventDefault();
-                      setMenu({ x: e.clientX, y: e.clientY, id: String(p.id) });
+                      setMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        id: String(p.id),
+                        path: playlistPath(p),
+                      });
                     }}
                   >
                     <Link
-                      href={`/playlist/${p.id}`}
+                      href={playlistPath(p)}
                       className="flex items-center gap-3 px-2 py-2 rounded hover:bg-panel-hover transition"
                     >
                       {p.cover_url ? (
@@ -194,7 +203,7 @@ export default function Sidebar() {
           items={[
             {
               label: "Öffnen",
-              onClick: () => router.push(`/playlist/${menu.id}`),
+              onClick: () => router.push(menu.path),
             },
             {
               label: "Löschen",
