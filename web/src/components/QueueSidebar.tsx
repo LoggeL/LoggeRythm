@@ -9,6 +9,7 @@ import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon } from "@/components/icons";
 import TrackContext from "@/components/TrackContext";
 import EqualizerBars from "@/components/EqualizerBars";
+import CacheMarker from "@/components/CacheMarker";
 
 function GripIcon() {
   return (
@@ -126,7 +127,10 @@ export default function QueueSidebar() {
             )}
             <div className="min-w-0">
               <div className="truncate text-sm">{t.title}</div>
-              <div className="truncate text-xs text-muted">{t.artist}</div>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <CacheMarker trackId={t.id} />
+                <span className="truncate text-xs text-muted">{t.artist}</span>
+              </div>
             </div>
           </button>
           <span className="text-xs text-muted tabular-nums">
@@ -210,7 +214,10 @@ export default function QueueSidebar() {
                 <div className="truncate text-sm text-accent font-medium">
                   {cur.title}
                 </div>
-                <div className="truncate text-xs text-muted">{cur.artist}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <CacheMarker trackId={cur.id} />
+                  <span className="truncate text-xs text-muted">{cur.artist}</span>
+                </div>
               </div>
               {isPlaying && (
                 <EqualizerBars

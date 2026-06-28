@@ -6,8 +6,8 @@ import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { toast } from "@/store/toast";
-import { PlayIcon, PauseIcon, PlusIcon, DownloadedIcon } from "@/components/icons";
-import { useTrackCacheState } from "@/store/downloads";
+import { PlayIcon, PauseIcon, PlusIcon } from "@/components/icons";
+import CacheMarker from "@/components/CacheMarker";
 import LikeButton from "@/components/LikeButton";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
@@ -37,7 +37,6 @@ export default function TrackRow({
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
-  const cacheState = useTrackCacheState(track.id);
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuItems = useTrackMenuItems(track, onRemove);
@@ -107,26 +106,7 @@ export default function TrackRow({
             {track.title}
           </div>
           <div className="flex items-center gap-1.5 text-sm text-muted min-w-0">
-            {cacheState && (
-              <span
-                title={
-                  cacheState === "local"
-                    ? "Offline auf diesem Gerät verfügbar"
-                    : "Auf dem Server gespeichert"
-                }
-                className={`inline-flex flex-shrink-0 ${
-                  cacheState === "local" ? "text-green-500" : "text-muted"
-                }`}
-              >
-                <DownloadedIcon
-                  aria-label={
-                    cacheState === "local"
-                      ? "Offline verfügbar"
-                      : "Auf dem Server gespeichert"
-                  }
-                />
-              </span>
-            )}
+            <CacheMarker trackId={track.id} />
             <span className="truncate">
               {track.artist_id ? (
                 <Link

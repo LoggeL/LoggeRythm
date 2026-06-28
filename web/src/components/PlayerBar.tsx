@@ -11,6 +11,7 @@ import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
 import NowPlaying from "@/components/NowPlaying";
 import TrackContext from "@/components/TrackContext";
+import CacheMarker from "@/components/CacheMarker";
 import {
   PlayIcon,
   PauseIcon,
@@ -444,15 +445,22 @@ export default function PlayerBar() {
                   <div className="truncate text-xs text-muted">
                     <span className="text-red-400">{error}</span>
                   </div>
-                ) : track.artist_id ? (
-                  <Link
-                    href={`/artist/${track.artist_id}`}
-                    className="block truncate text-xs text-muted hover:underline hover:text-foreground"
-                  >
-                    {track.artist}
-                  </Link>
                 ) : (
-                  <div className="truncate text-xs text-muted">{track.artist}</div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <CacheMarker trackId={track.id} />
+                    {track.artist_id ? (
+                      <Link
+                        href={`/artist/${track.artist_id}`}
+                        className="truncate text-xs text-muted hover:underline hover:text-foreground"
+                      >
+                        {track.artist}
+                      </Link>
+                    ) : (
+                      <span className="truncate text-xs text-muted">
+                        {track.artist}
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="hidden sm:block">
