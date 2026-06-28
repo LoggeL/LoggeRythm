@@ -534,7 +534,7 @@ export default function AccountPage() {
   }
 
   return (
-    <div className="animate-in flex flex-col gap-8 max-w-3xl">
+    <div className="animate-in flex flex-col gap-8 w-full max-w-5xl mx-auto">
       <section className="bg-panel rounded-lg p-6 flex items-center gap-5">
         <input
           ref={fileInput}

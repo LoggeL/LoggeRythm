@@ -46,10 +46,10 @@ export default function Lyrics() {
   const a = active < 0 ? 0 : active;
 
   return (
-    <div className="animate-in flex-shrink-0 bg-gradient-to-t from-background/70 via-background/35 to-transparent backdrop-blur-md flex items-stretch transition-all duration-500">
-      <div className="flex-shrink-0 flex items-center px-4 sm:px-6">
+    <div className="animate-in flex-shrink-0 mx-3 mb-2 sm:mx-4 rounded-2xl border border-white/10 bg-background-elevated/95 backdrop-blur-xl shadow-2xl shadow-black/30 ring-1 ring-accent/10 flex items-stretch overflow-hidden transition-all duration-500">
+      <div className="flex-shrink-0 flex items-center px-4 sm:px-6 bg-accent/10 border-r border-white/10">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-accent">
             Songtext
           </span>
           {isAiGenerated && (
@@ -80,7 +80,7 @@ export default function Lyrics() {
                     opacity: activeLine ? 1 : dist === 1 ? 0.55 : 0.3,
                   }}
                   className={`flex items-center justify-center w-full truncate text-center text-sm leading-7 transition-all duration-300 ${
-                    activeLine ? "text-foreground font-semibold" : "text-muted"
+                    activeLine ? "text-accent font-semibold" : "text-muted"
                   }`}
                 >
                   {line.text || "♪"}

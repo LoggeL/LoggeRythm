@@ -2,6 +2,12 @@
 
 SpotiFrei is a self-hosted, private Spotify-style music app. It pairs a FastAPI backend with a Next.js frontend to deliver full-track playback, browsing, search, playlists, and social features in a polished web player. Audio is sourced from Deezer using an account ARL cookie and decrypted server-side, so it streams complete tracks rather than 30-second previews. **This is an explicitly private / demo project that lives in a legal grey area — it is not intended for public distribution or commercial use.**
 
+## Screenshots
+
+| Two-level queue | Fullscreen player | Offline markers |
+|---|---|---|
+| [![Two-level queue](docs/screenshots/01-queue.png)](docs/screenshots/01-queue.png) | [![Fullscreen player](docs/screenshots/02-now-playing.png)](docs/screenshots/02-now-playing.png) | [![Offline markers](docs/screenshots/03-downloads.png)](docs/screenshots/03-downloads.png) |
+
 ## Architecture
 
 - **`api/` — FastAPI backend**
@@ -18,12 +24,14 @@ SpotiFrei is a self-hosted, private Spotify-style music app. It pairs a FastAPI 
 
 - **Auth** — email/password registration and login with JWT cookie sessions. New accounts require admin approval, or can be auto-approved via single-use invite links.
 - **Browse & search** — search and browse tracks, albums, artists, playlists, and genres.
-- **Full playback** — complete-track streaming with a play queue, shuffle and repeat, OS-level media controls via the MediaSession API, and synced (time-stamped) lyrics from [lrclib.net](https://lrclib.net).
+- **Full playback** — complete-track streaming, shuffle and repeat, crossfade, a circular audio visualizer, OS-level media controls via the MediaSession API, the current song reflected in the browser tab title, and synced (time-stamped) lyrics from [lrclib.net](https://lrclib.net).
+- **Two-level queue** — manually queued songs ("add to queue" / "play next") form a primary queue that always plays before the secondary queue fed by the current playlist/album or song radio, Spotify-style.
 - **Playlists** — full CRUD, custom covers, and public/private visibility.
 - **Likes** — like/unlike tracks.
 - **Follows** — follow other users.
 - **Spotify-link import** — paste a Spotify track/album/playlist link; metadata is resolved via the Spotify API and matched to Deezer for playback.
 - **Song radio** — endless similar-track radio seeded from a song, using Last.fm similarity (falls back to Deezer's own artist mix when no Last.fm key is set).
+- **Offline downloads** — cache a playlist's tracks into the browser (Cache Storage + service worker) for offline playback; downloaded songs show a per-track marker in every track list.
 - **Party mode** — collaborative, shared listening queue accessed by a party code.
 - **Personal stats** — listening statistics per user.
 - **Profiles & avatars** — public user profiles with uploadable avatars.

@@ -66,7 +66,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black/40 text-foreground gap-2 p-2">
+    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black/40 text-foreground border-r border-white/10">
       {/* Logo */}
       <div className="px-4 py-4">
         <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
@@ -79,7 +79,7 @@ export default function Sidebar() {
       </div>
 
       {/* Primary nav */}
-      <nav className="bg-panel/70 border border-white/5 rounded-2xl p-2 flex flex-col gap-1">
+      <nav className="px-2 flex flex-col gap-1">
         <NavLink href="/" icon={<HomeIcon />} label="Start" />
         <NavLink href="/search" icon={<SearchIcon />} label="Suche" />
         <NavLink
@@ -90,7 +90,7 @@ export default function Sidebar() {
       </nav>
 
       {/* Library / playlists */}
-      <div className="bg-panel/70 border border-white/5 rounded-2xl p-2 flex-1 min-h-0 flex flex-col">
+      <div className="mt-3 px-2 flex-1 min-h-0 flex flex-col">
         <div className="flex items-center justify-between px-2 py-2">
           <span className="text-sm font-semibold text-muted">
             Deine Playlists
@@ -165,7 +165,7 @@ export default function Sidebar() {
       </div>
 
       {/* Auth footer */}
-      <div className="bg-panel/70 border border-white/5 rounded-2xl p-3">
+      <div className="border-t border-white/10 p-3 mt-1">
         {me ? (
           // Profile link only — logout lives in the profile/account view.
           <Link

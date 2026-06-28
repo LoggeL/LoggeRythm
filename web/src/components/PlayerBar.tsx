@@ -243,15 +243,29 @@ export default function PlayerBar() {
     volume,
   ]);
 
-  // Consume seek requests from the store.
+  // Consume seek requests from the store. If the media isn't ready yet (e.g. a
+  // crossfade just switched to a freshly-loaded track), defer the seek until
+  // metadata is available — otherwise the new track audibly restarts from 0.
   useEffect(() => {
     if (seekTo == null) return;
     const el = audioRef.current;
     if (el) {
-      try {
-        el.currentTime = seekTo;
-      } catch {
-        // ignore invalid seek
+      const target = seekTo;
+      const apply = () => {
+        try {
+          el.currentTime = target;
+        } catch {
+          // ignore invalid seek
+        }
+      };
+      if (el.readyState >= 1) {
+        apply();
+      } else {
+        const onReady = () => {
+          el.removeEventListener("loadedmetadata", onReady);
+          apply();
+        };
+        el.addEventListener("loadedmetadata", onReady);
       }
     }
     _clearSeek();

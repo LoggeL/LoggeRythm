@@ -157,6 +157,17 @@ export default function PlaylistPage({
               />
             </>
           )}
+          {tracks.length > 0 && (
+            <button
+              type="button"
+              onClick={() => playQueue(tracks, 0, data.name)}
+              aria-label="Alle abspielen"
+              title="Alle abspielen"
+              className="absolute -bottom-3 -right-3 z-10 grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-xl shadow-accent/30 transition hover:bg-accent-hover hover:scale-105 press"
+            >
+              <PlayIcon width={22} height={22} />
+            </button>
+          )}
         </div>
         <div className="min-w-0 max-w-full">
           <p className="text-xs uppercase tracking-wide text-muted">Playlist</p>
@@ -169,15 +180,7 @@ export default function PlaylistPage({
         </div>
       </header>
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => playQueue(tracks, 0, data.name)}
-          disabled={tracks.length === 0}
-          className="inline-flex min-w-0 items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
-        >
-          <PlayIcon /> Alle abspielen
-        </button>
+      <div className="mb-6 flex flex-wrap items-center gap-2">
         {supported && tracks.length > 0 && (
           progress && progress.id === id ? (
             <span className="text-sm text-muted">
@@ -190,7 +193,7 @@ export default function PlaylistPage({
                 removeDownload(id, tracks);
                 toast.info("Offline-Download entfernt.");
               }}
-              className="press px-4 py-2 rounded-full border border-accent text-accent text-sm font-medium"
+              className="press px-3 py-1.5 rounded-full border border-accent text-accent text-sm font-medium"
             >
               ✓ Offline
             </button>
@@ -201,7 +204,7 @@ export default function PlaylistPage({
                 downloadPlaylist(id, data.name, tracks);
                 toast.info("Download gestartet…");
               }}
-              className="press px-4 py-2 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
+              className="press px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
             >
               Herunterladen
             </button>
@@ -212,7 +215,7 @@ export default function PlaylistPage({
             <button
               type="button"
               onClick={toggleVisibility}
-              className="px-4 py-2 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
+              className="px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
             >
               {data.is_public ? "Öffentlich" : "Privat"}
             </button>

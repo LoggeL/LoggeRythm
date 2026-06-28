@@ -730,7 +730,7 @@ function LyricsPanel({
 
   return (
     <div className="min-h-0 mt-8 lg:mt-0 flex flex-col">
-      <span className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-widest text-muted mb-4">
+      <span className="hidden lg:flex flex-shrink-0 items-center text-[11px] font-semibold uppercase tracking-widest text-muted mb-4">
         Songtext
         {isAiGenerated && (
           <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
