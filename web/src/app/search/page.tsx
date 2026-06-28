@@ -125,42 +125,61 @@ export default function SearchPage() {
     <div onBlur={() => commitRecent(query)}>
       <h1 className="text-3xl font-extrabold mb-4">Suche</h1>
 
-      <div className="mb-5 max-w-xl">
-        <div className="flex items-center gap-2 bg-panel rounded-full px-4 py-2 focus-within:ring-2 focus-within:ring-accent">
-          <SearchIcon className="text-muted" />
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Titel, Künstler, Alben, Playlists…"
-            className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted"
-            autoFocus
-          />
-          {input && (
+      <div className="mb-5 max-w-2xl">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 flex items-center gap-2 bg-panel rounded-full px-4 py-2 focus-within:ring-2 focus-within:ring-accent">
+            <SearchIcon className="text-muted flex-shrink-0" />
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Titel, Künstler, Alben, Playlists…"
+              className="flex-1 min-w-0 bg-transparent outline-none text-foreground placeholder:text-muted"
+              autoFocus
+            />
+            {input && (
+              <button
+                type="button"
+                onClick={() => setInput("")}
+                aria-label="Leeren"
+                className="text-muted hover:text-foreground flex-shrink-0"
+              >
+                ✕
+              </button>
+            )}
+            <kbd className="hidden sm:block text-[10px] text-muted border border-white/15 rounded px-1.5 py-0.5 flex-shrink-0">
+              ⌘K
+            </kbd>
             <button
               type="button"
-              onClick={() => setInput("")}
-              aria-label="Leeren"
-              className="text-muted hover:text-foreground"
+              onClick={() => setShowFilters((v) => !v)}
+              aria-label="Filter"
+              aria-pressed={showFilters}
+              title="Filter"
+              className={`p-1 rounded-full transition flex-shrink-0 ${
+                showFilters || sort !== "relevance"
+                  ? "text-accent"
+                  : "text-muted hover:text-foreground"
+              }`}
             >
-              ✕
+              <FilterIcon />
             </button>
-          )}
-          <kbd className="hidden sm:block text-[10px] text-muted border border-white/15 rounded px-1.5 py-0.5">
-            ⌘K
-          </kbd>
+          </div>
+
+          {/* Spotify-Import — same height, to the right of the search bar */}
           <button
             type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            aria-label="Filter"
-            aria-pressed={showFilters}
-            title="Filter"
-            className={`p-1 rounded-full transition ${
-              showFilters || sort !== "relevance"
-                ? "text-accent"
-                : "text-muted hover:text-foreground"
+            onClick={() => setImporting((v) => !v)}
+            title={importing ? "Import schließen" : "Von Spotify importieren"}
+            className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition ${
+              importing
+                ? "bg-foreground text-background"
+                : "bg-panel text-muted hover:text-foreground"
             }`}
           >
-            <FilterIcon />
+            <ImportIcon width={16} height={16} className="flex-shrink-0" />
+            <span className="hidden sm:inline whitespace-nowrap">
+              {importing ? "Import schließen" : "Von Spotify importieren"}
+            </span>
           </button>
         </div>
 
@@ -183,20 +202,6 @@ export default function SearchPage() {
             ))}
           </div>
         )}
-
-        {/* Sub-button: Spotify-Import */}
-        <button
-          type="button"
-          onClick={() => setImporting((v) => !v)}
-          className={`mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition ${
-            importing
-              ? "bg-foreground text-background"
-              : "bg-panel text-muted hover:text-foreground"
-          }`}
-        >
-          <ImportIcon width={16} height={16} />
-          {importing ? "Import schließen" : "Von Spotify importieren"}
-        </button>
       </div>
 
       {importing && (
