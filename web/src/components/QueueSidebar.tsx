@@ -149,7 +149,7 @@ export default function QueueSidebar() {
     <aside
       className={`${
         open ? "fixed inset-0 z-[70] flex" : "hidden"
-      } flex-col bg-background md:static md:z-auto md:flex md:w-[22rem] md:flex-shrink-0 md:m-3 md:ml-4 xl:ml-5 md:mb-0 md:rounded-[1.35rem] md:bg-white/[0.045] md:backdrop-blur-xl border-l border-white/10 md:border md:shadow-2xl md:shadow-black/25 overflow-hidden`}
+      } flex-col bg-background md:static md:z-auto md:flex md:w-[22rem] md:flex-shrink-0 md:bg-black/40 border-l border-white/10 overflow-hidden`}
     >
       <div className="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0 border-b border-white/5">
         <h2 className="text-lg font-bold">Warteschlange</h2>
