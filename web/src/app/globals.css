@@ -1,25 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --background: #121212;
-  --foreground: #eeeeee;
-  --panel: #181818;
-  --panel-hover: #282828;
+  /* Deep near-black with a faint violet cast, matching the mockups. */
+  --background: #0b0b12;
+  --background-elevated: #101019;
+  --foreground: #f3f3f6;
+  --panel: #14141f;
+  --panel-hover: #1e1e2c;
   --accent: #7c5cff;
   --accent-hover: #9277ff;
-  --muted: #a0a0a0;
+  --accent-soft: #b9a8ff;
+  --muted: #a0a0ad;
+  /* Brand gradient stops (used by the gradient utilities below). */
+  --grad-violet-from: #8b5cff;
+  --grad-violet-to: #4d3bd6;
+  --grad-pink-from: #ff6ec7;
+  --grad-pink-to: #7c5cff;
+  --grad-aurora-from: #6d5bff;
+  --grad-aurora-to: #00c2c7;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
   --color-foreground: var(--foreground);
   --color-panel: var(--panel);
   --color-panel-hover: var(--panel-hover);
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
   --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.25rem;
 }
 
 html,
@@ -28,7 +42,14 @@ body {
 }
 
 body {
-  background: var(--background);
+  /* Subtle violet glow anchored top-left for depth, over the deep base. */
+  background-color: var(--background);
+  background-image: radial-gradient(
+    120% 80% at 15% -10%,
+    rgba(124, 92, 255, 0.12),
+    transparent 60%
+  );
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
@@ -88,7 +109,70 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
   outline-offset: 2px;
 }
 
-/* ============ ANIMATION FOUNDATION (solid colors, no gradients) ============ */
+/* ============ BRAND GRADIENTS & GLOW (mockup-aligned) ============ */
+@layer utilities {
+  .gradient-violet {
+    background-image: linear-gradient(
+      135deg,
+      var(--grad-violet-from),
+      var(--grad-violet-to)
+    );
+  }
+  .gradient-pink {
+    background-image: linear-gradient(
+      135deg,
+      var(--grad-pink-from),
+      var(--grad-pink-to)
+    );
+  }
+  .gradient-aurora {
+    background-image: linear-gradient(
+      135deg,
+      var(--grad-aurora-from),
+      var(--grad-aurora-to)
+    );
+  }
+  /* Themed collection gradients (mockup-style colourful cards). */
+  .gradient-teal {
+    background-image: linear-gradient(150deg, #1f9c8f, #0e3b52);
+  }
+  .gradient-orange {
+    background-image: linear-gradient(150deg, #ff8a3d, #b23a2e);
+  }
+  .gradient-blue {
+    background-image: linear-gradient(150deg, #3b82f6, #1e1b6e);
+  }
+  .gradient-red {
+    background-image: linear-gradient(150deg, #e0457b, #4a1042);
+  }
+  .gradient-green {
+    background-image: linear-gradient(150deg, #2bb673, #0c3b2e);
+  }
+  /* Soft scrim so text stays legible on top of imagery/gradients. */
+  .cover-scrim {
+    background-image: linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.75),
+      rgba(0, 0, 0, 0.15) 45%,
+      transparent 70%
+    );
+  }
+  /* Violet glow for the logo, active controls and hero cards. */
+  .glow {
+    box-shadow: 0 0 24px -2px rgba(124, 92, 255, 0.45);
+  }
+  .glow-sm {
+    box-shadow: 0 0 14px -2px rgba(124, 92, 255, 0.4);
+  }
+  .glow-strong {
+    box-shadow: 0 0 40px -4px rgba(124, 92, 255, 0.55);
+  }
+  .drop-glow {
+    filter: drop-shadow(0 0 10px rgba(124, 92, 255, 0.5));
+  }
+}
+
+/* ============ ANIMATION FOUNDATION ============ */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -116,6 +200,16 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
   }
   50% {
     opacity: 0.4;
+  }
+}
+/* Animated equalizer bars for the "now playing" indicator. */
+@keyframes eqBar {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
   }
 }
 
@@ -148,6 +242,11 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
   .press:active {
     transform: scale(0.95);
   }
+  /* equalizer indicator: apply to bars, stagger via inline animation-delay */
+  .eq-bar {
+    transform-origin: bottom;
+    animation: eqBar 0.9s ease-in-out infinite;
+  }
 }
 
 /* Hide horizontal scrollbar on shelves */
@@ -162,7 +261,8 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .animate-in,
   .pop-in,
-  .skeleton {
+  .skeleton,
+  .eq-bar {
     animation: none;
   }
   .hover-lift:hover {

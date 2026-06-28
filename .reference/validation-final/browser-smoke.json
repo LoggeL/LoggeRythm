@@ -1,0 +1,14 @@
+{
+  "crossfadeVisible": true,
+  "noNotifications": true,
+  "noPremiumText": true,
+  "queueVisibleDesktop": true,
+  "similarTabVisible": true,
+  "logCount": 1,
+  "logs": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+    }
+  ]
+}

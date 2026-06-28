@@ -85,6 +85,7 @@ interface PlayerState {
   addToQueue: (track: Track) => void;
   playNext: (track: Track) => void;
   removeFromQueue: (i: number) => void;
+  clearQueue: () => void;
   reorderQueue: (from: number, to: number) => void;
   jumpTo: (i: number) => void;
   toggle: () => void;
@@ -239,6 +240,19 @@ export const usePlayerStore = create<PlayerState>()(
           index: q.length ? newIndex : -1,
           isPlaying: q.length ? get().isPlaying : false,
         });
+      },
+
+      clearQueue: () => {
+        // Party queues are shared/host-managed — don't clear from a member view.
+        if (get().partyBridge) return;
+        const { queue, index } = get();
+        if (index >= 0 && index < queue.length) {
+          // Keep the current track so playback continues; drop the rest.
+          const cur = queue[index];
+          set({ queue: [cur], index: 0, originalQueue: [cur] });
+        } else {
+          set({ queue: [], index: -1, originalQueue: [], isPlaying: false });
+        }
       },
 
       reorderQueue: (from, to) => {

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Spotifrei equalizer mark: symmetric rounded bars + end dots, a sine wave
+       cut through the middle, vertical pink→violet gradient and a soft neon
+       glow. Transparent background. Geometry traced from Logo.png. -->
+  <defs>
+    <linearGradient id="sfGrad" gradientUnits="userSpaceOnUse" x1="128" y1="63" x2="128" y2="199">
+      <stop offset="0.02" stop-color="#fdcbfd"/>
+      <stop offset="0.20" stop-color="#ed85fc"/>
+      <stop offset="0.42" stop-color="#a644fc"/>
+      <stop offset="0.71" stop-color="#812bfb"/>
+      <stop offset="0.97" stop-color="#5e0fda"/>
+    </linearGradient>
+
+    <filter id="sfSoftGlow" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="sfTightGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.5"/>
+    </filter>
+
+    <!-- Sine wave carved out of the bars (black = removed). -->
+    <mask id="sfWave">
+      <rect width="256" height="256" fill="#ffffff"/>
+      <path d="M 75 131 C 95 126, 112 131, 128 135 C 144 139, 162 143, 183 140"
+            fill="none" stroke="#000000" stroke-width="10" stroke-linecap="round"/>
+    </mask>
+
+    <g id="sfMarks" fill="url(#sfGrad)" stroke="url(#sfGrad)"
+       stroke-width="15" stroke-linecap="round">
+      <circle cx="62"  cy="132" r="7.5" stroke="none"/>
+      <circle cx="194" cy="132" r="7.5" stroke="none"/>
+      <line x1="84"  y1="107" x2="84"  y2="159"/>
+      <line x1="106" y1="89"  x2="106" y2="174"/>
+      <line x1="128" y1="63"  x2="128" y2="199"/>
+      <line x1="150" y1="90"  x2="150" y2="174"/>
+      <line x1="172" y1="106" x2="172" y2="159"/>
+    </g>
+  </defs>
+
+  <g mask="url(#sfWave)">
+    <use href="#sfMarks" filter="url(#sfSoftGlow)" opacity="0.55"/>
+    <use href="#sfMarks" filter="url(#sfTightGlow)" opacity="0.9"/>
+    <use href="#sfMarks"/>
+  </g>
+</svg>

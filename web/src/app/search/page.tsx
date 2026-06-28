@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
@@ -10,7 +10,8 @@ import TrackRow from "@/components/TrackRow";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
 import { RowListSkeleton } from "@/components/Skeleton";
-import { SearchIcon } from "@/components/icons";
+import ImportPanel from "@/components/ImportPanel";
+import { SearchIcon, ImportIcon, FilterIcon } from "@/components/icons";
 import type { Track, ArtistSummary, PlaylistSearchResult } from "@/types";
 
 const EMPTY_STRINGS: string[] = [];
@@ -25,10 +26,31 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "playlist", label: "Playlists" },
 ];
 
+type Sort = "relevance" | "title" | "dur-asc" | "dur-desc";
+
+const SORTS: { key: Sort; label: string }[] = [
+  { key: "relevance", label: "Relevanz" },
+  { key: "title", label: "Titel A–Z" },
+  { key: "dur-asc", label: "Dauer ↑" },
+  { key: "dur-desc", label: "Dauer ↓" },
+];
+
+function sortTracks(list: Track[], sort: Sort): Track[] {
+  if (sort === "relevance") return list;
+  const c = [...list];
+  if (sort === "title") c.sort((a, b) => a.title.localeCompare(b.title));
+  else if (sort === "dur-asc") c.sort((a, b) => a.duration_sec - b.duration_sec);
+  else if (sort === "dur-desc") c.sort((a, b) => b.duration_sec - a.duration_sec);
+  return c;
+}
+
 export default function SearchPage() {
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("all");
+  const [sort, setSort] = useState<Sort>("relevance");
+  const [showFilters, setShowFilters] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [recent, setRecent] = useLocalJson<string[]>(
     "sf_recent_searches",
     EMPTY_STRINGS,
@@ -77,7 +99,10 @@ export default function SearchPage() {
     enabled: enabled && wantPlaylists,
   });
 
-  const tracks = tracksQ.data ?? [];
+  const tracks = useMemo(
+    () => sortTracks(tracksQ.data ?? [], sort),
+    [tracksQ.data, sort],
+  );
   const albums = albumsQ.data ?? [];
   const artists = artistsQ.data ?? [];
   const playlists = playlistsQ.data ?? [];
@@ -120,10 +145,67 @@ export default function SearchPage() {
               ✕
             </button>
           )}
+          <kbd className="hidden sm:block text-[10px] text-muted border border-white/15 rounded px-1.5 py-0.5">
+            ⌘K
+          </kbd>
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            aria-label="Filter"
+            aria-pressed={showFilters}
+            title="Filter"
+            className={`p-1 rounded-full transition ${
+              showFilters || sort !== "relevance"
+                ? "text-accent"
+                : "text-muted hover:text-foreground"
+            }`}
+          >
+            <FilterIcon />
+          </button>
         </div>
+
+        {showFilters && (
+          <div className="mt-2 flex items-center gap-2 flex-wrap bg-panel/70 border border-white/5 rounded-2xl px-3 py-2">
+            <span className="text-xs text-muted mr-1">Sortierung:</span>
+            {SORTS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setSort(s.key)}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition ${
+                  sort === s.key
+                    ? "bg-accent text-white"
+                    : "bg-panel-hover text-muted hover:text-foreground"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Sub-button: Spotify-Import */}
+        <button
+          type="button"
+          onClick={() => setImporting((v) => !v)}
+          className={`mt-2 inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition ${
+            importing
+              ? "bg-foreground text-background"
+              : "bg-panel text-muted hover:text-foreground"
+          }`}
+        >
+          <ImportIcon width={16} height={16} />
+          {importing ? "Import schließen" : "Von Spotify importieren"}
+        </button>
       </div>
 
-      {enabled && (
+      {importing && (
+        <div className="mb-8">
+          <ImportPanel />
+        </div>
+      )}
+
+      {!importing && enabled && (
         <div className="flex gap-2 mb-6 flex-wrap">
           {TABS.map((t) => (
             <button
@@ -142,6 +224,8 @@ export default function SearchPage() {
         </div>
       )}
 
+      {!importing && (
+        <>
       {!enabled && (
         <div>
           {recent.length > 0 ? (
@@ -246,17 +330,17 @@ export default function SearchPage() {
                     const pl = await api.deezerPlaylist(String(p.id));
                     usePlayerStore.getState().playQueue(pl.tracks, 0);
                   }}
-                  className="bg-panel rounded-lg p-4 cursor-pointer hover-lift transition"
+                  className="bg-panel/70 border border-white/5 rounded-2xl p-4 cursor-pointer hover-lift transition"
                 >
                   {p.cover ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={p.cover}
                       alt={p.title}
-                      className="w-full aspect-square object-cover rounded-md shadow-lg mb-3"
+                      className="w-full aspect-square object-cover rounded-xl shadow-lg mb-3"
                     />
                   ) : (
-                    <div className="w-full aspect-square rounded-md bg-[#333] mb-3" />
+                    <div className="w-full aspect-square rounded-xl gradient-aurora opacity-80 mb-3" />
                   )}
                   <div className="truncate font-semibold">{p.title}</div>
                   <div className="truncate text-sm text-muted">
@@ -266,6 +350,8 @@ export default function SearchPage() {
               ))}
           </div>
         </section>
+      )}
+        </>
       )}
     </div>
   );

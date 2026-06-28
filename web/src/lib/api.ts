@@ -11,22 +11,29 @@ import type {
   PlaylistSearchResult,
   Genre,
   GenreDetail,
+  HomeShelf,
   ResolveResult,
   PartyState,
   StorageInfo,
   InviteInfo,
+  SystemStatus,
   DeezerPlaylistDetail,
   PublicProfile,
   UserStats,
+  PlaybackSettings,
+  LyricsResponse,
 } from "@/types";
 
 const BASE = "/api";
 
 class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Full parsed error body from the server (may carry error_type/traceback). */
+  body?: unknown;
+  constructor(status: number, message: string, body?: unknown) {
     super(message);
     this.status = status;
+    this.body = body;
     this.name = "ApiError";
   }
 }
@@ -48,14 +55,33 @@ async function req<T>(
 
   if (!res.ok) {
     let message = res.statusText;
+    let body: unknown;
     try {
       const data = await res.json();
+      body = data;
       if (data && typeof data.detail === "string") message = data.detail;
       else if (data && typeof data.message === "string") message = data.message;
     } catch {
       // ignore non-json error bodies
     }
-    throw new ApiError(res.status, message || `Request failed (${res.status})`);
+    // Surface server-side stack traces (sent in dev) to the browser console so
+    // they are not lost — the toast/UI still shows the concise message.
+    if (
+      body &&
+      typeof body === "object" &&
+      "traceback" in body &&
+      Array.isArray((body as { traceback: unknown }).traceback)
+    ) {
+      console.error(
+        `API ${res.status} ${path}\n` +
+          (body as { traceback: string[] }).traceback.join("\n"),
+      );
+    }
+    throw new ApiError(
+      res.status,
+      message || `Request failed (${res.status})`,
+      body,
+    );
   }
 
   if (res.status === 204) return undefined as T;
@@ -74,6 +100,11 @@ export const api = {
   searchPlaylists: (q: string) =>
     req<PlaylistSearchResult[]>(`/search/playlist?q=${encodeURIComponent(q)}`),
   charts: () => req<Track[]>(`/charts`),
+  // Home / discovery shelves
+  homeMixes: () => req<HomeShelf[]>(`/home/mixes`),
+  homeChartsCollections: () => req<HomeShelf[]>(`/home/charts-collections`),
+  homeMood: (tag: string) =>
+    req<Track[]>(`/home/mood/${encodeURIComponent(tag)}`),
   genres: () => req<Genre[]>(`/genres`),
   genre: (id: string) => req<GenreDetail>(`/genres/${encodeURIComponent(id)}`),
   newReleases: () => req<AlbumSummary[]>(`/new-releases`),
@@ -104,6 +135,15 @@ export const api = {
     email?: string;
     password?: string;
   }) => req<User>(`/me`, { method: "PATCH", body: JSON.stringify(patch) }),
+  settings: () => req<PlaybackSettings>(`/me/settings`),
+  updateSettings: (patch: {
+    crossfade_enabled?: boolean;
+    crossfade_duration_sec?: number;
+  }) =>
+    req<PlaybackSettings>(`/me/settings`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
 
   // Admin
   adminUsers: () => req<AdminUser[]>(`/admin/users`),
@@ -206,7 +246,7 @@ export const api = {
 
   // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached server-side)
   lyrics: (artist: string, title: string, deezerId?: string) =>
-    req<{ lines: { t: number; text: string }[] | null; synced: boolean }>(
+    req<LyricsResponse>(
       `/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(
         title,
       )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}`,
@@ -232,6 +272,9 @@ export const api = {
   recordPlay: (track: Track) =>
     req<void>(`/me/plays`, { method: "POST", body: JSON.stringify(track) }),
   stats: () => req<UserStats>(`/me/stats`),
+
+  // Admin system status / health
+  adminStatus: () => req<SystemStatus>(`/admin/status`),
 
   // Admin storage overview + invites
   adminStorage: () => req<StorageInfo>(`/admin/storage`),

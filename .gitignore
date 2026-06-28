@@ -28,3 +28,10 @@ next-env.d.ts
 Thumbs.db
 .idea/
 .vscode/
+
+# Local-only files (credentials, scratch) — never commit
+*.local
+*.local.md
+.reference/credentials*
+goal.md
+GOALS.md

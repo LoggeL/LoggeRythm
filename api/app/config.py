@@ -47,6 +47,12 @@ SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 # Cap how many tracks we resolve from one Spotify playlist/album.
 SPOTIFY_RESOLVE_LIMIT: int = int(os.getenv("SPOTIFY_RESOLVE_LIMIT", "200"))
 
+# --- Groq (optional lyrics transcription fallback) ---
+GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+GROQ_TRANSCRIPTION_MODEL: str = os.getenv(
+    "GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo"
+)
+
 
 def validate_runtime_config() -> None:
     if APP_ENV in {"prod", "production"} and JWT_SECRET in _DEV_JWT_SECRETS:

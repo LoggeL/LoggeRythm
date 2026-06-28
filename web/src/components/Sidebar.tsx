@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useMe, useLogout } from "@/hooks/useAuth";
+import { useMe } from "@/hooks/useAuth";
 import {
   usePlaylists,
   useCreatePlaylist,
@@ -14,7 +14,6 @@ import {
   SearchIcon,
   LibraryIcon,
   PlusIcon,
-  ImportIcon,
 } from "@/components/icons";
 import Logo from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
@@ -34,10 +33,10 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-4 px-3 py-2 rounded-md font-semibold transition ${
+      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl font-semibold transition ${
         active
-          ? "text-foreground bg-white/5"
-          : "text-muted hover:text-foreground"
+          ? "text-white bg-accent glow-sm"
+          : "text-muted hover:text-foreground hover:bg-white/5"
       }`}
     >
       {icon}
@@ -48,7 +47,6 @@ function NavLink({
 
 export default function Sidebar() {
   const { data: me } = useMe();
-  const logout = useLogout();
   const router = useRouter();
   const { data: playlists } = usePlaylists(!!me);
   const createPlaylist = useCreatePlaylist();
@@ -64,11 +62,11 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black text-foreground gap-2 p-2">
+    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black/40 text-foreground gap-2 p-2">
       {/* Logo */}
       <div className="px-4 py-4">
         <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-          <Logo size={28} />
+          <Logo size={30} className="drop-glow" />
           <span className="text-xl font-extrabold tracking-tight">
             <span className="text-foreground">Spoti</span>
             <span className="text-accent">frei</span>
@@ -77,23 +75,18 @@ export default function Sidebar() {
       </div>
 
       {/* Primary nav */}
-      <nav className="bg-panel rounded-lg p-2 flex flex-col gap-1">
-        <NavLink href="/" icon={<HomeIcon />} label="Home" />
+      <nav className="bg-panel/70 border border-white/5 rounded-2xl p-2 flex flex-col gap-1">
+        <NavLink href="/" icon={<HomeIcon />} label="Start" />
         <NavLink href="/search" icon={<SearchIcon />} label="Suche" />
         <NavLink
           href="/library"
           icon={<LibraryIcon />}
           label="Deine Bibliothek"
         />
-        <NavLink
-          href="/import"
-          icon={<ImportIcon />}
-          label="Importieren"
-        />
       </nav>
 
       {/* Library / playlists */}
-      <div className="bg-panel rounded-lg p-2 flex-1 min-h-0 flex flex-col">
+      <div className="bg-panel/70 border border-white/5 rounded-2xl p-2 flex-1 min-h-0 flex flex-col">
         <div className="flex items-center justify-between px-2 py-2">
           <span className="text-sm font-semibold text-muted">
             Deine Playlists
@@ -163,33 +156,25 @@ export default function Sidebar() {
       </div>
 
       {/* Auth footer */}
-      <div className="bg-panel rounded-lg p-3">
+      <div className="bg-panel/70 border border-white/5 rounded-2xl p-3">
         {me ? (
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <Avatar src={me.avatar_url} name={me.display_name} size={28} />
-              <Link
-                href="/account"
-                className="text-sm font-medium truncate hover:underline"
-              >
-                {me.display_name}
-              </Link>
-            </div>
-            <button
-              type="button"
-              onClick={logout}
-              className="text-xs text-muted hover:text-foreground whitespace-nowrap"
-            >
-              Logout
-            </button>
-          </div>
+          // Profile link only — logout lives in the profile/account view.
+          <Link
+            href="/account"
+            className="flex items-center gap-2 min-w-0 rounded-lg -m-1 p-1 hover:bg-white/5 transition"
+          >
+            <Avatar src={me.avatar_url} name={me.display_name} size={28} />
+            <span className="text-sm font-medium truncate">
+              {me.display_name}
+            </span>
+          </Link>
         ) : (
           <div className="flex items-center gap-2 text-sm">
             <Link
               href="/login"
               className="flex-1 text-center px-3 py-1.5 rounded-full border border-white/20 hover:border-white/60"
             >
-              Login
+              Anmelden
             </Link>
             <Link
               href="/register"

@@ -12,7 +12,12 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
-import type { AdminUser, StorageInfo, InviteInfo } from "@/types";
+import type {
+  AdminUser,
+  StorageInfo,
+  InviteInfo,
+  PlaybackSettings,
+} from "@/types";
 
 function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -362,6 +367,95 @@ function AdminInvitesSection() {
   );
 }
 
+function PlaybackSettingsSection() {
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useQuery<PlaybackSettings>({
+    queryKey: ["playback-settings"],
+    queryFn: api.settings,
+  });
+
+  const updateSettings = useMutation({
+    mutationFn: (patch: Partial<PlaybackSettings>) => api.updateSettings(patch),
+    onSuccess: (next) => {
+      qc.setQueryData(["playback-settings"], next);
+      toast.success("Wiedergabe aktualisiert.");
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError
+          ? err.message
+          : "Wiedergabe konnte nicht aktualisiert werden.",
+      ),
+  });
+
+  const enabled = data?.crossfade_enabled ?? false;
+  const duration = data?.crossfade_duration_sec ?? 5;
+
+  return (
+    <section className="bg-panel rounded-lg p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+        <div>
+          <h2 className="text-xl font-bold">Wiedergabe</h2>
+          <p className="text-sm text-muted">
+            Übergänge zwischen Titeln anpassen.
+          </p>
+        </div>
+        <label className="flex cursor-pointer items-center gap-3 rounded-full bg-background px-3 py-2 text-sm font-semibold">
+          <input
+            type="checkbox"
+            checked={enabled}
+            disabled={isLoading || updateSettings.isPending}
+            onChange={(e) =>
+              updateSettings.mutate({ crossfade_enabled: e.target.checked })
+            }
+            className="h-4 w-4 accent-accent"
+          />
+          Crossfade
+        </label>
+      </div>
+
+      {isLoading && <p className="text-muted">Lädt…</p>}
+      {error && (
+        <p className="text-red-400 text-sm">
+          {error instanceof ApiError
+            ? error.message
+            : "Einstellungen konnten nicht geladen werden."}
+        </p>
+      )}
+
+      {data && (
+        <div className="rounded-lg bg-background p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold">Dauer</span>
+            <span className="text-sm text-muted tabular-nums">
+              {duration} Sekunden
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={12}
+            step={1}
+            value={duration}
+            disabled={!enabled || updateSettings.isPending}
+            onChange={(e) =>
+              updateSettings.mutate({
+                crossfade_duration_sec: Number(e.target.value),
+              })
+            }
+            aria-label="Crossfade-Dauer"
+            className="w-full"
+          />
+          <div className="mt-2 flex justify-between text-xs text-muted">
+            <span>Aus</span>
+            <span>12 s</span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AccountPage() {
   const { data: me, isLoading } = useMe();
   const logout = useLogout();
@@ -487,7 +581,7 @@ export default function AccountPage() {
             onClick={logout}
             className="press px-4 py-2 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10"
           >
-            Logout
+            Abmelden
           </button>
         </div>
       </section>
@@ -551,6 +645,22 @@ export default function AccountPage() {
         </form>
       </Modal>
 
+      <PlaybackSettingsSection />
+
+      {me.is_admin && (
+        <Link
+          href="/status"
+          className="press bg-panel rounded-lg p-6 flex items-center justify-between gap-3 hover:bg-panel-hover transition"
+        >
+          <div>
+            <h2 className="text-xl font-bold">Systemstatus</h2>
+            <p className="text-sm text-muted">
+              Deezer-Auth, Speicher, Benutzer & Konfiguration
+            </p>
+          </div>
+          <span className="text-muted text-2xl">→</span>
+        </Link>
+      )}
       {me.is_admin && <AdminUsersSection />}
       {me.is_admin && <AdminStorageSection />}
       {me.is_admin && <AdminInvitesSection />}

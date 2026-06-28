@@ -84,7 +84,7 @@ export default function PartyPage({
   return (
     <div className="animate-in max-w-3xl">
       <header className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-muted">Party Mode</p>
+        <p className="text-xs uppercase tracking-wide text-muted">Party-Modus</p>
         <h1 className="text-3xl font-extrabold mb-1">{party.name || "Party"}</h1>
         <p className="text-sm text-muted">Code: {party.code}</p>
       </header>

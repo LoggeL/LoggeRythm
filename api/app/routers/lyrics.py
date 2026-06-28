@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ..db.models import StoredLyrics
 from ..db.session import get_db
+from ..services import groq, storage
 
 router = APIRouter(prefix="/api", tags=["lyrics"])
 
@@ -80,8 +81,27 @@ def _fetch(artist: str, title: str) -> dict:
     for t in titles:
         lines = _lrclib_synced(primary, t)
         if lines:
-            return {"lines": lines, "synced": True}
-    return {"lines": None, "synced": False}
+            return {
+                "lines": lines,
+                "synced": True,
+                "source": "lrclib",
+                "ai_generated": False,
+            }
+    return {
+        "lines": None,
+        "synced": False,
+        "source": None,
+        "ai_generated": False,
+    }
+
+
+def _groq_transcription_fallback(deezer_id: str) -> list[dict] | None:
+    try:
+        path = storage.materialize(deezer_id)
+        return groq.transcribe_file(path)
+    except Exception as exc:  # noqa: BLE001 - fallback must not break lyrics lookup
+        print(f"Groq lyrics fallback skipped for deezer_id={deezer_id}: {exc!r}")
+        return None
 
 
 @router.get("/lyrics")
@@ -98,10 +118,22 @@ async def lyrics(
             return {
                 "lines": json.loads(row.lines_json),
                 "synced": row.synced,
+                "source": row.source,
+                "ai_generated": row.ai_generated,
                 "cached": True,
             }
 
     result = await run_in_threadpool(_fetch, artist, title)
+
+    if deezer_id and not result.get("lines") and groq.configured():
+        lines = await run_in_threadpool(_groq_transcription_fallback, deezer_id)
+        if lines:
+            result = {
+                "lines": lines,
+                "synced": False,
+                "source": "groq",
+                "ai_generated": True,
+            }
 
     # Persist positive hits so we never re-fetch them.
     if deezer_id and result.get("lines"):
@@ -110,6 +142,8 @@ async def lyrics(
                 deezer_id=deezer_id,
                 lines_json=json.dumps(result["lines"], ensure_ascii=False),
                 synced=bool(result.get("synced")),
+                source=str(result.get("source") or "unknown"),
+                ai_generated=bool(result.get("ai_generated")),
             )
         )
         db.commit()

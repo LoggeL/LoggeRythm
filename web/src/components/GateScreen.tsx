@@ -57,7 +57,7 @@ export function PendingScreen() {
     <Shell>
       <h1 className="text-2xl font-bold">Konto wartet auf Freigabe</h1>
       <p className="text-muted">
-        Hi {me?.display_name || ""}! Dein Konto muss erst von einem Admin
+        Hallo {me?.display_name || ""}! Dein Konto muss erst von einem Admin
         freigegeben werden. Schau später nochmal vorbei.
       </p>
       <button

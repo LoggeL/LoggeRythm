@@ -29,6 +29,8 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    crossfade_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    crossfade_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     playlists: Mapped[list["Playlist"]] = relationship(
@@ -208,6 +210,8 @@ class StoredLyrics(Base):
     deezer_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     lines_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     synced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="lrclib")
+    ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 

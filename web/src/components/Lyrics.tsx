@@ -23,6 +23,7 @@ export default function Lyrics() {
   if (!open) return null;
 
   const lines: Line[] = data?.lines ?? [];
+  const isAiGenerated = !!data?.ai_generated;
 
   // Active line = last line whose timestamp has passed.
   let active = -1;
@@ -45,11 +46,18 @@ export default function Lyrics() {
   const a = active < 0 ? 0 : active;
 
   return (
-    <div className="animate-in flex-shrink-0 bg-gradient-to-t from-black/85 via-black/70 to-black/30 backdrop-blur-sm border-t border-white/10 flex items-stretch">
+    <div className="animate-in flex-shrink-0 bg-gradient-to-t from-background/70 via-background/35 to-transparent backdrop-blur-md flex items-stretch transition-all duration-500">
       <div className="flex-shrink-0 flex items-center px-4 sm:px-6">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">
-          Lyrics
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted">
+            Songtext
+          </span>
+          {isAiGenerated && (
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
+              ✦ AI
+            </span>
+          )}
+        </div>
       </div>
 
       {hasLyrics ? (

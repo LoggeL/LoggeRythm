@@ -36,6 +36,16 @@ class MeUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
+class PlaybackSettings(BaseModel):
+    crossfade_enabled: bool
+    crossfade_duration_sec: int
+
+
+class PlaybackSettingsUpdate(BaseModel):
+    crossfade_enabled: bool | None = None
+    crossfade_duration_sec: int | None = None
+
+
 def _user_out(u: User) -> UserOut:
     return UserOut(
         id=u.id,
@@ -44,6 +54,13 @@ def _user_out(u: User) -> UserOut:
         avatar_url=u.avatar_url,
         is_admin=u.is_admin,
         is_approved=u.is_approved,
+    )
+
+
+def _playback_settings(user: User) -> PlaybackSettings:
+    return PlaybackSettings(
+        crossfade_enabled=bool(user.crossfade_enabled),
+        crossfade_duration_sec=int(user.crossfade_duration_sec or 0),
     )
 
 
@@ -101,6 +118,31 @@ def update_me(
     db.commit()
     db.refresh(user)
     return _user_out(user)
+
+
+@router.get("/me/settings", response_model=PlaybackSettings)
+def get_settings(user: User = Depends(get_current_user)) -> PlaybackSettings:
+    return _playback_settings(user)
+
+
+@router.patch("/me/settings", response_model=PlaybackSettings)
+def update_settings(
+    body: PlaybackSettingsUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlaybackSettings:
+    if body.crossfade_duration_sec is not None:
+        if body.crossfade_duration_sec < 0 or body.crossfade_duration_sec > 12:
+            raise HTTPException(
+                status_code=422,
+                detail="Die Crossfade-Dauer muss zwischen 0 und 12 Sekunden liegen.",
+            )
+        user.crossfade_duration_sec = body.crossfade_duration_sec
+    if body.crossfade_enabled is not None:
+        user.crossfade_enabled = body.crossfade_enabled
+    db.commit()
+    db.refresh(user)
+    return _playback_settings(user)
 
 
 @router.get("/users/{user_id}/avatar")

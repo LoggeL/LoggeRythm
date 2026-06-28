@@ -41,24 +41,24 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
   return (
     <div
       onContextMenu={handleContextMenu}
-      className="group relative bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift cursor-default"
+      className="group relative bg-panel/70 hover:bg-panel-hover border border-white/5 rounded-2xl p-4 transition hover-lift cursor-default"
     >
       <div className="relative mb-3">
         {track.album_id ? (
           <Link
             href={`/album/${track.album_id}`}
             aria-label={`Album ${track.album}`}
-            className="block overflow-hidden rounded-md"
+            className="block overflow-hidden rounded-xl"
           >
             {track.cover ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={track.cover}
                 alt={track.album}
-                className="w-full aspect-square object-cover rounded-md shadow-lg transition-transform duration-300 group-hover:scale-105"
+                className="w-full aspect-square object-cover rounded-xl shadow-lg transition-transform duration-300 group-hover:scale-105"
               />
             ) : (
-              <div className="w-full aspect-square rounded-md bg-[#333]" />
+              <div className="w-full aspect-square rounded-xl gradient-violet opacity-80" />
             )}
           </Link>
         ) : track.cover ? (
@@ -66,16 +66,27 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
           <img
             src={track.cover}
             alt={track.album}
-            className="w-full aspect-square object-cover rounded-md shadow-lg"
+            className="w-full aspect-square object-cover rounded-xl shadow-lg"
           />
         ) : (
-          <div className="w-full aspect-square rounded-md bg-[#333]" />
+          <div className="w-full aspect-square rounded-xl gradient-violet opacity-80" />
+        )}
+        {playingThis && (
+          <div className="absolute bottom-2 left-2 flex items-end gap-[3px] h-5 px-2 py-1 rounded-full bg-black/55 backdrop-blur-sm">
+            {[0, 0.15, 0.3].map((d, i) => (
+              <span
+                key={i}
+                className="eq-bar w-[3px] h-full bg-accent-soft rounded-full"
+                style={{ animationDelay: `${d}s` }}
+              />
+            ))}
+          </div>
         )}
         <button
           type="button"
           onClick={handlePlay}
           aria-label={playingThis ? "Pause" : "Abspielen"}
-          className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition hover:bg-accent-hover hover:scale-105 press"
+          className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg glow-sm opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition hover:bg-accent-hover hover:scale-105 press"
         >
           {playingThis ? (
             <PauseIcon width={22} height={22} />

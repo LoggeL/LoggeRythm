@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon } from "@/components/icons";
 import TrackContext from "@/components/TrackContext";
+import EqualizerBars from "@/components/EqualizerBars";
 
 function GripIcon() {
   return (
@@ -38,6 +39,7 @@ export default function QueueSidebar() {
   const jumpTo = usePlayerStore((s) => s.jumpTo);
   const toggle = usePlayerStore((s) => s.toggle);
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
+  const clearQueue = usePlayerStore((s) => s.clearQueue);
   const reorderQueue = usePlayerStore((s) => s.reorderQueue);
 
   const router = useRouter();
@@ -56,41 +58,53 @@ export default function QueueSidebar() {
     }
   };
 
-  if (!open) return null;
-
   const upcoming = queue
     .map((t, i) => ({ t, i }))
     .filter(({ i }) => i > index);
 
   return (
-    <aside className="fixed inset-0 z-[70] flex flex-col bg-background md:static md:z-auto md:w-80 md:flex-shrink-0 md:bg-black/40 border-l border-white/10 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-4 flex-shrink-0">
+    <aside
+      className={`${
+        open ? "fixed inset-0 z-[70] flex" : "hidden"
+      } flex-col bg-background md:static md:z-auto md:flex md:w-[22rem] md:flex-shrink-0 md:m-3 md:ml-0 md:mb-0 md:rounded-[1.35rem] md:bg-white/[0.045] md:backdrop-blur-xl border-l border-white/10 md:border md:shadow-2xl md:shadow-black/25 overflow-hidden`}
+    >
+      <div className="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0 border-b border-white/5">
         <h2 className="text-lg font-bold">Warteschlange</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {upcoming.length > 0 && (
+            <button
+              type="button"
+              onClick={clearQueue}
+              className="px-3 py-1 rounded-full bg-white/5 text-muted hover:text-foreground hover:bg-white/10 text-xs font-semibold press"
+            >
+              Leeren
+            </button>
+          )}
           <button
             type="button"
             onClick={startParty}
             disabled={startingParty}
             className="px-3 py-1 rounded-full bg-accent text-white text-xs font-semibold hover:bg-accent-hover disabled:opacity-40 press"
           >
-            Party starten
+            Party
           </button>
           <button
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Warteschlange schließen"
-            className="text-muted hover:text-foreground p-2 -m-2"
+            className="text-muted hover:text-foreground p-2 -m-2 md:hidden"
           >
             ✕
           </button>
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto scroll-area px-3 pb-4 animate-in">
+      <div className="flex-1 min-h-0 overflow-auto scroll-area ml-3 mr-1 pl-1 pr-4 pt-2 pb-5 animate-in [scrollbar-gutter:stable]">
         {!cur && upcoming.length === 0 && (
-          <p className="text-sm text-muted px-2 py-4">
-            Die Warteschlange ist leer.
-          </p>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-5 text-sm text-muted">
+            <p className="font-semibold text-foreground">Bereit für Musik</p>
+            <p className="mt-1">Starte einen Titel, dann bleibt deine Warteschlange hier sichtbar.</p>
+          </div>
         )}
 
         {cur && (
@@ -98,16 +112,16 @@ export default function QueueSidebar() {
             <p className="text-xs uppercase tracking-wide text-muted px-2 mb-1">
               Wird gespielt
             </p>
-            <div className="flex items-center gap-3 px-2 py-2 rounded-md bg-white/5 mb-4">
+            <div className="flex items-center gap-3 px-3 py-3 rounded-2xl bg-accent/[0.12] ring-1 ring-accent/[0.35] shadow-lg shadow-accent/10 mb-4">
               {cur.cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={cur.cover}
                   alt=""
-                  className="w-10 h-10 rounded object-cover"
+                  className="w-11 h-11 rounded-lg object-cover shadow"
                 />
               ) : (
-                <div className="w-10 h-10 rounded bg-panel-hover" />
+                <div className="w-11 h-11 rounded-lg gradient-violet opacity-80" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm text-accent font-medium">
@@ -115,11 +129,18 @@ export default function QueueSidebar() {
                 </div>
                 <div className="truncate text-xs text-muted">{cur.artist}</div>
               </div>
+              {isPlaying && (
+                <EqualizerBars
+                  height={16}
+                  barClassName="bg-accent"
+                  className="mr-1"
+                />
+              )}
               <button
                 type="button"
                 onClick={toggle}
                 aria-label={isPlaying ? "Pause" : "Abspielen"}
-                className="text-foreground"
+                className="text-foreground hover:text-accent transition"
               >
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
               </button>
@@ -165,7 +186,7 @@ export default function QueueSidebar() {
                   setDragIndex(null);
                   setOverIndex(null);
                 }}
-                className={`group flex items-center gap-2 px-2 py-2 rounded-md transition hover:bg-panel-hover ${
+                className={`group flex items-center gap-2 px-2 py-2 rounded-xl transition hover:bg-white/[0.06] ${
                   isOver ? "bg-panel-hover ring-1 ring-accent" : ""
                 } ${isDragging ? "opacity-50" : ""}`}
               >
@@ -186,10 +207,10 @@ export default function QueueSidebar() {
                     <img
                       src={t.cover}
                       alt=""
-                      className="w-10 h-10 rounded object-cover flex-shrink-0"
+                      className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
                     />
                   ) : (
-                    <div className="w-10 h-10 rounded bg-panel-hover flex-shrink-0" />
+                    <div className="w-10 h-10 rounded-lg gradient-violet opacity-80 flex-shrink-0" />
                   )}
                   <div className="min-w-0">
                     <div className="truncate text-sm">{t.title}</div>

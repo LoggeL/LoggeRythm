@@ -7,7 +7,7 @@ export default function ArtistCard({ artist }: { artist: ArtistSummary }) {
   return (
     <Link
       href={`/artist/${artist.id}`}
-      className="group block bg-panel hover:bg-panel-hover rounded-lg p-4 transition hover-lift text-center"
+      className="group block bg-panel/70 hover:bg-panel-hover border border-white/5 rounded-2xl p-4 transition hover-lift text-center"
     >
       {artist.picture ? (
         <div className="mb-3 overflow-hidden rounded-full">
@@ -19,7 +19,7 @@ export default function ArtistCard({ artist }: { artist: ArtistSummary }) {
           />
         </div>
       ) : (
-        <div className="w-full aspect-square rounded-full bg-[#333] mb-3" />
+        <div className="w-full aspect-square rounded-full gradient-violet opacity-80 mb-3" />
       )}
       <div className="truncate font-semibold">{artist.name}</div>
       <div className="text-sm text-muted">Künstler</div>

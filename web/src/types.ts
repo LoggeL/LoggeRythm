@@ -42,6 +42,24 @@ export interface UserStats {
   recent: Track[];
 }
 
+export interface PlaybackSettings {
+  crossfade_enabled: boolean;
+  crossfade_duration_sec: number;
+}
+
+export interface LyricsLine {
+  t: number;
+  text: string;
+}
+
+export interface LyricsResponse {
+  lines: LyricsLine[] | null;
+  synced: boolean;
+  source?: string | null;
+  ai_generated?: boolean;
+  cached?: boolean;
+}
+
 export interface AdminUser {
   id: string | number;
   email: string;
@@ -187,6 +205,56 @@ export interface InviteInfo {
   url: string;
   used_by_name?: string | null;
   created_at: string;
+}
+
+export interface SystemStatus {
+  deezer: {
+    arl_configured: boolean;
+    arl_ok: boolean;
+    quality: string;
+  };
+  storage: {
+    track_count: number;
+    total_bytes: number;
+    disk_total: number;
+    disk_used: number;
+    disk_free: number;
+    retention_days: number;
+  };
+  users: {
+    total: number;
+    approved: number;
+    pending: number;
+    admins: number;
+  };
+  content: {
+    playlists: number;
+    likes: number;
+    follows: number;
+    plays: number;
+    stored_lyrics: number;
+    parties: number;
+    invites_total: number;
+    invites_used: number;
+  };
+  integrations: {
+    spotify_configured: boolean;
+    lastfm_configured: boolean;
+  };
+  system: {
+    app_env: string;
+    database: string;
+    jwt_secure: boolean;
+    cookie_secure: boolean;
+  };
+}
+
+export interface HomeShelf {
+  key: string;
+  title: string;
+  subtitle?: string;
+  cover?: string;
+  tracks: Track[];
 }
 
 export interface ResolveResult {
