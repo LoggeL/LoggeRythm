@@ -154,6 +154,19 @@ def is_ready(deezer_id: str) -> bool:
     return os.path.exists(path_for(deezer_id))
 
 
+def cached_ids() -> list[str]:
+    """All track ids currently stored on the server (ready to stream without
+    re-fetching from Deezer)."""
+    try:
+        with SessionLocal() as db:
+            rows = db.query(StoredTrack.deezer_id).filter(
+                StoredTrack.status == "ready"
+            ).all()
+            return [r[0] for r in rows]
+    except Exception:  # noqa: BLE001 — a marker lookup must never break the page
+        return []
+
+
 def get_meta(deezer_id: str) -> dict | None:
     p = meta_path_for(deezer_id)
     if not os.path.exists(p):

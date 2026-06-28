@@ -7,7 +7,7 @@ import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon, PlusIcon, DownloadedIcon } from "@/components/icons";
-import { useTrackDownloaded } from "@/store/downloads";
+import { useTrackCacheState } from "@/store/downloads";
 import LikeButton from "@/components/LikeButton";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
@@ -37,7 +37,7 @@ export default function TrackRow({
   const playTrack = usePlayerStore((s) => s.playTrack);
   const toggle = usePlayerStore((s) => s.toggle);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
-  const downloaded = useTrackDownloaded(track.id);
+  const cacheState = useTrackCacheState(track.id);
 
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const menuItems = useTrackMenuItems(track, onRemove);
@@ -107,12 +107,24 @@ export default function TrackRow({
             {track.title}
           </div>
           <div className="flex items-center gap-1.5 text-sm text-muted min-w-0">
-            {downloaded && (
+            {cacheState && (
               <span
-                title="Heruntergeladen"
-                className="inline-flex flex-shrink-0 text-green-500"
+                title={
+                  cacheState === "local"
+                    ? "Offline auf diesem Gerät verfügbar"
+                    : "Auf dem Server gespeichert"
+                }
+                className={`inline-flex flex-shrink-0 ${
+                  cacheState === "local" ? "text-green-500" : "text-muted"
+                }`}
               >
-                <DownloadedIcon aria-label="Heruntergeladen" />
+                <DownloadedIcon
+                  aria-label={
+                    cacheState === "local"
+                      ? "Offline verfügbar"
+                      : "Auf dem Server gespeichert"
+                  }
+                />
               </span>
             )}
             <span className="truncate">

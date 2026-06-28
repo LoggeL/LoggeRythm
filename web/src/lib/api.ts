@@ -273,6 +273,9 @@ export const api = {
     req<void>(`/me/plays`, { method: "POST", body: JSON.stringify(track) }),
   stats: () => req<UserStats>(`/me/stats`),
 
+  // Track ids cached on the server (no Deezer re-fetch needed)
+  cachedTracks: () => req<{ ids: string[] }>(`/cached-tracks`),
+
   // Admin system status / health
   adminStatus: () => req<SystemStatus>(`/admin/status`),
 

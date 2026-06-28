@@ -5,13 +5,24 @@ The Range logic is preserved verbatim from the verified Phase-0 spike.
 import os
 import re
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
+from ..auth import get_current_user
+from ..db.models import User
 from ..services import storage
 
 router = APIRouter(prefix="/api", tags=["stream"])
+
+
+@router.get("/cached-tracks")
+async def cached_tracks(
+    _user: User = Depends(get_current_user),
+) -> dict[str, list[str]]:
+    """Track ids stored on the server (available without re-fetching Deezer)."""
+    ids = await run_in_threadpool(storage.cached_ids)
+    return {"ids": ids}
 
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 _CHUNK = 64 * 1024
