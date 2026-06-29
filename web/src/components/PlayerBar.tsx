@@ -366,6 +366,16 @@ export default function PlayerBar() {
     }
   };
 
+  useEffect(() => {
+    document.body.dataset.nowPlayingExpanded = expanded ? "true" : "false";
+
+    window.addEventListener("spotifrei:close-now-playing", closeFullscreen);
+    return () => {
+      window.removeEventListener("spotifrei:close-now-playing", closeFullscreen);
+      document.body.dataset.nowPlayingExpanded = "false";
+    };
+  }, [expanded]);
+
   return (
     <>
       {expanded && track && <NowPlaying onClose={closeFullscreen} />}

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import CapacitorBackButton from "@/components/CapacitorBackButton";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export default function Providers({
@@ -24,6 +25,7 @@ export default function Providers({
 
   return (
     <QueryClientProvider client={client}>
+      <CapacitorBackButton />
       <ServiceWorkerRegister />
       {children}
     </QueryClientProvider>
