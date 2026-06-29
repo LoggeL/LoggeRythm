@@ -25,7 +25,7 @@ import {
 type NowPlayingTab = "playing" | "lyrics" | "similar";
 
 export default function NowPlaying({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<NowPlayingTab>("lyrics");
+  const [tab, setTab] = useState<NowPlayingTab>("playing");
   const track = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTime = usePlayerStore((s) => s.currentTime);
@@ -49,7 +49,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const isPlayingView = tab === "playing";
 
   return (
-    <div className="animate-in fixed inset-0 z-[80] flex flex-col bg-background p-5 md:p-8 overflow-hidden">
+    <div className="animate-in fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] md:p-8">
       {/* Ambient backdrop from the cover art */}
       {track.cover && (
         <>
@@ -66,12 +66,12 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
           />
         </>
       )}
-      <div className="relative flex justify-between items-center mb-8">
+      <div className="relative flex flex-shrink-0 justify-between items-center mb-3 md:mb-8">
         <button
           type="button"
           onClick={onClose}
           aria-label="Schließen"
-          className="text-muted hover:text-foreground p-2"
+          className="text-muted hover:text-foreground p-2 -ml-2 md:ml-0"
         >
           <ChevronDownIcon width={24} height={24} />
         </button>
@@ -82,7 +82,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         <span className="w-10" />
       </div>
 
-      <div className="relative mx-auto mb-6 flex rounded-2xl bg-white/5 p-1 ring-1 ring-white/10">
+      <div className="relative mx-auto mb-3 flex max-w-full flex-shrink-0 overflow-x-auto rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 no-scrollbar md:mb-6">
         {[
           ["playing", "Jetzt läuft"],
           ["lyrics", "Songtext"],
@@ -94,7 +94,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
               key={key}
               type="button"
               onClick={() => setTab(key as NowPlayingTab)}
-              className={`min-w-28 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+              className={`min-w-24 rounded-xl px-3 py-2 text-xs font-semibold transition sm:min-w-28 sm:px-4 sm:text-sm ${
                 active
                   ? "bg-accent text-white shadow-lg shadow-accent/20"
                   : "text-muted hover:text-foreground hover:bg-white/5"
@@ -439,11 +439,11 @@ function EpicPlayingPanel({
   onVolume: (v: number) => void;
 }) {
   return (
-    <div className="min-h-0 mt-8 lg:mt-0 flex flex-col">
-      <span className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-widest text-muted mb-4">
+    <div className="min-h-0 flex flex-1 flex-col lg:mt-0">
+      <span className="sr-only lg:not-sr-only lg:flex-shrink-0 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-widest lg:text-muted lg:mb-4">
         Jetzt läuft
       </span>
-      <div className="relative flex-1 min-h-[34rem] overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.045] backdrop-blur-2xl shadow-2xl shadow-black/30">
+      <div className="relative flex-1 min-h-0 overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.045] backdrop-blur-2xl shadow-2xl shadow-black/30 md:rounded-[2rem]">
         {track.cover && (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -460,13 +460,13 @@ function EpicPlayingPanel({
           </>
         )}
 
-        <div className="relative z-10 flex h-full min-h-0 flex-col items-center justify-between gap-7 p-7 md:p-10">
+        <div className="relative z-10 flex h-full min-h-0 flex-col items-center justify-between gap-4 p-4 md:gap-7 md:p-10">
           <div className="relative grid w-full flex-1 min-h-0 place-items-center">
             <div
               aria-hidden
               className="absolute inset-x-4 top-1/2 h-48 -translate-y-1/2 rounded-full bg-accent/20 blur-3xl"
             />
-            <div className="relative grid aspect-square w-[min(36vh,32rem)] place-items-center">
+            <div className="relative grid aspect-square w-[min(58vw,32vh,18rem)] place-items-center md:w-[min(36vh,32rem)]">
               <RadialVisualizer
                 isPlaying={isPlaying}
                 className="pointer-events-none absolute inset-0 z-0 h-full w-full"
@@ -495,14 +495,14 @@ function EpicPlayingPanel({
           </div>
 
           <div className="w-full max-w-3xl">
-            <div className="mb-5 text-center">
+            <div className="mb-3 text-center md:mb-5">
               <div className="flex items-center justify-center gap-3">
-                <h2 className="truncate text-3xl font-extrabold md:text-5xl">
+                <h2 className="min-w-0 truncate text-xl font-extrabold md:text-5xl">
                   {track.title}
                 </h2>
                 <LikeButton track={track} />
               </div>
-              <p className="mt-2 text-base text-muted md:text-lg">{track.artist}</p>
+              <p className="mt-1 truncate text-sm text-muted md:mt-2 md:text-lg">{track.artist}</p>
             </div>
 
             <div className="flex items-center gap-2 w-full">
@@ -525,7 +525,7 @@ function EpicPlayingPanel({
               </span>
             </div>
 
-            <div className="mt-5 flex items-center justify-center gap-6">
+            <div className="mt-4 flex items-center justify-center gap-4 md:mt-5 md:gap-6">
               <button
                 type="button"
                 onClick={onToggleShuffle}
@@ -546,7 +546,7 @@ function EpicPlayingPanel({
                 type="button"
                 onClick={onToggle}
                 aria-label={isPlaying ? "Pause" : "Abspielen"}
-                className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center shadow-lg hover:scale-105 transition"
+                className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center shadow-lg hover:scale-105 transition md:h-16 md:w-16"
               >
                 {isPlaying ? (
                   <PauseIcon width={30} height={30} />
@@ -572,7 +572,7 @@ function EpicPlayingPanel({
               </button>
             </div>
 
-            <div className="mt-5 flex items-center justify-center gap-2">
+            <div className="mt-5 hidden items-center justify-center gap-2 sm:flex">
               <button
                 type="button"
                 onClick={onToggleMute}
