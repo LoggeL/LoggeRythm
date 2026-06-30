@@ -24,7 +24,7 @@ import {
   ChevronDownIcon,
 } from "@/components/icons";
 
-type NowPlayingTab = "playing" | "lyrics" | "similar";
+type NowPlayingTab = "playing" | "lyrics" | "similar" | "queue";
 
 export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<NowPlayingTab>("playing");
@@ -45,6 +45,16 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
+
+  // The queue tab is mobile-only (desktop shows the queue column); if the
+  // viewport grows to lg while it's active, fall back to the playing tab.
+  useEffect(() => {
+    if (tab !== "queue") return;
+    const mq = window.matchMedia("(min-width: 1024px)");
+    const onChange = (e: MediaQueryListEvent) => e.matches && setTab("playing");
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [tab]);
 
   if (!track) return null;
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
@@ -85,18 +95,22 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="relative mx-auto mb-3 flex max-w-full flex-shrink-0 overflow-x-auto rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 no-scrollbar md:mb-6">
-        {[
-          ["playing", "Jetzt läuft"],
-          ["lyrics", "Songtext"],
-          ["similar", "Ähnliche Titel"],
-        ].map(([key, label]) => {
+        {(
+          [
+            ["playing", "Jetzt läuft"],
+            ["lyrics", "Songtext"],
+            ["similar", "Ähnliche Titel"],
+            // Queue has its own column on desktop, so it's a mobile-only tab.
+            ["queue", "Warteschlange", true],
+          ] as [NowPlayingTab, string, boolean?][]
+        ).map(([key, label, mobileOnly]) => {
           const active = tab === key;
           return (
             <button
               key={key}
               type="button"
-              onClick={() => setTab(key as NowPlayingTab)}
-              className={`min-w-24 rounded-xl px-3 py-2 text-xs font-semibold transition sm:min-w-28 sm:px-4 sm:text-sm ${
+              onClick={() => setTab(key)}
+              className={`${mobileOnly ? "lg:hidden " : ""}min-w-24 rounded-xl px-3 py-2 text-xs font-semibold transition sm:min-w-28 sm:px-4 sm:text-sm ${
                 active
                   ? "bg-accent text-white shadow-lg shadow-accent/20"
                   : "text-muted hover:text-foreground hover:bg-white/5"
@@ -240,7 +254,9 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         </div>
         </div>
 
-        {tab === "similar" ? (
+        {tab === "queue" ? (
+          <NowPlayingQueue className="flex lg:hidden flex-1 min-h-0 flex-col" />
+        ) : tab === "similar" ? (
           <SimilarTracksPanel seedId={track.id} onClose={onClose} />
         ) : tab === "playing" ? (
           <EpicPlayingPanel
@@ -292,7 +308,11 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   );
 }
 
-function NowPlayingQueue() {
+function NowPlayingQueue({
+  className = "hidden lg:flex flex-col min-h-0",
+}: {
+  className?: string;
+}) {
   const queue = usePlayerStore((s) => s.queue);
   const origins = usePlayerStore((s) => s.origins);
   const queueContext = usePlayerStore((s) => s.queueContext);
@@ -337,7 +357,7 @@ function NowPlayingQueue() {
   );
 
   return (
-    <div className="hidden lg:flex flex-col min-h-0">
+    <div className={className}>
       <div className="flex-shrink-0 flex items-center justify-between mb-4">
         <span className="text-[11px] font-semibold uppercase tracking-widest text-muted">
           Warteschlange
