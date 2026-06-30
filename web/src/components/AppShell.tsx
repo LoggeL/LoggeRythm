@@ -9,6 +9,7 @@ import MobileNav from "@/components/MobileNav";
 import Toaster from "@/components/Toast";
 import QueueSidebar from "@/components/QueueSidebar";
 import CommandPalette from "@/components/CommandPalette";
+import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 import Lyrics from "@/components/Lyrics";
 import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
@@ -96,6 +97,7 @@ export default function AppShell({
       <PlayerBar />
       <MobileNav />
       <CommandPalette />
+      <AddToPlaylistModal />
       <Toaster />
     </div>
   );

@@ -7,11 +7,7 @@ import { usePlayerStore } from "@/store/player";
 import { toast } from "@/store/toast";
 import { api } from "@/lib/api";
 import { useMe } from "@/hooks/useAuth";
-import {
-  usePlaylists,
-  useAddToPlaylist,
-  useCreatePlaylist,
-} from "@/hooks/useLibrary";
+import { openAddToPlaylist } from "@/store/addToPlaylist";
 import { MoreIcon } from "@/components/icons";
 import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
 
@@ -23,9 +19,6 @@ export function useTrackMenuItems(
   const playNext = usePlayerStore((s) => s.playNext);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
   const { data: me } = useMe();
-  const { data: playlists } = usePlaylists(!!me);
-  const addToPlaylist = useAddToPlaylist();
-  const createPlaylist = useCreatePlaylist();
 
   const items: ContextMenuItem[] = [
     {
@@ -58,6 +51,11 @@ export function useTrackMenuItems(
       },
     },
   ];
+  if (me)
+    items.push({
+      label: "Zu Playlist hinzufügen…",
+      onClick: () => openAddToPlaylist(track),
+    });
   if (track.album_id)
     items.push({
       label: "Zum Album",
@@ -74,34 +72,6 @@ export function useTrackMenuItems(
       danger: true,
       onClick: onRemove,
     });
-
-  if (me) {
-    for (const p of (playlists ?? []).slice(0, 8)) {
-      items.push({
-        label: `Zur Playlist: ${p.name}`,
-        onClick: () => {
-          addToPlaylist.mutate({ id: String(p.id), track });
-          toast.success(`Zu „${p.name}“ hinzugefügt.`);
-        },
-      });
-    }
-    items.push({
-      label: "Neue Playlist…",
-      onClick: async () => {
-        const name = window.prompt("Name der neuen Playlist:");
-        if (!name?.trim()) return;
-        try {
-          const playlist = await createPlaylist.mutateAsync({
-            name: name.trim(),
-          });
-          addToPlaylist.mutate({ id: String(playlist.id), track });
-          toast.success(`Zu „${playlist.name}“ hinzugefügt.`);
-        } catch {
-          /* errors surfaced via mutation onError toasts */
-        }
-      },
-    });
-  }
 
   return items;
 }
