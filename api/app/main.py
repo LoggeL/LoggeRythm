@@ -76,77 +76,69 @@ async def _unhandled_exception_handler(
 _STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 
-def _migrate_user_columns() -> None:
-    """Lightweight SQLite migration: add is_admin/is_approved if missing.
+# Declarative SQLite column migrations — a stand-in for Alembic. Each entry adds
+# one column to a pre-existing table when it's missing, with an optional one-off
+# backfill statement. Tables created fresh by ``create_all`` already have every
+# column, so those entries are simply skipped. Append new columns here; never
+# edit/remove past entries (older DBs replay the whole list on each startup).
+_COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
+    {"table": "users", "column": "is_admin", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
+    {"table": "users", "column": "is_approved", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
+    {"table": "users", "column": "avatar_url", "ddl": "VARCHAR(500)"},
+    {"table": "users", "column": "crossfade_enabled", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
+    {"table": "users", "column": "crossfade_duration_sec", "ddl": "INTEGER NOT NULL DEFAULT 5"},
+    {"table": "playlists", "column": "is_public", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
+    {
+        "table": "stored_tracks",
+        "column": "last_accessed",
+        "ddl": "DATETIME",
+        "backfill": "UPDATE stored_tracks SET last_accessed = created_at WHERE last_accessed IS NULL",
+    },
+    {"table": "stored_lyrics", "column": "source", "ddl": "VARCHAR(40) NOT NULL DEFAULT 'lrclib'"},
+    {"table": "stored_lyrics", "column": "ai_generated", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
+    # Full performer credit list for tracks with several artists.
+    {"table": "playlist_tracks", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
+    {"table": "likes", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
+    {"table": "plays", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
+    {"table": "party_tracks", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
+)
 
-    The existing `users` table predates these columns. Idempotent and
-    sqlite-only; wrapped so it never crashes startup.
+
+def _run_column_migrations() -> None:
+    """Apply the declarative column migrations above (idempotent, sqlite-only).
+
+    Wrapped so a migration failure never crashes startup.
     """
     if engine.dialect.name != "sqlite":
         return
     try:
         with engine.begin() as conn:
-            cols = {
-                row[1]
-                for row in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
-            }
-            if "is_admin" not in cols:
+            cache: dict[str, set[str]] = {}
+
+            def columns(table: str) -> set[str]:
+                if table not in cache:
+                    cache[table] = {
+                        row[1]
+                        for row in conn.exec_driver_sql(
+                            f"PRAGMA table_info({table})"
+                        ).fetchall()
+                    }
+                return cache[table]
+
+            for spec in _COLUMN_MIGRATIONS:
+                table, column = spec["table"], spec["column"]
+                cols = columns(table)
+                # Empty set → table doesn't exist yet; nothing to alter.
+                if not cols or column in cols:
+                    continue
                 conn.exec_driver_sql(
-                    "ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"
+                    f"ALTER TABLE {table} ADD COLUMN {column} {spec['ddl']}"
                 )
-            if "is_approved" not in cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE users ADD COLUMN is_approved BOOLEAN NOT NULL DEFAULT 0"
-                )
-            if "avatar_url" not in cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)")
-            if "crossfade_enabled" not in cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE users ADD COLUMN crossfade_enabled BOOLEAN NOT NULL DEFAULT 0"
-                )
-            if "crossfade_duration_sec" not in cols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE users ADD COLUMN crossfade_duration_sec INTEGER NOT NULL DEFAULT 5"
-                )
-            pcols = {
-                row[1]
-                for row in conn.exec_driver_sql(
-                    "PRAGMA table_info(playlists)"
-                ).fetchall()
-            }
-            if "is_public" not in pcols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE playlists ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT 0"
-                )
-            scols = {
-                row[1]
-                for row in conn.exec_driver_sql(
-                    "PRAGMA table_info(stored_tracks)"
-                ).fetchall()
-            }
-            if scols and "last_accessed" not in scols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE stored_tracks ADD COLUMN last_accessed DATETIME"
-                )
-                conn.exec_driver_sql(
-                    "UPDATE stored_tracks SET last_accessed = created_at WHERE last_accessed IS NULL"
-                )
-            lcols = {
-                row[1]
-                for row in conn.exec_driver_sql(
-                    "PRAGMA table_info(stored_lyrics)"
-                ).fetchall()
-            }
-            if lcols and "source" not in lcols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE stored_lyrics ADD COLUMN source VARCHAR(40) NOT NULL DEFAULT 'lrclib'"
-                )
-            if lcols and "ai_generated" not in lcols:
-                conn.exec_driver_sql(
-                    "ALTER TABLE stored_lyrics ADD COLUMN ai_generated BOOLEAN NOT NULL DEFAULT 0"
-                )
+                cols.add(column)
+                if spec.get("backfill"):
+                    conn.exec_driver_sql(spec["backfill"])
     except Exception as exc:  # pragma: no cover — never crash startup
-        print(f"User column migration skipped: {exc!r}")
+        print(f"Column migration skipped: {exc!r}")
 
 
 def _bootstrap_admin() -> None:
@@ -185,7 +177,7 @@ def _startup() -> None:
 
     validate_runtime_config()
     init_db()
-    _migrate_user_columns()
+    _run_column_migrations()
     _bootstrap_admin()
     deezer_client.init_session()
     storage.reconcile()  # backfill DB rows for pre-existing files

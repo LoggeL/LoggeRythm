@@ -19,7 +19,7 @@ from ..schemas.playlist import (
     PlaylistSummary,
     PlaylistUpdate,
 )
-from ..schemas.track import Track
+from ..schemas.track import Track, dump_artists, load_artists
 from ..uploads import image_extension, save_image_upload
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
@@ -49,10 +49,13 @@ def _get_owned_playlist(db: Session, playlist_id: int, user: User) -> Playlist:
 
 
 def _pt_to_track(pt: PlaylistTrack) -> Track:
+    artists = load_artists(pt.artists_json, pt.artist)
     return Track(
         id=pt.deezer_id,
         title=pt.title,
         artist=pt.artist,
+        artist_id=artists[0].id if artists else "",
+        artists=artists,
         album=pt.album,
         album_id="",
         cover=pt.cover_url or "",
@@ -262,6 +265,7 @@ def add_track(
             deezer_id=track.id,
             title=track.title,
             artist=track.artist,
+            artists_json=dump_artists(track),
             album=track.album,
             cover_url=track.cover or None,
             duration_sec=track.duration_sec,
@@ -306,6 +310,7 @@ def add_tracks_bulk(
                 deezer_id=track.id,
                 title=track.title,
                 artist=track.artist,
+                artists_json=dump_artists(track),
                 album=track.album,
                 cover_url=track.cover or None,
                 duration_sec=track.duration_sec,

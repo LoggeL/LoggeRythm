@@ -276,6 +276,13 @@ export const api = {
   // Track ids cached on the server (no Deezer re-fetch needed)
   cachedTracks: () => req<{ ids: string[] }>(`/cached-tracks`),
 
+  // Batched Last.fm play counts → { [trackId]: { plays, listeners } }
+  trackPlays: (tracks: { id: string; artist: string; title: string }[]) =>
+    req<Record<string, { plays: number; listeners: number }>>(`/track-plays`, {
+      method: "POST",
+      body: JSON.stringify({ tracks }),
+    }),
+
   // Admin system status / health
   adminStatus: () => req<SystemStatus>(`/admin/status`),
 

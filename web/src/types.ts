@@ -1,8 +1,16 @@
+export interface ArtistRef {
+  id: string | number;
+  name: string;
+}
+
 export interface Track {
   id: string;
   title: string;
+  /** Primary performer (drives lyrics/Last.fm lookups, titles, play history). */
   artist: string;
   artist_id?: string | number;
+  /** Full performer credit list when a track has more than one artist. */
+  artists?: ArtistRef[];
   album: string;
   album_id?: string | number;
   cover: string;
@@ -162,6 +170,7 @@ export interface PartyTrack {
   title: string;
   artist: string;
   artist_id?: string | number;
+  artists?: ArtistRef[];
   album: string;
   album_id?: string | number;
   cover: string;

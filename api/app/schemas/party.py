@@ -1,6 +1,8 @@
 """Schemas for collaborative party sessions."""
 from pydantic import BaseModel, Field
 
+from .track import ArtistRef
+
 
 class PartyTrackOut(BaseModel):
     id: int
@@ -8,6 +10,7 @@ class PartyTrackOut(BaseModel):
     title: str = ""
     artist: str = ""
     artist_id: str = ""
+    artists: list[ArtistRef] = Field(default_factory=list)
     album: str = ""
     album_id: str = ""
     cover: str = ""

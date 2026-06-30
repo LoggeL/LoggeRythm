@@ -13,6 +13,7 @@ function partyTrackToTrack(pt: PartyTrack): Track {
     title: pt.title,
     artist: pt.artist,
     artist_id: pt.artist_id,
+    artists: pt.artists,
     album: pt.album,
     album_id: pt.album_id,
     cover: pt.cover,

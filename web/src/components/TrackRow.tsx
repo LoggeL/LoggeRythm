@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
-import { formatTime } from "@/lib/format";
+import { formatTime, formatCompact } from "@/lib/format";
 import { toast } from "@/store/toast";
+import type { TrackPlays } from "@/hooks/usePlays";
 import { PlayIcon, PauseIcon, PlusIcon } from "@/components/icons";
 import CacheMarker from "@/components/CacheMarker";
+import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
@@ -26,8 +28,10 @@ interface TrackRowProps {
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   showAlbum?: boolean;
-  // Show a Deezer popularity bar (only meaningful for search / artist results).
+  // Show a popularity indicator (only meaningful for search / artist results):
+  // the real Last.fm play count when known, otherwise the Deezer popularity bar.
   showPopularity?: boolean;
+  plays?: TrackPlays;
 }
 
 export default function TrackRow({
@@ -39,6 +43,7 @@ export default function TrackRow({
   onMoveDown,
   showAlbum = true,
   showPopularity = false,
+  plays,
 }: TrackRowProps) {
   const cur = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -115,18 +120,7 @@ export default function TrackRow({
           </div>
           <div className="flex items-center gap-1.5 text-sm text-muted min-w-0">
             <CacheMarker trackId={track.id} />
-            <span className="truncate">
-              {track.artist_id ? (
-                <Link
-                  href={`/artist/${track.artist_id}`}
-                  className="hover:underline hover:text-foreground"
-                >
-                  {track.artist}
-                </Link>
-              ) : (
-                track.artist
-              )}
-            </span>
+            <ArtistLinks track={track} className="truncate" />
           </div>
         </div>
       </div>
@@ -171,7 +165,15 @@ export default function TrackRow({
             </button>
           </div>
         )}
-        {showPopularity && track.rank ? (
+        {showPopularity && plays && plays.plays > 0 ? (
+          <span
+            className="hidden sm:flex items-center gap-1.5 mr-1 text-xs text-muted tabular-nums"
+            title={`${plays.plays.toLocaleString("de-DE")} Wiedergaben · ${plays.listeners.toLocaleString("de-DE")} Hörer (Last.fm)`}
+          >
+            <PlayIcon width={11} height={11} className="opacity-70" />
+            {formatCompact(plays.plays)}
+          </span>
+        ) : showPopularity && track.rank ? (
           <div
             className="hidden sm:flex items-center gap-1.5 mr-1"
             title={`Popularität ${popularityPct(track.rank)}%`}

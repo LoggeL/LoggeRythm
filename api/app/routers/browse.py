@@ -1,7 +1,10 @@
 """Browse + search endpoints (health, search, tracks meta, charts, albums, artists)."""
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from ..auth import get_current_user
+from ..db.models import User
 from ..schemas.track import (
     AlbumDetail,
     AlbumSummary,
@@ -13,9 +16,34 @@ from ..schemas.track import (
     Track,
 )
 from ..services import deezer_client as dc
+from ..services import lastfm
 from .errors import to_http
 
 router = APIRouter(prefix="/api", tags=["browse"])
+
+
+class PlayQuery(BaseModel):
+    id: str
+    artist: str = ""
+    title: str = ""
+
+
+class PlaysRequest(BaseModel):
+    tracks: list[PlayQuery] = []
+
+
+@router.post("/track-plays")
+async def track_plays(
+    body: PlaysRequest,
+    _user: User = Depends(get_current_user),
+) -> dict[str, dict]:
+    """Batched Last.fm play counts for a set of tracks → ``{id: {plays, listeners}}``."""
+    items = [
+        {"id": t.id, "artist": t.artist, "title": t.title} for t in body.tracks
+    ][:60]
+    if not items:
+        return {}
+    return await run_in_threadpool(lastfm.plays_for, items)
 
 
 @router.get("/health/deezer")

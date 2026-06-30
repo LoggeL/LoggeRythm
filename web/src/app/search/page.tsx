@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import { toast } from "@/store/toast";
 import { useLocalJson } from "@/hooks/useLocalJson";
+import { useTrackPlays } from "@/hooks/usePlays";
 import TrackRow from "@/components/TrackRow";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
@@ -103,6 +104,11 @@ export default function SearchPage() {
     () => sortTracks(tracksQ.data ?? [], sort),
     [tracksQ.data, sort],
   );
+  const shownTracks = useMemo(
+    () => tracks.slice(0, tab === "track" ? tracks.length : 6),
+    [tracks, tab],
+  );
+  const trackPlays = useTrackPlays(shownTracks);
   const albums = albumsQ.data ?? [];
   const artists = artistsQ.data ?? [];
   const playlists = playlistsQ.data ?? [];
@@ -284,17 +290,16 @@ export default function SearchPage() {
         <section className="mb-8">
           <h2 className="text-xl font-bold mb-3">Titel</h2>
           <div className="flex flex-col">
-            {tracks
-              .slice(0, tab === "track" ? tracks.length : 6)
-              .map((track, i) => (
-                <TrackRow
-                  key={track.id}
-                  track={track}
-                  index={i}
-                  showPopularity
-                  onPlay={() => playQueue(tracks, i)}
-                />
-              ))}
+            {shownTracks.map((track, i) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                index={i}
+                showPopularity
+                plays={trackPlays[String(track.id)]}
+                onPlay={() => playQueue(tracks, i)}
+              />
+            ))}
           </div>
         </section>
       )}

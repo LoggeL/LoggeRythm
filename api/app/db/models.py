@@ -73,6 +73,8 @@ class PlaylistTrack(Base):
     deezer_id: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # Full performer credit list as a JSON string (see schemas.track helpers).
+    artists_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     album: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -91,6 +93,8 @@ class Like(Base):
     deezer_id: Mapped[str] = mapped_column(String(32), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    # Full performer credit list as a JSON string (see schemas.track helpers).
+    artists_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     album: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -138,6 +142,8 @@ class Play(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    # Full performer credit list as a JSON string (see schemas.track helpers).
+    artists_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     album: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -176,6 +182,8 @@ class PartyTrack(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    # Full performer credit list as a JSON string (see schemas.track helpers).
+    artists_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     album: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

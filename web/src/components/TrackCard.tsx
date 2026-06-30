@@ -7,6 +7,7 @@ import { usePlayerStore, currentTrack } from "@/store/player";
 import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon, MoreIcon, PlusIcon } from "@/components/icons";
 import { useTrackMenuItems } from "@/components/TrackMenu";
+import ArtistLinks from "@/components/ArtistLinks";
 import ContextMenu from "@/components/ContextMenu";
 
 interface TrackCardProps {
@@ -138,16 +139,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
             {track.title}
           </div>
         )}
-        {track.artist_id ? (
-          <Link
-            href={`/artist/${track.artist_id}`}
-            className="block truncate text-sm text-muted hover:underline hover:text-foreground"
-          >
-            {track.artist}
-          </Link>
-        ) : (
-          <div className="truncate text-sm text-muted">{track.artist}</div>
-        )}
+        <ArtistLinks track={track} className="block truncate text-sm text-muted" />
       </div>
 
       {menuPos && (

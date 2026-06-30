@@ -76,6 +76,26 @@ def normalize_search_item(item: dict) -> dict:
     }
 
 
+def _artist_refs(t: dict, primary: dict) -> list[dict]:
+    """Build the full performer list from a track's ``contributors``.
+
+    Falls back to the single primary artist when no contributor list is present.
+    """
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for c in t.get("contributors") or []:
+        name = (c.get("name") or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        refs.append({"id": str(c.get("id", "") or ""), "name": name})
+    if not refs and primary.get("name"):
+        refs.append(
+            {"id": str(primary.get("id", "") or ""), "name": primary.get("name", "")}
+        )
+    return refs
+
+
 def normalize_public_track(t: dict) -> dict:
     """Map a public Deezer API track object to the Track shape."""
     album = t.get("album") or {}
@@ -85,6 +105,7 @@ def normalize_public_track(t: dict) -> dict:
         "title": t.get("title", "") or "",
         "artist": artist.get("name", "") or "",
         "artist_id": artist.get("id", "") or "",
+        "artists": _artist_refs(t, artist),
         "album": album.get("title", "") or "",
         "album_id": album.get("id", "") or "",
         "cover": album.get("cover_medium")

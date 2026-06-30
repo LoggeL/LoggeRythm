@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import ArtistLinks from "@/components/ArtistLinks";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
@@ -136,19 +136,11 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
                 <h2 className="text-3xl font-extrabold truncate">{track.title}</h2>
                 <LikeButton track={track} />
               </div>
-              <p className="text-muted mt-1">
-                {track.artist_id ? (
-                  <Link
-                    href={`/artist/${track.artist_id}`}
-                    onClick={onClose}
-                    className="hover:underline hover:text-foreground"
-                  >
-                    {track.artist}
-                  </Link>
-                ) : (
-                  track.artist
-                )}
-              </p>
+              <ArtistLinks
+                track={track}
+                onNavigate={onClose}
+                className="text-muted mt-1 block"
+              />
             </div>
           </div>
 
@@ -249,6 +241,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         ) : tab === "playing" ? (
           <EpicPlayingPanel
             track={track}
+            onClose={onClose}
             isPlaying={isPlaying}
             currentTime={currentTime}
             duration={duration}
@@ -403,6 +396,7 @@ function NowPlayingQueue() {
 
 function EpicPlayingPanel({
   track,
+  onClose,
   isPlaying,
   currentTime,
   duration,
@@ -421,6 +415,7 @@ function EpicPlayingPanel({
   onVolume,
 }: {
   track: NonNullable<ReturnType<typeof currentTrack>>;
+  onClose: () => void;
   isPlaying: boolean;
   currentTime: number;
   duration: number;
@@ -502,7 +497,11 @@ function EpicPlayingPanel({
                 </h2>
                 <LikeButton track={track} />
               </div>
-              <p className="mt-1 truncate text-sm text-muted md:mt-2 md:text-lg">{track.artist}</p>
+              <ArtistLinks
+                track={track}
+                onNavigate={onClose}
+                className="mt-1 block truncate text-sm text-muted md:mt-2 md:text-lg"
+              />
             </div>
 
             <div className="flex items-center gap-2 w-full">

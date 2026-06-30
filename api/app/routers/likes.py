@@ -6,16 +6,19 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db.models import Like, User
 from ..db.session import get_db
-from ..schemas.track import Track
+from ..schemas.track import Track, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me/likes", tags=["likes"])
 
 
 def _like_to_track(like: Like) -> Track:
+    artists = load_artists(like.artists_json, like.artist)
     return Track(
         id=like.deezer_id,
         title=like.title,
         artist=like.artist,
+        artist_id=artists[0].id if artists else "",
+        artists=artists,
         album=like.album,
         album_id="",
         cover=like.cover_url or "",
@@ -71,6 +74,7 @@ def add_like(
                 deezer_id=deezer_id,
                 title=track.title,
                 artist=track.artist,
+                artists_json=dump_artists(track),
                 album=track.album,
                 cover_url=track.cover or None,
                 duration_sec=track.duration_sec,
@@ -79,6 +83,7 @@ def add_like(
     else:
         existing.title = track.title
         existing.artist = track.artist
+        existing.artists_json = dump_artists(track)
         existing.album = track.album
         existing.cover_url = track.cover or None
         existing.duration_sec = track.duration_sec

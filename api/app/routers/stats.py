@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db.models import Play, User
 from ..db.session import get_db
-from ..schemas.track import Track
+from ..schemas.track import Track, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
 
@@ -24,6 +24,7 @@ def record_play(
             title=track.title,
             artist=track.artist,
             artist_id=str(track.artist_id or ""),
+            artists_json=dump_artists(track),
             album=track.album,
             album_id=str(track.album_id or ""),
             cover_url=track.cover or None,
@@ -103,6 +104,10 @@ def get_stats(
             "title": p.title,
             "artist": p.artist,
             "artist_id": p.artist_id,
+            "artists": [
+                a.model_dump()
+                for a in load_artists(p.artists_json, p.artist, p.artist_id)
+            ],
             "album": p.album,
             "album_id": p.album_id,
             "cover": p.cover_url or "",

@@ -11,7 +11,7 @@ from ..auth import get_current_user
 from ..db.models import PartyMember, PartySession, PartyTrack, User
 from ..db.session import get_db
 from ..schemas.party import PartyMemberOut, PartyState, PartyTrackOut
-from ..schemas.track import Track
+from ..schemas.track import Track, dump_artists, load_artists
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/party", tags=["party"])
@@ -92,6 +92,7 @@ def _build_state(db: Session, session: PartySession, user: User) -> PartyState:
                 title=t.title,
                 artist=t.artist,
                 artist_id=t.artist_id,
+                artists=load_artists(t.artists_json, t.artist, t.artist_id),
                 album=t.album,
                 album_id=t.album_id,
                 cover=t.cover_url or "",
@@ -179,6 +180,7 @@ def add_track(
             title=track.title,
             artist=track.artist,
             artist_id=str(track.artist_id),
+            artists_json=dump_artists(track),
             album=track.album,
             album_id=str(track.album_id),
             cover_url=track.cover or None,
