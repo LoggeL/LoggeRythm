@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
@@ -23,23 +23,46 @@ import {
   RepeatIcon,
   RepeatOneIcon,
   QueueIcon,
+  VisualizerIcon,
   LyricsIcon,
   SpinnerIcon,
   ChevronDownIcon,
   ExpandIcon,
 } from "@/components/icons";
 
-// Shared styling for the player's secondary round icon buttons.
+// Shared styling for the player's secondary icon buttons.
 const ICON_BTN =
   "w-9 h-9 rounded-full grid place-items-center transition-colors";
 const ICON_IDLE = "text-muted hover:text-foreground hover:bg-white/10";
-const ICON_ACTIVE = "text-accent bg-accent/15 hover:bg-accent/20";
+// Rounded-square buttons (lyrics / queue) with a subtle elevated surface.
+const SQUARE_BTN =
+  "w-10 h-10 rounded-lg grid place-items-center transition-colors";
+const SQUARE_IDLE = "text-muted bg-white/5 hover:text-foreground hover:bg-white/10";
+const SQUARE_ACTIVE = "text-accent bg-accent/20 hover:bg-accent/25";
+
+/** A violet-filled track for range inputs (filled up to `pct` percent). */
+function rangeFill(pct: number): string {
+  const p = Math.max(0, Math.min(100, pct));
+  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, #4d4d57 ${p}%, #4d4d57 100%)`;
+}
 
 export default function PlayerBar() {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const crossfadeRef = useRef<HTMLAudioElement>(null);
+  // Two interchangeable decks: one is "active" (drives the store + UI), the
+  // other prefetches the next track for a gapless crossfade. On handoff we just
+  // swap which deck is active — the faded-in deck keeps playing, so there is no
+  // reload, no seek and no restart.
+  const deckA = useRef<HTMLAudioElement>(null);
+  const deckB = useRef<HTMLAudioElement>(null);
+  const [activeIdx, setActiveIdx] = useState(0);
+  const activeIdxRef = useRef(0);
+  useEffect(() => {
+    activeIdxRef.current = activeIdx;
+  }, [activeIdx]);
+
   const crossfadeTimer = useRef<number | null>(null);
-  const crossfadeTrackId = useRef<string | null>(null);
+  // The next-track id we've already begun crossfading into (prevents the
+  // crossfade effect from re-triggering every frame near the end).
+  const crossfadeToId = useRef<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   const queueOpen = usePlayerStore((s) => s.queueOpen);
@@ -62,7 +85,6 @@ export default function PlayerBar() {
   const toggle = usePlayerStore((s) => s.toggle);
   const next = usePlayerStore((s) => s.next);
   const prev = usePlayerStore((s) => s.prev);
-  const jumpTo = usePlayerStore((s) => s.jumpTo);
   const seek = usePlayerStore((s) => s.seek);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
@@ -71,6 +93,7 @@ export default function PlayerBar() {
   const _setCurrentTime = usePlayerStore((s) => s._setCurrentTime);
   const _setDuration = usePlayerStore((s) => s._setDuration);
   const _onEnded = usePlayerStore((s) => s._onEnded);
+  const _crossfadeAdvance = usePlayerStore((s) => s._crossfadeAdvance);
   const _clearSeek = usePlayerStore((s) => s._clearSeek);
   const _setBuffering = usePlayerStore((s) => s._setBuffering);
   const _setError = usePlayerStore((s) => s._setError);
@@ -106,7 +129,7 @@ export default function PlayerBar() {
 
   // Reflect the current song in the browser tab title.
   useEffect(() => {
-    const base = "SpotiFrei";
+    const base = "LoggeRythm";
     document.title = track ? `${track.title} • ${track.artist}` : base;
     return () => {
       document.title = base;
@@ -134,50 +157,70 @@ export default function PlayerBar() {
       });
   }, [radioActive, index, queueLen, track, appendToQueue]);
 
-  // Reflect play/pause state.
+  // Load the current track into the active deck — unless that deck is already
+  // playing it, which is the case right after a crossfade handoff.
   useEffect(() => {
-    const el = audioRef.current;
+    const el = (activeIdx === 0 ? deckA : deckB).current;
+    if (!el) return;
+    const id = trackId ? String(trackId) : "";
+    if (el.dataset.trackId !== id) {
+      if (id) {
+        ensureAnalyser(el);
+        el.src = streamUrl(id);
+        el.dataset.trackId = id;
+        el.currentTime = 0;
+        const s = usePlayerStore.getState();
+        el.volume = s.muted ? 0 : s.volume;
+      } else {
+        el.pause();
+        el.removeAttribute("src");
+        el.dataset.trackId = "";
+        el.load();
+      }
+    }
+    // Idle the other deck (it may hold a half-faded previous/next track).
+    const idle = (activeIdx === 0 ? deckB : deckA).current;
+    if (idle && !crossfadeTimer.current) {
+      idle.pause();
+      idle.dataset.trackId = "";
+    }
+    // A normal (non-crossfade) track change cancels any pending crossfade.
+    crossfadeToId.current = null;
+  }, [activeIdx, trackId]);
+
+  // Reflect play/pause on the active deck.
+  useEffect(() => {
+    const el = (activeIdx === 0 ? deckA : deckB).current;
     if (!el) return;
     if (isPlaying) {
-      // Lazily wire the Web Audio analyser on play (a user gesture, so the
-      // AudioContext is allowed to start) — powers the fullscreen visualizer.
+      // Lazily wire the analyser on play (a user gesture, so the AudioContext
+      // may start) — powers the visualizers.
       ensureAnalyser(el);
-      el.play().catch(() => {
-        // autoplay may be blocked; ignore
-      });
+      el.play().catch(() => {});
     } else {
       el.pause();
+      // Pausing aborts any in-flight crossfade so both decks stop together.
+      if (crossfadeTimer.current) {
+        window.clearInterval(crossfadeTimer.current);
+        crossfadeTimer.current = null;
+        const idle = (activeIdx === 0 ? deckB : deckA).current;
+        if (idle) idle.pause();
+        crossfadeToId.current = null;
+        const s = usePlayerStore.getState();
+        el.volume = s.muted ? 0 : s.volume;
+      }
     }
-  }, [isPlaying, trackId]);
+  }, [isPlaying, trackId, activeIdx]);
 
+  // Sync volume + mute onto the active deck (the crossfade owns volumes while
+  // it runs).
   useEffect(() => {
-    if (!isPlaying && crossfadeRef.current) {
-      crossfadeRef.current.pause();
-    }
-  }, [isPlaying]);
+    const el = (activeIdx === 0 ? deckA : deckB).current;
+    if (el && !crossfadeTimer.current) el.volume = muted ? 0 : volume;
+  }, [volume, muted, activeIdx]);
 
-  // Sync volume + mute.
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
-    if (crossfadeRef.current && !crossfadeTimer.current) {
-      crossfadeRef.current.volume = muted ? 0 : volume;
-    }
-  }, [volume, muted]);
-
-  useEffect(() => {
-    crossfadeTrackId.current = null;
-    if (crossfadeTimer.current) {
-      window.clearInterval(crossfadeTimer.current);
-      crossfadeTimer.current = null;
-    }
-    if (crossfadeRef.current) {
-      crossfadeRef.current.pause();
-      crossfadeRef.current.removeAttribute("src");
-      crossfadeRef.current.load();
-    }
-    if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
-  }, [trackId, muted, volume]);
-
+  // Crossfade: near the end of the active deck, fade the next track in on the
+  // idle deck, then swap which deck is active — no reload, no seek, no restart.
   useEffect(() => {
     const seconds = settings?.crossfade_enabled
       ? settings.crossfade_duration_sec
@@ -187,15 +230,19 @@ export default function PlayerBar() {
     if (!duration || duration <= seconds + 1) return;
     if (currentTime < duration - seconds) return;
     if (index < 0 || index >= queue.length - 1) return;
+    if (crossfadeTimer.current) return;
 
-    const outgoing = audioRef.current;
-    const incoming = crossfadeRef.current;
+    const outgoing = (activeIdx === 0 ? deckA : deckB).current;
+    const incoming = (activeIdx === 0 ? deckB : deckA).current;
     const nextTrack = queue[index + 1];
     if (!outgoing || !incoming || !nextTrack) return;
-    if (crossfadeTrackId.current === String(nextTrack.id)) return;
+    if (crossfadeToId.current === String(nextTrack.id)) return;
 
-    crossfadeTrackId.current = String(nextTrack.id);
+    const incomingIdx = activeIdx ^ 1;
+    crossfadeToId.current = String(nextTrack.id);
+    ensureAnalyser(incoming);
     incoming.src = streamUrl(String(nextTrack.id));
+    incoming.dataset.trackId = String(nextTrack.id);
     incoming.currentTime = 0;
     incoming.volume = 0;
 
@@ -215,41 +262,42 @@ export default function PlayerBar() {
               window.clearInterval(crossfadeTimer.current);
               crossfadeTimer.current = null;
             }
-            incoming.pause();
-            jumpTo(index + 1);
-            setTimeout(() => {
-              seek(Math.min(seconds, nextTrack.duration_sec || seconds));
-              if (audioRef.current) audioRef.current.volume = targetVolume;
-            }, 0);
+            incoming.volume = targetVolume;
+            // The incoming deck simply keeps playing — promote it to active and
+            // advance the queue index without touching currentTime.
+            outgoing.pause();
+            activeIdxRef.current = incomingIdx;
+            setActiveIdx(incomingIdx);
+            _crossfadeAdvance();
           }
         }, 50);
       })
       .catch(() => {
-        crossfadeTrackId.current = null;
+        crossfadeToId.current = null;
         incoming.removeAttribute("src");
+        incoming.dataset.trackId = "";
       });
   }, [
     currentTime,
     duration,
     index,
     isPlaying,
-    jumpTo,
     muted,
     queue,
     repeat,
-    seek,
     settings?.crossfade_duration_sec,
     settings?.crossfade_enabled,
     track,
     volume,
+    activeIdx,
+    _crossfadeAdvance,
   ]);
 
-  // Consume seek requests from the store. If the media isn't ready yet (e.g. a
-  // crossfade just switched to a freshly-loaded track), defer the seek until
-  // metadata is available — otherwise the new track audibly restarts from 0.
+  // Consume seek requests from the store on the active deck. Defer until
+  // metadata is ready when the deck is still loading.
   useEffect(() => {
     if (seekTo == null) return;
-    const el = audioRef.current;
+    const el = (activeIdx === 0 ? deckA : deckB).current;
     if (el) {
       const target = seekTo;
       const apply = () => {
@@ -270,7 +318,7 @@ export default function PlayerBar() {
       }
     }
     _clearSeek();
-  }, [seekTo, _clearSeek]);
+  }, [seekTo, _clearSeek, activeIdx]);
 
   // MediaSession: OS media keys + metadata + artwork.
   useEffect(() => {
@@ -370,11 +418,56 @@ export default function PlayerBar() {
     document.body.dataset.nowPlayingExpanded = expanded ? "true" : "false";
 
     window.addEventListener("spotifrei:close-now-playing", closeFullscreen);
+    window.addEventListener("spotifrei:open-now-playing", openFullscreen);
     return () => {
       window.removeEventListener("spotifrei:close-now-playing", closeFullscreen);
+      window.removeEventListener("spotifrei:open-now-playing", openFullscreen);
       document.body.dataset.nowPlayingExpanded = "false";
     };
   }, [expanded]);
+
+  // Media-element event props for a deck — only the ACTIVE deck drives the
+  // store (the other is mid-crossfade prefetch and must stay silent to the UI).
+  const deckProps = (idx: 0 | 1) => ({
+    onTimeUpdate: (e: SyntheticEvent<HTMLAudioElement>) => {
+      if (activeIdxRef.current === idx) _setCurrentTime(e.currentTarget.currentTime);
+    },
+    onLoadedMetadata: (e: SyntheticEvent<HTMLAudioElement>) => {
+      if (activeIdxRef.current !== idx) return;
+      const d = e.currentTarget.duration;
+      if (Number.isFinite(d)) _setDuration(d);
+    },
+    onEnded: (e: SyntheticEvent<HTMLAudioElement>) => {
+      if (activeIdxRef.current !== idx) return;
+      // A crossfade already owns the transition into the next track.
+      if (crossfadeTimer.current) return;
+      if (repeat === "one") {
+        e.currentTarget.currentTime = 0;
+        _setCurrentTime(0);
+        e.currentTarget.play().catch(() => _onEnded());
+        return;
+      }
+      _onEnded();
+    },
+    onWaiting: () => {
+      if (activeIdxRef.current === idx) _setBuffering(true);
+    },
+    onStalled: () => {
+      if (activeIdxRef.current === idx) _setBuffering(true);
+    },
+    onPlaying: () => {
+      if (activeIdxRef.current !== idx) return;
+      _setBuffering(false);
+      _setError(null);
+    },
+    onCanPlay: () => {
+      if (activeIdxRef.current === idx) _setBuffering(false);
+    },
+    onError: () => {
+      if (activeIdxRef.current === idx) _setError("Titel konnte nicht geladen werden.");
+    },
+    preload: "auto" as const,
+  });
 
   return (
     <>
@@ -386,34 +479,9 @@ export default function PlayerBar() {
             : "bg-background-elevated/95 border-t border-white/10 min-h-16 sm:h-20"
         }`}
       >
-        <audio
-          ref={audioRef}
-          src={trackId ? streamUrl(trackId) : undefined}
-          onTimeUpdate={(e) => _setCurrentTime(e.currentTarget.currentTime)}
-          onLoadedMetadata={(e) => {
-            const d = e.currentTarget.duration;
-            if (Number.isFinite(d)) _setDuration(d);
-          }}
-          onEnded={(e) => {
-            if (repeat === "one") {
-              e.currentTarget.currentTime = 0;
-              _setCurrentTime(0);
-              e.currentTarget.play().catch(() => _onEnded());
-              return;
-            }
-            _onEnded();
-          }}
-          onWaiting={() => _setBuffering(true)}
-          onStalled={() => _setBuffering(true)}
-          onPlaying={() => {
-            _setBuffering(false);
-            _setError(null);
-          }}
-          onCanPlay={() => _setBuffering(false)}
-          onError={() => _setError("Titel konnte nicht geladen werden.")}
-          preload="metadata"
-        />
-        <audio ref={crossfadeRef} preload="auto" aria-hidden="true" />
+        {/* Two interchangeable decks — see the playback engine above. */}
+        <audio ref={deckA} aria-hidden="true" {...deckProps(0)} />
+        <audio ref={deckB} aria-hidden="true" {...deckProps(1)} />
 
         {/* Track info */}
         <div
@@ -434,7 +502,7 @@ export default function PlayerBar() {
                   <img
                     src={track.cover}
                     alt=""
-                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover shadow-md hover:opacity-80 transition"
+                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover shadow-md ring-1 ring-white/10 hover:opacity-80 transition"
                   />
                 ) : (
                   <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl gradient-violet opacity-80" />
@@ -444,12 +512,14 @@ export default function PlayerBar() {
                 {track.album_id ? (
                   <Link
                     href={`/album/${track.album_id}`}
-                    className="block truncate font-medium text-sm hover:underline"
+                    className="block truncate font-semibold text-[15px] uppercase tracking-wide hover:underline"
                   >
                     {track.title}
                   </Link>
                 ) : (
-                  <div className="truncate font-medium text-sm">{track.title}</div>
+                  <div className="truncate font-semibold text-[15px] uppercase tracking-wide">
+                    {track.title}
+                  </div>
                 )}
                 {error ? (
                   <div className="truncate text-xs text-muted">
@@ -488,7 +558,7 @@ export default function PlayerBar() {
             hasTrack ? "" : "hidden sm:flex"
           }`}
         >
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-6">
             <button
               type="button"
               onClick={toggleShuffle}
@@ -516,7 +586,7 @@ export default function PlayerBar() {
               onClick={toggle}
               disabled={!hasTrack}
               aria-label={isPlaying ? "Pause" : "Abspielen"}
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white text-black flex items-center justify-center shadow-lg hover:scale-105 transition disabled:opacity-40"
+              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-[0_0_22px_rgba(124,92,255,0.6)] hover:scale-105 transition disabled:opacity-40"
             >
               {isBuffering ? (
                 <SpinnerIcon width={22} height={22} className="animate-spin" />
@@ -569,6 +639,11 @@ export default function PlayerBar() {
               onChange={(e) => seek(Number(e.target.value))}
               disabled={!hasTrack || !duration}
               className="flex-1"
+              style={{
+                background: rangeFill(
+                  duration ? (currentTime / duration) * 100 : 0,
+                ),
+              }}
               aria-label="Fortschritt"
             />
             <span className="hidden min-[380px]:block text-xs text-muted w-10 tabular-nums">
@@ -585,7 +660,7 @@ export default function PlayerBar() {
             aria-label="Songtext"
             aria-pressed={lyricsOpen}
             title="Songtext"
-            className={`${ICON_BTN} ${lyricsOpen ? ICON_ACTIVE : ICON_IDLE}`}
+            className={`${SQUARE_BTN} ${lyricsOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
           >
             <LyricsIcon width={18} height={18} />
           </button>
@@ -595,11 +670,11 @@ export default function PlayerBar() {
             aria-label="Warteschlange"
             aria-pressed={queueOpen}
             title="Warteschlange"
-            className={`${ICON_BTN} ${queueOpen ? ICON_ACTIVE : ICON_IDLE}`}
+            className={`${SQUARE_BTN} ${SQUARE_IDLE}`}
           >
-            <QueueIcon width={18} height={18} />
+            <VisualizerIcon width={18} height={18} />
           </button>
-          <div className="flex items-center gap-1.5 ml-1">
+          <div className="flex items-center gap-1.5 ml-2">
             <button
               type="button"
               onClick={toggleMute}
@@ -619,7 +694,8 @@ export default function PlayerBar() {
               step={0.01}
               value={muted ? 0 : volume}
               onChange={(e) => setVolume(Number(e.target.value))}
-              className="w-20"
+              className="w-24"
+              style={{ background: rangeFill((muted ? 0 : volume) * 100) }}
               aria-label="Lautstärke"
             />
           </div>

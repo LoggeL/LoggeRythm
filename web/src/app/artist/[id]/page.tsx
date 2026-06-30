@@ -6,11 +6,14 @@ import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import { useMe } from "@/hooks/useAuth";
 import { useFollowedIds, useToggleFollow } from "@/hooks/useFollows";
-import TrackRow from "@/components/TrackRow";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
+import PopularTrackTable from "@/components/PopularTrackTable";
+import ArtistSongSearch from "@/components/ArtistSongSearch";
+import ArtistAbout from "@/components/ArtistAbout";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
-import { PlayIcon } from "@/components/icons";
+import { PlayIcon, MoreIcon, VerifiedIcon } from "@/components/icons";
+import { formatCompact } from "@/lib/format";
 import type { Artist } from "@/types";
 
 export default function ArtistPage({
@@ -44,68 +47,104 @@ export default function ArtistPage({
   const related = data.related ?? [];
   const following = followedIds.has(String(data.id));
 
+  const fans = data.fans ?? 0;
+
   return (
     <div>
-      <header className="flex items-end gap-6 mb-6">
-        {data.picture ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.picture}
-            alt={data.name}
-            className="w-40 h-40 rounded-full object-cover shadow-xl"
-          />
-        ) : (
-          <div className="w-40 h-40 rounded-full bg-panel-hover" />
-        )}
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted">Künstler</p>
-          <h1 className="text-4xl font-extrabold mb-2">{data.name}</h1>
-        </div>
-      </header>
+      {/* Hero header with decorative aurora */}
+      <div className="relative -mx-4 sm:-mx-8 px-4 sm:px-8 overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/artist-aurora.png"
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute right-0 top-0 h-[360px] w-[70%] object-cover opacity-90 [mask-image:linear-gradient(to_left,black,transparent)]"
+          style={{ mixBlendMode: "screen" }}
+        />
 
-      <div className="flex items-center gap-3 mb-8">
-        <button
-          type="button"
-          onClick={() => playQueue(tracks, 0, data.name)}
-          disabled={tracks.length === 0}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
-        >
-          <PlayIcon /> Abspielen
-        </button>
-        <button
-          type="button"
-          onClick={() =>
-            toggleFollow.mutate({
-              artist: { id: data.id, name: data.name, picture: data.picture },
-              following,
-            })
-          }
-          className={`px-5 py-2.5 rounded-full border font-semibold transition ${
-            following
-              ? "border-accent text-accent"
-              : "border-white/30 hover:border-white/70"
-          }`}
-        >
-          {following ? "Gefolgt" : "Folgen"}
-        </button>
+        <header className="relative flex items-center gap-8 pt-10 pb-8 pl-2">
+          <div className="relative flex-shrink-0">
+            <div className="absolute -inset-2.5 rounded-full bg-[conic-gradient(from_210deg,#3b82ff,#7c5cff,#c46bff,#3b82ff)] blur-md opacity-80" />
+            <div className="absolute -inset-1 rounded-full bg-[conic-gradient(from_210deg,#3b82ff,#7c5cff,#c46bff,#3b82ff)]" />
+            {data.picture ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={data.picture}
+                alt={data.name}
+                className="relative w-44 h-44 rounded-full object-cover ring-2 ring-white/10"
+              />
+            ) : (
+              <div className="relative w-44 h-44 rounded-full bg-panel-hover" />
+            )}
+          </div>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-3">
+              <VerifiedIcon className="text-accent" width={20} height={20} />
+              <span className="text-[13px] font-semibold uppercase tracking-wider text-muted">
+                Künstler
+              </span>
+            </div>
+            <h1 className="text-6xl lg:text-7xl font-bold tracking-tight leading-none mb-4">
+              {data.name}
+            </h1>
+            {fans > 0 && (
+              <p className="text-sm text-muted mb-8">
+                {formatCompact(fans)} monatliche Hörer*innen
+              </p>
+            )}
+
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => playQueue(tracks, 0, data.name)}
+                disabled={tracks.length === 0}
+                className="inline-flex items-center gap-2.5 pl-6 pr-7 py-3 rounded-full bg-accent text-white font-semibold shadow-lg shadow-accent/25 hover:bg-accent-hover disabled:opacity-40 press"
+              >
+                <PlayIcon width={18} height={18} /> Abspielen
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  toggleFollow.mutate({
+                    artist: { id: data.id, name: data.name, picture: data.picture },
+                    following,
+                  })
+                }
+                className={`px-8 py-2.5 rounded-full border font-semibold transition press ${
+                  following
+                    ? "border-accent text-accent"
+                    : "border-white/25 hover:border-white/60"
+                }`}
+              >
+                {following ? "Gefolgt" : "Folgen"}
+              </button>
+              <button
+                type="button"
+                aria-label="Weitere Optionen"
+                className="grid h-12 w-12 place-items-center rounded-full border border-white/25 text-muted hover:text-foreground hover:border-white/60 transition press"
+              >
+                <MoreIcon width={20} height={20} />
+              </button>
+            </div>
+          </div>
+        </header>
       </div>
 
-      {tracks.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-3">Beliebt</h2>
-          <div className="flex flex-col">
-            {tracks.slice(0, 10).map((track, i) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={i}
-                showPopularity
-                onPlay={() => playQueue(tracks, i, data.name)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+      <div className="pt-6">
+        {tracks.length > 0 && (
+          <section className="mb-10">
+            <h2 className="text-2xl font-bold mb-4">Beliebt</h2>
+            <PopularTrackTable
+              tracks={tracks.slice(0, 10)}
+              context={data.name}
+              showPlays
+            />
+          </section>
+        )}
+
+        <ArtistSongSearch artistId={String(data.id)} artistName={data.name} />
+      </div>
 
       {albums.length > 0 && (
         <section className="mb-10">
@@ -128,6 +167,12 @@ export default function ArtistPage({
           </div>
         </section>
       )}
+
+      <ArtistAbout
+        name={data.name}
+        picture={data.picture}
+        albumsCount={data.albums_count}
+      />
     </div>
   );
 }

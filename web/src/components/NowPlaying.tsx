@@ -11,6 +11,7 @@ import CompactLyrics from "@/components/CompactLyrics";
 import LikeButton from "@/components/LikeButton";
 import Visualizer, { RadialVisualizer } from "@/components/Visualizer";
 import EqualizerBars from "@/components/EqualizerBars";
+import { useBassGlow } from "@/hooks/useBassGlow";
 import {
   PlayIcon,
   PauseIcon,
@@ -88,8 +89,9 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
           <ChevronDownIcon width={24} height={24} />
         </button>
         <span className="text-base font-extrabold tracking-tight">
-          <span className="text-foreground">Spoti</span>
-          <span className="text-accent">Frei</span>
+          <span className="text-foreground">Logge</span>
+          <span className="mx-0.5 text-white/35">|</span>
+          <span className="text-accent">Rythm</span>
         </span>
         <span className="w-10" />
       </div>
@@ -469,6 +471,14 @@ function EpicPlayingPanel({
   onToggleMute: () => void;
   onVolume: (v: number) => void;
 }) {
+  // Bass-reactive pulse + glow on the circular album art.
+  const albumRef = useBassGlow<HTMLDivElement>(isPlaying, {
+    baseSpread: 50,
+    peakSpread: 95,
+    baseAlpha: 0.3,
+    peakAlpha: 0.6,
+    maxScale: 0.04,
+  });
   return (
     <div className="min-h-0 flex flex-1 flex-col lg:mt-0">
       <span className="sr-only lg:not-sr-only lg:flex-shrink-0 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-widest lg:text-muted lg:mb-4">
@@ -502,7 +512,10 @@ function EpicPlayingPanel({
                 isPlaying={isPlaying}
                 className="pointer-events-none absolute inset-0 z-0 h-full w-full"
               />
-              <div className="relative flex aspect-square w-[82%] items-center justify-center rounded-full border border-white/10 bg-black/30 p-[8.5%] shadow-[0_0_80px_rgba(124,92,255,0.35)]">
+              <div
+                ref={albumRef}
+                className="relative flex aspect-square w-[82%] items-center justify-center rounded-full border border-white/10 bg-black/30 p-[8.5%] will-change-transform"
+              >
                 <div
                   aria-hidden
                   className="absolute inset-[8%] z-10 rounded-full border border-accent/25"

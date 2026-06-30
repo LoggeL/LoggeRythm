@@ -5,6 +5,7 @@ import type {
   Album,
   AlbumSummary,
   Artist,
+  ArtistAbout,
   ArtistSummary,
   Playlist,
   PlaylistSummary,
@@ -111,6 +112,8 @@ export const api = {
   track: (id: string) => req<Track>(`/tracks/${encodeURIComponent(id)}`),
   album: (id: string) => req<Album>(`/albums/${encodeURIComponent(id)}`),
   artist: (id: string) => req<Artist>(`/artists/${encodeURIComponent(id)}`),
+  artistAbout: (name: string) =>
+    req<ArtistAbout>(`/artist-about?name=${encodeURIComponent(name)}`),
 
   // Auth
   me: () => req<User>(`/auth/me`),

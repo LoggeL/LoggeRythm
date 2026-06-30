@@ -90,8 +90,40 @@ export function PlusIcon(props: IconProps) {
 
 export function HomeIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" width={20} height={20} fill="currentColor" {...props}>
-      <path d="M12 3l9 8h-2v9h-5v-6h-4v6H5v-9H3z" />
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M4 11.5L12 4l8 7.5" />
+      <path d="M5.5 10.5V20h5v-6h3v6h5v-9.5" />
+    </svg>
+  );
+}
+
+export function NotesIcon(props: IconProps) {
+  // Document/notes page with a folded corner — used for "Bibliothek".
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M6 3h8l4 4v14H6z" />
+      <path d="M14 3v4h4" />
+      <path d="M9 12h6M9 16h4" />
     </svg>
   );
 }
@@ -291,6 +323,14 @@ export function TrashIcon(props: IconProps) {
   );
 }
 
+export function MusicNoteIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" width={18} height={18} fill="currentColor" {...props}>
+      <path d="M9 17.5a2.5 2.5 0 11-2.5-2.5c.55 0 1.06.18 1.5.47V5l9-2v9.5a2.5 2.5 0 11-2.5-2.5c.55 0 1.06.18 1.5.47V6.2L9 7.6z" />
+    </svg>
+  );
+}
+
 export function LyricsIcon(props: IconProps) {
   return (
     <svg
@@ -311,6 +351,124 @@ export function LyricsIcon(props: IconProps) {
       <path d="M18 6v8.5" />
       <path d="M18 6l2.5.8" />
       <circle cx="16.5" cy="17" r="2" />
+    </svg>
+  );
+}
+
+export function CompassIcon(props: IconProps) {
+  // Discover/explore: a ring with an angled needle.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function RadioIcon(props: IconProps) {
+  // Broadcast: a centre dot flanked by signal arcs.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+      <path d="M8.5 8.5a5 5 0 000 7M15.5 8.5a5 5 0 010 7" />
+      <path d="M5.8 5.8a9 9 0 000 12.4M18.2 5.8a9 9 0 010 12.4" />
+    </svg>
+  );
+}
+
+export function DownloadIcon(props: IconProps) {
+  // Circle with a download arrow.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={20}
+      height={20}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v6m0 0l-2.5-2.5M12 14l2.5-2.5" />
+    </svg>
+  );
+}
+
+export function VerifiedIcon(props: IconProps) {
+  // Filled scalloped verified badge with a check.
+  return (
+    <svg viewBox="0 0 24 24" width={20} height={20} fill="none" {...props}>
+      <path
+        d="M12 2.2l2.3 1.7 2.9-.2 1 2.7 2.4 1.6-.8 2.8.8 2.8-2.4 1.6-1 2.7-2.9-.2L12 21.8l-2.3-1.7-2.9.2-1-2.7-2.4-1.6.8-2.8-.8-2.8 2.4-1.6 1-2.7 2.9.2z"
+        fill="currentColor"
+      />
+      <path
+        d="M8.5 12.2l2.3 2.3 4.5-4.7"
+        fill="none"
+        stroke="#0b0b12"
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function ClockIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </svg>
+  );
+}
+
+export function VisualizerIcon(props: IconProps) {
+  // Equalizer / spectrum bars.
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      {...props}
+    >
+      <path d="M5 14v4M9.5 9v9M14.5 6v12M19 11v7" />
     </svg>
   );
 }

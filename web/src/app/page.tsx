@@ -90,8 +90,9 @@ export default function HomePage() {
       <div className="flex md:hidden items-center gap-2 -mb-3">
         <Logo size={22} className="drop-glow" />
         <span className="text-base font-extrabold tracking-tight">
-          <span className="text-foreground">Spoti</span>
-          <span className="text-accent">Frei</span>
+          <span className="text-foreground">Logge</span>
+          <span className="mx-0.5 text-white/35">|</span>
+          <span className="text-accent">Rythm</span>
         </span>
       </div>
 

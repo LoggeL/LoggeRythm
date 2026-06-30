@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 :root {
-  /* Deep near-black with a faint violet cast, matching the mockups. */
-  --background: #0b0b12;
-  --background-elevated: #101019;
+  /* Deep near-black with a faint blue/violet navy cast, matching the mockups. */
+  --background: #0a0a14;
+  --background-elevated: #11111d;
   --foreground: #f3f3f6;
   --panel: #14141f;
   --panel-hover: #1e1e2c;
@@ -45,10 +45,20 @@ body {
   /* Subtle violet glow anchored top-left for depth, over the deep base. */
   background-color: var(--background);
   background-image: radial-gradient(
-    120% 80% at 15% -10%,
-    rgba(124, 92, 255, 0.12),
-    transparent 60%
-  );
+      110% 70% at 12% -8%,
+      rgba(124, 92, 255, 0.16),
+      transparent 58%
+    ),
+    radial-gradient(
+      80% 60% at 60% -5%,
+      rgba(80, 70, 180, 0.1),
+      transparent 55%
+    ),
+    radial-gradient(
+      90% 70% at 92% 2%,
+      rgba(45, 65, 150, 0.12),
+      transparent 55%
+    );
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;

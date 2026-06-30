@@ -107,3 +107,60 @@ def plays_for(items: list[dict]) -> dict[str, dict]:
                 for tid in seen_keys.get(k, []):
                     out[tid] = res
     return out
+
+
+# artist name (lowercased) -> (fetched_at, info | None)
+_artist_cache: dict[str, tuple[float, dict | None]] = {}
+
+
+def _clean_bio(raw: str) -> str:
+    """Strip Last.fm's trailing "Read more on Last.fm" link/markup from a bio."""
+    text = raw or ""
+    marker = "<a href"
+    idx = text.find(marker)
+    if idx != -1:
+        text = text[:idx]
+    return text.strip()
+
+
+def artist_info(name: str) -> dict | None:
+    """Last.fm ``artist.getInfo`` → ``{bio, listeners, playcount, tags}``.
+
+    Cached 24h per artist name; returns ``None`` when no key is configured or
+    the artist is unknown.
+    """
+    name = (name or "").strip()
+    if not name:
+        return None
+    key = name.lower()
+    now = _now()
+    with _lock:
+        ent = _artist_cache.get(key)
+    if ent and now - ent[0] < _CACHE_TTL:
+        return ent[1]
+
+    data = _get({"method": "artist.getInfo", "artist": name, "autocorrect": 1})
+    artist = (data or {}).get("artist") or {}
+    info: dict | None = None
+    if artist:
+        stats = artist.get("stats") or {}
+        bio = (artist.get("bio") or {}).get("summary") or ""
+        tags = [
+            t.get("name", "")
+            for t in ((artist.get("tags") or {}).get("tag") or [])
+            if t.get("name")
+        ]
+        try:
+            listeners = int(stats.get("listeners") or 0)
+            playcount = int(stats.get("playcount") or 0)
+        except (TypeError, ValueError):
+            listeners = playcount = 0
+        info = {
+            "bio": _clean_bio(bio),
+            "listeners": listeners,
+            "playcount": playcount,
+            "tags": tags[:5],
+        }
+    with _lock:
+        _artist_cache[key] = (now, info)
+    return info

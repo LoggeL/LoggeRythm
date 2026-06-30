@@ -410,6 +410,8 @@ def artist_detail(artist_id: str) -> dict:
         or data.get("picture_big")
         or data.get("picture", "")
         or "",
+        "fans": data.get("nb_fan", 0) or 0,
+        "albums_count": data.get("nb_album", 0) or 0,
         "top": [normalize_public_track(t) for t in tracks],
         "albums": albums,
         "related": related,

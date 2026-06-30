@@ -194,6 +194,9 @@ interface PlayerState {
   _setCurrentTime: (t: number) => void;
   _setDuration: (d: number) => void;
   _onEnded: () => void;
+  // Advance to the next track during a crossfade WITHOUT resetting currentTime
+  // (the incoming deck is already playing, so its time is the source of truth).
+  _crossfadeAdvance: () => void;
   _setBuffering: (b: boolean) => void;
   _setError: (msg: string | null) => void;
 
@@ -554,6 +557,17 @@ export const usePlayerStore = create<PlayerState>()(
 
       _setCurrentTime: (t) => set({ currentTime: t }),
       _setDuration: (d) => set({ duration: d }),
+      _crossfadeAdvance: () => {
+        const { index, queue } = get();
+        if (index < 0 || index >= queue.length - 1) return;
+        pushRecent(queue[index + 1]);
+        set({
+          index: index + 1,
+          isPlaying: true,
+          duration: queue[index + 1]?.duration_sec || 0,
+          error: null,
+        });
+      },
       _onEnded: () => {
         if (get().repeat === "one") {
           set({ seekTo: 0, currentTime: 0, isPlaying: true });

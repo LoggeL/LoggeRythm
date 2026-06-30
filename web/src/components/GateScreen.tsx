@@ -11,8 +11,9 @@ function Shell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3">
           <Logo size={44} />
           <span className="text-3xl font-black tracking-tight">
-            <span className="text-foreground">Spoti</span>
-            <span className="text-accent">Frei</span>
+            <span className="text-foreground">Logge</span>
+            <span className="mx-1 text-white/35">|</span>
+            <span className="text-accent">Rythm</span>
           </span>
         </div>
         {children}

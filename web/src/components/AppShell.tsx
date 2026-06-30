@@ -81,20 +81,24 @@ export default function AppShell({
     <div className="h-full flex flex-col">
       <div className="flex flex-1 min-h-0">
         <Sidebar />
-        <main
-          ref={mainRef}
-          className="flex-1 min-w-0 overflow-y-auto scroll-area bg-background"
-        >
-          <div className="px-4 sm:px-6 pb-6 max-w-[92rem] mx-auto">
-            <TopBar />
-            <div key={pathname} className="animate-in pt-2">
-              {children}
+        <div className="flex-1 min-w-0 flex flex-col bg-background">
+          <main
+            ref={mainRef}
+            className="flex-1 min-h-0 overflow-y-auto scroll-area"
+          >
+            <div className="px-4 sm:px-8 pb-6 max-w-[92rem] mx-auto">
+              <TopBar />
+              <div key={pathname} className="animate-in pt-2">
+                {children}
+              </div>
             </div>
-          </div>
-        </main>
+          </main>
+          {/* Lyrics dock sits at the bottom of the main column only, so the
+              sidebar and queue run full-height down to the player bar. */}
+          <Lyrics />
+        </div>
         <QueueSidebar />
       </div>
-      <Lyrics />
       <PlayerBar />
       <MobileNav />
       <CommandPalette />

@@ -145,6 +145,20 @@ async def artist(artist_id: str) -> dict:
         raise to_http(e)
 
 
+class ArtistAbout(BaseModel):
+    bio: str = ""
+    listeners: int = 0
+    playcount: int = 0
+    tags: list[str] = []
+
+
+@router.get("/artist-about", response_model=ArtistAbout)
+async def artist_about(name: str = Query(default="")) -> dict:
+    """Last.fm artist biography + stats for the "About" section (lazy-loaded)."""
+    info = await run_in_threadpool(lastfm.artist_info, name)
+    return info or {}
+
+
 @router.get("/deezer-playlist/{playlist_id}")
 async def deezer_playlist(playlist_id: str) -> dict:
     try:

@@ -17,8 +17,11 @@ type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
 let ctx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
-let source: MediaElementAudioSourceNode | null = null;
-let connectedEl: HTMLAudioElement | null = null;
+// Each <audio> element may only have ONE MediaElementSource ever, and once
+// routed through Web Audio it must reach the destination through the graph or
+// it falls silent. We therefore track every connected element (the player uses
+// two decks for gapless crossfades) and wire each: source → analyser → output.
+const sources = new Map<HTMLAudioElement, MediaElementAudioSourceNode>();
 
 function getCtor(): typeof AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -26,14 +29,15 @@ function getCtor(): typeof AudioContext | null {
 }
 
 /**
- * Wire the given audio element into the analyser graph (once) and resume the
- * AudioContext. Call this in response to a user gesture (e.g. pressing play).
+ * Wire the given audio element into the shared analyser graph (once per
+ * element) and resume the AudioContext. Safe to call repeatedly and for several
+ * elements. Call it in response to a user gesture (e.g. pressing play), before
+ * the element starts playing, so its output is routed to the speakers + analyser.
  * Returns the analyser, or null if Web Audio is unavailable / setup failed.
  */
 export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null {
-  if (!el) return analyser;
   const Ctor = getCtor();
-  if (!Ctor) return null;
+  if (!Ctor) return analyser;
 
   if (!ctx) {
     try {
@@ -44,24 +48,23 @@ export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null
   }
   if (ctx.state === "suspended") ctx.resume().catch(() => {});
 
-  if (connectedEl !== el) {
-    try {
-      source = ctx.createMediaElementSource(el);
-    } catch {
-      // Element already routed elsewhere (or unsupported) — can't recover a new
-      // source node. Leave any existing graph intact.
-      return analyser;
-    }
-    if (!analyser) {
-      analyser = ctx.createAnalyser();
-      analyser.fftSize = 256; // 128 frequency bins — plenty for a bar display
-      analyser.smoothingTimeConstant = 0.82;
-      analyser.minDecibels = -85;
-      analyser.maxDecibels = -10;
-    }
-    source.connect(analyser);
+  if (!analyser) {
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256; // 128 frequency bins — plenty for a bar display
+    analyser.smoothingTimeConstant = 0.82;
+    analyser.minDecibels = -85;
+    analyser.maxDecibels = -10;
     analyser.connect(ctx.destination);
-    connectedEl = el;
+  }
+
+  if (el && !sources.has(el)) {
+    try {
+      const source = ctx.createMediaElementSource(el);
+      source.connect(analyser);
+      sources.set(el, source);
+    } catch {
+      // Element already routed elsewhere (or unsupported) — leave it be.
+    }
   }
 
   return analyser;

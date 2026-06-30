@@ -12,12 +12,14 @@ import {
 import {
   HomeIcon,
   SearchIcon,
-  LibraryIcon,
+  CompassIcon,
+  NotesIcon,
+  RadioIcon,
+  DownloadIcon,
   PlusIcon,
 } from "@/components/icons";
-import Logo from "@/components/Logo";
+import Logo, { Wordmark } from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
-import Avatar from "@/components/Avatar";
 import { playlistPath } from "@/lib/slugs";
 
 function NavLink({
@@ -34,13 +36,16 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`flex items-center gap-4 px-3 py-2.5 rounded-xl font-semibold transition ${
+      className={`relative flex items-center gap-4 px-4 py-3 rounded-lg text-[17px] font-medium transition ${
         active
-          ? "text-white bg-accent glow-sm"
+          ? "text-accent"
           : "text-muted hover:text-foreground hover:bg-white/5"
       }`}
     >
-      {icon}
+      {active && (
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-accent" />
+      )}
+      <span className="flex-shrink-0">{icon}</span>
       {label}
     </Link>
   );
@@ -65,35 +70,36 @@ export default function Sidebar() {
     await createPlaylist.mutateAsync({ name });
   }
 
+  const pathname = usePathname();
+
   return (
     <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black/40 text-foreground border-r border-white/10">
       {/* Logo */}
-      <div className="px-4 py-4">
-        <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-          <Logo size={30} className="drop-glow" />
-          <span className="text-xl font-extrabold tracking-tight">
-            <span className="text-foreground">Spoti</span>
-            <span className="text-accent">Frei</span>
-          </span>
+      <div className="px-5 pt-5 pb-4">
+        <Link
+          href="/"
+          className="flex items-center gap-3 transition-opacity hover:opacity-80"
+        >
+          <Logo size={42} className="drop-glow" />
+          <Wordmark />
         </Link>
       </div>
 
       {/* Primary nav */}
-      <nav className="px-2 flex flex-col gap-1">
-        <NavLink href="/" icon={<HomeIcon />} label="Start" />
-        <NavLink href="/search" icon={<SearchIcon />} label="Suche" />
-        <NavLink
-          href="/library"
-          icon={<LibraryIcon />}
-          label="Deine Bibliothek"
-        />
+      <nav className="px-3 flex flex-col gap-1">
+        <NavLink href="/" icon={<HomeIcon width={23} height={23} />} label="Start" />
+        <NavLink href="/search" icon={<SearchIcon width={23} height={23} />} label="Suchen" />
+        <NavLink href="/genre" icon={<CompassIcon width={23} height={23} />} label="Entdecken" />
+        <NavLink href="/library" icon={<NotesIcon width={23} height={23} />} label="Bibliothek" />
+        <NavLink href="/radio" icon={<RadioIcon width={23} height={23} />} label="Radio" />
       </nav>
 
       {/* Library / playlists */}
-      <div className="mt-3 px-2 flex-1 min-h-0 flex flex-col">
-        <div className="flex items-center justify-between px-2 py-2">
-          <span className="text-sm font-semibold text-muted">
-            Deine Playlists
+      <div className="mt-5 px-3 flex-1 min-h-0 flex flex-col">
+        <div className="mx-2 mb-2 border-t border-white/10" />
+        <div className="flex items-center justify-between px-2 py-1.5">
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted">
+            Playlists
           </span>
           <button
             type="button"
@@ -106,50 +112,58 @@ export default function Sidebar() {
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-auto scroll-area px-1">
+        <div className="flex-1 min-h-0 overflow-auto scroll-area px-1 mt-1">
           {me ? (
             playlists && playlists.length > 0 ? (
-              <ul className="flex flex-col">
-                {playlists.map((p) => (
-                  <li
-                    key={String(p.id)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      setMenu({
-                        x: e.clientX,
-                        y: e.clientY,
-                        id: String(p.id),
-                        path: playlistPath(p),
-                      });
-                    }}
-                  >
-                    <Link
-                      href={playlistPath(p)}
-                      className="flex items-center gap-3 px-2 py-2 rounded hover:bg-panel-hover transition"
+              <ul className="flex flex-col gap-1">
+                {playlists.map((p) => {
+                  const path = playlistPath(p);
+                  const active = pathname === path;
+                  return (
+                    <li
+                      key={String(p.id)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        setMenu({
+                          x: e.clientX,
+                          y: e.clientY,
+                          id: String(p.id),
+                          path,
+                        });
+                      }}
                     >
-                      {p.cover_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={p.cover_url}
-                          alt=""
-                          className="w-10 h-10 rounded object-cover flex-shrink-0"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded bg-panel-hover flex items-center justify-center text-muted flex-shrink-0">
-                          ♪
+                      <Link
+                        href={path}
+                        className={`flex items-center gap-3 p-2 rounded-xl transition ${
+                          active
+                            ? "bg-white/[0.06] ring-1 ring-white/10"
+                            : "hover:bg-white/5"
+                        }`}
+                      >
+                        {p.cover_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={p.cover_url}
+                            alt=""
+                            className="w-11 h-11 rounded-lg object-cover flex-shrink-0"
+                          />
+                        ) : (
+                          <div className="w-11 h-11 rounded-lg bg-panel-hover flex items-center justify-center text-muted flex-shrink-0">
+                            ♪
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {p.name}
+                          </span>
+                          <span className="block truncate text-xs text-muted">
+                            {p.track_count} Titel
+                          </span>
                         </div>
-                      )}
-                      <div className="min-w-0">
-                        <span className="block truncate text-sm font-medium">
-                          {p.name}
-                        </span>
-                        <span className="block truncate text-xs text-muted">
-                          Playlist · {p.track_count} Titel
-                        </span>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
+                      </Link>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <p className="px-2 py-2 text-sm text-muted">
@@ -164,18 +178,16 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Auth footer */}
-      <div className="border-t border-white/10 p-3 mt-1">
+      {/* Downloads footer */}
+      <div className="px-3 pb-4">
+        <div className="mx-2 mb-2 border-t border-white/10" />
         {me ? (
-          // Profile link only — logout lives in the profile/account view.
           <Link
-            href="/account"
-            className="flex items-center gap-2 min-w-0 rounded-lg -m-1 p-1 hover:bg-white/5 transition"
+            href="/library"
+            className="flex items-center gap-4 px-4 py-3 rounded-lg text-[17px] font-medium text-muted hover:text-foreground hover:bg-white/5 transition"
           >
-            <Avatar src={me.avatar_url} name={me.display_name} size={28} />
-            <span className="text-sm font-medium truncate">
-              {me.display_name}
-            </span>
+            <DownloadIcon width={23} height={23} />
+            Downloads
           </Link>
         ) : (
           <div className="flex items-center gap-2 text-sm">

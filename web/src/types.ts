@@ -109,9 +109,18 @@ export interface Artist {
   id: string | number;
   name: string;
   picture: string;
+  fans?: number;
+  albums_count?: number;
   top: Track[];
   albums?: AlbumSummary[];
   related?: ArtistSummary[];
+}
+
+export interface ArtistAbout {
+  bio: string;
+  listeners: number;
+  playcount: number;
+  tags: string[];
 }
 
 export interface PlaylistSearchResult {

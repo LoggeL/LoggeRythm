@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SpotiFrei",
-  description: "SpotiFrei – dein freier Musikstreaming-Klon.",
+  title: "LoggeRythm",
+  description: "LoggeRythm – dein privater Musikstream.",
 };
 
 export default function RootLayout({

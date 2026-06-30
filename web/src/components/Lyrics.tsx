@@ -1,16 +1,22 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore, currentTrack } from "@/store/player";
+import { MusicNoteIcon, ChevronDownIcon } from "@/components/icons";
 
 type Line = { t: number; text: string };
 
+const LINE_H = 30; // px per lyric line
+const COLLAPSED_ROWS = 3;
+const EXPANDED_ROWS = 7;
+
 export default function Lyrics() {
   const open = usePlayerStore((s) => s.lyricsOpen);
-  const setOpen = usePlayerStore((s) => s.setLyricsOpen);
   const track = usePlayerStore(currentTrack);
   const currentTime = usePlayerStore((s) => s.currentTime);
+  const [expanded, setExpanded] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["lyrics", track?.id],
@@ -31,80 +37,90 @@ export default function Lyrics() {
     if (lines[i].t <= currentTime + 0.15) active = i;
     else break;
   }
-
+  const a = active < 0 ? 0 : active;
   const hasLyrics = !!track && !isLoading && lines.length > 0;
 
-  // Status message when there is no synced karaoke view to show.
+  const rows = expanded ? EXPANDED_ROWS : COLLAPSED_ROWS;
+  // How many lines to show above the active one (centred-ish when expanded,
+  // anchored to the top when collapsed).
+  const above = expanded ? 2 : 0;
+
   const status = !track
     ? "Es wird nichts abgespielt."
     : isLoading
       ? "Lädt…"
       : "Kein synchronisierter Songtext gefunden.";
 
-  const LINE_H = 28; // px, matches leading-7
-  const ROWS = 3;
-  const a = active < 0 ? 0 : active;
-
   return (
-    <div className="animate-in flex-shrink-0 mx-3 mb-2 sm:mx-4 rounded-2xl border border-white/10 bg-background-elevated/95 backdrop-blur-xl shadow-2xl shadow-black/30 ring-1 ring-accent/10 flex items-stretch overflow-hidden transition-all duration-500">
-      <div className="flex-shrink-0 flex items-center px-4 sm:px-6 bg-accent/10 border-r border-white/10">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-accent">
-            Songtext
+    <div className="animate-in flex-shrink-0 border-t border-white/10 bg-[#0c0c18]/90 backdrop-blur-xl flex items-center gap-4 px-6 py-3 overflow-hidden">
+      {/* Label */}
+      <div className="flex flex-shrink-0 items-center gap-2 text-foreground/90 self-start pt-1">
+        <MusicNoteIcon width={16} height={16} />
+        <span className="text-xs font-semibold uppercase tracking-widest">
+          Lyrics
+        </span>
+        {isAiGenerated && (
+          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
+            ✦ AI
           </span>
-          {isAiGenerated && (
-            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
-              ✦ AI
-            </span>
-          )}
-        </div>
+        )}
       </div>
 
+      {/* Karaoke window */}
       {hasLyrics ? (
         <div
-          className="flex-1 min-w-0 overflow-hidden px-4"
-          style={{ height: LINE_H * ROWS }}
+          className="flex-1 min-w-0 overflow-hidden transition-[height] duration-300 ease-out"
+          style={{ height: rows * LINE_H }}
         >
           <div
             className="transition-transform duration-500 ease-out will-change-transform"
-            style={{ transform: `translateY(${(1 - a) * LINE_H}px)` }}
+            style={{ transform: `translateY(${(above - a) * LINE_H}px)` }}
           >
             {lines.map((line, i) => {
-              const activeLine = i === active;
               const dist = Math.abs(i - a);
+              const isActive = i === active;
               return (
-                <div
+                <p
                   key={i}
-                  style={{
-                    height: LINE_H,
-                    opacity: activeLine ? 1 : dist === 1 ? 0.55 : 0.3,
-                  }}
-                  className={`flex items-center justify-center w-full truncate text-center text-sm leading-7 transition-all duration-300 ${
-                    activeLine ? "text-accent font-semibold" : "text-muted"
+                  style={{ height: LINE_H, opacity: isActive ? 1 : dist === 1 ? 0.6 : dist === 2 ? 0.4 : 0.25 }}
+                  className={`flex items-center justify-center w-full truncate text-center transition-all duration-300 ${
+                    isActive
+                      ? "text-[15px] font-bold text-[#c06bff]"
+                      : "text-sm text-muted"
                   }`}
                 >
                   {line.text || "♪"}
-                </div>
+                </p>
               );
             })}
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-w-0 h-10 flex items-center justify-center text-center px-4">
+        <div
+          className="flex-1 min-w-0 flex items-center justify-center text-center transition-[height] duration-300"
+          style={{ height: COLLAPSED_ROWS * LINE_H }}
+        >
           <p className="text-sm text-muted truncate">{status}</p>
         </div>
       )}
 
-      <div className="flex-shrink-0 flex items-start p-2">
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          aria-label="Songtext schließen"
-          className="text-muted hover:text-foreground text-sm"
-        >
-          ✕
-        </button>
-      </div>
+      {/* Expand / collapse */}
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-label={expanded ? "Songtext verkleinern" : "Songtext vergrößern"}
+        aria-expanded={expanded}
+        disabled={!hasLyrics}
+        className="flex-shrink-0 self-start mt-1 text-muted hover:text-foreground transition disabled:opacity-30 p-1"
+      >
+        <ChevronDownIcon
+          width={20}
+          height={20}
+          className={`transition-transform duration-300 ${
+            expanded ? "rotate-0" : "rotate-180"
+          }`}
+        />
+      </button>
     </div>
   );
 }

@@ -127,6 +127,8 @@ class ArtistDetail(BaseModel):
     id: str
     name: str = ""
     picture: str = ""
+    fans: int = 0
+    albums_count: int = 0
     top: list[Track] = Field(default_factory=list)
     albums: list[AlbumSummary] = Field(default_factory=list)
     related: list[ArtistSummary] = Field(default_factory=list)
