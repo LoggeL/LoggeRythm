@@ -151,9 +151,11 @@ export default function QueueSidebar() {
 
   return (
     <aside
-      className={`${
-        open ? "fixed inset-0 z-[70] flex" : "hidden"
-      } flex-col bg-background md:static md:z-auto md:flex md:w-[22rem] md:flex-shrink-0 md:bg-black/40 border-l border-white/10 overflow-hidden`}
+      className={
+        open
+          ? "flex flex-col fixed inset-0 z-[70] bg-background md:static md:z-auto md:w-[22rem] md:flex-shrink-0 md:bg-black/40 border-l border-white/10 overflow-hidden"
+          : "hidden"
+      }
     >
       <div className="flex items-center justify-between px-5 pt-5 pb-4 flex-shrink-0 border-b border-white/5">
         <h2 className="text-lg font-bold">Warteschlange</h2>
@@ -179,7 +181,7 @@ export default function QueueSidebar() {
             type="button"
             onClick={() => setOpen(false)}
             aria-label="Warteschlange schließen"
-            className="text-muted hover:text-foreground p-2 -m-2 md:hidden"
+            className="text-muted hover:text-foreground p-2 -m-2"
           >
             ✕
           </button>

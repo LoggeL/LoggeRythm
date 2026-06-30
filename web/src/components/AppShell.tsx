@@ -29,10 +29,11 @@ export default function AppShell({
     mainRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
 
-  // Open the queue panel by default on desktop (mockup shows it open). Done in
-  // an effect (not store init) to stay SSR-safe; mobile keeps it an overlay.
+  // Open the queue panel by default from medium screens up (it docks as a
+  // static sidebar there); it stays collapsible via the player-bar toggle.
+  // Done in an effect (not store init) to stay SSR-safe; mobile is an overlay.
   useEffect(() => {
-    if (window.innerWidth >= 1024) {
+    if (window.innerWidth >= 768) {
       usePlayerStore.getState().setQueueOpen(true);
     }
   }, []);
