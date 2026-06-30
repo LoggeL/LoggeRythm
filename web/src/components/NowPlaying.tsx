@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
+import { useLyrics } from "@/hooks/useLyrics";
+import CompactLyrics from "@/components/CompactLyrics";
 import LikeButton from "@/components/LikeButton";
 import Visualizer, { RadialVisualizer } from "@/components/Visualizer";
 import EqualizerBars from "@/components/EqualizerBars";
@@ -113,10 +115,12 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             : "lg:grid-cols-[1.05fr_1.2fr_0.9fr]"
         }`}
       >
-        {/* Left: cover, title, transport */}
+        {/* Left: cover, title, transport (desktop grid column only — on mobile
+            the playing tab shows EpicPlayingPanel and lyrics/similar are
+            fullscreen, so this is hidden below lg) */}
         <div
           className={`flex-col min-h-0 lg:overflow-y-auto no-scrollbar ${
-            isPlayingView ? "hidden" : "flex"
+            isPlayingView ? "hidden" : "hidden lg:flex"
           }`}
         >
           <div className="flex-1 flex flex-col items-center justify-center gap-8 min-h-0">
@@ -260,13 +264,25 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             onVolume={setVolume}
           />
         ) : (
-          <LyricsPanel
-            artist={track.artist}
-            title={track.title}
-            trackId={track.id}
-            currentTime={currentTime}
-            onSeek={seek}
-          />
+          <>
+            <CompactLyrics
+              track={track}
+              currentTime={currentTime}
+              duration={duration}
+              isPlaying={isPlaying}
+              onSeek={seek}
+              onToggle={toggle}
+              onNext={next}
+              onPrev={prev}
+            />
+            <LyricsPanel
+              artist={track.artist}
+              title={track.title}
+              trackId={track.id}
+              currentTime={currentTime}
+              onSeek={seek}
+            />
+          </>
         )}
 
         {/* Right: queue (desktop only — mockup's third column) */}
@@ -617,7 +633,7 @@ function SimilarTracksPanel({
   const tracks = data ?? [];
 
   return (
-    <div className="min-h-0 mt-8 lg:mt-0 flex flex-col">
+    <div className="flex-1 min-h-0 mt-6 lg:mt-0 flex flex-col">
       <span className="flex-shrink-0 text-[11px] font-semibold uppercase tracking-widest text-muted mb-4">
         Ähnliche Titel
       </span>
@@ -697,26 +713,12 @@ function LyricsPanel({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["lyrics", trackId],
-    queryFn: () => api.lyrics(artist, title, String(trackId)),
-    enabled: !!trackId,
-    staleTime: 3600_000,
-    retry: false,
-  });
-
-  const lines = data?.lines ?? [];
-  const isAiGenerated = !!data?.ai_generated;
-  const hasTimedLines = lines.some((line) => typeof line.t === "number");
-
-  // Active line = last line whose timestamp has passed.
-  let active = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (!hasTimedLines) break;
-    if (lines[i].t <= currentTime + 0.15) active = i;
-    else break;
-  }
+  const { lines, active, hasTimedLines, isLoading, isAiGenerated } = useLyrics(
+    artist,
+    title,
+    trackId,
+    currentTime,
+  );
 
   useEffect(() => {
     const el = activeRef.current;
@@ -727,9 +729,10 @@ function LyricsPanel({
     container.scrollTo({ top, behavior: "smooth" });
   }, [active]);
 
+  // Desktop-only — the mobile fullscreen uses <CompactLyrics> instead.
   return (
-    <div className="min-h-0 mt-8 lg:mt-0 flex flex-col">
-      <span className="hidden lg:flex flex-shrink-0 items-center text-[11px] font-semibold uppercase tracking-widest text-muted mb-4">
+    <div className="hidden lg:flex min-h-0 flex-col">
+      <span className="flex flex-shrink-0 items-center text-[11px] font-semibold uppercase tracking-widest text-muted mb-4">
         Songtext
         {isAiGenerated && (
           <span className="ml-2 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
@@ -740,7 +743,7 @@ function LyricsPanel({
       {lines.length > 0 ? (
         <div
           ref={scrollRef}
-          className="flex-1 min-h-0 overflow-y-auto no-scrollbar py-[40vh] lg:py-[35vh] pr-2"
+          className="flex-1 min-h-0 overflow-y-auto no-scrollbar py-[35vh] pr-2"
         >
           {lines.map((line, i) => {
             const isActive = i === active;
@@ -751,7 +754,7 @@ function LyricsPanel({
                 ref={isActive ? activeRef : undefined}
                 onClick={() => hasTimedLines && onSeek(line.t)}
                 disabled={!hasTimedLines}
-                className={`block w-full text-left py-2 text-2xl sm:text-3xl font-bold leading-snug transition-all duration-300 ${
+                className={`block w-full text-left py-2 text-3xl font-bold leading-snug transition-all duration-300 ${
                   isActive
                     ? "text-foreground opacity-100"
                     : "text-muted opacity-50 hover:opacity-80"
