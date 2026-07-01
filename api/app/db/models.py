@@ -76,6 +76,7 @@ class PlaylistTrack(Base):
     # Full performer credit list as a JSON string (see schemas.track helpers).
     artists_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     album: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -96,6 +97,7 @@ class Like(Base):
     # Full performer credit list as a JSON string (see schemas.track helpers).
     artists_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     album: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

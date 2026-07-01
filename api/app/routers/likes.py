@@ -20,7 +20,7 @@ def _like_to_track(like: Like) -> Track:
         artist_id=artists[0].id if artists else "",
         artists=artists,
         album=like.album,
-        album_id="",
+        album_id=like.album_id,
         cover=like.cover_url or "",
         duration_sec=like.duration_sec,
         preview_url=None,
@@ -76,6 +76,7 @@ def add_like(
                 artist=track.artist,
                 artists_json=dump_artists(track),
                 album=track.album,
+                album_id=str(track.album_id or ""),
                 cover_url=track.cover or None,
                 duration_sec=track.duration_sec,
             )
@@ -85,6 +86,7 @@ def add_like(
         existing.artist = track.artist
         existing.artists_json = dump_artists(track)
         existing.album = track.album
+        existing.album_id = str(track.album_id or "")
         existing.cover_url = track.cover or None
         existing.duration_sec = track.duration_sec
     db.commit()

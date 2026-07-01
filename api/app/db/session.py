@@ -29,8 +29,34 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
+def _ensure_columns() -> None:
+    """Add columns introduced after a table was first created.
+
+    ``create_all`` never ALTERs an existing table, so additive columns on the
+    dev SQLite DB need a tiny explicit migration. Idempotent: only adds a column
+    when ``PRAGMA table_info`` shows it missing.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    wanted = {
+        "playlist_tracks": [("album_id", "VARCHAR(32) NOT NULL DEFAULT ''")],
+        "likes": [("album_id", "VARCHAR(32) NOT NULL DEFAULT ''")],
+    }
+    with engine.begin() as conn:
+        for table, cols in wanted.items():
+            existing = {
+                row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))
+            }
+            for name, ddl in cols:
+                if name not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+
+
 def init_db() -> None:
     """Create all tables (dev convenience; replace with Alembic later)."""
     from . import models  # noqa: F401 — register models on the metadata
 
     Base.metadata.create_all(engine)
+    _ensure_columns()
