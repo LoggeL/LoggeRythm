@@ -111,13 +111,24 @@ export default function TrackRow({
           <div className="w-10 h-10 rounded bg-panel-hover flex-shrink-0" />
         )}
         <div className="min-w-0">
-          <div
-            className={`truncate font-medium ${
-              isCurrent ? "text-accent" : "text-foreground"
-            }`}
-          >
-            {track.title}
-          </div>
+          {track.album_id ? (
+            <Link
+              href={`/album/${track.album_id}`}
+              className={`block truncate font-medium hover:underline ${
+                isCurrent ? "text-accent" : "text-foreground"
+              }`}
+            >
+              {track.title}
+            </Link>
+          ) : (
+            <div
+              className={`truncate font-medium ${
+                isCurrent ? "text-accent" : "text-foreground"
+              }`}
+            >
+              {track.title}
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-sm text-muted min-w-0">
             <CacheMarker trackId={track.id} />
             <ArtistLinks track={track} className="truncate" />

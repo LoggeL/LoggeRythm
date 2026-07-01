@@ -6,10 +6,12 @@ import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime } from "@/lib/format";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
-import { PlayIcon, PauseIcon, MoreIcon } from "@/components/icons";
+import { PlayIcon, PauseIcon, CloseIcon } from "@/components/icons";
 import TrackContext from "@/components/TrackContext";
 import Visualizer from "@/components/Visualizer";
 import CacheMarker from "@/components/CacheMarker";
+import TrackTitle from "@/components/TrackTitle";
+import ArtistLinks from "@/components/ArtistLinks";
 import { useBassGlow } from "@/hooks/useBassGlow";
 
 function GripIcon() {
@@ -122,26 +124,37 @@ export default function QueueSidebar() {
           <button
             type="button"
             onClick={() => jumpTo(i)}
-            className="flex items-center gap-3 min-w-0 flex-1 text-left"
+            aria-label={`${t.title} abspielen`}
+            className="relative flex-shrink-0 group/cover"
           >
             {t.cover ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={t.cover}
                 alt=""
-                className="w-11 h-11 rounded-lg object-cover flex-shrink-0"
+                className="w-11 h-11 rounded-lg object-cover"
               />
             ) : (
-              <div className="w-11 h-11 rounded-lg gradient-violet opacity-80 flex-shrink-0" />
+              <div className="w-11 h-11 rounded-lg gradient-violet opacity-80" />
             )}
-            <div className="min-w-0">
-              <div className="truncate text-[15px]">{t.title}</div>
-              <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
-                <CacheMarker trackId={t.id} />
-                <span className="truncate text-xs text-muted">{t.artist}</span>
-              </div>
-            </div>
+            <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/50 opacity-0 group-hover/cover:opacity-100 transition">
+              <PlayIcon width={16} height={16} className="text-white" />
+            </span>
           </button>
+          <div className="min-w-0 flex-1">
+            <TrackTitle
+              track={t}
+              className="block truncate text-[15px] hover:underline"
+            />
+            <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
+              <CacheMarker trackId={t.id} />
+              <ArtistLinks
+                track={t}
+                className="truncate text-xs text-muted"
+                linkClassName="hover:underline hover:text-foreground"
+              />
+            </div>
+          </div>
           <span className="text-xs text-muted tabular-nums flex-shrink-0">
             {formatTime(t.duration_sec)}
           </span>
@@ -150,9 +163,9 @@ export default function QueueSidebar() {
             onClick={() => removeFromQueue(i)}
             aria-label="Entfernen"
             title="Aus Warteschlange entfernen"
-            className="text-muted hover:text-foreground transition flex-shrink-0 p-1"
+            className="text-muted hover:text-foreground transition flex-shrink-0 p-1 opacity-0 group-hover:opacity-100"
           >
-            <MoreIcon width={16} height={16} />
+            <CloseIcon width={16} height={16} />
           </button>
         </TrackContext>
       </li>
@@ -228,12 +241,17 @@ export default function QueueSidebar() {
                 <div className="w-12 h-12 rounded-lg gradient-violet opacity-80" />
               )}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[15px] uppercase tracking-wide text-accent font-bold">
-                  {cur.title}
-                </div>
+                <TrackTitle
+                  track={cur}
+                  className="block truncate text-[15px] uppercase tracking-wide text-accent font-bold hover:underline"
+                />
                 <div className="flex items-center gap-1.5 min-w-0 mt-0.5">
                   <CacheMarker trackId={cur.id} />
-                  <span className="truncate text-xs text-muted">{cur.artist}</span>
+                  <ArtistLinks
+                    track={cur}
+                    className="truncate text-xs text-muted"
+                    linkClassName="hover:underline hover:text-foreground"
+                  />
                 </div>
               </div>
               <button

@@ -10,6 +10,7 @@ import { PlayIcon, PauseIcon, PlusIcon, ClockIcon } from "@/components/icons";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import CacheMarker from "@/components/CacheMarker";
+import TrackContext from "@/components/TrackContext";
 
 const GRID =
   "grid grid-cols-[2.5rem_minmax(0,1fr)_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-4";
@@ -55,8 +56,9 @@ export default function PopularTrackTable({
         }
 
         return (
-          <div
+          <TrackContext
             key={track.id}
+            track={track}
             className={`group ${GRID} px-4 py-2 rounded-lg transition ${
               isCurrent
                 ? "bg-accent/[0.12] ring-1 ring-inset ring-accent/10"
@@ -108,9 +110,18 @@ export default function PopularTrackTable({
                 <div className="h-11 w-11 rounded-lg bg-panel-hover flex-shrink-0" />
               )}
               <div className="min-w-0">
-                <div className="truncate text-[15px] font-medium text-foreground">
-                  {track.title}
-                </div>
+                {track.album_id ? (
+                  <Link
+                    href={`/album/${track.album_id}`}
+                    className="block truncate text-[15px] font-medium text-foreground hover:underline"
+                  >
+                    {track.title}
+                  </Link>
+                ) : (
+                  <div className="truncate text-[15px] font-medium text-foreground">
+                    {track.title}
+                  </div>
+                )}
                 <div className="mt-0.5 flex items-center gap-1.5 text-sm text-muted min-w-0">
                   <CacheMarker trackId={track.id} />
                   <ArtistLinks track={track} className="truncate" />
@@ -160,7 +171,7 @@ export default function PopularTrackTable({
                 {formatTime(track.duration_sec)}
               </span>
             </div>
-          </div>
+          </TrackContext>
         );
       })}
     </div>
