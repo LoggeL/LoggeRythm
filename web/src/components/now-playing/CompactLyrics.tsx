@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { Track } from "@/types";
+import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
 import { useBassGlow } from "@/hooks/useBassGlow";
 import type { CoverPalette } from "@/hooks/useCoverColors";
@@ -20,13 +21,6 @@ interface CompactLyricsProps {
   track: Track;
   /** Cover-derived palette for the bass glow (falls back to brand violet). */
   palette?: CoverPalette | null;
-  currentTime: number;
-  duration: number;
-  isPlaying: boolean;
-  onSeek: (t: number) => void;
-  onToggle: () => void;
-  onNext: () => void;
-  onPrev: () => void;
   /** Called when a title/artist link navigates, to close the fullscreen view. */
   onNavigate?: () => void;
 }
@@ -40,17 +34,17 @@ interface CompactLyricsProps {
 export default function CompactLyrics({
   track,
   palette,
-  currentTime,
-  duration,
-  isPlaying,
-  onSeek,
-  onToggle,
-  onNext,
-  onPrev,
   onNavigate,
 }: CompactLyricsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const currentTime = usePlayerStore((s) => s.currentTime);
+  const duration = usePlayerStore((s) => s.duration);
+  const seek = usePlayerStore((s) => s.seek);
+  const toggle = usePlayerStore((s) => s.toggle);
+  const next = usePlayerStore((s) => s.next);
+  const prev = usePlayerStore((s) => s.prev);
   // Bass-reactive pulse on the header cover, tinted by the cover palette.
   const coverRef = useBassGlow<HTMLDivElement>(isPlaying, {
     baseSpread: 8,
@@ -127,7 +121,8 @@ export default function CompactLyrics({
       {lines.length > 0 ? (
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 overflow-y-auto no-scrollbar py-[34vh] pr-1"
+          data-np-scroll
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar py-[34vh] pr-1"
         >
           {lines.map((line, i) => {
             const isActive = i === active;
@@ -137,7 +132,7 @@ export default function CompactLyrics({
                 key={i}
                 type="button"
                 ref={isActive ? activeRef : undefined}
-                onClick={() => hasTimedLines && onSeek(line.t)}
+                onClick={() => hasTimedLines && seek(line.t)}
                 disabled={!hasTimedLines}
                 style={
                   isActive
@@ -171,7 +166,7 @@ export default function CompactLyrics({
             max={duration || 0}
             step={0.1}
             value={Math.min(currentTime, duration || 0)}
-            onChange={(e) => onSeek(Number(e.target.value))}
+            onChange={(e) => seek(Number(e.target.value))}
             disabled={!duration}
             className="flex-1"
             aria-label="Fortschritt"
@@ -183,7 +178,7 @@ export default function CompactLyrics({
         <div className="mt-1 flex items-center justify-center gap-8">
           <button
             type="button"
-            onClick={onPrev}
+            onClick={prev}
             aria-label="Vorheriger Titel"
             className="text-muted hover:text-foreground"
           >
@@ -191,7 +186,7 @@ export default function CompactLyrics({
           </button>
           <button
             type="button"
-            onClick={onToggle}
+            onClick={toggle}
             aria-label={isPlaying ? "Pause" : "Abspielen"}
             className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105"
           >
@@ -203,7 +198,7 @@ export default function CompactLyrics({
           </button>
           <button
             type="button"
-            onClick={onNext}
+            onClick={next}
             aria-label="Nächster Titel"
             className="text-muted hover:text-foreground"
           >

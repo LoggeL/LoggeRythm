@@ -9,7 +9,7 @@ import { ensureAnalyser, applyVolume } from "@/lib/audioAnalyser";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
-import NowPlaying from "@/components/NowPlaying";
+import NowPlaying from "@/components/now-playing/NowPlaying";
 import TrackContext from "@/components/TrackContext";
 import CacheMarker from "@/components/CacheMarker";
 import ArtistLinks from "@/components/ArtistLinks";
