@@ -8,7 +8,7 @@
  *   - cached cover images for downloaded tracks
  *   - a last-good app shell, served only when the network is unreachable
  */
-const VERSION = "sf-v1";
+const VERSION = "sf-v2";
 const SHELL = `${VERSION}-shell`;
 const STATIC = `${VERSION}-static`;
 const AUDIO = "sf-audio"; // unversioned — user downloads must persist across releases
