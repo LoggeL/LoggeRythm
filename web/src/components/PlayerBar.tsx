@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { api, streamUrl } from "@/lib/api";
-import { ensureAnalyser } from "@/lib/audioAnalyser";
+import { ensureAnalyser, applyVolume } from "@/lib/audioAnalyser";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
 import NowPlaying from "@/components/NowPlaying";
 import TrackContext from "@/components/TrackContext";
 import CacheMarker from "@/components/CacheMarker";
+import ArtistLinks from "@/components/ArtistLinks";
 import {
   PlayIcon,
   PauseIcon,
@@ -44,6 +45,51 @@ const SQUARE_ACTIVE = "text-accent bg-accent/20 hover:bg-accent/25";
 function rangeFill(pct: number): string {
   const p = Math.max(0, Math.min(100, pct));
   return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, #4d4d57 ${p}%, #4d4d57 100%)`;
+}
+
+const MEDIA_ERROR_LABELS: Record<number, string> = {
+  1: "Wiedergabe abgebrochen",
+  2: "Netzwerkfehler",
+  3: "Dekodierung fehlgeschlagen",
+  4: "Quelle nicht unterstützt",
+};
+
+/**
+ * Build a human-readable reason for a failed stream: the ``<audio>`` MediaError
+ * plus the backend's actual response (HTTP status + ``detail``), so the UI can
+ * show *why* a title failed instead of a bare generic message.
+ */
+async function describeStreamFailure(
+  url: string,
+  mediaErr: MediaError | null,
+): Promise<string> {
+  const parts: string[] = [];
+  if (mediaErr) {
+    parts.push(MEDIA_ERROR_LABELS[mediaErr.code] || `MediaError ${mediaErr.code}`);
+    if (mediaErr.message) parts.push(mediaErr.message);
+  }
+  if (url) {
+    try {
+      const res = await fetch(url, { headers: { Range: "bytes=0-1" } });
+      if (!res.ok) {
+        let body = "";
+        try {
+          const j = await res.clone().json();
+          body = j?.detail ?? JSON.stringify(j);
+        } catch {
+          try {
+            body = await res.text();
+          } catch {
+            /* ignore */
+          }
+        }
+        parts.push(`Server ${res.status}${body ? `: ${String(body).slice(0, 200)}` : ""}`);
+      }
+    } catch (err) {
+      parts.push(`Netzwerk: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return parts.join(" · ") || "Unbekannter Fehler";
 }
 
 export default function PlayerBar() {
@@ -170,7 +216,7 @@ export default function PlayerBar() {
         el.dataset.trackId = id;
         el.currentTime = 0;
         const s = usePlayerStore.getState();
-        el.volume = s.muted ? 0 : s.volume;
+        applyVolume(el, s.muted ? 0 : s.volume);
       } else {
         el.pause();
         el.removeAttribute("src");
@@ -207,7 +253,7 @@ export default function PlayerBar() {
         if (idle) idle.pause();
         crossfadeToId.current = null;
         const s = usePlayerStore.getState();
-        el.volume = s.muted ? 0 : s.volume;
+        applyVolume(el, s.muted ? 0 : s.volume);
       }
     }
   }, [isPlaying, trackId, activeIdx]);
@@ -216,7 +262,7 @@ export default function PlayerBar() {
   // it runs).
   useEffect(() => {
     const el = (activeIdx === 0 ? deckA : deckB).current;
-    if (el && !crossfadeTimer.current) el.volume = muted ? 0 : volume;
+    if (el && !crossfadeTimer.current) applyVolume(el, muted ? 0 : volume);
   }, [volume, muted, activeIdx]);
 
   // Crossfade: near the end of the active deck, fade the next track in on the
@@ -244,7 +290,7 @@ export default function PlayerBar() {
     incoming.src = streamUrl(String(nextTrack.id));
     incoming.dataset.trackId = String(nextTrack.id);
     incoming.currentTime = 0;
-    incoming.volume = 0;
+    applyVolume(incoming, 0);
 
     const startedAt = performance.now();
     incoming
@@ -254,21 +300,29 @@ export default function PlayerBar() {
           const elapsed = (performance.now() - startedAt) / 1000;
           const pct = Math.min(1, elapsed / seconds);
           const targetVolume = muted ? 0 : volume;
-          outgoing.volume = targetVolume * (1 - pct);
-          incoming.volume = targetVolume * pct;
+          applyVolume(outgoing, targetVolume * (1 - pct));
+          applyVolume(incoming, targetVolume * pct);
 
           if (pct >= 1) {
             if (crossfadeTimer.current) {
               window.clearInterval(crossfadeTimer.current);
               crossfadeTimer.current = null;
             }
-            incoming.volume = targetVolume;
+            applyVolume(incoming, targetVolume);
             // The incoming deck simply keeps playing — promote it to active and
             // advance the queue index without touching currentTime.
             outgoing.pause();
             activeIdxRef.current = incomingIdx;
             setActiveIdx(incomingIdx);
             _crossfadeAdvance();
+            // Refresh the store's position + duration from the deck that just
+            // took over. Otherwise they keep the *outgoing* track's end values,
+            // and if the incoming track is shorter the crossfade check fires
+            // again immediately — skipping the song we just faded into.
+            _setCurrentTime(incoming.currentTime);
+            if (Number.isFinite(incoming.duration)) {
+              _setDuration(incoming.duration);
+            }
           }
         }, 50);
       })
@@ -291,6 +345,8 @@ export default function PlayerBar() {
     volume,
     activeIdx,
     _crossfadeAdvance,
+    _setCurrentTime,
+    _setDuration,
   ]);
 
   // Consume seek requests from the store on the active deck. Defer until
@@ -463,8 +519,21 @@ export default function PlayerBar() {
     onCanPlay: () => {
       if (activeIdxRef.current === idx) _setBuffering(false);
     },
-    onError: () => {
-      if (activeIdxRef.current === idx) _setError("Titel konnte nicht geladen werden.");
+    onError: (e: SyntheticEvent<HTMLAudioElement>) => {
+      if (activeIdxRef.current !== idx) return;
+      const el = e.currentTarget;
+      const mediaErr = el.error;
+      const id = el.dataset.trackId || "";
+      _setError("Titel konnte nicht geladen werden.");
+      // Probe the backend for the real reason so the UI shows *why* it failed
+      // (HTTP status + detail / decode error) instead of a bare message.
+      describeStreamFailure(id ? streamUrl(id) : el.currentSrc, mediaErr).then(
+        (detail) => {
+          if (activeIdxRef.current === idx) {
+            _setError(`Titel konnte nicht geladen werden — ${detail}`);
+          }
+        },
+      );
     },
     preload: "auto" as const,
   });
@@ -522,24 +591,20 @@ export default function PlayerBar() {
                   </div>
                 )}
                 {error ? (
-                  <div className="truncate text-xs text-muted">
-                    <span className="text-red-400">{error}</span>
+                  <div
+                    className="line-clamp-2 text-xs text-red-400"
+                    title={error}
+                  >
+                    {error}
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 min-w-0">
                     <CacheMarker trackId={track.id} />
-                    {track.artist_id ? (
-                      <Link
-                        href={`/artist/${track.artist_id}`}
-                        className="truncate text-xs text-muted hover:underline hover:text-foreground"
-                      >
-                        {track.artist}
-                      </Link>
-                    ) : (
-                      <span className="truncate text-xs text-muted">
-                        {track.artist}
-                      </span>
-                    )}
+                    <ArtistLinks
+                      track={track}
+                      className="truncate text-xs text-muted"
+                      linkClassName="hover:underline hover:text-foreground"
+                    />
                   </div>
                 )}
               </div>
