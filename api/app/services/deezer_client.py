@@ -43,6 +43,13 @@ class DecryptFailed(DeezerClientError):
 # --- session lifecycle ----------------------------------------------------
 def init_session() -> None:
     """Initialize the global Deezer session from env config (call on startup)."""
+    # Fail loud: an empty ARL means authenticated calls will silently break
+    # later (the legacy fallback warns-and-continues). Surface it here instead.
+    if not DEEZER_ARL:
+        raise RuntimeError(
+            "DEEZER_ARL is empty — check api/.env (a UTF-8 BOM on the first line "
+            "or a missing DEEZER_ARL key will blank it)."
+        )
     deezer.init_deezer_session(quality=DEEZER_QUALITY, arl=DEEZER_ARL)
 
 
@@ -188,6 +195,13 @@ def track_metadata(deezer_id: str) -> dict:
         raise TrackUnavailable(str(e)) from e
     except deezer.DeezerApiException as e:
         raise DeezerClientError(str(e)) from e
+    # The legacy gw returns None (not an exception) for an unknown track or a
+    # dead session — surface that clearly instead of crashing on ``None.get``.
+    if not song:
+        raise TrackUnavailable(
+            f"Deezer returned no metadata for track {deezer_id} "
+            "(unknown track id or expired ARL session)."
+        )
     return {
         "id": str(song.get("SNG_ID", deezer_id)),
         "title": song.get("SNG_TITLE", "") or "",
@@ -199,6 +213,15 @@ def track_metadata(deezer_id: str) -> dict:
         "duration_sec": int(song.get("DURATION", 0) or 0),
         "preview_url": None,
     }
+
+
+def track_public(deezer_id: str) -> dict:
+    """Fetch a single track's metadata via the **public** Deezer API (no ARL).
+
+    Returns the normalized Track shape including ``artist_id``, ``album_id`` and
+    the full ``artists`` credit list. Raises on any failure (no silent fallback).
+    """
+    return normalize_public_track(_public_get(f"/track/{deezer_id}"))
 
 
 # --- public Deezer API browse (no auth) -----------------------------------

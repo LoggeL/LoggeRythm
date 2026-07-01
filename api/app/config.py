@@ -3,7 +3,10 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# ``utf-8-sig`` strips a leading UTF-8 BOM if the .env was saved with one
+# (common on Windows editors). Without this the first key is read as
+# ``﻿DEEZER_ARL`` and silently goes missing.
+load_dotenv(encoding="utf-8-sig")
 
 # --- Deezer ---
 DEEZER_ARL: str = os.getenv("DEEZER_ARL", "")
