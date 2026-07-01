@@ -22,8 +22,12 @@ export interface BassGlowOptions {
   peakAlpha?: number;
   /** Max extra scale at a full kick (e.g. 0.016 → up to 1.016×). */
   maxScale?: number;
+  /** Resting scale with no bass (e.g. 0.92 → dips to 0.92× between kicks). */
+  baseScale?: number;
   /** Also tint the element's border with the glow colour. */
   tintBorder?: boolean;
+  /** Glow colour as an [r,g,b] triple (defaults to the brand violet). */
+  color?: [number, number, number];
 }
 
 export function useBassGlow<T extends HTMLElement>(
@@ -36,8 +40,11 @@ export function useBassGlow<T extends HTMLElement>(
     baseAlpha = 0.2,
     peakAlpha = 0.55,
     maxScale = 0.016,
+    baseScale = 1,
     tintBorder = true,
+    color = [124, 92, 255],
   } = opts;
+  const [cr, cg, cb] = color;
   const ref = useRef<T>(null);
   const playingRef = useRef(isPlaying);
   useEffect(() => {
@@ -58,11 +65,11 @@ export function useBassGlow<T extends HTMLElement>(
       if (!el) return;
       const spread = baseSpread + l * peakSpread;
       const glow = baseAlpha + l * peakAlpha;
-      el.style.boxShadow = `0 0 ${spread.toFixed(1)}px rgba(124, 92, 255, ${glow.toFixed(3)})`;
+      el.style.boxShadow = `0 0 ${spread.toFixed(1)}px rgba(${cr}, ${cg}, ${cb}, ${glow.toFixed(3)})`;
       if (tintBorder) {
-        el.style.borderColor = `rgba(150, 120, 255, ${(0.14 + l * 0.5).toFixed(3)})`;
+        el.style.borderColor = `rgba(${cr}, ${cg}, ${cb}, ${(0.2 + l * 0.55).toFixed(3)})`;
       }
-      el.style.transform = `scale(${(1 + l * maxScale).toFixed(4)})`;
+      el.style.transform = `scale(${(baseScale + l * maxScale).toFixed(4)})`;
     }
 
     if (reduced) {
@@ -93,7 +100,7 @@ export function useBassGlow<T extends HTMLElement>(
     }
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [baseSpread, peakSpread, baseAlpha, peakAlpha, maxScale, tintBorder]);
+  }, [baseSpread, peakSpread, baseAlpha, peakAlpha, maxScale, baseScale, tintBorder, cr, cg, cb]);
 
   return ref;
 }

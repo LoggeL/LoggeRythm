@@ -13,12 +13,21 @@ import { getAnalyser } from "@/lib/audioAnalyser";
  *
  * Honors prefers-reduced-motion by rendering a single static baseline.
  */
+const DEFAULT_STOPS = ["#4d3bd6", "#8b5cff", "#ff6ec7"] as const;
+const DEFAULT_GLOW = "rgba(124, 92, 255, 0.55)";
+
 export default function Visualizer({
   isPlaying,
   className = "",
+  colors,
+  glow,
 }: {
   isPlaying: boolean;
   className?: string;
+  /** Gradient stops bottom→top (defaults to the brand violet→pink). */
+  colors?: readonly string[];
+  /** Bar glow colour (defaults to a translucent violet). */
+  glow?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Latest isPlaying without re-subscribing the RAF loop on every toggle.
@@ -26,6 +35,14 @@ export default function Visualizer({
   useEffect(() => {
     playingRef.current = isPlaying;
   }, [isPlaying]);
+  // Latest colours without re-subscribing the RAF loop on palette changes.
+  const stops = colors && colors.length >= 2 ? colors : DEFAULT_STOPS;
+  const colorsRef = useRef<readonly string[]>(stops);
+  const glowRef = useRef(glow || DEFAULT_GLOW);
+  useEffect(() => {
+    colorsRef.current = colors && colors.length >= 2 ? colors : DEFAULT_STOPS;
+    glowRef.current = glow || DEFAULT_GLOW;
+  }, [colors, glow]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -108,14 +125,19 @@ export default function Visualizer({
 
       const gap = Math.max(1, width / BARS * 0.28);
       const barW = (width - gap * (BARS - 1)) / BARS;
-      const radius = Math.min(barW / 2, 4);
+      // The canvas can be momentarily 0–1px wide before layout settles, which
+      // makes barW (and thus any corner radius) negative — guard against it so
+      // arcTo() never throws.
+      if (barW <= 0 || height <= 0) return;
+      const radius = Math.max(0, Math.min(barW / 2, 4));
 
       const grad = ctx.createLinearGradient(0, height, 0, 0);
-      grad.addColorStop(0, "#4d3bd6");
-      grad.addColorStop(0.55, "#8b5cff");
-      grad.addColorStop(1, "#ff6ec7");
+      const cs = colorsRef.current;
+      for (let i = 0; i < cs.length; i++) {
+        grad.addColorStop(i / (cs.length - 1), cs[i]);
+      }
       ctx.fillStyle = grad;
-      ctx.shadowColor = "rgba(124, 92, 255, 0.55)";
+      ctx.shadowColor = glowRef.current;
       ctx.shadowBlur = 12;
 
       const minH = 2;
@@ -303,7 +325,7 @@ function roundedTopRect(
   h: number,
   r: number,
 ) {
-  const radius = Math.min(r, w / 2, h);
+  const radius = Math.max(0, Math.min(r, w / 2, h));
   ctx.beginPath();
   ctx.moveTo(x, y + h);
   ctx.lineTo(x, y + radius);

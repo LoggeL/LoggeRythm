@@ -3,11 +3,23 @@
 import { useEffect, useRef } from "react";
 import type { Track } from "@/types";
 import { useLyrics } from "@/hooks/useLyrics";
+import { useBassGlow } from "@/hooks/useBassGlow";
+import type { CoverPalette } from "@/hooks/useCoverColors";
 import { formatTime } from "@/lib/format";
-import { PlayIcon, PauseIcon, NextIcon, PrevIcon } from "@/components/icons";
+import TrackTitle from "@/components/TrackTitle";
+import ArtistLinks from "@/components/ArtistLinks";
+import {
+  PlayIcon,
+  PauseIcon,
+  NextIcon,
+  PrevIcon,
+  MusicNoteIcon,
+} from "@/components/icons";
 
 interface CompactLyricsProps {
   track: Track;
+  /** Cover-derived palette for the bass glow (falls back to brand violet). */
+  palette?: CoverPalette | null;
   currentTime: number;
   duration: number;
   isPlaying: boolean;
@@ -15,6 +27,8 @@ interface CompactLyricsProps {
   onToggle: () => void;
   onNext: () => void;
   onPrev: () => void;
+  /** Called when a title/artist link navigates, to close the fullscreen view. */
+  onNavigate?: () => void;
 }
 
 /**
@@ -25,6 +39,7 @@ interface CompactLyricsProps {
  */
 export default function CompactLyrics({
   track,
+  palette,
   currentTime,
   duration,
   isPlaying,
@@ -32,9 +47,20 @@ export default function CompactLyrics({
   onToggle,
   onNext,
   onPrev,
+  onNavigate,
 }: CompactLyricsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
+  // Bass-reactive pulse on the header cover, tinted by the cover palette.
+  const coverRef = useBassGlow<HTMLDivElement>(isPlaying, {
+    baseSpread: 8,
+    peakSpread: 34,
+    baseAlpha: 0.25,
+    peakAlpha: 0.85,
+    maxScale: 0.07,
+    tintBorder: false,
+    color: palette?.rgb,
+  });
   const { lines, active, hasTimedLines, isLoading, isAiGenerated } = useLyrics(
     track.artist,
     track.title,
@@ -54,22 +80,44 @@ export default function CompactLyrics({
     <div className="flex flex-1 min-h-0 flex-col lg:hidden">
       {/* Compact track header */}
       <div className="flex flex-shrink-0 items-center gap-3 pb-3">
-        {track.cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={track.cover}
-            alt=""
-            className="h-12 w-12 flex-shrink-0 rounded-lg object-cover shadow"
-          />
-        ) : (
-          <div className="h-12 w-12 flex-shrink-0 rounded-lg gradient-violet opacity-80" />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-bold">{track.title}</div>
-          <div className="truncate text-xs text-muted">{track.artist}</div>
+        <div
+          ref={coverRef}
+          className="h-12 w-12 flex-shrink-0 rounded-lg will-change-transform"
+        >
+          {track.cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={track.cover}
+              alt=""
+              className="h-full w-full rounded-lg object-cover shadow"
+            />
+          ) : (
+            <div className="h-full w-full rounded-lg gradient-violet opacity-80" />
+          )}
         </div>
+        <div className="min-w-0 flex-1">
+          <TrackTitle
+            track={track}
+            onNavigate={onNavigate}
+            className="block truncate text-sm font-bold hover:underline"
+          />
+          <ArtistLinks
+            track={track}
+            onNavigate={onNavigate}
+            className="block truncate text-xs text-muted"
+            linkClassName="hover:text-foreground hover:underline"
+          />
+        </div>
+      </div>
+
+      {/* Lyrics label */}
+      <div className="flex flex-shrink-0 items-center gap-2 pb-2 text-foreground/90">
+        <MusicNoteIcon width={14} height={14} />
+        <span className="text-[11px] font-semibold uppercase tracking-widest">
+          Lyrics
+        </span>
         {isAiGenerated && (
-          <span className="flex-shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
+          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
             ✦ AI
           </span>
         )}
@@ -83,6 +131,7 @@ export default function CompactLyrics({
         >
           {lines.map((line, i) => {
             const isActive = i === active;
+            const dist = Math.abs(i - active);
             return (
               <button
                 key={i}
@@ -90,10 +139,13 @@ export default function CompactLyrics({
                 ref={isActive ? activeRef : undefined}
                 onClick={() => hasTimedLines && onSeek(line.t)}
                 disabled={!hasTimedLines}
-                className={`block w-full text-left py-1.5 text-lg font-bold leading-snug transition-all duration-300 ${
+                style={
                   isActive
-                    ? "text-foreground opacity-100"
-                    : "text-muted opacity-50"
+                    ? undefined
+                    : { opacity: dist === 1 ? 0.6 : dist === 2 ? 0.45 : 0.3 }
+                }
+                className={`block w-full text-left py-1.5 text-lg font-bold leading-snug transition-all duration-300 ${
+                  isActive ? "text-[color:var(--accent-soft)]" : "text-muted"
                 }`}
               >
                 {line.text || "♪"}
