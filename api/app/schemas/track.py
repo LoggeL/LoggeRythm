@@ -26,6 +26,8 @@ class Track(BaseModel):
     preview_url: str | None = None
     # Deezer popularity rank (0–~1,000,000); 0 when unknown.
     rank: int = 0
+    # Release date (YYYY-MM-DD) — populated by the release radar; "" elsewhere.
+    release_date: str = ""
 
 
 # --- performer-list persistence helpers -----------------------------------

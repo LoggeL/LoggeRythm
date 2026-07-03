@@ -18,6 +18,8 @@ export interface Track {
   preview_url?: string;
   /** Deezer popularity rank (0–~1,000,000); 0/undefined when unknown. */
   rank?: number;
+  /** Release date (YYYY-MM-DD); set by the release radar, empty elsewhere. */
+  release_date?: string;
 }
 
 export interface User {

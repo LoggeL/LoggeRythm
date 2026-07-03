@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
-import { formatTime, formatCompact } from "@/lib/format";
+import { formatTime, formatCompact, formatRelativeDate } from "@/lib/format";
 import { toast } from "@/store/toast";
 import type { TrackPlays } from "@/hooks/usePlays";
 import { PlayIcon, PauseIcon, PlusIcon } from "@/components/icons";
@@ -132,6 +132,16 @@ export default function TrackRow({
           <div className="flex items-center gap-1.5 text-sm text-muted min-w-0">
             <CacheMarker trackId={track.id} />
             <ArtistLinks track={track} className="truncate" />
+            {/* Release recency — only radar tracks carry release_date, so this
+                stays invisible in playlists/search without a special prop. */}
+            {track.release_date && (
+              <span
+                className="flex-shrink-0 text-accent/90 before:content-['·'] before:mr-1.5 before:text-muted"
+                title={track.release_date}
+              >
+                {formatRelativeDate(track.release_date)}
+              </span>
+            )}
           </div>
         </div>
       </div>

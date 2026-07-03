@@ -125,7 +125,7 @@ def _user_top_artists(db: Session, user: User, limit: int = 3) -> list[str]:
     return [f.name for f in follows if f.name]
 
 
-def _radar_artist_ids(db: Session, user: User, limit: int = 40) -> list[str]:
+def _radar_artist_ids(db: Session, user: User, limit: int = 60) -> list[str]:
     """Deezer artist IDs the radar should watch.
 
     All artists the user played at least twice in the last 90 days (most-played
@@ -164,7 +164,7 @@ _RADAR_TRACKS_PER_ARTIST = 2
 def _artist_new_tracks(artist_id: str, cutoff: str) -> list[dict]:
     """Up to `_RADAR_TRACKS_PER_ARTIST` newest tracks from an artist's recent
     releases (release_date >= cutoff), newest release first. Each track is
-    tagged with `_release_date` so callers can sort the merged radar globally.
+    tagged with `release_date` so callers can sort the merged radar globally.
     """
     albums = dc.artist_albums(artist_id)
     recent = sorted(
@@ -176,7 +176,8 @@ def _artist_new_tracks(artist_id: str, cutoff: str) -> list[dict]:
     for al in recent:
         detail = dc.album_detail(al["id"])
         for t in detail.get("tracks", []):
-            t["_release_date"] = detail.get("release_date", "")
+            # Real Track field (survives serialization) + drives global sort.
+            t["release_date"] = detail.get("release_date", "")
             tracks.append(t)
             if len(tracks) >= _RADAR_TRACKS_PER_ARTIST:
                 return tracks
@@ -217,7 +218,7 @@ def release_radar(
                     e,
                 )
 
-    tracks.sort(key=lambda t: t.get("_release_date", ""), reverse=True)
+    tracks.sort(key=lambda t: t.get("release_date", ""), reverse=True)
     seen: set[str] = set()
     per_artist: dict[str, int] = {}
     out: list[dict] = []
@@ -233,7 +234,7 @@ def release_radar(
         seen.add(tid)
         per_artist[key] = per_artist.get(key, 0) + 1
         out.append(t)
-    return out[:40]
+    return out[:100]
 
 
 @router.get("/charts-collections", response_model=list[Shelf])
