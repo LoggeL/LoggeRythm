@@ -15,11 +15,11 @@ import {
   CompassIcon,
   NotesIcon,
   RadioIcon,
-  DownloadIcon,
   PlusIcon,
 } from "@/components/icons";
 import Logo, { Wordmark } from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
+import Modal from "@/components/Modal";
 import { playlistPath } from "@/lib/slugs";
 
 function NavLink({
@@ -64,10 +64,21 @@ export default function Sidebar() {
     path: string;
   } | null>(null);
 
-  async function handleCreate() {
-    const name = window.prompt("Name der neuen Playlist?");
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
     if (!name) return;
-    await createPlaylist.mutateAsync({ name });
+    await createPlaylist.mutateAsync({
+      name,
+      description: newDescription.trim() || undefined,
+    });
+    setCreating(false);
+    setNewName("");
+    setNewDescription("");
   }
 
   const pathname = usePathname();
@@ -103,7 +114,7 @@ export default function Sidebar() {
           </span>
           <button
             type="button"
-            onClick={handleCreate}
+            onClick={() => setCreating(true)}
             aria-label="Playlist erstellen"
             title="Playlist erstellen"
             className="text-muted hover:text-foreground p-1 rounded-full hover:bg-panel-hover"
@@ -178,18 +189,9 @@ export default function Sidebar() {
         </div>
       </div>
 
-      {/* Downloads footer */}
-      <div className="px-3 pb-4">
-        <div className="mx-2 mb-2 border-t border-white/10" />
-        {me ? (
-          <Link
-            href="/library"
-            className="flex items-center gap-4 px-4 py-3 rounded-lg text-[17px] font-medium text-muted hover:text-foreground hover:bg-white/5 transition"
-          >
-            <DownloadIcon width={23} height={23} />
-            Downloads
-          </Link>
-        ) : (
+      {!me && (
+        <div className="px-3 pb-4">
+          <div className="mx-2 mb-2 border-t border-white/10" />
           <div className="flex items-center gap-2 text-sm">
             <Link
               href="/login"
@@ -204,8 +206,53 @@ export default function Sidebar() {
               Registrieren
             </Link>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      <Modal
+        open={creating}
+        onClose={() => setCreating(false)}
+        title="Neue Playlist"
+      >
+        <form onSubmit={handleCreate} className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1 text-sm">
+            Name
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              required
+              autoFocus
+              placeholder="Meine Playlist"
+              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Beschreibung (optional)
+            <textarea
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              rows={2}
+              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent resize-none"
+            />
+          </label>
+          <div className="flex gap-2 justify-end">
+            <button
+              type="button"
+              onClick={() => setCreating(false)}
+              className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              disabled={createPlaylist.isPending}
+              className="px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-60"
+            >
+              {createPlaylist.isPending ? "Wird erstellt…" : "Erstellen"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {menu && (
         <ContextMenu

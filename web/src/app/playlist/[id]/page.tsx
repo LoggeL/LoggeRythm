@@ -40,6 +40,7 @@ export default function PlaylistPage({
     useDownloads();
 
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -95,7 +96,6 @@ export default function PlaylistPage({
   }
 
   async function handleDelete() {
-    if (!window.confirm("Diese Playlist wirklich löschen?")) return;
     await deletePlaylist.mutateAsync(id);
     router.push("/library");
   }
@@ -230,7 +230,7 @@ export default function PlaylistPage({
             </button>
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={() => setConfirmingDelete(true)}
               aria-label="Playlist löschen"
               title="Löschen"
               className="text-muted hover:text-red-400 p-2 rounded-full hover:bg-panel-hover"
@@ -240,6 +240,34 @@ export default function PlaylistPage({
           </>
         )}
       </div>
+
+      <Modal
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title="Playlist löschen"
+      >
+        <p className="text-sm text-muted mb-4">
+          „{data.name}“ wird endgültig gelöscht. Das kann nicht rückgängig
+          gemacht werden.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(false)}
+            className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deletePlaylist.isPending}
+            className="px-5 py-2 rounded-full bg-red-500 text-white font-semibold hover:bg-red-400 disabled:opacity-60"
+          >
+            {deletePlaylist.isPending ? "Wird gelöscht…" : "Löschen"}
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={editing}

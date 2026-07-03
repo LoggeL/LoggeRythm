@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAddToPlaylistStore } from "@/store/addToPlaylist";
 import {
@@ -19,6 +19,17 @@ export default function AddToPlaylistModal() {
   const { data: playlists } = usePlaylists(!!me && !!track);
   const addToPlaylist = useAddToPlaylist();
   const createPlaylist = useCreatePlaylist();
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  // Reset the inline create form whenever the modal opens for a new track
+  // ("adjust state during render" — avoids a setState-in-effect cascade).
+  const [lastTrackId, setLastTrackId] = useState(track?.id);
+  if (track?.id !== lastTrackId) {
+    setLastTrackId(track?.id);
+    setCreating(false);
+    setNewName("");
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -36,11 +47,12 @@ export default function AddToPlaylistModal() {
     close();
   }
 
-  async function createAndAdd() {
-    const name = window.prompt("Name der neuen Playlist:");
-    if (!name?.trim()) return;
+  async function createAndAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
     try {
-      const playlist = await createPlaylist.mutateAsync({ name: name.trim() });
+      const playlist = await createPlaylist.mutateAsync({ name });
       addToPlaylist.mutate({ id: String(playlist.id), track: track! });
       toast.success(`Zu „${playlist.name}“ hinzugefügt.`);
       close();
@@ -85,16 +97,39 @@ export default function AddToPlaylistModal() {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={createAndAdd}
-          className="mx-3 mb-1 flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition hover:bg-white/10"
-        >
-          <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded bg-panel-hover text-foreground">
-            <PlusIcon />
-          </span>
-          <span className="font-medium text-foreground">Neue Playlist</span>
-        </button>
+        {creating ? (
+          <form
+            onSubmit={createAndAdd}
+            className="mx-3 mb-1 flex items-center gap-2 rounded-lg px-2 py-2"
+          >
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Name der neuen Playlist"
+              autoFocus
+              required
+              className="min-w-0 flex-1 rounded bg-background border border-white/15 px-3 py-2 text-sm outline-none focus:border-accent"
+            />
+            <button
+              type="submit"
+              disabled={createPlaylist.isPending}
+              className="flex-shrink-0 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
+            >
+              {createPlaylist.isPending ? "…" : "Erstellen"}
+            </button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="mx-3 mb-1 flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition hover:bg-white/10"
+          >
+            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded bg-panel-hover text-foreground">
+              <PlusIcon />
+            </span>
+            <span className="font-medium text-foreground">Neue Playlist</span>
+          </button>
+        )}
 
         <div className="min-h-0 flex-1 overflow-y-auto scroll-area px-3 pb-3">
           {list.length === 0 ? (
