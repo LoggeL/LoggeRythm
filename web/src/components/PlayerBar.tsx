@@ -273,6 +273,8 @@ export default function PlayerBar() {
       : 0;
     if (!seconds || seconds <= 0) return;
     if (!track || !isPlaying || repeat === "one") return;
+    // "Sleep at end of track": let the track finish instead of fading onward.
+    if (usePlayerStore.getState().sleepAfterTrack) return;
     if (!duration || duration <= seconds + 1) return;
     if (currentTime < duration - seconds) return;
     if (index < 0 || index >= queue.length - 1) return;
@@ -411,6 +413,22 @@ export default function PlayerBar() {
       // unsupported
     }
   }, [isPlaying]);
+
+  // Sleep timer: pause when the deadline passes.
+  const sleepAt = usePlayerStore((s) => s.sleepAt);
+  useEffect(() => {
+    if (sleepAt == null) return;
+    const tick = () => {
+      const s = usePlayerStore.getState();
+      if (s.sleepAt != null && Date.now() >= s.sleepAt) {
+        s.setSleepTimer(null);
+        s.pause();
+        toast.info("Sleep-Timer: Wiedergabe pausiert.");
+      }
+    };
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [sleepAt]);
 
   // Keyboard shortcuts (ignore while typing in inputs).
   useEffect(() => {

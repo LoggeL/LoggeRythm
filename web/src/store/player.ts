@@ -159,12 +159,23 @@ interface PlayerState {
   lyricsOpen: boolean;
   radioActive: boolean; // endless "song radio" — auto-extends the queue
 
+  // Sleep timer: pause playback at `sleepAt` (epoch ms), or after the current
+  // track finishes when `sleepAfterTrack` is set. Both cleared once they fire.
+  sleepAt: number | null;
+  sleepAfterTrack: boolean;
+  setSleepTimer: (minutes: number | null) => void;
+  setSleepAfterTrack: (v: boolean) => void;
+
   // party mode bridge: when set, queue edits route to the party
   partyBridge: PartyBridge | null;
 
   // actions
   setPartyBridge: (b: PartyBridge | null) => void;
   setPartyQueue: (tracks: Track[], index: number) => void;
+  // Guest-follow: apply the host's broadcast playback atomically. Pass a
+  // numeric `seekTo` only when a drift correction is needed (null = leave the
+  // playhead alone). No-op while nothing is loaded (index < 0).
+  followHostPlayback: (isPlaying: boolean, seekTo: number | null) => void;
   setRadioActive: (v: boolean) => void;
   appendToQueue: (tracks: Track[]) => void;
   toggleQueue: () => void;
@@ -230,6 +241,15 @@ export const usePlayerStore = create<PlayerState>()(
       partyBridge: null,
 
       radioActive: false,
+
+      sleepAt: null,
+      sleepAfterTrack: false,
+      setSleepTimer: (minutes) =>
+        set({
+          sleepAt: minutes == null ? null : Date.now() + minutes * 60_000,
+          sleepAfterTrack: false,
+        }),
+      setSleepAfterTrack: (v) => set({ sleepAfterTrack: v, sleepAt: null }),
 
       setPartyBridge: (b) => set({ partyBridge: b }),
       setPartyQueue: (tracks, index) =>
@@ -579,6 +599,10 @@ export const usePlayerStore = create<PlayerState>()(
         });
       },
       _onEnded: () => {
+        if (get().sleepAfterTrack) {
+          set({ sleepAfterTrack: false, isPlaying: false, currentTime: 0 });
+          return;
+        }
         if (get().repeat === "one") {
           set({ seekTo: 0, currentTime: 0, isPlaying: true });
           return;
