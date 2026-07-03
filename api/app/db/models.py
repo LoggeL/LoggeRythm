@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -160,6 +161,12 @@ class PartySession(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     host_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=-1)
+    # Host-authoritative playback state, broadcast to guests via SSE.
+    is_playing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    position_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    playback_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 

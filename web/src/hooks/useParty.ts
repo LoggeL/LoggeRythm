@@ -1,8 +1,13 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import {
+  openPartyStream,
+  patchPartyPlayback,
+  type PartyLiveState,
+} from "@/lib/partySocket";
 import { usePlayerStore } from "@/store/player";
 import { usePartyStore } from "@/store/party";
 import type { PartyState, PartyTrack, Track } from "@/types";
@@ -27,19 +32,38 @@ export function useParty(code: string | null) {
   const setParty = usePartyStore((s) => s.setParty);
   const clearParty = usePartyStore((s) => s.clearParty);
 
+  // Live state fed by the SSE stream. The initial full-state frame arrives on
+  // connect; every mutation pushes a fresh frame. React Query below is only the
+  // one-shot initial load plus a long safety-net refetch in case the stream
+  // silently stalls.
+  const [live, setLive] = useState<PartyLiveState | null>(null);
+
   const query = useQuery<PartyState>({
     queryKey: ["party", code],
     queryFn: () => api.getParty(code as string),
     enabled: !!code,
-    refetchInterval: 2000,
+    // Safety fallback only — SSE is the real-time source of truth.
+    refetchInterval: 20000,
   });
 
-  const data = query.data;
+  // The backend always includes the playback fields; the query type predates
+  // them, so widen it here.
+  const initial = query.data as PartyLiveState | undefined;
+  const data: PartyLiveState | null = live ?? initial ?? null;
+
+  // Open the SSE stream. On new code / unmount the previous stream is closed.
+  useEffect(() => {
+    if (!code) return;
+    const dispose = openPartyStream(code, (state) => setLive(state));
+    return () => {
+      dispose();
+      setLive(null);
+    };
+  }, [code]);
 
   // Install the bridge so player queue edits route to the party api. It is
-  // re-installed whenever poll data changes so removeAt/reorder can map queue
-  // indices to the server item ids from the latest party state. Cleared on
-  // unmount / when the code goes away.
+  // re-installed whenever state changes so removeAt/reorder can map queue
+  // indices to the server item ids from the latest party state.
   useEffect(() => {
     if (!code) {
       setPartyBridge(null);
@@ -70,7 +94,7 @@ export function useParty(code: string | null) {
     };
   }, [code, data, setPartyBridge]);
 
-  // Sync poll data into player queue + party store.
+  // Sync live state into the player queue + party store.
   useEffect(() => {
     if (!data) return;
     const tracks = data.tracks.map(partyTrackToTrack);
@@ -82,6 +106,11 @@ export function useParty(code: string | null) {
       isHost: data.is_host,
       currentIndex: data.current_index,
       members: data.members,
+      isPlaying: data.is_playing,
+      positionSec: data.position_sec,
+      playbackUpdatedAt: data.playback_updated_at
+        ? Date.parse(data.playback_updated_at)
+        : null,
     });
   }, [data, setPartyQueue, setParty]);
 
@@ -90,37 +119,43 @@ export function useParty(code: string | null) {
     if (!code) return;
     return api.joinParty(code);
   }, [code]);
+  // Mutations rely on the SSE stream to echo the resulting state back, so they
+  // no longer refetch — the broadcast (and the 20s safety poll) keep us fresh.
   const add = useCallback(
     async (track: Track) => {
       if (!code) return;
       await api.partyAddTrack(code, track);
-      await query.refetch();
     },
-    [code, query],
+    [code],
   );
   const remove = useCallback(
     async (itemId: number) => {
       if (!code) return;
       await api.partyRemoveTrack(code, itemId);
-      await query.refetch();
     },
-    [code, query],
+    [code],
   );
   const reorder = useCallback(
     async (ids: number[]) => {
       if (!code) return;
       await api.partyReorder(code, ids);
-      await query.refetch();
     },
-    [code, query],
+    [code],
   );
   const setCurrent = useCallback(
     async (index: number) => {
       if (!code) return;
       await api.partySetCurrent(code, index);
-      await query.refetch();
     },
-    [code, query],
+    [code],
+  );
+  // Host-only playback broadcast (guarded server-side with a 403 for guests).
+  const setPlayback = useCallback(
+    async (isPlaying: boolean, positionSec: number) => {
+      if (!code) return;
+      await patchPartyPlayback(code, isPlaying, positionSec);
+    },
+    [code],
   );
   const leave = useCallback(async () => {
     if (!code) return;
@@ -140,6 +175,7 @@ export function useParty(code: string | null) {
     remove,
     reorder,
     setCurrent,
+    setPlayback,
     leave,
   };
 }

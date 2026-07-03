@@ -29,5 +29,10 @@ class PartyState(BaseModel):
     host_name: str = ""
     is_host: bool = False
     current_index: int = -1
+    # Host-authoritative playback state, broadcast to guests.
+    is_playing: bool = False
+    position_sec: float = 0.0
+    # ISO-8601 timestamp of the last playback update, or None if never set.
+    playback_updated_at: str | None = None
     members: list[PartyMemberOut] = Field(default_factory=list)
     tracks: list[PartyTrackOut] = Field(default_factory=list)

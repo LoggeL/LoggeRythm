@@ -101,6 +101,10 @@ _COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
     {"table": "likes", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
     {"table": "plays", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
     {"table": "party_tracks", "column": "artists_json", "ddl": "TEXT NOT NULL DEFAULT '[]'"},
+    # Host-authoritative playback state for real-time party mode.
+    {"table": "party_sessions", "column": "is_playing", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
+    {"table": "party_sessions", "column": "position_sec", "ddl": "FLOAT NOT NULL DEFAULT 0"},
+    {"table": "party_sessions", "column": "playback_updated_at", "ddl": "DATETIME"},
 )
 
 

@@ -239,6 +239,16 @@ export const usePlayerStore = create<PlayerState>()(
           index,
           duration: tracks[index]?.duration_sec || 0,
         }),
+      followHostPlayback: (isPlaying, seekTo) =>
+        set((s) => {
+          if (s.index < 0) return {};
+          const patch: Partial<PlayerState> = { isPlaying };
+          if (seekTo != null) {
+            patch.seekTo = seekTo;
+            patch.currentTime = seekTo;
+          }
+          return patch;
+        }),
       setRadioActive: (v) => set({ radioActive: v }),
       appendToQueue: (tracks) => {
         if (!tracks.length) return;
