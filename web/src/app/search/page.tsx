@@ -58,6 +58,7 @@ export default function SearchPage() {
   const [sort, setSort] = useState<Sort>("relevance");
   const [showFilters, setShowFilters] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [startingPlaylist, setStartingPlaylist] = useState<string | null>(null);
   const [recent, setRecent] = useLocalJson<string[]>(
     "sf_recent_searches",
     EMPTY_STRINGS,
@@ -269,16 +270,45 @@ export default function SearchPage() {
                     key={r}
                     type="button"
                     onClick={() => setInput(r)}
-                    className="px-4 py-1.5 rounded-full bg-panel text-sm hover:bg-panel-hover"
+                    className="px-4 py-1.5 rounded-full bg-panel text-sm hover:bg-panel-hover press"
                   >
                     {r}
                   </button>
                 ))}
               </div>
-            </>
-          ) : (
-            <p className="text-muted">Wonach suchst du?</p>
+            </section>
           )}
+
+          {/* Browse by genre — real Deezer genre tiles */}
+          <section>
+            <h2 className="text-xl font-bold mb-4">Zum Stöbern</h2>
+            {genresQ.isLoading && <CardGridSkeleton count={12} />}
+            {!genresQ.isLoading && (genresQ.data?.length ?? 0) === 0 && (
+              <p className="text-muted">Wonach suchst du?</p>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+              {(genresQ.data ?? []).map((g) => (
+                <Link
+                  key={String(g.id)}
+                  href={`/genre/${g.id}`}
+                  className="group relative block rounded-2xl overflow-hidden aspect-[4/3] bg-panel hover-lift transition"
+                >
+                  {g.picture && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={g.picture}
+                      alt={g.name}
+                      className="absolute inset-0 w-full h-full object-cover opacity-65 transition-transform duration-300 group-hover:scale-105"
+                    />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/15 to-transparent" />
+                  <span className="absolute bottom-2 left-3 right-3 font-bold text-lg drop-shadow truncate">
+                    {g.name}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
         </div>
       )}
 
@@ -346,14 +376,24 @@ export default function SearchPage() {
             {playlists
               .slice(0, tab === "playlist" ? playlists.length : 5)
               .map((p) => (
-                <div
+                <button
                   key={String(p.id)}
+                  type="button"
+                  disabled={startingPlaylist === String(p.id)}
                   onClick={async () => {
-                    toast.info("Playlist wird abgespielt…");
-                    const pl = await api.deezerPlaylist(String(p.id));
-                    usePlayerStore.getState().playQueue(pl.tracks, 0);
+                    setStartingPlaylist(String(p.id));
+                    try {
+                      const pl = await api.deezerPlaylist(String(p.id));
+                      usePlayerStore.getState().playQueue(pl.tracks, 0, p.title);
+                    } catch (err) {
+                      toast.error(
+                        `Playlist konnte nicht geladen werden — ${err instanceof Error ? err.message : String(err)}`,
+                      );
+                    } finally {
+                      setStartingPlaylist(null);
+                    }
                   }}
-                  className="bg-panel/70 border border-white/5 rounded-2xl p-4 cursor-pointer hover-lift transition"
+                  className="text-left bg-panel/70 border border-white/5 rounded-2xl p-4 cursor-pointer hover-lift transition disabled:opacity-60 disabled:cursor-wait"
                 >
                   {p.cover ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -367,9 +407,11 @@ export default function SearchPage() {
                   )}
                   <div className="truncate font-semibold">{p.title}</div>
                   <div className="truncate text-sm text-muted">
-                    {p.track_count} Titel
+                    {startingPlaylist === String(p.id)
+                      ? "Wird geladen…"
+                      : `${p.track_count} Titel`}
                   </div>
-                </div>
+                </button>
               ))}
           </div>
         </section>

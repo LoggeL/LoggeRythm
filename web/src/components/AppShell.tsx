@@ -33,10 +33,14 @@ export default function AppShell({
   // Open the queue panel by default from medium screens up (it docks as a
   // static sidebar there); it stays collapsible via the player-bar toggle.
   // Done in an effect (not store init) to stay SSR-safe; mobile is an overlay.
+  // Tracks the breakpoint via matchMedia so crossing it (resize/rotate)
+  // re-evaluates instead of freezing the initial viewport's choice.
   useEffect(() => {
-    if (window.innerWidth >= 768) {
-      usePlayerStore.getState().setQueueOpen(true);
-    }
+    const mq = window.matchMedia("(min-width: 768px)");
+    const apply = () => usePlayerStore.getState().setQueueOpen(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   // Login/register are always reachable (minimal chrome) so users can get in.

@@ -24,12 +24,12 @@ import {
   RepeatIcon,
   RepeatOneIcon,
   QueueIcon,
-  VisualizerIcon,
   LyricsIcon,
   SpinnerIcon,
   ChevronDownIcon,
   ExpandIcon,
 } from "@/components/icons";
+import { toast } from "@/store/toast";
 
 // Shared styling for the player's secondary icon buttons.
 const ICON_BTN =
@@ -403,6 +403,21 @@ export default function PlayerBar() {
     navigator.mediaSession.setActionHandler("seekto", (d) => {
       if (d.seekTime != null) seek(d.seekTime);
     });
+    navigator.mediaSession.setActionHandler("seekforward", (d) => {
+      const s = usePlayerStore.getState();
+      s.seek(Math.min(s.currentTime + (d.seekOffset ?? 10), s.duration || 0));
+    });
+    navigator.mediaSession.setActionHandler("seekbackward", (d) => {
+      const s = usePlayerStore.getState();
+      s.seek(Math.max(s.currentTime - (d.seekOffset ?? 10), 0));
+    });
+    try {
+      navigator.mediaSession.setActionHandler("stop", () => {
+        usePlayerStore.getState().pause();
+      });
+    } catch {
+      // "stop" is not supported everywhere
+    }
   }, [track, toggle, prev, next, seek]);
 
   useEffect(() => {
@@ -450,9 +465,11 @@ export default function PlayerBar() {
           s.toggle();
           break;
         case "ArrowRight":
+          e.preventDefault();
           s.seek(Math.min(s.currentTime + 5, s.duration || s.currentTime + 5));
           break;
         case "ArrowLeft":
+          e.preventDefault();
           s.seek(Math.max(s.currentTime - 5, 0));
           break;
         case "ArrowUp":
@@ -548,7 +565,11 @@ export default function PlayerBar() {
       describeStreamFailure(id ? streamUrl(id) : el.currentSrc, mediaErr).then(
         (detail) => {
           if (activeIdxRef.current === idx) {
-            _setError(`Titel konnte nicht geladen werden — ${detail}`);
+            const msg = `Titel konnte nicht geladen werden — ${detail}`;
+            _setError(msg);
+            // Also toast: the inline player-bar text is easy to miss in
+            // fullscreen or on mobile.
+            toast.error(msg);
           }
         },
       );
@@ -649,7 +670,7 @@ export default function PlayerBar() {
               aria-label="Zufallswiedergabe"
               aria-pressed={shuffle}
               title="Zufallswiedergabe"
-              className={`hidden sm:inline-flex disabled:opacity-40 transition ${
+              className={`inline-flex disabled:opacity-40 transition ${
                 shuffle ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
@@ -701,7 +722,7 @@ export default function PlayerBar() {
                     ? "Alle wiederholen"
                     : "Wiederholen aus"
               }
-              className={`hidden sm:inline-flex disabled:opacity-40 transition ${
+              className={`inline-flex disabled:opacity-40 transition ${
                 repeat !== "off" ? "text-accent" : "text-muted hover:text-foreground"
               }`}
             >
@@ -753,9 +774,9 @@ export default function PlayerBar() {
             aria-label="Warteschlange"
             aria-pressed={queueOpen}
             title="Warteschlange"
-            className={`${SQUARE_BTN} ${SQUARE_IDLE}`}
+            className={`${SQUARE_BTN} ${queueOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
           >
-            <VisualizerIcon width={18} height={18} />
+            <QueueIcon width={18} height={18} />
           </button>
           <div className="flex items-center gap-1.5 ml-2">
             <button
