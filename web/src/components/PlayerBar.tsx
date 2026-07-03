@@ -109,6 +109,15 @@ export default function PlayerBar() {
   // The next-track id we've already begun crossfading into (prevents the
   // crossfade effect from re-triggering every frame near the end).
   const crossfadeToId = useRef<string | null>(null);
+  // Auto-skip a failed track after a short grace period so a single dead
+  // source doesn't stall the whole queue.
+  const errorSkipTimer = useRef<number | null>(null);
+  const clearErrorSkip = () => {
+    if (errorSkipTimer.current) {
+      clearTimeout(errorSkipTimer.current);
+      errorSkipTimer.current = null;
+    }
+  };
   const [expanded, setExpanded] = useState(false);
 
   const queueOpen = usePlayerStore((s) => s.queueOpen);
@@ -505,6 +514,13 @@ export default function PlayerBar() {
     }
   };
 
+  // A new track (manual skip, queue advance) invalidates any pending
+  // auto-skip from the previous track's failure.
+  useEffect(() => {
+    clearErrorSkip();
+    return clearErrorSkip;
+  }, [trackId]);
+
   useEffect(() => {
     document.body.dataset.nowPlayingExpanded = expanded ? "true" : "false";
 
@@ -548,6 +564,7 @@ export default function PlayerBar() {
     },
     onPlaying: () => {
       if (activeIdxRef.current !== idx) return;
+      clearErrorSkip(); // recovered — cancel any pending auto-skip
       _setBuffering(false);
       _setError(null);
     },
@@ -560,6 +577,17 @@ export default function PlayerBar() {
       const mediaErr = el.error;
       const id = el.dataset.trackId || "";
       _setError("Titel konnte nicht geladen werden.");
+      // Auto-skip after 5s so one dead source doesn't block the queue. Only
+      // fire if we're still stuck on this same failed track.
+      clearErrorSkip();
+      errorSkipTimer.current = window.setTimeout(() => {
+        errorSkipTimer.current = null;
+        const cur = currentTrack(usePlayerStore.getState());
+        if (activeIdxRef.current === idx && cur?.id === id) {
+          toast.info("Titel übersprungen.");
+          next();
+        }
+      }, 5000);
       // Probe the backend for the real reason so the UI shows *why* it failed
       // (HTTP status + detail / decode error) instead of a bare message.
       describeStreamFailure(id ? streamUrl(id) : el.currentSrc, mediaErr).then(
