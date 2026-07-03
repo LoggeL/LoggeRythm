@@ -6,14 +6,18 @@ import {
   HomeIcon,
   SearchIcon,
   LibraryIcon,
-  UserIcon,
+  CompassIcon,
+  RadioIcon,
 } from "@/components/icons";
 
+// Konto is intentionally omitted — it's reachable via the avatar in the TopBar
+// on mobile, so the slot is spent on Entdecken/Radio instead.
 const ITEMS = [
   { href: "/", label: "Start", icon: HomeIcon },
   { href: "/search", label: "Suche", icon: SearchIcon },
+  { href: "/genre", label: "Entdecken", icon: CompassIcon },
+  { href: "/radio", label: "Radio", icon: RadioIcon },
   { href: "/library", label: "Bibliothek", icon: LibraryIcon },
-  { href: "/account", label: "Konto", icon: UserIcon },
 ];
 
 export default function MobileNav() {
@@ -21,7 +25,9 @@ export default function MobileNav() {
   return (
     <nav className="md:hidden flex-shrink-0 z-40 bg-background/95 backdrop-blur-xl border-t border-white/5 flex justify-around px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       {ITEMS.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href;
+        const active =
+          pathname === href ||
+          (href !== "/" && pathname.startsWith(`${href}/`));
         return (
           <Link
             key={href}

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { toast } from "@/store/toast";
-import { api } from "@/lib/api";
+import { startTrackRadio } from "@/lib/radio";
 import { useMe } from "@/hooks/useAuth";
 import { openAddToPlaylist } from "@/store/addToPlaylist";
 import { MoreIcon } from "@/components/icons";
@@ -37,18 +37,7 @@ export function useTrackMenuItems(
     },
     {
       label: "Song-Radio starten",
-      onClick: async () => {
-        try {
-          const tracks = await api.radio(String(track.id));
-          const store = usePlayerStore.getState();
-          // start with the seed track, then the radio mix; endless top-up handled in PlayerBar
-          store.playQueue([track, ...tracks], 0, `Radio – ${track.title}`);
-          store.setRadioActive(true);
-          toast.info("Radio gestartet…");
-        } catch {
-          toast.error("Radio konnte nicht gestartet werden.");
-        }
-      },
+      onClick: () => startTrackRadio(track),
     },
   ];
   if (me)
