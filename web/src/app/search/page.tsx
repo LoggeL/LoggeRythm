@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
@@ -10,10 +11,15 @@ import { useTrackPlays } from "@/hooks/usePlays";
 import TrackRow from "@/components/TrackRow";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
-import { RowListSkeleton } from "@/components/Skeleton";
+import { CardGridSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import ImportPanel from "@/components/ImportPanel";
 import { SearchIcon, ImportIcon, FilterIcon } from "@/components/icons";
-import type { Track, ArtistSummary, PlaylistSearchResult } from "@/types";
+import type {
+  Track,
+  ArtistSummary,
+  PlaylistSearchResult,
+  Genre,
+} from "@/types";
 
 const EMPTY_STRINGS: string[] = [];
 
@@ -98,6 +104,12 @@ export default function SearchPage() {
     queryKey: ["search", "playlist", query],
     queryFn: () => api.searchPlaylists(query),
     enabled: enabled && wantPlaylists,
+  });
+  // Browse-by-genre tiles shown on the empty search landing.
+  const genresQ = useQuery<Genre[]>({
+    queryKey: ["genres"],
+    queryFn: () => api.genres(),
+    enabled: !enabled && !importing,
   });
 
   const tracks = useMemo(
@@ -238,11 +250,11 @@ export default function SearchPage() {
       {!importing && (
         <>
       {!enabled && (
-        <div>
-          {recent.length > 0 ? (
-            <>
+        <div className="animate-in flex flex-col gap-8">
+          {recent.length > 0 && (
+            <section>
               <div className="flex items-center justify-between mb-3">
-                <h2 className="font-bold">Zuletzt gesucht</h2>
+                <h2 className="text-xl font-bold">Zuletzt gesucht</h2>
                 <button
                   type="button"
                   onClick={clearRecent}
