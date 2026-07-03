@@ -2,15 +2,24 @@
 import glob
 import os
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from ..auth import get_current_user, hash_password
+from ..auth import clear_session_cookie, get_current_user, hash_password
 from ..config import STORAGE_DIR
-from ..db.models import FollowedArtist, Playlist, PlaylistTrack, User
+from ..db.models import (
+    FollowedArtist,
+    InviteCode,
+    PartyMember,
+    PartySession,
+    Play,
+    Playlist,
+    PlaylistTrack,
+    User,
+)
 from ..db.session import get_db
 from ..schemas.auth import UserOut
 from ..schemas.playlist import PlaylistSummary
@@ -118,6 +127,63 @@ def update_me(
     db.commit()
     db.refresh(user)
     return _user_out(user)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_me(
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Delete the current user's account and all of their data.
+
+    Playlists (+tracks), likes and follows cascade via the ORM; play events,
+    party memberships, hosted parties and invite codes have no ORM cascade and
+    are cleaned up explicitly so no orphaned rows survive.
+    """
+    if user.is_admin:
+        other_admin = db.scalar(
+            select(User).where(User.is_admin.is_(True), User.id != user.id)
+        )
+        if other_admin is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Der letzte Admin kann sein Konto nicht löschen.",
+            )
+
+    user_id = user.id
+    playlist_ids = list(
+        db.scalars(select(Playlist.id).where(Playlist.user_id == user_id))
+    )
+
+    db.execute(delete(Play).where(Play.user_id == user_id))
+    db.execute(delete(PartyMember).where(PartyMember.user_id == user_id))
+    # Hosted parties die with their host (ORM cascade removes tracks/members).
+    for session in db.scalars(
+        select(PartySession).where(PartySession.host_id == user_id)
+    ):
+        db.delete(session)
+    db.execute(delete(InviteCode).where(InviteCode.created_by == user_id))
+    db.execute(
+        update(InviteCode)
+        .where(InviteCode.used_by == user_id)
+        .values(used_by=None)
+    )
+    db.delete(user)
+    db.commit()
+
+    for pid in playlist_ids:
+        _remove_playlist_cover_files(pid)
+    _remove_avatar_files(user_id)
+    clear_session_cookie(response)
+
+
+def _remove_playlist_cover_files(playlist_id: int) -> None:
+    for f in glob.glob(os.path.join(STORAGE_DIR, "covers", f"{playlist_id}.*")):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 
 @router.get("/me/settings", response_model=PlaybackSettings)

@@ -1,23 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { useMe, useLogout } from "@/hooks/useAuth";
+import { usePlayerStore } from "@/store/player";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
+import ListeningStats from "@/components/profile/ListeningStats";
 import type {
   AdminUser,
   StorageInfo,
   InviteInfo,
   PlaybackSettings,
 } from "@/types";
+
+// Sub-navigation of the account page. Keeps the profile identity always visible
+// on top while the heavier content (stats, playback, admin tools) lives behind
+// tabs so nothing is crammed onto one scroll.
+type AccountTab = "stats" | "playback" | "admin";
 
 function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
@@ -43,6 +50,7 @@ function StatusBadge({ approved }: { approved: boolean }) {
 
 function AdminUsersSection() {
   const qc = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null);
   const { data, isLoading, error } = useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
     queryFn: api.adminUsers,
@@ -64,6 +72,7 @@ function AdminUsersSection() {
     mutationFn: (id: string | number) => api.deleteUser(id),
     onSuccess: () => {
       toast.success("Benutzer entfernt.");
+      setPendingDelete(null);
       qc.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (err) =>
@@ -72,19 +81,38 @@ function AdminUsersSection() {
       ),
   });
 
-  function handleDelete(u: AdminUser) {
-    if (
-      !window.confirm(
-        `Benutzer ${u.display_name} (${u.email}) wirklich entfernen?`,
-      )
-    )
-      return;
-    remove.mutate(u.id);
-  }
-
   return (
     <section className="bg-panel rounded-lg p-6">
       <h2 className="text-xl font-bold mb-4">Benutzerverwaltung</h2>
+
+      <Modal
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        title="Benutzer entfernen"
+      >
+        <p className="text-sm text-muted mb-4">
+          {pendingDelete
+            ? `${pendingDelete.display_name} (${pendingDelete.email}) wird samt Playlists, Likes und Verlauf endgültig entfernt.`
+            : ""}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={() => setPendingDelete(null)}
+            className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={() => pendingDelete && remove.mutate(pendingDelete.id)}
+            disabled={remove.isPending}
+            className="px-5 py-2 rounded-full bg-red-500 text-white font-semibold hover:bg-red-400 disabled:opacity-60"
+          >
+            {remove.isPending ? "Wird entfernt…" : "Entfernen"}
+          </button>
+        </div>
+      </Modal>
 
       {isLoading && <p className="text-muted">Lädt…</p>}
       {error && (
@@ -137,7 +165,7 @@ function AdminUsersSection() {
                 {!u.is_admin && (
                   <button
                     type="button"
-                    onClick={() => handleDelete(u)}
+                    onClick={() => setPendingDelete(u)}
                     disabled={remove.isPending}
                     className="press px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10 disabled:opacity-50"
                   >
@@ -367,6 +395,94 @@ function AdminInvitesSection() {
   );
 }
 
+const SLEEP_PRESETS = [15, 30, 45, 60];
+
+function SleepTimerSection() {
+  const sleepAt = usePlayerStore((s) => s.sleepAt);
+  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
+  const setSleepTimer = usePlayerStore((s) => s.setSleepTimer);
+  const setSleepAfterTrack = usePlayerStore((s) => s.setSleepAfterTrack);
+
+  // Tick once a second while armed so the remaining time counts down live.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (sleepAt == null) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [sleepAt]);
+
+  const remainingSec =
+    sleepAt == null ? null : Math.max(0, Math.round((sleepAt - now) / 1000));
+  const armed = sleepAt != null || sleepAfterTrack;
+
+  return (
+    <section className="bg-panel rounded-lg p-6">
+      <div className="mb-4">
+        <h2 className="text-xl font-bold">Sleep-Timer</h2>
+        <p className="text-sm text-muted">
+          Pausiert die Wiedergabe nach der gewählten Zeit.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setSleepTimer(null)}
+          className={`press px-4 py-1.5 rounded-full text-sm font-medium transition ${
+            !armed
+              ? "bg-foreground text-background"
+              : "bg-background text-muted hover:text-foreground"
+          }`}
+        >
+          Aus
+        </button>
+        {SLEEP_PRESETS.map((m) => {
+          // Active when this preset was picked (remaining time still within it).
+          const active =
+            remainingSec != null &&
+            remainingSec > (SLEEP_PRESETS[SLEEP_PRESETS.indexOf(m) - 1] ?? 0) * 60 &&
+            remainingSec <= m * 60;
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setSleepTimer(m)}
+              className={`press px-4 py-1.5 rounded-full text-sm font-medium transition ${
+                active
+                  ? "bg-accent text-white"
+                  : "bg-background text-muted hover:text-foreground"
+              }`}
+            >
+              {m} min
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => setSleepAfterTrack(true)}
+          className={`press px-4 py-1.5 rounded-full text-sm font-medium transition ${
+            sleepAfterTrack
+              ? "bg-accent text-white"
+              : "bg-background text-muted hover:text-foreground"
+          }`}
+        >
+          Ende des Titels
+        </button>
+      </div>
+      {remainingSec != null && (
+        <p className="mt-3 text-sm text-muted tabular-nums">
+          Pausiert in {Math.floor(remainingSec / 60)}:
+          {String(remainingSec % 60).padStart(2, "0")} Minuten.
+        </p>
+      )}
+      {sleepAfterTrack && (
+        <p className="mt-3 text-sm text-muted">
+          Pausiert, sobald der aktuelle Titel zu Ende ist.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function PlaybackSettingsSection() {
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery<PlaybackSettings>({
@@ -481,7 +597,22 @@ export default function AccountPage() {
   }
 
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState({ display_name: "", email: "", password: "" });
+  const [tab, setTab] = useState<AccountTab>("stats");
+
+  const deleteAccount = useMutation({
+    mutationFn: () => api.deleteMe(),
+    onSuccess: () => {
+      toast.success("Konto gelöscht.");
+      qc.clear();
+      window.location.href = "/";
+    },
+    onError: (err) =>
+      toast.error(
+        err instanceof ApiError ? err.message : "Löschen fehlgeschlagen.",
+      ),
+  });
 
   function openEdit() {
     setForm({
@@ -533,6 +664,14 @@ export default function AccountPage() {
     );
   }
 
+  const TABS: { key: AccountTab; label: string }[] = [
+    { key: "stats", label: "Statistiken" },
+    { key: "playback", label: "Wiedergabe" },
+    ...(me.is_admin
+      ? [{ key: "admin" as const, label: "Administration" }]
+      : []),
+  ];
+
   return (
     <div className="animate-in flex flex-col gap-8 w-full max-w-5xl mx-auto">
       <section className="bg-panel rounded-lg p-6 flex items-center gap-5">
@@ -583,8 +722,43 @@ export default function AccountPage() {
           >
             Abmelden
           </button>
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(true)}
+            className="press px-4 py-2 rounded-full text-sm font-medium text-red-400 hover:bg-red-500/10"
+          >
+            Konto löschen
+          </button>
         </div>
       </section>
+
+      <Modal
+        open={confirmingDelete}
+        onClose={() => setConfirmingDelete(false)}
+        title="Konto löschen"
+      >
+        <p className="text-sm text-muted mb-4">
+          Dein Konto wird mit allen Playlists, Likes und deinem Hörverlauf
+          endgültig gelöscht. Das kann nicht rückgängig gemacht werden.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={() => setConfirmingDelete(false)}
+            className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={() => deleteAccount.mutate()}
+            disabled={deleteAccount.isPending}
+            className="px-5 py-2 rounded-full bg-red-500 text-white font-semibold hover:bg-red-400 disabled:opacity-60"
+          >
+            {deleteAccount.isPending ? "Wird gelöscht…" : "Endgültig löschen"}
+          </button>
+        </div>
+      </Modal>
 
       <Modal open={editing} onClose={() => setEditing(false)} title="Profil bearbeiten">
         <form
@@ -645,25 +819,52 @@ export default function AccountPage() {
         </form>
       </Modal>
 
-      <PlaybackSettingsSection />
+      {/* Sub-navigation */}
+      <div className="flex gap-2 flex-wrap -mb-2">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+              tab === t.key
+                ? "bg-foreground text-background"
+                : "bg-panel text-muted hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      {me.is_admin && (
-        <Link
-          href="/status"
-          className="press bg-panel rounded-lg p-6 flex items-center justify-between gap-3 hover:bg-panel-hover transition"
-        >
-          <div>
-            <h2 className="text-xl font-bold">Systemstatus</h2>
-            <p className="text-sm text-muted">
-              Deezer-Auth, Speicher, Benutzer & Konfiguration
-            </p>
-          </div>
-          <span className="text-muted text-2xl">→</span>
-        </Link>
+      {tab === "stats" && <ListeningStats />}
+
+      {tab === "playback" && (
+        <div className="flex flex-col gap-8">
+          <PlaybackSettingsSection />
+          <SleepTimerSection />
+        </div>
       )}
-      {me.is_admin && <AdminUsersSection />}
-      {me.is_admin && <AdminStorageSection />}
-      {me.is_admin && <AdminInvitesSection />}
+
+      {tab === "admin" && me.is_admin && (
+        <div className="flex flex-col gap-8">
+          <Link
+            href="/status"
+            className="press bg-panel rounded-lg p-6 flex items-center justify-between gap-3 hover:bg-panel-hover transition"
+          >
+            <div>
+              <h2 className="text-xl font-bold">Systemstatus</h2>
+              <p className="text-sm text-muted">
+                Deezer-Auth, Speicher, Benutzer & Konfiguration
+              </p>
+            </div>
+            <span className="text-muted text-2xl">→</span>
+          </Link>
+          <AdminUsersSection />
+          <AdminStorageSection />
+          <AdminInvitesSection />
+        </div>
+      )}
     </div>
   );
 }

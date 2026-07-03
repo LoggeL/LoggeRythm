@@ -1,7 +1,10 @@
 """Personal listening statistics for the current user."""
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from ..auth import get_current_user
 from ..db.models import Play, User
@@ -9,6 +12,58 @@ from ..db.session import get_db
 from ..schemas.track import Track, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
+
+
+def _top_tracks(db: Session, where: ColumnElement[bool]) -> list[dict]:
+    count = func.count().label("count")
+    rows = db.execute(
+        select(
+            Play.deezer_id,
+            func.max(Play.title).label("title"),
+            func.max(Play.artist).label("artist"),
+            func.max(Play.cover_url).label("cover_url"),
+            count,
+        )
+        .where(where)
+        .group_by(Play.deezer_id)
+        .order_by(count.desc())
+        .limit(10)
+    ).all()
+    return [
+        {
+            "key": r.deezer_id,
+            "label": r.title or "",
+            "sublabel": r.artist or "",
+            "cover": r.cover_url or "",
+            "count": r.count,
+        }
+        for r in rows
+    ]
+
+
+def _top_artists(db: Session, where: ColumnElement[bool]) -> list[dict]:
+    count = func.count().label("count")
+    rows = db.execute(
+        select(
+            Play.artist,
+            Play.artist_id,
+            count,
+        )
+        .where(where)
+        .group_by(Play.artist, Play.artist_id)
+        .order_by(count.desc())
+        .limit(10)
+    ).all()
+    return [
+        {
+            "key": r.artist_id or "",
+            "label": r.artist or "",
+            "sublabel": "",
+            "cover": "",
+            "count": r.count,
+        }
+        for r in rows
+    ]
 
 
 @router.post("/plays", status_code=status.HTTP_204_NO_CONTENT)
@@ -44,53 +99,18 @@ def get_stats(
         select(func.count()).select_from(Play).where(Play.user_id == user.id)
     ) or 0
 
-    count = func.count().label("count")
+    all_time = Play.user_id == user.id
+    top_tracks = _top_tracks(db, all_time)
+    top_artists = _top_artists(db, all_time)
 
-    top_tracks_rows = db.execute(
-        select(
-            Play.deezer_id,
-            func.max(Play.title).label("title"),
-            func.max(Play.artist).label("artist"),
-            func.max(Play.cover_url).label("cover_url"),
-            count,
-        )
-        .where(Play.user_id == user.id)
-        .group_by(Play.deezer_id)
-        .order_by(count.desc())
-        .limit(10)
-    ).all()
-    top_tracks = [
-        {
-            "key": r.deezer_id,
-            "label": r.title or "",
-            "sublabel": r.artist or "",
-            "cover": r.cover_url or "",
-            "count": r.count,
-        }
-        for r in top_tracks_rows
-    ]
-
-    top_artists_rows = db.execute(
-        select(
-            Play.artist,
-            Play.artist_id,
-            count,
-        )
-        .where(Play.user_id == user.id)
-        .group_by(Play.artist, Play.artist_id)
-        .order_by(count.desc())
-        .limit(10)
-    ).all()
-    top_artists = [
-        {
-            "key": r.artist_id or "",
-            "label": r.artist or "",
-            "sublabel": "",
-            "cover": "",
-            "count": r.count,
-        }
-        for r in top_artists_rows
-    ]
+    # Last-30-days view (purely additive).
+    month_cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    month_where = (Play.user_id == user.id) & (Play.played_at >= month_cutoff)
+    total_plays_month = db.scalar(
+        select(func.count()).select_from(Play).where(month_where)
+    ) or 0
+    top_tracks_month = _top_tracks(db, month_where)
+    top_artists_month = _top_artists(db, month_where)
 
     recent_rows = db.scalars(
         select(Play)
@@ -121,4 +141,7 @@ def get_stats(
         "top_tracks": top_tracks,
         "top_artists": top_artists,
         "recent": recent,
+        "total_plays_month": total_plays_month,
+        "top_tracks_month": top_tracks_month,
+        "top_artists_month": top_artists_month,
     }

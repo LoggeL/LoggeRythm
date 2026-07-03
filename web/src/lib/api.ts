@@ -140,6 +140,7 @@ export const api = {
     email?: string;
     password?: string;
   }) => req<User>(`/me`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteMe: () => req<void>(`/me`, { method: "DELETE" }),
   settings: () => req<PlaybackSettings>(`/me/settings`),
   updateSettings: (patch: {
     crossfade_enabled?: boolean;
