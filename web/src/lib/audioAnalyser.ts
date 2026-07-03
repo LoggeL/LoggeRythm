@@ -101,6 +101,19 @@ export function applyVolume(el: HTMLAudioElement | null, v: number): void {
   }
 }
 
+// Human loudness perception is roughly logarithmic, so a linear slider feels
+// like nearly all the change happens in the bottom third. Map the slider
+// position (0..1) through a power curve to the audible gain: quieter low end,
+// finer control up top. Endpoints are preserved (0->0, 1->1). Raise the
+// exponent for a stronger taper.
+const VOLUME_CURVE_EXPONENT = 2;
+
+/** Map a linear slider position (0..1) to a perceptual audio gain (0..1). */
+export function perceptualVolume(position: number): number {
+  const p = Math.max(0, Math.min(1, position));
+  return p ** VOLUME_CURVE_EXPONENT;
+}
+
 /** The analyser node, if it has been initialised. */
 export function getAnalyser(): AnalyserNode | null {
   return analyser;

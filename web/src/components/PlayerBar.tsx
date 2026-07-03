@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { api, streamUrl } from "@/lib/api";
-import { ensureAnalyser, applyVolume } from "@/lib/audioAnalyser";
+import { ensureAnalyser, applyVolume, perceptualVolume } from "@/lib/audioAnalyser";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import LikeButton from "@/components/LikeButton";
@@ -225,7 +225,7 @@ export default function PlayerBar() {
         el.dataset.trackId = id;
         el.currentTime = 0;
         const s = usePlayerStore.getState();
-        applyVolume(el, s.muted ? 0 : s.volume);
+        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume));
       } else {
         el.pause();
         el.removeAttribute("src");
@@ -262,7 +262,7 @@ export default function PlayerBar() {
         if (idle) idle.pause();
         crossfadeToId.current = null;
         const s = usePlayerStore.getState();
-        applyVolume(el, s.muted ? 0 : s.volume);
+        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume));
       }
     }
   }, [isPlaying, trackId, activeIdx]);
@@ -271,7 +271,8 @@ export default function PlayerBar() {
   // it runs).
   useEffect(() => {
     const el = (activeIdx === 0 ? deckA : deckB).current;
-    if (el && !crossfadeTimer.current) applyVolume(el, muted ? 0 : volume);
+    if (el && !crossfadeTimer.current)
+      applyVolume(el, muted ? 0 : perceptualVolume(volume));
   }, [volume, muted, activeIdx]);
 
   // Crossfade: near the end of the active deck, fade the next track in on the
@@ -310,7 +311,7 @@ export default function PlayerBar() {
         crossfadeTimer.current = window.setInterval(() => {
           const elapsed = (performance.now() - startedAt) / 1000;
           const pct = Math.min(1, elapsed / seconds);
-          const targetVolume = muted ? 0 : volume;
+          const targetVolume = muted ? 0 : perceptualVolume(volume);
           applyVolume(outgoing, targetVolume * (1 - pct));
           applyVolume(incoming, targetVolume * pct);
 
