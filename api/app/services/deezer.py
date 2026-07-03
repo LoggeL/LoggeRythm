@@ -195,6 +195,7 @@ def decryptfile(fh, key, fo):
     """
     blockSize = 2048
     i = 0
+    written = 0
 
     for data in fh.iter_content(blockSize):
         if not data:
@@ -207,7 +208,10 @@ def decryptfile(fh, key, fo):
             data = blowfishDecrypt(data, key)
 
         fo.write(data)
+        written += len(data)
         i += 1
+
+    return written
 
 
 def writeid3v1_1(fo, song):
@@ -478,22 +482,25 @@ def download_song(song: dict, output_file: str) -> None:
     try:
         url = get_song_url(song["TRACK_TOKEN"])
     except Exception as e:
-        print(
-            f"Could not download song (https://www.deezer.com/us/track/{song['SNG_ID']}). Maybe it's not available anymore or at least not in your country. {e}"
-        )
+        # Primary token failed. Try Deezer's FALLBACK track if present; if that
+        # also fails, raise loudly (no silent fallback — a swallowed error here
+        # left `url` unbound and produced a cryptic downstream crash).
         if "FALLBACK" in song:
-            song = song["FALLBACK"]
-            print(
-                f"Trying fallback song https://www.deezer.com/us/track/{song['SNG_ID']}"
-            )
+            fallback = song["FALLBACK"]
             try:
-                url = get_song_url(song["TRACK_TOKEN"])
-            except Exception:
-                pass
-            else:
-                print("Fallback song seems to work")
+                url = get_song_url(fallback["TRACK_TOKEN"])
+            except Exception as fe:
+                raise DeezerApiException(
+                    f"Track {song.get('SNG_ID')} is not downloadable (primary: {e}; "
+                    f"fallback {fallback.get('SNG_ID')}: {fe}). It may be unavailable "
+                    "in this region."
+                ) from fe
+            song = fallback  # decrypt with the fallback's key/id
         else:
-            raise
+            raise DeezerApiException(
+                f"Track {song.get('SNG_ID')} is not downloadable ({e}). "
+                "It may be unavailable in this region."
+            ) from e
 
     key = calcbfkey(song["SNG_ID"])
     try:
@@ -502,12 +509,26 @@ def download_song(song: dict, output_file: str) -> None:
             with open(output_file, "w+b") as fo:
                 # Add song cover and first 30 seconds of unencrypted data
                 writeid3v2(fo, song)
-                decryptfile(response, key, fo)
+                audio_bytes = decryptfile(response, key, fo)
                 writeid3v1_1(fo, song)
     except Exception as e:
         raise DeezerApiException(f"Could not write song to disk: {e}") from e
-    else:
-        print("Dowload finished: {}".format(output_file))
+
+    # Integrity guard: a truncated/empty CDN response yields a file with ID3
+    # tags but no (or too little) audio. Fail loudly instead of caching a
+    # corrupt track that would silently fail to play forever.
+    expected = int(song.get(f"FILESIZE_{sound_format}", 0) or song.get("FILESIZE", 0) or 0)
+    if expected > 0 and audio_bytes < expected * 0.9:
+        raise DeezerApiException(
+            f"Truncated download for track {song.get('SNG_ID')}: got {audio_bytes} "
+            f"audio bytes, expected ~{expected}. Deezer CDN likely returned an error body."
+        )
+    if expected == 0 and audio_bytes < 4096:
+        raise DeezerApiException(
+            f"Empty download for track {song.get('SNG_ID')}: only {audio_bytes} audio "
+            "bytes written. Deezer CDN likely returned an error body."
+        )
+    print("Download finished: {}".format(output_file))
 
 
 def get_song_infos_from_deezer_website(search_type, id):

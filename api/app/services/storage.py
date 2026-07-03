@@ -194,7 +194,14 @@ def materialize(deezer_id: str) -> str:
 
         song = deezer.get_song_infos_from_deezer_website(deezer.TYPE_TRACK, deezer_id)
         tmp = final + ".part"
-        deezer.download_song(song, tmp)
+        try:
+            deezer.download_song(song, tmp)
+        except Exception:
+            # A failed/aborted download must not leave a partial .part behind or
+            # get promoted to `final` — re-raise loudly after cleaning up.
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            raise
         os.replace(tmp, final)  # atomic on same filesystem
 
         # Sidecar metadata (UI fallback) + DB row (source of truth for retention).
