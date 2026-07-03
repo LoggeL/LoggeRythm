@@ -1,6 +1,7 @@
 import sys
 import re
 import json
+import time
 from typing import Optional, Sequence
 
 from Crypto.Hash import MD5
@@ -118,6 +119,57 @@ class Deezer403Exception(Exception):
 
 class DeezerApiException(Exception):
     pass
+
+
+class TrackFormatUnavailable(DeezerApiException):
+    """Deezer has no download URL for this track in the requested format.
+
+    Not transient — retrying the same format won't help; try another quality.
+    """
+
+
+class TruncatedDownload(DeezerApiException):
+    """The CDN returned fewer audio bytes than the track's declared size.
+
+    Treated as transient: a fresh request often returns the full body.
+    """
+
+
+# HTTP statuses worth retrying (server-side / gateway hiccups).
+_TRANSIENT_STATUS = {429, 500, 502, 503, 504}
+# MP3 qualities in descending order; used as download fallbacks.
+_MP3_FORMATS = ["MP3_320", "MP3_256", "MP3_128", "MP3_64"]
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Whether an error is worth retrying with backoff (vs. giving up now)."""
+    if isinstance(exc, TrackFormatUnavailable):
+        return False
+    if isinstance(exc, TruncatedDownload):
+        return True
+    if isinstance(exc, requests.exceptions.RequestException):
+        resp = getattr(exc, "response", None)
+        return resp is None or resp.status_code in _TRANSIENT_STATUS
+    return False
+
+
+def _retry_transient(fn, *, attempts: int = 3, base_delay: float = 0.7):
+    """Call ``fn`` up to ``attempts`` times, backing off on transient errors.
+
+    Non-transient errors (e.g. format unavailable) raise immediately — no point
+    hammering Deezer for something that won't change.
+    """
+    last: Exception | None = None
+    for n in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 — re-raised below; never swallowed
+            last = exc
+            if not _is_transient(exc) or n == attempts - 1:
+                raise
+            time.sleep(base_delay * (2 ** n))
+    assert last is not None
+    raise last
 
 
 class ScriptExtractor(html.parser.HTMLParser):
@@ -437,98 +489,127 @@ def writeid3v2(fo, song):
     fo.write(id3data)
 
 
-def get_song_url(track_token: str, quality: int = 3) -> str:
-    try:
-        response = requests.post(
-            "https://media.deezer.com/v1/get_url",
-            json={
-                "license_token": license_token,
-                "media": [
-                    {
-                        "type": "FULL",
-                        "formats": [
-                            {"cipher": "BF_CBC_STRIPE", "format": sound_format}
-                        ],
-                    }
-                ],
-                "track_tokens": [
-                    track_token,
-                ],
-            },
-            headers={"User-Agent": USER_AGENT},
-            timeout=REQUEST_TIMEOUT,
+def get_song_url(track_token: str, fmt: str | None = None) -> str:
+    """Resolve a CDN download URL for ``track_token`` in ``fmt`` (default: the
+    session's configured ``sound_format``).
+
+    Raises ``TrackFormatUnavailable`` when Deezer has no source for that format
+    (caller should try another quality) and lets network errors propagate as
+    ``requests`` exceptions so the retry layer can back off.
+    """
+    fmt = fmt or sound_format
+    response = requests.post(
+        "https://media.deezer.com/v1/get_url",
+        json={
+            "license_token": license_token,
+            "media": [
+                {
+                    "type": "FULL",
+                    "formats": [{"cipher": "BF_CBC_STRIPE", "format": fmt}],
+                }
+            ],
+            "track_tokens": [track_token],
+        },
+        headers={"User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    entry = (data.get("data") or [None])[0]
+    if not entry or "errors" in entry:
+        msg = (
+            entry["errors"][0]["message"]
+            if entry and entry.get("errors")
+            else "no media returned"
         )
+        raise TrackFormatUnavailable(f"format {fmt} unavailable: {msg}")
+
+    return entry["media"][0]["sources"][0]["url"]
+
+
+def _candidate_formats(song: dict) -> list[str]:
+    """Formats to attempt, best first: the configured quality, then every other
+    quality the track actually reports (non-zero FILESIZE). Lets a track that
+    isn't offered in the preferred format still download in whatever it has.
+    """
+    order = (["FLAC"] if sound_format == "FLAC" else []) + _MP3_FORMATS
+    if sound_format in order:
+        order.remove(sound_format)
+    order.insert(0, sound_format or "MP3_128")
+
+    available = [f for f in order if int(song.get(f"FILESIZE_{f}", 0) or 0) > 0]
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    available = [f for f in available if not (f in seen or seen.add(f))]
+    # If the track carries no size info, still try the preferred format.
+    return available or [sound_format or "MP3_128"]
+
+
+def _fetch_to_file(url: str, key: bytes, song: dict, fmt: str, output_file: str) -> None:
+    """Stream + decrypt one CDN URL to disk, then verify it isn't truncated.
+
+    Raises ``TruncatedDownload`` (retryable) on a short body so a CDN glitch
+    doesn't get cached as a corrupt, unplayable file.
+    """
+    with session.get(url, stream=True, timeout=REQUEST_TIMEOUT) as response:
         response.raise_for_status()
-        data = response.json()
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Could not retrieve song URL: {e}")
+        with open(output_file, "w+b") as fo:
+            writeid3v2(fo, song)  # cover art + first header
+            audio_bytes = decryptfile(response, key, fo)
+            writeid3v1_1(fo, song)
 
-    if not data.get("data") or "errors" in data["data"][0]:
-        raise RuntimeError(
-            f"Could not get download url from API: {data['data'][0]['errors'][0]['message']}"
+    expected = int(song.get(f"FILESIZE_{fmt}", 0) or song.get("FILESIZE", 0) or 0)
+    if expected > 0 and audio_bytes < expected * 0.9:
+        raise TruncatedDownload(
+            f"got {audio_bytes} audio bytes, expected ~{expected} ({fmt})"
         )
-
-    url = data["data"][0]["media"][0]["sources"][0]["url"]
-    return url
+    if expected == 0 and audio_bytes < 4096:
+        raise TruncatedDownload(f"only {audio_bytes} audio bytes written ({fmt})")
 
 
 def download_song(song: dict, output_file: str) -> None:
-    # downloads and decrypts the song from Deezer. Adds ID3 and art cover
-    # song: dict with information of the song (grabbed from Deezer.com)
-    # output_file: absolute file name of the output file
+    """Download + decrypt a Deezer track to ``output_file``.
+
+    Resilient to transient failures: retries network/CDN hiccups with backoff,
+    falls back across the qualities the track offers, and finally tries Deezer's
+    FALLBACK track. Only after *every* option is exhausted does it raise loudly
+    — a corrupt/partial file is never left behind or served.
+    """
     assert type(song) is dict, "song must be a dict"
     assert type(output_file) is str, "output_file must be a str"
 
-    try:
-        url = get_song_url(song["TRACK_TOKEN"])
-    except Exception as e:
-        # Primary token failed. Try Deezer's FALLBACK track if present; if that
-        # also fails, raise loudly (no silent fallback — a swallowed error here
-        # left `url` unbound and produced a cryptic downstream crash).
-        if "FALLBACK" in song:
-            fallback = song["FALLBACK"]
+    # Try the primary track, then Deezer's designated FALLBACK track (if any).
+    candidates = [song] + ([song["FALLBACK"]] if "FALLBACK" in song else [])
+    errors: list[str] = []
+
+    for cand in candidates:
+        if not cand.get("TRACK_TOKEN") or not cand.get("SNG_ID"):
+            errors.append(f"track {cand.get('SNG_ID')}: missing token")
+            continue
+        key = calcbfkey(cand["SNG_ID"])
+        for fmt in _candidate_formats(cand):
             try:
-                url = get_song_url(fallback["TRACK_TOKEN"])
-            except Exception as fe:
-                raise DeezerApiException(
-                    f"Track {song.get('SNG_ID')} is not downloadable (primary: {e}; "
-                    f"fallback {fallback.get('SNG_ID')}: {fe}). It may be unavailable "
-                    "in this region."
-                ) from fe
-            song = fallback  # decrypt with the fallback's key/id
-        else:
-            raise DeezerApiException(
-                f"Track {song.get('SNG_ID')} is not downloadable ({e}). "
-                "It may be unavailable in this region."
-            ) from e
+                url = _retry_transient(lambda: get_song_url(cand["TRACK_TOKEN"], fmt))
+            except TrackFormatUnavailable as e:
+                errors.append(str(e))
+                continue
+            except Exception as e:  # noqa: BLE001 — recorded and surfaced below
+                errors.append(f"url {fmt}: {e}")
+                continue
+            try:
+                _retry_transient(lambda: _fetch_to_file(url, key, cand, fmt, output_file))
+            except Exception as e:  # noqa: BLE001 — recorded and surfaced below
+                errors.append(f"download {fmt}: {e}")
+                continue
+            print(f"Download finished ({fmt}, track {cand['SNG_ID']}): {output_file}")
+            return
 
-    key = calcbfkey(song["SNG_ID"])
-    try:
-        with session.get(url, stream=True, timeout=REQUEST_TIMEOUT) as response:
-            response.raise_for_status()
-            with open(output_file, "w+b") as fo:
-                # Add song cover and first 30 seconds of unencrypted data
-                writeid3v2(fo, song)
-                audio_bytes = decryptfile(response, key, fo)
-                writeid3v1_1(fo, song)
-    except Exception as e:
-        raise DeezerApiException(f"Could not write song to disk: {e}") from e
-
-    # Integrity guard: a truncated/empty CDN response yields a file with ID3
-    # tags but no (or too little) audio. Fail loudly instead of caching a
-    # corrupt track that would silently fail to play forever.
-    expected = int(song.get(f"FILESIZE_{sound_format}", 0) or song.get("FILESIZE", 0) or 0)
-    if expected > 0 and audio_bytes < expected * 0.9:
-        raise DeezerApiException(
-            f"Truncated download for track {song.get('SNG_ID')}: got {audio_bytes} "
-            f"audio bytes, expected ~{expected}. Deezer CDN likely returned an error body."
-        )
-    if expected == 0 and audio_bytes < 4096:
-        raise DeezerApiException(
-            f"Empty download for track {song.get('SNG_ID')}: only {audio_bytes} audio "
-            "bytes written. Deezer CDN likely returned an error body."
-        )
-    print("Download finished: {}".format(output_file))
+    raise DeezerApiException(
+        f"Track {song.get('SNG_ID')} could not be downloaded after "
+        f"{len(errors)} attempt(s). It may be unavailable in this region. "
+        f"Last errors: {'; '.join(errors[-4:])}"
+    )
 
 
 def get_song_infos_from_deezer_website(search_type, id):
