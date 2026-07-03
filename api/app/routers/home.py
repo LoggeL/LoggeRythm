@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 
@@ -297,11 +299,34 @@ def because_you_listened(
     return shelves
 
 
+# The "Für dich" mixes are an expensive per-user Last.fm/Deezer fan-out that
+# changes slowly — cache each user's result in-process for 1h so repeated home
+# loads (and multiple tabs) don't recompute it every time.
+_MIXES_TTL_SEC = 3600
+_mixes_cache: dict[str, tuple[float, list[Shelf]]] = {}
+_mixes_lock = threading.Lock()
+
+
 @router.get("/mixes", response_model=list[Shelf])
 def mixes(
     user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ) -> list[Shelf]:
+    cache_key = str(user.id) if user is not None else "anon"
+    now = time.monotonic()
+    with _mixes_lock:
+        hit = _mixes_cache.get(cache_key)
+        if hit is not None and now - hit[0] < _MIXES_TTL_SEC:
+            return hit[1]
+
+    shelves = _build_mixes(user, db)
+
+    with _mixes_lock:
+        _mixes_cache[cache_key] = (now, shelves)
+    return shelves
+
+
+def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
     shelves: list[Shelf] = []
 
     # 1) Dein Mix der Woche — similar to the user's most-played seeds.
