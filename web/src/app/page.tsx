@@ -52,10 +52,21 @@ export default function HomePage() {
     queryFn: () => api.homeMixes(),
     enabled: chip === "top",
   });
+  const becauseYouListened = useQuery<HomeShelf[]>({
+    queryKey: ["because-you-listened"],
+    queryFn: () => api.becauseYouListened(),
+    enabled: chip === "top" && !!me,
+  });
   const collections = useQuery<HomeShelf[]>({
     queryKey: ["home-collections"],
     queryFn: () => api.homeChartsCollections(),
     enabled: chip === "top",
+  });
+  const radar = useQuery<Track[]>({
+    queryKey: ["release-radar"],
+    queryFn: () => api.releaseRadar(),
+    enabled: chip === "top" && !!me,
+    staleTime: 60 * 60 * 1000, // server caches per-artist for 24h anyway
   });
   const releases = useQuery<AlbumSummary[]>({
     queryKey: ["new-releases"],
@@ -173,28 +184,63 @@ export default function HomePage() {
             </section>
           )}
 
-          {/* Für dich — curated mixes */}
-          {(mixes.isLoading || (mixes.data?.length ?? 0) > 0) && (
+          {/* Für dich — curated mixes + Release Radar */}
+          {(mixes.isLoading ||
+            (mixes.data?.length ?? 0) > 0 ||
+            (radar.data ?? []).length > 0) && (
             <section className="animate-in">
               <h2 className="text-2xl font-bold mb-4">Für dich</h2>
               {mixes.isLoading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
-                  {Array.from({ length: 3 }).map((_, i) => (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
                     <div key={i} className="skeleton rounded-2xl min-h-[168px]" />
                   ))}
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                  {/* Release Radar — opens like a playlist at /radar */}
+                  {(radar.data ?? []).length > 0 && (
+                    <ShelfCard
+                      href="/radar"
+                      variant="hero"
+                      index={0}
+                      shelf={{
+                        key: "release-radar",
+                        title: "Dein Release Radar",
+                        subtitle:
+                          "Neues von Künstler:innen, die du hörst und folgst",
+                        cover: (radar.data ?? []).find((t) => t.cover)?.cover,
+                        tracks: radar.data ?? [],
+                      }}
+                    />
+                  )}
                   {(mixes.data ?? []).map((shelf, i) => (
                     <ShelfCard
                       key={shelf.key}
                       shelf={shelf}
-                      index={i}
+                      index={i + 1}
                       variant="hero"
                     />
                   ))}
                 </div>
               )}
+            </section>
+          )}
+
+          {/* Weil du … gehört hast — per-artist recommendation rails */}
+          {(becauseYouListened.data ?? []).length > 0 && (
+            <section className="animate-in">
+              <h2 className="text-2xl font-bold mb-4">Weil du das gehört hast</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+                {(becauseYouListened.data ?? []).map((shelf, i) => (
+                  <ShelfCard
+                    key={shelf.key}
+                    shelf={shelf}
+                    index={i}
+                    variant="hero"
+                  />
+                ))}
+              </div>
             </section>
           )}
 
@@ -223,15 +269,17 @@ export default function HomePage() {
             </section>
           )}
 
-          <section className="animate-in">
-            <h2 className="text-2xl font-bold mb-4">Neue Veröffentlichungen</h2>
-            {releases.isLoading && <CardGridSkeleton count={10} />}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {(releases.data ?? []).map((al) => (
-                <AlbumCard key={String(al.id)} album={al} />
-              ))}
-            </div>
-          </section>
+          {(releases.isLoading || (releases.data?.length ?? 0) > 0) && (
+            <section className="animate-in">
+              <h2 className="text-2xl font-bold mb-4">Neue Veröffentlichungen</h2>
+              {releases.isLoading && <CardGridSkeleton count={10} />}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {(releases.data ?? []).map((al) => (
+                  <AlbumCard key={String(al.id)} album={al} />
+                ))}
+              </div>
+            </section>
+          )}
 
           {(community.data ?? []).length > 0 && (
             <section className="animate-in">

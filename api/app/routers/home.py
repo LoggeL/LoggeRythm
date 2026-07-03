@@ -8,7 +8,10 @@ blocking DB session with blocking network calls.
 """
 from __future__ import annotations
 
+import logging
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -21,6 +24,8 @@ from ..db.session import get_db
 from ..schemas.track import Track
 from ..services import deezer_client as dc
 from ..services import recommend
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/home", tags=["home"])
 
@@ -120,6 +125,117 @@ def _user_top_artists(db: Session, user: User, limit: int = 3) -> list[str]:
     return [f.name for f in follows if f.name]
 
 
+def _radar_artist_ids(db: Session, user: User, limit: int = 40) -> list[str]:
+    """Deezer artist IDs the radar should watch.
+
+    All artists the user played at least twice in the last 90 days (most-played
+    first), plus followed artists — capped to bound the per-artist API fan-out.
+    """
+    ids: list[str] = []
+    seen: set[str] = set()
+    since = datetime.utcnow() - timedelta(days=90)
+    rows = db.execute(
+        select(Play.artist_id, func.count().label("c"))
+        .where(Play.user_id == user.id, Play.artist_id != "", Play.played_at >= since)
+        .group_by(Play.artist_id)
+        .having(func.count() >= 2)
+        .order_by(func.count().desc())
+    ).all()
+    for r in rows:
+        if r.artist_id not in seen:
+            seen.add(r.artist_id)
+            ids.append(r.artist_id)
+    follows = db.scalars(
+        select(FollowedArtist)
+        .where(FollowedArtist.user_id == user.id)
+        .order_by(FollowedArtist.created_at.desc())
+        .limit(limit)
+    ).all()
+    for f in follows:
+        if f.artist_id and f.artist_id not in seen:
+            seen.add(f.artist_id)
+            ids.append(f.artist_id)
+    return ids[:limit]
+
+
+_RADAR_TRACKS_PER_ARTIST = 2
+
+
+def _artist_new_tracks(artist_id: str, cutoff: str) -> list[dict]:
+    """Up to `_RADAR_TRACKS_PER_ARTIST` newest tracks from an artist's recent
+    releases (release_date >= cutoff), newest release first. Each track is
+    tagged with `_release_date` so callers can sort the merged radar globally.
+    """
+    albums = dc.artist_albums(artist_id)
+    recent = sorted(
+        (a for a in albums if a.get("release_date", "") >= cutoff),
+        key=lambda a: a.get("release_date", ""),
+        reverse=True,
+    )
+    tracks: list[dict] = []
+    for al in recent:
+        detail = dc.album_detail(al["id"])
+        for t in detail.get("tracks", []):
+            t["_release_date"] = detail.get("release_date", "")
+            tracks.append(t)
+            if len(tracks) >= _RADAR_TRACKS_PER_ARTIST:
+                return tracks
+    return tracks
+
+
+@router.get("/release-radar", response_model=list[Track])
+def release_radar(
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Recent songs (last 90 days), at most two per followed/top artist.
+
+    Fans out per artist over the 24h-cached album lists, then pulls the newest
+    release's tracks; per-artist failures are logged loudly but don't blank the
+    whole radar. Signed-out or no artist history → empty list, frontend hides
+    the section.
+    """
+    if user is None:
+        return []
+    artist_ids = _radar_artist_ids(db, user)
+    if not artist_ids:
+        return []
+
+    cutoff = (date.today() - timedelta(days=90)).isoformat()
+    tracks: list[dict] = []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = {
+            ex.submit(_artist_new_tracks, aid, cutoff): aid for aid in artist_ids
+        }
+        for fut in as_completed(futures):
+            try:
+                tracks.extend(fut.result())
+            except dc.DeezerClientError as e:
+                logger.warning(
+                    "release-radar: fetching tracks for artist %s failed: %s",
+                    futures[fut],
+                    e,
+                )
+
+    tracks.sort(key=lambda t: t.get("_release_date", ""), reverse=True)
+    seen: set[str] = set()
+    per_artist: dict[str, int] = {}
+    out: list[dict] = []
+    for t in tracks:
+        tid = t.get("id", "")
+        if not tid or tid in seen:
+            continue
+        # Cap at two songs per primary artist, even when collaborations surface
+        # the same artist across several source artists' albums.
+        key = str(t.get("artist_id") or t.get("artist") or "")
+        if per_artist.get(key, 0) >= _RADAR_TRACKS_PER_ARTIST:
+            continue
+        seen.add(tid)
+        per_artist[key] = per_artist.get(key, 0) + 1
+        out.append(t)
+    return out[:40]
+
+
 @router.get("/charts-collections", response_model=list[Shelf])
 def charts_collections() -> list[Shelf]:
     shelves: list[Shelf] = []
@@ -143,6 +259,41 @@ def charts_collections() -> list[Shelf]:
 def mood(tag: str) -> list[dict]:
     tags = _MOODS.get(tag, [tag])
     return recommend.tag_top_tracks(tags, 40)
+
+
+@router.get("/because-you-listened", response_model=list[Shelf])
+def because_you_listened(
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> list[Shelf]:
+    """Per-artist recommendation rails seeded from the user's most-played artists.
+
+    Returns up to 3 shelves ("Weil du <Artist> gehört hast"), each a seed artist
+    plus recommended playable Deezer tracks. If the user is signed out or has no
+    plays/follows to seed from, returns an empty list (explicit) — the frontend
+    simply won't render the section.
+    """
+    if user is None:
+        return []
+
+    shelves: list[Shelf] = []
+    for artist in _user_top_artists(db, user, limit=3):
+        # Tracks by artists similar to this favourite, resolved to Deezer.
+        names = recommend.similar_artists(artist, 8)
+        tracks = _dedupe(recommend.resolve_queries(names, 24)) if names else []
+        if not tracks:
+            continue
+        shelves.append(
+            Shelf(
+                key=f"byl-{artist.lower().replace(' ', '-')}",
+                title=f"Weil du {artist} gehört hast",
+                subtitle="Ähnliche Künstler:innen, die dir gefallen könnten",
+                cover=_cover_of(tracks),
+                tracks=tracks[:30],
+            )
+        )
+
+    return shelves
 
 
 @router.get("/mixes", response_model=list[Shelf])

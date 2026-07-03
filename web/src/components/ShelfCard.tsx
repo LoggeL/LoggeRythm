@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { HomeShelf } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { PlayIcon } from "@/components/icons";
@@ -23,6 +24,7 @@ const TAG_BY_KEY: Record<string, string> = {
   weekly: "Wöchentlich",
   chill: "Entspannt",
   discover: "Neu",
+  "release-radar": "Radar",
 };
 
 function themeFor(shelf: HomeShelf, index: number): string {
@@ -38,10 +40,14 @@ export default function ShelfCard({
   shelf,
   index = 0,
   variant = "collection",
+  href,
 }: {
   shelf: HomeShelf;
   index?: number;
   variant?: "hero" | "collection";
+  /** When set, the card navigates here (opens like a playlist) instead of
+   * playing its tracks in place. */
+  href?: string;
 }) {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const theme = themeFor(shelf, index);
@@ -52,12 +58,10 @@ export default function ShelfCard({
 
   if (variant === "hero") {
     const tag = TAG_BY_KEY[shelf.key];
-    return (
-      <button
-        type="button"
-        onClick={play}
-        className="group relative flex w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] shadow-xl shadow-black/15 hover-lift min-h-[168px]"
-      >
+    const heroClass =
+      "group relative flex w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] shadow-xl shadow-black/15 hover-lift min-h-[168px]";
+    const heroInner = (
+      <>
         {/* Gradient art on the right half (optionally tinted by the cover). */}
         <div className="absolute inset-y-0 right-0 w-3/5 overflow-hidden rounded-r-2xl">
           {shelf.cover && (
@@ -86,6 +90,15 @@ export default function ShelfCard({
             <PlayIcon width={20} height={20} />
           </span>
         </div>
+      </>
+    );
+    return href ? (
+      <Link href={href} className={heroClass}>
+        {heroInner}
+      </Link>
+    ) : (
+      <button type="button" onClick={play} className={heroClass}>
+        {heroInner}
       </button>
     );
   }

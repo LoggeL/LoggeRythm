@@ -10,6 +10,7 @@ must call them via starlette.concurrency.run_in_threadpool.
 """
 from __future__ import annotations
 
+import threading
 import time
 from urllib.parse import quote_plus
 
@@ -336,6 +337,28 @@ def genre_detail(genre_id: str) -> dict:
         "albums": [normalize_album_summary(a) for a in albums],
         "artists": [normalize_artist_summary(a) for a in artists],
     }
+
+
+# Per-artist release lists change rarely; cache them in-process for 24h so
+# the release-radar fan-out (one call per followed/top artist) doesn't hammer
+# the public API on every home-page load.
+_ARTIST_ALBUMS_TTL_SEC = 24 * 3600
+_artist_albums_cache: dict[str, tuple[float, list[dict]]] = {}
+_artist_albums_lock = threading.Lock()
+
+
+def artist_albums(artist_id: str) -> list[dict]:
+    """An artist's releases as AlbumSummary dicts, cached for 24h."""
+    now = time.monotonic()
+    with _artist_albums_lock:
+        hit = _artist_albums_cache.get(artist_id)
+        if hit is not None and now - hit[0] < _ARTIST_ALBUMS_TTL_SEC:
+            return hit[1]
+    data = _public_get(f"/artist/{artist_id}/albums?limit=50")
+    albums = [normalize_album_summary(a) for a in (data.get("data") or [])]
+    with _artist_albums_lock:
+        _artist_albums_cache[artist_id] = (now, albums)
+    return albums
 
 
 def related_artists(artist_id: str) -> list[dict]:
