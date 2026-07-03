@@ -1,26 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
 import { useLikes, usePlaylists } from "@/hooks/useLibrary";
 import { useFollowing } from "@/hooks/useFollows";
+import { useDownloads } from "@/hooks/useDownloads";
+import { api } from "@/lib/api";
 import { playlistPath } from "@/lib/slugs";
-import { usePlayerStore } from "@/store/player";
+import { usePlayerStore, getRecentTracks } from "@/store/player";
+import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
 import ArtistCard from "@/components/ArtistCard";
 import { RowListSkeleton } from "@/components/Skeleton";
-import { HeartIcon } from "@/components/icons";
+import { HeartIcon, DownloadIcon } from "@/components/icons";
 
-type Tab = "playlists" | "liked" | "following";
+type Tab = "playlists" | "liked" | "recent" | "downloads" | "following";
 
-export default function LibraryPage() {
+const TAB_KEYS: Tab[] = ["playlists", "liked", "recent", "downloads", "following"];
+
+function LibraryContent() {
   const { data: me, isLoading: meLoading } = useMe();
   const { data: likes, isLoading: likesLoading } = useLikes(!!me);
   const { data: playlists } = usePlaylists(!!me);
   const { data: following } = useFollowing(!!me);
+  const { downloads, removeDownload, supported } = useDownloads();
   const playQueue = usePlayerStore((s) => s.playQueue);
-  const [tab, setTab] = useState<Tab>("playlists");
+
+  const searchParams = useSearchParams();
+  const paramTab = searchParams.get("tab");
+  const initialTab: Tab = TAB_KEYS.includes(paramTab as Tab)
+    ? (paramTab as Tab)
+    : "playlists";
+  const [tab, setTab] = useState<Tab>(initialTab);
+  // Read once per mount — recently played only changes through playback.
+  const [recent] = useState(() => getRecentTracks());
+  const [removingDownload, setRemovingDownload] = useState<string | null>(null);
 
   if (meLoading) return <RowListSkeleton />;
 
@@ -42,11 +58,29 @@ export default function LibraryPage() {
   }
 
   const tracks = likes ?? [];
+  const downloadEntries = Object.entries(downloads);
   const TABS: { key: Tab; label: string }[] = [
     { key: "playlists", label: "Playlists" },
     { key: "liked", label: "Gelikte Titel" },
+    { key: "recent", label: "Zuletzt gehört" },
+    { key: "downloads", label: "Downloads" },
     { key: "following", label: "Gefolgt" },
   ];
+
+  async function handleRemoveDownload(id: string) {
+    setRemovingDownload(id);
+    try {
+      const pl = await api.playlist(id);
+      await removeDownload(id, pl.tracks ?? []);
+      toast.info("Offline-Download entfernt.");
+    } catch (err) {
+      toast.error(
+        `Download konnte nicht entfernt werden — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setRemovingDownload(null);
+    }
+  }
 
   return (
     <div className="animate-in">
@@ -130,6 +164,83 @@ export default function LibraryPage() {
         </>
       )}
 
+      {tab === "recent" && (
+        <>
+          <p className="text-muted mb-4">Zuletzt gehört · {recent.length}</p>
+          {recent.length === 0 ? (
+            <p className="text-muted">
+              Noch nichts gehört — spiele ein paar Titel, dann tauchen sie hier
+              auf.
+            </p>
+          ) : (
+            <div className="flex flex-col">
+              {recent.map((track, i) => (
+                <TrackRow
+                  key={`${track.id}-${i}`}
+                  track={track}
+                  index={i}
+                  onPlay={() => playQueue(recent, i, "Zuletzt gehört")}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "downloads" && (
+        <>
+          {!supported && (
+            <p className="text-muted">
+              Offline-Downloads werden von diesem Browser nicht unterstützt.
+            </p>
+          )}
+          {supported && downloadEntries.length === 0 && (
+            <p className="text-muted">
+              Noch keine Downloads. Öffne eine Playlist und tippe auf
+              „Herunterladen“, um sie offline verfügbar zu machen.
+            </p>
+          )}
+          {supported && downloadEntries.length > 0 && (
+            <ul className="flex flex-col gap-2">
+              {downloadEntries.map(([id, info]) => {
+                const summary = (playlists ?? []).find(
+                  (p) => String(p.id) === id,
+                );
+                return (
+                  <li
+                    key={id}
+                    className="flex items-center gap-3 bg-panel rounded-lg px-4 py-3"
+                  >
+                    <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-panel-hover text-accent">
+                      <DownloadIcon width={20} height={20} />
+                    </span>
+                    <Link
+                      href={summary ? playlistPath(summary) : `/playlist/${id}`}
+                      className="min-w-0 flex-1 hover:underline"
+                    >
+                      <span className="block truncate font-semibold">
+                        {info.name}
+                      </span>
+                      <span className="block text-sm text-muted">
+                        {info.total} Titel offline
+                      </span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveDownload(id)}
+                      disabled={removingDownload === id}
+                      className="press flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover hover:bg-white/10 disabled:opacity-50"
+                    >
+                      {removingDownload === id ? "Entfernt…" : "Entfernen"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
+
       {tab === "following" && (
         <>
           {(following ?? []).length === 0 ? (
@@ -144,5 +255,13 @@ export default function LibraryPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function LibraryPage() {
+  return (
+    <Suspense>
+      <LibraryContent />
+    </Suspense>
   );
 }

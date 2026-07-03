@@ -561,15 +561,6 @@ export function ExpandIcon(props: IconProps) {
   );
 }
 
-export function CastIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M2 16a6 6 0 016 6M2 12a10 10 0 0110 10M2 20h.01" />
-      <rect x="2" y="4" width="20" height="14" rx="2" opacity="0.5" />
-    </svg>
-  );
-}
-
 export function FilterIcon(props: IconProps) {
   return (
     <svg

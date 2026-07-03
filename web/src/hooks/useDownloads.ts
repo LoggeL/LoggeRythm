@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { streamUrl } from "@/lib/api";
 import { refreshDownloadedTracks } from "@/store/downloads";
+import { toast } from "@/store/toast";
 import type { Track } from "@/types";
 
 const AUDIO_CACHE = "sf-audio";
@@ -37,12 +38,18 @@ export function useDownloads() {
     const img = await caches.open(IMG_CACHE);
     setProgress({ id, done: 0, total: tracks.length });
     let done = 0;
+    // Collect failures instead of skipping silently — a playlist is only
+    // marked "offline" when every track really made it into the cache.
+    const failed: string[] = [];
     for (const t of tracks) {
       try {
         const u = streamUrl(String(t.id));
         if (!(await audio.match(u))) {
           const r = await fetch(u, { credentials: "include" });
-          if (r.ok) await audio.put(u, r);
+          if (!r.ok) {
+            throw new Error(`Server ${r.status}`);
+          }
+          await audio.put(u, r);
         }
         if (t.cover && !(await img.match(t.cover))) {
           try {
@@ -53,12 +60,20 @@ export function useDownloads() {
           }
         }
       } catch {
-        /* skip a failed track, keep going */
+        failed.push(t.title);
       }
       done += 1;
       setProgress({ id, done, total: tracks.length });
     }
-    setDownloads({ ...downloads, [id]: { name, total: tracks.length } });
+    if (failed.length === 0) {
+      setDownloads({ ...downloads, [id]: { name, total: tracks.length } });
+      toast.success(`„${name}“ ist jetzt offline verfügbar.`);
+    } else {
+      toast.error(
+        `${failed.length} von ${tracks.length} Titeln konnten nicht heruntergeladen werden` +
+          ` (z. B. „${failed[0]}“). „${name}“ ist nicht vollständig offline.`,
+      );
+    }
     setProgress(null);
     void refreshDownloadedTracks();
   }
