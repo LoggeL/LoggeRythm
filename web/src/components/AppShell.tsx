@@ -7,6 +7,7 @@ import TopBar from "@/components/TopBar";
 import PlayerBar from "@/components/PlayerBar";
 import MobileNav from "@/components/MobileNav";
 import Toaster from "@/components/Toast";
+import PwaBanner from "@/components/PwaBanner";
 import QueueSidebar from "@/components/QueueSidebar";
 import CommandPalette from "@/components/CommandPalette";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
@@ -79,6 +80,7 @@ export default function AppShell({
   // Full app — approved users only.
   return (
     <div className="h-full flex flex-col">
+      <PwaBanner />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <div className="flex-1 min-w-0 flex flex-col bg-background">
