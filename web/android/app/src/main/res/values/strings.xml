@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">SpotiFrei</string>
-    <string name="title_activity_main">SpotiFrei</string>
+    <string name="app_name">loggerythm</string>
+    <string name="title_activity_main">loggerythm</string>
     <string name="package_name">com.spotifrei.app</string>
     <string name="custom_url_scheme">com.spotifrei.app</string>
 </resources>
