@@ -13,6 +13,7 @@ import NowPlaying from "@/components/now-playing/NowPlaying";
 import TrackContext from "@/components/TrackContext";
 import CacheMarker from "@/components/CacheMarker";
 import ArtistLinks from "@/components/ArtistLinks";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import {
   PlayIcon,
   PauseIcon,
@@ -116,6 +117,17 @@ export default function PlayerBar() {
     if (errorSkipTimer.current) {
       clearTimeout(errorSkipTimer.current);
       errorSkipTimer.current = null;
+    }
+  };
+  // Transient stream failures (e.g. the backend answers 500 while it is still
+  // fetching the title) get silent-to-the-user retries before we alarm anyone.
+  // Tracks how many reload attempts the current track has used up.
+  const errorRetries = useRef<{ id: string; count: number }>({ id: "", count: 0 });
+  const errorRetryTimer = useRef<number | null>(null);
+  const clearErrorRetry = () => {
+    if (errorRetryTimer.current) {
+      clearTimeout(errorRetryTimer.current);
+      errorRetryTimer.current = null;
     }
   };
   const [expanded, setExpanded] = useState(false);
@@ -519,7 +531,12 @@ export default function PlayerBar() {
   // auto-skip from the previous track's failure.
   useEffect(() => {
     clearErrorSkip();
-    return clearErrorSkip;
+    clearErrorRetry();
+    errorRetries.current = { id: "", count: 0 };
+    return () => {
+      clearErrorSkip();
+      clearErrorRetry();
+    };
   }, [trackId]);
 
   useEffect(() => {
@@ -566,6 +583,8 @@ export default function PlayerBar() {
     onPlaying: () => {
       if (activeIdxRef.current !== idx) return;
       clearErrorSkip(); // recovered — cancel any pending auto-skip
+      clearErrorRetry();
+      errorRetries.current = { id: "", count: 0 };
       _setBuffering(false);
       _setError(null);
     },
@@ -577,6 +596,43 @@ export default function PlayerBar() {
       const el = e.currentTarget;
       const mediaErr = el.error;
       const id = el.dataset.trackId || "";
+
+      // First failures are often transient (the backend answers 500 while it
+      // is still fetching/transcoding the title). Reload a couple of times
+      // with backoff before alarming the user or skipping.
+      if (errorRetries.current.id !== id) errorRetries.current = { id, count: 0 };
+      if (errorRetries.current.count < 2) {
+        errorRetries.current.count += 1;
+        const attempt = errorRetries.current.count;
+        console.warn(
+          `[player] stream error for track ${id} (${mediaErr?.code ?? "?"}: ${mediaErr?.message ?? "no detail"}) — retry ${attempt}/2`,
+        );
+        _setBuffering(true);
+        clearErrorRetry();
+        errorRetryTimer.current = window.setTimeout(() => {
+          errorRetryTimer.current = null;
+          const cur = currentTrack(usePlayerStore.getState());
+          if (activeIdxRef.current !== idx || String(cur?.id ?? "") !== id) return;
+          // Mid-song failures resume where they broke off instead of at 0:00.
+          const resumeAt = el.currentTime;
+          el.load(); // re-request the source from scratch
+          if (resumeAt > 0) {
+            const onMeta = () => {
+              el.removeEventListener("loadedmetadata", onMeta);
+              try {
+                el.currentTime = resumeAt;
+              } catch {
+                // seeking an unseekable stream is not worth failing the retry
+              }
+            };
+            el.addEventListener("loadedmetadata", onMeta);
+          }
+          if (usePlayerStore.getState().isPlaying) el.play().catch(() => {});
+        }, 1500 * attempt);
+        return;
+      }
+
+      // Retries exhausted — now fail loudly.
       _setError("Titel konnte nicht geladen werden.");
       // Auto-skip after 5s so one dead source doesn't block the queue. Only
       // fire if we're still stuck on this same failed track.
@@ -584,7 +640,7 @@ export default function PlayerBar() {
       errorSkipTimer.current = window.setTimeout(() => {
         errorSkipTimer.current = null;
         const cur = currentTrack(usePlayerStore.getState());
-        if (activeIdxRef.current === idx && cur?.id === id) {
+        if (activeIdxRef.current === idx && cur?.id === id && el.error) {
           toast.info("Titel übersprungen.");
           next();
         }
@@ -593,7 +649,15 @@ export default function PlayerBar() {
       // (HTTP status + detail / decode error) instead of a bare message.
       describeStreamFailure(id ? streamUrl(id) : el.currentSrc, mediaErr).then(
         (detail) => {
-          if (activeIdxRef.current === idx) {
+          // Only surface the probe result if this deck is still the active one,
+          // still on the same track AND still broken — playback may have
+          // recovered while the probe was in flight, and a scary toast over a
+          // playing song is worse than no detail at all.
+          if (
+            activeIdxRef.current === idx &&
+            el.dataset.trackId === id &&
+            el.error
+          ) {
             const msg = `Titel konnte nicht geladen werden — ${detail}`;
             _setError(msg);
             // Also toast: the inline player-bar text is easy to miss in
@@ -642,7 +706,7 @@ export default function PlayerBar() {
                     className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover shadow-md ring-1 ring-white/10 hover:opacity-80 transition"
                   />
                 ) : (
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl gradient-violet opacity-80" />
+                  <CoverPlaceholder className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl" />
                 )}
               </button>
               <div className="min-w-0">

@@ -7,6 +7,7 @@ import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
 import { RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon } from "@/components/icons";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track } from "@/types";
 
 const RADAR_TITLE = "Dein Release Radar";
@@ -37,7 +38,7 @@ export default function RadarPage() {
               className="w-40 h-40 rounded-md object-cover shadow-xl"
             />
           ) : (
-            <div className="w-40 h-40 rounded-md gradient-violet shadow-xl" />
+            <CoverPlaceholder className="w-40 h-40 rounded-md shadow-xl" />
           )}
           {tracks.length > 0 && (
             <button

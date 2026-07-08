@@ -13,6 +13,7 @@ import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
 import { CardGridSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import ImportPanel from "@/components/ImportPanel";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { SearchIcon, ImportIcon, FilterIcon } from "@/components/icons";
 import type {
   Track,
@@ -403,7 +404,7 @@ export default function SearchPage() {
                       className="w-full aspect-square object-cover rounded-xl shadow-lg mb-3"
                     />
                   ) : (
-                    <div className="w-full aspect-square rounded-xl gradient-aurora opacity-80 mb-3" />
+                    <CoverPlaceholder className="w-full aspect-square rounded-xl mb-3" />
                   )}
                   <div className="truncate font-semibold">{p.title}</div>
                   <div className="truncate text-sm text-muted">

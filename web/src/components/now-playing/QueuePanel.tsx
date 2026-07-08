@@ -5,6 +5,7 @@ import { formatTime } from "@/lib/format";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import EqualizerBars from "@/components/EqualizerBars";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { PlayIcon } from "@/components/icons";
 import type { Track } from "@/types";
 
@@ -52,7 +53,7 @@ export default function QueuePanel({
             className="h-11 w-11 rounded-lg object-cover"
           />
         ) : (
-          <div className="h-11 w-11 rounded-lg gradient-violet opacity-80" />
+          <CoverPlaceholder className="h-11 w-11 rounded-lg" />
         )}
         <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/50 opacity-0 transition group-hover/cover:opacity-100">
           <PlayIcon width={16} height={16} className="text-white" />
@@ -111,7 +112,7 @@ export default function QueuePanel({
                   className="h-11 w-11 rounded-lg object-cover shadow"
                 />
               ) : (
-                <div className="h-11 w-11 rounded-lg gradient-violet opacity-80" />
+                <CoverPlaceholder className="h-11 w-11 rounded-lg" />
               )}
               <div className="min-w-0 flex-1">
                 <TrackTitle

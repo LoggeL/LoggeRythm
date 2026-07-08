@@ -11,6 +11,7 @@ import ArtistCard from "@/components/ArtistCard";
 import PopularTrackTable from "@/components/PopularTrackTable";
 import ArtistSongSearch from "@/components/ArtistSongSearch";
 import ArtistAbout from "@/components/ArtistAbout";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon, MoreIcon, VerifiedIcon } from "@/components/icons";
 import { formatCompact } from "@/lib/format";
@@ -74,7 +75,7 @@ export default function ArtistPage({
                 className="relative w-44 h-44 rounded-full object-cover ring-2 ring-white/10"
               />
             ) : (
-              <div className="relative w-44 h-44 rounded-full bg-panel-hover" />
+              <CoverPlaceholder className="relative w-44 h-44 rounded-full" />
             )}
           </div>
 

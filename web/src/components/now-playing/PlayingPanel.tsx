@@ -9,6 +9,7 @@ import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import Visualizer from "@/components/Visualizer";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
 /**
@@ -118,7 +119,7 @@ export default function PlayingPanel({
                   className="relative h-full w-full rounded-[1.75rem] object-cover shadow-2xl"
                 />
               ) : (
-                <div className="relative h-full w-full rounded-[1.75rem] gradient-violet opacity-90 shadow-2xl" />
+                <CoverPlaceholder className="relative h-full w-full rounded-[1.75rem] shadow-2xl" />
               )}
             </div>
           </div>

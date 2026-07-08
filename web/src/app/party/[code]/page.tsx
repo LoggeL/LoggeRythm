@@ -10,6 +10,7 @@ import { toast } from "@/store/toast";
 import { formatTime } from "@/lib/format";
 import { PlayIcon } from "@/components/icons";
 import Avatar from "@/components/Avatar";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track } from "@/types";
 
 export default function PartyPage({
@@ -294,7 +295,7 @@ export default function PartyPage({
                     className="w-10 h-10 rounded object-cover flex-shrink-0"
                   />
                 ) : (
-                  <div className="w-10 h-10 rounded bg-panel-hover flex-shrink-0" />
+                  <CoverPlaceholder className="w-10 h-10 rounded flex-shrink-0" />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{t.title}</div>
@@ -354,7 +355,7 @@ export default function PartyPage({
                         className="w-10 h-10 rounded object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded bg-panel-hover flex-shrink-0" />
+                      <CoverPlaceholder className="w-10 h-10 rounded flex-shrink-0" />
                     )}
                     <div className="min-w-0">
                       <div

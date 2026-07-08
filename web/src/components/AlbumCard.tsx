@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { AlbumSummary } from "@/types";
 
 export default function AlbumCard({ album }: { album: AlbumSummary }) {
@@ -20,7 +21,7 @@ export default function AlbumCard({ album }: { album: AlbumSummary }) {
           />
         </div>
       ) : (
-        <div className="w-full aspect-square rounded-xl gradient-aurora opacity-80 mb-3" />
+        <CoverPlaceholder className="w-full aspect-square rounded-xl mb-3" />
       )}
       <div className="truncate font-semibold">{album.title}</div>
       <div className="truncate text-sm text-muted">

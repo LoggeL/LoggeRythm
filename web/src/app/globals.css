@@ -212,6 +212,52 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
     opacity: 0.4;
   }
 }
+/* Like "beat drop": the heart pops like a kick drum, two soundwave rings
+   ripple outward (sonar pulse, echoing the equalizer logo) and tiny eq-bar
+   sparks fly out radially. Angle per spark via --burst-angle. */
+@keyframes likePop {
+  0% {
+    transform: scale(1);
+  }
+  20% {
+    transform: scale(0.55) rotate(-10deg);
+  }
+  50% {
+    transform: scale(1.35) rotate(5deg);
+    filter: drop-shadow(0 0 8px rgba(124, 92, 255, 0.9));
+  }
+  75% {
+    transform: scale(0.92);
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 0 rgba(124, 92, 255, 0));
+  }
+}
+@keyframes likeRing {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+@keyframes likeBar {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--burst-angle)) translateY(-7px) scaleY(0.4);
+  }
+  25% {
+    opacity: 1;
+    transform: rotate(var(--burst-angle)) translateY(-11px) scaleY(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--burst-angle)) translateY(-17px) scaleY(0.25);
+  }
+}
 /* Animated equalizer bars for the "now playing" indicator. */
 @keyframes eqBar {
   0%,
@@ -257,6 +303,34 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
     transform-origin: bottom;
     animation: eqBar 0.9s ease-in-out infinite;
   }
+  /* like animation (see the like* keyframes above) */
+  .like-pop {
+    animation: likePop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  .like-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 1.5px solid var(--accent);
+    opacity: 0;
+    animation: likeRing 0.55s ease-out forwards;
+  }
+  .like-ring-2 {
+    border-color: var(--grad-pink-from);
+    animation-delay: 0.12s;
+  }
+  .like-bar {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2.5px;
+    height: 8px;
+    margin: -4px 0 0 -1.25px;
+    border-radius: 2px;
+    background: var(--accent);
+    opacity: 0;
+    animation: likeBar 0.6s ease-out forwards;
+  }
 }
 
 /* Hide horizontal scrollbar on shelves */
@@ -272,7 +346,10 @@ input[type="range"]::-webkit-slider-thumb:focus-visible {
   .animate-in,
   .pop-in,
   .skeleton,
-  .eq-bar {
+  .eq-bar,
+  .like-pop,
+  .like-ring,
+  .like-bar {
     animation: none;
   }
   .hover-lift:hover {

@@ -10,6 +10,7 @@ import { useMe } from "@/hooks/useAuth";
 import { useCreatePlaylist } from "@/hooks/useLibrary";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { PlayIcon, PlusIcon } from "@/components/icons";
 import type { ResolveResult } from "@/types";
 
@@ -105,7 +106,7 @@ export default function ImportPanel() {
                 className="w-40 h-40 rounded-md object-cover shadow-xl"
               />
             ) : (
-              <div className="w-40 h-40 rounded-md bg-panel-hover" />
+              <CoverPlaceholder className="w-40 h-40 rounded-md" />
             )}
             <div>
               <p className="text-xs uppercase tracking-wide text-muted">

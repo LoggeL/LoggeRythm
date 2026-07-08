@@ -8,6 +8,7 @@ import { useLocalJson } from "@/hooks/useLocalJson";
 import { toast } from "@/store/toast";
 import { CardGridSkeleton } from "@/components/Skeleton";
 import { PlayIcon, RadioIcon, SpinnerIcon } from "@/components/icons";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track, Genre } from "@/types";
 
 const EMPTY_TRACKS: Track[] = [];
@@ -110,7 +111,7 @@ export default function RadioPage() {
                       className="w-full aspect-square object-cover rounded-xl shadow-lg transition-transform duration-300 group-hover:scale-105"
                     />
                   ) : (
-                    <div className="w-full aspect-square rounded-xl gradient-violet opacity-80" />
+                    <CoverPlaceholder className="w-full aspect-square rounded-xl" />
                   )}
                   <span className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg glow-sm opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition">
                     <PlayIcon width={22} height={22} />

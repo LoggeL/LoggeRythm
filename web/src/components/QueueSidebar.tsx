@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import { PlayIcon, PauseIcon, CloseIcon } from "@/components/icons";
 import TrackContext from "@/components/TrackContext";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Visualizer from "@/components/Visualizer";
 import CacheMarker from "@/components/CacheMarker";
 import TrackTitle from "@/components/TrackTitle";
@@ -135,7 +136,7 @@ export default function QueueSidebar() {
                 className="w-11 h-11 rounded-lg object-cover"
               />
             ) : (
-              <div className="w-11 h-11 rounded-lg gradient-violet opacity-80" />
+              <CoverPlaceholder className="w-11 h-11 rounded-lg" />
             )}
             <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/50 opacity-0 group-hover/cover:opacity-100 transition">
               <PlayIcon width={16} height={16} className="text-white" />
@@ -238,7 +239,7 @@ export default function QueueSidebar() {
                   className="w-12 h-12 rounded-lg object-cover shadow"
                 />
               ) : (
-                <div className="w-12 h-12 rounded-lg gradient-violet opacity-80" />
+                <CoverPlaceholder className="w-12 h-12 rounded-lg" />
               )}
               <div className="min-w-0 flex-1">
                 <TrackTitle

@@ -9,6 +9,7 @@ import { PlayIcon, PauseIcon, MoreIcon, PlusIcon } from "@/components/icons";
 import { useTrackMenuItems } from "@/components/TrackMenu";
 import ArtistLinks from "@/components/ArtistLinks";
 import ContextMenu from "@/components/ContextMenu";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 
 interface TrackCardProps {
   track: Track;
@@ -59,7 +60,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
                 className="w-full aspect-square object-cover rounded-xl shadow-lg transition-transform duration-300 group-hover:scale-105"
               />
             ) : (
-              <div className="w-full aspect-square rounded-xl gradient-violet opacity-80" />
+              <CoverPlaceholder className="w-full aspect-square rounded-xl" />
             )}
           </Link>
         ) : track.cover ? (
@@ -70,7 +71,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
             className="w-full aspect-square object-cover rounded-xl shadow-lg"
           />
         ) : (
-          <div className="w-full aspect-square rounded-xl gradient-violet opacity-80" />
+          <CoverPlaceholder className="w-full aspect-square rounded-xl" />
         )}
         {playingThis && (
           <div className="absolute bottom-2 left-2 flex items-end gap-[3px] h-5 px-2 py-1 rounded-full bg-black/55 backdrop-blur-sm">

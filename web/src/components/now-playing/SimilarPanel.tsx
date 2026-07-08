@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import { PlayIcon, PlusIcon } from "@/components/icons";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 
 /** "Ähnliche Titel" tab: song radio seeded by the current track. */
 export default function SimilarPanel({
@@ -73,7 +74,7 @@ export default function SimilarPanel({
                     className="h-12 w-12 rounded-xl object-cover shadow"
                   />
                 ) : (
-                  <div className="h-12 w-12 rounded-xl gradient-violet opacity-80" />
+                  <CoverPlaceholder className="h-12 w-12 rounded-xl" />
                 )}
                 <span className="absolute inset-0 grid place-items-center rounded-xl bg-black/50 opacity-0 transition group-hover/cover:opacity-100">
                   <PlayIcon width={18} height={18} className="text-white" />

@@ -13,6 +13,7 @@ import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 
 /** Map a Deezer rank (0–~1,000,000) to a 0–100 popularity percentage. */
 function popularityPct(rank: number): number {
@@ -108,7 +109,7 @@ export default function TrackRow({
             className="w-10 h-10 rounded object-cover flex-shrink-0"
           />
         ) : (
-          <div className="w-10 h-10 rounded bg-panel-hover flex-shrink-0" />
+          <CoverPlaceholder className="w-10 h-10 rounded flex-shrink-0" />
         )}
         <div className="min-w-0">
           {track.album_id ? (

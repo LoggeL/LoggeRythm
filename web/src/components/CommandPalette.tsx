@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import { SearchIcon, PlayIcon } from "@/components/icons";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track, ArtistSummary } from "@/types";
 
 type Row =
@@ -181,7 +182,7 @@ export default function CommandPalette() {
                         className="w-9 h-9 rounded object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded gradient-violet opacity-80 flex-shrink-0" />
+                      <CoverPlaceholder className="w-9 h-9 rounded flex-shrink-0" />
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">
@@ -205,7 +206,7 @@ export default function CommandPalette() {
                         className="w-9 h-9 rounded-full object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-9 h-9 rounded-full gradient-violet opacity-80 flex-shrink-0" />
+                      <CoverPlaceholder className="w-9 h-9 rounded-full flex-shrink-0" />
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">

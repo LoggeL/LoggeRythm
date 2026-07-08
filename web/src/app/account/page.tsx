@@ -13,7 +13,9 @@ import { api, ApiError } from "@/lib/api";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
-import ListeningStats from "@/components/profile/ListeningStats";
+import ListeningStats, {
+  type UserStatsWithMonth,
+} from "@/components/profile/ListeningStats";
 import type {
   AdminUser,
   StorageInfo,
@@ -47,6 +49,22 @@ function StatusBadge({ approved }: { approved: boolean }) {
     </span>
   );
 }
+
+/** Small glassy fact chip for the profile hero (plays, top artist, …). */
+function HeroChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-foreground/90 backdrop-blur-sm">
+      {children}
+    </span>
+  );
+}
+
+// Static equalizer silhouette along the hero's bottom edge — the brand glyph
+// as scenery. Fixed heights (px) so the skyline is identical on every visit.
+const HERO_EQ_HEIGHTS = [
+  14, 30, 22, 44, 34, 56, 40, 26, 50, 36, 60, 30, 46, 20, 38, 54, 28, 42, 16,
+  34, 24, 48, 18, 40, 12, 32,
+];
 
 function AdminUsersSection() {
   const qc = useQueryClient();
@@ -82,7 +100,7 @@ function AdminUsersSection() {
   });
 
   return (
-    <section className="bg-panel rounded-lg p-6">
+    <section className="bg-panel rounded-2xl border border-white/5 p-6">
       <h2 className="text-xl font-bold mb-4">Benutzerverwaltung</h2>
 
       <Modal
@@ -201,7 +219,7 @@ function AdminStorageSection() {
   });
 
   return (
-    <section className="bg-panel rounded-lg p-6">
+    <section className="bg-panel rounded-2xl border border-white/5 p-6">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h2 className="text-xl font-bold">Speicher</h2>
         <div className="flex items-center gap-3">
@@ -320,7 +338,7 @@ function AdminInvitesSection() {
   }
 
   return (
-    <section className="bg-panel rounded-lg p-6">
+    <section className="bg-panel rounded-2xl border border-white/5 p-6">
       <h2 className="text-xl font-bold mb-4">Einladungslinks</h2>
 
       <button
@@ -416,7 +434,7 @@ function SleepTimerSection() {
   const armed = sleepAt != null || sleepAfterTrack;
 
   return (
-    <section className="bg-panel rounded-lg p-6">
+    <section className="bg-panel rounded-2xl border border-white/5 p-6">
       <div className="mb-4">
         <h2 className="text-xl font-bold">Sleep-Timer</h2>
         <p className="text-sm text-muted">
@@ -508,7 +526,7 @@ function PlaybackSettingsSection() {
   const duration = data?.crossfade_duration_sec ?? 5;
 
   return (
-    <section className="bg-panel rounded-lg p-6">
+    <section className="bg-panel rounded-2xl border border-white/5 p-6">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
         <div>
           <h2 className="text-xl font-bold">Wiedergabe</h2>
@@ -577,6 +595,14 @@ export default function AccountPage() {
   const logout = useLogout();
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
+
+  // Same cache entry ListeningStats uses — the hero shows a few headline
+  // numbers, the stats tab the full breakdown.
+  const { data: stats } = useQuery<UserStatsWithMonth>({
+    queryKey: ["stats"],
+    queryFn: api.stats,
+    enabled: !!me,
+  });
 
   const uploadAvatar = useMutation({
     mutationFn: (file: File) => api.uploadAvatar(file),
@@ -674,61 +700,107 @@ export default function AccountPage() {
 
   return (
     <div className="animate-in flex flex-col gap-8 w-full max-w-5xl mx-auto">
-      <section className="bg-panel rounded-lg p-6 flex items-center gap-5">
-        <input
-          ref={fileInput}
-          type="file"
-          accept="image/*"
-          onChange={handleAvatarFile}
-          className="hidden"
+      <section className="relative overflow-hidden rounded-2xl border border-white/10">
+        {/* Layered brand backdrop: panel base, violet wash, two soft glows. */}
+        <div className="absolute inset-0 bg-panel" />
+        <div className="absolute inset-0 gradient-violet opacity-20" />
+        <div
+          className="absolute -top-24 -right-16 h-80 w-80 rounded-full opacity-15 blur-3xl"
+          style={{ background: "var(--grad-pink-from)" }}
         />
-        <button
-          type="button"
-          onClick={() => fileInput.current?.click()}
-          disabled={uploadAvatar.isPending}
-          title="Profilbild ändern"
-          className="press flex-shrink-0 rounded-full overflow-hidden disabled:opacity-50"
+        <div
+          className="absolute -top-20 left-1/4 h-72 w-72 rounded-full opacity-25 blur-3xl"
+          style={{ background: "var(--accent)" }}
+        />
+        {/* Equalizer skyline along the bottom edge — the brand glyph as scenery. */}
+        <div
+          aria-hidden
+          className="absolute inset-x-0 bottom-0 flex items-end gap-[3px] px-4"
         >
-          <Avatar src={me.avatar_url} name={me.display_name} size={80} />
-        </button>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-3xl font-extrabold truncate">
-              {me.display_name}
-            </h1>
-            {me.is_admin && (
-              <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-accent text-white">
-                Admin
-              </span>
-            )}
-          </div>
-          <p className="text-muted truncate">{me.email}</p>
-          <div className="mt-2">
-            <StatusBadge approved={!!me.is_approved} />
-          </div>
+          {HERO_EQ_HEIGHTS.map((h, i) => (
+            <span
+              key={i}
+              className="flex-1 rounded-t-sm bg-white/[0.05]"
+              style={{ height: `${h}px` }}
+            />
+          ))}
         </div>
-        <div className="self-start flex flex-col gap-2">
+
+        <div className="relative flex flex-col gap-6 p-6 sm:flex-row sm:items-center sm:p-8">
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarFile}
+            className="hidden"
+          />
           <button
             type="button"
-            onClick={openEdit}
-            className="press px-4 py-2 rounded-full text-sm font-medium bg-accent text-white hover:bg-accent-hover"
+            onClick={() => fileInput.current?.click()}
+            disabled={uploadAvatar.isPending}
+            title="Profilbild ändern"
+            className="press group relative flex-shrink-0 self-center rounded-full disabled:opacity-50 sm:self-auto"
           >
-            Profil bearbeiten
+            <span className="block overflow-hidden rounded-full ring-2 ring-accent/60 glow-sm">
+              <Avatar src={me.avatar_url} name={me.display_name} size={96} />
+            </span>
+            <span className="absolute inset-0 grid place-items-center rounded-full bg-black/50 text-xs font-semibold opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+              Ändern
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={logout}
-            className="press px-4 py-2 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10"
-          >
-            Abmelden
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmingDelete(true)}
-            className="press px-4 py-2 rounded-full text-sm font-medium text-red-400 hover:bg-red-500/10"
-          >
-            Konto löschen
-          </button>
+
+          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <div className="flex items-center justify-center gap-2 flex-wrap sm:justify-start">
+              <h1 className="truncate text-3xl font-extrabold tracking-tight sm:text-4xl">
+                {me.display_name}
+              </h1>
+              {me.is_admin && (
+                <span className="inline-block rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-white">
+                  Admin
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 truncate text-muted">{me.email}</p>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+              <StatusBadge approved={!!me.is_approved} />
+              {stats && stats.total_plays > 0 && (
+                <HeroChip>
+                  <b className="font-semibold tabular-nums">
+                    {stats.total_plays}
+                  </b>{" "}
+                  Wiedergaben
+                </HeroChip>
+              )}
+              {(stats?.total_plays_month ?? 0) > 0 && (
+                <HeroChip>
+                  <b className="font-semibold tabular-nums">
+                    {stats!.total_plays_month}
+                  </b>{" "}
+                  in 30 Tagen
+                </HeroChip>
+              )}
+              {stats?.top_artists[0] && (
+                <HeroChip>Top: {stats.top_artists[0].label}</HeroChip>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-row justify-center gap-2 sm:flex-col sm:self-start">
+            <button
+              type="button"
+              onClick={openEdit}
+              className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
+            >
+              Profil bearbeiten
+            </button>
+            <button
+              type="button"
+              onClick={logout}
+              className="press rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm hover:bg-white/15"
+            >
+              Abmelden
+            </button>
+          </div>
         </div>
       </section>
 
@@ -819,22 +891,24 @@ export default function AccountPage() {
         </form>
       </Modal>
 
-      {/* Sub-navigation */}
-      <div className="flex gap-2 flex-wrap -mb-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
-              tab === t.key
-                ? "bg-foreground text-background"
-                : "bg-panel text-muted hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Sub-navigation: one segmented pill control */}
+      <div className="-mb-2 self-center sm:self-start">
+        <div className="inline-flex flex-wrap gap-1 rounded-full border border-white/5 bg-panel p-1">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`press rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                tab === t.key
+                  ? "bg-accent text-white glow-sm"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === "stats" && <ListeningStats />}
@@ -850,7 +924,7 @@ export default function AccountPage() {
         <div className="flex flex-col gap-8">
           <Link
             href="/status"
-            className="press bg-panel rounded-lg p-6 flex items-center justify-between gap-3 hover:bg-panel-hover transition"
+            className="press bg-panel rounded-2xl border border-white/5 p-6 flex items-center justify-between gap-3 hover:bg-panel-hover transition"
           >
             <div>
               <h2 className="text-xl font-bold">Systemstatus</h2>
@@ -865,6 +939,17 @@ export default function AccountPage() {
           <AdminInvitesSection />
         </div>
       )}
+
+      {/* Destructive action lives quietly at the very end, not in the hero. */}
+      <div className="flex justify-center border-t border-white/5 pt-4 sm:justify-end">
+        <button
+          type="button"
+          onClick={() => setConfirmingDelete(true)}
+          className="press rounded-full px-4 py-2 text-sm font-medium text-red-400/90 hover:bg-red-500/10"
+        >
+          Konto löschen
+        </button>
+      </div>
     </div>
   );
 }

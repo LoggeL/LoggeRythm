@@ -11,6 +11,7 @@ import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import CacheMarker from "@/components/CacheMarker";
 import TrackContext from "@/components/TrackContext";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 
 const GRID =
   "grid grid-cols-[2.5rem_minmax(0,1fr)_auto] md:grid-cols-[2.5rem_minmax(0,1fr)_minmax(0,0.8fr)_auto] items-center gap-4";
@@ -107,7 +108,7 @@ export default function PopularTrackTable({
                   className="h-11 w-11 rounded-lg object-cover flex-shrink-0"
                 />
               ) : (
-                <div className="h-11 w-11 rounded-lg bg-panel-hover flex-shrink-0" />
+                <CoverPlaceholder className="h-11 w-11 rounded-lg flex-shrink-0" />
               )}
               <div className="min-w-0">
                 {track.album_id ? (

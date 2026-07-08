@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon } from "@/components/icons";
 import type { Album } from "@/types";
@@ -62,7 +63,7 @@ export default function AlbumPage({
             className="w-40 h-40 rounded-md object-cover shadow-xl"
           />
         ) : (
-          <div className="w-40 h-40 rounded-md bg-panel-hover" />
+          <CoverPlaceholder className="w-40 h-40 rounded-md" />
         )}
         <div>
           <p className="text-xs uppercase tracking-wide text-muted">Album</p>

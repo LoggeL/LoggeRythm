@@ -11,6 +11,7 @@ import {
 import { useMe } from "@/hooks/useAuth";
 import { toast } from "@/store/toast";
 import { PlusIcon } from "@/components/icons";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 
 export default function AddToPlaylistModal() {
   const track = useAddToPlaylistStore((s) => s.track);
@@ -154,7 +155,7 @@ export default function AddToPlaylistModal() {
                     className="h-11 w-11 flex-shrink-0 rounded object-cover"
                   />
                 ) : (
-                  <div className="h-11 w-11 flex-shrink-0 rounded gradient-violet opacity-80" />
+                  <CoverPlaceholder className="h-11 w-11 flex-shrink-0 rounded" />
                 )}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-foreground">

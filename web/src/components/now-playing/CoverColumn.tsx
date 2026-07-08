@@ -9,6 +9,7 @@ import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import Visualizer from "@/components/Visualizer";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
 /**
@@ -53,7 +54,7 @@ export default function CoverColumn({
               className="h-full w-full rounded-[1.75rem] object-cover shadow-2xl"
             />
           ) : (
-            <div className="h-full w-full rounded-[1.75rem] gradient-violet opacity-80" />
+            <CoverPlaceholder className="h-full w-full rounded-[1.75rem]" />
           )}
         </div>
 

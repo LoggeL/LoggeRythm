@@ -9,6 +9,7 @@ import type { CoverPalette } from "@/hooks/useCoverColors";
 import { formatTime } from "@/lib/format";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import {
   PlayIcon,
   PauseIcon,
@@ -86,7 +87,7 @@ export default function CompactLyrics({
               className="h-full w-full rounded-lg object-cover shadow"
             />
           ) : (
-            <div className="h-full w-full rounded-lg gradient-violet opacity-80" />
+            <CoverPlaceholder className="h-full w-full rounded-lg" />
           )}
         </div>
         <div className="min-w-0 flex-1">

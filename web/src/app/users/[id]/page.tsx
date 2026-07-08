@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { playlistPath } from "@/lib/slugs";
 import ArtistCard from "@/components/ArtistCard";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Avatar from "@/components/Avatar";
 import { DetailHeaderSkeleton } from "@/components/Skeleton";
 import type { PublicProfile } from "@/types";
@@ -84,7 +85,7 @@ export default function UserProfilePage({
                     className="w-full aspect-square object-cover rounded-xl mb-3 shadow-lg shadow-black/30"
                   />
                 ) : (
-                  <div className="w-full aspect-square rounded-xl gradient-violet opacity-80 mb-3" />
+                  <CoverPlaceholder className="w-full aspect-square rounded-xl mb-3" />
                 )}
                 <div className="truncate font-semibold">{pl.name}</div>
                 <div className="text-sm text-muted">{pl.track_count} Titel</div>

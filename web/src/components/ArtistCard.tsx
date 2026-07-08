@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { ArtistSummary } from "@/types";
 
 export default function ArtistCard({ artist }: { artist: ArtistSummary }) {
@@ -19,7 +20,7 @@ export default function ArtistCard({ artist }: { artist: ArtistSummary }) {
           />
         </div>
       ) : (
-        <div className="w-full aspect-square rounded-full gradient-violet opacity-80 mb-3" />
+        <CoverPlaceholder className="w-full aspect-square rounded-full mb-3" />
       )}
       <div className="truncate font-semibold">{artist.name}</div>
       <div className="text-sm text-muted">Künstler</div>
