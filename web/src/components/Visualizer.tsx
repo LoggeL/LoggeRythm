@@ -60,6 +60,12 @@ export default function Visualizer({
     const BARS = 64;
     // Smoothed bar heights (0..1) so transitions stay fluid frame to frame.
     const heights = new Float32Array(BARS);
+    // Previous frame's raw (unboosted) level per bar, so we can react to the
+    // frame-to-frame *rise* in energy — a fast beat spikes the delta even when
+    // the absolute level is modest, so bass hits and snappy drums pop harder.
+    const prev = new Float32Array(BARS);
+    // How strongly a rapid rise adds on top of the absolute level.
+    const BEAT_BOOST = 0.9;
     let freq: Uint8Array<ArrayBuffer> | null = null;
 
     let width = 0;
@@ -104,13 +110,20 @@ export default function Visualizer({
           // mapped logarithmically so bass doesn't dominate the whole row.
           const frac = i / BARS;
           const bin = Math.floor(Math.pow(frac, 1.35) * freq.length * 0.8);
-          target = freq[bin] / 255;
+          const raw = freq[bin] / 255;
+          // Add the positive change since last frame so fast attacks (beats)
+          // punch above their absolute level; steady tones aren't inflated.
+          const rise = raw - prev[i];
+          prev[i] = raw;
+          target = rise > 0 ? Math.min(1, raw + rise * BEAT_BOOST) : raw;
         } else if (reduced) {
           target = 0.06;
+          prev[i] = target;
         } else {
           // Gentle idle breathing wave.
           const phase = t * 0.04 + i * 0.35;
           target = 0.06 + 0.05 * (0.5 + 0.5 * Math.sin(phase));
+          prev[i] = target;
         }
         // Fast attack, slower release for a lively but smooth feel.
         const h = heights[i];
@@ -202,6 +215,11 @@ export function RadialVisualizer({
 
     const BARS = 112;
     const heights = new Float32Array(BARS);
+    // Previous frame's raw level per bar, to emphasise the frame-to-frame rise
+    // in energy so fast beats spike harder than their absolute level (see the
+    // linear Visualizer for the rationale).
+    const prev = new Float32Array(BARS);
+    const BEAT_BOOST = 0.9;
     let freq: Uint8Array<ArrayBuffer> | null = null;
     let width = 0;
     let height = 0;
@@ -237,12 +255,17 @@ export function RadialVisualizer({
         if (analyser && playing && freq) {
           const frac = i / BARS;
           const bin = Math.floor(Math.pow(frac, 1.25) * freq.length * 0.82);
-          target = freq[bin] / 255;
+          const raw = freq[bin] / 255;
+          const rise = raw - prev[i];
+          prev[i] = raw;
+          target = rise > 0 ? Math.min(1, raw + rise * BEAT_BOOST) : raw;
         } else if (reduced) {
           target = 0.08;
+          prev[i] = target;
         } else {
           const phase = t * 0.035 + i * 0.22;
           target = 0.08 + 0.055 * (0.5 + 0.5 * Math.sin(phase));
+          prev[i] = target;
         }
         const h = heights[i];
         heights[i] = target > h ? target * 0.58 + h * 0.42 : target * 0.18 + h * 0.82;
