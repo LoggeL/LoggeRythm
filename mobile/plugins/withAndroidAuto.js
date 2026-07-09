@@ -68,6 +68,27 @@ function configureAutoManifest(config) {
         filter.action.push({ $: { 'android:name': name } });
       }
     }
+
+    // Voice-search entry point ("Hey Google, play … on LoggeRythm"). Android's
+    // media lint (MissingIntentFilterForMediaSearch) requires a media app to
+    // advertise a handler for MEDIA_PLAY_FROM_SEARCH; RNTP's media session runs
+    // the actual search-and-play, this filter is the launch route the platform
+    // expects. Attach it to the launcher activity.
+    const mainActivity = app.activity?.find((a) => a.$?.['android:name'] === '.MainActivity');
+    if (!mainActivity)
+      throw new Error('withAndroidAuto: .MainActivity not found in AndroidManifest.xml');
+    mainActivity['intent-filter'] = mainActivity['intent-filter'] || [];
+    const hasSearchFilter = mainActivity['intent-filter'].some((item) =>
+      item.action?.some(
+        (action) => action.$?.['android:name'] === 'android.media.action.MEDIA_PLAY_FROM_SEARCH',
+      ),
+    );
+    if (!hasSearchFilter) {
+      mainActivity['intent-filter'].push({
+        action: [{ $: { 'android:name': 'android.media.action.MEDIA_PLAY_FROM_SEARCH' } }],
+        category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
+      });
+    }
     return cfg;
   });
 }
