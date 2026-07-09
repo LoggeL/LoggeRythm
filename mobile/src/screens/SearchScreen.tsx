@@ -1,17 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as api from '../api/endpoints';
 import type { Track } from '../api/types';
 import TrackRow from '../components/TrackRow';
-import { addToQueue, playNext, playTracks } from '../player/controller';
+import { showTrackActions } from '../components/trackActions';
+import { playTracks } from '../player/controller';
 import { colors } from '../theme';
 
 export default function SearchScreen() {
@@ -19,82 +12,92 @@ export default function SearchScreen() {
   const [results, setResults] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Monotonic token so a slow earlier request can't overwrite a newer one.
-  const reqId = useRef(0);
+  const requestId = useRef(0);
 
   useEffect(() => {
+    const token = ++requestId.current;
+    const controller = new AbortController();
     const q = query.trim();
     if (q.length < 2) {
-      setResults([]);
-      setLoading(false);
-      setError(null);
-      return;
+      return () => controller.abort();
     }
-    const token = ++reqId.current;
-    setLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const r = await api.searchTracks(q);
-        if (token === reqId.current) {
-          setResults(r);
-          setError(null);
-        }
-      } catch (e) {
-        if (token === reqId.current) setError((e as Error).message);
-      } finally {
-        if (token === reqId.current) setLoading(false);
-      }
+
+    const timer = setTimeout(() => {
+      void api
+        .searchTracks(q, controller.signal)
+        .then((tracks) => {
+          if (token === requestId.current && !controller.signal.aborted) {
+            setResults(tracks);
+            setError(null);
+          }
+        })
+        .catch((cause) => {
+          if (token === requestId.current && !controller.signal.aborted) {
+            setError((cause as Error).message);
+          }
+        })
+        .finally(() => {
+          if (token === requestId.current && !controller.signal.aborted) setLoading(false);
+        });
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query]);
 
-  const onTrackPress = (index: number) => {
-    playTracks(results, index).catch((e) => setError((e as Error).message));
+  const updateQuery = (value: string) => {
+    requestId.current += 1;
+    setQuery(value);
+    setError(null);
+    if (value.trim().length < 2) {
+      setResults([]);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
   };
 
-  const onTrackLongPress = (track: Track) => {
-    Alert.alert(track.title, undefined, [
-      { text: 'Play next', onPress: () => void playNext(track) },
-      { text: 'Add to queue', onPress: () => void addToQueue(track) },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  const play = (index: number) => {
+    void playTracks(results, index).catch((cause) => setError((cause as Error).message));
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.searchBar}>
         <TextInput
+          accessibilityLabel="Search songs and artists"
           style={styles.input}
           placeholder="Songs, artists…"
           placeholderTextColor={colors.textDim}
           value={query}
-          onChangeText={setQuery}
+          onChangeText={updateQuery}
           returnKeyType="search"
           autoCapitalize="none"
           autoCorrect={false}
         />
       </View>
-
-      {loading && <ActivityIndicator color={colors.accent} style={{ marginTop: 24 }} />}
-      {error && <Text style={styles.error}>{error}</Text>}
-
+      {loading && <ActivityIndicator color={colors.accent} style={styles.loader} />}
+      {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}
       <FlatList
         data={results}
-        keyExtractor={(t) => String(t.id)}
+        keyExtractor={(track, index) => `${track.id}:${index}`}
         renderItem={({ item, index }) => (
           <TrackRow
             track={item}
-            onPress={() => onTrackPress(index)}
-            onLongPress={() => onTrackLongPress(item)}
+            onPress={() => play(index)}
+            onLongPress={() => showTrackActions(item, setError)}
           />
         )}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
           !loading && !error ? (
-            <Text style={styles.hint}>Search your library — long-press a result to queue it.</Text>
+            <Text style={styles.hint}>
+              {query.trim().length < 2 ? 'Type at least two characters to search.' : 'No tracks found.'}
+            </Text>
           ) : null
         }
-        contentContainerStyle={{ paddingBottom: 120 }}
+        contentContainerStyle={styles.listContent}
       />
     </View>
   );
@@ -111,6 +114,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
   },
+  loader: { marginTop: 24 },
   error: { color: colors.error, paddingHorizontal: 16, paddingTop: 8 },
   hint: { color: colors.textDim, textAlign: 'center', marginTop: 48, paddingHorizontal: 32 },
+  listContent: { paddingBottom: 120 },
 });

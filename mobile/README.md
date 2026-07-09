@@ -44,6 +44,11 @@ cd android
 ./gradlew assembleDebug                 # → android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+Release tasks intentionally fail unless a real keystore and monotonic version
+code are supplied through `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, and `ANDROID_VERSION_CODE`. This
+prevents a release APK from being silently signed with Android's debug key.
+
 ## Architecture
 
 ```
@@ -65,8 +70,9 @@ plugins/
 ### Auth
 
 The backend issues auth only as an `HttpOnly` `sf_session` JWT cookie (no bearer
-endpoint). The client captures that cookie value on login, persists it in
-AsyncStorage, and resends it as a `Cookie` header on every request.
+endpoint). The client captures that cookie value on login, binds it to the
+server origin, persists it with Android Keystore-backed SecureStore, and
+resends it as a `Cookie` header on API and native Range-stream requests.
 
 ### Playback / queue
 

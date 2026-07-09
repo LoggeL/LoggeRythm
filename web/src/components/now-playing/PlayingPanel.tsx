@@ -1,14 +1,14 @@
 "use client";
 
+import { useRef } from "react";
 import { usePlayerStore } from "@/store/player";
-import { useBassGlow } from "@/hooks/useBassGlow";
 import type { CoverPalette } from "@/hooks/useCoverColors";
 import { hiResCover } from "@/lib/cover";
 import type { Track } from "@/types";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
-import Visualizer from "@/components/Visualizer";
+import FullscreenVisualizer from "@/components/FullscreenVisualizer";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
@@ -31,26 +31,8 @@ export default function PlayingPanel({
   onClose: () => void;
 }) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
-  // Bass-reactive pulse + glow on the album art — hard scale punch on kicks.
-  const albumRef = useBassGlow<HTMLDivElement>(isPlaying, {
-    baseSpread: 40,
-    peakSpread: 130,
-    baseAlpha: 0.32,
-    peakAlpha: 0.95,
-    maxScale: 0.16,
-    tintBorder: false,
-    color: palette?.rgb,
-  });
-  // Strong bass-reactive pulse on the surrounding panel border (no scale).
-  const panelRef = useBassGlow<HTMLDivElement>(isPlaying, {
-    baseSpread: 14,
-    peakSpread: 75,
-    baseAlpha: 0.08,
-    peakAlpha: 0.9,
-    maxScale: 0,
-    tintBorder: true,
-    color: palette?.rgb,
-  });
+  const albumRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   // Cover-derived theming (falls back to the brand violet when unavailable).
   const [gr, gg, gb] = palette?.rgb ?? [124, 92, 255];
@@ -70,12 +52,12 @@ export default function PlayingPanel({
           their own rounded wrappers instead. */}
       <div
         ref={panelRef}
-        className="relative min-h-0 flex-1 will-change-[box-shadow] md:rounded-[2.25rem] md:border md:border-white/10 md:bg-white/[0.04] md:backdrop-blur-2xl"
+        className="like-celebration-surface relative min-h-0 flex-1 will-change-[box-shadow] md:rounded-[2.25rem] md:border md:border-white/10 md:bg-white/[0.04] md:backdrop-blur-2xl"
       >
         {/* Panel-local backdrop, desktop only — the shell's ambient backdrop
             already covers the full-bleed mobile layout. */}
         {track.cover && (
-          <div className="absolute inset-0 hidden overflow-hidden md:block md:rounded-[2.25rem]">
+          <div className="absolute inset-0 z-0 hidden overflow-hidden md:block md:rounded-[2.25rem]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={hiResCover(track.cover)}
@@ -90,6 +72,25 @@ export default function PlayingPanel({
             />
           </div>
         )}
+
+        {/* One full-panel stage drives the cover pulse, orbiting spectrum,
+            beat shockwaves, sparks, bloom, and the mirrored floor bars. */}
+        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden md:rounded-[2.25rem]">
+          <FullscreenVisualizer
+            isPlaying={isPlaying}
+            anchorRef={albumRef}
+            surfaceRef={panelRef}
+            className="block h-full w-full"
+            colors={palette?.gradient}
+            glow={palette?.primary}
+            rgb={palette?.rgb}
+          />
+        </div>
+        {/* Keep timestamps and transport controls crisp over the floor bars. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-36 bg-gradient-to-t from-background/80 via-background/25 to-transparent md:h-44 md:rounded-b-[2.25rem]"
+        />
 
         <div
           data-np-scroll
@@ -125,14 +126,14 @@ export default function PlayingPanel({
           </div>
 
           <div className="w-full max-w-2xl flex-shrink-0">
-            <div className="mb-2 text-center md:mb-3">
+            <div className="mb-2 px-12 text-center md:mb-3">
               <div className="flex items-center justify-center gap-3">
                 <TrackTitle
                   track={track}
                   onNavigate={onClose}
                   className="min-w-0 truncate text-2xl font-extrabold tracking-tight hover:underline md:text-4xl"
                 />
-                <LikeButton track={track} />
+                <LikeButton key={track.id} track={track} />
               </div>
               <ArtistLinks
                 track={track}
@@ -146,20 +147,6 @@ export default function PlayingPanel({
             <TransportRow />
             <VolumeRow />
           </div>
-        </div>
-
-        {/* Audio-reactive visualizer — pinned flush to the panel's bottom edge,
-            matching its corner radius so it reaches the box on every side. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 overflow-hidden md:rounded-b-[2.25rem]"
-        >
-          <Visualizer
-            isPlaying={isPlaying}
-            className="block h-14 w-full md:h-24"
-            colors={palette?.gradient}
-            glow={palette ? palette.primary : undefined}
-          />
         </div>
       </div>
     </div>

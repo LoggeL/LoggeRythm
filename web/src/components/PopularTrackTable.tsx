@@ -60,7 +60,7 @@ export default function PopularTrackTable({
           <TrackContext
             key={track.id}
             track={track}
-            className={`group ${GRID} px-4 py-2 rounded-lg transition ${
+            className={`like-celebration-surface group ${GRID} px-4 py-2 rounded-lg transition ${
               isCurrent
                 ? "bg-accent/[0.12] ring-1 ring-inset ring-accent/10"
                 : "hover:bg-white/5"
@@ -155,7 +155,7 @@ export default function PopularTrackTable({
                   {formatCompact(plays[String(track.id)].plays)}
                 </span>
               ) : null}
-              <LikeButton track={track} />
+              <LikeButton key={track.id} track={track} />
               <button
                 type="button"
                 onClick={() => {

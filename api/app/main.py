@@ -109,59 +109,50 @@ _COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
 
 
 def _run_column_migrations() -> None:
-    """Apply the declarative column migrations above (idempotent, sqlite-only).
-
-    Wrapped so a migration failure never crashes startup.
-    """
+    """Apply the declarative column migrations above (idempotent, sqlite-only)."""
     if engine.dialect.name != "sqlite":
         return
-    try:
-        with engine.begin() as conn:
-            cache: dict[str, set[str]] = {}
+    with engine.begin() as conn:
+        cache: dict[str, set[str]] = {}
 
-            def columns(table: str) -> set[str]:
-                if table not in cache:
-                    cache[table] = {
-                        row[1]
-                        for row in conn.exec_driver_sql(
-                            f"PRAGMA table_info({table})"
-                        ).fetchall()
-                    }
-                return cache[table]
+        def columns(table: str) -> set[str]:
+            if table not in cache:
+                cache[table] = {
+                    row[1]
+                    for row in conn.exec_driver_sql(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                }
+            return cache[table]
 
-            for spec in _COLUMN_MIGRATIONS:
-                table, column = spec["table"], spec["column"]
-                cols = columns(table)
-                # Empty set → table doesn't exist yet; nothing to alter.
-                if not cols or column in cols:
-                    continue
-                conn.exec_driver_sql(
-                    f"ALTER TABLE {table} ADD COLUMN {column} {spec['ddl']}"
-                )
-                cols.add(column)
-                if spec.get("backfill"):
-                    conn.exec_driver_sql(spec["backfill"])
-    except Exception as exc:  # pragma: no cover — never crash startup
-        print(f"Column migration skipped: {exc!r}")
+        for spec in _COLUMN_MIGRATIONS:
+            table, column = spec["table"], spec["column"]
+            cols = columns(table)
+            # Empty set → table doesn't exist yet; nothing to alter.
+            if not cols or column in cols:
+                continue
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN {column} {spec['ddl']}"
+            )
+            cols.add(column)
+            if spec.get("backfill"):
+                conn.exec_driver_sql(spec["backfill"])
 
 
 def _bootstrap_admin() -> None:
     """Promote the lowest-id user to admin if no admin exists yet."""
-    try:
-        with SessionLocal() as db:
-            has_admin = db.scalar(
-                select(User).where(User.is_admin.is_(True)).limit(1)
-            )
-            if has_admin is not None:
-                return
-            first = db.scalar(select(User).order_by(User.id).limit(1))
-            if first is not None:
-                first.is_admin = True
-                first.is_approved = True
-                db.commit()
-                print(f"Bootstrapped admin: user id={first.id} ({first.email}).")
-    except Exception as exc:  # pragma: no cover — never crash startup
-        print(f"Admin bootstrap skipped: {exc!r}")
+    with SessionLocal() as db:
+        has_admin = db.scalar(
+            select(User).where(User.is_admin.is_(True)).limit(1)
+        )
+        if has_admin is not None:
+            return
+        first = db.scalar(select(User).order_by(User.id).limit(1))
+        if first is not None:
+            first.is_admin = True
+            first.is_approved = True
+            db.commit()
+            print(f"Bootstrapped admin: user id={first.id} ({first.email}).")
 
 
 def _cleanup_loop() -> None:

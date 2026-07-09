@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useIsMutating,
   useQuery,
   useMutation,
   useQueryClient,
@@ -23,9 +24,23 @@ export function useLikedIds(enabled = true) {
   return new Set((data ?? []).map((t) => String(t.id)));
 }
 
-export function useToggleLike() {
+function toggleLikeMutationKey(trackId: Track["id"]) {
+  return ["toggle-like", String(trackId)] as const;
+}
+
+export function useLikePending(trackId: Track["id"]) {
+  return (
+    useIsMutating({
+      mutationKey: toggleLikeMutationKey(trackId),
+      exact: true,
+    }) > 0
+  );
+}
+
+export function useToggleLike(trackId: Track["id"]) {
   const qc = useQueryClient();
   return useMutation({
+    mutationKey: toggleLikeMutationKey(trackId),
     mutationFn: async ({ track, liked }: { track: Track; liked: boolean }) => {
       if (liked) await api.unlike(String(track.id));
       else await api.like(track);

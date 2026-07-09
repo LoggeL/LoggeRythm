@@ -1,52 +1,113 @@
 import TrackPlayer, { type BrowseCategory, type BrowseItem } from '@rntp/player';
-import type { Track } from '../api/types';
+import { authenticatedHeadersFor } from '../api/client';
+import type { Playlist, Track } from '../api/types';
 import { getApiBase } from '../config';
 import * as api from '../api/endpoints';
 
-/**
- * Publish the Android Auto / CarPlay browse tree from the user's library.
- *
- * Structure:
- *   • "Liked Songs"  → playable tracks (selecting one plays the whole liked set)
- *   • "Playlists"    → browsable folders, one per playlist, each holding its tracks
- *
- * Selecting a playable item is handled natively: RNTP loads the item's siblings
- * as the queue and starts playback with no JS round-trip. The tree must be built
- * eagerly (there's no lazy children callback), so we prefetch each playlist's
- * tracks. Fine for a personal library; call again to refresh.
- */
-export async function publishBrowseTree(): Promise<void> {
+const PLAYLIST_FETCH_CONCURRENCY = 4;
+let publicationRevision = 0;
+let activeController: AbortController | null = null;
+
+function assertCurrent(revision: number, signal?: AbortSignal): void {
+  if (signal?.aborted || revision !== publicationRevision) {
+    throw new Error('Android Auto library publication was cancelled');
+  }
+}
+
+export function cancelBrowseTreePublication(): void {
+  publicationRevision += 1;
+  activeController?.abort();
+  activeController = null;
+}
+
+export function clearBrowseTree(): void {
+  cancelBrowseTreePublication();
+  TrackPlayer.setBrowseTree([]);
+}
+
+async function loadPlaylists(
+  summaries: Awaited<ReturnType<typeof api.getPlaylists>>,
+  signal: AbortSignal | undefined,
+  revision: number,
+): Promise<Playlist[]> {
+  const playlists: Playlist[] = [];
+  const failures: string[] = [];
+  for (let offset = 0; offset < summaries.length; offset += PLAYLIST_FETCH_CONCURRENCY) {
+    assertCurrent(revision, signal);
+    const batch = summaries.slice(offset, offset + PLAYLIST_FETCH_CONCURRENCY);
+    const results = await Promise.allSettled(
+      batch.map((summary) => api.getPlaylist(summary.id, signal)),
+    );
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') playlists.push(result.value);
+      else {
+        const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        failures.push(`${batch[index].name} (${batch[index].id}): ${reason}`);
+      }
+    });
+  }
+  assertCurrent(revision, signal);
+  if (failures.length > 0) {
+    throw new Error(`Failed to load Android Auto playlists: ${failures.join('; ')}`);
+  }
+  return playlists;
+}
+
+/** Publish an account-scoped, uniquely identified Android Auto / CarPlay tree. */
+export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
+  const revision = ++publicationRevision;
+  // Clear any previous user's native library before starting network work.
+  TrackPlayer.setBrowseTree([]);
+
   const base = await getApiBase();
-  const toItem = (t: Track): BrowseItem => ({
-    mediaId: String(t.id),
-    title: t.title,
-    artist: t.artist,
-    artworkUrl: t.cover ?? undefined,
-    url: `${base}/api/tracks/${t.id}/stream`,
-    duration: t.duration_sec,
-    extras: { track: t as unknown as Record<string, unknown> },
+  const streamHeaders = await authenticatedHeadersFor(base);
+  const [likes, summaries] = await Promise.all([api.getLikes(signal), api.getPlaylists(signal)]);
+  assertCurrent(revision, signal);
+  const playlists = await loadPlaylists(summaries, signal, revision);
+
+  const toItem = (track: Track, mediaId: string): BrowseItem => ({
+    mediaId,
+    title: track.title,
+    artist: track.artist,
+    artworkUrl: track.cover || undefined,
+    url: { uri: `${base}/api/tracks/${track.id}/stream`, headers: streamHeaders },
+    duration: track.duration_sec,
+    extras: { track: track as unknown as Record<string, unknown>, radio: false },
   });
 
   const categories: BrowseCategory[] = [];
-
-  const likes = await api.getLikes();
   if (likes.length > 0) {
-    categories.push({ mediaId: 'liked', title: 'Liked Songs', items: likes.map(toItem) });
-  }
-
-  const summaries = await api.getPlaylists();
-  if (summaries.length > 0) {
-    const playlists = await Promise.all(summaries.map((p) => api.getPlaylist(p.id)));
     categories.push({
-      mediaId: 'playlists',
+      mediaId: 'library:liked',
+      title: 'Liked Songs',
+      items: likes.map((track, index) => toItem(track, `liked:${index}:${track.id}`)),
+    });
+  }
+  if (playlists.length > 0) {
+    categories.push({
+      mediaId: 'library:playlists',
       title: 'Playlists',
-      items: playlists.map((pl) => ({
-        mediaId: `pl-${pl.id}`,
-        title: pl.name,
-        children: pl.tracks.map(toItem), // browsable folder (no url) → drills into tracks
+      items: playlists.map((playlist) => ({
+        mediaId: `playlist:${playlist.id}`,
+        title: playlist.name,
+        children: playlist.tracks.map((track, index) =>
+          toItem(track, `playlist:${playlist.id}:${index}:${track.id}`),
+        ),
       })),
     });
   }
 
+  assertCurrent(revision, signal);
   TrackPlayer.setBrowseTree(categories);
+}
+
+export async function refreshBrowseTree(): Promise<void> {
+  activeController?.abort();
+  const controller = new AbortController();
+  activeController = controller;
+  try {
+    await publishBrowseTree(controller.signal);
+  } finally {
+    if (activeController === controller) activeController = null;
+  }
 }

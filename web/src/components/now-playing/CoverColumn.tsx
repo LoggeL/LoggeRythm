@@ -40,7 +40,7 @@ export default function CoverColumn({
   });
 
   return (
-    <div className="hidden min-h-0 flex-col lg:flex">
+    <div className="like-celebration-surface hidden min-h-0 flex-col lg:flex">
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8">
         <div
           ref={coverRef}
@@ -65,7 +65,7 @@ export default function CoverColumn({
               onNavigate={onClose}
               className="min-w-0 truncate text-3xl font-extrabold hover:underline"
             />
-            <LikeButton track={track} />
+            <LikeButton key={track.id} track={track} />
           </div>
           <ArtistLinks
             track={track}

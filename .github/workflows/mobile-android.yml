@@ -1,0 +1,67 @@
+name: Native Android QA
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "mobile/**"
+      - "api/app/main.py"
+      - "api/app/routers/stream.py"
+      - ".github/workflows/mobile-android.yml"
+  pull_request:
+    paths:
+      - "mobile/**"
+      - "api/app/main.py"
+      - "api/app/routers/stream.py"
+      - ".github/workflows/mobile-android.yml"
+  workflow_dispatch:
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Typecheck, lint, and unit test
+        working-directory: mobile
+        run: npm run check
+
+      - name: Validate Expo dependencies and config
+        working-directory: mobile
+        run: npx expo-doctor
+
+      - name: Generate native Android project
+        working-directory: mobile
+        env:
+          CI: "true"
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Android lint, unit tests, and debug APK
+        working-directory: mobile/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          # Debug-signed smoke-test artifact only; release tasks require secret-backed signing.
+          name: loggerythm-native-debug-qa-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

@@ -20,14 +20,36 @@ export default function LoginScreen() {
   const [apiBase, setApiBaseInput] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [configReady, setConfigReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getApiBase().then(setApiBaseInput);
+    let alive = true;
+    getApiBase()
+      .then((base) => {
+        if (alive) {
+          setApiBaseInput(base);
+          setConfigReady(true);
+        }
+      })
+      .catch((cause) => {
+        if (alive) setError(`Server configuration could not be loaded: ${(cause as Error).message}`);
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const onSubmit = async () => {
     setError(null);
+    if (!configReady) {
+      setError('Server configuration is still loading');
+      return;
+    }
+    if (!email.trim() || !password) {
+      setError('Email and password are required');
+      return;
+    }
     setBusy(true);
     try {
       await setApiBase(apiBase);
@@ -56,6 +78,7 @@ export default function LoginScreen() {
           keyboardType="email-address"
           value={email}
           onChangeText={setEmail}
+          autoComplete="email"
         />
         <TextInput
           style={styles.input}
@@ -64,6 +87,9 @@ export default function LoginScreen() {
           secureTextEntry
           value={password}
           onChangeText={setPassword}
+          autoComplete="current-password"
+          returnKeyType="done"
+          onSubmitEditing={() => void onSubmit()}
         />
 
         <Pressable onPress={() => setShowAdvanced((s) => !s)}>
@@ -86,9 +112,12 @@ export default function LoginScreen() {
         {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable
-          style={[styles.button, busy && styles.buttonDisabled]}
+          style={[
+            styles.button,
+            (busy || !configReady || !email.trim() || !password) && styles.buttonDisabled,
+          ]}
           onPress={onSubmit}
-          disabled={busy}
+          disabled={busy || !configReady || !email.trim() || !password}
         >
           {busy ? (
             <ActivityIndicator color="#000" />

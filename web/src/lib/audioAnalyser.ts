@@ -6,7 +6,8 @@
  * destination or it falls silent. We therefore set this up exactly once (keyed
  * by the element) and keep the graph alive for the lifetime of the page:
  *
- *   <audio> ── MediaElementSource ──> AnalyserNode ──> destination
+ *   source ─┬─> analysisGain ──> analyser
+ *           └─> outputGain ──> destination
  *
  * `ensureAnalyser` is safe to call repeatedly; the visualizer reads the live
  * analyser each animation frame via `getAnalyser`, so it picks up the node as
@@ -20,14 +21,19 @@ let analyser: AnalyserNode | null = null;
 // Each <audio> element may only have ONE MediaElementSource ever, and once
 // routed through Web Audio it must reach the destination through the graph or
 // it falls silent. We track every connected element (the player uses two decks
-// for gapless crossfades) and wire each so the analyser taps the signal BEFORE
-// the volume gain — the visualizer stays full-amplitude regardless of volume:
+// for gapless crossfades) and give analysis its own mix gain. That gain follows
+// the crossfade but not the user volume, so visuals reflect what is audibly in
+// the mix even while muted:
 //
-//   source ─┬─> analyser            (tap, not connected to output)
-//           └─> gain ──> destination (audible, volume-controlled)
+//   source ─┬─> analysisGain ──> analyser
+//           └─> outputGain ──> destination
 const decks = new Map<
   HTMLAudioElement,
-  { source: MediaElementAudioSourceNode; gain: GainNode }
+  {
+    source: MediaElementAudioSourceNode;
+    outputGain: GainNode;
+    analysisGain: GainNode;
+  }
 >();
 
 function getCtor(): typeof AudioContext | null {
@@ -57,25 +63,31 @@ export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null
 
   if (!analyser) {
     analyser = ctx.createAnalyser();
-    analyser.fftSize = 256; // 128 frequency bins — plenty for a bar display
-    analyser.smoothingTimeConstant = 0.82;
-    analyser.minDecibels = -85;
-    analyser.maxDecibels = -10;
+    // 2048 keeps kick/sub bands distinct (≈21.5 Hz per bin at 44.1 kHz).
+    // A moderate analyser-level smoothing preserves drum transients; each
+    // visual consumer can still apply its own time-based release envelope.
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.35;
+    analyser.minDecibels = -90;
+    analyser.maxDecibels = -8;
     // Not connected to the destination — it's a passive tap on the source.
   }
 
   if (el && !decks.has(el)) {
     try {
       const source = ctx.createMediaElementSource(el);
-      const gain = ctx.createGain();
+      const outputGain = ctx.createGain();
+      const analysisGain = ctx.createGain();
       // Carry over the element's current volume, then decouple the element so
       // its `volume` no longer scales the analyser tap.
-      gain.gain.value = el.volume;
+      outputGain.gain.value = el.volume;
+      analysisGain.gain.value = 1;
       el.volume = 1;
-      source.connect(analyser); // full-amplitude tap for the visualizer
-      source.connect(gain);
-      gain.connect(ctx.destination); // audible path, volume via the gain
-      decks.set(el, { source, gain });
+      source.connect(analysisGain);
+      analysisGain.connect(analyser);
+      source.connect(outputGain);
+      outputGain.connect(ctx.destination);
+      decks.set(el, { source, outputGain, analysisGain });
     } catch {
       // Element already routed elsewhere (or unsupported) — leave it be.
     }
@@ -85,17 +97,30 @@ export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null
 }
 
 /**
- * Set an element's output volume (0..1). Once the element is wired into the
- * Web Audio graph this drives the gain node (keeping the element itself at full
- * volume so the analyser is unaffected); before then it falls back to the
- * element's own volume.
+ * Set an element's output volume (0..1) and its contribution to the shared
+ * analyser (0..1). The analysis weight follows crossfade position but remains
+ * independent from user volume/mute. Before Web Audio setup, output volume is
+ * applied directly to the media element.
  */
-export function applyVolume(el: HTMLAudioElement | null, v: number): void {
+export function applyVolume(
+  el: HTMLAudioElement | null,
+  v: number,
+  analysisWeight = 1,
+): void {
   if (!el) return;
+  if (!Number.isFinite(v) || v < 0 || v > 1) {
+    throw new RangeError(`Audio output gain must be between 0 and 1; received ${v}.`);
+  }
+  if (!Number.isFinite(analysisWeight) || analysisWeight < 0 || analysisWeight > 1) {
+    throw new RangeError(
+      `Audio analysis weight must be between 0 and 1; received ${analysisWeight}.`,
+    );
+  }
   const deck = decks.get(el);
   if (deck) {
     el.volume = 1;
-    deck.gain.gain.value = v;
+    deck.outputGain.gain.value = v;
+    deck.analysisGain.gain.value = analysisWeight;
   } else {
     el.volume = v;
   }

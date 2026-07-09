@@ -8,11 +8,22 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useMe, useLogout } from "@/hooks/useAuth";
-import { usePlayerStore } from "@/store/player";
+import { currentTrack, usePlayerStore } from "@/store/player";
+import { useBassGlow } from "@/hooks/useBassGlow";
+import { useCoverColors } from "@/hooks/useCoverColors";
 import { api, ApiError } from "@/lib/api";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
+import { RadialVisualizer } from "@/components/Visualizer";
+import {
+  ChevronRightIcon,
+  ClockIcon,
+  EditIcon,
+  StatusIcon,
+  UserIcon,
+  VisualizerIcon,
+} from "@/components/icons";
 import ListeningStats, {
   type UserStatsWithMonth,
 } from "@/components/profile/ListeningStats";
@@ -22,6 +33,7 @@ import type {
   InviteInfo,
   PlaybackSettings,
 } from "@/types";
+import styles from "./account.module.css";
 
 // Sub-navigation of the account page. Keeps the profile identity always visible
 // on top while the heavier content (stats, playback, admin tools) lives behind
@@ -36,35 +48,22 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
+function formatCount(value: number): string {
+  return new Intl.NumberFormat("de-DE").format(value);
+}
+
 function StatusBadge({ approved }: { approved: boolean }) {
   return (
     <span
-      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-        approved
-          ? "bg-accent text-white"
-          : "bg-panel-hover text-muted"
+      className={`${styles.statusBadge} ${
+        approved ? styles.statusApproved : styles.statusPending
       }`}
     >
+      <span className={styles.statusDot} aria-hidden />
       {approved ? "Freigegeben" : "Wartet auf Freigabe"}
     </span>
   );
 }
-
-/** Small glassy fact chip for the profile hero (plays, top artist, …). */
-function HeroChip({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-foreground/90 backdrop-blur-sm">
-      {children}
-    </span>
-  );
-}
-
-// Static equalizer silhouette along the hero's bottom edge — the brand glyph
-// as scenery. Fixed heights (px) so the skyline is identical on every visit.
-const HERO_EQ_HEIGHTS = [
-  14, 30, 22, 44, 34, 56, 40, 26, 50, 36, 60, 30, 46, 20, 38, 54, 28, 42, 16,
-  34, 24, 48, 18, 40, 12, 32,
-];
 
 function AdminUsersSection() {
   const qc = useQueryClient();
@@ -100,24 +99,32 @@ function AdminUsersSection() {
   });
 
   return (
-    <section className="bg-panel rounded-2xl border border-white/5 p-6">
-      <h2 className="text-xl font-bold mb-4">Benutzerverwaltung</h2>
+    <section className={styles.panelCard}>
+      <div className={styles.sectionHeading}>
+        <span className={styles.sectionIcon} aria-hidden>
+          <UserIcon />
+        </span>
+        <div>
+          <span className={styles.panelKicker}>Community</span>
+          <h2>Benutzerverwaltung</h2>
+        </div>
+      </div>
 
       <Modal
         open={!!pendingDelete}
         onClose={() => setPendingDelete(null)}
         title="Benutzer entfernen"
       >
-        <p className="text-sm text-muted mb-4">
+        <p className={styles.modalCopy}>
           {pendingDelete
             ? `${pendingDelete.display_name} (${pendingDelete.email}) wird samt Playlists, Likes und Verlauf endgültig entfernt.`
             : ""}
         </p>
-        <div className="flex gap-2 justify-end">
+        <div className={styles.modalActions}>
           <button
             type="button"
             onClick={() => setPendingDelete(null)}
-            className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+            className={styles.ghostButton}
           >
             Abbrechen
           </button>
@@ -125,16 +132,16 @@ function AdminUsersSection() {
             type="button"
             onClick={() => pendingDelete && remove.mutate(pendingDelete.id)}
             disabled={remove.isPending}
-            className="px-5 py-2 rounded-full bg-red-500 text-white font-semibold hover:bg-red-400 disabled:opacity-60"
+            className={styles.dangerButton}
           >
             {remove.isPending ? "Wird entfernt…" : "Entfernen"}
           </button>
         </div>
       </Modal>
 
-      {isLoading && <p className="text-muted">Lädt…</p>}
+      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
       {error && (
-        <p className="text-red-400 text-sm">
+        <p className={styles.errorMessage}>
           {error instanceof ApiError
             ? error.message
             : "Benutzer konnten nicht geladen werden."}
@@ -142,40 +149,40 @@ function AdminUsersSection() {
       )}
 
       {data && data.length === 0 && (
-        <p className="text-muted">Keine Benutzer vorhanden.</p>
+        <p className={styles.stateMessage}>Keine Benutzer vorhanden.</p>
       )}
 
       {data && data.length > 0 && (
-        <ul className="flex flex-col gap-2">
+        <ul className={styles.userList}>
           {data.map((u) => (
             <li
               key={String(u.id)}
-              className="flex flex-wrap items-center gap-3 bg-background rounded-md px-4 py-3"
+              className={styles.userRow}
             >
               <Avatar src={u.avatar_url} name={u.display_name} size={36} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium truncate">
+              <div className={styles.userIdentity}>
+                <div className={styles.userNameLine}>
+                  <span className={styles.userName}>
                     {u.display_name}
                   </span>
                   {u.is_admin && (
-                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-accent text-white">
+                    <span className={styles.adminBadge}>
                       Admin
                     </span>
                   )}
                 </div>
-                <div className="text-sm text-muted truncate">{u.email}</div>
+                <div className={styles.userEmail}>{u.email}</div>
               </div>
 
               <StatusBadge approved={u.is_approved} />
 
-              <div className="flex items-center gap-2">
+              <div className={styles.rowActions}>
                 {!u.is_approved && (
                   <button
                     type="button"
                     onClick={() => approve.mutate(u.id)}
                     disabled={approve.isPending}
-                    className="press px-3 py-1.5 rounded-full text-sm font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+                    className={styles.primarySmallButton}
                   >
                     Freigeben
                   </button>
@@ -185,7 +192,7 @@ function AdminUsersSection() {
                     type="button"
                     onClick={() => setPendingDelete(u)}
                     disabled={remove.isPending}
-                    className="press px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10 disabled:opacity-50"
+                    className={styles.secondarySmallButton}
                   >
                     Entfernen
                   </button>
@@ -219,12 +226,20 @@ function AdminStorageSection() {
   });
 
   return (
-    <section className="bg-panel rounded-2xl border border-white/5 p-6">
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <h2 className="text-xl font-bold">Speicher</h2>
-        <div className="flex items-center gap-3">
+    <section className={styles.panelCard}>
+      <div className={styles.panelHeaderRow}>
+        <div className={styles.sectionHeading}>
+          <span className={styles.sectionIcon} aria-hidden>
+            <StatusIcon />
+          </span>
+          <div>
+            <span className={styles.panelKicker}>System</span>
+            <h2>Speicher</h2>
+          </div>
+        </div>
+        <div className={styles.panelHeaderActions}>
           {data && (
-            <span className="text-xs text-muted">
+            <span className={styles.retentionNote}>
               {data.retention_days > 0
                 ? `Nicht gespielt seit ${data.retention_days} Tagen → automatisch gelöscht`
                 : "Keine automatische Löschung"}
@@ -234,16 +249,16 @@ function AdminStorageSection() {
             type="button"
             onClick={() => cleanup.mutate()}
             disabled={cleanup.isPending}
-            className="press px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover hover:bg-white/10 disabled:opacity-50"
+            className={styles.secondarySmallButton}
           >
             {cleanup.isPending ? "Räumt auf…" : "Jetzt aufräumen"}
           </button>
         </div>
       </div>
 
-      {isLoading && <p className="text-muted">Lädt…</p>}
+      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
       {error && (
-        <p className="text-red-400 text-sm">
+        <p className={styles.errorMessage}>
           {error instanceof ApiError
             ? error.message
             : "Speicher konnte nicht geladen werden."}
@@ -252,43 +267,43 @@ function AdminStorageSection() {
 
       {data && (
         <>
-          <div className="flex flex-wrap gap-3 mb-4">
-            <div className="bg-background rounded-md px-4 py-3">
-              <div className="text-2xl font-extrabold">{data.track_count}</div>
-              <div className="text-sm text-muted">Titel</div>
+          <div className={styles.storageGrid}>
+            <div className={styles.storageMetric}>
+              <div className={styles.storageValue}>{data.track_count}</div>
+              <div className={styles.storageLabel}>Titel</div>
             </div>
-            <div className="bg-background rounded-md px-4 py-3">
-              <div className="text-2xl font-extrabold">
+            <div className={styles.storageMetric}>
+              <div className={styles.storageValue}>
                 {formatBytes(data.total_bytes)}
               </div>
-              <div className="text-sm text-muted">Belegt (Tracks)</div>
+              <div className={styles.storageLabel}>Belegt (Tracks)</div>
             </div>
-            <div className="bg-background rounded-md px-4 py-3">
-              <div className="text-2xl font-extrabold">
+            <div className={styles.storageMetric}>
+              <div className={styles.storageValue}>
                 {formatBytes(data.disk_free)}
               </div>
-              <div className="text-sm text-muted">Frei auf Disk</div>
+              <div className={styles.storageLabel}>Frei auf Disk</div>
             </div>
-            <div className="bg-background rounded-md px-4 py-3">
-              <div className="text-2xl font-extrabold">
+            <div className={styles.storageMetric}>
+              <div className={styles.storageValue}>
                 {formatBytes(data.disk_total)}
               </div>
-              <div className="text-sm text-muted">Disk gesamt</div>
+              <div className={styles.storageLabel}>Disk gesamt</div>
             </div>
           </div>
 
           {/* Disk usage bar */}
           {data.disk_total > 0 && (
-            <div className="mb-4">
-              <div className="h-2 rounded-full bg-background overflow-hidden">
+            <div className={styles.storageProgressBlock}>
+              <div className={styles.storageProgressTrack}>
                 <div
-                  className="h-full bg-accent"
+                  className={styles.storageProgressFill}
                   style={{
                     width: `${Math.min(100, (data.disk_used / data.disk_total) * 100)}%`,
                   }}
                 />
               </div>
-              <p className="text-xs text-muted mt-1">
+              <p className={styles.storageProgressLabel}>
                 {formatBytes(data.disk_used)} von {formatBytes(data.disk_total)} belegt
                 · {formatBytes(data.disk_free)} frei
               </p>
@@ -338,36 +353,44 @@ function AdminInvitesSection() {
   }
 
   return (
-    <section className="bg-panel rounded-2xl border border-white/5 p-6">
-      <h2 className="text-xl font-bold mb-4">Einladungslinks</h2>
+    <section className={styles.panelCard}>
+      <div className={styles.sectionHeading}>
+        <span className={styles.sectionIcon} aria-hidden>
+          <UserIcon />
+        </span>
+        <div>
+          <span className={styles.panelKicker}>Zugang</span>
+          <h2>Einladungslinks</h2>
+        </div>
+      </div>
 
       <button
         type="button"
         onClick={() => create.mutate()}
         disabled={create.isPending}
-        className="press px-4 py-2 rounded-full text-sm font-medium bg-accent text-white hover:bg-accent-hover disabled:opacity-50 mb-4"
+        className={styles.primaryButton}
       >
         Einladungslink erstellen
       </button>
 
       {lastCode && (
-        <div className="flex flex-wrap items-center gap-2 bg-background rounded-md px-4 py-3 mb-4">
-          <code className="min-w-0 flex-1 truncate text-sm">
+        <div className={styles.inviteReveal}>
+          <code className={styles.inviteCodeWide}>
             {inviteUrl(lastCode)}
           </code>
           <button
             type="button"
             onClick={() => copy(lastCode)}
-            className="press px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10"
+            className={styles.secondarySmallButton}
           >
             Kopieren
           </button>
         </div>
       )}
 
-      {isLoading && <p className="text-muted">Lädt…</p>}
+      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
       {error && (
-        <p className="text-red-400 text-sm">
+        <p className={styles.errorMessage}>
           {error instanceof ApiError
             ? error.message
             : "Einladungen konnten nicht geladen werden."}
@@ -375,33 +398,33 @@ function AdminInvitesSection() {
       )}
 
       {data && data.length === 0 && (
-        <p className="text-muted">Keine Einladungslinks vorhanden.</p>
+        <p className={styles.stateMessage}>Keine Einladungslinks vorhanden.</p>
       )}
 
       {data && data.length > 0 && (
-        <ul className="flex flex-col gap-2">
+        <ul className={styles.inviteList}>
           {data.map((inv) => (
             <li
               key={inv.code}
-              className="flex flex-wrap items-center gap-3 bg-background rounded-md px-4 py-3"
+              className={styles.inviteRow}
             >
-              <code className="text-sm font-medium">{inv.code}</code>
+              <code className={styles.inviteCode}>{inv.code}</code>
               <span
-                className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+                className={`${styles.inviteState} ${
                   inv.used_by_name
-                    ? "bg-panel-hover text-muted"
-                    : "bg-accent text-white"
+                    ? styles.inviteUsed
+                    : styles.inviteFree
                 }`}
               >
                 {inv.used_by_name || "frei"}
               </span>
-              <span className="text-sm text-muted ml-auto">
+              <span className={styles.inviteDate}>
                 {new Date(inv.created_at).toLocaleDateString()}
               </span>
               <button
                 type="button"
                 onClick={() => copy(inv.code)}
-                className="press px-3 py-1.5 rounded-full text-sm font-medium bg-panel-hover text-foreground hover:bg-white/10"
+                className={styles.secondarySmallButton}
               >
                 Kopieren
               </button>
@@ -434,69 +457,93 @@ function SleepTimerSection() {
   const armed = sleepAt != null || sleepAfterTrack;
 
   return (
-    <section className="bg-panel rounded-2xl border border-white/5 p-6">
-      <div className="mb-4">
-        <h2 className="text-xl font-bold">Sleep-Timer</h2>
-        <p className="text-sm text-muted">
-          Pausiert die Wiedergabe nach der gewählten Zeit.
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setSleepTimer(null)}
-          className={`press px-4 py-1.5 rounded-full text-sm font-medium transition ${
-            !armed
-              ? "bg-foreground text-background"
-              : "bg-background text-muted hover:text-foreground"
-          }`}
-        >
-          Aus
-        </button>
-        {SLEEP_PRESETS.map((m) => {
-          // Active when this preset was picked (remaining time still within it).
-          const active =
-            remainingSec != null &&
-            remainingSec > (SLEEP_PRESETS[SLEEP_PRESETS.indexOf(m) - 1] ?? 0) * 60 &&
-            remainingSec <= m * 60;
-          return (
+    <section className={`${styles.panelCard} ${styles.sleepCard}`}>
+      <div className={styles.sleepContent}>
+        <div>
+          <div className={styles.sectionHeading}>
+            <span className={styles.sectionIcon} aria-hidden>
+              <ClockIcon />
+            </span>
+            <div>
+              <span className={styles.panelKicker}>Nachtmodus</span>
+              <h2>Sleep-Timer</h2>
+            </div>
+          </div>
+          <p className={styles.sectionDescription}>
+            Lass die Musik ausklingen. Wir pausieren automatisch, wenn du es
+            möchtest.
+          </p>
+
+          <div className={styles.presetGrid} aria-label="Sleep-Timer auswählen">
             <button
-              key={m}
               type="button"
-              onClick={() => setSleepTimer(m)}
-              className={`press px-4 py-1.5 rounded-full text-sm font-medium transition ${
-                active
-                  ? "bg-accent text-white"
-                  : "bg-background text-muted hover:text-foreground"
+              onClick={() => setSleepTimer(null)}
+              aria-pressed={!armed}
+              className={`${styles.presetButton} ${
+                !armed ? styles.presetActive : ""
               }`}
             >
-              {m} min
+              Aus
             </button>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setSleepAfterTrack(true)}
-          className={`press px-4 py-1.5 rounded-full text-sm font-medium transition ${
-            sleepAfterTrack
-              ? "bg-accent text-white"
-              : "bg-background text-muted hover:text-foreground"
-          }`}
-        >
-          Ende des Titels
-        </button>
+            {SLEEP_PRESETS.map((m) => {
+              const previous = SLEEP_PRESETS[SLEEP_PRESETS.indexOf(m) - 1] ?? 0;
+              const active =
+                remainingSec != null &&
+                remainingSec > previous * 60 &&
+                remainingSec <= m * 60;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setSleepTimer(m)}
+                  aria-pressed={active}
+                  className={`${styles.presetButton} ${
+                    active ? styles.presetActive : ""
+                  }`}
+                >
+                  <strong>{m}</strong>
+                  <span>min</span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setSleepAfterTrack(true)}
+              aria-pressed={sleepAfterTrack}
+              className={`${styles.presetButton} ${styles.presetTrackEnd} ${
+                sleepAfterTrack ? styles.presetActive : ""
+              }`}
+            >
+              Ende des Titels
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.timerDial} data-armed={armed} aria-live="polite">
+          <span className={styles.timerOrbit} aria-hidden />
+          <span className={styles.timerOrbitDot} aria-hidden />
+          <ClockIcon className={styles.timerIcon} />
+          {remainingSec != null ? (
+            <>
+              <strong>
+                {Math.floor(remainingSec / 60)}:
+                {String(remainingSec % 60).padStart(2, "0")}
+              </strong>
+              <span>bis zur Ruhe</span>
+            </>
+          ) : sleepAfterTrack ? (
+            <>
+              <strong>Outro</strong>
+              <span>nach diesem Titel</span>
+            </>
+          ) : (
+            <>
+              <strong>∞</strong>
+              <span>läuft weiter</span>
+            </>
+          )}
+        </div>
       </div>
-      {remainingSec != null && (
-        <p className="mt-3 text-sm text-muted tabular-nums">
-          Pausiert in {Math.floor(remainingSec / 60)}:
-          {String(remainingSec % 60).padStart(2, "0")} Minuten.
-        </p>
-      )}
-      {sleepAfterTrack && (
-        <p className="mt-3 text-sm text-muted">
-          Pausiert, sobald der aktuelle Titel zu Ende ist.
-        </p>
-      )}
     </section>
   );
 }
@@ -526,15 +573,20 @@ function PlaybackSettingsSection() {
   const duration = data?.crossfade_duration_sec ?? 5;
 
   return (
-    <section className="bg-panel rounded-2xl border border-white/5 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
-        <div>
-          <h2 className="text-xl font-bold">Wiedergabe</h2>
-          <p className="text-sm text-muted">
-            Übergänge zwischen Titeln anpassen.
-          </p>
+    <section className={`${styles.panelCard} ${styles.playbackCard}`}>
+      <div className={styles.panelHeaderRow}>
+        <div className={styles.sectionHeading}>
+          <span className={styles.sectionIcon} aria-hidden>
+            <VisualizerIcon />
+          </span>
+          <div>
+            <span className={styles.panelKicker}>Übergangsmotor</span>
+            <h2>Crossfade</h2>
+          </div>
         </div>
-        <label className="flex cursor-pointer items-center gap-3 rounded-full bg-background px-3 py-2 text-sm font-semibold">
+
+        <label className={styles.switchLabel}>
+          <span>{enabled ? "Aktiv" : "Aus"}</span>
           <input
             type="checkbox"
             checked={enabled}
@@ -542,15 +594,22 @@ function PlaybackSettingsSection() {
             onChange={(e) =>
               updateSettings.mutate({ crossfade_enabled: e.target.checked })
             }
-            className="h-4 w-4 accent-accent"
+            className={styles.switchInput}
           />
-          Crossfade
+          <span className={styles.switchTrack} aria-hidden>
+            <span className={styles.switchThumb} />
+          </span>
         </label>
       </div>
 
-      {isLoading && <p className="text-muted">Lädt…</p>}
+      <p className={styles.sectionDescription}>
+        Zwei Titel, ein Moment. Bestimme, wie weich der nächste Song in den
+        laufenden gleitet.
+      </p>
+
+      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
       {error && (
-        <p className="text-red-400 text-sm">
+        <p className={styles.errorMessage}>
           {error instanceof ApiError
             ? error.message
             : "Einstellungen konnten nicht geladen werden."}
@@ -558,31 +617,55 @@ function PlaybackSettingsSection() {
       )}
 
       {data && (
-        <div className="rounded-lg bg-background p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <span className="text-sm font-semibold">Dauer</span>
-            <span className="text-sm text-muted tabular-nums">
-              {duration} Sekunden
-            </span>
+        <div className={styles.crossfadeControl} data-enabled={enabled}>
+          <div className={styles.crossfadeVisual} aria-hidden>
+            <div className={`${styles.waveform} ${styles.waveformOutgoing}`}>
+              {[24, 52, 38, 78, 46, 86, 60, 34, 68, 48, 28, 58].map(
+                (height, index) => (
+                  <span key={index} style={{ height: `${height}%` }} />
+                ),
+              )}
+            </div>
+            <div className={styles.fadeLens}>
+              <strong>{duration}</strong>
+              <span>Sek.</span>
+            </div>
+            <div className={`${styles.waveform} ${styles.waveformIncoming}`}>
+              {[58, 30, 72, 42, 88, 62, 36, 80, 48, 68, 40, 54].map(
+                (height, index) => (
+                  <span key={index} style={{ height: `${height}%` }} />
+                ),
+              )}
+            </div>
+            <span className={styles.trackLabelLeft}>Jetzt</span>
+            <span className={styles.trackLabelRight}>Danach</span>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={12}
-            step={1}
-            value={duration}
-            disabled={!enabled || updateSettings.isPending}
-            onChange={(e) =>
-              updateSettings.mutate({
-                crossfade_duration_sec: Number(e.target.value),
-              })
-            }
-            aria-label="Crossfade-Dauer"
-            className="w-full"
-          />
-          <div className="mt-2 flex justify-between text-xs text-muted">
-            <span>Aus</span>
-            <span>12 s</span>
+
+          <div className={styles.rangeBlock}>
+            <div className={styles.rangeLabels}>
+              <span>Crossfade-Dauer</span>
+              <span>{duration} Sekunden</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={12}
+              step={1}
+              value={duration}
+              disabled={!enabled || updateSettings.isPending}
+              onChange={(e) =>
+                updateSettings.mutate({
+                  crossfade_duration_sec: Number(e.target.value),
+                })
+              }
+              aria-label="Crossfade-Dauer"
+              className={styles.crossfadeRange}
+              style={{ "--range-value": `${(duration / 12) * 100}%` } as React.CSSProperties}
+            />
+            <div className={styles.rangeScale}>
+              <span>Direkt</span>
+              <span>12 s</span>
+            </div>
           </div>
         </div>
       )}
@@ -595,6 +678,9 @@ export default function AccountPage() {
   const logout = useLogout();
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const liveTrack = usePlayerStore(currentTrack);
+  const isPlaying = usePlayerStore((state) => state.isPlaying);
 
   // Same cache entry ListeningStats uses — the hero shows a few headline
   // numbers, the stats tab the full breakdown.
@@ -602,6 +688,18 @@ export default function AccountPage() {
     queryKey: ["stats"],
     queryFn: api.stats,
     enabled: !!me,
+  });
+  const signalTrack = liveTrack ?? stats?.recent[0] ?? null;
+  const profileCover = signalTrack?.cover ?? null;
+  const palette = useCoverColors(profileCover);
+  const avatarGlowRef = useBassGlow<HTMLDivElement>(isPlaying, {
+    color: palette?.rgb,
+    baseSpread: 18,
+    peakSpread: 34,
+    baseAlpha: 0.28,
+    peakAlpha: 0.52,
+    maxScale: 0.012,
+    tintBorder: true,
   });
 
   const uploadAvatar = useMutation({
@@ -670,136 +768,250 @@ export default function AccountPage() {
   });
 
   if (isLoading) {
-    return <p className="text-muted">Lädt…</p>;
-  }
-
-  if (!me) {
     return (
-      <div className="max-w-md">
-        <h1 className="text-3xl font-extrabold mb-3">Dein Konto</h1>
-        <p className="text-muted mb-4">
-          Melde dich an, um dein Konto zu verwalten.
-        </p>
-        <Link
-          href="/login"
-          className="inline-block px-5 py-2 rounded-full bg-accent text-white hover:bg-accent-hover"
-        >
-          Anmelden
-        </Link>
+      <div className={styles.loadingState} role="status">
+        <span className={styles.loadingOrb} aria-hidden />
+        <div>
+          <span className={styles.panelKicker}>Sonic Passport</span>
+          <p>Dein Klangprofil wird geladen…</p>
+        </div>
       </div>
     );
   }
 
-  const TABS: { key: AccountTab; label: string }[] = [
-    { key: "stats", label: "Statistiken" },
-    { key: "playback", label: "Wiedergabe" },
+  if (!me) {
+    return (
+      <section className={styles.signedOutState}>
+        <span className={styles.signedOutOrb} aria-hidden>
+          <UserIcon />
+        </span>
+        <span className={styles.panelKicker}>Privater Bereich</span>
+        <h1>Dein Klangprofil wartet.</h1>
+        <p>Melde dich an, um dein Konto und deine Hörsignatur zu verwalten.</p>
+        <Link
+          href="/login"
+          className={styles.primaryButton}
+        >
+          Anmelden
+        </Link>
+      </section>
+    );
+  }
+
+  const TABS: {
+    key: AccountTab;
+    label: string;
+    description: string;
+    icon: React.ReactNode;
+  }[] = [
+    {
+      key: "stats",
+      label: "Hörprofil",
+      description: "Deine Listening DNA",
+      icon: <VisualizerIcon />,
+    },
+    {
+      key: "playback",
+      label: "Wiedergabe",
+      description: "Übergänge & Ruhemodus",
+      icon: <ClockIcon />,
+    },
     ...(me.is_admin
-      ? [{ key: "admin" as const, label: "Administration" }]
+      ? [
+          {
+            key: "admin" as const,
+            label: "Studio",
+            description: "System & Community",
+            icon: <StatusIcon />,
+          },
+        ]
       : []),
   ];
 
+  const profileStyle = {
+    "--profile-primary": palette?.primary ?? "rgb(124, 92, 255)",
+    "--profile-secondary": palette?.secondary ?? "rgb(255, 110, 199)",
+  } as React.CSSProperties;
+  const sonicId = String(me.id)
+    .replace(/[^a-z0-9]/gi, "")
+    .slice(-8)
+    .toUpperCase();
+
+  function handleHeroPointerMove(event: React.PointerEvent<HTMLElement>) {
+    if (event.pointerType === "touch") return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.style.setProperty(
+      "--spotlight-x",
+      `${((event.clientX - rect.left) / rect.width) * 100}%`,
+    );
+    event.currentTarget.style.setProperty(
+      "--spotlight-y",
+      `${((event.clientY - rect.top) / rect.height) * 100}%`,
+    );
+  }
+
+  function handleTabKeyDown(
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const nextIndex = (index + direction + TABS.length) % TABS.length;
+    setTab(TABS[nextIndex].key);
+    tabRefs.current[nextIndex]?.focus();
+  }
+
   return (
-    <div className="animate-in flex flex-col gap-8 w-full max-w-5xl mx-auto">
-      <section className="relative overflow-hidden rounded-2xl border border-white/10">
-        {/* Layered brand backdrop: panel base, violet wash, two soft glows. */}
-        <div className="absolute inset-0 bg-panel" />
-        <div className="absolute inset-0 gradient-violet opacity-20" />
-        <div
-          className="absolute -top-24 -right-16 h-80 w-80 rounded-full opacity-15 blur-3xl"
-          style={{ background: "var(--grad-pink-from)" }}
-        />
-        <div
-          className="absolute -top-20 left-1/4 h-72 w-72 rounded-full opacity-25 blur-3xl"
-          style={{ background: "var(--accent)" }}
-        />
-        {/* Equalizer skyline along the bottom edge — the brand glyph as scenery. */}
-        <div
-          aria-hidden
-          className="absolute inset-x-0 bottom-0 flex items-end gap-[3px] px-4"
-        >
-          {HERO_EQ_HEIGHTS.map((h, i) => (
-            <span
-              key={i}
-              className="flex-1 rounded-t-sm bg-white/[0.05]"
-              style={{ height: `${h}px` }}
-            />
-          ))}
+    <div className={styles.page} style={profileStyle}>
+      <section
+        className={styles.hero}
+        onPointerMove={handleHeroPointerMove}
+        onPointerLeave={(event) => {
+          event.currentTarget.style.setProperty("--spotlight-x", "72%");
+          event.currentTarget.style.setProperty("--spotlight-y", "24%");
+        }}
+      >
+        <div className={styles.heroNoise} aria-hidden />
+        <div className={styles.heroHalo} aria-hidden />
+        <div className={styles.heroScanline} aria-hidden />
+
+        <div className={styles.heroTopline}>
+          <span className={styles.liveLabel}>
+            <span className={styles.liveDot} aria-hidden />
+            {isPlaying ? "Live signal" : "Sonic passport"}
+          </span>
+          <span className={styles.passportId}>LR / {sonicId} / PROFILE</span>
         </div>
 
-        <div className="relative flex flex-col gap-6 p-6 sm:flex-row sm:items-center sm:p-8">
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/*"
-            onChange={handleAvatarFile}
-            className="hidden"
-          />
-          <button
-            type="button"
-            onClick={() => fileInput.current?.click()}
-            disabled={uploadAvatar.isPending}
-            title="Profilbild ändern"
-            className="press group relative flex-shrink-0 self-center rounded-full disabled:opacity-50 sm:self-auto"
-          >
-            <span className="block overflow-hidden rounded-full ring-2 ring-accent/60 glow-sm">
-              <Avatar src={me.avatar_url} name={me.display_name} size={96} />
-            </span>
-            <span className="absolute inset-0 grid place-items-center rounded-full bg-black/50 text-xs font-semibold opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
-              Ändern
-            </span>
-          </button>
-
-          <div className="min-w-0 flex-1 text-center sm:text-left">
-            <div className="flex items-center justify-center gap-2 flex-wrap sm:justify-start">
-              <h1 className="truncate text-3xl font-extrabold tracking-tight sm:text-4xl">
-                {me.display_name}
+        <div className={styles.heroGrid}>
+          <div className={styles.identityColumn}>
+            <div className={styles.identityCopy}>
+              <span className={styles.heroEyebrow}>Deine persönliche Frequenz</span>
+              <h1>
+                <span>{me.display_name}</span>
+                <em>klingt so.</em>
               </h1>
-              {me.is_admin && (
-                <span className="inline-block rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-white">
-                  Admin
-                </span>
-              )}
+              <p className={styles.heroIntro}>
+                Jeder Play hinterlässt eine Spur. Hier wird daraus dein ganz
+                persönliches Klangbild.
+              </p>
+              <div className={styles.identityMeta}>
+                <StatusBadge approved={!!me.is_approved} />
+                {me.is_admin && <span className={styles.adminBadge}>Admin</span>}
+                <span className={styles.email}>{me.email}</span>
+              </div>
             </div>
-            <p className="mt-0.5 truncate text-muted">{me.email}</p>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-              <StatusBadge approved={!!me.is_approved} />
-              {stats && stats.total_plays > 0 && (
-                <HeroChip>
-                  <b className="font-semibold tabular-nums">
-                    {stats.total_plays}
-                  </b>{" "}
-                  Wiedergaben
-                </HeroChip>
-              )}
-              {(stats?.total_plays_month ?? 0) > 0 && (
-                <HeroChip>
-                  <b className="font-semibold tabular-nums">
-                    {stats!.total_plays_month}
-                  </b>{" "}
-                  in 30 Tagen
-                </HeroChip>
-              )}
-              {stats?.top_artists[0] && (
-                <HeroChip>Top: {stats.top_artists[0].label}</HeroChip>
-              )}
+
+            <div className={styles.heroActions}>
+              <button
+                type="button"
+                onClick={openEdit}
+                className={styles.primaryButton}
+              >
+                <EditIcon />
+                Profil bearbeiten
+              </button>
+              <button type="button" onClick={logout} className={styles.ghostButton}>
+                Abmelden
+                <ChevronRightIcon />
+              </button>
+            </div>
+
+            <div className={styles.heroMetrics}>
+              <article className={styles.heroMetric}>
+                <span>01 · All time</span>
+                <strong>{stats ? formatCount(stats.total_plays) : "…"}</strong>
+                <small>Wiedergaben</small>
+              </article>
+              <article className={styles.heroMetric}>
+                <span>02 · 30 Tage</span>
+                <strong>
+                  {stats ? formatCount(stats.total_plays_month ?? 0) : "…"}
+                </strong>
+                <small>neue Impulse</small>
+              </article>
+              <article className={`${styles.heroMetric} ${styles.heroMetricWide}`}>
+                <span>03 · Top Artist</span>
+                <strong>
+                  {stats ? stats.top_artists[0]?.label ?? "Noch unentdeckt" : "…"}
+                </strong>
+                <small>dein stärkstes Signal</small>
+              </article>
             </div>
           </div>
 
-          <div className="flex flex-row justify-center gap-2 sm:flex-col sm:self-start">
-            <button
-              type="button"
-              onClick={openEdit}
-              className="press rounded-full bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-hover"
-            >
-              Profil bearbeiten
-            </button>
-            <button
-              type="button"
-              onClick={logout}
-              className="press rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-foreground backdrop-blur-sm hover:bg-white/15"
-            >
-              Abmelden
-            </button>
+          <div className={styles.orbitColumn}>
+            <div className={styles.orbitStage}>
+              <span className={styles.orbitRingOuter} aria-hidden />
+              <span className={styles.orbitRingInner} aria-hidden />
+              <span className={styles.orbitSatellite} aria-hidden />
+              <RadialVisualizer
+                isPlaying={isPlaying}
+                className={styles.radialVisualizer}
+              />
+
+              <div ref={avatarGlowRef} className={styles.avatarGlowShell}>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="image/*"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  onChange={handleAvatarFile}
+                  className={styles.fileInput}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={uploadAvatar.isPending}
+                  aria-label="Profilbild ändern"
+                  className={styles.avatarButton}
+                >
+                  <Avatar
+                    src={me.avatar_url}
+                    name={me.display_name}
+                    size={168}
+                    className={styles.avatarImage}
+                  />
+                  <span className={styles.avatarEdit}>
+                    <EditIcon />
+                    {uploadAvatar.isPending ? "Upload…" : "Bild ändern"}
+                  </span>
+                </button>
+              </div>
+
+              <span className={`${styles.coordinate} ${styles.coordinateTop}`}>
+                48° 08′ N
+              </span>
+              <span className={`${styles.coordinate} ${styles.coordinateSide}`}>
+                FREQ · LR
+              </span>
+            </div>
+
+            <div className={styles.signalCard}>
+              {signalTrack?.cover ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={signalTrack.cover} alt="" />
+              ) : (
+                <span className={styles.signalPlaceholder} aria-hidden>
+                  <VisualizerIcon />
+                </span>
+              )}
+              <div className={styles.signalCopy}>
+                <span>
+                  <i className={isPlaying ? styles.signalPulse : ""} aria-hidden />
+                  {isPlaying && liveTrack ? "Jetzt läuft" : "Letzter Impuls"}
+                </span>
+                <strong>{signalTrack?.title ?? "Noch kein Titel"}</strong>
+                <small>{signalTrack?.artist ?? "Starte deine erste Wiedergabe"}</small>
+              </div>
+              <span className={styles.signalBars} aria-hidden>
+                {[42, 78, 56, 92, 64].map((height, index) => (
+                  <i key={index} style={{ height: `${height}%` }} />
+                ))}
+              </span>
+            </div>
           </div>
         </div>
       </section>
@@ -809,15 +1021,15 @@ export default function AccountPage() {
         onClose={() => setConfirmingDelete(false)}
         title="Konto löschen"
       >
-        <p className="text-sm text-muted mb-4">
+        <p className={styles.modalCopy}>
           Dein Konto wird mit allen Playlists, Likes und deinem Hörverlauf
           endgültig gelöscht. Das kann nicht rückgängig gemacht werden.
         </p>
-        <div className="flex gap-2 justify-end">
+        <div className={styles.modalActions}>
           <button
             type="button"
             onClick={() => setConfirmingDelete(false)}
-            className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+            className={styles.ghostButton}
           >
             Abbrechen
           </button>
@@ -825,7 +1037,7 @@ export default function AccountPage() {
             type="button"
             onClick={() => deleteAccount.mutate()}
             disabled={deleteAccount.isPending}
-            className="px-5 py-2 rounded-full bg-red-500 text-white font-semibold hover:bg-red-400 disabled:opacity-60"
+            className={styles.dangerButton}
           >
             {deleteAccount.isPending ? "Wird gelöscht…" : "Endgültig löschen"}
           </button>
@@ -834,56 +1046,64 @@ export default function AccountPage() {
 
       <Modal open={editing} onClose={() => setEditing(false)} title="Profil bearbeiten">
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
+          onSubmit={(event) => {
+            event.preventDefault();
             saveProfile.mutate();
           }}
-          className="flex flex-col gap-3"
+          className={styles.profileForm}
         >
-          <label className="flex flex-col gap-1 text-sm">
-            Anzeigename
+          <label className={styles.fieldLabel}>
+            <span>Anzeigename</span>
             <input
               value={form.display_name}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, display_name: e.target.value }))
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  display_name: event.target.value,
+                }))
               }
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+              className={styles.fieldInput}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            E-Mail
+          <label className={styles.fieldLabel}>
+            <span>E-Mail</span>
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+              onChange={(event) =>
+                setForm((current) => ({ ...current, email: event.target.value }))
+              }
+              className={styles.fieldInput}
             />
           </label>
-          <label className="flex flex-col gap-1 text-sm">
-            Neues Passwort
+          <label className={styles.fieldLabel}>
+            <span>Neues Passwort</span>
             <input
               type="password"
               value={form.password}
               minLength={8}
               placeholder="Leer lassen, um beizubehalten"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, password: e.target.value }))
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
               }
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+              className={styles.fieldInput}
             />
           </label>
-          <div className="flex justify-end gap-2 mt-1">
+          <div className={styles.modalActions}>
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+              className={styles.ghostButton}
             >
               Abbrechen
             </button>
             <button
               type="submit"
               disabled={saveProfile.isPending}
-              className="press px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
+              className={styles.primaryButton}
             >
               {saveProfile.isPending ? "Speichert…" : "Speichern"}
             </button>
@@ -891,61 +1111,83 @@ export default function AccountPage() {
         </form>
       </Modal>
 
-      {/* Sub-navigation: one segmented pill control */}
-      <div className="-mb-2 self-center sm:self-start">
-        <div className="inline-flex flex-wrap gap-1 rounded-full border border-white/5 bg-panel p-1">
-          {TABS.map((t) => (
+      <nav className={styles.tabNav} aria-label="Kontobereiche">
+        <div className={styles.tabList} role="tablist" aria-label="Kontobereiche">
+          {TABS.map((item, index) => (
             <button
-              key={t.key}
+              key={item.key}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={`account-tab-${item.key}`}
               type="button"
-              onClick={() => setTab(t.key)}
-              className={`press rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                tab === t.key
-                  ? "bg-accent text-white glow-sm"
-                  : "text-muted hover:text-foreground"
+              role="tab"
+              aria-selected={tab === item.key}
+              aria-controls={`account-panel-${item.key}`}
+              tabIndex={tab === item.key ? 0 : -1}
+              onClick={() => setTab(item.key)}
+              onKeyDown={(event) => handleTabKeyDown(event, index)}
+              className={`${styles.tabButton} ${
+                tab === item.key ? styles.tabButtonActive : ""
               }`}
             >
-              {t.label}
+              <span className={styles.tabIcon}>{item.icon}</span>
+              <span className={styles.tabCopy}>
+                <strong>{item.label}</strong>
+                <small>{item.description}</small>
+              </span>
+              <span className={styles.tabIndex}>0{index + 1}</span>
             </button>
           ))}
         </div>
-      </div>
+      </nav>
 
-      {tab === "stats" && <ListeningStats />}
+      <section
+        id={`account-panel-${tab}`}
+        role="tabpanel"
+        aria-labelledby={`account-tab-${tab}`}
+        className={styles.tabPanel}
+      >
+        <div key={tab} className={styles.tabContent}>
+          {tab === "stats" && <ListeningStats />}
 
-      {tab === "playback" && (
-        <div className="flex flex-col gap-8">
-          <PlaybackSettingsSection />
-          <SleepTimerSection />
-        </div>
-      )}
-
-      {tab === "admin" && me.is_admin && (
-        <div className="flex flex-col gap-8">
-          <Link
-            href="/status"
-            className="press bg-panel rounded-2xl border border-white/5 p-6 flex items-center justify-between gap-3 hover:bg-panel-hover transition"
-          >
-            <div>
-              <h2 className="text-xl font-bold">Systemstatus</h2>
-              <p className="text-sm text-muted">
-                Deezer-Auth, Speicher, Benutzer & Konfiguration
-              </p>
+          {tab === "playback" && (
+            <div className={styles.settingsGrid}>
+              <PlaybackSettingsSection />
+              <SleepTimerSection />
             </div>
-            <span className="text-muted text-2xl">→</span>
-          </Link>
-          <AdminUsersSection />
-          <AdminStorageSection />
-          <AdminInvitesSection />
-        </div>
-      )}
+          )}
 
-      {/* Destructive action lives quietly at the very end, not in the hero. */}
-      <div className="flex justify-center border-t border-white/5 pt-4 sm:justify-end">
+          {tab === "admin" && me.is_admin && (
+            <div className={styles.adminStack}>
+              <Link href="/status" className={styles.statusLink}>
+                <span className={styles.statusLinkIcon} aria-hidden>
+                  <StatusIcon />
+                </span>
+                <span className={styles.statusLinkCopy}>
+                  <small>Live-Diagnose</small>
+                  <strong>Systemstatus</strong>
+                  <span>Deezer-Auth, Speicher, Benutzer & Konfiguration</span>
+                </span>
+                <ChevronRightIcon className={styles.statusLinkArrow} />
+              </Link>
+              <AdminUsersSection />
+              <AdminStorageSection />
+              <AdminInvitesSection />
+            </div>
+          )}
+        </div>
+      </section>
+
+      <div className={styles.dangerZone}>
+        <div>
+          <span className={styles.panelKicker}>Privatsphäre</span>
+          <p>Du möchtest LoggeRythm nicht mehr verwenden?</p>
+        </div>
         <button
           type="button"
           onClick={() => setConfirmingDelete(true)}
-          className="press rounded-full px-4 py-2 text-sm font-medium text-red-400/90 hover:bg-red-500/10"
+          className={styles.dangerTextButton}
         >
           Konto löschen
         </button>

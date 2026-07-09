@@ -1,48 +1,64 @@
 import TrackPlayer, { PlayerCommand } from '@rntp/player';
-import { installPlaybackListeners } from './controller';
+import { clearBrowseTree } from './browseTree';
+import { installPlaybackListeners, resetControllerState } from './controller';
 
-let started = false;
+let nativeSetupComplete = false;
+let ready = false;
 
-/**
- * Initialize the native player exactly once. Must run in the foreground on
- * Android (call from the app root after auth). Configures the media
- * notification / lock-screen controls (the "media bar") and native command
- * handling, plus a 500 MB disk cache with next-track preloading.
- */
-export async function ensurePlayer(): Promise<void> {
-  if (started) return;
-  started = true;
+/** Initialize the native player exactly once while the Android app is foregrounded. */
+export function ensurePlayer(): void {
+  if (ready) return;
+  try {
+    if (!nativeSetupComplete) {
+      TrackPlayer.setupPlayer({
+        contentType: 'music',
+        handleAudioBecomingNoisy: true,
+        android: {
+          wakeMode: 'network',
+          notification: {
+            channelId: 'lr.playback',
+            channelName: 'Playback',
+            smallIcon: 'ic_stat_music',
+          },
+        },
+        cache: {
+          maxSizeBytes: 500 * 1024 * 1024,
+          preloading: { window: 1 },
+        },
+      });
+      nativeSetupComplete = true;
+    }
 
-  TrackPlayer.setupPlayer({
-    contentType: 'music',
-    handleAudioBecomingNoisy: true,
-    android: {
-      wakeMode: 'network',
-      notification: {
-        channelId: 'lr.playback',
-        channelName: 'Playback',
-        // Monochrome music-note glyph written by plugins/withNotificationIcon.js.
-        smallIcon: 'ic_stat_music',
-      },
-    },
-    cache: {
-      maxSizeBytes: 500 * 1024 * 1024,
-      preloading: { window: 1 },
-    },
-  });
+    TrackPlayer.setCommands({
+      capabilities: [
+        PlayerCommand.PlayPause,
+        PlayerCommand.Next,
+        PlayerCommand.Previous,
+        PlayerCommand.Seek,
+      ],
+      handling: 'native',
+    });
+    installPlaybackListeners();
+    ready = true;
+  } catch (error) {
+    throw new Error(`Native audio player initialization failed: ${(error as Error).message}`);
+  }
+}
 
-  // Native handling: lock screen / notification / Bluetooth / Android Auto all
-  // work without the JS runtime. We still install in-app listeners for radio
-  // auto-extend and play recording while the UI is foregrounded.
-  TrackPlayer.setCommands({
-    capabilities: [
-      PlayerCommand.PlayPause,
-      PlayerCommand.Next,
-      PlayerCommand.Previous,
-      PlayerCommand.Seek,
-    ],
-    handling: 'native',
-  });
+export function isPlayerReady(): boolean {
+  return ready;
+}
 
-  installPlaybackListeners();
+/** Remove all account-scoped player state before logging out or switching users. */
+export function clearPlayerSession(): void {
+  if (!nativeSetupComplete) return;
+  try {
+    TrackPlayer.pause();
+    TrackPlayer.clear();
+    clearBrowseTree();
+    TrackPlayer.cancelSleepTimer();
+    resetControllerState();
+  } catch (error) {
+    throw new Error(`Failed to clear native playback state: ${(error as Error).message}`);
+  }
 }

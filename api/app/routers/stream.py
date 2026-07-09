@@ -107,7 +107,11 @@ def _range_response(path: str, request: Request) -> Response:
 
 
 @router.get("/tracks/{deezer_id}/stream")
-async def stream(deezer_id: str, request: Request) -> Response:
+async def stream(
+    deezer_id: str,
+    request: Request,
+    _user: User = Depends(get_current_user),
+) -> Response:
     if not deezer_id.isdigit():
         raise HTTPException(status_code=400, detail="deezer_id must be numeric")
     try:

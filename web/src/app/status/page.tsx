@@ -2,34 +2,168 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMe } from "@/hooks/useAuth";
 import { api, ApiError } from "@/lib/api";
 import type { SystemStatus } from "@/types";
+import styles from "./status.module.css";
 
-function formatBytes(bytes: number): string {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+type StatusTone = "ok" | "critical" | "neutral";
+type IconProps = React.SVGProps<SVGSVGElement>;
+
+const numberFormatter = new Intl.NumberFormat("de-DE");
+const timeFormatter = new Intl.DateTimeFormat("de-DE", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
+function statusContractError(field: string, expectation: string): never {
+  throw new Error(
+    `Ungültige Antwort von /admin/status: „${field}“ muss ${expectation} sein.`,
+  );
 }
 
-/* ------------------------------------------------------------------ */
-/* Section icons — thin line glyphs, accent-tinted via currentColor.    */
-/* ------------------------------------------------------------------ */
-type IconProps = React.SVGProps<SVGSVGElement>;
+function requireRecord(value: unknown, field: string): Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    statusContractError(field, "ein Objekt");
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireBoolean(value: unknown, field: string): void {
+  if (typeof value !== "boolean") statusContractError(field, "ein Wahrheitswert");
+}
+
+function requireText(value: unknown, field: string): void {
+  if (typeof value !== "string" || value.trim() === "") {
+    statusContractError(field, "nicht-leerer Text");
+  }
+}
+
+function requireCount(value: unknown, field: string, positive = false): void {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < (positive ? 1 : 0)
+  ) {
+    statusContractError(
+      field,
+      positive
+        ? "eine positive ganze Zahl"
+        : "eine nicht-negative ganze Zahl",
+    );
+  }
+}
+
+function assertSystemStatus(value: unknown): asserts value is SystemStatus {
+  const root = requireRecord(value, "Antwort");
+  const deezer = requireRecord(root.deezer, "deezer");
+  const storage = requireRecord(root.storage, "storage");
+  const users = requireRecord(root.users, "users");
+  const content = requireRecord(root.content, "content");
+  const integrations = requireRecord(root.integrations, "integrations");
+  const system = requireRecord(root.system, "system");
+
+  requireBoolean(deezer.arl_configured, "deezer.arl_configured");
+  requireBoolean(deezer.arl_ok, "deezer.arl_ok");
+  requireText(deezer.quality, "deezer.quality");
+
+  for (const field of [
+    "track_count",
+    "total_bytes",
+    "disk_used",
+    "disk_free",
+    "retention_days",
+  ] as const) {
+    requireCount(storage[field], `storage.${field}`);
+  }
+  requireCount(storage.disk_total, "storage.disk_total", true);
+  if ((storage.disk_used as number) > (storage.disk_total as number)) {
+    statusContractError(
+      "storage.disk_used",
+      "kleiner oder gleich „storage.disk_total“",
+    );
+  }
+
+  for (const field of ["total", "approved", "pending", "admins"] as const) {
+    requireCount(users[field], `users.${field}`);
+  }
+  if ((users.approved as number) > (users.total as number)) {
+    statusContractError("users.approved", "kleiner oder gleich „users.total“");
+  }
+  if ((users.pending as number) > (users.total as number)) {
+    statusContractError("users.pending", "kleiner oder gleich „users.total“");
+  }
+  if ((users.admins as number) > (users.total as number)) {
+    statusContractError("users.admins", "kleiner oder gleich „users.total“");
+  }
+
+  for (const field of [
+    "playlists",
+    "likes",
+    "follows",
+    "plays",
+    "stored_lyrics",
+    "parties",
+    "invites_total",
+    "invites_used",
+  ] as const) {
+    requireCount(content[field], `content.${field}`);
+  }
+  if ((content.invites_used as number) > (content.invites_total as number)) {
+    statusContractError(
+      "content.invites_used",
+      "kleiner oder gleich „content.invites_total“",
+    );
+  }
+
+  requireBoolean(
+    integrations.spotify_configured,
+    "integrations.spotify_configured",
+  );
+  requireBoolean(
+    integrations.lastfm_configured,
+    "integrations.lastfm_configured",
+  );
+  requireText(system.app_env, "system.app_env");
+  requireText(system.database, "system.database");
+  requireBoolean(system.jwt_secure, "system.jwt_secure");
+  requireBoolean(system.cookie_secure, "system.cookie_secure");
+}
+
+async function fetchSystemStatus(): Promise<SystemStatus> {
+  const value: unknown = await api.adminStatus();
+  assertSystemStatus(value);
+  return value;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isSafeInteger(bytes) || bytes < 0) {
+    statusContractError("Speicherwert", "eine nicht-negative ganze Zahl");
+  }
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const index = Math.floor(Math.log(bytes) / Math.log(1024));
+  if (index >= units.length) {
+    statusContractError("Speicherwert", "kleiner als 1 PB");
+  }
+  const value = bytes / Math.pow(1024, index);
+  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
 const icon = (path: React.ReactNode) =>
   function Icon(props: IconProps) {
     return (
       <svg
         viewBox="0 0 24 24"
-        width={18}
-        height={18}
+        width={19}
+        height={19}
         fill="none"
         stroke="currentColor"
         strokeWidth={1.8}
         strokeLinecap="round"
         strokeLinejoin="round"
+        focusable="false"
+        aria-hidden="true"
         {...props}
       >
         {path}
@@ -74,428 +208,548 @@ const ServerIcon = icon(
     <path d="M7 7.5h.01M7 16.5h.01" />
   </>,
 );
+const RefreshIcon = icon(
+  <>
+    <path d="M20 11a8 8 0 1 0-2.35 5.65" />
+    <path d="M20 5v6h-6" />
+  </>,
+);
+const ArrowIcon = icon(<path d="m9 18 6-6-6-6" />);
+const BackIcon = icon(<path d="m15 18-6-6 6-6" />);
 
-/** Coloured pill conveying an OK / warning / neutral status. */
+function toneClass(tone: StatusTone): string {
+  if (tone === "ok") return styles.toneOk;
+  if (tone === "critical") return styles.toneCritical;
+  return styles.toneNeutral;
+}
+
 function Pill({
-  state,
+  tone,
   children,
 }: {
-  state: "ok" | "warn" | "neutral";
+  tone: StatusTone;
   children: React.ReactNode;
 }) {
-  const cls =
-    state === "ok"
-      ? "bg-green-500/15 text-green-400 ring-green-400/20"
-      : state === "warn"
-        ? "bg-red-500/15 text-red-400 ring-red-400/20"
-        : "bg-white/[0.06] text-muted ring-white/10";
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium ring-1 ${cls}`}
-    >
-      <span
-        className={`w-1.5 h-1.5 rounded-full ${
-          state === "ok"
-            ? "bg-green-400"
-            : state === "warn"
-              ? "bg-red-400"
-              : "bg-muted"
-        }`}
-      />
+    <span className={`${styles.pill} ${toneClass(tone)}`}>
+      <span className={styles.statusDot} aria-hidden="true" />
       {children}
     </span>
   );
 }
 
-/** Card shell with an accent-tinted icon chip, used for every section. */
-function Card({
+function Panel({
+  number,
+  kicker,
   title,
   Icon,
   action,
   className = "",
   children,
 }: {
+  number: string;
+  kicker: string;
   title: string;
-  Icon: (p: IconProps) => React.ReactElement;
+  Icon: (props: IconProps) => React.ReactElement;
   action?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section
-      className={`rounded-2xl border border-white/10 bg-white/[0.025] backdrop-blur-sm p-5 sm:p-6 ${className}`}
-    >
-      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent/15 text-accent ring-1 ring-accent/20">
+    <section className={`${styles.panel} ${className}`}>
+      <header className={styles.panelHeader}>
+        <div className={styles.panelTitleGroup}>
+          <span className={styles.panelIcon} aria-hidden="true">
             <Icon />
           </span>
-          <h2 className="text-lg font-bold">{title}</h2>
+          <div>
+            <span className={styles.panelKicker}>
+              {number} · {kicker}
+            </span>
+            <h2>{title}</h2>
+          </div>
         </div>
         {action}
-      </div>
+      </header>
       {children}
     </section>
   );
 }
 
-/** A label / value row inside a section. */
-function Row({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2.5 border-b border-white/5 last:border-0">
-      <span className="text-muted text-sm">{label}</span>
-      <span className="text-sm font-medium text-right">{children}</span>
+    <div className={styles.row}>
+      <span>{label}</span>
+      <div>{children}</div>
     </div>
   );
 }
 
-/** A small stat tile for the content grid. */
-function Stat({ value, label }: { value: number | string; label: string }) {
+function Metric({ value, label }: { value: number | string; label: string }) {
   return (
-    <div className="rounded-xl bg-white/[0.04] ring-1 ring-white/5 px-4 py-3 hover-lift">
-      <div className="text-2xl font-extrabold tabular-nums">{value}</div>
-      <div className="text-sm text-muted">{label}</div>
+    <div className={styles.metric}>
+      <strong>{typeof value === "number" ? numberFormatter.format(value) : value}</strong>
+      <span>{label}</span>
     </div>
   );
 }
 
-/** Highlight tile for the health overview at the top. */
-function Highlight({
+function Signal({
   label,
   value,
-  state,
+  tone,
 }: {
   label: string;
   value: string;
-  state: "ok" | "warn" | "neutral";
+  tone: StatusTone;
 }) {
-  const ring =
-    state === "ok"
-      ? "ring-green-400/25"
-      : state === "warn"
-        ? "ring-red-400/30"
-        : "ring-white/10";
-  const dot =
-    state === "ok"
-      ? "bg-green-400"
-      : state === "warn"
-        ? "bg-red-400"
-        : "bg-muted";
   return (
-    <div
-      className={`rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 ring-1 ${ring}`}
-    >
-      <div className="flex items-center gap-2 text-xs text-muted">
-        <span className={`w-2 h-2 rounded-full ${dot}`} />
-        {label}
+    <div className={styles.signal}>
+      <span className={`${styles.signalMarker} ${toneClass(tone)}`} aria-hidden="true" />
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
       </div>
-      <div className="mt-2 text-lg font-bold truncate">{value}</div>
     </div>
   );
 }
 
-function StatusBody({ s }: { s: SystemStatus }) {
-  const diskPct =
-    s.storage.disk_total > 0
-      ? Math.min(100, (s.storage.disk_used / s.storage.disk_total) * 100)
-      : 0;
-  const diskState: "ok" | "warn" | "neutral" =
-    diskPct >= 90 ? "warn" : "ok";
+function StatusBody({ status }: { status: SystemStatus }) {
+  const diskPct = (status.storage.disk_used / status.storage.disk_total) * 100;
+  const diskTone: StatusTone = diskPct >= 90 ? "critical" : "ok";
+  const environmentIsProduction =
+    status.system.app_env === "production" || status.system.app_env === "prod";
+  const cookiesAreCritical =
+    environmentIsProduction && !status.system.cookie_secure;
+  const warningCount =
+    Number(!status.deezer.arl_ok) +
+    Number(!status.system.jwt_secure) +
+    Number(diskTone === "critical") +
+    Number(cookiesAreCritical);
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Health overview */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Highlight
-          label="Deezer"
-          value={
-            s.deezer.arl_ok
-              ? "Angemeldet"
-              : s.deezer.arl_configured
-                ? "ARL ungültig"
-                : "Kein ARL"
-          }
-          state={s.deezer.arl_ok ? "ok" : "warn"}
-        />
-        <Highlight
-          label="Speicherauslastung"
-          value={
-            s.storage.disk_total > 0 ? `${Math.round(diskPct)} %` : "—"
-          }
-          state={s.storage.disk_total > 0 ? diskState : "neutral"}
-        />
-        <Highlight
-          label="JWT-Secret"
-          value={s.system.jwt_secure ? "Sicher" : "Standardwert"}
-          state={s.system.jwt_secure ? "ok" : "warn"}
-        />
-        <Highlight
-          label="Umgebung"
-          value={s.system.app_env}
-          state={
-            s.system.app_env === "production" || s.system.app_env === "prod"
-              ? "ok"
-              : "neutral"
-          }
-        />
-      </div>
+    <div className={styles.statusBody}>
+      <section className={styles.overview} aria-labelledby="system-overview-title">
+        <div className={styles.overviewLead}>
+          <span className={styles.eyebrow}>Momentaufnahme</span>
+          <div className={styles.overviewTitleLine}>
+            <span
+              className={`${styles.overallIndicator} ${
+                warningCount === 0 ? styles.toneOk : styles.toneCritical
+              }`}
+              aria-hidden="true"
+            />
+            <h2 id="system-overview-title">
+              {warningCount === 0
+                ? "Kernsysteme stabil"
+                : warningCount === 1
+                  ? "Ein Hinweis benötigt Aufmerksamkeit"
+                  : `${warningCount} Hinweise benötigen Aufmerksamkeit`}
+            </h2>
+          </div>
+          <p>
+            Live-Prüfung von Zugriff, Kapazität und sicherheitsrelevanter
+            Konfiguration.
+          </p>
+        </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Deezer ARL auth */}
-        <Card
+        <div className={styles.telemetry} aria-hidden="true">
+          <span className={status.deezer.arl_ok ? styles.toneOk : styles.toneCritical} />
+          <span className={toneClass(diskTone)} />
+          <span className={status.system.jwt_secure ? styles.toneOk : styles.toneCritical} />
+          <span className={environmentIsProduction ? styles.toneOk : styles.toneNeutral} />
+        </div>
+
+        <div className={styles.signalGrid}>
+          <Signal
+            label="Deezer"
+            value={
+              status.deezer.arl_ok
+                ? "Angemeldet"
+                : status.deezer.arl_configured
+                  ? "ARL ungültig"
+                  : "Kein ARL"
+            }
+            tone={status.deezer.arl_ok ? "ok" : "critical"}
+          />
+          <Signal
+            label="Speicher"
+            value={`${Math.round(diskPct)} % belegt`}
+            tone={diskTone}
+          />
+          <Signal
+            label="JWT-Secret"
+            value={status.system.jwt_secure ? "Sicher" : "Standardwert"}
+            tone={status.system.jwt_secure ? "ok" : "critical"}
+          />
+          <Signal
+            label="Umgebung"
+            value={status.system.app_env}
+            tone={environmentIsProduction ? "ok" : "neutral"}
+          />
+        </div>
+      </section>
+
+      <div className={styles.panelGrid}>
+        <Panel
+          number="01"
+          kicker="Zugriff"
           title="Deezer-Authentifizierung"
           Icon={KeyIcon}
+          className={styles.authPanel}
           action={
-            s.deezer.arl_ok ? (
-              <Pill state="ok">Angemeldet</Pill>
-            ) : s.deezer.arl_configured ? (
-              <Pill state="warn">ARL ungültig / abgelaufen</Pill>
+            status.deezer.arl_ok ? (
+              <Pill tone="ok">Angemeldet</Pill>
+            ) : status.deezer.arl_configured ? (
+              <Pill tone="critical">ARL ungültig oder abgelaufen</Pill>
             ) : (
-              <Pill state="warn">Kein ARL gesetzt</Pill>
+              <Pill tone="critical">Kein ARL gesetzt</Pill>
             )
           }
         >
           <Row label="ARL-Token konfiguriert">
-            {s.deezer.arl_configured ? (
-              <Pill state="ok">Ja</Pill>
-            ) : (
-              <Pill state="warn">Nein</Pill>
-            )}
-          </Row>
-          <Row label="Login funktioniert">
-            {s.deezer.arl_ok ? (
-              <Pill state="ok">Ja</Pill>
-            ) : (
-              <Pill state="warn">Nein</Pill>
-            )}
-          </Row>
-          <Row label="Qualität">{s.deezer.quality}</Row>
-          {!s.deezer.arl_ok && (
-            <p className="text-xs text-muted mt-3 leading-relaxed">
-              Setze ein gültiges <code className="text-accent-soft">DEEZER_ARL</code>{" "}
-              in der API-Konfiguration und starte den Dienst neu. Ohne gültiges
-              ARL ist nur die Vorschau (30 s) verfügbar.
-            </p>
-          )}
-        </Card>
-
-        {/* System / config */}
-        <Card title="System" Icon={ServerIcon}>
-          <Row label="Umgebung">
-            <Pill
-              state={
-                s.system.app_env === "production" ||
-                s.system.app_env === "prod"
-                  ? "ok"
-                  : "neutral"
-              }
-            >
-              {s.system.app_env}
+            <Pill tone={status.deezer.arl_configured ? "ok" : "critical"}>
+              {status.deezer.arl_configured ? "Ja" : "Nein"}
             </Pill>
           </Row>
-          <Row label="Datenbank">{s.system.database}</Row>
-          <Row label="JWT-Secret">
-            {s.system.jwt_secure ? (
-              <Pill state="ok">Sicher</Pill>
-            ) : (
-              <Pill state="warn">Standardwert!</Pill>
-            )}
+          <Row label="Login funktioniert">
+            <Pill tone={status.deezer.arl_ok ? "ok" : "critical"}>
+              {status.deezer.arl_ok ? "Ja" : "Nein"}
+            </Pill>
           </Row>
-          <Row label="Secure-Cookies (HTTPS)">
-            {s.system.cookie_secure ? (
-              <Pill state="ok">Aktiv</Pill>
-            ) : (
-              <Pill state="neutral">Aus</Pill>
-            )}
-          </Row>
-        </Card>
-
-        {/* Storage */}
-        <Card title="Speicher" Icon={DiskIcon} className="lg:col-span-2">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-            <Stat value={s.storage.track_count} label="Titel gecacht" />
-            <Stat
-              value={formatBytes(s.storage.total_bytes)}
-              label="Belegt (Tracks)"
-            />
-            <Stat value={formatBytes(s.storage.disk_free)} label="Frei auf Disk" />
-            <Stat value={formatBytes(s.storage.disk_total)} label="Disk gesamt" />
-          </div>
-          {s.storage.disk_total > 0 && (
-            <div className="mb-3">
-              <div className="h-2.5 rounded-full bg-black/40 overflow-hidden ring-1 ring-white/5">
-                <div
-                  className={`h-full rounded-full ${
-                    diskState === "warn"
-                      ? "bg-red-500"
-                      : "gradient-violet glow-sm"
-                  }`}
-                  style={{ width: `${diskPct}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted mt-1.5">
-                {formatBytes(s.storage.disk_used)} von{" "}
-                {formatBytes(s.storage.disk_total)} belegt ·{" "}
-                {Math.round(diskPct)} %
-              </p>
-            </div>
-          )}
-          <p className="text-xs text-muted">
-            {s.storage.retention_days > 0
-              ? `Nicht gespielt seit ${s.storage.retention_days} Tagen → automatisch gelöscht`
-              : "Keine automatische Löschung"}{" "}
-            ·{" "}
-            <Link href="/account" className="underline hover:text-foreground">
-              Speicher verwalten
-            </Link>
-          </p>
-        </Card>
-
-        {/* Users */}
-        <Card title="Benutzer" Icon={UsersIcon}>
-          <div className="grid grid-cols-2 gap-3">
-            <Stat value={s.users.total} label="Gesamt" />
-            <Stat value={s.users.approved} label="Freigegeben" />
-            <Stat value={s.users.pending} label="Wartet auf Freigabe" />
-            <Stat value={s.users.admins} label="Admins" />
-          </div>
-          {s.users.pending > 0 && (
-            <p className="text-xs text-muted mt-3">
-              <Link href="/account" className="text-accent-soft hover:underline">
-                {s.users.pending} Benutzer freigeben →
-              </Link>
+          <Row label="Audioqualität">{status.deezer.quality}</Row>
+          {!status.deezer.arl_ok && (
+            <p className={styles.guidance}>
+              Setze ein gültiges <code>DEEZER_ARL</code> in der
+              API-Konfiguration und starte den Dienst neu. Ohne gültiges ARL ist
+              nur die 30-Sekunden-Vorschau verfügbar.
             </p>
           )}
-        </Card>
+        </Panel>
 
-        {/* Integrations */}
-        <Card title="Integrationen" Icon={PlugIcon}>
-          <Row label="Spotify (Link-Import)">
-            {s.integrations.spotify_configured ? (
-              <Pill state="ok">Konfiguriert</Pill>
-            ) : (
-              <Pill state="neutral">Nicht konfiguriert</Pill>
-            )}
-          </Row>
-          <Row label="Last.fm (Radio-Empfehlungen)">
-            {s.integrations.lastfm_configured ? (
-              <Pill state="ok">Konfiguriert</Pill>
-            ) : (
-              <Pill state="neutral">Nicht konfiguriert (Fallback aktiv)</Pill>
-            )}
-          </Row>
-        </Card>
+        <Panel
+          number="02"
+          kicker="Kapazität"
+          title="Speicher"
+          Icon={DiskIcon}
+          className={styles.storagePanel}
+          action={<Pill tone={diskTone}>{Math.round(diskPct)} % belegt</Pill>}
+        >
+          <div className={styles.storageMetrics}>
+            <Metric value={status.storage.track_count} label="Titel gecacht" />
+            <Metric value={formatBytes(status.storage.total_bytes)} label="Tracks" />
+            <Metric value={formatBytes(status.storage.disk_free)} label="Frei" />
+            <Metric value={formatBytes(status.storage.disk_total)} label="Gesamt" />
+          </div>
+          <div className={styles.capacityBlock}>
+            <div
+              className={styles.capacityTrack}
+              role="progressbar"
+              aria-label="Speicherauslastung"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(diskPct)}
+              aria-valuetext={`${formatBytes(status.storage.disk_used)} von ${formatBytes(status.storage.disk_total)} belegt`}
+            >
+              <span
+                className={`${styles.capacityFill} ${toneClass(diskTone)}`}
+                style={{ "--capacity": `${diskPct}%` } as React.CSSProperties}
+              />
+            </div>
+            <div className={styles.capacityMeta}>
+              <span>
+                {formatBytes(status.storage.disk_used)} von{" "}
+                {formatBytes(status.storage.disk_total)} belegt
+              </span>
+              <span>{Math.round(diskPct)} %</span>
+            </div>
+          </div>
+          <div className={styles.panelFooter}>
+            <span>
+              {status.storage.retention_days > 0
+                ? `Automatische Löschung nach ${status.storage.retention_days} inaktiven Tagen`
+                : "Keine automatische Löschung"}
+            </span>
+            <Link href="/account">
+              Speicher verwalten <ArrowIcon />
+            </Link>
+          </div>
+        </Panel>
 
-        {/* Content / data */}
-        <Card title="Inhalte" Icon={ContentIcon} className="lg:col-span-2">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            <Stat value={s.content.playlists} label="Playlists" />
-            <Stat value={s.content.likes} label="Likes" />
-            <Stat value={s.content.follows} label="Gefolgte Künstler" />
-            <Stat value={s.content.plays} label="Wiedergaben" />
-            <Stat value={s.content.stored_lyrics} label="Songtexte gecacht" />
-            <Stat value={s.content.parties} label="Party-Sessions" />
-            <Stat
-              value={`${s.content.invites_used} / ${s.content.invites_total}`}
+        <Panel
+          number="03"
+          kicker="Laufzeit"
+          title="System"
+          Icon={ServerIcon}
+          className={styles.systemPanel}
+        >
+          <Row label="Umgebung">
+            <Pill tone={environmentIsProduction ? "ok" : "neutral"}>
+              {status.system.app_env}
+            </Pill>
+          </Row>
+          <Row label="Datenbank">{status.system.database}</Row>
+          <Row label="JWT-Secret">
+            <Pill tone={status.system.jwt_secure ? "ok" : "critical"}>
+              {status.system.jwt_secure ? "Sicher" : "Standardwert"}
+            </Pill>
+          </Row>
+          <Row label="Secure-Cookies">
+            <Pill
+              tone={
+                status.system.cookie_secure
+                  ? "ok"
+                  : cookiesAreCritical
+                    ? "critical"
+                    : "neutral"
+              }
+            >
+              {status.system.cookie_secure ? "Aktiv" : "Aus"}
+            </Pill>
+          </Row>
+        </Panel>
+
+        <Panel
+          number="04"
+          kicker="Zugänge"
+          title="Benutzer"
+          Icon={UsersIcon}
+          className={styles.usersPanel}
+        >
+          <div className={styles.metricGrid}>
+            <Metric value={status.users.total} label="Gesamt" />
+            <Metric value={status.users.approved} label="Freigegeben" />
+            <Metric value={status.users.pending} label="Ausstehend" />
+            <Metric value={status.users.admins} label="Admins" />
+          </div>
+          {status.users.pending > 0 && (
+            <Link href="/account" className={styles.inlineLink}>
+              {numberFormatter.format(status.users.pending)} ausstehende{" "}
+              {status.users.pending === 1 ? "Freigabe" : "Freigaben"}
+              <ArrowIcon />
+            </Link>
+          )}
+        </Panel>
+
+        <Panel
+          number="05"
+          kicker="Dienste"
+          title="Integrationen"
+          Icon={PlugIcon}
+          className={styles.integrationsPanel}
+        >
+          <Row label="Spotify · Link-Import">
+            <Pill
+              tone={
+                status.integrations.spotify_configured ? "ok" : "neutral"
+              }
+            >
+              {status.integrations.spotify_configured
+                ? "Konfiguriert"
+                : "Nicht konfiguriert"}
+            </Pill>
+          </Row>
+          <Row label="Last.fm · Empfehlungen">
+            <Pill
+              tone={status.integrations.lastfm_configured ? "ok" : "neutral"}
+            >
+              {status.integrations.lastfm_configured
+                ? "Konfiguriert"
+                : "Nicht konfiguriert"}
+            </Pill>
+          </Row>
+        </Panel>
+
+        <Panel
+          number="06"
+          kicker="Bibliothek"
+          title="Inhalte"
+          Icon={ContentIcon}
+          className={styles.contentPanel}
+        >
+          <div className={styles.contentMetrics}>
+            <Metric value={status.content.playlists} label="Playlists" />
+            <Metric value={status.content.likes} label="Likes" />
+            <Metric value={status.content.follows} label="Gefolgte Künstler" />
+            <Metric value={status.content.plays} label="Wiedergaben" />
+            <Metric value={status.content.stored_lyrics} label="Songtexte" />
+            <Metric value={status.content.parties} label="Party-Sessions" />
+            <Metric
+              value={`${numberFormatter.format(status.content.invites_used)} / ${numberFormatter.format(status.content.invites_total)}`}
               label="Einladungen genutzt"
             />
           </div>
-        </Card>
+        </Panel>
       </div>
     </div>
   );
 }
 
 export default function StatusPage() {
-  const { data: me, isLoading: meLoading } = useMe();
-  const qc = useQueryClient();
-
+  const queryClient = useQueryClient();
+  const {
+    data: me,
+    isLoading: meLoading,
+    error: meError,
+    isFetching: meFetching,
+  } = useQuery({
+    queryKey: ["status-auth"],
+    queryFn: api.me,
+    retry: false,
+    staleTime: 60_000,
+  });
   const {
     data: status,
+    dataUpdatedAt,
     isLoading,
     isFetching,
     error,
   } = useQuery<SystemStatus>({
     queryKey: ["admin-status"],
-    queryFn: api.adminStatus,
+    queryFn: fetchSystemStatus,
     enabled: !!me?.is_admin,
   });
 
   if (meLoading) {
-    return <p className="text-muted">Lädt…</p>;
-  }
-
-  if (!me?.is_admin) {
     return (
-      <div className="max-w-md">
-        <h1 className="text-3xl font-extrabold mb-3">Systemstatus</h1>
-        <p className="text-muted mb-4">
-          Diese Seite ist nur für Administratoren zugänglich.
-        </p>
-        <Link
-          href="/"
-          className="inline-block px-5 py-2 rounded-full bg-accent text-white hover:bg-accent-hover"
-        >
-          Zur Startseite
-        </Link>
+      <div className={styles.gate} role="status">
+        <span className={styles.gateIcon} aria-hidden="true">
+          <ServerIcon />
+        </span>
+        <span className={styles.eyebrow}>Admin-Konsole</span>
+        <p>Berechtigung wird geprüft…</p>
       </div>
     );
   }
 
-  return (
-    <div className="animate-in flex flex-col gap-6 w-full max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-extrabold">Systemstatus</h1>
-          <p className="text-sm text-muted mt-1">
-            Auth, Speicher, Benutzer &amp; Konfiguration auf einen Blick.
-          </p>
-        </div>
+  if (meError) {
+    return (
+      <section className={styles.gate} role="alert">
+        <span className={styles.gateIcon} aria-hidden="true">
+          <KeyIcon />
+        </span>
+        <span className={styles.eyebrow}>Berechtigungsprüfung fehlgeschlagen</span>
+        <h1>Systemstatus</h1>
+        <p>
+          {meError instanceof ApiError
+            ? meError.message
+            : meError instanceof Error
+              ? meError.message
+              : "Die Administratorrechte konnten nicht geprüft werden."}
+        </p>
         <button
           type="button"
-          onClick={() => qc.invalidateQueries({ queryKey: ["admin-status"] })}
-          disabled={isFetching}
-          className="press inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-white/[0.06] ring-1 ring-white/10 hover:bg-white/10 disabled:opacity-50"
+          onClick={() =>
+            queryClient.invalidateQueries({ queryKey: ["status-auth"] })
+          }
+          disabled={meFetching}
+          className={styles.errorRetry}
         >
-          <svg
-            viewBox="0 0 24 24"
-            width={15}
-            height={15}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className={isFetching ? "animate-spin" : ""}
-          >
-            <path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" />
-          </svg>
-          {isFetching ? "Aktualisiert…" : "Aktualisieren"}
+          {meFetching ? "Wird erneut geprüft…" : "Erneut prüfen"}
         </button>
-      </div>
+      </section>
+    );
+  }
+
+  if (!me?.is_admin) {
+    return (
+      <section className={styles.gate}>
+        <span className={styles.gateIcon} aria-hidden="true">
+          <KeyIcon />
+        </span>
+        <span className={styles.eyebrow}>Geschützter Bereich</span>
+        <h1>Systemstatus</h1>
+        <p>Diese Seite ist ausschließlich für Administratoren zugänglich.</p>
+        <Link href="/" className={styles.primaryLink}>
+          Zur Startseite <ArrowIcon />
+        </Link>
+      </section>
+    );
+  }
+
+  const updatedAt =
+    status && dataUpdatedAt > 0
+      ? timeFormatter.format(new Date(dataUpdatedAt))
+      : null;
+
+  return (
+    <div className={styles.page} aria-busy={isFetching}>
+      <header className={styles.pageHeader}>
+        <div>
+          <Link href="/account" className={styles.backLink}>
+            <BackIcon /> Konto
+          </Link>
+          <span className={styles.eyebrow}>Admin-Konsole · Live-Diagnose</span>
+          <h1>Systemstatus</h1>
+          <p>Auth, Speicher, Benutzer und Konfiguration auf einen Blick.</p>
+        </div>
+
+        <div className={styles.headerActions}>
+          <div className={styles.refreshStamp} aria-live="polite">
+            <span>{isFetching ? "Status" : "Zuletzt geprüft"}</span>
+            <strong>
+              {isFetching
+                ? "Wird aktualisiert…"
+                : updatedAt ?? "Noch keine Messung"}
+            </strong>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ["admin-status"] })
+            }
+            disabled={isFetching}
+            className={styles.refreshButton}
+          >
+            <RefreshIcon className={isFetching ? styles.refreshing : ""} />
+            {isFetching ? "Wird aktualisiert…" : "Neu prüfen"}
+          </button>
+        </div>
+      </header>
 
       {isLoading && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 rounded-2xl skeleton" />
-          ))}
+        <div className={styles.loadingRegion} role="status">
+          <span className={styles.srOnly}>Systemstatus wird geladen.</span>
+          <div className={styles.loadingSignals} aria-hidden="true">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span key={index} />
+            ))}
+          </div>
+          <div className={styles.loadingPanels} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
         </div>
       )}
+
       {error && (
-        <p className="text-red-400 text-sm">
-          {error instanceof ApiError
-            ? error.message
-            : "Status konnte nicht geladen werden."}
-        </p>
+        <div className={styles.errorPanel} role="alert">
+          <div>
+            <span className={styles.eyebrow}>Diagnose fehlgeschlagen</span>
+            <strong>Status konnte nicht vollständig aktualisiert werden.</strong>
+            <p>
+              {error instanceof ApiError
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : "Status konnte nicht geladen werden."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ["admin-status"] })
+            }
+            disabled={isFetching}
+            className={styles.errorRetry}
+          >
+            Erneut prüfen
+          </button>
+        </div>
       )}
 
-      {status && <StatusBody s={status} />}
+      {status && <StatusBody status={status} />}
     </div>
   );
 }

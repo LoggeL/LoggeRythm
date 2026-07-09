@@ -1,11 +1,12 @@
-import React, { useEffect } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NavigationContainer, DarkTheme, type Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useAuth } from './auth/AuthContext';
 import { ensurePlayer } from './player/setup';
-import { publishBrowseTree } from './player/browseTree';
+import { cancelBrowseTreePublication, refreshBrowseTree } from './player/browseTree';
+import { clearPlayerError, reportPlayerError, usePlayerError } from './player/errors';
 import MiniPlayer from './components/MiniPlayer';
 import SearchScreen from './screens/SearchScreen';
 import LibraryScreen from './screens/LibraryScreen';
@@ -43,9 +44,19 @@ const RootStack = createNativeStackNavigator<RootStackParams>();
 
 function LogoutButton() {
   const { logout } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const onLogout = async () => {
+    setBusy(true);
+    try {
+      await logout();
+    } catch (error) {
+      Alert.alert('Logout failed', (error as Error).message);
+      setBusy(false);
+    }
+  };
   return (
-    <Pressable onPress={() => void logout()} hitSlop={12}>
-      <Text style={{ color: colors.textDim, fontSize: 14 }}>Log out</Text>
+    <Pressable accessibilityRole="button" onPress={() => void onLogout()} disabled={busy} hitSlop={12}>
+      <Text style={styles.logout}>{busy ? 'Logging out…' : 'Log out'}</Text>
     </Pressable>
   );
 }
@@ -53,10 +64,7 @@ function LogoutButton() {
 function LibraryNavigator() {
   return (
     <LibraryStack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.bg },
-        headerTintColor: colors.text,
-      }}
+      screenOptions={{ headerStyle: { backgroundColor: colors.bg }, headerTintColor: colors.text }}
     >
       <LibraryStack.Screen
         name="LibraryHome"
@@ -72,9 +80,22 @@ function LibraryNavigator() {
   );
 }
 
+function PlayerErrorBanner() {
+  const error = usePlayerError();
+  if (!error) return null;
+  return (
+    <View style={styles.errorBanner} accessibilityRole="alert">
+      <Text style={styles.errorText} numberOfLines={3}>{error}</Text>
+      <Pressable accessibilityRole="button" onPress={clearPlayerError} hitSlop={10}>
+        <Text style={styles.dismiss}>Dismiss</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function Tabs() {
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.fill}>
       <Tab.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: colors.bg },
@@ -87,7 +108,7 @@ function Tabs() {
         <Tab.Screen
           name="Search"
           component={SearchScreen}
-          options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>🔍</Text> }}
+          options={{ tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>⌕</Text> }}
         />
         <Tab.Screen
           name="LibraryTab"
@@ -95,25 +116,70 @@ function Tabs() {
           options={{
             headerShown: false,
             title: 'Library',
-            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>📚</Text>,
+            tabBarIcon: ({ color }) => <Text style={{ color, fontSize: 18 }}>♫</Text>,
           }}
         />
       </Tab.Navigator>
+      <PlayerErrorBanner />
       <MiniPlayer />
     </View>
   );
 }
 
-/** Root navigator for the authenticated app; boots the player + Android Auto tree. */
-export default function RootNavigator() {
-  useEffect(() => {
-    (async () => {
-      await ensurePlayer();
-      // Populate the Android Auto / CarPlay browse tree from the library.
-      publishBrowseTree().catch((e) => console.warn('browse tree publish failed:', e.message));
-    })();
-  }, []);
+function PlayerStartupError({ message, retry }: { message: string; retry: () => void }) {
+  return (
+    <View style={styles.startupState}>
+      <Text style={styles.startupTitle}>Audio player couldn’t start</Text>
+      <Text style={styles.startupMessage}>{message}</Text>
+      <Pressable accessibilityRole="button" style={styles.retryButton} onPress={retry}>
+        <Text style={styles.retryText}>Retry</Text>
+      </Pressable>
+    </View>
+  );
+}
 
+/** Authenticated navigator, gated until native audio initialization succeeds. */
+export default function RootNavigator() {
+  const [ready, setReady] = useState(false);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let mounted = true;
+    void Promise.resolve().then(() => {
+      if (!mounted) return;
+      try {
+        ensurePlayer();
+        setReady(true);
+        void refreshBrowseTree().catch((error) => {
+          if (mounted) reportPlayerError('Android Auto library failed to load', error);
+        });
+      } catch (error) {
+        setStartupError((error as Error).message);
+      }
+    });
+    return () => {
+      mounted = false;
+      cancelBrowseTreePublication();
+    };
+  }, [attempt]);
+
+  const retry = () => {
+    setReady(false);
+    setStartupError(null);
+    setAttempt((value) => value + 1);
+  };
+
+  if (startupError) {
+    return <PlayerStartupError message={startupError} retry={retry} />;
+  }
+  if (!ready) {
+    return (
+      <View style={styles.startupState}>
+        <ActivityIndicator color={colors.accent} size="large" />
+      </View>
+    );
+  }
   return (
     <NavigationContainer theme={navTheme}>
       <RootStack.Navigator>
@@ -127,3 +193,36 @@ export default function RootNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+  logout: { color: colors.textDim, fontSize: 14 },
+  errorBanner: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 126,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.error,
+    backgroundColor: colors.surfaceAlt,
+    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  errorText: { color: colors.error, fontSize: 12, flex: 1 },
+  dismiss: { color: colors.text, fontSize: 12, fontWeight: '700' },
+  startupState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+    padding: 28,
+    gap: 14,
+  },
+  startupTitle: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  startupMessage: { color: colors.error, fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  retryButton: { backgroundColor: colors.accent, borderRadius: 22, paddingHorizontal: 28, paddingVertical: 12 },
+  retryText: { color: '#000', fontSize: 15, fontWeight: '700' },
+});

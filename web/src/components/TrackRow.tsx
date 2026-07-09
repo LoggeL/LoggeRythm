@@ -75,8 +75,9 @@ export default function TrackRow({
 
   return (
     <div
+      data-track-id={String(track.id)}
       onContextMenu={handleContextMenu}
-      className="group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_4fr_3fr_auto] items-center gap-3 px-3 py-2 rounded-md hover:bg-panel-hover transition"
+      className="like-celebration-surface group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_4fr_3fr_auto] items-center gap-3 px-3 py-2 rounded-md hover:bg-panel-hover transition"
     >
       {/* index / play */}
       <div className="w-8 flex items-center justify-center text-muted text-sm">
@@ -208,7 +209,7 @@ export default function TrackRow({
             </div>
           </div>
         ) : null}
-        <LikeButton track={track} />
+        <LikeButton key={track.id} track={track} />
         <button
           type="button"
           onClick={() => {

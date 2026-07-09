@@ -314,7 +314,7 @@ export default function PlayerBar() {
     incoming.src = streamUrl(String(nextTrack.id));
     incoming.dataset.trackId = String(nextTrack.id);
     incoming.currentTime = 0;
-    applyVolume(incoming, 0);
+    applyVolume(incoming, 0, 0);
 
     const startedAt = performance.now();
     incoming
@@ -324,15 +324,15 @@ export default function PlayerBar() {
           const elapsed = (performance.now() - startedAt) / 1000;
           const pct = Math.min(1, elapsed / seconds);
           const targetVolume = muted ? 0 : perceptualVolume(volume);
-          applyVolume(outgoing, targetVolume * (1 - pct));
-          applyVolume(incoming, targetVolume * pct);
+          applyVolume(outgoing, targetVolume * (1 - pct), 1 - pct);
+          applyVolume(incoming, targetVolume * pct, pct);
 
           if (pct >= 1) {
             if (crossfadeTimer.current) {
               window.clearInterval(crossfadeTimer.current);
               crossfadeTimer.current = null;
             }
-            applyVolume(incoming, targetVolume);
+            applyVolume(incoming, targetVolume, 1);
             // The incoming deck simply keeps playing — promote it to active and
             // advance the queue index without touching currentTime.
             outgoing.pause();
@@ -674,7 +674,7 @@ export default function PlayerBar() {
     <>
       {expanded && track && <NowPlaying onClose={closeFullscreen} />}
       <footer
-        className={`relative flex-shrink-0 backdrop-blur-xl px-3 sm:px-4 py-2 sm:py-0 pb-2 sm:pb-0 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 ${
+        className={`like-celebration-surface relative flex-shrink-0 backdrop-blur-xl px-3 sm:px-4 py-2 sm:py-0 pb-2 sm:pb-0 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 ${
           hasTrack
             ? "mx-3 mb-2 rounded-2xl border border-white/10 bg-background-elevated/95 shadow-2xl shadow-black/25 min-h-24 sm:mx-0 sm:mb-0 sm:rounded-none sm:border-x-0 sm:border-b-0 sm:min-h-0 sm:h-20"
             : "bg-background-elevated/95 border-t border-white/10 min-h-16 sm:h-20"
@@ -741,7 +741,7 @@ export default function PlayerBar() {
                 )}
               </div>
               <div className="hidden sm:block">
-                <LikeButton track={track} />
+                <LikeButton key={track.id} track={track} />
               </div>
             </TrackContext>
           ) : (

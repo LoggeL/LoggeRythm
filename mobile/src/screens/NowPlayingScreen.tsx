@@ -2,22 +2,30 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Slider from '@react-native-community/slider';
-import { useActiveMediaItem, useIsPlaying, useProgress, usePlaybackState, PlaybackState, RepeatMode } from '@rntp/player';
-import TrackPlayer from '@rntp/player';
+import TrackPlayer, {
+  PlaybackState,
+  RepeatMode,
+  useActiveMediaItem,
+  useIsPlaying,
+  usePlaybackState,
+  useProgress,
+} from '@rntp/player';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as api from '../api/endpoints';
+import { refreshBrowseTree } from '../player/browseTree';
 import { mediaItemToTrack } from '../player/mediaItem';
 import { cycleRepeat, next, prev, seekTo, toggleShuffle, togglePlay } from '../player/controller';
+import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/errors';
 import type { RootStackParams } from '../navigation';
 import { colors } from '../theme';
 
 type Props = NativeStackScreenProps<RootStackParams, 'NowPlaying'>;
 
-function fmt(sec: number): string {
-  if (!isFinite(sec) || sec < 0) sec = 0;
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+function fmt(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.floor(seconds % 60);
+  return `${minutes}:${remainder.toString().padStart(2, '0')}`;
 }
 
 export default function NowPlayingScreen({ navigation }: Props) {
@@ -27,52 +35,96 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const playbackState = usePlaybackState();
   const { position, duration } = useProgress(0.5);
   const track = mediaItemToTrack(item);
-  const buffering = playbackState === PlaybackState.Buffering;
+  const playerError = usePlayerError();
 
-  const [seekValue, setSeekValue] = useState<number | null>(null);
-  const [repeat, setRepeat] = useState<RepeatMode>(RepeatMode.Off);
-  const [shuffle, setShuffle] = useState(false);
-  const [liked, setLiked] = useState(false);
+  const [seekState, setSeekState] = useState<{ trackId: string; value: number } | null>(null);
+  const [repeat, setRepeat] = useState<RepeatMode>(() => TrackPlayer.getRepeatMode());
+  const [shuffle, setShuffle] = useState(() => TrackPlayer.isShuffleEnabled());
+  const [likeState, setLikeState] = useState<{
+    trackId: string;
+    liked: boolean;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
-    setRepeat(TrackPlayer.getRepeatMode());
-    setShuffle(TrackPlayer.isShuffleEnabled());
-  }, []);
-
-  useEffect(() => {
-    if (!track) return;
-    let alive = true;
-    api
-      .likesContains([track.id])
-      .then((m) => alive && setLiked(!!m[String(track.id)]))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
+    const trackId = track?.id;
+    if (!trackId) return;
+    const controller = new AbortController();
+    void api
+      .likesContains([trackId], controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        if (!(trackId in result)) {
+          throw new Error(`Like lookup omitted track ${trackId}`);
+        }
+        setLikeState({ trackId, liked: result[trackId], loading: false, error: null });
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) {
+          setLikeState({ trackId, liked: false, loading: false, error: (cause as Error).message });
+        }
+      });
+    return () => controller.abort();
   }, [track?.id]);
 
   const toggleLike = async () => {
     if (!track) return;
-    const wasLiked = liked;
-    setLiked(!wasLiked);
+    const currentLike =
+      likeState?.trackId === track.id
+        ? likeState
+        : { trackId: track.id, liked: false, loading: true, error: null };
+    if (currentLike.loading) return;
+    const targetId = track.id;
+    const nextLiked = !currentLike.liked;
+    setLikeState({ ...currentLike, loading: true, error: null });
     try {
-      if (wasLiked) await api.unlikeTrack(track.id);
-      else await api.likeTrack(track);
-    } catch {
-      setLiked(wasLiked); // revert on failure
+      if (nextLiked) await api.likeTrack(track);
+      else await api.unlikeTrack(targetId);
+      if (mediaItemToTrack(TrackPlayer.getActiveMediaItem())?.id === targetId) {
+        setLikeState({ trackId: targetId, liked: nextLiked, loading: false, error: null });
+      }
+      void refreshBrowseTree().catch((cause) =>
+        reportPlayerError('Android Auto library refresh failed', cause),
+      );
+    } catch (cause) {
+      if (mediaItemToTrack(TrackPlayer.getActiveMediaItem())?.id === targetId) {
+        setLikeState({
+          trackId: targetId,
+          liked: currentLike.liked,
+          loading: false,
+          error: (cause as Error).message,
+        });
+      }
+    }
+  };
+
+  const run = (label: string, action: () => void) => {
+    try {
+      action();
+    } catch (cause) {
+      reportPlayerError(label, cause);
     }
   };
 
   if (!track) {
     return (
-      <View style={[styles.container, styles.empty]}>
+      <View style={[styles.container, styles.empty, { paddingTop: insets.top }]}>
+        <Pressable style={styles.emptyClose} onPress={() => navigation.goBack()}>
+          <Text style={styles.closeText}>⌄</Text>
+        </Pressable>
         <Text style={styles.dim}>Nothing playing.</Text>
       </View>
     );
   }
 
-  const sliderPos = seekValue ?? position;
-  const repeatLabel = repeat === RepeatMode.One ? '🔂' : '🔁';
+  const buffering = playbackState === PlaybackState.Buffering;
+  const currentLike =
+    likeState?.trackId === track.id
+      ? likeState
+      : { trackId: track.id, liked: false, loading: true, error: null };
+  const sliderPosition = seekState?.trackId === track.id ? seekState.value : position;
+  const repeatLabel = repeat === RepeatMode.One ? '1↻' : '↻';
 
   return (
     <View
@@ -81,8 +133,14 @@ export default function NowPlayingScreen({ navigation }: Props) {
         { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
       ]}
     >
-      <Pressable style={styles.closeBtn} onPress={() => navigation.goBack()} hitSlop={16}>
-        <Text style={styles.closeText}>▾</Text>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Close Now Playing"
+        style={styles.closeButton}
+        onPress={() => navigation.goBack()}
+        hitSlop={16}
+      >
+        <Text style={styles.closeText}>⌄</Text>
       </Pressable>
 
       <View style={styles.artWrap}>
@@ -94,62 +152,80 @@ export default function NowPlayingScreen({ navigation }: Props) {
       </View>
 
       <View style={styles.titleRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.title} numberOfLines={1}>
-            {track.title}
-          </Text>
-          <Text style={styles.artist} numberOfLines={1}>
-            {track.artist}
-          </Text>
+        <View style={styles.titleMeta}>
+          <Text style={styles.title} numberOfLines={1}>{track.title}</Text>
+          <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
         </View>
-        <Pressable onPress={toggleLike} hitSlop={12}>
-          <Text style={[styles.heart, liked && styles.heartOn]}>{liked ? '♥' : '♡'}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={currentLike.liked ? 'Unlike track' : 'Like track'}
+          accessibilityState={{ checked: currentLike.liked, disabled: currentLike.loading }}
+          onPress={() => void toggleLike()}
+          disabled={currentLike.loading}
+          hitSlop={12}
+          style={styles.likeButton}
+        >
+          {currentLike.loading ? (
+            <ActivityIndicator color={colors.accent} size="small" />
+          ) : (
+            <Text style={[styles.heart, currentLike.liked && styles.heartOn]}>{currentLike.liked ? '♥' : '♡'}</Text>
+          )}
         </Pressable>
       </View>
+      {currentLike.error && <Text style={styles.inlineError} accessibilityRole="alert">Like failed: {currentLike.error}</Text>}
+      {playerError && (
+        <Pressable accessibilityRole="button" accessibilityHint="Dismiss error" onPress={clearPlayerError}>
+          <Text style={styles.inlineError}>{playerError}</Text>
+        </Pressable>
+      )}
 
       <Slider
+        accessibilityLabel="Playback position"
         style={styles.slider}
         minimumValue={0}
         maximumValue={Math.max(duration, 1)}
-        value={sliderPos}
+        value={Math.min(sliderPosition, Math.max(duration, 1))}
         minimumTrackTintColor={colors.accent}
         maximumTrackTintColor={colors.surfaceAlt}
         thumbTintColor={colors.accent}
-        onValueChange={setSeekValue}
-        onSlidingComplete={(v) => {
-          seekTo(v);
-          setSeekValue(null);
+        onValueChange={(value) => setSeekState({ trackId: track.id, value })}
+        onSlidingComplete={(value) => {
+          run('Seeking failed', () => seekTo(value));
+          setSeekState(null);
         }}
       />
       <View style={styles.timeRow}>
-        <Text style={styles.time}>{fmt(sliderPos)}</Text>
+        <Text style={styles.time}>{fmt(sliderPosition)}</Text>
         <Text style={styles.time}>{fmt(duration)}</Text>
       </View>
 
       <View style={styles.controls}>
         <Pressable
-          onPress={() => setShuffle(toggleShuffle())}
+          accessibilityRole="button"
+          accessibilityLabel={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+          accessibilityState={{ checked: shuffle }}
+          onPress={() => run('Changing shuffle failed', () => setShuffle(toggleShuffle()))}
           hitSlop={12}
         >
-          <Text style={[styles.secondaryBtn, shuffle && styles.activeBtn]}>🔀</Text>
+          <Text style={[styles.secondaryButton, shuffle && styles.activeButton]}>⇄</Text>
         </Pressable>
-        <Pressable onPress={prev} hitSlop={12}>
-          <Text style={styles.skipBtn}>⏮</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Previous track" onPress={() => run('Previous track failed', prev)} hitSlop={12}>
+          <Text style={styles.skipButton}>|◀</Text>
         </Pressable>
-        <Pressable style={styles.playBtn} onPress={togglePlay}>
-          {buffering ? (
-            <ActivityIndicator color="#000" />
-          ) : (
-            <Text style={styles.playIcon}>{playing ? '⏸' : '▶'}</Text>
-          )}
+        <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause' : 'Play'} style={styles.playButton} onPress={() => run('Play/pause failed', togglePlay)}>
+          {buffering ? <ActivityIndicator color="#000" /> : <Text style={styles.playIcon}>{playing ? 'Ⅱ' : '▶'}</Text>}
         </Pressable>
-        <Pressable onPress={next} hitSlop={12}>
-          <Text style={styles.skipBtn}>⏭</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Next track" onPress={() => run('Next track failed', next)} hitSlop={12}>
+          <Text style={styles.skipButton}>▶|</Text>
         </Pressable>
-        <Pressable onPress={() => setRepeat(cycleRepeat())} hitSlop={12}>
-          <Text style={[styles.secondaryBtn, repeat !== RepeatMode.Off && styles.activeBtn]}>
-            {repeatLabel}
-          </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Change repeat mode"
+          accessibilityState={{ checked: repeat !== RepeatMode.Off }}
+          onPress={() => run('Changing repeat failed', () => setRepeat(cycleRepeat()))}
+          hitSlop={12}
+        >
+          <Text style={[styles.secondaryButton, repeat !== RepeatMode.Off && styles.activeButton]}>{repeatLabel}</Text>
         </Pressable>
       </View>
     </View>
@@ -159,27 +235,29 @@ export default function NowPlayingScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 28 },
   empty: { alignItems: 'center', justifyContent: 'center' },
+  emptyClose: { position: 'absolute', left: 28, top: 40, padding: 8 },
   dim: { color: colors.textDim },
-  closeBtn: { alignSelf: 'flex-start', paddingVertical: 8 },
-  closeText: { color: colors.text, fontSize: 22 },
-  // Flexible middle: artwork scales to fill available space and shrinks on
-  // small screens so the title/slider/controls below always stay visible.
+  closeButton: { alignSelf: 'flex-start', paddingVertical: 8 },
+  closeText: { color: colors.text, fontSize: 26 },
   artWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 0 },
   art: { width: '100%', aspectRatio: 1, maxHeight: '100%', borderRadius: 12, backgroundColor: colors.surfaceAlt },
   artPlaceholder: { borderWidth: 1, borderColor: colors.border },
   titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 12 },
+  titleMeta: { minWidth: 0, flex: 1 },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
   artist: { color: colors.textDim, fontSize: 16, marginTop: 4 },
+  likeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   heart: { color: colors.textDim, fontSize: 28 },
   heartOn: { color: colors.accent },
-  slider: { width: '100%', height: 40, marginTop: 24 },
+  inlineError: { color: colors.error, fontSize: 12, marginTop: 8 },
+  slider: { width: '100%', height: 40, marginTop: 16 },
   timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -6 },
   time: { color: colors.textDim, fontSize: 12 },
   controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 28 },
-  secondaryBtn: { color: colors.textDim, fontSize: 22 },
-  activeBtn: { color: colors.accent },
-  skipBtn: { color: colors.text, fontSize: 34 },
-  playBtn: {
+  secondaryButton: { color: colors.textDim, fontSize: 22 },
+  activeButton: { color: colors.accent },
+  skipButton: { color: colors.text, fontSize: 28 },
+  playButton: {
     width: 72,
     height: 72,
     borderRadius: 36,

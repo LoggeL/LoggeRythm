@@ -16,6 +16,10 @@ export default function TrackRow({
 }) {
   return (
     <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${track.title} by ${track.artist}`}
+      accessibilityHint={onLongPress ? 'Long press for queue and radio actions' : undefined}
+      accessibilityState={{ selected: active === true }}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       onPress={onPress}
       onLongPress={onLongPress}
@@ -38,7 +42,7 @@ export default function TrackRow({
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 16, gap: 12 },
+  row: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 16, gap: 12 },
   pressed: { backgroundColor: colors.surface },
   cover: { width: 48, height: 48, borderRadius: 6, backgroundColor: colors.surfaceAlt },
   coverPlaceholder: { borderWidth: 1, borderColor: colors.border },

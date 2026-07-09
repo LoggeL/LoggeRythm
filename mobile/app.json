@@ -3,10 +3,9 @@
     "name": "LoggeRythm",
     "slug": "loggerythm",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -15,6 +14,7 @@
     },
     "android": {
       "package": "top.logge.loggerythm",
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#0b0b0d",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,6 +27,11 @@
         "WAKE_LOCK",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ]
     },
     "web": {
@@ -43,6 +48,14 @@
       ],
       "./plugins/withAndroidAuto",
       "./plugins/withNotificationIcon",
+      "./plugins/withReleaseSigning",
+      "./plugins/withNoBackup",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": false
+        }
+      ],
       "expo-system-ui"
     ]
   }
