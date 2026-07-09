@@ -34,6 +34,12 @@ jobs:
           java-version: "17"
 
       - uses: android-actions/setup-android@v3
+        with:
+          # Skip the obsolete `tools` package (the setup-android default), which
+          # pulls in the flaky Android Emulator download we never use for a
+          # headless APK build. Gradle's AGP auto-fetches the platform and
+          # build-tools it needs; licenses are pre-accepted by this action.
+          packages: platform-tools
 
       - name: Install dependencies
         working-directory: mobile
