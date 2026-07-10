@@ -2,6 +2,7 @@
   --profile-primary: rgb(124, 92, 255);
   --profile-secondary: rgb(255, 110, 199);
   width: min(100%, 80rem);
+  min-width: 0;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1892,7 +1893,6 @@ input.crossfadeRange::-moz-range-thumb {
 
   .tabNav {
     top: 4.4rem;
-    margin-inline: -0.15rem;
     border-radius: 1.25rem;
   }
 
