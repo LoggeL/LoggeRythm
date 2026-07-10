@@ -1,30 +1,30 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { useEffect } from "react";
 import { useMe } from "@/hooks/useAuth";
+import {
+  RADAR_TITLE,
+  useReleaseRadar,
+  useReleaseRadarSeen,
+} from "@/hooks/useReleaseRadar";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
 import { RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
-import type { Track } from "@/types";
-
-const RADAR_TITLE = "Dein Release Radar";
 
 export default function RadarPage() {
   const { data: me } = useMe();
   const playQueue = usePlayerStore((s) => s.playQueue);
-
-  const radar = useQuery<Track[]>({
-    queryKey: ["release-radar"],
-    queryFn: () => api.releaseRadar(),
-    enabled: !!me,
-    staleTime: 60 * 60 * 1000,
-  });
+  const radar = useReleaseRadar(me);
 
   const tracks = radar.data ?? [];
   const cover = tracks.find((t) => t.cover)?.cover;
+  const { markVisibleTracksSeen } = useReleaseRadarSeen(me?.id, tracks);
+
+  useEffect(() => {
+    markVisibleTracksSeen();
+  }, [markVisibleTracksSeen]);
 
   return (
     <div className="animate-in">
@@ -62,8 +62,22 @@ export default function RadarPage() {
         </div>
       </header>
 
+      {radar.isError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+        >
+          Release Radar konnte nicht aktualisiert werden.
+          {tracks.length > 0 &&
+            " Die zuletzt geladenen Songs bleiben sichtbar."}{" "}
+          {radar.error.message}
+        </div>
+      )}
+
       {radar.isLoading ? (
         <RowListSkeleton />
+      ) : radar.isError && radar.data === undefined ? (
+        null
       ) : tracks.length === 0 ? (
         <p className="text-muted">
           Noch keine frischen Releases von deinen Künstler:innen. Folge Artists

@@ -7,6 +7,10 @@ import { playlistPath } from "@/lib/slugs";
 import { usePlayerStore } from "@/store/player";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { useMe } from "@/hooks/useAuth";
+import {
+  useReleaseRadar,
+  useReleaseRadarSeen,
+} from "@/hooks/useReleaseRadar";
 import Link from "next/link";
 import Logo from "@/components/Logo";
 import TrackCard from "@/components/TrackCard";
@@ -46,28 +50,24 @@ export default function HomePage() {
   const [chip, setChip] = useState("top");
 
   const activeMood = CHIPS.find((c) => c.key === chip)?.mood;
+  const userId = me ? String(me.id) : null;
 
   const mixes = useQuery<HomeShelf[]>({
-    queryKey: ["home-mixes"],
+    queryKey: ["home-mixes", userId],
     queryFn: () => api.homeMixes(),
-    enabled: chip === "top",
+    enabled: chip === "top" && userId !== null,
   });
   const becauseYouListened = useQuery<HomeShelf[]>({
-    queryKey: ["because-you-listened"],
+    queryKey: ["because-you-listened", userId],
     queryFn: () => api.becauseYouListened(),
-    enabled: chip === "top" && !!me,
+    enabled: chip === "top" && userId !== null,
   });
   const collections = useQuery<HomeShelf[]>({
     queryKey: ["home-collections"],
     queryFn: () => api.homeChartsCollections(),
     enabled: chip === "top",
   });
-  const radar = useQuery<Track[]>({
-    queryKey: ["release-radar"],
-    queryFn: () => api.releaseRadar(),
-    enabled: chip === "top" && !!me,
-    staleTime: 60 * 60 * 1000, // server caches per-artist for 24h anyway
-  });
+  const radar = useReleaseRadar(chip === "top" ? me : undefined);
   const releases = useQuery<AlbumSummary[]>({
     queryKey: ["new-releases"],
     queryFn: () => api.newReleases(),
@@ -91,9 +91,34 @@ export default function HomePage() {
 
   const hello = greeting(new Date().getHours());
   const name = me?.display_name ? `, ${me.display_name}` : "";
+  const radarTracks = radar.data ?? EMPTY_TRACKS;
+  const { unseenCount: unseenRadarCount } = useReleaseRadarSeen(
+    me?.id,
+    radarTracks,
+  );
   const recentFallback = (mixes.data ?? []).flatMap((shelf) => shelf.tracks);
   const displayRecent = recent.length > 0 ? recent : recentFallback;
   const recentTitle = recent.length > 0 ? "Zuletzt gehört" : "Direkt starten";
+  const refreshError = [
+    mixes.error,
+    becauseYouListened.error,
+    collections.error,
+    radar.error,
+    releases.error,
+    genres.error,
+    community.error,
+    mood.error,
+  ].find((error): error is Error => error instanceof Error);
+  const hasCachedDiscoveryData = [
+    mixes.data,
+    becauseYouListened.data,
+    collections.data,
+    radar.data,
+    releases.data,
+    genres.data,
+    community.data,
+    mood.data,
+  ].some((data) => data !== undefined);
 
   return (
     <div className="flex flex-col gap-7 md:gap-8">
@@ -136,6 +161,19 @@ export default function HomePage() {
           );
         })}
       </div>
+
+      {refreshError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+        >
+          Einige Inhalte konnten nicht aktualisiert werden.{" "}
+          {hasCachedDiscoveryData
+            ? "Die zuletzt geladenen Inhalte bleiben sichtbar. "
+            : "Es sind noch keine gespeicherten Inhalte vorhanden. "}
+          {refreshError.message}
+        </div>
+      )}
 
       {/* Mood view */}
       {activeMood && (
@@ -187,43 +225,50 @@ export default function HomePage() {
           {/* Für dich — curated mixes + Release Radar */}
           {(mixes.isLoading ||
             (mixes.data?.length ?? 0) > 0 ||
-            (radar.data ?? []).length > 0) && (
+            radarTracks.length > 0) && (
             <section className="animate-in">
               <h2 className="text-2xl font-bold mb-4">Für dich</h2>
-              {mixes.isLoading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="skeleton rounded-2xl min-h-[168px]" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                  {/* Release Radar — opens like a playlist at /radar */}
-                  {(radar.data ?? []).length > 0 && (
-                    <ShelfCard
-                      href="/radar"
-                      variant="hero"
-                      index={0}
-                      shelf={{
-                        key: "release-radar",
-                        title: "Dein Release Radar",
-                        subtitle:
-                          "Neues von Künstler:innen, die du hörst und folgst",
-                        cover: (radar.data ?? []).find((t) => t.cover)?.cover,
-                        tracks: radar.data ?? [],
-                      }}
-                    />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                {/* Radar remains visible while the slower mixes refresh. */}
+                {radarTracks.length > 0 && (
+                  <ShelfCard
+                    href="/radar"
+                    variant="hero"
+                    index={0}
+                    highlighted={unseenRadarCount > 0}
+                    statusBadge={
+                      unseenRadarCount > 0 ? `${unseenRadarCount} neu` : undefined
+                    }
+                    shelf={{
+                      key: "release-radar",
+                      title: "Dein Release Radar",
+                      subtitle:
+                        "Neues von Künstler:innen, die du hörst und folgst",
+                      cover: radarTracks.find((track) => track.cover)?.cover,
+                      tracks: radarTracks,
+                    }}
+                  />
+                )}
+                {(mixes.data ?? []).map((shelf, i) => (
+                  <ShelfCard
+                    key={shelf.key}
+                    href={`/mix/${encodeURIComponent(shelf.key)}`}
+                    shelf={shelf}
+                    index={i + 1}
+                    variant="hero"
+                  />
+                ))}
+                {mixes.isLoading &&
+                  mixes.data === undefined &&
+                  Array.from({ length: radarTracks.length > 0 ? 3 : 4 }).map(
+                    (_, i) => (
+                      <div
+                        key={`mix-skeleton-${i}`}
+                        className="skeleton rounded-2xl min-h-[168px]"
+                      />
+                    ),
                   )}
-                  {(mixes.data ?? []).map((shelf, i) => (
-                    <ShelfCard
-                      key={shelf.key}
-                      shelf={shelf}
-                      index={i + 1}
-                      variant="hero"
-                    />
-                  ))}
-                </div>
-              )}
+              </div>
             </section>
           )}
 

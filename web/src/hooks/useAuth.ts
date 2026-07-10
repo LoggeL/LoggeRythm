@@ -2,7 +2,8 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 import type { User } from "@/types";
 
 export function useMe() {
@@ -11,8 +12,9 @@ export function useMe() {
     queryFn: async () => {
       try {
         return await api.me();
-      } catch {
-        return null;
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) return null;
+        throw error;
       }
     },
     staleTime: 60_000,
@@ -24,14 +26,12 @@ export function useLogout() {
   const qc = useQueryClient();
   const router = useRouter();
   return async () => {
-    try {
-      await api.logout();
-    } catch {
-      // ignore
-    }
+    await api.logout();
+    qc.removeQueries({
+      predicate: (query) =>
+        shouldRemoveQueryForUserChange(query.queryKey),
+    });
     qc.setQueryData(["me"], null);
-    qc.invalidateQueries({ queryKey: ["likes"] });
-    qc.invalidateQueries({ queryKey: ["playlists"] });
     router.push("/");
   };
 }

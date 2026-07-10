@@ -17,7 +17,7 @@ export default function GenrePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data, isLoading, isError } = useQuery<GenreDetail>({
+  const { data, isLoading, isError, error } = useQuery<GenreDetail>({
     queryKey: ["genre", id],
     queryFn: () => api.genre(id),
     enabled: !!id,
@@ -31,8 +31,15 @@ export default function GenrePage({
         <RowListSkeleton />
       </div>
     );
-  if (isError || !data)
-    return <p className="text-red-400">Genre nicht gefunden.</p>;
+  if (!data) {
+    return (
+      <p className="text-red-400">
+        {isError
+          ? `Genre konnte nicht geladen werden: ${error.message}`
+          : "Genre nicht gefunden."}
+      </p>
+    );
+  }
 
   const tracks = data.tracks ?? [];
   const albums = data.albums ?? [];
@@ -40,6 +47,15 @@ export default function GenrePage({
 
   return (
     <div className="animate-in">
+      {isError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+        >
+          Genredaten konnten nicht aktualisiert werden. Der zuletzt geladene
+          Stand bleibt sichtbar. {error.message}
+        </div>
+      )}
       <header className="relative flex items-end gap-6 mb-6 rounded-xl overflow-hidden p-6 min-h-44 isolate">
         {data.picture && (
           // eslint-disable-next-line @next/next/no-img-element

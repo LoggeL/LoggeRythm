@@ -34,13 +34,16 @@ function themeFor(shelf: HomeShelf, index: number): string {
 /**
  * A curated shelf rendered as a designed card. `variant="hero"` is the wide
  * split card used for "Für dich" mixes (text left, gradient art right);
- * `variant="collection"` is the colourful chart tile. Clicking plays the shelf.
+ * `variant="collection"` is the colourful chart tile. Cards navigate when an
+ * `href` is supplied; otherwise clicking starts playback immediately.
  */
 export default function ShelfCard({
   shelf,
   index = 0,
   variant = "collection",
   href,
+  highlighted = false,
+  statusBadge,
 }: {
   shelf: HomeShelf;
   index?: number;
@@ -48,6 +51,9 @@ export default function ShelfCard({
   /** When set, the card navigates here (opens like a playlist) instead of
    * playing its tracks in place. */
   href?: string;
+  /** Visually emphasizes fresh content without relying on color alone. */
+  highlighted?: boolean;
+  statusBadge?: string;
 }) {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const theme = themeFor(shelf, index);
@@ -58,10 +64,18 @@ export default function ShelfCard({
 
   if (variant === "hero") {
     const tag = TAG_BY_KEY[shelf.key];
-    const heroClass =
-      "group relative flex w-full overflow-hidden rounded-2xl border border-white/10 bg-white/[0.055] shadow-xl shadow-black/15 hover-lift min-h-[168px]";
+    const heroClass = `group relative flex w-full overflow-hidden rounded-2xl border bg-white/[0.055] shadow-xl hover-lift min-h-[168px] ${
+      highlighted
+        ? "new-content-highlight border-accent/80 shadow-accent/25"
+        : "border-white/10 shadow-black/15"
+    }`;
     const heroInner = (
       <>
+        {statusBadge && (
+          <span className="absolute right-3 top-3 z-20 rounded-full bg-accent px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wide text-white shadow-lg shadow-accent/35">
+            {statusBadge}
+          </span>
+        )}
         {/* Gradient art on the right half (optionally tinted by the cover). */}
         <div className="absolute inset-y-0 right-0 w-3/5 overflow-hidden rounded-r-2xl">
           {shelf.cover && (
@@ -93,11 +107,20 @@ export default function ShelfCard({
       </>
     );
     return href ? (
-      <Link href={href} className={heroClass}>
+      <Link
+        href={href}
+        className={heroClass}
+        aria-label={statusBadge ? `${shelf.title}, ${statusBadge}` : undefined}
+      >
         {heroInner}
       </Link>
     ) : (
-      <button type="button" onClick={play} className={heroClass}>
+      <button
+        type="button"
+        onClick={play}
+        className={heroClass}
+        aria-label={statusBadge ? `${shelf.title}, ${statusBadge}` : undefined}
+      >
         {heroInner}
       </button>
     );
@@ -108,7 +131,7 @@ export default function ShelfCard({
     <button
       type="button"
       onClick={play}
-        className={`group relative block w-full overflow-hidden rounded-2xl aspect-[4/3] text-left border border-white/10 shadow-xl shadow-black/15 hover-lift ${theme}`}
+      className={`group relative block w-full overflow-hidden rounded-2xl aspect-[4/3] text-left border border-white/10 shadow-xl shadow-black/15 hover-lift ${theme}`}
     >
       {shelf.cover && (
         <>

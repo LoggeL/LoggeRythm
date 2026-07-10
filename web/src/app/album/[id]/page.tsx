@@ -24,7 +24,7 @@ export default function AlbumPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data, isLoading, isError } = useQuery<Album>({
+  const { data, isLoading, isError, error } = useQuery<Album>({
     queryKey: ["album", id],
     queryFn: () => api.album(id),
     enabled: !!id,
@@ -38,8 +38,15 @@ export default function AlbumPage({
         <RowListSkeleton />
       </div>
     );
-  if (isError || !data)
-    return <p className="text-red-400">Album nicht gefunden.</p>;
+  if (!data) {
+    return (
+      <p className="text-red-400">
+        {isError
+          ? `Album konnte nicht geladen werden: ${error.message}`
+          : "Album nicht gefunden."}
+      </p>
+    );
+  }
 
   const tracks = data.tracks ?? [];
   const year = data.release_date ? data.release_date.slice(0, 4) : "";
@@ -54,6 +61,15 @@ export default function AlbumPage({
 
   return (
     <div>
+      {isError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+        >
+          Albumdaten konnten nicht aktualisiert werden. Der zuletzt geladene
+          Stand bleibt sichtbar. {error.message}
+        </div>
+      )}
       <header className="flex items-end gap-6 mb-6">
         {data.cover ? (
           // eslint-disable-next-line @next/next/no-img-element

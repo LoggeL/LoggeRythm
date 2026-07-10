@@ -23,7 +23,7 @@ export default function AppShell({
 }) {
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
-  const { data: me, isLoading } = useMe();
+  const { data: me, isPending, isError, error } = useMe();
 
   // Reset scroll position on route change.
   useEffect(() => {
@@ -54,8 +54,10 @@ export default function AppShell({
     );
   }
 
+  if (isError) throw error;
+
   // Still resolving the session.
-  if (isLoading && me === undefined) {
+  if (isPending && me === undefined) {
     return (
       <div className="h-full flex items-center justify-center bg-background text-muted">
         Lädt…

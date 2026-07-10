@@ -32,6 +32,18 @@ export default function DiscoverPage() {
     queryKey: ["public-playlists"],
     queryFn: () => api.publicPlaylists(),
   });
+  const refreshError = [
+    collections.error,
+    genres.error,
+    releases.error,
+    community.error,
+  ].find((error): error is Error => error instanceof Error);
+  const hasCachedData = [
+    collections.data,
+    genres.data,
+    releases.data,
+    community.data,
+  ].some((data) => data !== undefined);
 
   return (
     <div className="flex flex-col gap-8 animate-in">
@@ -51,6 +63,19 @@ export default function DiscoverPage() {
           </div>
         </div>
       </header>
+
+      {refreshError && (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+        >
+          Entdecken-Inhalte konnten nicht vollständig aktualisiert werden.{" "}
+          {hasCachedData
+            ? "Der zuletzt geladene Stand bleibt sichtbar. "
+            : "Es ist noch kein gespeicherter Stand vorhanden. "}
+          {refreshError.message}
+        </div>
+      )}
 
       {/* Charts collections */}
       {(collections.isLoading || (collections.data?.length ?? 0) > 0) && (

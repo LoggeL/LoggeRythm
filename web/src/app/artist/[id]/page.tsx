@@ -23,7 +23,7 @@ export default function ArtistPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data, isLoading, isError } = useQuery<Artist>({
+  const { data, isLoading, isError, error } = useQuery<Artist>({
     queryKey: ["artist", id],
     queryFn: () => api.artist(id),
     enabled: !!id,
@@ -40,8 +40,15 @@ export default function ArtistPage({
         <RowListSkeleton />
       </div>
     );
-  if (isError || !data)
-    return <p className="text-red-400">Künstler nicht gefunden.</p>;
+  if (!data) {
+    return (
+      <p className="text-red-400">
+        {isError
+          ? `Künstler konnte nicht geladen werden: ${error.message}`
+          : "Künstler nicht gefunden."}
+      </p>
+    );
+  }
 
   const tracks = data.top ?? [];
   const albums = data.albums ?? [];
@@ -52,6 +59,15 @@ export default function ArtistPage({
 
   return (
     <div>
+      {isError && (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+        >
+          Künstlerdaten konnten nicht aktualisiert werden. Der zuletzt geladene
+          Stand bleibt sichtbar. {error.message}
+        </div>
+      )}
       {/* Hero header with decorative aurora */}
       <div className="relative -mx-4 sm:-mx-8 px-4 sm:px-8 overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}

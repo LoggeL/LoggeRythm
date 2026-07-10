@@ -35,6 +35,9 @@ export function useToggleFollow() {
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["following"] });
+      qc.invalidateQueries({ queryKey: ["release-radar"] });
+      qc.invalidateQueries({ queryKey: ["home-mixes"] });
+      qc.invalidateQueries({ queryKey: ["because-you-listened"] });
       toast.success(vars.following ? "Nicht mehr gefolgt." : "Künstler gefolgt.");
     },
     onError: () => toast.error("Aktion fehlgeschlagen."),

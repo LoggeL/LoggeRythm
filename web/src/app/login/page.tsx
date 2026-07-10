@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
+import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -20,9 +21,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const user = await api.login(email, password);
+      qc.removeQueries({
+        predicate: (query) =>
+          shouldRemoveQueryForUserChange(query.queryKey, String(user.id)),
+      });
       qc.setQueryData(["me"], user);
-      qc.invalidateQueries({ queryKey: ["likes"] });
-      qc.invalidateQueries({ queryKey: ["playlists"] });
       router.push("/");
     } catch (err) {
       setError(
