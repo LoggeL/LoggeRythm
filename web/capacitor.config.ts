@@ -20,7 +20,7 @@ const url = configuredUrl.replace(/\/+$/, "");
 
 const config: CapacitorConfig = {
   appId: "com.spotifrei.app",
-  appName: "loggerythm",
+  appName: "LoggeRythm",
   webDir: "capacitor-shell",
   server: {
     url,
