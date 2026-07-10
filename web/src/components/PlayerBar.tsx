@@ -131,6 +131,14 @@ export default function PlayerBar() {
     }
   };
   const [expanded, setExpanded] = useState(false);
+  // A preload begins only after the current deck is ready. That
+  // avoids competing with the current track's first materialization while
+  // still giving the next download almost the full song length to finish.
+  const [readyTrackId, setReadyTrackId] = useState<string | null>(null);
+  const [preloadFailure, setPreloadFailure] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
 
   const queueOpen = usePlayerStore((s) => s.queueOpen);
   const toggleQueue = usePlayerStore((s) => s.toggleQueue);
@@ -175,6 +183,7 @@ export default function PlayerBar() {
   const queueLen = usePlayerStore((s) => s.queue.length);
   const queue = usePlayerStore((s) => s.queue);
   const index = usePlayerStore((s) => s.index);
+  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
   const radioFetching = useRef(false);
   const { data: settings } = useQuery({
     queryKey: ["playback-settings"],
@@ -182,6 +191,64 @@ export default function PlayerBar() {
     enabled: !!me?.is_approved,
     staleTime: 5 * 60_000,
   });
+
+  const nextTrack =
+    !sleepAfterTrack && repeat !== "one" && index >= 0
+      ? index < queue.length - 1
+        ? queue[index + 1]
+        : repeat === "all"
+          ? queue[0]
+          : null
+      : null;
+  const currentTrackId = trackId == null ? null : String(trackId);
+  const nextTrackId = nextTrack == null ? null : String(nextTrack.id);
+  const nextTrackTitle = nextTrack == null ? null : nextTrack.title;
+  // Repeating a one-item queue is already backed by the current materialized
+  // file, so there is nothing new to preload.
+  const preloadKey =
+    currentTrackId && nextTrackId && currentTrackId !== nextTrackId
+      ? `${currentTrackId}:${nextTrackId}`
+      : null;
+  const visiblePreloadError =
+    preloadKey && preloadFailure?.key === preloadKey
+      ? preloadFailure.message
+      : null;
+
+  // Materialize the next queue entry on the server while the current title is
+  // playing. Obsolete requests are allowed to finish because aborting the
+  // browser request cannot stop the backend worker; the cached file stays useful.
+  useEffect(() => {
+    if (
+      !preloadKey ||
+      readyTrackId !== currentTrackId ||
+      !nextTrackId ||
+      nextTrackTitle == null
+    ) {
+      return;
+    }
+
+    let relevant = true;
+    api
+      .preloadTrack(nextTrackId)
+      .then(() => {
+        if (!relevant) return;
+        setPreloadFailure((failure) =>
+          failure?.key === preloadKey ? null : failure,
+        );
+      })
+      .catch((reason: unknown) => {
+        const detail = reason instanceof Error ? reason.message : String(reason);
+        const message = `„${nextTrackTitle}“ konnte nicht vorgeladen werden: ${detail}`;
+        console.error(`[player] next-track preload failed (${preloadKey})`, reason);
+        if (!relevant) return;
+        setPreloadFailure({ key: preloadKey, message });
+        toast.error(message);
+      });
+
+    return () => {
+      relevant = false;
+    };
+  }, [currentTrackId, nextTrackId, nextTrackTitle, preloadKey, readyTrackId]);
 
   // Record a play once per (new) track for approved, logged-in users.
   useEffect(() => {
@@ -338,6 +405,7 @@ export default function PlayerBar() {
             outgoing.pause();
             activeIdxRef.current = incomingIdx;
             setActiveIdx(incomingIdx);
+            setReadyTrackId(String(nextTrack.id));
             _crossfadeAdvance();
             // Refresh the store's position + duration from the deck that just
             // took over. Otherwise they keep the *outgoing* track's end values,
@@ -588,8 +656,11 @@ export default function PlayerBar() {
       _setBuffering(false);
       _setError(null);
     },
-    onCanPlay: () => {
-      if (activeIdxRef.current === idx) _setBuffering(false);
+    onCanPlay: (e: SyntheticEvent<HTMLAudioElement>) => {
+      if (activeIdxRef.current !== idx) return;
+      const id = e.currentTarget.dataset.trackId;
+      if (id) setReadyTrackId(id);
+      _setBuffering(false);
     },
     onError: (e: SyntheticEvent<HTMLAudioElement>) => {
       if (activeIdxRef.current !== idx) return;
@@ -722,12 +793,12 @@ export default function PlayerBar() {
                     {track.title}
                   </div>
                 )}
-                {error ? (
+                {error || visiblePreloadError ? (
                   <div
                     className="line-clamp-2 text-xs text-red-400"
-                    title={error}
+                    title={error || visiblePreloadError || undefined}
                   >
-                    {error}
+                    {error || visiblePreloadError}
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5 min-w-0">

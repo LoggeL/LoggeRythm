@@ -281,6 +281,10 @@ export const api = {
 
   // Track ids cached on the server (no Deezer re-fetch needed)
   cachedTracks: () => req<{ ids: string[] }>(`/cached-tracks`),
+  preloadTrack: (deezerId: string) =>
+    req<void>(`/tracks/${encodeURIComponent(deezerId)}/preload`, {
+      method: "POST",
+    }),
 
   // Batched Last.fm play counts → { [trackId]: { plays, listeners } }
   trackPlays: (tracks: { id: string; artist: string; title: string }[]) =>

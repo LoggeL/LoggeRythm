@@ -5,7 +5,7 @@ The Range logic is preserved verbatim from the verified Phase-0 spike.
 import os
 import re
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -26,6 +26,18 @@ async def cached_tracks(
 
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 _CHUNK = 64 * 1024
+
+
+async def _materialize_track(deezer_id: str) -> str:
+    if not deezer_id.isdigit():
+        raise HTTPException(status_code=400, detail="deezer_id must be numeric")
+    try:
+        return await run_in_threadpool(storage.materialize, deezer_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not materialize track: {exc}",
+        ) from exc
 
 
 def _range_response(path: str, request: Request) -> Response:
@@ -106,16 +118,24 @@ def _range_response(path: str, request: Request) -> Response:
     return StreamingResponse(body(), status_code=206, headers=headers)
 
 
+@router.post(
+    "/tracks/{deezer_id}/preload",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def preload_track(
+    deezer_id: str,
+    _user: User = Depends(get_current_user),
+) -> Response:
+    """Materialize a track without returning its audio payload."""
+    await _materialize_track(deezer_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/tracks/{deezer_id}/stream")
 async def stream(
     deezer_id: str,
     request: Request,
     _user: User = Depends(get_current_user),
 ) -> Response:
-    if not deezer_id.isdigit():
-        raise HTTPException(status_code=400, detail="deezer_id must be numeric")
-    try:
-        path = await run_in_threadpool(storage.materialize, deezer_id)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Could not materialize track: {e}")
+    path = await _materialize_track(deezer_id)
     return _range_response(path, request)
