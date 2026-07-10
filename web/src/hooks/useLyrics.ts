@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { splitAiLyrics } from "@/lib/lyrics";
 
 export interface LyricsData {
   lines: { t: number; text: string }[];
@@ -31,7 +33,10 @@ export function useLyrics(
     retry: false,
   });
 
-  const lines = data?.lines ?? [];
+  const lines = useMemo(() => {
+    const sourceLines = data?.lines ?? [];
+    return data?.ai_generated ? splitAiLyrics(sourceLines) : sourceLines;
+  }, [data]);
   const hasTimedLines = lines.some((line) => typeof line.t === "number");
 
   let active = -1;

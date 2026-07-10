@@ -67,7 +67,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
     ? ({
         "--accent": palette.primary,
         "--accent-hover": palette.secondary,
-        "--accent-soft": palette.gradient[2],
+        "--accent-soft": palette.secondary,
       } as CSSProperties)
     : undefined;
   const [br, bg, bb] = palette?.rgb ?? [124, 92, 255];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
 import { MusicNoteIcon } from "@/components/icons";
@@ -14,6 +14,7 @@ import type { Track } from "@/types";
 export default function LyricsPanel({ track }: { track: Track }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
+  const hasPositionedRef = useRef(false);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const seek = usePlayerStore((s) => s.seek);
   const { lines, active, hasTimedLines, isLoading, isAiGenerated } = useLyrics(
@@ -23,13 +24,31 @@ export default function LyricsPanel({ track }: { track: Track }) {
     currentTime,
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = activeRef.current;
     const container = scrollRef.current;
     if (!el || !container) return;
-    const top = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
-    container.scrollTo({ top, behavior: "smooth" });
-  }, [active]);
+
+    const positionActiveLine = () => {
+      if (container.clientHeight === 0) return false;
+      const top = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
+      if (hasPositionedRef.current) {
+        container.scrollTo({ top, behavior: "smooth" });
+      } else {
+        // Opening fullscreen must start on the current lyric, before paint.
+        container.scrollTop = top;
+        hasPositionedRef.current = true;
+      }
+      return true;
+    };
+
+    if (positionActiveLine()) return;
+    const observer = new ResizeObserver(() => {
+      if (positionActiveLine()) observer.disconnect();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [active, lines.length]);
 
   return (
     <div className="hidden min-h-0 flex-col lg:flex">

@@ -12,6 +12,7 @@ const FLUX_HISTORY = 64;
 const FLUX_WINDOW_MS = 850;
 const DETECTOR_WARMUP_MS = 180;
 const FRAME_INTERVAL_MS = 1000 / 60;
+const COVER_GLOW_INTERVAL_MS = 1000 / 30;
 
 interface Shockwave {
   age: number;
@@ -73,7 +74,7 @@ export default function FullscreenVisualizer({
     if (!canvas) {
       throw new Error("Fullscreen visualizer canvas did not mount.");
     }
-    const ctx2d = canvas.getContext("2d");
+    const ctx2d = canvas.getContext("2d", { desynchronized: true });
     if (!ctx2d) {
       throw new Error("Fullscreen visualizer requires a Canvas 2D context.");
     }
@@ -112,6 +113,7 @@ export default function FullscreenVisualizer({
     let lastFrameAt = 0;
     let nextFrameAt = 0;
     let lastBeatAt = -Infinity;
+    let lastCoverGlowAt = -Infinity;
     let lastPanelStyleAt = -Infinity;
     let lastBassRaw = 0;
     let bassFast = 0;
@@ -146,7 +148,9 @@ export default function FullscreenVisualizer({
       const rect = cv.getBoundingClientRect();
       width = Math.max(1, Math.round(rect.width));
       height = Math.max(1, Math.round(rect.height));
-      const maxDpr = width < 600 ? 1.5 : 2;
+      // This canvas fills most of the viewport and uses many blurred strokes.
+      // A modest DPR cap avoids multiplying that paint cost on dense screens.
+      const maxDpr = width < 600 ? 1.25 : 1.5;
       dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
       cv.width = Math.round(width * dpr);
       cv.height = Math.round(height * dpr);
@@ -623,9 +627,15 @@ export default function FullscreenVisualizer({
       const coverSpread = 45 + energy * 80 + kick * 80;
       const coverAlpha = 0.26 + energy * 0.42 + kick * 0.2;
       cover.style.transform = `translateZ(0) scale(${scale.toFixed(4)})`;
-      cover.style.boxShadow =
-        `0 0 ${coverSpread.toFixed(1)}px rgba(${red}, ${green}, ${blue}, ${coverAlpha.toFixed(3)}), ` +
-        `0 0 ${(18 + kick * 28).toFixed(1)}px rgba(255, 255, 255, ${(kick * 0.13).toFixed(3)})`;
+      // Scaling is composited cheaply at 60 fps. The large blurred shadow is
+      // paint-heavy, so refreshing it at 30 fps keeps motion smooth without
+      // making the glow feel detached from the beat.
+      if (now - lastCoverGlowAt >= COVER_GLOW_INTERVAL_MS) {
+        lastCoverGlowAt = now;
+        cover.style.boxShadow =
+          `0 0 ${coverSpread.toFixed(1)}px rgba(${red}, ${green}, ${blue}, ${coverAlpha.toFixed(3)}), ` +
+          `0 0 ${(18 + kick * 28).toFixed(1)}px rgba(255, 255, 255, ${(kick * 0.13).toFixed(3)})`;
+      }
 
       // The large panel shadow is paint-heavy, so update it at 15 fps while
       // the composited cover pulse and canvas continue at the render cadence.
@@ -685,6 +695,7 @@ export default function FullscreenVisualizer({
         bandPeaks[band] = 0.045;
       }
       draw(0);
+      lastCoverGlowAt = -Infinity;
       lastPanelStyleAt = -Infinity;
       applySurfaceStyles(0);
     };
