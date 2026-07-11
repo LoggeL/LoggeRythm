@@ -24,6 +24,13 @@ const config: CapacitorConfig = {
   webDir: "capacitor-shell",
   server: {
     url,
+    // Keep both production aliases inside the native WebView. The server may
+    // redirect between them during login or canonical-host normalization.
+    allowNavigation: [
+      parsedUrl.hostname,
+      "loggerythm.logge.top",
+      "spotifrei.logge.top",
+    ],
     cleartext: parsedUrl.protocol === "http:",
     errorPath: "index.html",
   },
