@@ -34,11 +34,3 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
-
-## Android WebView wrapper
-
-`npx cap sync android` requires `SPOTIFREI_URL` and refuses to bake an implicit
-server into the APK. CI publishes a debug-signed QA artifact only. Any release
-task requires a stable signing identity and monotonic version code via
-`ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-`ANDROID_KEY_PASSWORD`, and `ANDROID_VERSION_CODE`.

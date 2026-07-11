@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import CapacitorBackButton from "@/components/CapacitorBackButton";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import {
   createBrowserQueryPersister,
@@ -86,7 +85,6 @@ export default function Providers({
         )
       }
     >
-      <CapacitorBackButton />
       <ServiceWorkerRegister />
       {children}
     </PersistQueryClientProvider>

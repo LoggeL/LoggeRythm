@@ -19,6 +19,11 @@ LoggeRythm is a self-hosted, private Spotify-style music app. It pairs a FastAPI
   - App Router, TypeScript, Tailwind CSS v4.
   - Zustand for client state (the player), TanStack Query for server state.
   - Dev server proxies `/api/*` to the backend at `http://127.0.0.1:8000` (see `web/next.config.ts`), so the browser only ever talks to the Next.js origin.
+- **`mobile/` — native Android app**
+  - React Native/Expo frontend with native Track Player playback.
+  - Android MediaSession, background playback, notification controls, and Android Auto integration.
+  - This is the repository's only Android application; the former Capacitor WebView wrapper has been removed.
+  - `.github/workflows/mobile-android.yml` (`Native Android QA`) is the sole Android build and validation workflow.
 
 ## Features
 
