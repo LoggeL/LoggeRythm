@@ -80,11 +80,24 @@ jobs:
         working-directory: mobile/android
         run: |
           set -euo pipefail
+          fail() {
+            echo "APK verification failed: $*" >&2
+            exit 1
+          }
+          require_file() {
+            test -s "$1" || fail "$2"
+          }
+          require_fixed() {
+            grep -Fq -- "$1" "$2" || fail "$3"
+          }
+          require_regex() {
+            grep -Eq -- "$1" "$2" || fail "$3"
+          }
           apk=app/build/outputs/apk/release/app-release.apk
-          test -s "$apk"
+          require_file "$apk" "release APK is missing or empty: $apk"
           unzip -Z1 "$apk" > /tmp/apk-files.txt
-          grep -Fxq 'assets/index.android.bundle' /tmp/apk-files.txt
-          grep -q '^lib/arm64-v8a/' /tmp/apk-files.txt
+          require_regex '^assets/index[.]android[.]bundle$' /tmp/apk-files.txt 'Hermes bundle is missing from the APK'
+          require_regex '^lib/arm64-v8a/' /tmp/apk-files.txt 'APK has no arm64-v8a native libraries'
           if grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/' /tmp/apk-files.txt; then
             echo 'Unexpected non-arm64 native library in APK' >&2
             exit 1
@@ -93,27 +106,59 @@ jobs:
           import sys, zipfile
           with zipfile.ZipFile(sys.argv[1]) as apk_zip:
               bundle = apk_zip.read('assets/index.android.bundle')
-              assert bundle[:4].hex() == 'c61fbc03', 'bundle is not Hermes bytecode'
-              assert b'https://loggerythm.logge.top' in bundle, 'production server URL missing from bundle'
-              assert b'10.0.2.2' not in bundle, 'emulator server URL leaked into release bundle'
+              if bundle[:4].hex() != 'c61fbc03':
+                  raise SystemExit('APK verification failed: bundle is not Hermes bytecode')
+              if b'https://loggerythm.logge.top' not in bundle:
+                  raise SystemExit('APK verification failed: production server URL missing from bundle')
+              if b'10.0.2.2' in bundle:
+                  raise SystemExit('APK verification failed: emulator server URL leaked into release bundle')
           PY
-          test -s app/build/outputs/mapping/release/mapping.txt
-          test -s app/build/outputs/mapping/release/resources.txt
+          require_file app/build/outputs/mapping/release/mapping.txt 'R8 code mapping is missing or empty'
+          require_file app/build/outputs/mapping/release/resources.txt 'R8 resource mapping is missing or empty'
           aapt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
           "$aapt" dump badging "$apk" > /tmp/badging.txt
           "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
           "$aapt" dump resources "$apk" > /tmp/resources.txt
-          grep -q "application-label:'LoggeRythm'" /tmp/badging.txt
-          grep -Eq "application-icon-[0-9]+:'res/[^']+'" /tmp/badging.txt
-          grep -q 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService' /tmp/manifest.txt
-          grep -q 'android:foregroundServiceType' /tmp/manifest.txt
-          grep -q 'com.google.android.gms.car.application' /tmp/manifest.txt
-          grep -q 'android.intent.category.LAUNCHER' /tmp/manifest.txt
-          grep -q 'mipmap/ic_launcher' /tmp/manifest.txt
-          grep -q 'mipmap/ic_launcher_round' /tmp/manifest.txt
-          grep -q 'xml/automotive_app_desc' /tmp/resources.txt
-          grep -q 'mipmap/ic_launcher' /tmp/resources.txt
-          grep -q 'mipmap/ic_launcher_foreground' /tmp/resources.txt
+          require_fixed "application-label:'LoggeRythm'" /tmp/badging.txt 'application label is not LoggeRythm'
+          require_regex "application-icon-[0-9]+:'res/[^']+'" /tmp/badging.txt 'badging reports no packaged application icon'
+          require_fixed 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService' /tmp/manifest.txt 'Track Player playback service is missing from the manifest'
+          require_fixed 'android:foregroundServiceType' /tmp/manifest.txt 'playback foreground service type is missing from the manifest'
+          require_fixed 'com.google.android.gms.car.application' /tmp/manifest.txt 'Android Auto metadata is missing from the manifest'
+          require_fixed 'android.intent.category.LAUNCHER' /tmp/manifest.txt 'launcher activity is missing from the manifest'
+          python3 - /tmp/manifest.txt /tmp/resources.txt <<'PY'
+          import re, sys
+
+          manifest = open(sys.argv[1], encoding='utf-8').read()
+          resources = open(sys.argv[2], encoding='utf-8').read()
+
+          def require_manifest_resource(attribute: str, resource_name: str) -> None:
+              resource_ids = re.findall(
+                  rf'^\s*spec resource (0x[0-9a-fA-F]+) \S+:{re.escape(resource_name)}:',
+                  resources,
+                  re.MULTILINE,
+              )
+              if len(resource_ids) != 1:
+                  raise SystemExit(
+                      f'APK verification failed: expected exactly one {resource_name} resource; '
+                      f'found {len(resource_ids)}'
+                  )
+              resource_id = resource_ids[0]
+              manifest_reference = re.compile(
+                  rf'^\s+A: android:{re.escape(attribute)}\([^)]*\)=@{re.escape(resource_id)}$',
+                  re.MULTILINE,
+              )
+              if manifest_reference.search(manifest) is None:
+                  raise SystemExit(
+                      f'APK verification failed: manifest android:{attribute} does not reference '
+                      f'{resource_name} ({resource_id})'
+                  )
+
+          require_manifest_resource('icon', 'mipmap/ic_launcher')
+          require_manifest_resource('roundIcon', 'mipmap/ic_launcher_round')
+          PY
+          require_fixed ':xml/automotive_app_desc:' /tmp/resources.txt 'Android Auto descriptor resource is missing'
+          require_fixed ':mipmap/ic_launcher:' /tmp/resources.txt 'launcher icon resource is missing'
+          require_fixed ':mipmap/ic_launcher_foreground:' /tmp/resources.txt 'adaptive launcher foreground resource is missing'
           cp "$apk" LoggeRythm-native-arm64-v8a.apk
           sha256sum LoggeRythm-native-arm64-v8a.apk
 
