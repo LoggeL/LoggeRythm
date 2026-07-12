@@ -37,17 +37,24 @@ npx expo prebuild --platform android   # generates android/, runs the Android Au
 npm run android                         # build + install + launch on device/emulator
 ```
 
-Or build just the APK:
+Or build the same standalone arm64 APK produced by CI (embedded JS/Hermes;
+Metro is not needed at runtime):
 
 ```bash
 cd android
-./gradlew assembleDebug                 # → android/app/build/outputs/apk/debug/app-debug.apk
+ALLOW_DEBUG_RELEASE_SIGNING=true ANDROID_VERSION_CODE=1 ./gradlew assembleRelease \
+  -PreactNativeArchitectures=arm64-v8a \
+  -PhermesEnabled=true \
+  -Pandroid.enableMinifyInReleaseBuilds=true \
+  -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+# → android/app/build/outputs/apk/release/app-release.apk
 ```
 
-Release tasks intentionally fail unless a real keystore and monotonic version
-code are supplied through `ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`,
-`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, and `ANDROID_VERSION_CODE`. This
-prevents a release APK from being silently signed with Android's debug key.
+Production releases should supply a real keystore through
+`ANDROID_KEYSTORE_FILE`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and
+`ANDROID_KEY_PASSWORD`, plus a monotonic `ANDROID_VERSION_CODE`. Debug signing
+of a release-optimized test APK is only allowed with the explicit
+`ALLOW_DEBUG_RELEASE_SIGNING=true` opt-in.
 
 ## Architecture
 

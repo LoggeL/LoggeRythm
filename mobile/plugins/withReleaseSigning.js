@@ -17,6 +17,7 @@ def releaseKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
 def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD')
 def releaseVersionCode = System.getenv('ANDROID_VERSION_CODE')
+def allowDebugReleaseSigning = System.getenv('ALLOW_DEBUG_RELEASE_SIGNING') == 'true'
 def releaseSigningConfigured = [releaseKeystoreFile, releaseKeystorePassword, releaseKeyAlias, releaseKeyPassword].every { it != null && !it.trim().isEmpty() }
 if (releaseVersionCode != null && !(releaseVersionCode ==~ /[1-9][0-9]*/)) {
     throw new GradleException('ANDROID_VERSION_CODE must be a positive integer')
@@ -26,8 +27,11 @@ gradle.taskGraph.whenReady { graph ->
     def releaseTaskInGraph = graph.allTasks.any { task ->
         task.project == project && task.name.toLowerCase().contains('release')
     }
-    if (releaseTaskInGraph && (!releaseSigningConfigured || releaseVersionCode == null || releaseVersionCode.trim().isEmpty())) {
-        throw new GradleException('Release tasks require ANDROID_KEYSTORE_FILE, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD, and ANDROID_VERSION_CODE')
+    if (releaseTaskInGraph && (releaseVersionCode == null || releaseVersionCode.trim().isEmpty())) {
+        throw new GradleException('Release tasks require ANDROID_VERSION_CODE')
+    }
+    if (releaseTaskInGraph && !releaseSigningConfigured && !allowDebugReleaseSigning) {
+        throw new GradleException('Release tasks require release signing credentials, or explicit ALLOW_DEBUG_RELEASE_SIGNING=true for test builds')
     }
 }
 ${END_MARKER}
@@ -96,6 +100,10 @@ ${END_MARKER}
       source.slice(0, unsafeSigning) +
       `            if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release
+            } else if (allowDebugReleaseSigning) {
+                // Explicit CI/test fallback: optimized and bundled like release,
+                // but installable without putting a production key in forks.
+                signingConfig signingConfigs.debug
             }
 ` +
       source.slice(unsafeSigning + unsafeReleaseSigning.length);

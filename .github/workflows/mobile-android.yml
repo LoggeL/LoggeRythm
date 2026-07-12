@@ -59,15 +59,55 @@ jobs:
           CI: "true"
         run: npx expo prebuild --platform android --clean --no-install
 
-      - name: Android lint, unit tests, and debug APK
+      - name: Android lint, unit tests, and optimized standalone APK
         working-directory: mobile/android
+        env:
+          # This public QA artifact is deliberately test-signed. Production
+          # releases can provide the ANDROID_KEYSTORE_* / ANDROID_KEY_* secrets
+          # and omit this explicit fallback.
+          ALLOW_DEBUG_RELEASE_SIGNING: "true"
+          ANDROID_VERSION_CODE: ${{ github.run_number }}
         run: |
           chmod +x ./gradlew
-          ./gradlew --no-daemon :app:lintDebug :app:testDebugUnitTest :app:assembleDebug
+          ./gradlew --no-daemon \
+            :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            -PhermesEnabled=true \
+            -Pandroid.enableMinifyInReleaseBuilds=true \
+            -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+
+      - name: Verify standalone APK contents and Android Auto manifest
+        working-directory: mobile/android
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          unzip -Z1 "$apk" > /tmp/apk-files.txt
+          grep -Fxq 'assets/index.android.bundle' /tmp/apk-files.txt
+          grep -q '^lib/arm64-v8a/' /tmp/apk-files.txt
+          if grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/' /tmp/apk-files.txt; then
+            echo 'Unexpected non-arm64 native library in APK' >&2
+            exit 1
+          fi
+          python3 - "$apk" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk_zip:
+              assert apk_zip.read('assets/index.android.bundle')[:4].hex() == 'c61fbc03', 'bundle is not Hermes bytecode'
+          PY
+          test -s app/build/outputs/mapping/release/mapping.txt
+          test -s app/build/outputs/mapping/release/resources.txt
+          aapt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
+          "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
+          "$aapt" dump resources "$apk" > /tmp/resources.txt
+          grep -q 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService' /tmp/manifest.txt
+          grep -q 'android:foregroundServiceType' /tmp/manifest.txt
+          grep -q 'com.google.android.gms.car.application' /tmp/manifest.txt
+          grep -q 'xml/automotive_app_desc' /tmp/resources.txt
+          cp "$apk" LoggeRythm-native-arm64-v8a.apk
+          sha256sum LoggeRythm-native-arm64-v8a.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          # Debug-signed smoke-test artifact only; release tasks require secret-backed signing.
-          name: loggerythm-native-debug-qa-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: loggerythm-native-arm64-v8a-apk
+          path: mobile/android/LoggeRythm-native-arm64-v8a.apk
           if-no-files-found: error
