@@ -1,7 +1,6 @@
 # LoggeRythm — Android app
 
-Native Android client for the LoggeRythm (SpotiFrei) backend, built with Expo /
-React Native. Uses [`@rntp/player`](https://rntp.dev) (React Native Track Player
+Native Android client for the LoggeRythm backend, built with Expo / React Native. Uses [`@rntp/player`](https://rntp.dev) (React Native Track Player
 V5, New Architecture) for native audio so you get the real Android media
 experience: **lock-screen / notification media controls, background playback,
 Bluetooth & headset buttons, and Android Auto**.
@@ -16,17 +15,15 @@ Bluetooth & headset buttons, and Android Auto**.
 - A **custom dev build** — this app cannot run in Expo Go (it has native modules
   and requires the New Architecture).
 
-## Configure the backend URL
+## Backend URL
 
-The app talks to the FastAPI backend directly (not through the Next.js proxy).
+Release builds talk directly to the canonical FastAPI origin:
+`https://loggerythm.logge.top`. The login screen does not persist an alternate
+server, so a debug install cannot poison a later production install.
 
-- **Emulator:** default is `http://10.0.2.2:8000` (the host machine's localhost).
-- **Physical device:** open the **Server** field on the login screen and enter
-  your PC's LAN or Tailscale address, e.g. `http://192.168.178.20:8000` or your
-  Tailscale IP. The value is remembered.
-
-Cleartext (`http://`) traffic is enabled in the Android build so a local backend
-works without TLS.
+For a local QA bundle, set `EXPO_PUBLIC_API_BASE` before the Gradle bundle task,
+for example `EXPO_PUBLIC_API_BASE=http://10.0.2.2:8000`. Never set it when
+building a release artifact intended for users.
 
 ## Build & run
 

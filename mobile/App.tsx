@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
+import { appGate } from './src/auth/gate';
 import RootNavigator from './src/navigation';
 import LoginScreen from './src/screens/LoginScreen';
 import PendingApprovalScreen from './src/screens/PendingApprovalScreen';
@@ -40,16 +41,20 @@ function StartupError({ message }: { message: string }) {
 
 function Gate() {
   const { user, bootstrapping, bootstrapError } = useAuth();
-  if (bootstrapping) {
+  const route = appGate(user, bootstrapping, bootstrapError);
+  useEffect(() => {
+    console.info(`[LoggeRythm] app gate: ${route}`);
+  }, [route]);
+  if (route === 'loading') {
     return (
       <View style={styles.splash}>
         <ActivityIndicator color={colors.accent} size="large" />
       </View>
     );
   }
-  if (bootstrapError) return <StartupError message={bootstrapError} />;
-  if (!user) return <LoginScreen />;
-  if (!user.is_approved && !user.is_admin) return <PendingApprovalScreen />;
+  if (route === 'bootstrap-error') return <StartupError message={bootstrapError!} />;
+  if (route === 'login') return <LoginScreen />;
+  if (route === 'pending') return <PendingApprovalScreen />;
   return <RootNavigator />;
 }
 

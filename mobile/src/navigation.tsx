@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  InteractionManager,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { NavigationContainer, DarkTheme, type Theme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -140,57 +148,65 @@ function PlayerStartupError({ message, retry }: { message: string; retry: () => 
 
 /** Authenticated navigator, gated until native audio initialization succeeds. */
 export default function RootNavigator() {
-  const [ready, setReady] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let mounted = true;
-    void Promise.resolve().then(() => {
+    // Commit the authenticated gate first, then connect Media3. Crucially, do
+    // not mount MiniPlayer/NowPlaying (which subscribe to RNTP native hooks)
+    // until setupPlayer has completed; mounting those hooks against an
+    // uninitialized release native module caused the post-login crash.
+    const task = InteractionManager.runAfterInteractions(() => {
       if (!mounted) return;
       try {
         ensurePlayer();
-        setReady(true);
+        if (!mounted) return;
+        setPlayerReady(true);
         void refreshBrowseTree().catch((error) => {
           if (mounted) reportPlayerError('Android Auto library failed to load', error);
         });
       } catch (error) {
-        setStartupError((error as Error).message);
+        if (mounted) setStartupError((error as Error).message);
       }
     });
     return () => {
       mounted = false;
+      task.cancel();
       cancelBrowseTreePublication();
     };
   }, [attempt]);
 
   const retry = () => {
-    setReady(false);
+    setPlayerReady(false);
     setStartupError(null);
     setAttempt((value) => value + 1);
   };
 
-  if (startupError) {
-    return <PlayerStartupError message={startupError} retry={retry} />;
-  }
-  if (!ready) {
+  if (startupError) return <PlayerStartupError message={startupError} retry={retry} />;
+  if (!playerReady) {
     return (
       <View style={styles.startupState}>
         <ActivityIndicator color={colors.accent} size="large" />
+        <Text style={styles.startupMessage}>Preparing native audio…</Text>
       </View>
     );
   }
+
   return (
-    <NavigationContainer theme={navTheme}>
-      <RootStack.Navigator>
-        <RootStack.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
-        <RootStack.Screen
-          name="NowPlaying"
-          component={NowPlayingScreen}
-          options={{ headerShown: false, presentation: 'modal' }}
-        />
-      </RootStack.Navigator>
-    </NavigationContainer>
+    <View style={styles.fill}>
+      <NavigationContainer theme={navTheme}>
+        <RootStack.Navigator>
+          <RootStack.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
+          <RootStack.Screen
+            name="NowPlaying"
+            component={NowPlayingScreen}
+            options={{ headerShown: false, presentation: 'modal' }}
+          />
+        </RootStack.Navigator>
+      </NavigationContainer>
+    </View>
   );
 }
 
@@ -214,7 +230,8 @@ const styles = StyleSheet.create({
   errorText: { color: colors.error, fontSize: 12, flex: 1 },
   dismiss: { color: colors.text, fontSize: 12, fontWeight: '700' },
   startupState: {
-    flex: 1,
+    position: 'absolute',
+    inset: 0,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.bg,

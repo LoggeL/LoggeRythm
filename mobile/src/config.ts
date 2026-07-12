@@ -1,19 +1,12 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 /**
  * Base URL of the LoggeRythm FastAPI backend.
  *
- * Default targets the Android emulator, where `10.0.2.2` is the host machine's
- * loopback (i.e. the `uvicorn` server running on your PC at :8000). On a real
- * device this must be overridden with the PC's LAN or Tailscale address via the
- * login screen — the value is persisted in AsyncStorage under API_BASE_KEY.
+ * Release builds must never inherit a server selected by an older/debug install.
+ * Local QA builds can set EXPO_PUBLIC_API_BASE before bundling; otherwise the
+ * canonical production origin is baked into the Hermes bundle.
  */
-export const DEFAULT_API_BASE = 'http://10.0.2.2:8000';
-
-const API_BASE_KEY = 'lr.apiBase';
-
-let cachedBase: string | null = null;
-let baseLoad: Promise<string> | null = null;
+export const PRODUCTION_API_BASE = 'https://loggerythm.logge.top';
+export const DEFAULT_API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? PRODUCTION_API_BASE;
 
 export function normalizeApiBase(base: string): string {
   const trimmed = base.trim().replace(/\/+$/, '');
@@ -39,24 +32,5 @@ export function normalizeApiBase(base: string): string {
 }
 
 export async function getApiBase(): Promise<string> {
-  if (cachedBase !== null) return cachedBase;
-  if (baseLoad === null) {
-    baseLoad = (async () => {
-      const stored = await AsyncStorage.getItem(API_BASE_KEY);
-      const resolved = normalizeApiBase(stored ?? DEFAULT_API_BASE);
-      cachedBase = resolved;
-      return resolved;
-    })();
-  }
-  try {
-    return await baseLoad;
-  } finally {
-    baseLoad = null;
-  }
-}
-
-export async function setApiBase(base: string): Promise<void> {
-  const normalized = normalizeApiBase(base);
-  await AsyncStorage.setItem(API_BASE_KEY, normalized);
-  cachedBase = normalized;
+  return normalizeApiBase(DEFAULT_API_BASE);
 }

@@ -10,6 +10,7 @@ export function ensurePlayer(): void {
   if (ready) return;
   try {
     if (!nativeSetupComplete) {
+      console.info('[LoggeRythm] native player setup starting');
       TrackPlayer.setupPlayer({
         contentType: 'music',
         handleAudioBecomingNoisy: true,
@@ -27,6 +28,7 @@ export function ensurePlayer(): void {
         },
       });
       nativeSetupComplete = true;
+      console.info('[LoggeRythm] native player setup requested');
     }
 
     TrackPlayer.setCommands({
@@ -40,6 +42,7 @@ export function ensurePlayer(): void {
     });
     installPlaybackListeners();
     ready = true;
+    console.info('[LoggeRythm] native player commands/listeners ready');
   } catch (error) {
     throw new Error(`Native audio player initialization failed: ${(error as Error).message}`);
   }

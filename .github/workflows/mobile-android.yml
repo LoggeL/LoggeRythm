@@ -92,17 +92,28 @@ jobs:
           python3 - "$apk" <<'PY'
           import sys, zipfile
           with zipfile.ZipFile(sys.argv[1]) as apk_zip:
-              assert apk_zip.read('assets/index.android.bundle')[:4].hex() == 'c61fbc03', 'bundle is not Hermes bytecode'
+              bundle = apk_zip.read('assets/index.android.bundle')
+              assert bundle[:4].hex() == 'c61fbc03', 'bundle is not Hermes bytecode'
+              assert b'https://loggerythm.logge.top' in bundle, 'production server URL missing from bundle'
+              assert b'10.0.2.2' not in bundle, 'emulator server URL leaked into release bundle'
           PY
           test -s app/build/outputs/mapping/release/mapping.txt
           test -s app/build/outputs/mapping/release/resources.txt
           aapt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
+          "$aapt" dump badging "$apk" > /tmp/badging.txt
           "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
           "$aapt" dump resources "$apk" > /tmp/resources.txt
+          grep -q "application-label:'LoggeRythm'" /tmp/badging.txt
+          grep -Eq "application-icon-[0-9]+:'res/[^']+'" /tmp/badging.txt
           grep -q 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService' /tmp/manifest.txt
           grep -q 'android:foregroundServiceType' /tmp/manifest.txt
           grep -q 'com.google.android.gms.car.application' /tmp/manifest.txt
+          grep -q 'android.intent.category.LAUNCHER' /tmp/manifest.txt
+          grep -q 'mipmap/ic_launcher' /tmp/manifest.txt
+          grep -q 'mipmap/ic_launcher_round' /tmp/manifest.txt
           grep -q 'xml/automotive_app_desc' /tmp/resources.txt
+          grep -q 'mipmap/ic_launcher' /tmp/resources.txt
+          grep -q 'mipmap/ic_launcher_foreground' /tmp/resources.txt
           cp "$apk" LoggeRythm-native-arm64-v8a.apk
           sha256sum LoggeRythm-native-arm64-v8a.apk
 
