@@ -45,6 +45,8 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>Sign in to your library</Text>
 
         <TextInput
+          testID="login-email"
+          accessibilityLabel="Email address"
           style={styles.input}
           placeholder="Email"
           placeholderTextColor={colors.textDim}
@@ -55,6 +57,8 @@ export default function LoginScreen() {
           autoComplete="email"
         />
         <TextInput
+          testID="login-password"
+          accessibilityLabel="Password"
           style={styles.input}
           placeholder="Password"
           placeholderTextColor={colors.textDim}
@@ -69,6 +73,9 @@ export default function LoginScreen() {
         {error && <Text style={styles.error}>{error}</Text>}
 
         <Pressable
+          testID="login-submit"
+          accessibilityLabel="Sign in"
+          accessibilityRole="button"
           style={[
             styles.button,
             (busy || !email.trim() || !password) && styles.buttonDisabled,

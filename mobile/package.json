@@ -37,6 +37,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:android": "python3 scripts/android_smoke.py",
     "check": "npm run typecheck && npm run lint && npm test",
     "postinstall": "patch-package"
   },

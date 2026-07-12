@@ -20,6 +20,7 @@ const AUTOMOTIVE_DESC = `<?xml version="1.0" encoding="utf-8"?>
 `;
 
 const META_NAME = 'com.google.android.gms.car.application';
+const ATTRIBUTION_ICON_META_NAME = 'androidx.car.app.TintableAttributionIcon';
 const PLAYBACK_SERVICE = 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService';
 const SERVICE_ACTIONS = [
   'androidx.media3.session.MediaLibraryService',
@@ -35,6 +36,19 @@ function configureAutoManifest(config) {
     if (!already) {
       app['meta-data'].push({
         $: { 'android:name': META_NAME, 'android:resource': '@xml/automotive_app_desc' },
+      });
+    }
+    const attributionIcon = app['meta-data'].find(
+      (item) => item.$?.['android:name'] === ATTRIBUTION_ICON_META_NAME,
+    );
+    if (attributionIcon) {
+      attributionIcon.$['android:resource'] = '@drawable/ic_stat_music';
+    } else {
+      app['meta-data'].push({
+        $: {
+          'android:name': ATTRIBUTION_ICON_META_NAME,
+          'android:resource': '@drawable/ic_stat_music',
+        },
       });
     }
 

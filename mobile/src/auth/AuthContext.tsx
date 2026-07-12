@@ -31,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBootstrapError(null);
     try {
       if (!(await hasSession())) {
+        clearPlayerSession();
         setUser(null);
         return;
       }

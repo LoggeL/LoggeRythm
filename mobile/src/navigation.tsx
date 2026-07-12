@@ -146,7 +146,7 @@ function PlayerStartupError({ message, retry }: { message: string; retry: () => 
   );
 }
 
-/** Authenticated navigator, gated until native audio initialization succeeds. */
+/** Authenticated navigator, gated until the native player setup request succeeds. */
 export default function RootNavigator() {
   const [playerReady, setPlayerReady] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -154,19 +154,22 @@ export default function RootNavigator() {
 
   useEffect(() => {
     let mounted = true;
-    // Commit the authenticated gate first, then connect Media3. Crucially, do
-    // not mount MiniPlayer/NowPlaying (which subscribe to RNTP native hooks)
-    // until setupPlayer has completed; mounting those hooks against an
-    // uninitialized release native module caused the post-login crash.
+    // Commit the authenticated gate first, then ask RNTP to connect Media3.
+    // RNTP's setup call is synchronous but completes its MediaController
+    // connection asynchronously; its getters tolerate that connection window.
     const task = InteractionManager.runAfterInteractions(() => {
       if (!mounted) return;
       try {
         ensurePlayer();
         if (!mounted) return;
         setPlayerReady(true);
-        void refreshBrowseTree().catch((error) => {
-          if (mounted) reportPlayerError('Android Auto library failed to load', error);
-        });
+        void refreshBrowseTree()
+          .then(() => {
+            if (mounted) console.info('[LoggeRythm] Android Auto library ready');
+          })
+          .catch((error) => {
+            if (mounted) reportPlayerError('Android Auto library failed to load', error);
+          });
       } catch (error) {
         if (mounted) setStartupError((error as Error).message);
       }

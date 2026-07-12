@@ -39,7 +39,8 @@ Metro is not needed at runtime):
 
 ```bash
 cd android
-ALLOW_DEBUG_RELEASE_SIGNING=true ANDROID_VERSION_CODE=1 ./gradlew assembleRelease \
+NODE_ENV=production ALLOW_DEBUG_RELEASE_SIGNING=true ANDROID_VERSION_CODE=10001 \
+  ./gradlew assembleRelease \
   -PreactNativeArchitectures=arm64-v8a \
   -PhermesEnabled=true \
   -Pandroid.enableMinifyInReleaseBuilds=true \
@@ -52,6 +53,39 @@ Production releases should supply a real keystore through
 `ANDROID_KEY_PASSWORD`, plus a monotonic `ANDROID_VERSION_CODE`. Debug signing
 of a release-optimized test APK is only allowed with the explicit
 `ALLOW_DEBUG_RELEASE_SIGNING=true` opt-in.
+
+## Standalone Android smoke test
+
+The APK is not considered tested until it has been installed and launched on
+Android. With exactly one emulator/device online:
+
+```bash
+ANDROID_SDK_ROOT="$HOME/Android/Sdk" npm run smoke:android -- \
+  --apk android/app/build/outputs/apk/release/app-release.apk \
+  --startup-only
+```
+
+That clean-installs the APK, launches it without Metro, verifies the login UI
+with UIAutomator, checks the process/logcat, and writes private evidence under
+`/tmp` (directory mode `0700`, files `0600`). `--startup-only` always reports a
+limited result and never claims that login was tested, even if credential
+environment variables happen to be set.
+For the required post-login/player/Android Auto check, provide an **approved**
+test account through the environment (never command-line arguments):
+
+```bash
+LOGGERYTHM_TEST_EMAIL='qa@example.test' \
+LOGGERYTHM_TEST_PASSWORD='...' \
+ANDROID_SDK_ROOT="$HOME/Android/Sdk" \
+npm run smoke:android -- --apk android/app/build/outputs/apk/release/app-release.apk
+```
+
+Without those credentials the full command exits loudly after startup with the
+exact credential blocker; `--startup-only` is the explicit limited check. The
+harness removes credential variables from the child-process environment and
+streams shell-quoted, character-at-a-time input to adb, so complete credentials
+never appear in adb process arguments. It persists only the pre-login UI and
+screenshot; post-entry UI dumps and screenshots are deliberately not written.
 
 ## Architecture
 

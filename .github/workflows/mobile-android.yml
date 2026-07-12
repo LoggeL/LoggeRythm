@@ -66,10 +66,13 @@ jobs:
           # releases can provide the ANDROID_KEYSTORE_* / ANDROID_KEY_* secrets
           # and omit this explicit fallback.
           ALLOW_DEBUG_RELEASE_SIGNING: "true"
-          ANDROID_VERSION_CODE: ${{ github.run_number }}
+          NODE_ENV: production
         run: |
+          : "${GITHUB_RUN_NUMBER:?GitHub did not provide GITHUB_RUN_NUMBER}"
+          export ANDROID_VERSION_CODE=$((10000 + GITHUB_RUN_NUMBER))
           chmod +x ./gradlew
           ./gradlew --no-daemon \
+            :rntp_player:testReleaseUnitTest \
             :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease \
             -PreactNativeArchitectures=arm64-v8a \
             -PhermesEnabled=true \
@@ -112,26 +115,38 @@ jobs:
                   raise SystemExit('APK verification failed: production server URL missing from bundle')
               if b'10.0.2.2' in bundle:
                   raise SystemExit('APK verification failed: emulator server URL leaked into release bundle')
+              if b':8081' in bundle:
+                  raise SystemExit('APK verification failed: Metro/dev-server port leaked into release bundle')
           PY
           require_file app/build/outputs/mapping/release/mapping.txt 'R8 code mapping is missing or empty'
           require_file app/build/outputs/mapping/release/resources.txt 'R8 resource mapping is missing or empty'
-          aapt="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/aapt"
+          build_tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          aapt="$build_tools/aapt"
+          "$build_tools/apksigner" verify --verbose "$apk" || fail 'APK signature verification failed'
+          "$build_tools/zipalign" -c -P 16 4 "$apk" || fail 'APK zip alignment verification failed'
           "$aapt" dump badging "$apk" > /tmp/badging.txt
           "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
           "$aapt" dump resources "$apk" > /tmp/resources.txt
           require_fixed "application-label:'LoggeRythm'" /tmp/badging.txt 'application label is not LoggeRythm'
           require_regex "application-icon-[0-9]+:'res/[^']+'" /tmp/badging.txt 'badging reports no packaged application icon'
+          launcher_icon=$(awk -F"'" '/^application-icon-[0-9]+:/{print $2; exit}' /tmp/badging.txt)
+          test -n "$launcher_icon" || fail 'could not resolve the packaged launcher icon path'
+          "$aapt" dump xmltree "$apk" "$launcher_icon" > /tmp/launcher-icon.txt
           require_fixed 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService' /tmp/manifest.txt 'Track Player playback service is missing from the manifest'
           require_fixed 'android:foregroundServiceType' /tmp/manifest.txt 'playback foreground service type is missing from the manifest'
+          require_fixed 'androidx.media3.session.MediaLibraryService' /tmp/manifest.txt 'Media3 library-service action is missing from the manifest'
+          require_fixed 'android.media.browse.MediaBrowserService' /tmp/manifest.txt 'platform media-browser action is missing from the manifest'
           require_fixed 'com.google.android.gms.car.application' /tmp/manifest.txt 'Android Auto metadata is missing from the manifest'
+          require_fixed 'androidx.car.app.TintableAttributionIcon' /tmp/manifest.txt 'Android Auto attribution icon metadata is missing from the manifest'
           require_fixed 'android.intent.category.LAUNCHER' /tmp/manifest.txt 'launcher activity is missing from the manifest'
-          python3 - /tmp/manifest.txt /tmp/resources.txt <<'PY'
+          python3 - /tmp/manifest.txt /tmp/resources.txt /tmp/launcher-icon.txt <<'PY'
           import re, sys
 
           manifest = open(sys.argv[1], encoding='utf-8').read()
           resources = open(sys.argv[2], encoding='utf-8').read()
+          launcher = open(sys.argv[3], encoding='utf-8').read()
 
-          def require_manifest_resource(attribute: str, resource_name: str) -> None:
+          def resource_id(resource_name: str) -> str:
               resource_ids = re.findall(
                   rf'^\s*spec resource (0x[0-9a-fA-F]+) \S+:{re.escape(resource_name)}:',
                   resources,
@@ -142,23 +157,73 @@ jobs:
                       f'APK verification failed: expected exactly one {resource_name} resource; '
                       f'found {len(resource_ids)}'
                   )
-              resource_id = resource_ids[0]
+              return resource_ids[0]
+
+          def require_manifest_resource(attribute: str, resource_name: str) -> None:
+              expected_id = resource_id(resource_name)
               manifest_reference = re.compile(
-                  rf'^\s+A: android:{re.escape(attribute)}\([^)]*\)=@{re.escape(resource_id)}$',
+                  rf'^\s+A: android:{re.escape(attribute)}\([^)]*\)=@{re.escape(expected_id)}$',
                   re.MULTILINE,
               )
               if manifest_reference.search(manifest) is None:
                   raise SystemExit(
                       f'APK verification failed: manifest android:{attribute} does not reference '
-                      f'{resource_name} ({resource_id})'
+                      f'{resource_name} ({expected_id})'
+                  )
+
+          def require_metadata_resource(metadata_name: str, resource_name: str) -> None:
+              expected_id = resource_id(resource_name)
+              metadata = re.compile(
+                  rf'^\s+E: meta-data[^\n]*\n'
+                  rf'\s+A: android:name\([^)]*\)="{re.escape(metadata_name)}"[^\n]*\n'
+                  rf'\s+A: android:resource\([^)]*\)=@{re.escape(expected_id)}$',
+                  re.MULTILINE,
+              )
+              if metadata.search(manifest) is None:
+                  raise SystemExit(
+                      f'APK verification failed: metadata {metadata_name} does not reference '
+                      f'{resource_name} ({expected_id})'
+                  )
+
+          def require_launcher_resource(element: str, resource_name: str) -> None:
+              expected_id = resource_id(resource_name)
+              reference = re.compile(
+                  rf'^\s+E: {re.escape(element)}[^\n]*\n'
+                  rf'\s+A: android:drawable\([^)]*\)=@{re.escape(expected_id)}$',
+                  re.MULTILINE,
+              )
+              if reference.search(launcher) is None:
+                  raise SystemExit(
+                      f'APK verification failed: adaptive icon {element} does not reference '
+                      f'{resource_name} ({expected_id})'
                   )
 
           require_manifest_resource('icon', 'mipmap/ic_launcher')
           require_manifest_resource('roundIcon', 'mipmap/ic_launcher_round')
+          require_metadata_resource(
+              'com.google.android.gms.car.application',
+              'xml/automotive_app_desc',
+          )
+          require_metadata_resource(
+              'androidx.car.app.TintableAttributionIcon',
+              'drawable/ic_stat_music',
+          )
+          if re.search(
+              r'^\s+E: adaptive-icon[^\n]*\n'
+              r'\s+E: background[^\n]*\n'
+              r'\s+A: android:drawable\([^)]*\)=@[0-9a-fA-Fx]+$',
+              launcher,
+              re.MULTILINE,
+          ) is None:
+              raise SystemExit('APK verification failed: adaptive icon background is missing')
+          require_launcher_resource('foreground', 'mipmap/ic_launcher_foreground')
+          require_launcher_resource('monochrome', 'mipmap/ic_launcher_monochrome')
           PY
           require_fixed ':xml/automotive_app_desc:' /tmp/resources.txt 'Android Auto descriptor resource is missing'
           require_fixed ':mipmap/ic_launcher:' /tmp/resources.txt 'launcher icon resource is missing'
           require_fixed ':mipmap/ic_launcher_foreground:' /tmp/resources.txt 'adaptive launcher foreground resource is missing'
+          require_fixed ':mipmap/ic_launcher_monochrome:' /tmp/resources.txt 'adaptive monochrome launcher resource is missing'
+          require_fixed ':drawable/ic_stat_music:' /tmp/resources.txt 'notification/Android Auto attribution icon was removed from the APK'
           cp "$apk" LoggeRythm-native-arm64-v8a.apk
           sha256sum LoggeRythm-native-arm64-v8a.apk
 

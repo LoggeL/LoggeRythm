@@ -54,14 +54,26 @@ export function isPlayerReady(): boolean {
 
 /** Remove all account-scoped player state before logging out or switching users. */
 export function clearPlayerSession(): void {
-  if (!nativeSetupComplete) return;
-  try {
-    TrackPlayer.pause();
-    TrackPlayer.clear();
-    clearBrowseTree();
-    TrackPlayer.cancelSleepTimer();
-    resetControllerState();
-  } catch (error) {
-    throw new Error(`Failed to clear native playback state: ${(error as Error).message}`);
+  const failures: string[] = [];
+  const attempt = (label: string, operation: () => void): void => {
+    try {
+      operation();
+    } catch (error) {
+      failures.push(`${label}: ${(error as Error).message}`);
+    }
+  };
+
+  // The persisted Android Auto tree is account-scoped even when this JS
+  // process has not initialized a MediaController yet.
+  attempt('Android Auto library', clearBrowseTree);
+  if (nativeSetupComplete) {
+    attempt('pause', () => TrackPlayer.pause());
+    attempt('queue', () => TrackPlayer.clear());
+    attempt('sleep timer', () => TrackPlayer.cancelSleepTimer());
+  }
+  attempt('JavaScript controller state', resetControllerState);
+
+  if (failures.length > 0) {
+    throw new Error(`Failed to clear native playback state (${failures.join('; ')})`);
   }
 }
