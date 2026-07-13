@@ -619,127 +619,132 @@ export default function PlayerBar() {
     };
   }, [expanded]);
 
-  // Media-element event props for a deck — only the ACTIVE deck drives the
-  // store (the other is mid-crossfade prefetch and must stay silent to the UI).
-  const deckProps = (idx: 0 | 1) => ({
-    onTimeUpdate: (e: SyntheticEvent<HTMLAudioElement>) => {
-      if (activeIdxRef.current === idx) _setCurrentTime(e.currentTarget.currentTime);
-    },
-    onLoadedMetadata: (e: SyntheticEvent<HTMLAudioElement>) => {
-      if (activeIdxRef.current !== idx) return;
-      const d = e.currentTarget.duration;
-      if (Number.isFinite(d)) _setDuration(d);
-    },
-    onEnded: (e: SyntheticEvent<HTMLAudioElement>) => {
-      if (activeIdxRef.current !== idx) return;
-      // A crossfade already owns the transition into the next track.
-      if (crossfadeTimer.current) return;
-      if (repeat === "one") {
-        e.currentTarget.currentTime = 0;
-        _setCurrentTime(0);
-        e.currentTarget.play().catch(() => _onEnded());
-        return;
-      }
-      _onEnded();
-    },
-    onWaiting: () => {
-      if (activeIdxRef.current === idx) _setBuffering(true);
-    },
-    onStalled: () => {
-      if (activeIdxRef.current === idx) _setBuffering(true);
-    },
-    onPlaying: () => {
-      if (activeIdxRef.current !== idx) return;
-      clearErrorSkip(); // recovered — cancel any pending auto-skip
-      clearErrorRetry();
-      errorRetries.current = { id: "", count: 0 };
-      _setBuffering(false);
-      _setError(null);
-    },
-    onCanPlay: (e: SyntheticEvent<HTMLAudioElement>) => {
-      if (activeIdxRef.current !== idx) return;
-      const id = e.currentTarget.dataset.trackId;
-      if (id) setReadyTrackId(id);
-      _setBuffering(false);
-    },
-    onError: (e: SyntheticEvent<HTMLAudioElement>) => {
-      if (activeIdxRef.current !== idx) return;
-      const el = e.currentTarget;
-      const mediaErr = el.error;
-      const id = el.dataset.trackId || "";
+  // Only the active deck drives the store. These functions are called from
+  // explicit JSX media-event handlers, never while React is rendering.
+  const handleTimeUpdate = (
+    idx: 0 | 1,
+    e: SyntheticEvent<HTMLAudioElement>,
+  ) => {
+    if (activeIdxRef.current === idx) {
+      _setCurrentTime(e.currentTarget.currentTime);
+    }
+  };
+  const handleLoadedMetadata = (
+    idx: 0 | 1,
+    e: SyntheticEvent<HTMLAudioElement>,
+  ) => {
+    if (activeIdxRef.current !== idx) return;
+    const d = e.currentTarget.duration;
+    if (Number.isFinite(d)) _setDuration(d);
+  };
+  const handleEnded = (idx: 0 | 1, e: SyntheticEvent<HTMLAudioElement>) => {
+    if (activeIdxRef.current !== idx) return;
+    // A crossfade already owns the transition into the next track.
+    if (crossfadeTimer.current) return;
+    if (repeat === "one") {
+      e.currentTarget.currentTime = 0;
+      _setCurrentTime(0);
+      e.currentTarget.play().catch(() => _onEnded());
+      return;
+    }
+    _onEnded();
+  };
+  const handleWaiting = (idx: 0 | 1) => {
+    if (activeIdxRef.current === idx) _setBuffering(true);
+  };
+  const handlePlaying = (idx: 0 | 1) => {
+    if (activeIdxRef.current !== idx) return;
+    clearErrorSkip(); // recovered — cancel any pending auto-skip
+    clearErrorRetry();
+    errorRetries.current = { id: "", count: 0 };
+    _setBuffering(false);
+    _setError(null);
+  };
+  const handleCanPlay = (
+    idx: 0 | 1,
+    e: SyntheticEvent<HTMLAudioElement>,
+  ) => {
+    if (activeIdxRef.current !== idx) return;
+    const id = e.currentTarget.dataset.trackId;
+    if (id) setReadyTrackId(id);
+    _setBuffering(false);
+  };
+  const handleError = (idx: 0 | 1, e: SyntheticEvent<HTMLAudioElement>) => {
+    if (activeIdxRef.current !== idx) return;
+    const el = e.currentTarget;
+    const mediaErr = el.error;
+    const id = el.dataset.trackId || "";
 
-      // First failures are often transient (the backend answers 500 while it
-      // is still fetching/transcoding the title). Reload a couple of times
-      // with backoff before alarming the user or skipping.
-      if (errorRetries.current.id !== id) errorRetries.current = { id, count: 0 };
-      if (errorRetries.current.count < 2) {
-        errorRetries.current.count += 1;
-        const attempt = errorRetries.current.count;
-        console.warn(
-          `[player] stream error for track ${id} (${mediaErr?.code ?? "?"}: ${mediaErr?.message ?? "no detail"}) — retry ${attempt}/2`,
-        );
-        _setBuffering(true);
-        clearErrorRetry();
-        errorRetryTimer.current = window.setTimeout(() => {
-          errorRetryTimer.current = null;
-          const cur = currentTrack(usePlayerStore.getState());
-          if (activeIdxRef.current !== idx || String(cur?.id ?? "") !== id) return;
-          // Mid-song failures resume where they broke off instead of at 0:00.
-          const resumeAt = el.currentTime;
-          el.load(); // re-request the source from scratch
-          if (resumeAt > 0) {
-            const onMeta = () => {
-              el.removeEventListener("loadedmetadata", onMeta);
-              try {
-                el.currentTime = resumeAt;
-              } catch {
-                // seeking an unseekable stream is not worth failing the retry
-              }
-            };
-            el.addEventListener("loadedmetadata", onMeta);
-          }
-          if (usePlayerStore.getState().isPlaying) el.play().catch(() => {});
-        }, 1500 * attempt);
-        return;
-      }
-
-      // Retries exhausted — now fail loudly.
-      _setError("Titel konnte nicht geladen werden.");
-      // Auto-skip after 5s so one dead source doesn't block the queue. Only
-      // fire if we're still stuck on this same failed track.
-      clearErrorSkip();
-      errorSkipTimer.current = window.setTimeout(() => {
-        errorSkipTimer.current = null;
-        const cur = currentTrack(usePlayerStore.getState());
-        if (activeIdxRef.current === idx && cur?.id === id && el.error) {
-          toast.info("Titel übersprungen.");
-          next();
-        }
-      }, 5000);
-      // Probe the backend for the real reason so the UI shows *why* it failed
-      // (HTTP status + detail / decode error) instead of a bare message.
-      describeStreamFailure(id ? streamUrl(id) : el.currentSrc, mediaErr).then(
-        (detail) => {
-          // Only surface the probe result if this deck is still the active one,
-          // still on the same track AND still broken — playback may have
-          // recovered while the probe was in flight, and a scary toast over a
-          // playing song is worse than no detail at all.
-          if (
-            activeIdxRef.current === idx &&
-            el.dataset.trackId === id &&
-            el.error
-          ) {
-            const msg = `Titel konnte nicht geladen werden — ${detail}`;
-            _setError(msg);
-            // Also toast: the inline player-bar text is easy to miss in
-            // fullscreen or on mobile.
-            toast.error(msg);
-          }
-        },
+    // First failures are often transient (the backend answers 500 while it
+    // is still fetching/transcoding the title). Reload a couple of times
+    // with backoff before alarming the user or skipping.
+    if (errorRetries.current.id !== id) errorRetries.current = { id, count: 0 };
+    if (errorRetries.current.count < 2) {
+      errorRetries.current.count += 1;
+      const attempt = errorRetries.current.count;
+      console.warn(
+        `[player] stream error for track ${id} (${mediaErr?.code ?? "?"}: ${mediaErr?.message ?? "no detail"}) — retry ${attempt}/2`,
       );
-    },
-    preload: "auto" as const,
-  });
+      _setBuffering(true);
+      clearErrorRetry();
+      errorRetryTimer.current = window.setTimeout(() => {
+        errorRetryTimer.current = null;
+        const cur = currentTrack(usePlayerStore.getState());
+        if (activeIdxRef.current !== idx || String(cur?.id ?? "") !== id) return;
+        // Mid-song failures resume where they broke off instead of at 0:00.
+        const resumeAt = el.currentTime;
+        el.load(); // re-request the source from scratch
+        if (resumeAt > 0) {
+          const onMeta = () => {
+            el.removeEventListener("loadedmetadata", onMeta);
+            try {
+              el.currentTime = resumeAt;
+            } catch {
+              // seeking an unseekable stream is not worth failing the retry
+            }
+          };
+          el.addEventListener("loadedmetadata", onMeta);
+        }
+        if (usePlayerStore.getState().isPlaying) el.play().catch(() => {});
+      }, 1500 * attempt);
+      return;
+    }
+
+    // Retries exhausted — now fail loudly.
+    _setError("Titel konnte nicht geladen werden.");
+    // Auto-skip after 5s so one dead source doesn't block the queue. Only
+    // fire if we're still stuck on this same failed track.
+    clearErrorSkip();
+    errorSkipTimer.current = window.setTimeout(() => {
+      errorSkipTimer.current = null;
+      const cur = currentTrack(usePlayerStore.getState());
+      if (activeIdxRef.current === idx && cur?.id === id && el.error) {
+        toast.info("Titel übersprungen.");
+        next();
+      }
+    }, 5000);
+    // Probe the backend for the real reason so the UI shows *why* it failed
+    // (HTTP status + detail / decode error) instead of a bare message.
+    describeStreamFailure(id ? streamUrl(id) : el.currentSrc, mediaErr).then(
+      (detail) => {
+        // Only surface the probe result if this deck is still the active one,
+        // still on the same track AND still broken — playback may have
+        // recovered while the probe was in flight, and a scary toast over a
+        // playing song is worse than no detail at all.
+        if (
+          activeIdxRef.current === idx &&
+          el.dataset.trackId === id &&
+          el.error
+        ) {
+          const msg = `Titel konnte nicht geladen werden — ${detail}`;
+          _setError(msg);
+          // Also toast: the inline player-bar text is easy to miss in
+          // fullscreen or on mobile.
+          toast.error(msg);
+        }
+      },
+    );
+  };
 
   return (
     <>
@@ -752,8 +757,32 @@ export default function PlayerBar() {
         }`}
       >
         {/* Two interchangeable decks — see the playback engine above. */}
-        <audio ref={deckA} aria-hidden="true" {...deckProps(0)} />
-        <audio ref={deckB} aria-hidden="true" {...deckProps(1)} />
+        <audio
+          ref={deckA}
+          aria-hidden="true"
+          preload="auto"
+          onTimeUpdate={(e) => handleTimeUpdate(0, e)}
+          onLoadedMetadata={(e) => handleLoadedMetadata(0, e)}
+          onEnded={(e) => handleEnded(0, e)}
+          onWaiting={() => handleWaiting(0)}
+          onStalled={() => handleWaiting(0)}
+          onPlaying={() => handlePlaying(0)}
+          onCanPlay={(e) => handleCanPlay(0, e)}
+          onError={(e) => handleError(0, e)}
+        />
+        <audio
+          ref={deckB}
+          aria-hidden="true"
+          preload="auto"
+          onTimeUpdate={(e) => handleTimeUpdate(1, e)}
+          onLoadedMetadata={(e) => handleLoadedMetadata(1, e)}
+          onEnded={(e) => handleEnded(1, e)}
+          onWaiting={() => handleWaiting(1)}
+          onStalled={() => handleWaiting(1)}
+          onPlaying={() => handlePlaying(1)}
+          onCanPlay={(e) => handleCanPlay(1, e)}
+          onError={(e) => handleError(1, e)}
+        />
 
         {/* Track info */}
         <div

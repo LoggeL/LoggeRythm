@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { splitAiLyrics } from "@/lib/lyrics";
@@ -19,27 +19,6 @@ export default function Lyrics() {
   const currentTime = usePlayerStore((s) => s.currentTime);
   const [expanded, setExpanded] = useState(false);
 
-  // Slide-out animation: keep the panel mounted while it collapses shut,
-  // and mount it collapsed so opening always transitions from height 0.
-  const [present, setPresent] = useState(open);
-  const [shown, setShown] = useState(false);
-  useEffect(() => {
-    if (open) {
-      setPresent(true);
-      // Double rAF: let the browser paint the collapsed state first so the
-      // grid-rows transition actually runs on open.
-      let id2 = 0;
-      const id1 = requestAnimationFrame(() => {
-        id2 = requestAnimationFrame(() => setShown(true));
-      });
-      return () => {
-        cancelAnimationFrame(id1);
-        cancelAnimationFrame(id2);
-      };
-    }
-    setShown(false);
-  }, [open]);
-
   const { data, isLoading } = useQuery({
     queryKey: ["lyrics", track?.id],
     queryFn: () => api.lyrics(track!.artist, track!.title, String(track!.id)),
@@ -52,8 +31,6 @@ export default function Lyrics() {
     const sourceLines = data?.lines ?? [];
     return data?.ai_generated ? splitAiLyrics(sourceLines) : sourceLines;
   }, [data]);
-
-  if (!present) return null;
 
   const isAiGenerated = !!data?.ai_generated;
 
@@ -79,13 +56,11 @@ export default function Lyrics() {
 
   return (
     <div
+      aria-hidden={!open}
+      inert={!open}
       className={`grid flex-shrink-0 transition-[grid-template-rows,opacity] duration-300 ease-out ${
-        shown ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
       }`}
-      onTransitionEnd={(e) => {
-        // Unmount only after the collapse finishes (not on inner transitions).
-        if (e.target === e.currentTarget && !open) setPresent(false);
-      }}
     >
       <div className="min-h-0 overflow-hidden">
         <div className="border-t border-white/10 bg-[#0c0c18]/90 backdrop-blur-xl flex items-center gap-4 px-6 py-3 overflow-hidden">
