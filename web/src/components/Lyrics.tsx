@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { splitAiLyrics } from "@/lib/lyrics";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { MusicNoteIcon, ChevronDownIcon } from "@/components/icons";
 
@@ -27,10 +26,7 @@ export default function Lyrics() {
     retry: false,
   });
 
-  const lines: Line[] = useMemo(() => {
-    const sourceLines = data?.lines ?? [];
-    return data?.ai_generated ? splitAiLyrics(sourceLines) : sourceLines;
-  }, [data]);
+  const lines: Line[] = data?.lines ?? [];
 
   const isAiGenerated = !!data?.ai_generated;
 

@@ -7,7 +7,7 @@ import json
 import re
 
 import requests
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
@@ -95,13 +95,26 @@ def _fetch(artist: str, title: str) -> dict:
     }
 
 
-def _groq_transcription_fallback(deezer_id: str) -> list[dict] | None:
+def _groq_transcription(deezer_id: str) -> list[dict]:
     try:
         path = storage.materialize(deezer_id)
-        return groq.transcribe_file(path)
-    except Exception as exc:  # noqa: BLE001 - fallback must not break lyrics lookup
-        print(f"Groq lyrics fallback skipped for deezer_id={deezer_id}: {exc!r}")
-        return None
+    except Exception as exc:  # noqa: BLE001 - translate storage failure with context
+        raise groq.GroqTranscriptionError(
+            f"Could not materialize Deezer track {deezer_id}."
+        ) from exc
+    return groq.transcribe_file(path)
+
+
+def _cached_lyrics_need_word_refresh(row: StoredLyrics) -> bool:
+    return (
+        groq.configured()
+        and row.ai_generated
+        and row.source == groq.LEGACY_LYRICS_SOURCE
+    )
+
+
+def _should_persist_lyrics(result: dict) -> bool:
+    return bool(result.get("lines")) or result.get("source") == groq.LYRICS_SOURCE
 
 
 @router.get("/lyrics")
@@ -114,7 +127,7 @@ async def lyrics(
     # Served from permanent storage if we've fetched this track before.
     if deezer_id:
         row = db.get(StoredLyrics, deezer_id)
-        if row is not None:
+        if row is not None and not _cached_lyrics_need_word_refresh(row):
             return {
                 "lines": json.loads(row.lines_json),
                 "synced": row.synced,
@@ -126,17 +139,27 @@ async def lyrics(
     result = await run_in_threadpool(_fetch, artist, title)
 
     if deezer_id and not result.get("lines") and groq.configured():
-        lines = await run_in_threadpool(_groq_transcription_fallback, deezer_id)
-        if lines:
-            result = {
-                "lines": lines,
-                "synced": False,
-                "source": "groq",
-                "ai_generated": True,
-            }
+        try:
+            lines = await run_in_threadpool(_groq_transcription, deezer_id)
+        except Exception as exc:  # noqa: BLE001 - preserve materialize/Groq context
+            print(
+                f"Groq lyrics transcription failed for deezer_id={deezer_id}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Groq lyrics transcription failed. Check the server logs.",
+            ) from exc
+        result = {
+            "lines": lines,
+            "synced": False,
+            "source": groq.LYRICS_SOURCE,
+            "ai_generated": True,
+        }
 
-    # Persist positive hits so we never re-fetch them.
-    if deezer_id and result.get("lines"):
+    # Persist positive hits and valid no-vocals Groq results so repeated page
+    # loads never trigger another paid transcription for the same audio.
+    if deezer_id and _should_persist_lyrics(result):
         db.merge(
             StoredLyrics(
                 deezer_id=deezer_id,
