@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from ..auth import get_current_user, get_current_user_optional
 from ..config import STORAGE_DIR
@@ -20,6 +22,11 @@ from ..schemas.playlist import (
     PlaylistUpdate,
 )
 from ..schemas.track import Track, dump_artists, load_artists
+from ..services.playlist_export import (
+    PlaylistExportError,
+    PlaylistExportTrack,
+    build_playlist_archive,
+)
 from ..uploads import image_extension, save_image_upload
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
@@ -148,6 +155,46 @@ def get_playlist(
         is_owner=is_owner,
         owner_name=owner.display_name if owner else None,
         tracks=[_pt_to_track(pt) for pt in pl.tracks],
+    )
+
+
+@router.get("/{playlist_id}/export")
+async def export_playlist(
+    playlist_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Download all tracks in a visible playlist as an ordered MP3 ZIP."""
+    pl = db.get(Playlist, playlist_id)
+    if pl is None or (pl.user_id != user.id and not pl.is_public):
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    tracks = [
+        PlaylistExportTrack(
+            deezer_id=track.deezer_id,
+            artist=track.artist,
+            title=track.title,
+        )
+        for track in pl.tracks
+    ]
+    try:
+        archive_path, archive_filename = await run_in_threadpool(
+            build_playlist_archive,
+            pl.name,
+            tracks,
+        )
+    except PlaylistExportError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Playlist export failed: {exc}",
+        ) from exc
+
+    return FileResponse(
+        archive_path,
+        filename=archive_filename,
+        media_type="application/zip",
+        headers={"X-Playlist-Track-Count": str(len(tracks))},
+        background=BackgroundTask(os.remove, archive_path),
     )
 
 

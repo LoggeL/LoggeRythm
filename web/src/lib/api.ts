@@ -349,3 +349,7 @@ export { ApiError };
 export function streamUrl(trackId: string): string {
   return `${BASE}/tracks/${encodeURIComponent(trackId)}/stream`;
 }
+
+export function playlistExportUrl(playlistId: string): string {
+  return `${BASE}/playlists/${encodeURIComponent(playlistId)}/export`;
+}

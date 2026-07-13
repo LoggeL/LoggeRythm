@@ -31,7 +31,7 @@ LoggeRythm is a self-hosted, private Spotify-style music app. It pairs a FastAPI
 - **Browse & search** — search and browse tracks, albums, artists, playlists, and genres.
 - **Full playback** — complete-track streaming, shuffle and repeat, crossfade, a circular audio visualizer, OS-level media controls via the MediaSession API, the current song reflected in the browser tab title, and synced (time-stamped) lyrics from [lrclib.net](https://lrclib.net).
 - **Two-level queue** — manually queued songs ("add to queue" / "play next") form a primary queue that always plays before the secondary queue fed by the current playlist/album or song radio, Spotify-style.
-- **Playlists** — full CRUD, custom covers, and public/private visibility.
+- **Playlists** — full CRUD, custom covers, public/private visibility, and ordered MP3 ZIP export.
 - **Likes** — like/unlike tracks.
 - **Follows** — follow other users.
 - **Spotify-link import** — paste a Spotify track/album/playlist link; metadata is resolved via the Spotify API and matched to Deezer for playback.

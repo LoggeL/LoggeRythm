@@ -12,7 +12,7 @@ import {
 } from "@/hooks/useLibrary";
 import { usePlayerStore } from "@/store/player";
 import { useDownloads } from "@/hooks/useDownloads";
-import { api } from "@/lib/api";
+import { api, playlistExportUrl } from "@/lib/api";
 import { playlistIdFromParam, playlistPath } from "@/lib/slugs";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
@@ -181,6 +181,17 @@ export default function PlaylistPage({
       </header>
 
       <div className="mb-6 flex flex-wrap items-center gap-2">
+        {tracks.length > 0 && (
+          <a
+            href={playlistExportUrl(id)}
+            download
+            aria-label="Playlist als MP3-ZIP exportieren"
+            title="Playlist als ZIP mit MP3-Dateien exportieren"
+            className="press px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
+          >
+            MP3 exportieren
+          </a>
+        )}
         {supported && tracks.length > 0 && (
           progress && progress.id === id ? (
             <span className="text-sm text-muted">
