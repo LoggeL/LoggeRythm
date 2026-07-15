@@ -1,6 +1,32 @@
 import type { MediaItem } from '@rntp/player';
 import type { Track } from '../api/types';
 
+function isArtistRef(value: unknown): value is Track['artists'][number] {
+  if (typeof value !== 'object' || value === null) return false;
+  const artist = value as Record<string, unknown>;
+  return (
+    (typeof artist.id === 'string' || typeof artist.id === 'number') &&
+    typeof artist.name === 'string'
+  );
+}
+
+/**
+ * RNTP's Android extras bridge preserves an array's entries in numeric keys and
+ * records its length separately. Rebuild that native representation before an
+ * item is sent back to JSON APIs such as play history.
+ */
+function normalizeArtists(value: unknown): Track['artists'] | null {
+  if (Array.isArray(value)) return value.every(isArtistRef) ? value : null;
+  if (typeof value !== 'object' || value === null) return null;
+
+  const arrayLike = value as Record<string, unknown>;
+  const length = arrayLike.__rntp_array_length;
+  if (!Number.isInteger(length) || (length as number) < 0) return null;
+
+  const artists = Array.from({ length: length as number }, (_, index) => arrayLike[String(index)]);
+  return artists.every(isArtistRef) ? artists : null;
+}
+
 /**
  * Convert a backend Track into an RNTP MediaItem. The stream endpoint supports
  * HTTP Range requests and receives the account cookie through native URL headers.
@@ -36,10 +62,16 @@ export function mediaItemToTrack(item: MediaItem | null | undefined): Track | nu
     throw new Error(`Media item ${String(item.mediaId)} is missing Track metadata in extras.track`);
   }
   const candidate = t as Partial<Track>;
-  if (typeof candidate.id !== 'string' || typeof candidate.title !== 'string' || typeof candidate.artist !== 'string') {
+  const artists = normalizeArtists(candidate.artists);
+  if (
+    typeof candidate.id !== 'string' ||
+    typeof candidate.title !== 'string' ||
+    typeof candidate.artist !== 'string' ||
+    artists === null
+  ) {
     throw new Error(`Media item ${String(item.mediaId)} contains invalid Track metadata`);
   }
-  return candidate as Track;
+  return { ...candidate, artists } as Track;
 }
 
 export function mediaItemIsRadio(item: MediaItem | null | undefined): boolean {

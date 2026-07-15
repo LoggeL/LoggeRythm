@@ -20,6 +20,7 @@ import SearchScreen from './screens/SearchScreen';
 import LibraryScreen from './screens/LibraryScreen';
 import PlaylistScreen from './screens/PlaylistScreen';
 import NowPlayingScreen from './screens/NowPlayingScreen';
+import QueueScreen from './screens/QueueScreen';
 import { colors } from './theme';
 
 export type LibraryStackParams = {
@@ -32,6 +33,7 @@ export type LibraryStackParams = {
 export type RootStackParams = {
   Tabs: undefined;
   NowPlaying: undefined;
+  Queue: undefined;
 };
 
 const navTheme: Theme = {
@@ -205,6 +207,11 @@ export default function RootNavigator() {
           <RootStack.Screen
             name="NowPlaying"
             component={NowPlayingScreen}
+            options={{ headerShown: false, presentation: 'modal' }}
+          />
+          <RootStack.Screen
+            name="Queue"
+            component={QueueScreen}
             options={{ headerShown: false, presentation: 'modal' }}
           />
         </RootStack.Navigator>

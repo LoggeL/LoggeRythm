@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Keyboard, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as api from '../api/endpoints';
 import type { Track } from '../api/types';
 import TrackRow from '../components/TrackRow';
@@ -59,6 +59,7 @@ export default function SearchScreen() {
   };
 
   const play = (index: number) => {
+    Keyboard.dismiss();
     void playTracks(results, index).catch((cause) => setError((cause as Error).message));
   };
 

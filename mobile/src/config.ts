@@ -6,10 +6,17 @@
  * canonical production origin is baked into the Hermes bundle.
  */
 export const PRODUCTION_API_BASE = 'https://loggerythm.logge.top';
-export const DEFAULT_API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? PRODUCTION_API_BASE;
+
+export function selectApiBase(configured: string | undefined): string {
+  return configured === undefined || configured.trim() === ''
+    ? PRODUCTION_API_BASE
+    : configured;
+}
+
+export const DEFAULT_API_BASE = selectApiBase(process.env.EXPO_PUBLIC_API_BASE);
 
 export function normalizeApiBase(base: string): string {
-  const trimmed = base.trim().replace(/\/+$/, '');
+  const trimmed = base.trim();
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
@@ -28,7 +35,10 @@ export function normalizeApiBase(base: string): string {
   if (parsed.search || parsed.hash) {
     throw new Error(`Invalid API base URL "${base}": query strings and fragments are not allowed`);
   }
-  return trimmed;
+  if (parsed.pathname !== '/') {
+    throw new Error(`Invalid API base URL "${base}": path must be the origin root`);
+  }
+  return parsed.origin;
 }
 
 export async function getApiBase(): Promise<string> {

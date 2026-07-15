@@ -8,7 +8,7 @@ index 32ae595..c340802 100644
      targetSdkVersion getExtOrIntegerDefault("targetSdkVersion")
 +    testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
    }
- 
+
    buildFeatures {
 @@ -115,6 +116,8 @@ dependencies {
    testImplementation "io.mockk:mockk:1.13.8"
@@ -17,7 +17,7 @@ index 32ae595..c340802 100644
 +  androidTestImplementation "androidx.test.ext:junit:1.1.5"
 +  androidTestImplementation "androidx.test:runner:1.5.2"
  }
- 
+
  react {
 diff --git a/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/BrowseTreeStorageInstrumentedTest.kt b/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/BrowseTreeStorageInstrumentedTest.kt
 new file mode 100644
@@ -76,18 +76,527 @@ index 0000000..a623ff6
 +    assertEquals("sf_session=instrumented-token", MediaHeaders.get(uri)?.get("Cookie"))
 +  }
 +}
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/ControllerOperationQueue.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/ControllerOperationQueue.kt
+new file mode 100644
+index 0000000..a96a640
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/ControllerOperationQueue.kt
+@@ -0,0 +1,212 @@
++/*
++ * Copyright (c) Double Symmetry GmbH
++ * Commercial use requires a license. See https://rntp.dev/pricing
++ */
++
++package com.doublesymmetry.trackplayer
++
++import java.util.ArrayDeque
++
++/** Thread-safe lifecycle and FIFO queue used while a MediaController connection is pending. */
++internal class ControllerOperationQueue<T>(
++  private val execute: (T, (T) -> Unit) -> Unit = { controller, operation ->
++    operation(controller)
++  }
++) {
++  private enum class State {
++    NOT_STARTED,
++    CONNECTING,
++    FLUSHING,
++    CONNECTED,
++    DISCONNECTED,
++    FAILED,
++  }
++
++  private var state = State.NOT_STARTED
++  private var controller: T? = null
++  private var connectionFailure: Throwable? = null
++  private var disconnectRequested = false
++  private val pendingOperations = ArrayDeque<(T) -> Unit>()
++
++  @Synchronized
++  fun beginConnection() {
++    check(state == State.NOT_STARTED || state == State.DISCONNECTED || state == State.FAILED) {
++      when (state) {
++        State.CONNECTING, State.FLUSHING ->
++          "MediaController connection is already in progress"
++        State.CONNECTED ->
++          "MediaController is already connected; call destroy() before setupPlayer() again"
++        else -> "MediaController cannot start a connection from state $state"
++      }
++    }
++
++    controller = null
++    connectionFailure = null
++    disconnectRequested = false
++    pendingOperations.clear()
++    state = State.CONNECTING
++  }
++
++  fun run(operation: (T) -> Unit) {
++    val connectedController: T
++    synchronized(this) {
++      check(!disconnectRequested) {
++        "MediaController disconnect is in progress; call setupPlayer() after destroy completes"
++      }
++      when (state) {
++        State.CONNECTING, State.FLUSHING -> {
++          pendingOperations.addLast(operation)
++          return
++        }
++        State.CONNECTED -> connectedController = checkNotNull(controller)
++        State.NOT_STARTED -> throw IllegalStateException(
++          "MediaController is not initialized; call setupPlayer() first"
++        )
++        State.DISCONNECTED -> throw IllegalStateException(
++          "MediaController is disconnected; call setupPlayer() before using the player"
++        )
++        State.FAILED -> throw IllegalStateException(
++          "MediaController connection failed; call setupPlayer() to retry",
++          connectionFailure,
++        )
++      }
++    }
++
++    execute(connectedController, operation)
++  }
++
++  /**
++   * Runs or queues a best-effort notification, returning false when no connection lifecycle
++   * exists. This is reserved for state that has already been persisted independently.
++   */
++  fun runIfConnectingOrConnected(operation: (T) -> Unit): Boolean {
++    val connectedController: T
++    synchronized(this) {
++      if (disconnectRequested) return false
++      when (state) {
++        State.CONNECTING, State.FLUSHING -> {
++          pendingOperations.addLast(operation)
++          return true
++        }
++        State.CONNECTED -> connectedController = checkNotNull(controller)
++        State.NOT_STARTED, State.DISCONNECTED, State.FAILED -> return false
++      }
++    }
++
++    execute(connectedController, operation)
++    return true
++  }
++
++  fun runAndDisconnect(operation: (T) -> Unit) {
++    val connectedController: T
++    synchronized(this) {
++      check(!disconnectRequested) { "MediaController disconnect is already in progress" }
++
++      when (state) {
++        State.CONNECTING, State.FLUSHING -> {
++          disconnectRequested = true
++          pendingOperations.addLast { queuedController ->
++            try {
++              operation(queuedController)
++            } finally {
++              disconnect()
++            }
++          }
++          return
++        }
++        State.CONNECTED -> {
++          disconnectRequested = true
++          connectedController = checkNotNull(controller)
++        }
++        State.NOT_STARTED -> throw IllegalStateException(
++          "MediaController is not initialized; call setupPlayer() first"
++        )
++        State.DISCONNECTED -> throw IllegalStateException("MediaController is already disconnected")
++        State.FAILED -> throw IllegalStateException(
++          "MediaController connection failed; there is no connected controller to destroy",
++          connectionFailure,
++        )
++      }
++    }
++
++    execute(connectedController) { activeController ->
++      try {
++        operation(activeController)
++      } finally {
++        disconnect()
++      }
++    }
++  }
++
++  fun connect(newController: T) {
++    synchronized(this) {
++      check(state == State.CONNECTING) {
++        "MediaController completed a connection from invalid state $state"
++      }
++      controller = newController
++      state = State.FLUSHING
++    }
++
++    try {
++      while (true) {
++        val operation = synchronized(this) {
++          if (state != State.FLUSHING) return
++          if (pendingOperations.isEmpty()) {
++            state = State.CONNECTED
++            return
++          }
++          pendingOperations.removeFirst()
++        }
++        execute(newController, operation)
++      }
++    } catch (error: Throwable) {
++      fail(error)
++      throw error
++    }
++  }
++
++  @Synchronized
++  fun fail(error: Throwable) {
++    controller = null
++    connectionFailure = error
++    disconnectRequested = false
++    pendingOperations.clear()
++    state = State.FAILED
++  }
++
++  @Synchronized
++  fun disconnect() {
++    check(state == State.CONNECTED || state == State.FLUSHING) {
++      "MediaController cannot disconnect from state $state"
++    }
++    check(pendingOperations.isEmpty()) {
++      "MediaController cannot disconnect while ${pendingOperations.size} operations remain queued"
++    }
++    controller = null
++    connectionFailure = null
++    disconnectRequested = false
++    pendingOperations.clear()
++    state = State.DISCONNECTED
++  }
++
++  @Synchronized
++  fun controllerForSynchronousRead(): T? {
++    check(!disconnectRequested) {
++      "MediaController disconnect is in progress; call setupPlayer() after destroy completes"
++    }
++    return when (state) {
++      State.CONNECTING, State.FLUSHING -> null
++      State.CONNECTED -> checkNotNull(controller)
++      State.NOT_STARTED -> throw IllegalStateException(
++        "MediaController is not initialized; call setupPlayer() first"
++      )
++      State.DISCONNECTED -> throw IllegalStateException(
++        "MediaController is disconnected; call setupPlayer() before using the player"
++      )
++      State.FAILED -> throw IllegalStateException(
++        "MediaController connection failed; call setupPlayer() to retry",
++        connectionFailure,
++      )
++    }
++  }
++}
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt
+index 9a391d0..b6ed00d 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt
+@@ -10,47 +10,67 @@ import android.os.Looper
+ import androidx.media3.session.MediaController
+ import java.util.concurrent.FutureTask
+
+-/**
+- * Thread-safe wrapper that enforces all [MediaController] access happens on the main thread.
+- *
+- * The controller instance is private — callers must use [run], [sync], or [get] to interact
+- * with it, all of which guarantee main-thread execution.
+- */
++/** Main-thread gate plus an ordered queue for commands issued while connecting. */
+ class MainThreadMediaController(
+   private val mainHandler: Handler = Handler(Looper.getMainLooper())
+ ) {
++  private val operations = ControllerOperationQueue<MediaController> { controller, operation ->
++    if (isMainThread()) operation(controller)
++    else mainHandler.post { operation(controller) }
++  }
+
+-  private var controller: MediaController? = null
++  /** Starts the connection independently from [run], so setup can never queue behind itself. */
++  fun beginConnection(block: () -> Unit) {
++    operations.beginConnection()
++    if (isMainThread()) startConnection(block)
++    else mainHandler.post { startConnection(block) }
++  }
+
+-  /** Update the held controller. Must be called from the main thread. */
++  /** Completes or tears down the current connection. Must be called on the main thread. */
+   fun set(newController: MediaController?) {
+     assertMainThread()
+-    controller = newController
++    if (newController == null) operations.disconnect()
++    else operations.connect(newController)
+   }
+
+-  /** Fire-and-forget: dispatches [block] to the main thread with the controller. */
++  fun failConnection(error: Throwable) {
++    if (isMainThread()) operations.fail(error)
++    else mainHandler.post { operations.fail(error) }
++  }
++
++  /** Queues while connecting and otherwise dispatches to the connected main-thread controller. */
+   fun run(block: (MediaController?) -> Unit) {
+-    if (isMainThread()) {
+-      block(controller)
+-    } else {
+-      mainHandler.post { block(controller) }
+-    }
++    operations.run { block(it) }
+   }
+
+-  /** Blocking: runs [block] on the main thread and returns the result. */
++  fun runIfConnectingOrConnected(block: (MediaController?) -> Unit): Boolean =
++    operations.runIfConnectingOrConnected { block(it) }
++
++  /** Runs teardown in queue order and rejects any operation submitted after it. */
++  fun runAndDisconnect(block: (MediaController?) -> Unit) {
++    operations.runAndDisconnect { block(it) }
++  }
++
++  /** Synchronous reads return the existing null/default view only while connection is pending. */
+   fun <T> sync(block: (MediaController?) -> T): T {
+-    if (isMainThread()) {
+-      return block(controller)
+-    }
+-    val task = FutureTask { block(controller) }
++    if (isMainThread()) return block(operations.controllerForSynchronousRead())
++    val task = FutureTask { block(operations.controllerForSynchronousRead()) }
+     mainHandler.post(task)
+     return task.get()
+   }
+
+-  /** Direct access for code already on the main thread (e.g. Player.Listener callbacks). */
+   fun get(): MediaController? {
+     assertMainThread()
+-    return controller
++    return operations.controllerForSynchronousRead()
++  }
++
++  private fun startConnection(block: () -> Unit) {
++    try {
++      block()
++    } catch (error: Throwable) {
++      operations.fail(error)
++      throw error
++    }
+   }
+
+   private fun isMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicy.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicy.kt
+new file mode 100644
+index 0000000..83e3bfd
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicy.kt
+@@ -0,0 +1,20 @@
++/*
++ * Copyright (c) Double Symmetry GmbH
++ * Commercial use requires a license. See https://rntp.dev/pricing
++ */
++
++package com.doublesymmetry.trackplayer
++
++/** Pure policy kept separate from Media3 so controller authorization is unit-testable. */
++internal object MediaControllerTrustPolicy {
++  fun canConnect(
++    appUid: Int,
++    controllerUid: Int,
++    isTrusted: Boolean,
++  ): Boolean = isTrusted || controllerUid == appUid
++
++  fun canUsePrivilegedCommands(
++    appUid: Int,
++    controllerUid: Int,
++  ): Boolean = controllerUid == appUid
++}
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
-index 7da495f..87aaf66 100644
+index 7da495f..f47a639 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
-@@ -262,6 +262,7 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+@@ -60,18 +60,22 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+   override fun setupPlayer(map: ReadableMap) {
+     val config = PlayerConfig.fromReadableMap(map)
+     config.store(context)
+-    controller.run {
++    controller.beginConnection {
+       val sessionToken = SessionToken(context, ComponentName(context, TrackPlayerPlaybackService::class.java))
+       val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+       controllerFuture.addListener(
+         {
+-          val mc = controllerFuture.get()
+-          mc.addListener(this)
+-          controller.set(mc)
+-          mc.sendCustomCommand(
+-            SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
+-            Bundle.EMPTY
+-          )
++          try {
++            val mc = controllerFuture.get()
++            mc.addListener(this)
++            mc.sendCustomCommand(
++              SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
++              Bundle.EMPTY
++            )
++            controller.set(mc)
++          } catch (error: Throwable) {
++            controller.failConnection(error.cause ?: error)
++          }
+         },
+         MoreExecutors.directExecutor()
+       )
+@@ -262,6 +266,7 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
    @ReactMethod
    override fun clear() {
      controller.run { it?.clearMediaItems() }
 +    MediaHeaders.clearPlayer()
      context.emitEvent(QueueChangedEvent())
    }
- 
+
+@@ -467,7 +472,9 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+     val browseTree = BrowseTree.fromReadableArray(categories)
+     browseTree.store(context)
+
+-    controller.run { mc ->
++    // Persistence is authoritative. Before setup (fresh-install logout/cleanup), there is no
++    // live service to notify; setup sends the same update as soon as the controller connects.
++    controller.runIfConnectingOrConnected { mc ->
+       mc?.sendCustomCommand(
+         SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
+         Bundle.EMPTY
+@@ -606,10 +613,11 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+
+   @ReactMethod
+   override fun destroy() {
+-    controller.run { mc ->
++    // If setup is still connecting, teardown remains ordered behind earlier calls. The
++    // terminal queue operation also rejects any command submitted after destroy().
++    controller.runAndDisconnect { mc ->
+       mc?.removeListener(this)
+       mc?.release()
+-      controller.set(null)
+     }
+     MediaHeaders.clear()
+   }
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
+index 9c0906b..6a23f41 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
+@@ -388,27 +388,46 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+     session: MediaSession,
+     controller: MediaSession.ControllerInfo
+   ): MediaSession.ConnectionResult {
++    if (!canControllerConnect(controller)) {
++      return MediaSession.ConnectionResult.reject()
++    }
++
+     playerConfig = PlayerConfig().load(this)
+
+     return AcceptedResultBuilder(session)
+-      .setAvailableSessionCommands(buildSessionCommands())
++      .setAvailableSessionCommands(
++        buildSessionCommands(includePrivilegedCommands = isOwnAppController(controller))
++      )
+       .setAvailablePlayerCommands(buildPlayerCommands(playerConfig ?: PlayerConfig()))
+       .build()
+   }
+
++  @OptIn(UnstableApi::class)
+   override fun onCustomCommand(
+     session: MediaSession,
+     controller: MediaSession.ControllerInfo,
+     customCommand: SessionCommand,
+     args: Bundle
+   ): ListenableFuture<SessionResult> {
++    if (!isOwnAppController(controller)) {
++      return Futures.immediateFuture(
++        SessionResult(SessionResult.RESULT_ERROR_PERMISSION_DENIED)
++      )
++    }
++
+     when (customCommand.customAction) {
+       COMMAND_UPDATE_COMMANDS -> {
+         playerConfig = PlayerConfig().load(this)
+         val playerCommands = buildPlayerCommands(playerConfig ?: PlayerConfig())
+-        val sessionCommands = buildSessionCommands()
+         for (connectedController in session.connectedControllers) {
+-          session.setAvailableCommands(connectedController, sessionCommands, playerCommands)
++          if (!canControllerConnect(connectedController)) continue
++          session.setAvailableCommands(
++            connectedController,
++            buildSessionCommands(
++              includePrivilegedCommands = isOwnAppController(connectedController)
++            ),
++            playerCommands,
++          )
+         }
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
+@@ -626,25 +645,44 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+
+   // region Session Commands
+
+-  private fun buildSessionCommands() =
++  private fun buildSessionCommands(includePrivilegedCommands: Boolean) =
+     MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon()
+-      .add(SessionCommand(COMMAND_UPDATE_COMMANDS, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_PLAY, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_PAUSE, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_STOP, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_SEEK_TO, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_SEEK_BY, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_SEEK_TO_NEXT, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_SEEK_TO_PREVIOUS, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_UPDATE_PROGRESS_SYNC_HEADERS, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_SLEEP_AFTER_TIME, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_SLEEP_AFTER_MEDIA_ITEM, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_CANCEL_SLEEP_TIMER, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_PRELOAD, Bundle.EMPTY))
+-      .add(SessionCommand(COMMAND_CANCEL_PRELOAD, Bundle.EMPTY))
++      .apply {
++        if (includePrivilegedCommands) {
++          add(SessionCommand(COMMAND_UPDATE_COMMANDS, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_PLAY, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_PAUSE, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_STOP, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_SEEK_TO, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_SEEK_BY, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_SEEK_TO_NEXT, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_SEEK_TO_PREVIOUS, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_UPDATE_PROGRESS_SYNC_HEADERS, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_SLEEP_AFTER_TIME, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_SLEEP_AFTER_MEDIA_ITEM, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_CANCEL_SLEEP_TIMER, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_PRELOAD, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_CANCEL_PRELOAD, Bundle.EMPTY))
++        }
++      }
+       .build()
+
++  @OptIn(UnstableApi::class)
++  private fun canControllerConnect(controller: MediaSession.ControllerInfo): Boolean =
++    MediaControllerTrustPolicy.canConnect(
++      appUid = applicationInfo.uid,
++      controllerUid = controller.uid,
++      isTrusted = controller.isTrusted,
++    )
++
++  @OptIn(UnstableApi::class)
++  private fun isOwnAppController(controller: MediaSession.ControllerInfo): Boolean =
++    MediaControllerTrustPolicy.canUsePrivilegedCommands(
++      appUid = applicationInfo.uid,
++      controllerUid = controller.uid,
++    )
++
+   // endregion
+
+   // region Player Commands
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt
 index 8b7ea92..59d9688 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt
@@ -278,7 +787,7 @@ index 8b7ea92..59d9688 100644
 +    }
 +  }
 +}
- 
+
  @Serializable
  data class BrowseCategory(
 @@ -28,6 +202,7 @@ data class BrowseCategory(
@@ -321,11 +830,11 @@ index 8b7ea92..59d9688 100644
 +    categories.forEach { collect(it.items) }
 +    return snapshot
    }
- 
+
    fun findCategory(mediaId: String): BrowseCategory? =
 @@ -105,51 +301,61 @@ data class BrowseTree(
    }
- 
+
    companion object {
 -    private const val BROWSE_TREE_KEY = "browse_tree"
 -
@@ -342,7 +851,7 @@ index 8b7ea92..59d9688 100644
 +      context: Context,
 +      storage: BrowseTreeStorage = BrowseTreeStorage(),
 +    ): BrowseTree = BrowseTreeRegistry.load(context, storage)
- 
+
      fun fromReadableArray(data: ReadableArray): BrowseTree {
        val categories = mutableListOf<BrowseCategory>()
 +      val mediaIds = mutableSetOf<String>()
@@ -357,14 +866,14 @@ index 8b7ea92..59d9688 100644
 +        requireUniqueMediaId(mediaIds, mediaId, label)
 +        val title = requireNonBlankString(catMap, "title", label)
 +        val itemsArray = requireArray(catMap, "items", label)
- 
+
 -        val items = parseItems(itemsArray)
 +        val items = parseItems(itemsArray, "$label ('$mediaId')", mediaIds)
          categories.add(BrowseCategory(mediaId = mediaId, title = title, items = items))
        }
        return BrowseTree(categories)
      }
- 
+
 -    private fun parseItems(data: ReadableArray): List<BrowseMediaItem> {
 +    private fun parseItems(
 +      data: ReadableArray,
@@ -379,12 +888,12 @@ index 8b7ea92..59d9688 100644
 +        val itemMap = requireMap(data, i, label)
 +        val mediaId = requireNonBlankString(itemMap, "mediaId", label)
 +        requireUniqueMediaId(mediaIds, mediaId, label)
- 
+
          val children = if (itemMap.hasKey("children")) {
 -          itemMap.getArray("children")?.let { parseItems(it) }
 +          parseItems(requireArray(itemMap, "children", label), "$label ('$mediaId')", mediaIds)
          } else null
- 
+
 +        val (url, headers) = parseUrl(itemMap, mediaId)
 +        if (url == null && children == null) {
 +          throw IllegalArgumentException(
@@ -415,7 +924,7 @@ index 8b7ea92..59d9688 100644
 @@ -157,6 +363,144 @@ data class BrowseTree(
        return items
      }
- 
+
 +    private fun parseUrl(
 +      itemMap: ReadableMap,
 +      mediaId: String,
@@ -563,10 +1072,10 @@ index 0cb0889..f26ec4a 100644
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaHeaders.kt
 @@ -6,6 +6,7 @@
  package com.doublesymmetry.trackplayer.models
- 
+
  import java.util.concurrent.ConcurrentHashMap
 +import java.util.concurrent.atomic.AtomicReference
- 
+
  /**
   * Thread-safe store mapping media URIs to their HTTP request headers.
 @@ -13,13 +14,25 @@ import java.util.concurrent.ConcurrentHashMap
@@ -576,12 +1085,12 @@ index 0cb0889..f26ec4a 100644
 -  private val headers = ConcurrentHashMap<String, Map<String, String>>()
 +  private val playerHeaders = ConcurrentHashMap<String, Map<String, String>>()
 +  private val browseHeaders = AtomicReference<Map<String, Map<String, String>>>(emptyMap())
- 
+
    fun set(uri: String, headers: Map<String, String>) {
 -    this.headers[uri] = headers
 +    playerHeaders[uri] = headers
    }
- 
+
 -  fun get(uri: String): Map<String, String>? = headers[uri]
 +  fun replaceBrowse(headers: Map<String, Map<String, String>>) {
 +    browseHeaders.set(headers.mapValues { (_, values) -> values.toMap() }.toMap())
@@ -590,7 +1099,7 @@ index 0cb0889..f26ec4a 100644
 +  fun get(uri: String): Map<String, String>? = playerHeaders[uri] ?: browseHeaders.get()[uri]
 +
 +  fun clearPlayer() = playerHeaders.clear()
- 
+
 -  fun clear() = headers.clear()
 +  fun clearBrowse() = browseHeaders.set(emptyMap())
 +
@@ -606,7 +1115,7 @@ index 43b2934..798f255 100644
 @@ -57,18 +57,11 @@ data class TrackPlayerMediaItem(
        .setExtras(metadataExtras)
        .build()
- 
+
 -    val requestExtras = Bundle()
 -    headers?.let { h ->
 -      val headerBundle = Bundle()
@@ -644,13 +1153,13 @@ index f0e0ecb..9bebaa0 100644
 +import org.robolectric.RuntimeEnvironment
  import org.robolectric.annotation.Config
 +import javax.crypto.KeyGenerator
- 
+
  /**
   * Verifies [HeaderInjectingDataSourceFactory] forwards every [DataSource]
 @@ -111,6 +117,37 @@ class HeaderInjectingDataSourceFactoryTest {
      assertEquals("hello", seen["X-Custom"])
    }
- 
+
 +  @Test
 +  fun `encrypted browse-tree reload injects authenticated playback headers`() {
 +    val uri = "https://example.com/android-auto.mp3"
@@ -685,13 +1194,220 @@ index f0e0ecb..9bebaa0 100644
    @Test
    fun `dataSpec passes through unchanged when no per-item headers`() {
      val stub = StubDataSource()
+diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MainThreadMediaControllerTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MainThreadMediaControllerTest.kt
+new file mode 100644
+index 0000000..809c1e4
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MainThreadMediaControllerTest.kt
+@@ -0,0 +1,124 @@
++package com.doublesymmetry.trackplayer
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertSame
++import org.junit.Assert.assertThrows
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class MainThreadMediaControllerTest {
++  @Test
++  fun queuedOperationsFlushInSubmissionOrder() {
++    val queue = ControllerOperationQueue<String>()
++    val calls = mutableListOf<String>()
++
++    queue.beginConnection()
++    queue.run { controller ->
++      calls += "first:$controller"
++      queue.run { calls += "third:$it" }
++    }
++    queue.run { calls += "second:$it" }
++
++    assertNull(queue.controllerForSynchronousRead())
++    queue.connect("connected")
++
++    assertEquals(
++      listOf("first:connected", "second:connected", "third:connected"),
++      calls,
++    )
++  }
++
++  @Test
++  fun operationBeforeSetupFailsClearly() {
++    val error = assertThrows(IllegalStateException::class.java) {
++      ControllerOperationQueue<String>().run { }
++    }
++
++    assertTrue(error.message.orEmpty().contains("setupPlayer"))
++  }
++
++  @Test
++  fun persistedStateNotificationBeforeSetupIsAnExplicitNonOperation() {
++    val queue = ControllerOperationQueue<String>()
++    var called = false
++
++    val accepted = queue.runIfConnectingOrConnected { called = true }
++
++    assertEquals(false, accepted)
++    assertEquals(false, called)
++  }
++
++  @Test
++  fun repeatedConnectionAttemptFailsClearly() {
++    val queue = ControllerOperationQueue<String>()
++    queue.beginConnection()
++
++    val connectingError = assertThrows(IllegalStateException::class.java) {
++      queue.beginConnection()
++    }
++    assertTrue(connectingError.message.orEmpty().contains("already in progress"))
++
++    queue.connect("connected")
++    val connectedError = assertThrows(IllegalStateException::class.java) {
++      queue.beginConnection()
++    }
++    assertTrue(connectedError.message.orEmpty().contains("already connected"))
++  }
++
++  @Test
++  fun disconnectedOperationsFailAndExplicitReconnectSucceeds() {
++    val queue = ControllerOperationQueue<String>()
++    queue.beginConnection()
++    queue.connect("first")
++    queue.disconnect()
++
++    val error = assertThrows(IllegalStateException::class.java) {
++      queue.run { }
++    }
++    assertTrue(error.message.orEmpty().contains("disconnected"))
++
++    queue.beginConnection()
++    queue.connect("second")
++    assertEquals("second", queue.controllerForSynchronousRead())
++  }
++
++  @Test
++  fun destroyQueuedWhileConnectingDisconnectsDuringOrderedFlush() {
++    val queue = ControllerOperationQueue<String>()
++    val calls = mutableListOf<String>()
++    queue.beginConnection()
++    queue.run { calls += "before-destroy:$it" }
++    queue.runAndDisconnect {
++      calls += "destroy:$it"
++    }
++
++    val rejectedAfterDestroy = assertThrows(IllegalStateException::class.java) {
++      queue.run { calls += "after-destroy:$it" }
++    }
++    assertTrue(rejectedAfterDestroy.message.orEmpty().contains("disconnect is in progress"))
++
++    queue.connect("connected")
++
++    assertEquals(listOf("before-destroy:connected", "destroy:connected"), calls)
++    val disconnectedError = assertThrows(IllegalStateException::class.java) {
++      queue.run { calls += "after-disconnect:$it" }
++    }
++    assertTrue(disconnectedError.message.orEmpty().contains("disconnected"))
++  }
++
++  @Test
++  fun connectionFailureIsRetainedAsTheActionableCause() {
++    val queue = ControllerOperationQueue<String>()
++    val cause = SecurityException("session rejected")
++    queue.beginConnection()
++    queue.fail(cause)
++
++    val error = assertThrows(IllegalStateException::class.java) {
++      queue.run { }
++    }
++
++    assertSame(cause, error.cause)
++    assertTrue(error.message.orEmpty().contains("connection failed"))
++  }
++}
+diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicyTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicyTest.kt
+new file mode 100644
+index 0000000..72f68b0
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicyTest.kt
+@@ -0,0 +1,71 @@
++package com.doublesymmetry.trackplayer
++
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class MediaControllerTrustPolicyTest {
++  private val appUid = 10_001
++
++  @Test
++  fun verifiedOwnAppControllerIsAllowedAndPrivileged() {
++    assertTrue(
++      MediaControllerTrustPolicy.canConnect(
++        appUid,
++        appUid,
++        isTrusted = false,
++      )
++    )
++    assertTrue(
++      MediaControllerTrustPolicy.canUsePrivilegedCommands(
++        appUid,
++        appUid,
++      )
++    )
++  }
++
++  @Test
++  fun trustedSystemControllerIsAllowedWithoutPrivilegedAppCommands() {
++    assertTrue(
++      MediaControllerTrustPolicy.canConnect(
++        appUid,
++        controllerUid = 1_000,
++        isTrusted = true,
++      )
++    )
++    assertFalse(
++      MediaControllerTrustPolicy.canUsePrivilegedCommands(
++        appUid,
++        controllerUid = 1_000,
++      )
++    )
++  }
++
++  @Test
++  fun untrustedExternalControllerIsRejected() {
++    assertFalse(
++      MediaControllerTrustPolicy.canConnect(
++        appUid,
++        controllerUid = 10_002,
++        isTrusted = false,
++      )
++    )
++  }
++
++  @Test
++  fun trustedExternalControllerStillCannotUsePrivilegedAppCommands() {
++    assertTrue(
++      MediaControllerTrustPolicy.canConnect(
++        appUid,
++        controllerUid = 10_002,
++        isTrusted = true,
++      )
++    )
++    assertFalse(
++      MediaControllerTrustPolicy.canUsePrivilegedCommands(
++        appUid,
++        controllerUid = 10_002,
++      )
++    )
++  }
++}
 diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt
 index 34a1e21..1b155cc 100644
 --- a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt
 +++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt
 @@ -1,5 +1,7 @@
  package com.doublesymmetry.trackplayer.models
- 
+
 +import com.facebook.react.bridge.JavaOnlyArray
 +import com.facebook.react.bridge.JavaOnlyMap
  import kotlinx.serialization.json.JsonObject
@@ -703,10 +1419,10 @@ index 34a1e21..1b155cc 100644
  import org.robolectric.RuntimeEnvironment
 +import javax.crypto.KeyGenerator
 +import javax.crypto.SecretKey
- 
+
  @RunWith(RobolectricTestRunner::class)
  class BrowseTreeTest {
- 
+
 +    @Test
 +    fun `authenticated object URL survives encrypted service persistence`() {
 +        val uri = "https://example.com/secure.mp3"
@@ -753,12 +1469,12 @@ index 34a1e21..1b155cc 100644
 +        val storage = storage()
 +        tree.store(context, storage)
 +        val loaded = BrowseTree.load(context, storage)
- 
+
          assertEquals(1, loaded.categories.size)
          assertEquals("Music", loaded.categories[0].title)
 @@ -30,22 +69,175 @@ class BrowseTreeTest {
      }
- 
+
      @Test
 -    fun `load with corrupt JSON returns empty tree`() {
 +    fun `load with corrupt JSON fails loudly`() {
@@ -766,7 +1482,7 @@ index 34a1e21..1b155cc 100644
          val prefs = context.getSharedPreferences("TrackPlayerPrefs", 0)
 -        prefs.edit().putString("browse_tree", "not valid json{{{").apply()
 +        prefs.edit().putString("browse_tree", "{not valid json{{{").apply()
- 
+
 -        val tree = BrowseTree.load(context)
 -        assertTrue(tree.categories.isEmpty())
 +        val failure = assertThrows(IllegalStateException::class.java) {
@@ -774,7 +1490,7 @@ index 34a1e21..1b155cc 100644
 +        }
 +        assertTrue(failure.message!!.contains("legacy plaintext Android Auto browse tree is invalid"))
      }
- 
+
      @Test
      fun `load with no saved data returns empty tree`() {
          val context = RuntimeEnvironment.getApplication()
@@ -782,7 +1498,7 @@ index 34a1e21..1b155cc 100644
 +        val tree = BrowseTree.load(context, storage())
          assertTrue(tree.categories.isEmpty())
      }
- 
+
 +    @Test
 +    fun `fromReadableArray rejects malformed categories instead of skipping them`() {
 +        val malformed = JavaOnlyMap.of(
@@ -946,7 +1662,7 @@ index 34a1e21..1b155cc 100644
 +        val storage = storage()
 +        tree.store(context, storage)
 +        val loaded = BrowseTree.load(context, storage)
- 
+
          val album = loaded.categories[0].items[0]
          assertEquals("album", album.mediaId)
 @@ -184,8 +377,9 @@ class BrowseTreeTest {
@@ -958,13 +1674,13 @@ index 34a1e21..1b155cc 100644
 +        val storage = storage()
 +        tree.store(context, storage)
 +        val loaded = BrowseTree.load(context, storage)
- 
+
          val extras = loaded.categories[0].items[0].extras
          assertNotNull(extras)
 @@ -247,6 +441,11 @@ class BrowseTreeTest {
          ))
      }
- 
+
 +    private fun storage(): BrowseTreeStorage {
 +        val key: SecretKey = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
 +        return BrowseTreeStorage(encryptionKey = { key }, decryptionKey = { key })
@@ -979,7 +1695,7 @@ index bd6a0c1..6af8300 100644
 +++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItemTest.kt
 @@ -253,19 +253,20 @@ class TrackPlayerMediaItemTest {
      }
- 
+
      @Test
 -    fun `asMediaItem with headers stores headers in request extras`() {
 +    fun `asMediaItem keeps request headers local to the data source`() {
@@ -988,7 +1704,7 @@ index bd6a0c1..6af8300 100644
              url = "https://example.com/track.mp3",
              headers = mapOf("Authorization" to "Bearer xyz", "Accept" to "audio/*"),
          )
- 
+
          val mediaItem = item.asMediaItem()
 -        val requestExtras = mediaItem.requestMetadata.extras
 -        assertNotNull(requestExtras)
@@ -1003,5 +1719,5 @@ index bd6a0c1..6af8300 100644
 +        )
 +        MediaHeaders.clear()
      }
- 
+
      @Test

@@ -107,13 +107,36 @@ export default function NowPlayingScreen({ navigation }: Props) {
     }
   };
 
+  const topBar = (
+    <View style={styles.topBar}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Close Now Playing"
+        style={styles.closeButton}
+        onPress={() => navigation.goBack()}
+        hitSlop={16}
+      >
+        <Text style={styles.closeText}>⌄</Text>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open queue"
+        style={styles.queueButton}
+        onPress={() => navigation.navigate('Queue')}
+        hitSlop={12}
+      >
+        <Text style={styles.queueButtonText}>Queue</Text>
+      </Pressable>
+    </View>
+  );
+
   if (!track) {
     return (
-      <View style={[styles.container, styles.empty, { paddingTop: insets.top }]}>
-        <Pressable style={styles.emptyClose} onPress={() => navigation.goBack()}>
-          <Text style={styles.closeText}>⌄</Text>
-        </Pressable>
-        <Text style={styles.dim}>Nothing playing.</Text>
+      <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+        {topBar}
+        <View style={styles.empty}>
+          <Text style={styles.dim}>Nothing playing.</Text>
+        </View>
       </View>
     );
   }
@@ -133,15 +156,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
         { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
       ]}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Close Now Playing"
-        style={styles.closeButton}
-        onPress={() => navigation.goBack()}
-        hitSlop={16}
-      >
-        <Text style={styles.closeText}>⌄</Text>
-      </Pressable>
+      {topBar}
 
       <View style={styles.artWrap}>
         {track.cover ? (
@@ -234,11 +249,13 @@ export default function NowPlayingScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 28 },
-  empty: { alignItems: 'center', justifyContent: 'center' },
-  emptyClose: { position: 'absolute', left: 28, top: 40, padding: 8 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   dim: { color: colors.textDim },
-  closeButton: { alignSelf: 'flex-start', paddingVertical: 8 },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  closeButton: { paddingVertical: 8 },
   closeText: { color: colors.text, fontSize: 26 },
+  queueButton: { paddingVertical: 10, paddingLeft: 16 },
+  queueButtonText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   artWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 0 },
   art: { width: '100%', aspectRatio: 1, maxHeight: '100%', borderRadius: 12, backgroundColor: colors.surfaceAlt },
   artPlaceholder: { borderWidth: 1, borderColor: colors.border },

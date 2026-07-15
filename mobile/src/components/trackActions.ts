@@ -11,10 +11,17 @@ export function showTrackActions(track: Track, onError: (message: string) => voi
     }
   };
 
-  Alert.alert(track.title, track.artist, [
-    { text: 'Play next', onPress: () => void run('Play next failed', () => playNext(track)) },
-    { text: 'Add to queue', onPress: () => void run('Add to queue failed', () => addToQueue(track)) },
-    { text: 'Start radio', onPress: () => void run('Starting radio failed', () => startRadio(track)) },
-    { text: 'Cancel', style: 'cancel' },
-  ]);
+  Alert.alert(
+    track.title,
+    track.artist,
+    [
+      { text: 'Play next', onPress: () => void run('Play next failed', () => playNext(track)) },
+      { text: 'Add to queue', onPress: () => void run('Add to queue failed', () => addToQueue(track)) },
+      { text: 'Start radio', onPress: () => void run('Starting radio failed', () => startRadio(track)) },
+      { text: 'Cancel', style: 'cancel' },
+    ],
+    // Android only renders three alert buttons, so its native Back/outside
+    // dismissal is the reliable cancel path when all three queue actions exist.
+    { cancelable: true },
+  );
 }

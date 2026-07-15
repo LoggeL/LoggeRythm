@@ -18,6 +18,13 @@ let extending = false;
 let queueGeneration = 0;
 let itemSequence = 0;
 const BACKGROUND_REQUEST_TIMEOUT_MS = 4_000;
+const QUEUE_MUTATION_TIMEOUT_MS = 1_500;
+const QUEUE_MUTATION_POLL_MS = 25;
+
+export interface QueueSnapshot {
+  items: MediaItem[];
+  activeIndex: number | null;
+}
 
 function nextMediaId(prefix: string, track: Track): string {
   itemSequence += 1;
@@ -95,6 +102,171 @@ export function togglePlay(): void {
 export const next = (): void => TrackPlayer.skipToNext();
 export const prev = (): void => TrackPlayer.skipToPrevious();
 export const seekTo = (seconds: number): void => TrackPlayer.seekTo(seconds);
+
+function requireQueueIndex(queue: MediaItem[], index: number, operation: string): MediaItem {
+  if (!Number.isInteger(index) || index < 0 || index >= queue.length) {
+    throw new Error(`${operation} index ${index} is outside a ${queue.length}-item queue`);
+  }
+  return queue[index];
+}
+
+function requireUniqueMediaId(queue: MediaItem[], index: number, operation: string): string {
+  const item = requireQueueIndex(queue, index, operation);
+  const mediaId = item.mediaId;
+  if (typeof mediaId !== 'string' || mediaId.length === 0) {
+    throw new Error(`${operation} cannot verify queue item ${index} because it has no mediaId`);
+  }
+  const matches = queue.filter((candidate) => candidate.mediaId === mediaId).length;
+  if (matches !== 1) {
+    throw new Error(`${operation} cannot safely target duplicate mediaId ${mediaId}`);
+  }
+  return mediaId;
+}
+
+function assertExpectedQueue(
+  queue: MediaItem[],
+  expectedMediaIds: readonly string[],
+  operation: string,
+): void {
+  if (queue.length !== expectedMediaIds.length) {
+    throw new Error(`${operation} was cancelled because the native queue changed`);
+  }
+  const seen = new Set<string>();
+  queue.forEach((item, index) => {
+    const mediaId = item.mediaId;
+    if (typeof mediaId !== 'string' || mediaId.length === 0) {
+      throw new Error(`${operation} cannot verify queue item ${index} because it has no mediaId`);
+    }
+    if (seen.has(mediaId)) {
+      throw new Error(`${operation} cannot safely target duplicate mediaId ${mediaId}`);
+    }
+    seen.add(mediaId);
+    if (mediaId !== expectedMediaIds[index]) {
+      throw new Error(`${operation} was cancelled because the native queue changed`);
+    }
+  });
+}
+
+function waitForNativeQueueMutation(
+  operation: string,
+  predicate: () => boolean,
+): Promise<void> {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    const inspect = () => {
+      try {
+        if (predicate()) {
+          resolve();
+          return;
+        }
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      if (Date.now() - startedAt >= QUEUE_MUTATION_TIMEOUT_MS) {
+        reject(new Error(`${operation} was not applied by the native player`));
+        return;
+      }
+      setTimeout(inspect, QUEUE_MUTATION_POLL_MS);
+    };
+    setTimeout(inspect, 0);
+  });
+}
+
+/** Read the canonical native queue together with its active canonical index. */
+export function getQueueSnapshot(): QueueSnapshot {
+  const items = TrackPlayer.getQueue();
+  const activeIndex = TrackPlayer.getActiveMediaItemIndex();
+  if (
+    activeIndex !== null &&
+    (!Number.isInteger(activeIndex) || activeIndex < 0 || activeIndex >= items.length)
+  ) {
+    throw new Error(
+      `Native player reported active index ${activeIndex} for a ${items.length}-item queue`,
+    );
+  }
+  return { items, activeIndex };
+}
+
+/** Jump to an item in the native queue and verify that the transition happened. */
+export async function skipToQueueItem(
+  index: number,
+  expectedMediaIds: readonly string[],
+): Promise<void> {
+  const { items, activeIndex } = getQueueSnapshot();
+  assertExpectedQueue(items, expectedMediaIds, 'Skip');
+  const mediaId = requireUniqueMediaId(items, index, 'Skip');
+  if (activeIndex === index) return;
+
+  TrackPlayer.skipToIndex(index);
+  await waitForNativeQueueMutation('Queue skip', () => {
+    const snapshot = getQueueSnapshot();
+    return snapshot.activeIndex === index && snapshot.items[index]?.mediaId === mediaId;
+  });
+}
+
+/** Remove a non-active item from the native queue and verify that it disappeared. */
+export async function removeQueueItem(
+  index: number,
+  expectedMediaIds: readonly string[],
+): Promise<void> {
+  const { items, activeIndex } = getQueueSnapshot();
+  assertExpectedQueue(items, expectedMediaIds, 'Remove');
+  if (activeIndex === index) throw new Error('The currently playing queue item cannot be removed');
+  const activeMediaId =
+    activeIndex === null ? null : requireUniqueMediaId(items, activeIndex, 'Remove');
+  const mediaId = requireUniqueMediaId(items, index, 'Remove');
+  const originalLength = items.length;
+
+  queueGeneration += 1;
+  TrackPlayer.removeMediaItem(index);
+  await waitForNativeQueueMutation('Queue removal', () => {
+    const snapshot = getQueueSnapshot();
+    const activeItem =
+      snapshot.activeIndex === null ? null : snapshot.items[snapshot.activeIndex];
+    return (
+      snapshot.items.length === originalLength - 1 &&
+      !snapshot.items.some((item) => item.mediaId === mediaId) &&
+      (activeMediaId === null || activeItem?.mediaId === activeMediaId)
+    );
+  });
+}
+
+/** Move an item within the canonical native queue and verify its destination. */
+export async function moveQueueItem(
+  fromIndex: number,
+  toIndex: number,
+  expectedMediaIds: readonly string[],
+): Promise<void> {
+  const { items, activeIndex } = getQueueSnapshot();
+  assertExpectedQueue(items, expectedMediaIds, 'Move');
+  const mediaId = requireUniqueMediaId(items, fromIndex, 'Move');
+  requireQueueIndex(items, toIndex, 'Move destination');
+  if (fromIndex === toIndex) return;
+  const activeMediaId =
+    activeIndex === null ? null : requireUniqueMediaId(items, activeIndex, 'Move');
+  if (
+    activeIndex !== null &&
+    (fromIndex === activeIndex ||
+      toIndex === activeIndex ||
+      (fromIndex < activeIndex) !== (toIndex < activeIndex))
+  ) {
+    throw new Error('Queue items cannot be moved across the currently playing track');
+  }
+
+  queueGeneration += 1;
+  TrackPlayer.moveMediaItem(fromIndex, toIndex);
+  await waitForNativeQueueMutation('Queue move', () => {
+    const snapshot = getQueueSnapshot();
+    const activeItem =
+      snapshot.activeIndex === null ? null : snapshot.items[snapshot.activeIndex];
+    return (
+      snapshot.items.length === items.length &&
+      snapshot.items[toIndex]?.mediaId === mediaId &&
+      (activeMediaId === null || activeItem?.mediaId === activeMediaId)
+    );
+  });
+}
 
 /** Cycle Off → All → One → Off, returning the new mode. */
 export function cycleRepeat(): RepeatMode {

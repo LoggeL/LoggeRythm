@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import * as api from '../api/endpoints';
+import type { RegisterRequest } from '../api/endpoints';
 import {
   ApiError,
   clearSession,
@@ -14,6 +15,7 @@ interface AuthState {
   bootstrapping: boolean;
   bootstrapError: string | null;
   login: (email: string, password: string) => Promise<void>;
+  register: (request: RegisterRequest) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<User>;
   retryBootstrap: () => Promise<void>;
@@ -77,6 +79,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(authenticated);
   }, []);
 
+  const register = useCallback(async (request: RegisterRequest) => {
+    const authenticated = await api.register(request);
+    setBootstrapError(null);
+    // Gate derives pending/authenticated directly from this returned User.
+    setUser(authenticated);
+  }, []);
+
   const logout = useCallback(async () => {
     const failures: string[] = [];
     try {
@@ -110,11 +119,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       bootstrapping,
       bootstrapError,
       login,
+      register,
       logout,
       refreshUser,
       retryBootstrap: bootstrap,
     }),
-    [user, bootstrapping, bootstrapError, login, logout, refreshUser, bootstrap],
+    [user, bootstrapping, bootstrapError, login, register, logout, refreshUser, bootstrap],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -214,7 +214,9 @@ class AndroidSmoke:
         self.summary["serial"] = self.serial
 
     def clean_install_and_launch(self) -> None:
-        installed = self.adb(["shell", "pm", "path", PACKAGE])
+        # `pm path` exits 1 when the package is absent, which is the expected
+        # state on a fresh emulator and must not prevent the clean install.
+        installed = self.adb(["shell", "pm", "path", PACKAGE], check=False)
         assert isinstance(installed.stdout, str)
         if installed.stdout.strip():
             self.adb(["uninstall", PACKAGE])

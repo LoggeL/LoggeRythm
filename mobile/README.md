@@ -1,6 +1,6 @@
 # LoggeRythm — Android app
 
-Native Android client for the LoggeRythm backend, built with Expo / React Native. Uses [`@rntp/player`](https://rntp.dev) (React Native Track Player
+Android client for the LoggeRythm backend, built with Expo / React Native. Uses [`@rntp/player`](https://rntp.dev) (React Native Track Player
 V5, New Architecture) for native audio so you get the real Android media
 experience: **lock-screen / notification media controls, background playback,
 Bluetooth & headset buttons, and Android Auto**.
@@ -10,7 +10,7 @@ Bluetooth & headset buttons, and Android Auto**.
 
 ## Requirements
 
-- Node 20+, JDK 17, Android SDK (with an emulator or a physical device)
+- Node 22.13+, JDK 17+, Android SDK (with an emulator or a physical device)
 - A running LoggeRythm backend (the FastAPI `api/`) reachable from the device
 - A **custom dev build** — this app cannot run in Expo Go (it has native modules
   and requires the New Architecture).
@@ -29,7 +29,7 @@ building a release artifact intended for users.
 
 ```bash
 cd mobile
-npm install
+npm ci
 npx expo prebuild --platform android   # generates android/, runs the Android Auto plugin
 npm run android                         # build + install + launch on device/emulator
 ```
@@ -70,7 +70,7 @@ with UIAutomator, checks the process/logcat, and writes private evidence under
 `/tmp` (directory mode `0700`, files `0600`). `--startup-only` always reports a
 limited result and never claims that login was tested, even if credential
 environment variables happen to be set.
-For the required post-login/player/Android Auto check, provide an **approved**
+For the post-login native-player and browse-tree initialization check, provide an **approved**
 test account through the environment (never command-line arguments):
 
 ```bash
@@ -87,6 +87,13 @@ streams shell-quoted, character-at-a-time input to adb, so complete credentials
 never appear in adb process arguments. It persists only the pre-login UI and
 screenshot; post-entry UI dumps and screenshots are deliberately not written.
 
+That harness validates startup, authentication, native-player connection, and
+browse-tree publication; it does not start an audio stream or emulate an
+Android Auto host. Exercise playback, queue mutation, background controls, and
+the media notification on a device/emulator separately. Validate the car UI
+with Google's [Desktop Head Unit](https://developer.android.com/training/cars/testing/dhu)
+or [Media Controller Test app](https://developer.android.com/media/optimize/mct).
+
 ## Architecture
 
 ```
@@ -98,7 +105,7 @@ src/
     controller.ts  play / queue / next-prev / repeat-shuffle + endless-radio auto-extend
     browseTree.ts  setBrowseTree() — Android Auto library (Liked Songs + Playlists)
     mediaItem.ts   Track ⇄ MediaItem mapping (full Track carried in `extras`)
-  screens/        Login, Search, Library, Playlist, NowPlaying
+  screens/        Login/registration, Search, Library, Playlist, NowPlaying, Queue
   components/     TrackRow, MiniPlayer (persistent bottom bar)
   navigation.tsx  auth gate → tabs (Search / Library) + NowPlaying modal
 plugins/
@@ -124,6 +131,19 @@ runs low (mirrors the web player's endless radio).
 `browseTree.ts` publishes a browsable tree (Liked Songs + one folder per
 playlist) via `setBrowseTree()`. Selecting a track in the car is handled
 natively — RNTP loads its siblings as the queue and plays, no JS needed.
+
+### Architecture decision
+
+Keep the Expo/React Native UI for the current MVP. The difficult platform work
+is the Media3 service/session, authenticated stream headers, background
+playback, and Android Auto; a Flutter rewrite would still need a native plugin
+boundary for those pieces while replacing working UI code.
+
+If this client is permanently Android-only, the cleaner long-term target is an
+incremental migration to Kotlin + Jetpack Compose with first-party Media3. The
+first seam to replace should be the large commercially licensed RNTP patch,
+not the screen framework. Until then, native patch application and focused
+Media3 lifecycle/security tests are release gates.
 
 ## Not yet ported from the web player
 

@@ -30,9 +30,24 @@ function nullableString(value: unknown, path: string): string | null {
   return value === null ? null : string(value, path);
 }
 
-function stringOrNumber(value: unknown, path: string): string | number {
-  if (typeof value !== 'string' && typeof value !== 'number') {
-    throw new Error(`${path} must be a string or number`);
+function deezerStringId(value: unknown, path: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`${path} must be a string containing only digits`);
+  }
+  if (!/^\d+$/.test(value)) throw new Error(`${path} must be a non-empty digit-only Deezer ID`);
+  return value;
+}
+
+function deezerReferenceId(value: unknown, path: string): string | number {
+  // Artist/album references are optional in the backend Track contract and
+  // legacy likes/playlists legitimately serialize a missing reference as "".
+  if (value === '') return '';
+  if (typeof value === 'string') return deezerStringId(value, path);
+  if (typeof value !== 'number') {
+    throw new Error(`${path} must be a digit-only string or safe non-negative integer`);
+  }
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${path} must be a digit-only string or safe non-negative integer`);
   }
   return value;
 }
@@ -45,7 +60,7 @@ function array<T>(value: unknown, path: string, decode: (item: unknown, path: st
 function decodeArtist(value: unknown, path: string): ArtistRef {
   const source = object(value, path);
   return {
-    id: stringOrNumber(source.id, `${path}.id`),
+    id: deezerReferenceId(source.id, `${path}.id`),
     name: string(source.name, `${path}.name`),
   };
 }
@@ -53,13 +68,13 @@ function decodeArtist(value: unknown, path: string): ArtistRef {
 export function decodeTrack(value: unknown, path = 'Track'): Track {
   const source = object(value, path);
   return {
-    id: string(source.id, `${path}.id`),
+    id: deezerStringId(source.id, `${path}.id`),
     title: string(source.title, `${path}.title`),
     artist: string(source.artist, `${path}.artist`),
-    artist_id: stringOrNumber(source.artist_id, `${path}.artist_id`),
+    artist_id: deezerReferenceId(source.artist_id, `${path}.artist_id`),
     artists: array(source.artists, `${path}.artists`, decodeArtist),
     album: string(source.album, `${path}.album`),
-    album_id: stringOrNumber(source.album_id, `${path}.album_id`),
+    album_id: deezerReferenceId(source.album_id, `${path}.album_id`),
     cover: string(source.cover, `${path}.cover`),
     duration_sec: number(source.duration_sec, `${path}.duration_sec`),
     preview_url: nullableString(source.preview_url, `${path}.preview_url`),
@@ -117,10 +132,10 @@ export function decodePlaylist(value: unknown): Playlist {
 export function decodeAlbum(value: unknown): AlbumDetail {
   const source = object(value, 'Album');
   return {
-    id: string(source.id, 'Album.id'),
+    id: deezerStringId(source.id, 'Album.id'),
     title: string(source.title, 'Album.title'),
     artist: string(source.artist, 'Album.artist'),
-    artist_id: stringOrNumber(source.artist_id, 'Album.artist_id'),
+    artist_id: deezerReferenceId(source.artist_id, 'Album.artist_id'),
     cover: string(source.cover, 'Album.cover'),
     release_date: string(source.release_date, 'Album.release_date'),
     nb_tracks: number(source.nb_tracks, 'Album.nb_tracks'),
