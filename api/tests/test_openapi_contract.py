@@ -110,6 +110,26 @@ class OpenApiContractTests(unittest.TestCase):
                 self.assertNotIn("401", operation["responses"])
                 self.assertNotIn("403", operation["responses"])
 
+    def test_record_play_documents_the_optional_uuid_idempotency_header(self) -> None:
+        operation = build_schema()["paths"]["/api/me/plays"]["post"]
+        parameters = operation["parameters"]
+
+        self.assertEqual(len(parameters), 1)
+        parameter = parameters[0]
+        self.assertEqual(parameter["name"], "Idempotency-Key")
+        self.assertEqual(parameter["in"], "header")
+        self.assertFalse(parameter["required"])
+        self.assertEqual(parameter["schema"]["type"], "string")
+        self.assertEqual(parameter["schema"]["format"], "uuid")
+        self.assertEqual(
+            parameter["schema"]["pattern"],
+            (
+                "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            ),
+        )
+        self.assertNotIn("anyOf", parameter["schema"])
+
     def test_v2_server_retains_every_v1_operation_and_track_field(self) -> None:
         legacy_path = DEFAULT_CONTRACT_PATH.with_name("v1.json")
         legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
@@ -197,6 +217,7 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIn('"204": undefined;', generated)
         self.assertIn("GENERATED_OPENAPI_SHA256", generated)
         self.assertIn('path: "/api/version"', generated)
+        self.assertIn('"Idempotency-Key"?: string;', generated)
 
         schema = load_openapi_contract()
         schemas = schema["components"]["schemas"]

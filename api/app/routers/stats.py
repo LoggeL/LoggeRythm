@@ -1,8 +1,13 @@
 """Personal listening statistics for the current user."""
 from datetime import datetime, timedelta, timezone
+import re
+from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Header, Response, status
+from pydantic import BeforeValidator, WithJsonSchema
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -12,6 +17,34 @@ from ..db.session import get_db
 from ..schemas.track import Track, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
+
+_CANONICAL_UUID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+_CANONICAL_UUID = re.compile(_CANONICAL_UUID_PATTERN)
+
+
+def _parse_canonical_uuid(value: object) -> UUID:
+    """Accept only the standard hyphenated UUID wire representation."""
+    if isinstance(value, UUID):
+        return value
+    if not isinstance(value, str) or _CANONICAL_UUID.fullmatch(value) is None:
+        raise ValueError("must be a canonical hyphenated UUID")
+    return UUID(value)
+
+
+PlayIdempotencyKey = Annotated[
+    UUID,
+    BeforeValidator(_parse_canonical_uuid),
+    WithJsonSchema(
+        {
+            "type": "string",
+            "format": "uuid",
+            "pattern": _CANONICAL_UUID_PATTERN,
+        }
+    ),
+]
 
 
 def _top_tracks(db: Session, where: ColumnElement[bool]) -> list[dict]:
@@ -69,12 +102,27 @@ def _top_artists(db: Session, where: ColumnElement[bool]) -> list[dict]:
 @router.post("/plays", status_code=status.HTTP_204_NO_CONTENT)
 def record_play(
     track: Track,
+    idempotency_key: Annotated[
+        # Deliberately keep the wire annotation non-null while using ``None`` as
+        # FastAPI's default for an omitted header. A present HTTP header is
+        # always a string; this prevents OpenAPI and generated clients from
+        # advertising an impossible nullable wire value.
+        PlayIdempotencyKey,
+        Header(
+            alias="Idempotency-Key",
+            description=(
+                "Optional canonical UUID that makes this play event idempotent "
+                "for the authenticated user."
+            ),
+        ),
+    ] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
     db.add(
         Play(
             user_id=user.id,
+            event_id=idempotency_key,
             deezer_id=track.id,
             title=track.title,
             artist=track.artist,
@@ -86,7 +134,22 @@ def record_play(
             duration_sec=track.duration_sec,
         )
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if idempotency_key is None:
+            raise
+        existing_id = db.scalar(
+            select(Play.id)
+            .where(
+                Play.user_id == user.id,
+                Play.event_id == idempotency_key,
+            )
+            .limit(1)
+        )
+        if existing_id is None:
+            raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

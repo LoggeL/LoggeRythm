@@ -1,15 +1,18 @@
 """SQLAlchemy ORM models for SpotiFrei."""
 from datetime import datetime, timezone
+from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    Uuid,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -141,9 +144,13 @@ class Play(Base):
     """A recorded play event, for personal listening statistics."""
 
     __tablename__ = "plays"
+    __table_args__ = (
+        Index("uq_play_user_event_id", "user_id", "event_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    event_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     deezer_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")

@@ -3757,6 +3757,20 @@
     "/api/me/plays": {
       "post": {
         "operationId": "record_play_api_me_plays_post",
+        "parameters": [
+          {
+            "description": "Optional canonical UUID that makes this play event idempotent for the authenticated user.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

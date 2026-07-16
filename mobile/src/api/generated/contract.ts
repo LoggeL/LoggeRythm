@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "a753eda9baf55581bf644ec86b83ecd1c8a56214765a683578d63ec1c15ee86a" as const;
+export const GENERATED_OPENAPI_SHA256 = "c8a410eaee1be4ec43e4ccfbf3ead0f31b5c43d6ebe3f1353227503d9a3f2cf3" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -1005,6 +1005,9 @@ export interface GeneratedApiOperations {
   };
   "record_play_api_me_plays_post": {
     request: {
+      header?: {
+        "Idempotency-Key"?: string;
+      };
       body: TrackWire;
     };
     responses: {
