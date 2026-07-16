@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { MediaItem, PlaybackState } from '@rntp/player';
+import type { MediaItem, PlaybackState } from '../../player/player';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   TrackPresentationProvider,
@@ -39,7 +39,7 @@ vi.mock('react', async (importOriginal) => {
   };
 });
 
-vi.mock('@rntp/player', () => ({
+vi.mock('../../player/player', () => ({
     useActiveMediaItem: () => {
       mocks.activeCalls += 1;
       return mocks.activeItem;

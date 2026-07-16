@@ -1,4 +1,4 @@
-import type { MediaItem, PlaybackState } from '@rntp/player';
+import type { MediaItem, PlaybackState } from './player';
 import {
   queueContextOf,
   queueOriginalContextOrderOf,
@@ -34,7 +34,7 @@ export interface TrackPresentationState {
   playback: TrackPlaybackPhase;
   serverCache: ServerCacheKnowledge;
   /**
-   * Automatic Media3/RNTP LRU evidence for the active item only. This is not
+   * Automatic Media3 LRU evidence for the active item only. This is not
    * pinned, durable, or a user-managed offline download.
    */
   rollingDeviceCache: { kind: 'rolling-lru'; seconds: number } | null;

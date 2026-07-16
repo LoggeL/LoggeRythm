@@ -1,7 +1,7 @@
-import TrackPlayer from '@rntp/player';
+import Player from '../player/player';
 import { currentTrackRemainingSeconds } from './profileModel';
 
-export type ProfileSleepTimerState = ReturnType<typeof TrackPlayer.getSleepTimer>;
+export type ProfileSleepTimerState = ReturnType<typeof Player.getSleepTimer>;
 
 export interface SleepTimerGateway {
   read: () => ProfileSleepTimerState;
@@ -22,12 +22,12 @@ export class SleepTimerOperationError extends Error {
 }
 
 export const nativeSleepTimerGateway: SleepTimerGateway = {
-  read: TrackPlayer.getSleepTimer,
-  activeIndex: TrackPlayer.getActiveMediaItemIndex,
-  progress: TrackPlayer.getProgress,
-  afterTime: TrackPlayer.sleepAfterTime,
-  afterMediaItem: TrackPlayer.sleepAfterMediaItemAtIndex,
-  cancel: TrackPlayer.cancelSleepTimer,
+  read: Player.getSleepTimer,
+  activeIndex: Player.getActiveMediaItemIndex,
+  progress: Player.getProgress,
+  afterTime: Player.sleepAfterTime,
+  afterMediaItem: Player.sleepAfterMediaItemAtIndex,
+  cancel: Player.cancelSleepTimer,
 };
 
 export function setPresetSleepTimer(

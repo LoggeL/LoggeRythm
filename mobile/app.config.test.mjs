@@ -29,6 +29,8 @@ describe('Expo API-origin policy', () => {
     expect(config.android.icon).toBe('./assets/android-icon-legacy.png');
     expect(config.plugins).toContain('./plugins/withMusicVolumeControl');
     expect(config.plugins).toContain('./plugins/withAndroidLauncherAssets');
+    expect(config.plugins).toContain('./plugins/withFirstPartyPlayer');
+    expect(config.plugins).not.toContain('./plugins/withAndroidAuto');
     expect(config.plugins).toContain('@react-native-vector-icons/material-design-icons');
     const buildProperties = config.plugins.find(
       (plugin) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties',

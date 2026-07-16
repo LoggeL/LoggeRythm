@@ -25,7 +25,7 @@ export interface QueueMetadataCopy {
 }
 
 /**
- * RNTP uses zero when its rolling on-device cache position is unavailable or
+ * The player uses zero when its rolling on-device cache position is unavailable or
  * disabled. Treat every non-positive or corrupt value as unknown so the queue
  * only presents metadata backed by positive evidence.
  */

@@ -22,21 +22,24 @@ const player = vi.hoisted(() => ({
   setQueuePersistenceState: vi.fn(),
 }));
 
-vi.mock('@rntp/player', () => ({
-  default: {
-    getQueue: player.getQueue,
-    getActiveMediaItemIndex: player.getActiveMediaItemIndex,
-    skipToIndex: player.skipToIndex,
-    removeMediaItem: player.removeMediaItem,
-    removeMediaItems: player.removeMediaItems,
-    moveMediaItem: player.moveMediaItem,
-    isShuffleEnabled: player.isShuffleEnabled,
-    setShuffleEnabled: player.setShuffleEnabled,
-    setQueuePersistenceState: player.setQueuePersistenceState,
-  },
-  Event: { MediaItemTransition: 'transition', PlaybackError: 'error' },
-  RepeatMode: { Off: 0, All: 1, One: 2 },
-}));
+vi.mock('./player', async () => {
+  const { Event, RepeatMode } = await import('./playerPort');
+  return {
+    default: {
+      getQueue: player.getQueue,
+      getActiveMediaItemIndex: player.getActiveMediaItemIndex,
+      skipToIndex: player.skipToIndex,
+      removeMediaItem: player.removeMediaItem,
+      removeMediaItems: player.removeMediaItems,
+      moveMediaItem: player.moveMediaItem,
+      isShuffleEnabled: player.isShuffleEnabled,
+      setShuffleEnabled: player.setShuffleEnabled,
+      setQueuePersistenceState: player.setQueuePersistenceState,
+    },
+    Event,
+    RepeatMode,
+  };
+});
 vi.mock('../api/client', () => ({ authenticatedHeadersFor: vi.fn() }));
 vi.mock('../config', () => ({ getApiBase: vi.fn() }));
 vi.mock('../data/repositories', () => ({

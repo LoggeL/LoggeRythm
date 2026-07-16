@@ -5,7 +5,7 @@ const path = require('path');
 /**
  * Expo config plugin: write a monochrome status-bar/notification icon.
  *
- * Media3 (via @rntp/player) needs a small icon for the media notification. A
+ * The first-party Media3 service needs a small icon for the media notification. A
  * launcher icon renders as an ugly white square there, so we ship a proper
  * white-on-transparent music-note VectorDrawable that Android tints to match
  * the system. Referenced as `smallIcon: 'ic_stat_music'` in player setup.

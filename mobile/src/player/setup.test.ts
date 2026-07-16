@@ -5,17 +5,16 @@ const mocks = vi.hoisted(() => ({
   setupPlayer: vi.fn(),
   setCommands: vi.fn(),
   installPlaybackListeners: vi.fn(),
-  clearBrowseTree: vi.fn(),
   clearPersistedQueue: vi.fn(),
-  clearCache: vi.fn(),
   resetControllerState: vi.fn(),
   restoreControllerStateFromNativeQueue: vi.fn(),
   pause: vi.fn(),
   clear: vi.fn(),
   cancelSleepTimer: vi.fn(),
+  clearCache: vi.fn(),
 }));
 
-vi.mock('@rntp/player', () => ({
+vi.mock('./player', () => ({
   default: {
     setupPlayer: mocks.setupPlayer,
     setCommands: mocks.setCommands,
@@ -32,12 +31,15 @@ vi.mock('@rntp/player', () => ({
     Seek: 'seek',
   },
 }));
-vi.mock('./browseTree', () => ({ clearBrowseTree: mocks.clearBrowseTree }));
 vi.mock('./controller', () => ({
   installPlaybackListeners: mocks.installPlaybackListeners,
   resetControllerState: mocks.resetControllerState,
   restoreControllerStateFromNativeQueue: mocks.restoreControllerStateFromNativeQueue,
 }));
+
+const ORIGIN = 'https://loggerythm.logge.top';
+const ACCOUNT_SCOPE = `${ORIGIN}::user:7`;
+const OTHER_ACCOUNT_SCOPE = `${ORIGIN}::user:8`;
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -54,31 +56,75 @@ async function freshSetupModule() {
   return import('./setup');
 }
 
-describe('native player readiness', () => {
+describe('account-bound native player readiness', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.setupPlayer.mockReset().mockResolvedValue(undefined);
+    mocks.clearPersistedQueue.mockReset().mockResolvedValue(undefined);
+    mocks.setCommands.mockReset().mockResolvedValue(undefined);
+    mocks.installPlaybackListeners.mockReset();
+    mocks.resetControllerState.mockReset();
+    mocks.restoreControllerStateFromNativeQueue.mockReset();
   });
 
-  it('shares one pending attempt and stays unready until native connection resolves', async () => {
+  it('strictly converts a canonical query scope to the minimal native binding', async () => {
+    const player = await freshSetupModule();
+
+    const binding = player.playerSessionBindingFromQueryScope(ACCOUNT_SCOPE);
+
+    expect(binding).toEqual({ accountScope: 'user:7', origin: ORIGIN });
+    expect(Object.isFrozen(binding)).toBe(true);
+  });
+
+  it.each([
+    '',
+    'not-a-scope',
+    'http://loggerythm.logge.top::user:7',
+    'https://LOGGERYTHM.logge.top::user:7',
+    'https://loggerythm.logge.top/::user:7',
+    'https://loggerythm.logge.top:443::user:7',
+    'https://loggerythm.logge.top/path::user:7',
+    'https://loggerythm.logge.top::user:0',
+    'https://loggerythm.logge.top::user:01',
+    'https://loggerythm.logge.top::user:-1',
+    'https://loggerythm.logge.top::user:9007199254740992',
+    'https://loggerythm.logge.top::user:7::user:8',
+  ])('rejects a non-canonical player query scope without echoing it: %s', async (scope) => {
+    const player = await freshSetupModule();
+
+    let failure: unknown;
+    try {
+      player.playerSessionBindingFromQueryScope(scope);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ message: 'Player account scope is invalid' });
+    if (scope.length > 0) expect((failure as Error).message).not.toContain(scope);
+  });
+
+  it('requires a scope for the first setup attempt', async () => {
+    const player = await freshSetupModule();
+
+    await expect(player.ensurePlayer()).rejects.toThrow('Player session is unavailable');
+    expect(mocks.setupPlayer).not.toHaveBeenCalled();
+  });
+
+  it('shares one pending attempt and stabilizes the exact binding', async () => {
     const nativeConnection = deferred<void>();
     mocks.setupPlayer.mockReturnValueOnce(nativeConnection.promise);
     const player = await freshSetupModule();
 
-    const first = player.ensurePlayer();
-    const concurrent = player.ensurePlayer();
+    const first = player.ensurePlayer(ACCOUNT_SCOPE);
+    const concurrent = player.ensurePlayer(ACCOUNT_SCOPE);
+    const boundWithoutArgument = player.ensurePlayer();
 
     expect(concurrent).toBe(first);
+    expect(boundWithoutArgument).toBe(first);
     expect(player.isPlayerReady()).toBe(false);
     expect(mocks.setupPlayer).toHaveBeenCalledTimes(1);
-    expect(mocks.setCommands).not.toHaveBeenCalled();
-    expect(mocks.installPlaybackListeners).not.toHaveBeenCalled();
-
-    nativeConnection.resolve();
-    await first;
-
-    expect(player.isPlayerReady()).toBe(true);
     expect(mocks.setupPlayer).toHaveBeenCalledWith(
       expect.objectContaining({
+        sessionBinding: { accountScope: 'user:7', origin: ORIGIN },
         contentType: 'music',
         audioMixing: 'exclusive',
         handleAudioBecomingNoisy: true,
@@ -93,136 +139,182 @@ describe('native player readiness', () => {
         },
       }),
     );
-    expect(mocks.setCommands).toHaveBeenCalledTimes(1);
-    expect(mocks.restoreControllerStateFromNativeQueue).toHaveBeenCalledTimes(1);
-    expect(mocks.installPlaybackListeners).toHaveBeenCalledTimes(1);
+
+    nativeConnection.resolve();
+    await first;
+
+    expect(player.isPlayerReady()).toBe(true);
+    expect(mocks.setCommands).toHaveBeenCalledOnce();
+    expect(mocks.restoreControllerStateFromNativeQueue).toHaveBeenCalledOnce();
+    expect(mocks.installPlaybackListeners).toHaveBeenCalledOnce();
+    await expect(player.ensurePlayer()).resolves.toBeUndefined();
   });
 
-  it('clears a failed native attempt and reconnects on retry', async () => {
-    const failedConnection = deferred<void>();
+  it('rejects a cross-account call while the first binding is pending', async () => {
+    const nativeConnection = deferred<void>();
+    mocks.setupPlayer.mockReturnValueOnce(nativeConnection.promise);
+    const player = await freshSetupModule();
+    const first = player.ensurePlayer(ACCOUNT_SCOPE);
+
+    await expect(player.ensurePlayer(OTHER_ACCOUNT_SCOPE)).rejects.toThrow(
+      'Player session is unavailable',
+    );
+    expect(mocks.setupPlayer).toHaveBeenCalledOnce();
+
+    nativeConnection.resolve();
+    await first;
+  });
+
+  it('retains the binding across a failed connection and retries only that account', async () => {
     mocks.setupPlayer
-      .mockReturnValueOnce(failedConnection.promise)
+      .mockRejectedValueOnce(new Error(`native details must stay private: ${ACCOUNT_SCOPE}`))
       .mockResolvedValueOnce(undefined);
     const player = await freshSetupModule();
 
-    const failedAttempt = player.ensurePlayer();
-    failedConnection.reject(new Error('MediaSession rejected the controller'));
-
-    await expect(failedAttempt).rejects.toThrow(
-      'Native audio player initialization failed: MediaSession rejected the controller',
+    await expect(player.ensurePlayer(ACCOUNT_SCOPE)).rejects.toThrow(
+      'Native audio player initialization failed',
     );
-    expect(player.isPlayerReady()).toBe(false);
-
+    await expect(player.ensurePlayer(OTHER_ACCOUNT_SCOPE)).rejects.toThrow(
+      'Player session is unavailable',
+    );
     await expect(player.ensurePlayer()).resolves.toBeUndefined();
+
     expect(mocks.setupPlayer).toHaveBeenCalledTimes(2);
     expect(player.isPlayerReady()).toBe(true);
   });
 
-  it('retries command setup without reconnecting an already connected controller', async () => {
-    mocks.setupPlayer.mockResolvedValueOnce(undefined);
+  it('retries command setup without reconnecting an already bound controller', async () => {
     mocks.setCommands
-      .mockImplementationOnce(() => {
-        throw new Error('command registration failed');
-      })
-      .mockImplementationOnce(() => undefined);
+      .mockRejectedValueOnce(new Error('command registration failed'))
+      .mockResolvedValueOnce(undefined);
     const player = await freshSetupModule();
 
-    await expect(player.ensurePlayer()).rejects.toThrow('command registration failed');
-    await expect(player.ensurePlayer()).resolves.toBeUndefined();
-
-    expect(mocks.setupPlayer).toHaveBeenCalledTimes(1);
-    expect(mocks.setCommands).toHaveBeenCalledTimes(2);
-    expect(mocks.installPlaybackListeners).toHaveBeenCalledTimes(1);
-  });
-
-  it('deletes encrypted queue state before connecting, then clears any surviving live session', async () => {
-    mocks.setupPlayer.mockResolvedValueOnce(undefined);
-    const player = await freshSetupModule();
-
-    await expect(player.clearPlayerSession()).resolves.toBeUndefined();
-
-    expect(mocks.clearBrowseTree).toHaveBeenCalledOnce();
-    expect(mocks.setupPlayer).toHaveBeenCalledOnce();
-    expect(mocks.clearPersistedQueue).toHaveBeenCalledTimes(2);
-    expect(mocks.pause).toHaveBeenCalledOnce();
-    expect(mocks.clear).toHaveBeenCalledOnce();
-    expect(mocks.cancelSleepTimer).toHaveBeenCalledOnce();
-    expect(mocks.clearCache).toHaveBeenCalledOnce();
-    expect(mocks.resetControllerState).toHaveBeenCalledOnce();
-
-    const [firstPersist, secondPersist] = mocks.clearPersistedQueue.mock.invocationCallOrder;
-    expect(firstPersist).toBeLessThan(mocks.setupPlayer.mock.invocationCallOrder[0]);
-    expect(mocks.setupPlayer.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.clear.mock.invocationCallOrder[0],
+    await expect(player.ensurePlayer(ACCOUNT_SCOPE)).rejects.toThrow(
+      'Native audio player initialization failed',
     );
-    expect(mocks.clear.mock.invocationCallOrder[0]).toBeLessThan(secondPersist);
+    await expect(player.ensurePlayer(ACCOUNT_SCOPE)).resolves.toBeUndefined();
+
+    expect(mocks.setupPlayer).toHaveBeenCalledOnce();
+    expect(mocks.setCommands).toHaveBeenCalledTimes(2);
+    expect(mocks.installPlaybackListeners).toHaveBeenCalledOnce();
   });
 
-  it('stops live playback and clears its notification-owned queue after setup', async () => {
-    mocks.setupPlayer.mockResolvedValueOnce(undefined);
+  it('does not become ready when restoration reports native global shuffle enabled', async () => {
+    mocks.restoreControllerStateFromNativeQueue.mockImplementationOnce(() => {
+      throw new Error('Native global shuffle must remain disabled');
+    });
     const player = await freshSetupModule();
-    await player.ensurePlayer();
+
+    await expect(player.ensurePlayer(ACCOUNT_SCOPE)).rejects.toThrow(
+      'Native audio player initialization failed',
+    );
+
+    expect(player.isPlayerReady()).toBe(false);
+    expect(mocks.setCommands).not.toHaveBeenCalled();
+    expect(mocks.installPlaybackListeners).not.toHaveBeenCalled();
+  });
+
+  it('does not report ready until the exact native command policy is acknowledged', async () => {
+    const registration = deferred<void>();
+    mocks.setCommands.mockReturnValueOnce(registration.promise);
+    const player = await freshSetupModule();
+
+    const pending = player.ensurePlayer(ACCOUNT_SCOPE);
+    await vi.waitFor(() => expect(mocks.setCommands).toHaveBeenCalledOnce());
+
+    expect(player.isPlayerReady()).toBe(false);
+    expect(mocks.installPlaybackListeners).not.toHaveBeenCalled();
+
+    registration.resolve();
+    await pending;
+
+    expect(player.isPlayerReady()).toBe(true);
+    expect(mocks.installPlaybackListeners).toHaveBeenCalledOnce();
+  });
+
+  it('uses one native atomic cleanup boundary, then resets JS and releases the binding', async () => {
+    const player = await freshSetupModule();
+    await player.ensurePlayer(ACCOUNT_SCOPE);
 
     await expect(player.clearPlayerSession()).resolves.toBeUndefined();
 
-    expect(mocks.clearBrowseTree).toHaveBeenCalledOnce();
-    expect(mocks.pause).toHaveBeenCalledOnce();
-    expect(mocks.clear).toHaveBeenCalledOnce();
-    expect(mocks.cancelSleepTimer).toHaveBeenCalledOnce();
-    expect(mocks.clearPersistedQueue).toHaveBeenCalledTimes(2);
-    expect(mocks.clearCache).toHaveBeenCalledOnce();
+    expect(mocks.clearPersistedQueue).toHaveBeenCalledOnce();
     expect(mocks.resetControllerState).toHaveBeenCalledOnce();
+    expect(mocks.pause).not.toHaveBeenCalled();
+    expect(mocks.clear).not.toHaveBeenCalled();
+    expect(mocks.cancelSleepTimer).not.toHaveBeenCalled();
+    expect(mocks.clearCache).not.toHaveBeenCalled();
+    expect(player.isPlayerReady()).toBe(false);
+
+    await expect(player.ensurePlayer(OTHER_ACCOUNT_SCOPE)).resolves.toBeUndefined();
+    expect(mocks.setupPlayer).toHaveBeenCalledTimes(2);
+    expect(mocks.setupPlayer).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sessionBinding: { accountScope: 'user:8', origin: ORIGIN },
+      }),
+    );
   });
 
-  it('does not confirm cleanup until native automatic-cache eviction resolves', async () => {
-    const cacheEviction = deferred<void>();
-    mocks.setupPlayer.mockResolvedValueOnce(undefined);
-    mocks.clearCache.mockReturnValueOnce(cacheEviction.promise);
+  it('shares concurrent cleanup and does not release flags before native confirmation', async () => {
+    const nativeCleanup = deferred<void>();
+    mocks.clearPersistedQueue.mockReturnValueOnce(nativeCleanup.promise);
     const player = await freshSetupModule();
+    await player.ensurePlayer(ACCOUNT_SCOPE);
 
-    const cleanup = player.clearPlayerSession();
-    await vi.waitFor(() => expect(mocks.clearCache).toHaveBeenCalledOnce());
+    const first = player.clearPlayerSession();
+    const concurrent = player.clearPlayerSession();
 
-    expect(mocks.clearPersistedQueue).toHaveBeenCalledTimes(1);
+    expect(concurrent).toBe(first);
+    expect(player.isPlayerReady()).toBe(true);
     expect(mocks.resetControllerState).not.toHaveBeenCalled();
+    await expect(player.ensurePlayer(OTHER_ACCOUNT_SCOPE)).rejects.toThrow(
+      'Player session is unavailable',
+    );
 
-    cacheEviction.resolve();
-    await expect(cleanup).resolves.toBeUndefined();
-    expect(mocks.clearPersistedQueue).toHaveBeenCalledTimes(2);
+    nativeCleanup.resolve();
+    await first;
+    expect(player.isPlayerReady()).toBe(false);
     expect(mocks.resetControllerState).toHaveBeenCalledOnce();
   });
 
-  it('reports native automatic-cache eviction failure after attempting later boundaries', async () => {
-    mocks.setupPlayer.mockResolvedValueOnce(undefined);
-    mocks.clearCache.mockRejectedValueOnce(new Error('native eviction rejected'));
+  it('keeps the binding fail-closed after native cleanup failure until a retry succeeds', async () => {
+    mocks.clearPersistedQueue
+      .mockRejectedValueOnce(new Error(`private native failure ${ACCOUNT_SCOPE}`))
+      .mockResolvedValueOnce(undefined);
     const player = await freshSetupModule();
+    await player.ensurePlayer(ACCOUNT_SCOPE);
 
     await expect(player.clearPlayerSession()).rejects.toMatchObject({
       name: 'PlayerSessionCleanupError',
-      failedBoundaries: ['audio-cache'],
-      message: expect.stringContaining('audio cache: native eviction rejected'),
+      failedBoundaries: ['native-player-session'],
+      message: 'Player session cleanup could not be completed',
     });
+    expect(player.isPlayerReady()).toBe(true);
+    await expect(player.ensurePlayer(OTHER_ACCOUNT_SCOPE)).rejects.toThrow(
+      'Player session is unavailable',
+    );
 
-    expect(mocks.clearPersistedQueue).toHaveBeenCalledTimes(2);
-    expect(mocks.resetControllerState).toHaveBeenCalledOnce();
+    await expect(player.clearPlayerSession()).resolves.toBeUndefined();
+    await expect(player.ensurePlayer(OTHER_ACCOUNT_SCOPE)).resolves.toBeUndefined();
   });
 
-  it('attempts every player boundary when one cleanup operation fails', async () => {
-    mocks.setupPlayer.mockResolvedValueOnce(undefined);
-    mocks.clearBrowseTree.mockImplementationOnce(() => { throw new Error('tree'); });
-    mocks.clear.mockImplementationOnce(() => { throw new Error('queue'); });
+  it('requires a second cleanup when the process-local reset fails', async () => {
+    mocks.resetControllerState
+      .mockImplementationOnce(() => { throw new Error('local reset failed'); })
+      .mockImplementationOnce(() => undefined);
     const player = await freshSetupModule();
-    await player.ensurePlayer();
+    await player.ensurePlayer(ACCOUNT_SCOPE);
 
     await expect(player.clearPlayerSession()).rejects.toMatchObject({
-      failedBoundaries: ['android-auto-library', 'queue'],
-      message: expect.stringContaining('Android Auto library: tree; queue: queue'),
+      failedBoundaries: ['javascript-controller-state'],
     });
+    expect(player.isPlayerReady()).toBe(true);
+    await expect(player.ensurePlayer(ACCOUNT_SCOPE)).rejects.toThrow(
+      'Player session is unavailable',
+    );
 
-    expect(mocks.pause).toHaveBeenCalledOnce();
-    expect(mocks.cancelSleepTimer).toHaveBeenCalledOnce();
+    await expect(player.clearPlayerSession()).resolves.toBeUndefined();
     expect(mocks.clearPersistedQueue).toHaveBeenCalledTimes(2);
-    expect(mocks.clearCache).toHaveBeenCalledOnce();
-    expect(mocks.resetControllerState).toHaveBeenCalledOnce();
+    expect(player.isPlayerReady()).toBe(false);
   });
 });

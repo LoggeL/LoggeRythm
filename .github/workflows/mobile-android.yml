@@ -94,6 +94,10 @@ jobs:
         working-directory: mobile
         run: node scripts/verify_generated_android_launcher_assets.mjs
 
+      - name: Verify first-party player source and generated native tree
+        working-directory: mobile
+        run: node scripts/verify_first_party_player_gate.mjs
+
       - name: Android lint, unit tests, and optimized standalone APK
         working-directory: mobile/android
         env:
@@ -107,7 +111,7 @@ jobs:
           export ANDROID_VERSION_CODE=$((10000 + GITHUB_RUN_NUMBER))
           chmod +x ./gradlew
           ./gradlew --no-daemon \
-            :rntp_player:testReleaseUnitTest \
+            :loggerythm_player-native:testReleaseUnitTest \
             :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease \
             -PreactNativeArchitectures=arm64-v8a \
             -PhermesEnabled=true \
@@ -171,7 +175,7 @@ jobs:
           launcher_icon=$(awk -F"'" '/^application-icon-[0-9]+:/{print $2; exit}' /tmp/badging.txt)
           test -n "$launcher_icon" || fail 'could not resolve the packaged launcher icon path'
           "$aapt" dump xmltree "$apk" "$launcher_icon" > /tmp/launcher-icon.txt
-          require_fixed 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService' /tmp/manifest.txt 'Track Player playback service is missing from the manifest'
+          require_fixed 'top.logge.loggerythm.player.LoggeRythmMediaLibraryService' /tmp/manifest.txt 'First-party playback service is missing from the manifest'
           require_fixed 'android:foregroundServiceType' /tmp/manifest.txt 'playback foreground service type is missing from the manifest'
           require_fixed 'androidx.media3.session.MediaLibraryService' /tmp/manifest.txt 'Media3 library-service action is missing from the manifest'
           require_fixed 'android.media.browse.MediaBrowserService' /tmp/manifest.txt 'platform media-browser action is missing from the manifest'
@@ -263,6 +267,7 @@ jobs:
           require_fixed ':mipmap/ic_launcher_foreground:' /tmp/resources.txt 'adaptive launcher foreground resource is missing'
           require_fixed ':mipmap/ic_launcher_monochrome:' /tmp/resources.txt 'adaptive monochrome launcher resource is missing'
           require_fixed ':drawable/ic_stat_music:' /tmp/resources.txt 'notification/Android Auto attribution icon was removed from the APK'
+          node ../scripts/verify_first_party_player_gate.mjs --apk "$apk"
           mkdir -p release-evidence/r8
           cp "$apk" LoggeRythm-native-arm64-v8a.apk
           cp app/build/outputs/mapping/release/mapping.txt release-evidence/r8/mapping-arm64-v8a.txt
@@ -275,7 +280,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Keystore instrumentation and standalone x86_64 cold/warm release QA
+      - name: Standalone x86_64 cold/warm release QA
         uses: reactivecircus/android-emulator-runner@v2.38.0
         env:
           ALLOW_DEBUG_RELEASE_SIGNING: "true"
@@ -291,7 +296,8 @@ jobs:
             : "${GITHUB_RUN_NUMBER:?GitHub did not provide GITHUB_RUN_NUMBER}"
             export ANDROID_VERSION_CODE=$((20000 + GITHUB_RUN_NUMBER))
             chmod +x ./gradlew
-            ./gradlew --no-daemon :rntp_player:connectedDebugAndroidTest
+            ./gradlew --no-daemon \
+              :loggerythm_player-native:connectedDebugAndroidTest
             ./gradlew --no-daemon :app:clean :app:assembleRelease \
               -PreactNativeArchitectures=x86_64 \
               -PhermesEnabled=true \
@@ -326,7 +332,7 @@ jobs:
         with:
           name: android-native-test-reports
           path: |
-            mobile/node_modules/@rntp/player/android/build/reports/androidTests/**
-            mobile/node_modules/@rntp/player/android/build/outputs/androidTest-results/**
+            mobile/modules/loggerythm-player/android/build/reports/**
+            mobile/modules/loggerythm-player/android/build/test-results/**
             mobile/android-smoke-evidence/**
           if-no-files-found: warn

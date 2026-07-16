@@ -1,4 +1,4 @@
-import type { MediaItem, PlaybackState } from '@rntp/player';
+import type { MediaItem, PlaybackState } from './player';
 import { describe, expect, it } from 'vitest';
 import {
   activeTrackOccurrenceFromMediaItem,

@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import TrackPlayer, { Event, useProgress } from '@rntp/player';
+import Player, { Event, useProgress } from '../player/player';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Track } from '../api/types';
@@ -310,8 +310,8 @@ export function QueueSurface({
 
   useEffect(() => {
     refreshQueue();
-    const queueSubscription = TrackPlayer.addEventListener(Event.QueueChanged, refreshQueue);
-    const transitionSubscription = TrackPlayer.addEventListener(
+    const queueSubscription = Player.addEventListener(Event.QueueChanged, refreshQueue);
+    const transitionSubscription = Player.addEventListener(
       Event.MediaItemTransition,
       refreshQueue,
     );

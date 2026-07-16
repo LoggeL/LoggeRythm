@@ -1,8 +1,14 @@
-# RNTP licensing, patch ownership, upgrade, and rollback playbook
+# Historical RNTP licensing and patch-provenance record
 
-**Dependency:** `@rntp/player@5.6.0`
+**Status:** superseded for the active source tree by
+[`FIRST_PARTY_MEDIA3_MIGRATION.md`](./FIRST_PARTY_MEDIA3_MIGRATION.md). This file
+is retained to preserve the provenance, license decision, test record, and safe
+handling rules for the local b10012 checkpoint. It is not an active dependency
+upgrade or release path, and RNTP must not be reintroduced to publish an APK.
 
-**Patch:** `mobile/patches/@rntp+player+5.6.0.patch`
+**Historical dependency:** `@rntp/player@5.6.0`
+
+**Historical patch:** `mobile/patches/@rntp+player+5.6.0.patch`
 
 **Owner:** the `LoggeL/LoggeRythm` repository/release owner is accountable for
 licensing and release approval; the Android maintainer owns patch rebases,
@@ -11,7 +17,7 @@ release cannot proceed with either role unassigned.
 
 **Reviewed:** 2026-07-16
 
-## 1. Distribution decision
+## 1. Historical distribution decision
 
 The package's installed `license.txt` says:
 
@@ -20,9 +26,9 @@ The package's installed `license.txt` says:
 - The commercial terms prohibit sharing, distribution, or sublicensing to
   third parties without explicit written permission.
 
-The repository currently has no recorded paid license, written redistribution
-permission, or counsel-approved interpretation covering a public APK/AAB or
-the large derivative patch. Therefore:
+The repository has no recorded paid license, written redistribution permission,
+or counsel-approved interpretation covering a public APK/AAB or the large
+derivative patch. Therefore:
 
 - Local development and private QA for the repository owner's personal use are
   the only distribution scope accepted by this playbook.
@@ -30,8 +36,8 @@ the large derivative patch. Therefore:
   or third-party beta is blocked until the release owner records written
   permission/license terms that explicitly cover the intended channel and the
   patched/derivative native code.
-- If permission cannot be obtained, replace RNTP with a first-party Media3
-  service before public distribution.
+- The chosen exit is replacement with a first-party Media3 service before
+  public distribution.
 - Do not publish the patch as a standalone artifact or mirror the upstream
   package.
 
@@ -51,7 +57,7 @@ For the reviewed 5.6.0 install the fingerprint is
 Any change requires a new license review before dependency installation or
 release.
 
-Current reviewed patch provenance:
+Reviewed historical patch provenance:
 
 - 3,870 lines;
 - SHA-256
@@ -66,7 +72,7 @@ Current reviewed patch provenance:
 
 This technical provenance does not change the distribution decision above.
 
-## 2. Why the patch is a first-class subsystem
+## 2. Why the historical patch was a first-class subsystem
 
 The patch is not cosmetic. It changes:
 
@@ -82,7 +88,11 @@ The patch is not cosmetic. It changes:
 A dependency bump and its patch are one atomic source change. Never update the
 version, lockfile, package contents, or patch independently.
 
-## 3. Required patch provenance
+## 3. Historical patch-provenance requirements
+
+The following requirements remain the review standard for any retained local
+RNTP checkpoint. They do not authorize restoring the dependency to the active
+application.
 
 For every patch revision, the change description or release evidence must
 record:
@@ -101,7 +111,11 @@ record:
 Do not hand-edit hunk offsets after native-source changes. Regenerate the patch
 from a pristine dependency install and review the resulting complete diff.
 
-## 4. Rebase/upgrade procedure
+## 4. Historical rebase/upgrade procedure
+
+This procedure is preserved for forensic review or an explicitly authorized
+private checkpoint only. It is superseded for product development; active work
+must continue on the first-party Media3 migration.
 
 Use a dedicated branch/worktree with no unrelated dependency changes.
 
@@ -142,7 +156,7 @@ Use a dedicated branch/worktree with no unrelated dependency changes.
 12. Record the hashes, results, known deferrals, and license approval scope in
     the release evidence.
 
-## 5. Mandatory regression matrix
+## 5. Historical mandatory regression matrix
 
 Every patch change runs:
 
@@ -188,7 +202,7 @@ Every patch change runs:
 Remote CI must run on the exact commit intended for release. Local green tests
 cannot substitute for that provenance.
 
-## 6. Rollback procedure
+## 6. Historical rollback procedure
 
 Rollback means restoring a previously verified dependency+patch pair, not
 removing individual hunks until compilation succeeds.
@@ -215,46 +229,69 @@ For an emergency security rollback, disabling authenticated background
 playback or clearing encrypted player state is preferable to retaining another
 account's headers/metadata. Account isolation wins over playback continuity.
 
-## 7. Fork and first-party exit strategy
+## 7. First-party exit outcome
 
-### Short term
+The source-owned application has now crossed the dependency boundary:
 
-Keep the pinned package+patch only while:
+- `@rntp/player`, its lock entries, the derivative patch, `patch-package`
+  postinstall, the old Android Auto plugin, direct imports/mocks, and RNTP CI
+  markers are removed;
+- `@loggerythm/player-native` resolves to the local
+  `mobile/modules/loggerythm-player` package;
+- all 28 production/test consumers use the owned player facade;
+- the TypeScript `PlayerPort`, immutable snapshot hooks, and strict Native-v1
+  mapper are in place;
+- the first-party `MediaLibraryService`, controller policy, strict Cookie
+  vault/DataSource, 500 MiB LRU, maximum-8-MiB one-next preload, and 1-second
+  progress ticker exist;
+- the versioned encrypted codec/store passes 19 focused tests, but lifecycle
+  integration is still in progress and is not device proof.
 
-- the intended use/distribution is licensed;
-- clean application and the regression matrix stay green;
-- the patch remains reviewable as one owned subsystem.
+A clean Expo prebuild has removed the stale generated-Android references. The
+gate scans 421 source/generated files with zero findings, and Gradle exposes
+only `:loggerythm_player-native` as a player project. The newly assembled APK
+must still pass the unpacked class/string scan; source cleanliness alone is not
+artifact evidence.
 
-If license terms permit a private fork, mirror the exact upstream commit into a
-private repository, preserve upstream history/notices, apply LoggeRythm commits
-by subsystem, and pin the app to an immutable commit/integrity value. A private
-fork improves rebase review but does not expand redistribution rights.
+The local b10012 checkpoint and any commit/tag/archive containing its derivative
+patch remain non-publishable under this repository's recorded permission. A
+clean first-party artifact does not inherit the package redistribution blocker,
+but it still requires history-aware release provenance and every independent
+security, backend, signing, CI, and parity gate.
 
-### Android-only long term
+Still open in the first-party subsystem:
 
-Replace the patch incrementally with a first-party Kotlin Media3 module:
+- complete session binding and one atomic JS/Kotlin account cleanup boundary;
+- integrate encrypted persistence into live service restoration;
+- implement sleep and remaining remote commands;
+- implement first-party headless delivery and Android Auto sibling/cold-tree
+  behavior;
+- run Keystore, process-death, separate-UID, notification, audio/lifecycle,
+  DHU, emulator, and release instrumentation.
 
-1. authenticated native session/DataSource ownership;
-2. MediaLibraryService/notification/controller authorization;
-3. encrypted queue and browse persistence;
-4. cache/download/timer policy;
-5. a narrow typed React Native command/event adapter;
-6. Compose screens only where they provide a measured benefit.
-
-Keep RN screens while the service seam moves. A Flutter rewrite does not remove
+React Native screens remain the chosen UI. A Flutter rewrite does not remove
 this native work and is not the recommended exit.
 
-## 8. Change/release checklist
+## 8. Current exit/release checklist
 
-- [ ] Intended channel is covered by recorded written license/permission.
-- [ ] RNTP version, lock integrity, license hash, and patch hash are recorded.
-- [ ] Clean install applies the patch without drift.
-- [ ] Persistence schema/migration decision is explicit.
-- [ ] JS and all native JVM tests pass.
-- [ ] Required device instrumentation passes.
-- [ ] Release lint/assembly/runtime/secret evidence passes.
-- [ ] Upgrade and rollback behavior from the last distributed version passes.
-- [ ] Android maintainer approves technical changes.
-- [ ] Repository/release owner approves licensing and distribution.
+- [x] Historical RNTP version, license hash, patch hash, and local-only
+  distribution decision are retained in this record.
+- [x] Dependency, derivative patch, postinstall, old plugin, 28 direct
+  consumers, and RNTP workflow markers are removed from source-owned files.
+- [x] A clean prebuild removes the stale generated-Android findings; the gate
+  scans 421 files with zero findings and Gradle lists only the first-party
+  player project.
+- [ ] Hermes, DEX/native, and unpacked-APK gates pass on a newly assembled
+  artifact.
+- [ ] Session binding, persistence lifecycle, sleep, headless, Auto, and atomic
+  cleanup are complete.
+- [ ] Full JS/JVM/instrumentation/emulator/release evidence passes on the exact
+  clean commit.
+- [ ] Production v2 metadata and playlist contract deploy atomically under an
+  identified authority; production currently returns 404 at `/api/version`.
+- [ ] The previously exposed credential is rotated/revoked and the history
+  remediation decision is recorded.
+- [ ] Production signing, exact-commit CI, parity gates, and release-owner
+  approval pass.
 
 Any unchecked item blocks a public release.

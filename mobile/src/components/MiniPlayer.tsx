@@ -9,7 +9,7 @@ import {
   useIsPlaying,
   usePlaybackState,
   useProgress,
-} from '@rntp/player';
+} from '../player/player';
 import { mediaItemToTrack } from '../player/mediaItem';
 import { next, togglePlay } from '../player/controller';
 import { reportPlayerError } from '../player/errors';

@@ -1,4 +1,4 @@
-import type { MediaItem } from '@rntp/player';
+import type { MediaItem } from './player';
 import { describe, expect, it } from 'vitest';
 import type { Track } from '../api/types';
 import {
@@ -49,32 +49,16 @@ describe('mediaItemToTrack', () => {
     })).toThrow('must use an app-private file URI');
   });
 
-  it('restores the Android RNTP array-like artists representation', () => {
+  it('rejects non-array artist metadata', () => {
     const item = {
       mediaId: 'queue:1:123',
       url: 'https://api.test/api/tracks/123/stream',
       extras: {
         track: {
           ...track,
-          artists: {
-            0: { id: '456', name: 'Bridge Artist' },
-            __rntp_array_length: 1,
-          },
+          artists: { 0: { id: '456', name: 'Bridge Artist' } },
         },
       },
-    } as unknown as MediaItem;
-
-    const restored = mediaItemToTrack(item);
-
-    expect(restored?.artists).toEqual([{ id: '456', name: 'Bridge Artist' }]);
-    expect(Array.isArray(restored?.artists)).toBe(true);
-  });
-
-  it('rejects incomplete native array metadata instead of sending malformed JSON', () => {
-    const item = {
-      mediaId: 'queue:1:123',
-      url: 'https://api.test/api/tracks/123/stream',
-      extras: { track: { ...track, artists: { __rntp_array_length: 1 } } },
     } as unknown as MediaItem;
 
     expect(() => mediaItemToTrack(item)).toThrow('contains invalid Track metadata');

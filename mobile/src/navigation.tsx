@@ -23,7 +23,7 @@ import {
 } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { useActiveMediaItem } from '@rntp/player';
+import { useActiveMediaItem } from './player/player';
 import type { Track } from './api/types';
 import { useAuth } from './auth/AuthContext';
 import { presentError, type UserFacingError } from './auth/presentationError';
@@ -773,7 +773,7 @@ export default function RootNavigator() {
       void initializeOfflineDownloads(accountScope)
         .then(() => {
           if (!mounted) return undefined;
-          return ensurePlayer();
+          return ensurePlayer(accountScope);
         })
         .then(() => {
           if (!mounted) return;

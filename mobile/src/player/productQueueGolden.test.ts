@@ -1,4 +1,4 @@
-import type { MediaItem } from '@rntp/player';
+import type { MediaItem } from './player';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import contractData from '../../../contracts/product-queue.v1.json';
 import type { Track } from '../api/types';
@@ -79,22 +79,25 @@ const player = vi.hoisted(() => ({
   clearPlayerError: vi.fn(),
 }));
 
-vi.mock('@rntp/player', () => ({
-  default: {
-    getQueue: player.getQueue,
-    getActiveMediaItemIndex: player.getActiveMediaItemIndex,
-    insertMediaItem: player.insertMediaItem,
-    addMediaItem: player.addMediaItem,
-    removeMediaItem: player.removeMediaItem,
-    removeMediaItems: player.removeMediaItems,
-    moveMediaItem: player.moveMediaItem,
-    isShuffleEnabled: player.isShuffleEnabled,
-    setShuffleEnabled: player.setShuffleEnabled,
-    setQueuePersistenceState: player.setQueuePersistenceState,
-  },
-  Event: { MediaItemTransition: 'transition', PlaybackError: 'error' },
-  RepeatMode: { Off: 0, All: 1, One: 2 },
-}));
+vi.mock('./player', async () => {
+  const { Event, RepeatMode } = await import('./playerPort');
+  return {
+    default: {
+      getQueue: player.getQueue,
+      getActiveMediaItemIndex: player.getActiveMediaItemIndex,
+      insertMediaItem: player.insertMediaItem,
+      addMediaItem: player.addMediaItem,
+      removeMediaItem: player.removeMediaItem,
+      removeMediaItems: player.removeMediaItems,
+      moveMediaItem: player.moveMediaItem,
+      isShuffleEnabled: player.isShuffleEnabled,
+      setShuffleEnabled: player.setShuffleEnabled,
+      setQueuePersistenceState: player.setQueuePersistenceState,
+    },
+    Event,
+    RepeatMode,
+  };
+});
 vi.mock('../config', () => ({ getApiBase: player.getApiBase }));
 vi.mock('../api/client', () => ({
   authenticatedHeadersFor: player.authenticatedHeadersFor,

@@ -1,4 +1,4 @@
-import type { MediaItem } from '@rntp/player';
+import type { MediaItem } from './player';
 import type { Track } from '../api/types';
 
 function isArtistRef(value: unknown): value is Track['artists'][number] {
@@ -10,25 +10,13 @@ function isArtistRef(value: unknown): value is Track['artists'][number] {
   );
 }
 
-/**
- * RNTP's Android extras bridge preserves an array's entries in numeric keys and
- * records its length separately. Rebuild that native representation before an
- * item is sent back to JSON APIs such as play history.
- */
 function normalizeArtists(value: unknown): Track['artists'] | null {
   if (Array.isArray(value)) return value.every(isArtistRef) ? value : null;
-  if (typeof value !== 'object' || value === null) return null;
-
-  const arrayLike = value as Record<string, unknown>;
-  const length = arrayLike.__rntp_array_length;
-  if (!Number.isInteger(length) || (length as number) < 0) return null;
-
-  const artists = Array.from({ length: length as number }, (_, index) => arrayLike[String(index)]);
-  return artists.every(isArtistRef) ? artists : null;
+  return null;
 }
 
 /**
- * Convert a backend Track into an RNTP MediaItem. The stream endpoint supports
+ * Convert a backend Track into a first-party player MediaItem. The stream endpoint supports
  * HTTP Range requests and receives the account cookie through native URL headers.
  * The full Track is stashed in `extras` so it can be recovered from the queue
  * (for like/record-play calls and Android Auto selections) without a re-fetch.

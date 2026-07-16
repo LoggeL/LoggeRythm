@@ -7,7 +7,7 @@ import {
   profileSleepTimerFailureMessage,
 } from './profileFeedback';
 
-vi.mock('@rntp/player', () => ({ default: {} }));
+vi.mock('../player/player', () => ({ default: {} }));
 
 const copy = {
   saveFailed: 'Changes could not be saved.',

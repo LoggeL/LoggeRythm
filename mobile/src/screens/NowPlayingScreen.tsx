@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import TrackPlayer, {
+import Player, {
   Event,
   PlaybackState,
   RepeatMode,
@@ -18,7 +18,7 @@ import TrackPlayer, {
   useIsPlaying,
   usePlaybackState,
   useProgress,
-} from '@rntp/player';
+} from '../player/player';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import BrandLockup from '../components/BrandLockup';
 import AppIcon from '../components/AppIcon';
@@ -80,14 +80,14 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const playerError = usePlayerError();
 
   const [seekState, setSeekState] = useState<{ trackId: string; value: number } | null>(null);
-  const [repeat, setRepeat] = useState<RepeatMode>(() => TrackPlayer.getRepeatMode());
+  const [repeat, setRepeat] = useState<RepeatMode>(() => Player.getRepeatMode());
   const [shuffle, setShuffle] = useState(isContextShuffleEnabled);
   const [shufflePending, setShufflePending] = useState(false);
   const [tab, setTab] = useState<NowPlayingTab>(DEFAULT_NOW_PLAYING_TAB);
 
   useEffect(() => {
     const syncShuffleState = () => setShuffle(isContextShuffleEnabled());
-    const queueSubscription = TrackPlayer.addEventListener(Event.QueueChanged, syncShuffleState);
+    const queueSubscription = Player.addEventListener(Event.QueueChanged, syncShuffleState);
     const removeFocusListener = navigation.addListener('focus', syncShuffleState);
     syncShuffleState();
     return () => {

@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => ({
   connectivityStatus: 'unknown' as 'unknown' | 'online' | 'offline',
 }));
 
-vi.mock('@rntp/player', () => ({
+vi.mock('./player', () => ({
   default: { setBrowseTree: mocks.setBrowseTree },
 }));
 vi.mock('../api/client', () => ({

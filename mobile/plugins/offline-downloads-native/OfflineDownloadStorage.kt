@@ -49,8 +49,8 @@ internal data class OfflineHydration(
 )
 
 /**
- * The explicit-download store is deliberately separate from RNTP's rolling
- * cacheDir/trackplayer_cache. Files here are never LRU-evicted and are only
+ * The explicit-download store is deliberately separate from the player's rolling
+ * cache. Files here are never LRU-evicted and are only
  * removed by an explicit playlist/account cleanup transaction.
  */
 internal class OfflineDownloadStorage(private val context: Context) {

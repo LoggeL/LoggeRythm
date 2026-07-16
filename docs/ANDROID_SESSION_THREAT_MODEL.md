@@ -1,7 +1,8 @@
 # Android session-token threat model
 
-**Status:** Accepted architecture for the React Native parity phase, with
-mandatory release conditions below
+**Status:** Accepted target architecture for the React Native parity phase;
+first-party implementation is in progress and the mandatory release conditions
+below are not yet satisfied
 
 **Reviewed:** 2026-07-16
 
@@ -11,18 +12,21 @@ background playback, process restoration, and Android Auto browsing
 
 ## 1. Decision
 
-The Android client currently owns one manually managed `sf_session` cookie.
-JavaScript captures it after login, stores an origin-bound representation in
-Android SecureStore, adds it to ordinary API requests, and passes a Cookie
-header to the native player only for authenticated media URLs and Android Auto
-browse items.
+The Android client owns one manually managed `sf_session` cookie. JavaScript
+captures it after login, stores an origin-bound representation in Android
+SecureStore, and adds it to ordinary API requests. The player seam is now an
+owned TypeScript `PlayerPort` plus a first-party Kotlin/Media3 module. The
+strict adapter keeps credentials in private JavaScript/native source vaults and
+publishes only sanitized immutable snapshots.
 
 This design is accepted for the parity phase because it preserves one session
-authority and supports background Media3 playback without introducing a second
-native login. It is not the desired final security boundary. When the patched
-player seam becomes first-party, cookie storage and authenticated DataSource
-construction should move fully into the native service so raw session material
-no longer crosses the React Native bridge.
+authority and supports background Media3 playback without a second native
+login. Raw cookie material still crosses the React Native bridge when an
+authenticated source is installed, so the bridge remains a sensitive accepted
+risk. The native service accepts that source only under an exact account/origin
+binding and injects its Cookie through a private DataSource at open time. The
+binding and atomic account-cleanup lifecycle are still being integrated and
+must not be treated as release-proven.
 
 The current architecture is not approved for a production release merely
 because this document exists. The release conditions in section 6 remain
@@ -50,22 +54,26 @@ an account switch fails closed before the replacement login.
 2. The client stores a versioned object containing the token, exact origin, and
    Secure-cookie state under `lr.session.v1` in Expo SecureStore. The former
    AsyncStorage token is migrated once and deleted.
-3. Every API, stream, and authenticated-header request first checks the
+3. Every API, stream, and authenticated-source request first checks the
    server-contract version. Ordinary API calls then read the single in-memory
-   session and construct a Cookie header with origin/scheme validation.
-   React Native's native cookie jar is disabled through `credentials: 'omit'`.
-4. For audio, JavaScript passes `{ uri, headers }` on the selected MediaItem.
-   The RNTP bridge necessarily sees that header. Native code removes request
-   headers from public Media3 metadata/extras and keeps them in an internal
-   URI-to-header store used by the authenticated DataSource.
-5. Queue process restoration serializes the header-bearing media descriptor
-   only into an Android Keystore AES-GCM protected player snapshot. Android Auto
-   browse data and its headers use a separate encrypted browse-tree snapshot.
-6. Logout/account switch deletes the persisted queue before connecting to any
-   surviving service, clears the encrypted Auto tree/headers, connects and
-   pauses/clears live Media3/notification state, clears timers/cache/errors,
-   deletes persistence again, clears SecureStore and account-scoped JS data,
-   and only then permits a new authentication attempt.
+   session and construct a Cookie header with origin/scheme validation. React
+   Native's native cookie jar is disabled through `credentials: 'omit'`.
+4. The owned adapter separates a sanitized queue/browse item from its private
+   `{ uri, Cookie }` source. The public snapshot, React hooks, logs, and Media3
+   metadata never receive that private source object.
+5. JavaScript binds an exact account scope plus canonical HTTPS origin before
+   installing a source. Kotlin revalidates that binding and URI, retains the
+   Cookie only in its private per-URI vault, and injects it through the strict
+   Media3 DataSource when the URI is opened.
+6. A bounded versioned persistence codec and Android Keystore AES-GCM/no-backup
+   atomic store pass 19 focused tests, including corruption/key-loss handling.
+   Queue/browse lifecycle integration and cold restoration are still in
+   progress; isolated codec/store tests are not process-death evidence.
+7. Logout/account switch must be one awaitable transaction that clears live
+   Media3/notification state, queue, timer, encrypted queue/tree/session,
+   private source vaults, cache, errors, SecureStore, and account-scoped JS
+   state before a replacement authentication attempt. The cross-language
+   transaction is under implementation and remains a release gate.
 
 Trust boundaries:
 
@@ -86,15 +94,15 @@ Trust boundaries:
 | Threat | Implemented control and evidence | Residual risk / decision |
 |---|---|---|
 | Token sent to another host or downgraded HTTP origin | URL normalization rejects credentials, query/fragment/path misuse, cross-origin session reuse, and non-HTTPS production origins; production builds hard-fail any non-canonical override; session-cookie construction rechecks the destination | No certificate pinning. Standard Android TLS trust is accepted for now; revisit only with an operational pin-rotation design |
-| Competing cookie jars resurrect an old login | Native requests use one explicit session and `credentials: 'omit'`; 401 invalidation is revision-guarded; failed on-disk deletion retry cannot erase a newer login | A backend-issued stateless JWT remains valid server-side until expiry unless the backend adds revocation |
-| Plaintext token in SharedPreferences/backups | Session uses SecureStore; native queue/Auto snapshots use Keystore AES-GCM; `allowBackup=false`, Expo SecureStore backup is disabled, and no-backup/data-extraction rules are generated | Rooted devices, runtime instrumentation, or a compromised OS are outside the supported trust boundary |
-| Header exposed through Media3 metadata, Android Auto, or Binder | Request headers are kept out of MediaItem request metadata/extras and injected by an internal DataSource map; encrypted persistence tests assert no plaintext cookie/stable ID in preferences | A hostile cross-UID controller test has not yet proven the shipped service boundary end to end |
+| Competing cookie jars resurrect an old login | API requests use one explicit session and `credentials: 'omit'`; 401 invalidation is revision-guarded; failed on-disk deletion retry cannot erase a newer login | A backend-issued stateless JWT remains valid server-side until expiry unless the backend adds revocation |
+| Plaintext token in SharedPreferences/backups | Session uses SecureStore; the first-party bounded persistence codec/store uses Keystore AES-GCM, atomic no-backup storage, strict corruption/key-loss cleanup, and passes 19 focused tests; `allowBackup=false` and SecureStore backup rules remain configured | The first-party store is not yet lifecycle/device proven. Rooted devices, runtime instrumentation, or a compromised OS are outside the supported trust boundary |
+| Header exposed through Media3 metadata, Android Auto, or Binder | The strict Native-v1 mapper and immutable snapshot omit sources; Cookie data stays in private JS/native source vaults and a strict DataSource injects it only at URI open | Full bind/rebind/logout lifecycle and hostile cross-UID instrumentation have not yet proven the shipped boundary end to end |
 | Exported media service accepts arbitrary control or private browse access | Service connection policy rejects untrusted controllers; trusted external controllers receive standard commands only; privileged update/header commands require the app UID; pure policy tests pass | The service must remain exported for Media3/Auto discovery. Real separate-UID instrumentation is a production gate, not an accepted omission |
 | Token leaks to logs, UI dumps, crash reports, intents, share payloads, or artifacts | Config errors redact supplied origins; runtime logs expose only a sanitized origin marker; smoke/session harnesses redact UI text and credentials; working-tree known-secret scans pass; no backup; no token-bearing intent/share code is intended | Comprehensive automated artifact/log/intent scanning is still incomplete. Crash-reporting SDKs must not be added without a data review |
-| Old account survives logout or fast re-login | Cleanup is serialized; account switch tears down before new credentials; unexpected `/me` identity drift signs out; queue and Auto persistence are deleted even before normal player setup; query/mutation/search scopes are cleared; native cache eviction is awaited and filesystem-verified; a failed boundary remains mandatory before another login/register request | Rebuilt release-APK logout/account-switch and device-level cache/notification evidence is still required |
-| Compatibility mismatch causes old client to mis-handle auth/media | Public `GET /api/version` is checked before session load and before API/media-header access; malformed/missing/incompatible responses fail loudly without mutating the session | Production currently returns 404. The backend endpoint must deploy before current Android source is installed |
+| Old account survives logout or fast re-login | Existing JS cleanup remains serialized and fail-closed; the first-party service has binding, private-vault, persistence, and awaitable-cache-clear building blocks | The single JS/Kotlin cleanup transaction is still being integrated. Rebuilt release-APK account-switch plus filesystem/cache/notification/tree evidence is mandatory |
+| Compatibility mismatch causes old client to mis-handle auth/media | Public `GET /api/version` is checked before session load and before API/authenticated-source access; malformed/missing/incompatible responses fail loudly without mutating the session | Production currently returns 404 because v2 exists only locally. Metadata and the v2 playlist contract require one atomic production deployment by an identified authority |
 | Test credentials or signing material enter source/history | Screenshot tooling requires environment credentials and does not print the email; production keystore is not configured in source | A previously committed production test credential must be rotated/revoked and its Git-history disposition decided. Debug-signed QA APKs are not production releases |
-| A third-party React Native/native dependency reads the token in process | Dependencies are locked and the token is only passed to the API client/RNTP bridge | This is the principal accepted parity-phase risk. Reduce it by owning the native media/auth seam; review dependency changes that touch networking, logging, WebView, analytics, or native bridges |
+| A bridge observer or future dependency reads the token in process | The player seam is first-party; the strict adapter exposes only sanitized snapshots and keeps source credentials in private vaults | Raw Cookie material still crosses the React Native bridge on source installation. Removing that crossing is future hardening; review any networking, logging, WebView, analytics, or native-bridge dependency change |
 
 ## 5. Invariants
 
@@ -118,10 +126,17 @@ The implementation and tests must preserve all of these:
 
 Before this architecture may ship as production:
 
-- Deploy `GET /api/version` and verify compatible `v1` metadata from the
-  exact production backend revision.
-- Verify the now-awaitable native automatic-audio-cache deletion at a real
-  logout/account boundary, including device-level filesystem evidence.
+- Atomically deploy `GET /api/version` plus the complete v2 playlist contract,
+  identify the deployment authority, and verify compatible v2 metadata from
+  the exact production backend revision.
+- Finish first-party session binding, persistence lifecycle, and the single
+  awaitable JS/Kotlin cleanup boundary.
+- Preserve the clean-prebuilt source/generated gate result: 421 files, zero
+  RNTP findings, and only `:loggerythm_player-native` in the Gradle player
+  graph. Then make the unpacked-APK gate pass with no RNTP classes, package
+  strings, or derivative code.
+- Verify first-party automatic-audio-cache deletion at a real logout/account
+  boundary, including device-level filesystem evidence.
 - Exercise logout and defensive account switch in a rebuilt release APK,
   proving that notification, queue, player errors, searches, query state,
   Android Auto tree, cache, and session do not survive.
@@ -134,9 +149,11 @@ Before this architecture may ship as production:
 - Use a permanent protected production signing key and run the exact remote
   release workflow on the tagged commit.
 
-Moving cookie ownership fully native is a planned hardening seam, not a
-prerequisite if every condition above is green and the residual bridge risk is
-explicitly accepted by the release owner.
+Removing the remaining Cookie bridge crossing is a planned hardening seam, not
+a prerequisite if every condition above is green and the residual bridge risk
+is explicitly accepted by the release owner. Sleep commands, headless event
+delivery, Android Auto sibling/cold-tree behavior, and device instrumentation
+remain functional release gates independently of this security acceptance.
 
 ## 7. Evidence map
 
@@ -150,13 +167,18 @@ explicitly accepted by the release owner.
   their tests
 - Player/Auto cleanup:
   `mobile/src/player/setup.ts`, `mobile/src/player/browseTree.ts`,
+  `mobile/src/player/playerPort.ts`, `mobile/src/player/nativePlayerPort.ts`,
   `mobile/src/player/setup.test.ts`, `mobile/src/player/browseTree.test.ts`
 - Native encryption/header/controller controls:
-  `mobile/patches/@rntp+player+5.6.0.patch`
+  `mobile/modules/loggerythm-player/android/src/main/java/top/logge/loggerythm/player/LoggeRythmEncryptedPersistence.kt`,
+  `LoggeRythmPersistedState.kt`, `LoggeRythmCookieVault.kt`,
+  `LoggeRythmSecureDataSource.kt`, and `LoggeRythmMediaLibraryService.kt`
 - Manifest/network/backup policy:
   `mobile/app.json`, `mobile/app.config.js`,
   `mobile/plugins/withNoBackup.js`,
-  `mobile/plugins/withAndroidAuto.js`
+  `mobile/plugins/withFirstPartyPlayer.js`
+- First-party removal/artifact gate:
+  `mobile/scripts/verify_first_party_player_gate.mjs`
 - Emulator and release evidence:
   `docs/ANDROID_EMULATOR_QA_2026-07-15.md`,
   `mobile/scripts/android_smoke.py`,

@@ -315,7 +315,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
   return parsed;
 }
 
-/** An authenticated Range-capable stream source for RNTP/ExoPlayer. */
+/** An authenticated Range-capable stream source for the Media3 player. */
 export async function streamSource(deezerId: DeezerId): Promise<{
   uri: string;
   headers: Record<string, string>;

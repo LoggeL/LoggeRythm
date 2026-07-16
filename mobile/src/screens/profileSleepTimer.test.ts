@@ -9,7 +9,7 @@ import {
 } from './profileSleepTimer';
 import { SLEEP_PRESETS_MINUTES } from './profileModel';
 
-vi.mock('@rntp/player', () => ({
+vi.mock('../player/player', () => ({
   default: {
     cancelSleepTimer: vi.fn(),
     getActiveMediaItemIndex: vi.fn(() => null),

@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Event, type MediaItem, type PlaybackErrorEvent } from '@rntp/player';
+import { Event, type MediaItem, type PlaybackErrorEvent } from './player';
 import type { Track } from '../api/types';
 import { strings } from '../localization';
 import {
@@ -35,25 +35,24 @@ const mocks = vi.hoisted(() => ({
   reportPlayerNotice: vi.fn(),
 }));
 
-vi.mock('@rntp/player', () => ({
-  default: {
-    getQueue: mocks.getQueue,
-    getActiveMediaItemIndex: mocks.getActiveMediaItemIndex,
-    getProgress: mocks.getProgress,
-    replaceMediaItem: mocks.replaceMediaItem,
-    seekTo: mocks.seekTo,
-    play: mocks.play,
-    pause: mocks.pause,
-    skipToNext: mocks.skipToNext,
-    addEventListener: mocks.addEventListener,
-  },
-  Event: {
-    MediaItemTransition: 'transition',
-    PlaybackProgressUpdated: 'progress',
-    PlaybackError: 'error',
-  },
-  RepeatMode: { Off: 0, All: 1, One: 2 },
-}));
+vi.mock('./player', async () => {
+  const { Event, RepeatMode } = await import('./playerPort');
+  return {
+    default: {
+      getQueue: mocks.getQueue,
+      getActiveMediaItemIndex: mocks.getActiveMediaItemIndex,
+      getProgress: mocks.getProgress,
+      replaceMediaItem: mocks.replaceMediaItem,
+      seekTo: mocks.seekTo,
+      play: mocks.play,
+      pause: mocks.pause,
+      skipToNext: mocks.skipToNext,
+      addEventListener: mocks.addEventListener,
+    },
+    Event,
+    RepeatMode,
+  };
+});
 vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
 vi.mock('../api/client', () => ({ authenticatedHeadersFor: mocks.authenticatedHeadersFor }));
 vi.mock('../data/repositories', () => ({

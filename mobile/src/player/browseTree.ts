@@ -1,4 +1,4 @@
-import TrackPlayer, { type BrowseCategory, type BrowseItem } from '@rntp/player';
+import Player, { type BrowseCategory, type BrowseItem } from './player';
 import { authenticatedHeadersFor } from '../api/client';
 import type { Playlist, Track } from '../api/types';
 import { getApiBase } from '../config';
@@ -49,7 +49,7 @@ export function cancelBrowseTreePublication(): void {
 export function clearBrowseTree(): void {
   cancelBrowseTreePublication();
   lastRemoteTree = null;
-  TrackPlayer.setBrowseTree([]);
+  Player.setBrowseTree([]);
 }
 
 function currentOfflineCopy(): OfflineBrowseTreeCopy {
@@ -181,7 +181,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
       // Known-offline startup must not wait for auth or issue doomed repository
       // requests. Remote entries are deliberately omitted because their URLs are
       // not verified local downloads and would not be playable in this state.
-      TrackPlayer.setBrowseTree(initialDownloads === null ? [] : [initialDownloads]);
+      Player.setBrowseTree(initialDownloads === null ? [] : [initialDownloads]);
       return;
     }
     const base = await getApiBase();
@@ -235,7 +235,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
     // Atomically replace only after every remote source has loaded. The remote
     // subset is retained separately so a transient same-account refresh failure
     // can refresh verified Downloads without blanking previously published nodes.
-    TrackPlayer.setBrowseTree(categories);
+    Player.setBrowseTree(categories);
     lastRemoteTree = { scope: publicationScope, categories: remoteCategories };
   } catch (error) {
     if (signal?.aborted || revision !== publicationRevision) {
@@ -247,7 +247,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
       const retainedRemote = lastRemoteTree?.scope === publicationScope
         ? lastRemoteTree.categories
         : [];
-      TrackPlayer.setBrowseTree([...retainedRemote, downloads]);
+      Player.setBrowseTree([...retainedRemote, downloads]);
     }
     throw error;
   }
@@ -276,7 +276,7 @@ export async function refreshOfflineBrowseTree(): Promise<void> {
   const retainedRemote = lastRemoteTree?.scope === scope
     ? lastRemoteTree.categories
     : [];
-  TrackPlayer.setBrowseTree(
+  Player.setBrowseTree(
     downloads === null ? retainedRemote : [...retainedRemote, downloads],
   );
 }

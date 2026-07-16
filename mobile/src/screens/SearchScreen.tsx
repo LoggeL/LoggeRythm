@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useProgress } from '@rntp/player';
+import { useProgress } from '../player/player';
 import AppIcon from '../components/AppIcon';
 import {
   SearchEntityCard,

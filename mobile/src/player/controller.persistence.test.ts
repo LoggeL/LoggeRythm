@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { MediaItem } from '@rntp/player';
+import type { MediaItem } from './player';
 import type { Track } from '../api/types';
 import {
   addToQueue,
@@ -35,25 +35,24 @@ const player = vi.hoisted(() => ({
   clearPlayerError: vi.fn(),
 }));
 
-vi.mock('@rntp/player', () => ({
-  default: {
-    getQueue: player.getQueue,
-    getActiveMediaItemIndex: player.getActiveMediaItemIndex,
-    isShuffleEnabled: player.isShuffleEnabled,
-    setShuffleEnabled: player.setShuffleEnabled,
-    moveMediaItem: player.moveMediaItem,
-    getQueuePersistenceState: player.getQueuePersistenceState,
-    setQueuePersistenceState: player.setQueuePersistenceState,
-    addMediaItem: player.addMediaItem,
-    insertMediaItem: player.insertMediaItem,
-  },
-  Event: {
-    MediaItemTransition: 'transition',
-    PlaybackProgressUpdated: 'progress',
-    PlaybackError: 'error',
-  },
-  RepeatMode: { Off: 0, All: 1, One: 2 },
-}));
+vi.mock('./player', async () => {
+  const { Event, RepeatMode } = await import('./playerPort');
+  return {
+    default: {
+      getQueue: player.getQueue,
+      getActiveMediaItemIndex: player.getActiveMediaItemIndex,
+      isShuffleEnabled: player.isShuffleEnabled,
+      setShuffleEnabled: player.setShuffleEnabled,
+      moveMediaItem: player.moveMediaItem,
+      getQueuePersistenceState: player.getQueuePersistenceState,
+      setQueuePersistenceState: player.setQueuePersistenceState,
+      addMediaItem: player.addMediaItem,
+      insertMediaItem: player.insertMediaItem,
+    },
+    Event,
+    RepeatMode,
+  };
+});
 vi.mock('../config', () => ({ getApiBase: player.getApiBase }));
 vi.mock('../api/client', () => ({
   authenticatedHeadersFor: player.authenticatedHeadersFor,
@@ -140,6 +139,15 @@ describe('controller process restoration', () => {
     resetControllerState();
 
     expect(player.clearPlayerError).toHaveBeenCalledOnce();
+  });
+
+  it('fails closed instead of repairing a native global-shuffle invariant breach', () => {
+    player.isShuffleEnabled.mockReturnValue(true);
+
+    expect(() => restoreControllerStateFromNativeQueue()).toThrow(
+      'Native global shuffle must remain disabled',
+    );
+    expect(player.setShuffleEnabled).not.toHaveBeenCalled();
   });
 
   it('restores product shuffle intent and its exact stable-ID restore order', async () => {

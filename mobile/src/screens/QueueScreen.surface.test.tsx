@@ -26,11 +26,14 @@ vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 24, right: 0, bottom: 20, left: 0 }),
 }));
 
-vi.mock('@rntp/player', () => ({
-  default: { addEventListener: vi.fn() },
-  Event: { QueueChanged: 'QueueChanged', MediaItemTransition: 'MediaItemTransition' },
-  useProgress: () => ({ cached: 0 }),
-}));
+vi.mock('../player/player', async () => {
+  const { Event } = await import('../player/playerPort');
+  return {
+    default: { addEventListener: vi.fn() },
+    Event,
+    useProgress: () => ({ cached: 0 }),
+  };
+});
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn() }));
 vi.mock('../components/PlayerNoticeBanner', () => ({ default: 'PlayerNoticeBanner' }));

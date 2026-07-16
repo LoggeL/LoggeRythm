@@ -1,23 +1,17 @@
 # LoggeRythm — Android app
 
-Android client for the LoggeRythm backend, built with Expo / React Native. Uses [`@rntp/player`](https://rntp.dev) (React Native Track Player
-V5, New Architecture) for native audio so you get the real Android media
-experience: **lock-screen / notification media controls, background playback,
-Bluetooth & headset buttons, and Android Auto**.
-
-> **Distribution gate:** the installed `@rntp/player` terms cover qualifying
-> personal/educational non-commercial use, but this repository has no recorded
-> permission for public APK/AAB redistribution. Public GitHub, Play, or beta
-> distribution is blocked until the intended channel is covered in writing or
-> the dependency is replaced. See
-> [`docs/RNTP_PATCH_OWNERSHIP.md`](../docs/RNTP_PATCH_OWNERSHIP.md).
+Android client for the LoggeRythm backend, built with Expo / React Native and a
+first-party Kotlin/AndroidX Media3 playback service. It provides native
+lock-screen and notification controls, background playback, Bluetooth/headset
+transport, and an Android Auto media library without placing playback authority
+inside the JavaScript UI.
 
 ## Requirements
 
 - Node 22.13+, JDK 17+, Android SDK (with an emulator or a physical device)
 - A running LoggeRythm backend (the FastAPI `api/`) reachable from the device
 - A backend `GET /api/version` response advertising compatibility with contract
-  `v1`; missing/malformed/incompatible metadata fails closed before auth/media
+  `v2`; missing/malformed/incompatible metadata fails closed before auth/media
 - A **custom dev build** — this app cannot run in Expo Go (it has native modules
   and requires the New Architecture).
 
@@ -154,8 +148,9 @@ resends it as a `Cookie` header on API and native Range-stream requests.
 
 ### Playback / queue
 
-RNTP owns the native queue. `controller.ts` maps `Track`s to `MediaItem`s and
-drives it. "Play next" inserts after current and "Add to queue" appends after
+The first-party Media3 service owns the native queue. `controller.ts` maps
+`Track`s to validated `MediaItem`s through the app-owned `PlayerPort`. "Play
+next" inserts after current and "Add to queue" appends after
 existing manual items but before remaining context. Idle actions start
 playback, Previous uses the three-second restart rule, and radio extension
 deduplicates against the live queue. Stable context/manual metadata,
@@ -174,11 +169,11 @@ playing/paused route evidence remains a release gate.
 ### Android Auto
 
 `browseTree.ts` publishes a browsable tree (Liked Songs + one folder per
-playlist) via `setBrowseTree()`. Selecting a track in the car is handled
-natively — RNTP loads its siblings as the queue and plays, no JS needed. The
-unsupported voice-search capability is not advertised. Pagination,
-partial-failure refresh, mutation refresh, DHU, and large-library evidence are
-still required.
+playlist) via `setBrowseTree()`. Transport is handled natively without a live
+JavaScript command loop. The unsupported voice-search capability is not
+advertised. Sibling-queue selection, encrypted cold browse-tree restore,
+partial-failure refresh, mutation refresh, DHU, and large-library evidence
+remain explicit release work.
 
 ### Architecture decision
 
@@ -187,13 +182,12 @@ is the Media3 service/session, authenticated stream headers, background
 playback, and Android Auto; a Flutter rewrite would still need a native plugin
 boundary for those pieces while replacing working UI code.
 
-If this client is permanently Android-only, the cleaner long-term target is an
-incremental migration to Kotlin + Jetpack Compose with first-party Media3. The
-first seam to replace should be the large RNTP patch, not the screen framework.
-Until then, recorded distribution permission, reproducible patch application,
-and focused Media3 lifecycle/security tests are release gates. Ownership,
-rebase, regression, and rollback policy is documented in
-[`docs/RNTP_PATCH_OWNERSHIP.md`](../docs/RNTP_PATCH_OWNERSHIP.md).
+If this client is permanently Android-only, a later incremental migration to
+Kotlin + Jetpack Compose can still be evaluated screen by screen. Rewriting the
+UI is not required for a sound playback architecture: the app-owned PlayerPort
+already isolates React Native from the Media3 service. Clean dependency/APK
+gates plus lifecycle, Keystore, controller-trust, and Android Auto device tests
+remain mandatory before publication.
 
 ## Remaining web-parity work
 

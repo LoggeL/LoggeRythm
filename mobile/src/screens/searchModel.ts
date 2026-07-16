@@ -107,7 +107,7 @@ export function removeRecentSearch(current: readonly string[], query: string): s
   );
 }
 
-/** Format an API/RNTP duration without implying that a zero value is known. */
+/** Format an API/player duration without implying that a zero value is known. */
 export function formatSearchDuration(seconds: number): string | null {
   if (!Number.isFinite(seconds) || seconds < 0) {
     throw new Error(`Search metadata duration must be a finite non-negative number, got ${String(seconds)}`);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Event, type MediaItem } from '@rntp/player';
+import { Event, RepeatMode, type MediaItem } from './player';
 import type { Track } from '../api/types';
 import {
   addToQueue,
@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
   position: 0,
   playing: false,
   shuffle: false,
-  repeatMode: 0,
+  repeatMode: undefined as unknown as RepeatMode,
   getQueue: vi.fn(),
   getActiveMediaItem: vi.fn(),
   getActiveMediaItemIndex: vi.fn(),
@@ -58,32 +58,35 @@ const mocks = vi.hoisted(() => ({
   clearPlayerError: vi.fn(),
 }));
 
-vi.mock('@rntp/player', () => ({
-  default: {
-    getQueue: mocks.getQueue,
-    getActiveMediaItem: mocks.getActiveMediaItem,
-    getActiveMediaItemIndex: mocks.getActiveMediaItemIndex,
-    setMediaItem: mocks.setMediaItem,
-    setMediaItems: mocks.setMediaItems,
-    insertMediaItem: mocks.insertMediaItem,
-    addMediaItem: mocks.addMediaItem,
-    addMediaItems: mocks.addMediaItems,
-    play: mocks.play,
-    pause: mocks.pause,
-    isPlaying: mocks.isPlaying,
-    getProgress: mocks.getProgress,
-    seekTo: mocks.seekTo,
-    skipToPrevious: mocks.skipToPrevious,
-    isShuffleEnabled: mocks.isShuffleEnabled,
-    setShuffleEnabled: mocks.setShuffleEnabled,
-    moveMediaItem: mocks.moveMediaItem,
-    getRepeatMode: mocks.getRepeatMode,
-    setRepeatMode: mocks.setRepeatMode,
-    setQueuePersistenceState: mocks.setQueuePersistenceState,
-  },
-  Event: { MediaItemTransition: 'transition', PlaybackError: 'error' },
-  RepeatMode: { Off: 0, All: 1, One: 2 },
-}));
+vi.mock('./player', async () => {
+  const { Event, RepeatMode } = await import('./playerPort');
+  return {
+    default: {
+      getQueue: mocks.getQueue,
+      getActiveMediaItem: mocks.getActiveMediaItem,
+      getActiveMediaItemIndex: mocks.getActiveMediaItemIndex,
+      setMediaItem: mocks.setMediaItem,
+      setMediaItems: mocks.setMediaItems,
+      insertMediaItem: mocks.insertMediaItem,
+      addMediaItem: mocks.addMediaItem,
+      addMediaItems: mocks.addMediaItems,
+      play: mocks.play,
+      pause: mocks.pause,
+      isPlaying: mocks.isPlaying,
+      getProgress: mocks.getProgress,
+      seekTo: mocks.seekTo,
+      skipToPrevious: mocks.skipToPrevious,
+      isShuffleEnabled: mocks.isShuffleEnabled,
+      setShuffleEnabled: mocks.setShuffleEnabled,
+      moveMediaItem: mocks.moveMediaItem,
+      getRepeatMode: mocks.getRepeatMode,
+      setRepeatMode: mocks.setRepeatMode,
+      setQueuePersistenceState: mocks.setQueuePersistenceState,
+    },
+    Event,
+    RepeatMode,
+  };
+});
 vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
 vi.mock('../api/client', () => ({ authenticatedHeadersFor: mocks.authenticatedHeadersFor }));
 vi.mock('../offline/registry', () => ({ offlineUriForTrack: mocks.offlineUriForTrack }));
@@ -147,7 +150,7 @@ describe('controller Phase-0 queue contract', () => {
     mocks.position = 0;
     mocks.playing = false;
     mocks.shuffle = false;
-    mocks.repeatMode = 0;
+    mocks.repeatMode = RepeatMode.Off;
     mocks.getQueue.mockImplementation(() => [...mocks.queue]);
     mocks.getActiveMediaItem.mockImplementation(() =>
       mocks.activeIndex === null ? null : (mocks.queue[mocks.activeIndex] ?? null),
@@ -194,7 +197,7 @@ describe('controller Phase-0 queue contract', () => {
       if (moved) mocks.queue.splice(toIndex, 0, moved);
     });
     mocks.getRepeatMode.mockImplementation(() => mocks.repeatMode);
-    mocks.setRepeatMode.mockImplementation((mode: number) => {
+    mocks.setRepeatMode.mockImplementation((mode: RepeatMode) => {
       mocks.repeatMode = mode;
     });
     mocks.getApiBase.mockResolvedValue('https://music.test');
@@ -406,7 +409,6 @@ describe('controller Phase-0 queue contract', () => {
       media('context-2', 'context', true),
     ];
     mocks.activeIndex = 0;
-    mocks.shuffle = true;
 
     await playNext(track('next'));
     await addToQueue(track('added-1'));
@@ -431,7 +433,7 @@ describe('controller Phase-0 queue contract', () => {
       'context',
     ]);
     expect(mocks.queue.slice(1, 5).every((item) => item.extras?.radio === true)).toBe(true);
-    expect(mocks.setShuffleEnabled).toHaveBeenCalledWith(false);
+    expect(mocks.setShuffleEnabled).not.toHaveBeenCalled();
   });
 
   it('inserts local manual items without touching auth and preserves manual priority', async () => {
@@ -507,9 +509,9 @@ describe('controller Phase-0 queue contract', () => {
   });
 
   it('advances repeat mode with exactly one native setter call', () => {
-    expect(cycleRepeat()).toBe(1);
+    expect(cycleRepeat()).toBe(RepeatMode.All);
     expect(mocks.setRepeatMode).toHaveBeenCalledTimes(1);
-    expect(mocks.setRepeatMode).toHaveBeenCalledWith(1);
+    expect(mocks.setRepeatMode).toHaveBeenCalledWith(RepeatMode.All);
   });
 
   it('shuffles only context while preserving manual priority, then restores order', async () => {
@@ -521,12 +523,12 @@ describe('controller Phase-0 queue contract', () => {
       media('context-3'),
     ];
     mocks.activeIndex = 0;
-    mocks.shuffle = true;
 
     await expect(toggleShuffle(undefined, () => 0)).resolves.toBe(true);
     expect(ids()).toEqual(['active', 'manual', 'context-2', 'context-3', 'context-1']);
     expect(isContextShuffleEnabled()).toBe(true);
     expect(mocks.shuffle).toBe(false);
+    expect(mocks.setShuffleEnabled).not.toHaveBeenCalled();
 
     await expect(toggleShuffle()).resolves.toBe(false);
     expect(ids()).toEqual(['active', 'manual', 'context-1', 'context-2', 'context-3']);

@@ -1,4 +1,4 @@
-import type { MediaItem } from '@rntp/player';
+import type { MediaItem } from './player';
 
 export const PRODUCT_QUEUE_CONTRACT_ID = 'loggerythm.product-queue.v1';
 export type QueueOrigin = 'manual' | 'context';
@@ -143,7 +143,7 @@ export function queueOriginalContextOrderOf(item: MediaItem): number | null {
 
 /**
  * Product-created items carry a stable id independent of list position.
- * Older/native-created items safely fall back to their unique RNTP media id.
+ * Older/native-created items safely fall back to their unique media id.
  */
 export function queueStableIdOf(item: MediaItem): string {
   const value = item.extras?.[QUEUE_STABLE_ID_EXTRA];

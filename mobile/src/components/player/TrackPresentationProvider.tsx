@@ -9,7 +9,7 @@ import {
   useActiveMediaItem,
   useIsPlaying,
   usePlaybackState,
-} from '@rntp/player';
+} from '../../player/player';
 import { useQuery } from '@tanstack/react-query';
 import { musicQueries } from '../../data';
 import { useOfflineDownloads } from '../../offline/hooks';

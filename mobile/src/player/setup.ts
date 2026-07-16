@@ -1,6 +1,9 @@
-import TrackPlayer, { PlayerCommand } from '@rntp/player';
+import Player, {
+  PlayerCommand,
+  type PlayerSessionBinding,
+} from './player';
+import { requirePlayerSessionBinding } from './playerPort';
 import { strings } from '../localization';
-import { clearBrowseTree } from './browseTree';
 import {
   installPlaybackListeners,
   resetControllerState,
@@ -10,38 +13,62 @@ import {
 let nativeSetupComplete = false;
 let ready = false;
 let initializationPromise: Promise<void> | null = null;
+let cleanupPromise: Promise<void> | null = null;
+let cleanupRequired = false;
+let activeSessionBinding: Readonly<PlayerSessionBinding> | null = null;
 
 export type PlayerCleanupBoundary =
-  | 'android-auto-library'
-  | 'persisted-queue-before-connect'
-  | 'native-player-connection'
-  | 'pause'
-  | 'queue'
-  | 'sleep-timer'
-  | 'audio-cache'
-  | 'persisted-queue-confirmation'
+  | 'native-player-session'
   | 'javascript-controller-state';
 
-interface PlayerCleanupFailure {
-  boundary: PlayerCleanupBoundary;
-  detail: string;
-}
-
 export class PlayerSessionCleanupError extends Error {
-  constructor(
-    public readonly failedBoundaries: readonly PlayerCleanupBoundary[],
-    message: string,
-  ) {
-    super(message);
+  constructor(public readonly failedBoundaries: readonly PlayerCleanupBoundary[]) {
+    super('Player session cleanup could not be completed');
     this.name = 'PlayerSessionCleanupError';
   }
 }
 
-async function initializePlayer(): Promise<void> {
+function invalidAccountScope(): never {
+  throw new TypeError('Player account scope is invalid');
+}
+
+/** Convert the existing query-cache scope into the minimal native session identity. */
+export function playerSessionBindingFromQueryScope(
+  queryScope: string,
+): Readonly<PlayerSessionBinding> {
+  if (typeof queryScope !== 'string' || queryScope.length > 642) invalidAccountScope();
+  const delimiter = '::user:';
+  const delimiterIndex = queryScope.lastIndexOf(delimiter);
+  if (delimiterIndex <= 0) invalidAccountScope();
+  const origin = queryScope.slice(0, delimiterIndex);
+  const numericId = queryScope.slice(delimiterIndex + delimiter.length);
+  if (!/^[1-9][0-9]*$/.test(numericId)) invalidAccountScope();
+  let binding: Readonly<PlayerSessionBinding>;
+  try {
+    binding = requirePlayerSessionBinding({
+      accountScope: `user:${numericId}`,
+      origin,
+    });
+  } catch {
+    invalidAccountScope();
+  }
+  if (queryScope !== `${binding.origin}::${binding.accountScope}`) invalidAccountScope();
+  return binding;
+}
+
+function sameBinding(
+  left: Readonly<PlayerSessionBinding>,
+  right: Readonly<PlayerSessionBinding>,
+): boolean {
+  return left.accountScope === right.accountScope && left.origin === right.origin;
+}
+
+async function initializePlayer(binding: Readonly<PlayerSessionBinding>): Promise<void> {
   try {
     if (!nativeSetupComplete) {
       console.info('[LoggeRythm] native player setup starting');
-      await TrackPlayer.setupPlayer({
+      await Player.setupPlayer({
+        sessionBinding: binding,
         contentType: 'music',
         audioMixing: 'exclusive',
         handleAudioBecomingNoisy: true,
@@ -58,12 +85,14 @@ async function initializePlayer(): Promise<void> {
           preloading: { window: 1 },
         },
       });
+      if (cleanupRequired) throw new Error('Player session cleanup is required');
       nativeSetupComplete = true;
       console.info('[LoggeRythm] native MediaController connected');
     }
 
+    if (cleanupRequired) throw new Error('Player session cleanup is required');
     restoreControllerStateFromNativeQueue();
-    TrackPlayer.setCommands({
+    await Player.setCommands({
       capabilities: [
         PlayerCommand.PlayPause,
         PlayerCommand.Next,
@@ -75,23 +104,47 @@ async function initializePlayer(): Promise<void> {
     installPlaybackListeners();
     ready = true;
     console.info('[LoggeRythm] native player commands/listeners ready');
-  } catch (error) {
+  } catch {
     ready = false;
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Native audio player initialization failed: ${detail}`);
+    throw new Error('Native audio player initialization failed');
   }
 }
 
+function rejectedPlayerSession(): Promise<void> {
+  return Promise.reject(new Error('Player session is unavailable'));
+}
+
 /**
- * Resolve only after the native MediaController and the app's command/listener layer are ready.
- * Concurrent callers share one attempt. A rejected attempt is cleared so an explicit retry can
- * reconnect natively (or re-apply the command layer if the native connection already succeeded).
+ * Resolve only after the native MediaController and command/listener layer are ready.
+ * The first caller must provide an account query scope. That identity remains reserved
+ * across concurrent calls and retries, and only confirmed atomic cleanup can release it.
  */
-export function ensurePlayer(): Promise<void> {
+export function ensurePlayer(accountScope?: string): Promise<void> {
+  if (cleanupRequired) return rejectedPlayerSession();
+
+  let requestedBinding: Readonly<PlayerSessionBinding> | null = null;
+  if (accountScope !== undefined) {
+    try {
+      requestedBinding = playerSessionBindingFromQueryScope(accountScope);
+    } catch {
+      return rejectedPlayerSession();
+    }
+  }
+
+  if (activeSessionBinding === null) {
+    if (requestedBinding === null) return rejectedPlayerSession();
+    activeSessionBinding = requestedBinding;
+  } else if (
+    requestedBinding !== null
+    && !sameBinding(activeSessionBinding, requestedBinding)
+  ) {
+    return rejectedPlayerSession();
+  }
+
   if (ready) return Promise.resolve();
   if (initializationPromise !== null) return initializationPromise;
 
-  const attempt = initializePlayer();
+  const attempt = initializePlayer(activeSessionBinding);
   initializationPromise = attempt;
   const clearAttempt = (): void => {
     if (initializationPromise === attempt) initializationPromise = null;
@@ -104,68 +157,39 @@ export function isPlayerReady(): boolean {
   return ready;
 }
 
-/** Remove all account-scoped player state before logging out or switching users. */
-export async function clearPlayerSession(): Promise<void> {
-  const failures: PlayerCleanupFailure[] = [];
-  const attempt = async (
-    boundary: PlayerCleanupBoundary,
-    label: string,
-    operation: () => void | Promise<void>,
-  ): Promise<void> => {
-    try {
-      await operation();
-    } catch (error) {
-      failures.push({ boundary, detail: `${label}: ${(error as Error).message}` });
-    }
+async function performPlayerSessionCleanup(): Promise<void> {
+  try {
+    // One awaitable native boundary owns the live Media3 queue, notification,
+    // Cookie vault, browse tree, rolling cache, timers, and encrypted snapshot.
+    await Player.clearPersistedQueue();
+  } catch {
+    throw new PlayerSessionCleanupError(['native-player-session']);
+  }
+
+  try {
+    resetControllerState();
+  } catch {
+    throw new PlayerSessionCleanupError(['javascript-controller-state']);
+  }
+
+  // Do not release account identity or readiness flags until native cleanup and
+  // the process-local controller reset have both been confirmed.
+  ready = false;
+  nativeSetupComplete = false;
+  initializationPromise = null;
+  activeSessionBinding = null;
+  cleanupRequired = false;
+}
+
+/** Remove every account-scoped player resource before logout or account replacement. */
+export function clearPlayerSession(): Promise<void> {
+  if (cleanupPromise !== null) return cleanupPromise;
+  cleanupRequired = true;
+  const attempt = performPlayerSessionCleanup();
+  cleanupPromise = attempt;
+  const clearAttempt = (): void => {
+    if (cleanupPromise === attempt) cleanupPromise = null;
   };
-
-  // The persisted Android Auto tree is account-scoped even when this JS
-  // process has not initialized a MediaController yet.
-  await attempt('android-auto-library', 'Android Auto library', clearBrowseTree);
-
-  // Delete the disk snapshot before connecting. A newly-created service must
-  // never restore the departing user's authenticated queue while cleanup is in
-  // progress. The second deletion below closes the race with a final native
-  // persistence checkpoint.
-  await attempt(
-    'persisted-queue-before-connect',
-    'persisted queue',
-    () => TrackPlayer.clearPersistedQueue(),
-  );
-
-  // A Media3 service and notification can outlive the React Native JS process.
-  // Connecting here lets logout clear that live in-memory session as well as
-  // the encrypted disk snapshot. setupPlayer is idempotent and ensurePlayer
-  // shares any already-running connection attempt.
-  await attempt('native-player-connection', 'native player connection', ensurePlayer);
-  if (nativeSetupComplete) {
-    await attempt('pause', 'pause', () => TrackPlayer.pause());
-    await attempt('queue', 'queue', () => TrackPlayer.clear());
-    await attempt('sleep-timer', 'sleep timer', () => TrackPlayer.cancelSleepTimer());
-    // This clears only RNTP's automatic rolling stream cache. The separate,
-    // user-managed encrypted download store is erased by AuthContext's account
-    // storage boundary. Both awaitable boundaries gate account replacement.
-    await attempt('audio-cache', 'audio cache', () => TrackPlayer.clearCache());
-  }
-  await attempt(
-    'persisted-queue-confirmation',
-    'persisted queue confirmation',
-    () => TrackPlayer.clearPersistedQueue(),
-  );
-  await attempt(
-    'javascript-controller-state',
-    'JavaScript controller state',
-    resetControllerState,
-  );
-
-  if (failures.length > 0) {
-    const failedBoundaries = failures.map(({ boundary }) => boundary);
-    console.warn(
-      `[LoggeRythm] player cleanup failed: ${failedBoundaries.join(',')}`,
-    );
-    throw new PlayerSessionCleanupError(
-      failedBoundaries,
-      `Failed to clear native playback state (${failures.map(({ detail }) => detail).join('; ')})`,
-    );
-  }
+  void attempt.then(clearAttempt, clearAttempt);
+  return attempt;
 }

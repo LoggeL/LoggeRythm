@@ -1,4 +1,4 @@
-import TrackPlayer, {
+import Player, {
   Event,
   RepeatMode,
   type BackgroundEvent,
@@ -6,7 +6,7 @@ import TrackPlayer, {
   type MediaItemTransitionEvent,
   type PlaybackErrorEvent,
   type PlaybackProgressUpdatedEvent,
-} from '@rntp/player';
+} from './player';
 import type { Track } from '../api/types';
 import { authenticatedHeadersFor } from '../api/client';
 import { getApiBase } from '../config';
@@ -142,11 +142,14 @@ function queueMediaItem(
   );
 }
 
-function disableNativeShuffleForQueueContract(): void {
-  // Media3 exposes only a global shuffle order through RNTP. It cannot keep a
+function assertNativeShuffleDisabledForQueueContract(): void {
+  // Media3 exposes only a global shuffle order. It cannot keep a
   // primary manual section ahead of context. Product shuffle therefore uses
-  // explicit RNTP queue moves while native global shuffle stays disabled.
-  if (TrackPlayer.isShuffleEnabled()) TrackPlayer.setShuffleEnabled(false);
+  // explicit queue moves. A true native snapshot is an invariant breach, not
+  // state this controller is authorized to repair through MediaController.
+  if (Player.isShuffleEnabled()) {
+    throw new Error('Native global shuffle must remain disabled');
+  }
 }
 
 function resetContextShuffleState(): void {
@@ -155,7 +158,7 @@ function resetContextShuffleState(): void {
 }
 
 function persistContextShuffleState(): void {
-  TrackPlayer.setQueuePersistenceState({
+  Player.setQueuePersistenceState({
     contextShuffleEnabled,
     contextShuffleRestoreOrder: [...contextShuffleRestoreOrder],
   });
@@ -174,9 +177,9 @@ function restoreItemSequence(items: readonly MediaItem[]): void {
 /** Rehydrate JavaScript-only queue semantics after Media3 restores the encrypted timeline. */
 export function restoreControllerStateFromNativeQueue(): void {
   const { items, activeIndex } = getQueueSnapshot();
+  assertNativeShuffleDisabledForQueueContract();
   queueGeneration += 1;
   restoreItemSequence(items);
-  disableNativeShuffleForQueueContract();
 
   if (items.length === 0) {
     resetContextShuffleState();
@@ -188,7 +191,7 @@ export function restoreControllerStateFromNativeQueue(): void {
   uniqueQueueStableIds(items, 'Queue restoration');
   assertManualQueuePriority(items, activeIndex);
 
-  const state = TrackPlayer.getQueuePersistenceState();
+  const state = Player.getQueuePersistenceState();
   if (
     typeof state.contextShuffleEnabled !== 'boolean' ||
     !Array.isArray(state.contextShuffleRestoreOrder)
@@ -218,12 +221,12 @@ async function startIdleManualTrack(item: MediaItem): Promise<void> {
   if (typeof mediaId !== 'string' || mediaId.length === 0) {
     throw new Error('Cannot start an idle manual queue item without a mediaId');
   }
+  assertNativeShuffleDisabledForQueueContract();
   queueGeneration += 1;
   resetContextShuffleState();
-  disableNativeShuffleForQueueContract();
   clearPlayerError();
-  TrackPlayer.setMediaItem(item);
-  TrackPlayer.play();
+  Player.setMediaItem(item);
+  Player.play();
   await waitForNativeQueueMutation('Idle manual queue start', () => {
     const snapshot = getQueueSnapshot();
     return (
@@ -237,7 +240,7 @@ async function startIdleManualTrack(item: MediaItem): Promise<void> {
 
 async function verifyManualInsertion(mediaId: string): Promise<void> {
   await waitForNativeQueueMutation('Manual queue insertion', () => {
-    const matches = TrackPlayer.getQueue().filter((item) => item.mediaId === mediaId);
+    const matches = Player.getQueue().filter((item) => item.mediaId === mediaId);
     return matches.length === 1;
   });
 }
@@ -296,13 +299,13 @@ export async function playTracks(
   const sources = opts.requireExplicitDownloads
     ? requireExplicitDownloadSources(tracks)
     : await mediaSources(tracks);
+  assertNativeShuffleDisabledForQueueContract();
   const generation = ++queueGeneration;
   const context = opts.context;
   resetContextShuffleState();
   persistContextShuffleState();
-  disableNativeShuffleForQueueContract();
   clearPlayerError();
-  TrackPlayer.setMediaItems(
+  Player.setMediaItems(
     tracks.map((track, index) =>
       queueMediaItem(track, sources[index], {
         mediaId: `queue:${generation}:${index}:${track.id}`,
@@ -315,7 +318,7 @@ export async function playTracks(
     ),
     startIndex,
   );
-  TrackPlayer.play();
+  Player.play();
 }
 
 /**
@@ -337,7 +340,7 @@ export async function playTrackRow(
     );
   }
 
-  const activeItem = TrackPlayer.getActiveMediaItem();
+  const activeItem = Player.getActiveMediaItem();
   const activeTrack = activeItem === null ? null : mediaItemToTrack(activeItem);
   if (activeTrack?.id === tracks[startIndex].id) {
     togglePlay();
@@ -391,8 +394,8 @@ export async function playNext(track: Track): Promise<void> {
     context: queueContextOf(items[activeIndex]),
     stableId: `manual:${stableIdPart(mediaId)}`,
   });
-  disableNativeShuffleForQueueContract();
-  TrackPlayer.insertMediaItem(activeIndex + 1, item);
+  assertNativeShuffleDisabledForQueueContract();
+  Player.insertMediaItem(activeIndex + 1, item);
   await verifyManualInsertion(mediaId);
 }
 
@@ -422,30 +425,30 @@ export async function addToQueue(track: Track): Promise<void> {
     context: queueContextOf(items[activeIndex]),
     stableId: `manual:${stableIdPart(mediaId)}`,
   });
-  disableNativeShuffleForQueueContract();
-  if (at === items.length) TrackPlayer.addMediaItem(item);
-  else TrackPlayer.insertMediaItem(at, item);
+  assertNativeShuffleDisabledForQueueContract();
+  if (at === items.length) Player.addMediaItem(item);
+  else Player.insertMediaItem(at, item);
   await verifyManualInsertion(mediaId);
 }
 
 export function togglePlay(): void {
   clearPlayerError();
-  if (TrackPlayer.isPlaying()) TrackPlayer.pause();
-  else TrackPlayer.play();
+  if (Player.isPlaying()) Player.pause();
+  else Player.play();
 }
 
-export const next = (): void => TrackPlayer.skipToNext();
+export const next = (): void => Player.skipToNext();
 export function prev(): void {
   const { activeIndex } = getQueueSnapshot();
   if (activeIndex === null) return;
-  const { position } = TrackPlayer.getProgress();
+  const { position } = Player.getProgress();
   if (!Number.isFinite(position) || position < 0) {
     throw new Error(`Native player reported invalid playback position ${String(position)}`);
   }
-  if (position > 3 || activeIndex === 0) TrackPlayer.seekTo(0);
-  else TrackPlayer.skipToPrevious();
+  if (position > 3 || activeIndex === 0) Player.seekTo(0);
+  else Player.skipToPrevious();
 }
-export const seekTo = (seconds: number): void => TrackPlayer.seekTo(seconds);
+export const seekTo = (seconds: number): void => Player.seekTo(seconds);
 
 function requireQueueIndex(queue: MediaItem[], index: number, operation: string): MediaItem {
   if (!Number.isInteger(index) || index < 0 || index >= queue.length) {
@@ -515,8 +518,8 @@ function waitForNativeQueueMutation(
 
 /** Read the canonical native queue together with its active canonical index. */
 export function getQueueSnapshot(): QueueSnapshot {
-  const items = TrackPlayer.getQueue();
-  const activeIndex = TrackPlayer.getActiveMediaItemIndex();
+  const items = Player.getQueue();
+  const activeIndex = Player.getActiveMediaItemIndex();
   if (
     activeIndex !== null &&
     (!Number.isInteger(activeIndex) || activeIndex < 0 || activeIndex >= items.length)
@@ -549,7 +552,7 @@ function assertSameQueueMembership(
   }
 }
 
-/** Apply a full target order through RNTP, verifying every native move. */
+/** Apply a full target order through the player boundary, verifying every native move. */
 async function applyUpcomingQueueOrder(
   target: MediaItem[],
   operation: string,
@@ -585,7 +588,7 @@ async function applyUpcomingQueueOrder(
       throw new Error(`${operation} cannot move an item across the currently playing track`);
     }
 
-    TrackPlayer.moveMediaItem(fromIndex, targetIndex);
+    Player.moveMediaItem(fromIndex, targetIndex);
     await waitForNativeQueueMutation(operation, () => {
       const snapshot = getQueueSnapshot();
       const activeItem =
@@ -625,7 +628,7 @@ export async function skipToQueueItem(
   const stableId = requireUniqueStableId(items, index, 'Skip');
   if (activeIndex === index) return;
 
-  TrackPlayer.skipToIndex(index);
+  Player.skipToIndex(index);
   await waitForNativeQueueMutation('Queue skip', () => {
     const snapshot = getQueueSnapshot();
     return (
@@ -650,7 +653,7 @@ export async function removeQueueItem(
   const originalLength = items.length;
 
   queueGeneration += 1;
-  TrackPlayer.removeMediaItem(index);
+  Player.removeMediaItem(index);
   await waitForNativeQueueMutation('Queue removal', () => {
     const snapshot = getQueueSnapshot();
     const activeItem =
@@ -676,9 +679,9 @@ export async function clearUpcomingQueue(
   const activeStableId =
     activeIndex === null ? null : requireUniqueStableId(items, activeIndex, 'Clear upcoming');
 
+  assertNativeShuffleDisabledForQueueContract();
   queueGeneration += 1;
-  disableNativeShuffleForQueueContract();
-  TrackPlayer.removeMediaItems(firstUpcomingIndex, items.length);
+  Player.removeMediaItems(firstUpcomingIndex, items.length);
   await waitForNativeQueueMutation('Clear upcoming', () => {
     const snapshot = getQueueSnapshot();
     const currentIds = snapshot.items.map(queueStableIdOf);
@@ -719,7 +722,7 @@ export async function moveQueueItem(
   assertMovePreservesManualPriority(items, activeIndex, fromIndex, toIndex);
 
   queueGeneration += 1;
-  TrackPlayer.moveMediaItem(fromIndex, toIndex);
+  Player.moveMediaItem(fromIndex, toIndex);
   await waitForNativeQueueMutation('Queue move', () => {
     const snapshot = getQueueSnapshot();
     const activeItem =
@@ -736,14 +739,14 @@ export async function moveQueueItem(
 
 /** Cycle Off → All → One → Off, returning the new mode. */
 export function cycleRepeat(): RepeatMode {
-  const current = TrackPlayer.getRepeatMode();
+  const current = Player.getRepeatMode();
   const nextMode =
     current === RepeatMode.Off
       ? RepeatMode.All
       : current === RepeatMode.All
         ? RepeatMode.One
         : RepeatMode.Off;
-  TrackPlayer.setRepeatMode(nextMode);
+  Player.setRepeatMode(nextMode);
   return nextMode;
 }
 
@@ -767,7 +770,7 @@ export async function toggleShuffle(
     throw new Error('Shuffle requires a currently playing queue item');
   }
   assertManualQueuePriority(items, activeIndex);
-  disableNativeShuffleForQueueContract();
+  assertNativeShuffleDisabledForQueueContract();
 
   const enabling = !contextShuffleEnabled;
   const restoreOrder = enabling
@@ -845,7 +848,7 @@ function waitForRecoveryDelay(delayMs: number): Promise<void> {
 
 function recoveryPosition(): number {
   try {
-    const position = TrackPlayer.getProgress().position;
+    const position = Player.getProgress().position;
     return Number.isFinite(position) && position >= 0 ? position : 0;
   } catch {
     return 0;
@@ -964,7 +967,7 @@ function refreshedRecoveryItem(
 
 function pauseAfterRecoveryFailure(): string {
   try {
-    TrackPlayer.pause();
+    Player.pause();
     return '';
   } catch {
     return ` ${strings.player.recovery.pauseFailed}`;
@@ -994,7 +997,7 @@ function finishExhaustedRecovery(
 
   if (policy.exhaustionAction === 'skip' && activeIndex + 1 < snapshot.items.length) {
     try {
-      TrackPlayer.skipToNext();
+      Player.skipToNext();
       reportPlayerError(
         strings.player.recovery.skippedTitle,
         new UserFacingPlayerError(strings.player.recovery.skipped(target.track.title, attemptLabel, reason)),
@@ -1086,15 +1089,15 @@ async function performPlaybackRecovery(
       const { base, headers } = await mediaContext();
       const currentIndex = activeTargetIndex(target);
       if (currentIndex === null) return;
-      const currentItem = TrackPlayer.getQueue()[currentIndex];
+      const currentItem = Player.getQueue()[currentIndex];
       if (currentItem?.mediaId !== target.mediaId) return;
 
-      TrackPlayer.replaceMediaItem(
+      Player.replaceMediaItem(
         currentIndex,
         refreshedRecoveryItem(currentItem, target, base, headers),
       );
-      TrackPlayer.seekTo(target.position);
-      TrackPlayer.play();
+      Player.seekTo(target.position);
+      Player.play();
       return;
     } catch (error) {
       if (activeTargetIndex(target) === null) return;
@@ -1155,11 +1158,11 @@ export async function handleBackgroundPlaybackEvent(event: BackgroundEvent): Pro
 /** Install one-time foreground listeners for play recording, radio, and resilient recovery. */
 export function installPlaybackListeners(): void {
   if (listenersInstalled) return;
-  TrackPlayer.addEventListener(Event.MediaItemTransition, (event) => {
+  Player.addEventListener(Event.MediaItemTransition, (event) => {
     void handleMediaItemTransition(event);
   });
-  TrackPlayer.addEventListener(Event.PlaybackProgressUpdated, notePlaybackProgress);
-  TrackPlayer.addEventListener(Event.PlaybackError, (error) => {
+  Player.addEventListener(Event.PlaybackProgressUpdated, notePlaybackProgress);
+  Player.addEventListener(Event.PlaybackError, (error) => {
     void requestPlaybackRecovery(
       error,
       FOREGROUND_RECOVERY_REQUEST_TIMEOUT_MS,
@@ -1172,7 +1175,7 @@ export function installPlaybackListeners(): void {
 async function maybeExtendRadio(activeIndex: number, requestTimeoutMs?: number): Promise<void> {
   if (extending) return;
   const generation = queueGeneration;
-  const queue = TrackPlayer.getQueue();
+  const queue = Player.getQueue();
   const active = queue[activeIndex];
   if (!mediaItemIsRadio(active) || queue.length - activeIndex > 2) return;
   const seed = mediaItemToTrack(active);
@@ -1205,7 +1208,7 @@ async function maybeExtendRadio(activeIndex: number, requestTimeoutMs?: number):
         label: strings.queue.trackRadioContext(seed.title),
       };
       const firstOrder = nextOriginalContextOrder(current.items);
-      TrackPlayer.addMediaItems(
+      Player.addMediaItems(
         fresh.map((track, index) =>
           queueMediaItem(track, sources[index], {
             mediaId: nextMediaId('radio', track),
@@ -1236,5 +1239,5 @@ export function resetControllerState(): void {
 }
 
 export function currentQueue(): MediaItem[] {
-  return TrackPlayer.getQueue();
+  return Player.getQueue();
 }

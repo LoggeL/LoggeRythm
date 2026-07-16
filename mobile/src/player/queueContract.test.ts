@@ -1,4 +1,4 @@
-import type { MediaItem } from '@rntp/player';
+import type { MediaItem } from './player';
 import { describe, expect, it } from 'vitest';
 import {
   assertManualQueuePriority,
