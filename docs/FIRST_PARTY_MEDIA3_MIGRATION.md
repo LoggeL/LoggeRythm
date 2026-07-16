@@ -67,6 +67,9 @@ Current source checkpoint:
 The resulting ARM64 QA APK is 27,363,030 bytes with SHA-256
 `2bd490e96b0e0f58c42f8d300f662ad48ae2838002c5c623975638f6315d9378`.
 It is debug-certificate signed and therefore is not a production/Play artifact.
+It is published as the explicitly marked GitHub QA prerelease
+[`android-media3-v1.0.2-rc.1`](https://github.com/LoggeL/LoggeRythm/releases/tag/android-media3-v1.0.2-rc.1)
+from clean-root commit `3d134b3`; GitHub's asset digest matches the local APK.
 
 ## 2. Target ownership
 
