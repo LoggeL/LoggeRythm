@@ -60,7 +60,10 @@ class Playlist(Base):
     tracks: Mapped[list["PlaylistTrack"]] = relationship(
         back_populates="playlist",
         cascade="all, delete-orphan",
-        order_by="PlaylistTrack.position",
+        # `position` predates stable entry mutation and old rows may contain
+        # ties.  The immutable primary key makes reads deterministic without a
+        # destructive data rewrite; every new reorder writes unique positions.
+        order_by=lambda: (PlaylistTrack.position, PlaylistTrack.id),
     )
 
 

@@ -1,95 +1,117 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from './src/auth/AuthContext';
 import { appGate } from './src/auth/gate';
 import RootNavigator from './src/navigation';
 import LoginScreen from './src/screens/LoginScreen';
 import PendingApprovalScreen from './src/screens/PendingApprovalScreen';
+import BrandLockup from './src/components/BrandLockup';
+import SessionRestoreError from './src/components/SessionRestoreError';
+import TrackActionsHost from './src/components/TrackActionsHost';
+import ConnectivityBanner from './src/components/ConnectivityBanner';
+import { getApiBase } from './src/config';
+import { strings } from './src/localization';
+import { LocaleProvider, useLocaleRevision } from './src/localization/LocaleProvider';
+import { musicQueryClient } from './src/data';
+import { startSharedTextIntake } from './src/share/sharedTextIntent';
+import { spotifySharedTextCoordinator } from './src/share/sharedTextRuntime';
 import { colors } from './src/theme';
 
-function StartupError({ message }: { message: string }) {
-  const { retryBootstrap, logout } = useAuth();
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  const run = async (action: () => Promise<void>) => {
-    setBusy(true);
-    setActionError(null);
-    try {
-      await action();
-    } catch (error) {
-      setActionError((error as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <View style={styles.errorScreen}>
-      <Text style={styles.errorTitle}>Couldn’t restore your session</Text>
-      <Text style={styles.errorMessage}>{actionError ?? message}</Text>
-      <Pressable style={styles.primaryButton} disabled={busy} onPress={() => void run(retryBootstrap)}>
-        <Text style={styles.primaryButtonText}>{busy ? 'Working…' : 'Retry'}</Text>
-      </Pressable>
-      <Pressable style={styles.secondaryButton} disabled={busy} onPress={() => void run(logout)}>
-        <Text style={styles.secondaryButtonText}>Forget session and sign in</Text>
-      </Pressable>
-    </View>
-  );
+function SharedTextIntakeHost() {
+  useEffect(() => {
+    void spotifySharedTextCoordinator.hydrate();
+    return startSharedTextIntake((text) => {
+      void spotifySharedTextCoordinator.stage(text).catch(() => {
+        // Never include an external share payload in diagnostics.
+        console.error('[LoggeRythm] shared-text intake failed');
+      });
+    });
+  }, []);
+  return null;
 }
 
 function Gate() {
-  const { user, bootstrapping, bootstrapError } = useAuth();
-  const route = appGate(user, bootstrapping, bootstrapError);
+  useLocaleRevision();
+  const { user, bootstrapping, bootstrapError, retryBootstrap, forgetSession } = useAuth();
+  const route = appGate(user, bootstrapping, bootstrapError?.message ?? null);
   useEffect(() => {
     console.info(`[LoggeRythm] app gate: ${route}`);
   }, [route]);
   if (route === 'loading') {
     return (
-      <View style={styles.splash}>
+      <View
+        testID="session-bootstrap-status"
+        accessibilityRole="progressbar"
+        accessibilityLabel={strings.auth.restoringSession}
+        accessibilityLiveRegion="polite"
+        style={styles.splash}
+      >
+        <BrandLockup compact />
         <ActivityIndicator color={colors.accent} size="large" />
+        <Text style={styles.splashText}>{strings.auth.restoringSession}</Text>
       </View>
     );
   }
-  if (route === 'bootstrap-error') return <StartupError message={bootstrapError!} />;
+  if (route === 'bootstrap-error') {
+    return (
+      <SessionRestoreError
+        error={bootstrapError!}
+        onRetry={retryBootstrap}
+        onForget={forgetSession}
+      />
+    );
+  }
   if (route === 'login') return <LoginScreen />;
   if (route === 'pending') return <PendingApprovalScreen />;
-  return <RootNavigator />;
+  return (
+    <View style={styles.authenticatedApp}>
+      <ConnectivityBanner />
+      <RootNavigator />
+    </View>
+  );
 }
 
 export default function App() {
+  useEffect(() => {
+    let active = true;
+    void getApiBase()
+      .then((origin) => {
+        if (active) console.info(`[LoggeRythm] API origin: ${origin}`);
+      })
+      .catch(() => {
+        if (active) console.error('[LoggeRythm] API origin configuration failed');
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-      <AuthProvider>
-        <Gate />
-      </AuthProvider>
-    </SafeAreaProvider>
+    <LocaleProvider>
+      <QueryClientProvider client={musicQueryClient}>
+        <SafeAreaProvider>
+          <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+          <AuthProvider>
+            <SharedTextIntakeHost />
+            <Gate />
+            <TrackActionsHost />
+          </AuthProvider>
+        </SafeAreaProvider>
+      </QueryClientProvider>
+    </LocaleProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  splash: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
-  errorScreen: {
+  authenticatedApp: { flex: 1, backgroundColor: colors.background },
+  splash: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 28,
     gap: 14,
   },
-  errorTitle: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  errorMessage: { color: colors.error, fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 24,
-    paddingHorizontal: 28,
-    minHeight: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: { color: '#000', fontSize: 15, fontWeight: '700' },
-  secondaryButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 },
-  secondaryButtonText: { color: colors.textDim, fontSize: 14, fontWeight: '600' },
+  splashText: { color: colors.textSecondary, fontSize: 14 },
 });

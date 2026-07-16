@@ -1,0 +1,215 @@
+{
+  "$id": "loggerythm.product-queue.v1",
+  "version": 1,
+  "origins": ["manual", "context"],
+  "rules": {
+    "sections": ["history", "current", "manual", "context"],
+    "active": "Exactly one current item is retained by every queue mutation.",
+    "upcomingOrder": ["manual", "context"],
+    "playNext": "Insert immediately after the active item.",
+    "addToQueue": "Insert after existing upcoming manual items and before remaining context items.",
+    "shuffle": "Reorder only upcoming context items; history, active, and manual items stay pinned.",
+    "restore": "Restore the queue's canonical original order of upcoming context items.",
+    "remove": "Never remove the active item; removing any other item preserves the active item.",
+    "move": "Never move the active item, cross it, or cross the upcoming manual/context boundary.",
+    "clearUpcoming": "Remove only items after the active item; preserve history and the active item."
+  },
+  "cases": [
+    {
+      "id": "manual-priority-shuffle-restore-and-mutations",
+      "initial": {
+        "items": [
+          { "id": "current", "origin": "context", "originalContextOrder": 0 },
+          { "id": "context-A", "origin": "context", "originalContextOrder": 1 },
+          { "id": "context-B", "origin": "context", "originalContextOrder": 2 }
+        ],
+        "active": "current"
+      },
+      "steps": [
+        {
+          "operation": "add",
+          "item": { "id": "manual-A", "origin": "manual", "originalContextOrder": null },
+          "expected": {
+            "items": ["current", "manual-A", "context-A", "context-B"],
+            "origins": ["context", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "add",
+          "item": { "id": "manual-B", "origin": "manual", "originalContextOrder": null },
+          "expected": {
+            "items": ["current", "manual-A", "manual-B", "context-A", "context-B"],
+            "origins": ["context", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "toggle-shuffle",
+          "random": [0],
+          "expected": {
+            "items": ["current", "manual-A", "manual-B", "context-B", "context-A"],
+            "origins": ["context", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": true
+          }
+        },
+        {
+          "operation": "toggle-shuffle",
+          "expected": {
+            "items": ["current", "manual-A", "manual-B", "context-A", "context-B"],
+            "origins": ["context", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "play-next",
+          "item": { "id": "manual-next", "origin": "manual", "originalContextOrder": null },
+          "expected": {
+            "items": ["current", "manual-next", "manual-A", "manual-B", "context-A", "context-B"],
+            "origins": ["context", "manual", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "move",
+          "from": "manual-B",
+          "to": "manual-A",
+          "expected": {
+            "items": ["current", "manual-next", "manual-B", "manual-A", "context-A", "context-B"],
+            "origins": ["context", "manual", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "remove",
+          "itemId": "manual-B",
+          "expected": {
+            "items": ["current", "manual-next", "manual-A", "context-A", "context-B"],
+            "origins": ["context", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "move",
+          "from": "context-B",
+          "to": "context-A",
+          "expected": {
+            "items": ["current", "manual-next", "manual-A", "context-B", "context-A"],
+            "origins": ["context", "manual", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "remove",
+          "itemId": "context-A",
+          "expected": {
+            "items": ["current", "manual-next", "manual-A", "context-B"],
+            "origins": ["context", "manual", "manual", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "clear-upcoming",
+          "expected": {
+            "items": ["current"],
+            "origins": ["context"],
+            "active": "current",
+            "shuffle": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "history-and-current-stay-pinned",
+      "initial": {
+        "items": [
+          { "id": "history", "origin": "context", "originalContextOrder": 0 },
+          { "id": "current", "origin": "context", "originalContextOrder": 1 },
+          { "id": "manual-A", "origin": "manual", "originalContextOrder": null },
+          { "id": "context-A", "origin": "context", "originalContextOrder": 2 },
+          { "id": "context-B", "origin": "context", "originalContextOrder": 3 }
+        ],
+        "active": "current"
+      },
+      "steps": [
+        {
+          "operation": "toggle-shuffle",
+          "random": [0],
+          "expected": {
+            "items": ["history", "current", "manual-A", "context-B", "context-A"],
+            "origins": ["context", "context", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": true
+          }
+        },
+        {
+          "operation": "toggle-shuffle",
+          "expected": {
+            "items": ["history", "current", "manual-A", "context-A", "context-B"],
+            "origins": ["context", "context", "manual", "context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "clear-upcoming",
+          "expected": {
+            "items": ["history", "current"],
+            "origins": ["context", "context"],
+            "active": "current",
+            "shuffle": false
+          }
+        },
+        {
+          "operation": "remove",
+          "itemId": "history",
+          "expected": {
+            "items": ["current"],
+            "origins": ["context"],
+            "active": "current",
+            "shuffle": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "unsafe-current-and-boundary-mutations-are-rejected",
+      "initial": {
+        "items": [
+          { "id": "current", "origin": "context", "originalContextOrder": 0 },
+          { "id": "manual-A", "origin": "manual", "originalContextOrder": null },
+          { "id": "context-A", "origin": "context", "originalContextOrder": 1 }
+        ],
+        "active": "current"
+      },
+      "steps": [
+        {
+          "operation": "move",
+          "from": "manual-A",
+          "to": "context-A",
+          "expectedError": "manual-context-boundary"
+        },
+        {
+          "operation": "remove",
+          "itemId": "current",
+          "expectedError": "active-item"
+        },
+        {
+          "operation": "move",
+          "from": "current",
+          "to": "manual-A",
+          "expectedError": "active-item"
+        }
+      ]
+    }
+  ]
+}

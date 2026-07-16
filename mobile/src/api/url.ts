@@ -10,3 +10,12 @@ export function resolveServerUrl(value: string, apiBase: string): string {
   }
   return resolved.toString();
 }
+
+export function tryResolveServerUrl(value: string | null | undefined, apiBase: string): string | null {
+  if (!value) return null;
+  try {
+    return resolveServerUrl(value, apiBase);
+  } catch {
+    return null;
+  }
+}

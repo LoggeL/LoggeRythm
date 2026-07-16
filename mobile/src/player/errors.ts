@@ -3,13 +3,25 @@ import { useSyncExternalStore } from 'react';
 let currentError: string | null = null;
 const listeners = new Set<() => void>();
 
+/** Explicitly marks already-localized recovery detail as safe for display. */
+export class UserFacingPlayerError extends Error {
+  override readonly name = 'UserFacingPlayerError';
+}
+
 function emit(): void {
   for (const listener of listeners) listener();
 }
 
+export function playerFailureMessage(context: string, error: unknown): string {
+  return error instanceof UserFacingPlayerError && error.message.trim().length > 0
+    ? `${context}: ${error.message}`
+    : context;
+}
+
 export function reportPlayerError(context: string, error: unknown): void {
-  const detail = error instanceof Error ? error.message : String(error);
-  currentError = `${context}: ${detail}`;
+  currentError = playerFailureMessage(context, error);
+  // Do not place native/transport details in Logcat. Recovery detail reaches
+  // this boundary only through the explicit localized marker above.
   console.error(currentError);
   emit();
 }

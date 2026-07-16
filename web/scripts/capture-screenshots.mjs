@@ -3,10 +3,10 @@
 //   npm run screenshots            # from web/
 //   node scripts/capture-screenshots.mjs
 //
-// Env (all optional, sensible prod defaults):
-//   LR_BASE      base URL           (default https://spotifrei.logge.top)
-//   LR_EMAIL     login email
-//   LR_PASSWORD  login password
+// Env:
+//   LR_BASE      base URL           (default https://loggerythm.logge.top)
+//   LR_EMAIL     login email        (required; never committed)
+//   LR_PASSWORD  login password     (required; never committed)
 //   LR_HEADLESS  "1" to run headless (default: headed, so audio decodes and
 //                the frequency visualizer shows real bars)
 //
@@ -19,9 +19,9 @@ import { dirname, join } from "node:path";
 
 // web/scripts/ -> repo/docs/screenshots
 const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "docs", "screenshots");
-const BASE = (process.env.LR_BASE || "https://spotifrei.logge.top").replace(/\/$/, "");
-const EMAIL = process.env.LR_EMAIL || "hyper.xjo@gmail.com";
-const PASSWORD = process.env.LR_PASSWORD || "404noswagfound";
+const BASE = (process.env.LR_BASE || "https://loggerythm.logge.top").replace(/\/$/, "");
+const EMAIL = process.env.LR_EMAIL;
+const PASSWORD = process.env.LR_PASSWORD;
 const HEADLESS = process.env.LR_HEADLESS === "1";
 
 // Originals are 2880×1800 — a 1440×900 viewport at DPR 2 reproduces that exactly.
@@ -31,6 +31,9 @@ const DPR = 2;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function main() {
+  if (!EMAIL || !PASSWORD) {
+    throw new Error("Set LR_EMAIL and LR_PASSWORD to an approved test account.");
+  }
   const browser = await chromium.launch({
     headless: HEADLESS,
     args: ["--autoplay-policy=no-user-gesture-required"],
@@ -44,7 +47,7 @@ async function main() {
   page.setDefaultTimeout(30_000);
 
   // ---- Login -------------------------------------------------------------
-  console.log(`→ login at ${BASE}/login as ${EMAIL}`);
+  console.log(`→ login at ${BASE}/login with the configured test account`);
   // The submit is a hydrated React onSubmit — clicking before hydration does a
   // native GET that never authenticates. Retry the whole attempt a couple of
   // times to ride out hydration / transient network hiccups.

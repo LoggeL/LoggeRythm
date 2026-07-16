@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildRegisterRequest, type RegistrationFields } from './registration';
+import {
+  buildRegisterRequest,
+  RegistrationValidationError,
+  type RegistrationFields,
+} from './registration';
 
 const valid: RegistrationFields = {
   displayName: '  Ada Lovelace  ',
@@ -10,7 +14,7 @@ const valid: RegistrationFields = {
 };
 
 describe('registration validation', () => {
-  it('normalizes email and optional text fields into the exact API body', () => {
+  it('normalizes the required identity and optional invite into the exact API body', () => {
     expect(buildRegisterRequest(valid)).toEqual({
       email: 'ada@example.test',
       password: 'analytical-engine',
@@ -19,17 +23,15 @@ describe('registration validation', () => {
     });
   });
 
-  it('sends blank optional fields as explicit nulls', () => {
-    expect(buildRegisterRequest({ ...valid, displayName: '  ', invite: '' })).toMatchObject({
-      display_name: null,
-      invite: null,
-    });
+  it('sends a blank optional invite as explicit null', () => {
+    expect(buildRegisterRequest({ ...valid, invite: '' })).toMatchObject({ invite: null });
   });
 
   it.each([
-    [{ email: '   ' }, 'Email is required'],
-    [{ password: '' }, 'Password is required'],
-    [{ confirmPassword: '' }, 'Password confirmation is required'],
+    [{ displayName: '   ' }, 'Ein Anzeigename ist erforderlich.'],
+    [{ email: '   ' }, 'Eine E-Mail-Adresse ist erforderlich.'],
+    [{ password: '' }, 'Ein Passwort ist erforderlich.'],
+    [{ confirmPassword: '' }, 'Bitte bestätige das Passwort.'],
   ])('rejects a missing required field', (change, message) => {
     expect(() => buildRegisterRequest({ ...valid, ...change })).toThrow(message);
   });
@@ -37,10 +39,10 @@ describe('registration validation', () => {
   it('enforces the backend password length bounds before the request', () => {
     expect(() =>
       buildRegisterRequest({ ...valid, password: '1234567', confirmPassword: '1234567' }),
-    ).toThrow('Password must be at least 8 characters');
+    ).toThrow('Das Passwort muss mindestens 8 Zeichen lang sein.');
     expect(() =>
       buildRegisterRequest({ ...valid, password: 'x'.repeat(129), confirmPassword: 'x'.repeat(129) }),
-    ).toThrow('Password must be at most 128 characters');
+    ).toThrow('Das Passwort darf höchstens 128 Zeichen lang sein.');
     expect(
       buildRegisterRequest({ ...valid, password: 'x'.repeat(128), confirmPassword: 'x'.repeat(128) })
         .password,
@@ -49,7 +51,21 @@ describe('registration validation', () => {
 
   it('rejects a mismatched confirmation before the request', () => {
     expect(() => buildRegisterRequest({ ...valid, confirmPassword: 'different-password' })).toThrow(
-      'Passwords do not match',
+      'Die Passwörter stimmen nicht überein.',
     );
+  });
+
+  it('matches the web form identity and email constraints', () => {
+    expect(() => buildRegisterRequest({ ...valid, displayName: 'x'.repeat(121) })).toThrow(
+      'Der Anzeigename darf höchstens 120 Zeichen lang sein.',
+    );
+    expect(() => buildRegisterRequest({ ...valid, email: 'not-an-email' })).toThrow(
+      'Bitte gib eine gültige E-Mail-Adresse ein.',
+    );
+  });
+
+  it('marks only local validation copy as safe to present verbatim', () => {
+    expect(() => buildRegisterRequest({ ...valid, email: 'not-an-email' }))
+      .toThrow(RegistrationValidationError);
   });
 });

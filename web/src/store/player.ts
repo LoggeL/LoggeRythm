@@ -1,6 +1,16 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Track } from "@/types";
+import {
+  clearUpcomingItems,
+  insertManualItem,
+  moveQueueItem,
+  removeQueueItem,
+  toggleQueueShuffle,
+  type QueueOrigin,
+} from "./queuePolicy";
+
+export type { QueueOrigin } from "./queuePolicy";
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -39,108 +49,19 @@ export function getRecentTracks(): Track[] {
   }
 }
 
-// Fisher–Yates over indices, keeping `keep` (current track) first.
-function shuffledQueue(tracks: Track[], keepIndex: number): Track[] {
-  const rest = tracks.filter((_, i) => i !== keepIndex);
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [rest[i], rest[j]] = [rest[j], rest[i]];
-  }
-  const current = tracks[keepIndex];
-  return current ? [current, ...rest] : rest;
-}
-
-function shuffleArray<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-// Two-level queue: every queue entry carries an origin. "user" tracks were
+// Two-level queue: every queue entry carries an origin. "manual" tracks were
 // added manually ("Zur Warteschlange hinzufügen" / "Als Nächstes spielen") and
 // form the primary queue; "context" tracks come from a playlist/album/radio and
 // form the secondary queue. Invariant for upcoming tracks (index > current):
-// all "user" entries come before any "context" entry, so manual additions
+// all "manual" entries come before any "context" entry, so manual additions
 // always play first.
-export type QueueOrigin = "user" | "context";
-
 function fillOrigins(n: number, origin: QueueOrigin): QueueOrigin[] {
   return new Array(Math.max(0, n)).fill(origin);
 }
 
-// Insert a user-queued track into a flat queue. When `front` is true (play next)
-// it lands directly after the current track; otherwise it lands after any
-// existing upcoming user tracks but before the first upcoming context track.
-function insertUserTrack(
-  queue: Track[],
-  origins: QueueOrigin[],
-  anchorIndex: number,
-  track: Track,
-  front: boolean,
-): { queue: Track[]; origins: QueueOrigin[] } {
-  let at = queue.length;
-  if (front) {
-    at = anchorIndex + 1;
-  } else {
-    for (let k = anchorIndex + 1; k < queue.length; k++) {
-      if (origins[k] === "context") {
-        at = k;
-        break;
-      }
-    }
-  }
-  const q = [...queue];
-  q.splice(at, 0, track);
-  const o = [...origins];
-  o.splice(at, 0, "user");
-  return { queue: q, origins: o };
-}
-
-// Add a user (primary) track to the live queue and mirror it into the
-// pre-shuffle original queue so shuffle toggling stays consistent.
-function addUserTrack(
-  state: {
-    queue: Track[];
-    origins: QueueOrigin[];
-    originalQueue: Track[];
-    originalOrigins: QueueOrigin[];
-    index: number;
-  },
-  track: Track,
-  front: boolean,
-): Pick<PlayerState, "queue" | "origins" | "originalQueue" | "originalOrigins"> {
-  const { queue, origins, originalQueue, originalOrigins, index } = state;
-  const live = insertUserTrack(queue, origins, index, track, front);
-
-  const cur = queue[index];
-  const anchor = cur
-    ? originalQueue.findIndex((t) => String(t.id) === String(cur.id))
-    : -1;
-  let originalQ = originalQueue;
-  let originalO = originalOrigins;
-  if (anchor >= 0) {
-    const orig = insertUserTrack(originalQueue, originalOrigins, anchor, track, front);
-    originalQ = orig.queue;
-    originalO = orig.origins;
-  } else {
-    originalQ = [...originalQueue, track];
-    originalO = [...originalOrigins, "user"];
-  }
-
-  return {
-    queue: live.queue,
-    origins: live.origins,
-    originalQueue: originalQ,
-    originalOrigins: originalO,
-  };
-}
-
 interface PlayerState {
   queue: Track[];
-  origins: QueueOrigin[]; // parallel to queue: "user" (primary) | "context" (secondary)
+  origins: QueueOrigin[]; // parallel to queue: "manual" (primary) | "context" (secondary)
   originalQueue: Track[]; // pre-shuffle order, for restoring
   originalOrigins: QueueOrigin[]; // parallel to originalQueue
   queueContext: string | null; // label of the secondary queue's source (e.g. playlist name)
@@ -252,13 +173,18 @@ export const usePlayerStore = create<PlayerState>()(
       setSleepAfterTrack: (v) => set({ sleepAfterTrack: v, sleepAt: null }),
 
       setPartyBridge: (b) => set({ partyBridge: b }),
-      setPartyQueue: (tracks, index) =>
+      setPartyQueue: (tracks, index) => {
+        const queue = tracks.map((track) => ({ ...track }));
+        const origins = fillOrigins(queue.length, "context");
         set({
-          queue: tracks,
-          origins: fillOrigins(tracks.length, "context"),
+          queue,
+          origins,
+          originalQueue: [...queue],
+          originalOrigins: [...origins],
           index,
-          duration: tracks[index]?.duration_sec || 0,
-        }),
+          duration: queue[index]?.duration_sec || 0,
+        });
+      },
       followHostPlayback: (isPlaying, seekTo) =>
         set((s) => {
           if (s.index < 0) return {};
@@ -273,11 +199,12 @@ export const usePlayerStore = create<PlayerState>()(
       appendToQueue: (tracks) => {
         if (!tracks.length) return;
         const { queue, origins, originalQueue, originalOrigins } = get();
-        const ctx = fillOrigins(tracks.length, "context");
+        const appended = tracks.map((track) => ({ ...track }));
+        const ctx = fillOrigins(appended.length, "context");
         set({
-          queue: [...queue, ...tracks],
+          queue: [...queue, ...appended],
           origins: [...origins, ...ctx],
-          originalQueue: [...originalQueue, ...tracks],
+          originalQueue: [...originalQueue, ...appended],
           originalOrigins: [...originalOrigins, ...ctx],
         });
       },
@@ -288,11 +215,12 @@ export const usePlayerStore = create<PlayerState>()(
       setLyricsOpen: (v) => set({ lyricsOpen: v }),
 
       playTrack: (track) => {
-        pushRecent(track);
+        const queueTrack = { ...track };
+        pushRecent(queueTrack);
         set({
-          queue: [track],
+          queue: [queueTrack],
           origins: ["context"],
-          originalQueue: [track],
+          originalQueue: [queueTrack],
           originalOrigins: ["context"],
           queueContext: null,
           index: 0,
@@ -307,24 +235,26 @@ export const usePlayerStore = create<PlayerState>()(
       playQueue: (tracks, startIndex = 0, context) => {
         if (!tracks.length) return;
         const idx = Math.max(0, Math.min(startIndex, tracks.length - 1));
-        const original = tracks;
-        let queue = tracks;
-        let index = idx;
-        if (get().shuffle) {
-          queue = shuffledQueue(tracks, idx);
-          index = 0;
-        }
-        pushRecent(queue[index]);
-        set({
+        const queue = tracks.map((track) => ({ ...track }));
+        const origins = fillOrigins(queue.length, "context");
+        const baseQueue = {
           queue,
-          origins: fillOrigins(queue.length, "context"),
-          originalQueue: original,
-          originalOrigins: fillOrigins(original.length, "context"),
+          origins,
+          originalQueue: [...queue],
+          originalOrigins: [...origins],
+          index: idx,
+          shuffle: false,
+        };
+        const productQueue = get().shuffle
+          ? toggleQueueShuffle(baseQueue)
+          : baseQueue;
+        pushRecent(productQueue.queue[productQueue.index]);
+        set({
+          ...productQueue,
           queueContext: context ?? null,
-          index,
           isPlaying: true,
           currentTime: 0,
-          duration: queue[index]?.duration_sec || 0,
+          duration: productQueue.queue[productQueue.index]?.duration_sec || 0,
           error: null,
           radioActive: false,
         });
@@ -340,7 +270,7 @@ export const usePlayerStore = create<PlayerState>()(
           get().playTrack(track);
           return;
         }
-        set(addUserTrack(get(), track, false));
+        set(insertManualItem(get(), { ...track }, "tail"));
       },
 
       playNext: (track) => {
@@ -353,7 +283,7 @@ export const usePlayerStore = create<PlayerState>()(
           get().playTrack(track);
           return;
         }
-        set(addUserTrack(get(), track, true));
+        set(insertManualItem(get(), { ...track }, "next"));
       },
 
       removeFromQueue: (i) => {
@@ -362,45 +292,16 @@ export const usePlayerStore = create<PlayerState>()(
           bridge.removeAt(i);
           return;
         }
-        const { queue, origins, originalQueue, originalOrigins, index } = get();
-        if (i < 0 || i >= queue.length) return;
-        const removed = queue[i];
-        const q = queue.filter((_, idx) => idx !== i);
-        const o = origins.filter((_, idx) => idx !== i);
-        // Drop the matching track from the pre-shuffle original arrays too.
-        const oi = removed
-          ? originalQueue.findIndex((t) => String(t.id) === String(removed.id))
-          : -1;
-        const oq = oi >= 0 ? originalQueue.filter((_, idx) => idx !== oi) : originalQueue;
-        const oo = oi >= 0 ? originalOrigins.filter((_, idx) => idx !== oi) : originalOrigins;
-        let newIndex = index;
-        if (i < index) newIndex = index - 1;
-        else if (i === index) newIndex = Math.min(index, q.length - 1);
-        set({
-          queue: q,
-          origins: o,
-          originalQueue: oq,
-          originalOrigins: oo,
-          index: q.length ? newIndex : -1,
-          isPlaying: q.length ? get().isPlaying : false,
-        });
+        if (i < 0 || i >= get().queue.length) return;
+        set(removeQueueItem(get(), i));
       },
 
       clearQueue: () => {
         // Party queues are shared/host-managed — don't clear from a member view.
         if (get().partyBridge) return;
-        const { queue, origins, index } = get();
+        const { queue, index } = get();
         if (index >= 0 && index < queue.length) {
-          // Keep the current track so playback continues; drop the rest.
-          const cur = queue[index];
-          const curOrigin = origins[index] ?? "context";
-          set({
-            queue: [cur],
-            origins: [curOrigin],
-            index: 0,
-            originalQueue: [cur],
-            originalOrigins: [curOrigin],
-          });
+          set(clearUpcomingItems(get()));
         } else {
           set({
             queue: [],
@@ -419,19 +320,9 @@ export const usePlayerStore = create<PlayerState>()(
           bridge.reorder(from, to);
           return;
         }
-        const { queue, origins, index } = get();
+        const { queue } = get();
         if (from < 0 || from >= queue.length || to < 0 || to >= queue.length) return;
-        const q = [...queue];
-        const [moved] = q.splice(from, 1);
-        q.splice(to, 0, moved);
-        const o = [...origins];
-        const [movedOrigin] = o.splice(from, 1);
-        o.splice(to, 0, movedOrigin);
-        let newIndex = index;
-        if (from === index) newIndex = to;
-        else if (from < index && to >= index) newIndex = index - 1;
-        else if (from > index && to <= index) newIndex = index + 1;
-        set({ queue: q, origins: o, index: newIndex });
+        set(moveQueueItem(get(), from, to));
       },
 
       jumpTo: (i) => {
@@ -520,63 +411,7 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       toggleShuffle: () => {
-        const { shuffle, queue, origins, originalQueue, originalOrigins, index } = get();
-        if (!queue.length) {
-          set({ shuffle: !shuffle });
-          return;
-        }
-        if (!shuffle) {
-          // turn on: keep current + manual (user) queue order, shuffle only the
-          // secondary (context) tracks. Manual additions still play first.
-          const cur = queue[index];
-          const curOrigin = origins[index] ?? "context";
-          const userUp: Track[] = [];
-          const ctxUp: Track[] = [];
-          for (let k = index + 1; k < queue.length; k++) {
-            if (origins[k] === "user") userUp.push(queue[k]);
-            else ctxUp.push(queue[k]);
-          }
-          const shuffledCtx = shuffleArray(ctxUp);
-          const newQueue = (cur ? [cur, ...userUp, ...shuffledCtx] : [...userUp, ...shuffledCtx]);
-          const newOrigins: QueueOrigin[] = [
-            ...(cur ? [curOrigin] : []),
-            ...fillOrigins(userUp.length, "user"),
-            ...fillOrigins(shuffledCtx.length, "context"),
-          ];
-          const hasOriginal = originalQueue.length > 0;
-          set({
-            shuffle: true,
-            queue: newQueue,
-            origins: newOrigins,
-            originalQueue: hasOriginal
-              ? originalQueue
-              : cur
-                ? [cur, ...userUp, ...ctxUp]
-                : [...userUp, ...ctxUp],
-            originalOrigins: hasOriginal
-              ? originalOrigins
-              : [
-                  ...(cur ? [curOrigin] : []),
-                  ...fillOrigins(userUp.length, "user"),
-                  ...fillOrigins(ctxUp.length, "context"),
-                ],
-            index: 0,
-          });
-        } else {
-          // turn off: restore original order, find current track
-          const current = queue[index];
-          const restored = originalQueue.length ? originalQueue : queue;
-          const restoredOrigins = originalOrigins.length ? originalOrigins : origins;
-          const newIndex = current
-            ? restored.findIndex((t) => String(t.id) === String(current.id))
-            : 0;
-          set({
-            shuffle: false,
-            queue: restored,
-            origins: restoredOrigins,
-            index: newIndex >= 0 ? newIndex : 0,
-          });
-        }
+        set(toggleQueueShuffle(get()));
       },
 
       cycleRepeat: () => {

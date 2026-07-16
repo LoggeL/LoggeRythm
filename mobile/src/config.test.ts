@@ -20,6 +20,13 @@ describe('mobile server configuration', () => {
     expect(selectApiBase('http://10.0.2.2:8000')).toBe('http://10.0.2.2:8000');
   });
 
+  it('refuses a non-production origin for a production bundle', () => {
+    expect(selectApiBase(PRODUCTION_API_BASE, true)).toBe(PRODUCTION_API_BASE);
+    expect(() => selectApiBase('https://staging.example.test', true)).toThrow(
+      'Production builds must use the canonical LoggeRythm API origin',
+    );
+  });
+
   it('normalizes root trailing slashes to the canonical origin', () => {
     expect(normalizeApiBase(' https://LOGGERYTHM.logge.top/ ')).toBe(
       'https://loggerythm.logge.top',

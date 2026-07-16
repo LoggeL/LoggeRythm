@@ -1,7 +1,11 @@
 import type { MediaItem } from '@rntp/player';
 import { describe, expect, it } from 'vitest';
 import type { Track } from '../api/types';
-import { mediaItemToTrack, trackToMediaItem } from './mediaItem';
+import {
+  mediaItemToTrack,
+  mediaItemUsesExplicitDownload,
+  trackToMediaItem,
+} from './mediaItem';
 
 const track: Track = {
   id: '123',
@@ -23,6 +27,26 @@ describe('mediaItemToTrack', () => {
     const item = trackToMediaItem(track, 'https://api.test', { Cookie: 'session=test' });
 
     expect(mediaItemToTrack(item)).toEqual(track);
+    expect(mediaItemUsesExplicitDownload(item)).toBe(false);
+  });
+
+  it('builds a header-free local source only from an explicit file URI', () => {
+    const item = trackToMediaItem(track, 'https://api.test', { Cookie: 'session=test' }, {
+      explicitDownloadUri: 'file:///data/user/0/top.logge.loggerythm/no_backup/123.mp3',
+    });
+
+    expect(item.url).toEqual({
+      uri: 'file:///data/user/0/top.logge.loggerythm/no_backup/123.mp3',
+    });
+    expect(item.extras?.explicitDownload).toBe(true);
+    expect(mediaItemUsesExplicitDownload(item)).toBe(true);
+    expect(JSON.stringify(item.url)).not.toContain('Cookie');
+  });
+
+  it('rejects a remote URI presented as a verified explicit download', () => {
+    expect(() => trackToMediaItem(track, 'https://api.test', {}, {
+      explicitDownloadUri: 'https://attacker.test/123.mp3',
+    })).toThrow('must use an app-private file URI');
   });
 
   it('restores the Android RNTP array-like artists representation', () => {

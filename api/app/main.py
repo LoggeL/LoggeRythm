@@ -1,4 +1,4 @@
-"""SpotiFrei API — clean REST backend.
+"""LoggeRythm API — clean REST backend.
 
 Wires together browse/stream/auth/likes/playlists routers, the SQLAlchemy DB,
 cookie-based JWT auth and the Deezer adapter. The audio stream/Range logic
@@ -13,13 +13,16 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from sqlalchemy import select
 
+from .api_version import API_VERSION
 from .config import APP_ENV, CORS_ORIGINS, validate_runtime_config
 from .db.models import User
 from .db.session import SessionLocal, engine, init_db
+from .openapi_security import install_auth_openapi
 from .routers import (
     admin,
     auth,
     browse,
+    compatibility,
     follows,
     home,
     likes,
@@ -34,7 +37,7 @@ from .routers import (
 )
 from .services import deezer_client, storage
 
-app = FastAPI(title="SpotiFrei API")
+app = FastAPI(title="LoggeRythm API", version=API_VERSION)
 
 app.add_middleware(
     CORSMiddleware,
@@ -178,7 +181,7 @@ def _startup() -> None:
     storage.reconcile()  # backfill DB rows for pre-existing files
     storage.cleanup_old()  # evict stale tracks on boot
     threading.Thread(target=_cleanup_loop, daemon=True).start()
-    print("SpotiFrei API started: DB ready, Deezer session initialized.")
+    print("LoggeRythm API started: DB ready, Deezer session initialized.")
 
 
 @app.get("/")
@@ -187,6 +190,7 @@ def index() -> FileResponse:
 
 
 app.include_router(browse.router)
+app.include_router(compatibility.router)
 app.include_router(stream.router)
 app.include_router(auth.router)
 app.include_router(likes.router)
@@ -200,3 +204,6 @@ app.include_router(profile.router)
 app.include_router(radio.router)
 app.include_router(stats.router)
 app.include_router(home.router)
+
+# Install after every router so the dependency walk sees the complete API.
+install_auth_openapi(app)

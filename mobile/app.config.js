@@ -1,4 +1,11 @@
 const API_BASE_ENV = 'EXPO_PUBLIC_API_BASE';
+const PRODUCTION_API_BASE = 'https://loggerythm.logge.top';
+
+function invalidApiBase(reason) {
+  // The configured value can contain credentials by mistake. Never echo it in
+  // build logs, CI annotations, or crash output while rejecting the config.
+  return new Error(`Invalid ${API_BASE_ENV}: ${reason}`);
+}
 
 function localApiUsesCleartext() {
   const configured = process.env.EXPO_PUBLIC_API_BASE;
@@ -7,20 +14,23 @@ function localApiUsesCleartext() {
   let url;
   try {
     url = new URL(configured.trim());
-  } catch (error) {
-    throw new Error(`Invalid ${API_BASE_ENV} "${configured}": ${error.message}`);
+  } catch {
+    throw invalidApiBase('malformed URL');
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Invalid ${API_BASE_ENV} "${configured}": protocol must be http:// or https://`);
+    throw invalidApiBase('protocol must be http:// or https://');
   }
   if (url.username || url.password) {
-    throw new Error(`Invalid ${API_BASE_ENV} "${configured}": embedded credentials are not allowed`);
+    throw invalidApiBase('embedded credentials are not allowed');
   }
   if (url.search || url.hash) {
-    throw new Error(`Invalid ${API_BASE_ENV} "${configured}": query strings and fragments are not allowed`);
+    throw invalidApiBase('query strings and fragments are not allowed');
   }
   if (url.pathname !== '/' && url.pathname !== '') {
-    throw new Error(`Invalid ${API_BASE_ENV} "${configured}": path must be /`);
+    throw invalidApiBase('path must be /');
+  }
+  if (process.env.NODE_ENV === 'production' && url.origin !== PRODUCTION_API_BASE) {
+    throw invalidApiBase('production builds must use the canonical LoggeRythm API origin');
   }
   return url.protocol === 'http:';
 }

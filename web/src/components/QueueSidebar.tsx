@@ -76,8 +76,8 @@ export default function QueueSidebar() {
   const upcoming = queue
     .map((t, i) => ({ t, i }))
     .filter(({ i }) => i > index);
-  const userUpcoming = upcoming.filter(({ i }) => origins[i] === "user");
-  const contextUpcoming = upcoming.filter(({ i }) => origins[i] !== "user");
+  const manualUpcoming = upcoming.filter(({ i }) => origins[i] === "manual");
+  const contextUpcoming = upcoming.filter(({ i }) => origins[i] !== "manual");
 
   const renderItem = ({ t, i }: { t: (typeof upcoming)[number]["t"]; i: number }) => {
     const isDragging = dragIndex === i;
@@ -283,12 +283,12 @@ export default function QueueSidebar() {
           </div>
         )}
 
-        {userUpcoming.length > 0 && (
+        {manualUpcoming.length > 0 && (
           <>
             <p className="text-xs uppercase tracking-widest text-muted px-2 mb-2">
               Als Nächstes in der Warteschlange
             </p>
-            <ul className="flex flex-col mb-5">{userUpcoming.map(renderItem)}</ul>
+            <ul className="flex flex-col mb-5">{manualUpcoming.map(renderItem)}</ul>
           </>
         )}
 

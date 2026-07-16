@@ -1,8 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Slider from '@react-native-community/slider';
 import TrackPlayer, {
+  Event,
   PlaybackState,
   RepeatMode,
   useActiveMediaItem,
@@ -11,93 +20,81 @@ import TrackPlayer, {
   useProgress,
 } from '@rntp/player';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as api from '../api/endpoints';
-import { refreshBrowseTree } from '../player/browseTree';
+import BrandLockup from '../components/BrandLockup';
+import AppIcon from '../components/AppIcon';
+import TrackLikeButton from '../components/TrackLikeButton';
+import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
+import {
+  NowPlayingArtwork,
+  NowPlayingBackdrop,
+} from '../components/player/NowPlayingArtwork';
+import NowPlayingLyricsSurface from '../components/player/NowPlayingLyricsSurface';
+import NowPlayingMetadata from '../components/player/NowPlayingMetadata';
+import {
+  DEFAULT_NOW_PLAYING_TAB,
+  NowPlayingTabs,
+  type NowPlayingTab,
+} from '../components/player/NowPlayingTabs';
+import NowPlayingTransport from '../components/player/NowPlayingTransport';
+import SimilarPanel from '../components/player/SimilarPanel';
+import { QueueSurface } from './QueueScreen';
 import { mediaItemToTrack } from '../player/mediaItem';
-import { cycleRepeat, next, prev, seekTo, toggleShuffle, togglePlay } from '../player/controller';
+import {
+  cycleRepeat,
+  isContextShuffleEnabled,
+  next,
+  prev,
+  seekTo,
+  toggleShuffle,
+  togglePlay,
+} from '../player/controller';
 import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/errors';
+import { isPlayerReady } from '../player/setup';
 import type { RootStackParams } from '../navigation';
-import { colors } from '../theme';
+import { strings } from '../localization';
+import { colors, metrics } from '../theme';
+import { nowPlayingArtworkSize } from './nowPlayingLayout';
+import {
+  nowPlayingAlbumDestination,
+  nowPlayingArtistDestination,
+} from './nowPlayingNavigation';
+import { resolveNowPlayingBody } from './nowPlayingModel';
 
 type Props = NativeStackScreenProps<RootStackParams, 'NowPlaying'>;
 
-function fmt(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = Math.floor(seconds % 60);
-  return `${minutes}:${remainder.toString().padStart(2, '0')}`;
+function repeatModeLabel(mode: RepeatMode): string {
+  if (mode === RepeatMode.One) return strings.player.repeatOne;
+  if (mode === RepeatMode.All) return strings.player.repeatAll;
+  return strings.player.repeatOff;
 }
 
 export default function NowPlayingScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const window = useWindowDimensions();
   const item = useActiveMediaItem();
   const playing = useIsPlaying();
   const playbackState = usePlaybackState();
   const { position, duration } = useProgress(0.5);
   const track = mediaItemToTrack(item);
+  const body = resolveNowPlayingBody(isPlayerReady(), track !== null);
   const playerError = usePlayerError();
 
   const [seekState, setSeekState] = useState<{ trackId: string; value: number } | null>(null);
   const [repeat, setRepeat] = useState<RepeatMode>(() => TrackPlayer.getRepeatMode());
-  const [shuffle, setShuffle] = useState(() => TrackPlayer.isShuffleEnabled());
-  const [likeState, setLikeState] = useState<{
-    trackId: string;
-    liked: boolean;
-    loading: boolean;
-    error: string | null;
-  } | null>(null);
+  const [shuffle, setShuffle] = useState(isContextShuffleEnabled);
+  const [shufflePending, setShufflePending] = useState(false);
+  const [tab, setTab] = useState<NowPlayingTab>(DEFAULT_NOW_PLAYING_TAB);
 
   useEffect(() => {
-    const trackId = track?.id;
-    if (!trackId) return;
-    const controller = new AbortController();
-    void api
-      .likesContains([trackId], controller.signal)
-      .then((result) => {
-        if (controller.signal.aborted) return;
-        if (!(trackId in result)) {
-          throw new Error(`Like lookup omitted track ${trackId}`);
-        }
-        setLikeState({ trackId, liked: result[trackId], loading: false, error: null });
-      })
-      .catch((cause) => {
-        if (!controller.signal.aborted) {
-          setLikeState({ trackId, liked: false, loading: false, error: (cause as Error).message });
-        }
-      });
-    return () => controller.abort();
-  }, [track?.id]);
-
-  const toggleLike = async () => {
-    if (!track) return;
-    const currentLike =
-      likeState?.trackId === track.id
-        ? likeState
-        : { trackId: track.id, liked: false, loading: true, error: null };
-    if (currentLike.loading) return;
-    const targetId = track.id;
-    const nextLiked = !currentLike.liked;
-    setLikeState({ ...currentLike, loading: true, error: null });
-    try {
-      if (nextLiked) await api.likeTrack(track);
-      else await api.unlikeTrack(targetId);
-      if (mediaItemToTrack(TrackPlayer.getActiveMediaItem())?.id === targetId) {
-        setLikeState({ trackId: targetId, liked: nextLiked, loading: false, error: null });
-      }
-      void refreshBrowseTree().catch((cause) =>
-        reportPlayerError('Android Auto library refresh failed', cause),
-      );
-    } catch (cause) {
-      if (mediaItemToTrack(TrackPlayer.getActiveMediaItem())?.id === targetId) {
-        setLikeState({
-          trackId: targetId,
-          liked: currentLike.liked,
-          loading: false,
-          error: (cause as Error).message,
-        });
-      }
-    }
-  };
+    const syncShuffleState = () => setShuffle(isContextShuffleEnabled());
+    const queueSubscription = TrackPlayer.addEventListener(Event.QueueChanged, syncShuffleState);
+    const removeFocusListener = navigation.addListener('focus', syncShuffleState);
+    syncShuffleState();
+    return () => {
+      queueSubscription.remove();
+      removeFocusListener();
+    };
+  }, [navigation]);
 
   const run = (label: string, action: () => void) => {
     try {
@@ -107,180 +104,264 @@ export default function NowPlayingScreen({ navigation }: Props) {
     }
   };
 
+  const toggleContextShuffle = async () => {
+    if (shufflePending) return;
+    setShufflePending(true);
+    clearPlayerError();
+    try {
+      const enabled = await toggleShuffle();
+      setShuffle(enabled);
+      AccessibilityInfo.announceForAccessibility(
+        enabled ? strings.queue.shuffleEnabled : strings.queue.orderRestored,
+      );
+    } catch (cause) {
+      reportPlayerError(strings.player.shuffleFailed, cause);
+    } finally {
+      setShufflePending(false);
+    }
+  };
+
   const topBar = (
     <View style={styles.topBar}>
       <Pressable
+        testID="now-playing-close"
         accessibilityRole="button"
-        accessibilityLabel="Close Now Playing"
+        accessibilityLabel={strings.player.closeNowPlaying}
         style={styles.closeButton}
         onPress={() => navigation.goBack()}
         hitSlop={16}
       >
-        <Text style={styles.closeText}>⌄</Text>
+        <AppIcon name="chevron-down" color={colors.textPrimary} size={28} />
       </Pressable>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open queue"
-        style={styles.queueButton}
-        onPress={() => navigation.navigate('Queue')}
-        hitSlop={12}
-      >
-        <Text style={styles.queueButtonText}>Queue</Text>
-      </Pressable>
+      <BrandLockup compact horizontal accessibilityRole="header" />
+      <View style={styles.topBarSpacer} />
     </View>
   );
 
-  if (!track) {
+  if (body === 'loading') {
     return (
-      <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      <View testID="now-playing-screen" style={[styles.container, { paddingTop: insets.top + 8 }]}>
         {topBar}
-        <View style={styles.empty}>
-          <Text style={styles.dim}>Nothing playing.</Text>
+        <View
+          testID="now-playing-loading"
+          accessibilityRole="progressbar"
+          accessibilityLabel={strings.player.preparing}
+          accessibilityLiveRegion="polite"
+          style={styles.empty}
+        >
+          <ActivityIndicator color={colors.accent} />
+          <Text style={styles.dim}>{strings.player.preparing}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (body === 'empty' || !track) {
+    return (
+      <View testID="now-playing-screen" style={[styles.container, { paddingTop: insets.top + 8 }]}>
+        {topBar}
+        <View testID="now-playing-empty" accessibilityLiveRegion="polite" style={styles.empty}>
+          <Text style={styles.dim}>{strings.player.nothingPlaying}</Text>
         </View>
       </View>
     );
   }
 
   const buffering = playbackState === PlaybackState.Buffering;
-  const currentLike =
-    likeState?.trackId === track.id
-      ? likeState
-      : { trackId: track.id, liked: false, loading: true, error: null };
   const sliderPosition = seekState?.trackId === track.id ? seekState.value : position;
-  const repeatLabel = repeat === RepeatMode.One ? '1↻' : '↻';
+  const artworkSize = nowPlayingArtworkSize(window.width, window.height);
+  const openAlbum = () => {
+    const destination = nowPlayingAlbumDestination(track);
+    if (destination === null) {
+      reportPlayerError(strings.trackActions.navigationUnavailable, null);
+      return;
+    }
+    navigation.navigate('Tabs', destination);
+  };
+  const openArtist = (artist: Parameters<typeof nowPlayingArtistDestination>[0]) => {
+    const destination = nowPlayingArtistDestination(artist);
+    if (destination === null) {
+      reportPlayerError(strings.trackActions.navigationUnavailable, null);
+      return;
+    }
+    navigation.navigate('Tabs', destination);
+  };
+  const changeSeekPosition = (seconds: number) => {
+    setSeekState({ trackId: track.id, value: seconds });
+  };
+  const commitSeek = (seconds: number) => {
+    run(strings.player.seekFailed, () => seekTo(seconds));
+    setSeekState(null);
+  };
+  const playPrevious = () => run(strings.player.previousFailed, prev);
+  const togglePlayback = () => run(strings.player.playPauseFailed, togglePlay);
+  const playNext = () => run(strings.player.nextFailed, next);
 
   return (
     <View
+      testID="now-playing-screen"
       style={[
         styles.container,
         { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
       ]}
     >
+      <NowPlayingBackdrop coverUri={track.cover} />
       {topBar}
-
-      <View style={styles.artWrap}>
-        {track.cover ? (
-          <Image source={{ uri: track.cover }} style={styles.art} />
-        ) : (
-          <View style={[styles.art, styles.artPlaceholder]} />
-        )}
-      </View>
-
-      <View style={styles.titleRow}>
-        <View style={styles.titleMeta}>
-          <Text style={styles.title} numberOfLines={1}>{track.title}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={currentLike.liked ? 'Unlike track' : 'Like track'}
-          accessibilityState={{ checked: currentLike.liked, disabled: currentLike.loading }}
-          onPress={() => void toggleLike()}
-          disabled={currentLike.loading}
-          hitSlop={12}
-          style={styles.likeButton}
-        >
-          {currentLike.loading ? (
-            <ActivityIndicator color={colors.accent} size="small" />
-          ) : (
-            <Text style={[styles.heart, currentLike.liked && styles.heartOn]}>{currentLike.liked ? '♥' : '♡'}</Text>
-          )}
-        </Pressable>
-      </View>
-      {currentLike.error && <Text style={styles.inlineError} accessibilityRole="alert">Like failed: {currentLike.error}</Text>}
+      <NowPlayingTabs selected={tab} onSelect={setTab} />
       {playerError && (
-        <Pressable accessibilityRole="button" accessibilityHint="Dismiss error" onPress={clearPlayerError}>
-          <Text style={styles.inlineError}>{playerError}</Text>
-        </Pressable>
+        <View testID="now-playing-player-error" style={styles.playerErrorRow} accessibilityRole="alert" accessibilityLiveRegion="assertive">
+          <Text style={[styles.inlineError, styles.playerErrorText]}>{playerError}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={strings.player.playerErrorDismiss} onPress={clearPlayerError} style={styles.inlineDismissButton}>
+            <AppIcon name="close" color={colors.textSecondary} size={20} />
+          </Pressable>
+        </View>
       )}
+      <PlayerNoticeBanner />
 
-      <Slider
-        accessibilityLabel="Playback position"
-        style={styles.slider}
-        minimumValue={0}
-        maximumValue={Math.max(duration, 1)}
-        value={Math.min(sliderPosition, Math.max(duration, 1))}
-        minimumTrackTintColor={colors.accent}
-        maximumTrackTintColor={colors.surfaceAlt}
-        thumbTintColor={colors.accent}
-        onValueChange={(value) => setSeekState({ trackId: track.id, value })}
-        onSlidingComplete={(value) => {
-          run('Seeking failed', () => seekTo(value));
-          setSeekState(null);
-        }}
-      />
-      <View style={styles.timeRow}>
-        <Text style={styles.time}>{fmt(sliderPosition)}</Text>
-        <Text style={styles.time}>{fmt(duration)}</Text>
-      </View>
+      {tab === 'lyrics' ? (
+        <NowPlayingLyricsSurface
+          key={track.id}
+          track={track}
+          position={position}
+          sliderPosition={sliderPosition}
+          duration={duration}
+          playing={playing}
+          buffering={buffering}
+          onOpenAlbum={openAlbum}
+          onOpenArtist={openArtist}
+          onPositionChange={changeSeekPosition}
+          onSeek={commitSeek}
+          onPrevious={playPrevious}
+          onTogglePlay={togglePlayback}
+          onNext={playNext}
+        />
+      ) : tab === 'similar' ? (
+        <SimilarPanel
+          seed={track}
+          onOpenAlbum={(params) => navigation.navigate('Tabs', {
+            screen: 'DiscoverTab',
+            params: { screen: 'Album', params },
+          })}
+          onOpenArtist={(params) => navigation.navigate('Tabs', {
+            screen: 'DiscoverTab',
+            params: { screen: 'Artist', params },
+          })}
+        />
+      ) : tab === 'queue' ? (
+        <View style={styles.fullBleedTab}>
+          <QueueSurface
+            embedded
+            onOpenAlbum={(params) => navigation.navigate('Tabs', {
+              screen: 'DiscoverTab',
+              params: { screen: 'Album', params },
+            })}
+            onOpenArtist={(params) => navigation.navigate('Tabs', {
+              screen: 'DiscoverTab',
+              params: { screen: 'Artist', params },
+            })}
+          />
+        </View>
+      ) : (
+        <ScrollView
+          testID="now-playing-playing-scroll"
+          style={styles.playingScroll}
+          contentContainerStyle={styles.playingContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.artWrap}>
+            <NowPlayingArtwork
+              coverUri={track.cover}
+              style={{ width: artworkSize, height: artworkSize }}
+            />
+          </View>
 
-      <View style={styles.controls}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
-          accessibilityState={{ checked: shuffle }}
-          onPress={() => run('Changing shuffle failed', () => setShuffle(toggleShuffle()))}
-          hitSlop={12}
-        >
-          <Text style={[styles.secondaryButton, shuffle && styles.activeButton]}>⇄</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Previous track" onPress={() => run('Previous track failed', prev)} hitSlop={12}>
-          <Text style={styles.skipButton}>|◀</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={playing ? 'Pause' : 'Play'} style={styles.playButton} onPress={() => run('Play/pause failed', togglePlay)}>
-          {buffering ? <ActivityIndicator color="#000" /> : <Text style={styles.playIcon}>{playing ? 'Ⅱ' : '▶'}</Text>}
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Next track" onPress={() => run('Next track failed', next)} hitSlop={12}>
-          <Text style={styles.skipButton}>▶|</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Change repeat mode"
-          accessibilityState={{ checked: repeat !== RepeatMode.Off }}
-          onPress={() => run('Changing repeat failed', () => setRepeat(cycleRepeat()))}
-          hitSlop={12}
-        >
-          <Text style={[styles.secondaryButton, repeat !== RepeatMode.Off && styles.activeButton]}>{repeatLabel}</Text>
-        </Pressable>
-      </View>
+          <View style={styles.titleRow}>
+            <NowPlayingMetadata
+              track={track}
+              onOpenAlbum={openAlbum}
+              onOpenArtist={openArtist}
+            />
+            <TrackLikeButton track={track} testID="now-playing-like" style={styles.likeButton} />
+          </View>
+
+          <NowPlayingTransport
+            position={sliderPosition}
+            duration={duration}
+            playing={playing}
+            buffering={buffering}
+            onPositionChange={changeSeekPosition}
+            onSeek={commitSeek}
+            onPrevious={playPrevious}
+            onTogglePlay={togglePlayback}
+            onNext={playNext}
+            leadingControl={<Pressable
+              testID="now-playing-shuffle"
+              accessibilityRole="button"
+              accessibilityLabel={shuffle ? strings.player.disableShuffle : strings.player.enableShuffle}
+              accessibilityState={{ checked: shuffle, busy: shufflePending, disabled: shufflePending }}
+              disabled={shufflePending}
+              onPress={() => void toggleContextShuffle()}
+              style={styles.iconButton}
+            >
+              <AppIcon
+                name="shuffle-variant"
+                color={shuffle ? colors.accent : colors.textSecondary}
+                size={24}
+              />
+            </Pressable>}
+            trailingControl={<Pressable
+              testID="now-playing-repeat"
+              accessibilityRole="button"
+              accessibilityLabel={repeatModeLabel(repeat)}
+              accessibilityHint={strings.player.changeRepeatMode}
+              accessibilityState={{ checked: repeat !== RepeatMode.Off }}
+              onPress={() =>
+                run(strings.player.repeatFailed, () => {
+                  const nextMode = cycleRepeat();
+                  setRepeat(nextMode);
+                  AccessibilityInfo.announceForAccessibility(repeatModeLabel(nextMode));
+                })
+              }
+              style={styles.iconButton}
+            >
+              <AppIcon
+                name={repeat === RepeatMode.One ? 'repeat-once' : 'repeat'}
+                color={repeat !== RepeatMode.Off ? colors.accent : colors.textSecondary}
+                size={24}
+              />
+            </Pressable>}
+          />
+        </ScrollView>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg, paddingHorizontal: 28 },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 28 },
+  fullBleedTab: { flex: 1, minHeight: 0, marginHorizontal: -28 },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dim: { color: colors.textDim },
+  dim: { color: colors.textSecondary },
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  closeButton: { paddingVertical: 8 },
-  closeText: { color: colors.text, fontSize: 26 },
-  queueButton: { paddingVertical: 10, paddingLeft: 16 },
-  queueButtonText: { color: colors.text, fontSize: 15, fontWeight: '700' },
-  artWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 0 },
-  art: { width: '100%', aspectRatio: 1, maxHeight: '100%', borderRadius: 12, backgroundColor: colors.surfaceAlt },
-  artPlaceholder: { borderWidth: 1, borderColor: colors.border },
-  titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 12 },
-  titleMeta: { minWidth: 0, flex: 1 },
-  title: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  artist: { color: colors.textDim, fontSize: 16, marginTop: 4 },
-  likeButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  heart: { color: colors.textDim, fontSize: 28 },
-  heartOn: { color: colors.accent },
-  inlineError: { color: colors.error, fontSize: 12, marginTop: 8 },
-  slider: { width: '100%', height: 40, marginTop: 16 },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -6 },
-  time: { color: colors.textDim, fontSize: 12 },
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 28 },
-  secondaryButton: { color: colors.textDim, fontSize: 22 },
-  activeButton: { color: colors.accent },
-  skipButton: { color: colors.text, fontSize: 28 },
-  playButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
+  closeButton: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  closeText: { color: colors.textPrimary, fontSize: 26 },
+  topBarSpacer: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget },
+  playingScroll: { flex: 1, minHeight: 0 },
+  playingContent: { flexGrow: 1, paddingBottom: 4 },
+  artWrap: {
+    flexGrow: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
   },
-  playIcon: { color: '#000', fontSize: 30 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 12 },
+  likeButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  inlineError: { color: colors.danger, fontSize: 12, marginTop: 8 },
+  playerErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  playerErrorText: { flex: 1 },
+  inlineDismissButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  inlineDismissText: { color: colors.textPrimary, fontSize: 22 },
+  iconButton: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  secondaryButton: { color: colors.textSecondary, fontSize: 22 },
+  activeButton: { color: colors.accent },
 });

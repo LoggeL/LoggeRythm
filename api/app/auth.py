@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Cookie, Depends, HTTPException, Response, status
+from fastapi import Cookie, Depends, HTTPException, Response, Security, status
+from fastapi.security import APIKeyCookie
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
@@ -21,6 +22,19 @@ from .db.models import User
 from .db.session import get_db
 
 _pwd = CryptContext(schemes=["argon2"], deprecated="auto")
+
+# A required endpoint must expose the browser/mobile session as an OpenAPI
+# security scheme, not as an ordinary cookie parameter.  ``auto_error=False``
+# deliberately leaves the 401 body under our control (and lets us distinguish
+# an unapproved account with 403 below).
+_session_cookie_scheme = APIKeyCookie(
+    name=SESSION_COOKIE,
+    scheme_name=SESSION_COOKIE,
+    description=(
+        "HttpOnly JWT session cookie set by the login or registration endpoint."
+    ),
+    auto_error=False,
+)
 
 
 # --- password hashing -----------------------------------------------------
@@ -90,9 +104,12 @@ def get_current_user_optional(
 
 
 def get_current_user(
-    user: User | None = Depends(get_current_user_optional),
+    sf_session: str | None = Security(_session_cookie_scheme),
+    db: Session = Depends(get_db),
 ) -> User:
     """Return an approved authenticated user or raise 401/403."""
+    user_id = _decode_user_id(sf_session) if sf_session else None
+    user = db.get(User, user_id) if user_id is not None else None
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
@@ -106,9 +123,12 @@ def get_current_user(
 
 
 def get_current_session_user(
-    user: User | None = Depends(get_current_user_optional),
+    sf_session: str | None = Security(_session_cookie_scheme),
+    db: Session = Depends(get_db),
 ) -> User:
     """Return the cookie user, including pending accounts, or raise 401."""
+    user_id = _decode_user_id(sf_session) if sf_session else None
+    user = db.get(User, user_id) if user_id is not None else None
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"

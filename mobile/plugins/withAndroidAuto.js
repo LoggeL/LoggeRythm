@@ -1,4 +1,8 @@
-const { withAndroidManifest, withDangerousMod } = require('expo/config-plugins');
+const {
+  withAndroidManifest,
+  withAppBuildGradle,
+  withDangerousMod,
+} = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
 
@@ -22,9 +26,16 @@ const AUTOMOTIVE_DESC = `<?xml version="1.0" encoding="utf-8"?>
 const META_NAME = 'com.google.android.gms.car.application';
 const ATTRIBUTION_ICON_META_NAME = 'androidx.car.app.TintableAttributionIcon';
 const PLAYBACK_SERVICE = 'com.doublesymmetry.trackplayer.TrackPlayerPlaybackService';
+const UNSUPPORTED_SEARCH_ACTION = 'android.media.action.MEDIA_PLAY_FROM_SEARCH';
 const SERVICE_ACTIONS = [
   'androidx.media3.session.MediaLibraryService',
   'android.media.browse.MediaBrowserService',
+];
+const WEB_LINK_PATHS = [
+  { 'android:path': '/' },
+  ...['register', 'album', 'artist', 'playlist', 'genre', 'account', 'search', 'radio', 'library'].map(
+    (value) => ({ 'android:pathPrefix': `/${value}` }),
+  ),
 ];
 
 function configureAutoManifest(config) {
@@ -83,26 +94,41 @@ function configureAutoManifest(config) {
       }
     }
 
-    // Voice-search entry point ("Hey Google, play … on LoggeRythm"). Android's
-    // media lint (MissingIntentFilterForMediaSearch) requires a media app to
-    // advertise a handler for MEDIA_PLAY_FROM_SEARCH; RNTP's media session runs
-    // the actual search-and-play, this filter is the launch route the platform
-    // expects. Attach it to the launcher activity.
+    // Do not advertise voice search until the playback service implements it.
+    // A manifest action alone makes car hosts route an unsupported command into
+    // MainActivity and is materially worse than an honest capability gap.
     const mainActivity = app.activity?.find((a) => a.$?.['android:name'] === '.MainActivity');
     if (!mainActivity)
       throw new Error('withAndroidAuto: .MainActivity not found in AndroidManifest.xml');
     mainActivity['intent-filter'] = mainActivity['intent-filter'] || [];
-    const hasSearchFilter = mainActivity['intent-filter'].some((item) =>
-      item.action?.some(
-        (action) => action.$?.['android:name'] === 'android.media.action.MEDIA_PLAY_FROM_SEARCH',
-      ),
+    mainActivity['intent-filter'] = mainActivity['intent-filter'].filter(
+      (item) => !item.action?.some((action) => action.$?.['android:name'] === UNSUPPORTED_SEARCH_ACTION),
     );
-    if (!hasSearchFilter) {
-      mainActivity['intent-filter'].push({
-        action: [{ $: { 'android:name': 'android.media.action.MEDIA_PLAY_FROM_SEARCH' } }],
-        category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
-      });
+    let webLinks = mainActivity['intent-filter'].find((item) =>
+      item.data?.some((data) => data.$?.['android:host'] === 'loggerythm.logge.top'),
+    );
+    if (!webLinks) {
+      webLinks = {};
+      mainActivity['intent-filter'].push(webLinks);
     }
+    webLinks.action = [{ $: { 'android:name': 'android.intent.action.VIEW' } }];
+    webLinks.category = [
+      { $: { 'android:name': 'android.intent.category.DEFAULT' } },
+      { $: { 'android:name': 'android.intent.category.BROWSABLE' } },
+    ];
+    webLinks.data = WEB_LINK_PATHS.map((pathRule) => ({
+      $: {
+        'android:scheme': 'https',
+        'android:host': 'loggerythm.logge.top',
+        ...pathRule,
+      },
+    }));
+    cfg.modResults.manifest.$ = cfg.modResults.manifest.$ || {};
+    cfg.modResults.manifest.$['xmlns:tools'] =
+      cfg.modResults.manifest.$['xmlns:tools'] || 'http://schemas.android.com/tools';
+    const ignored = new Set((app.$['tools:ignore'] || '').split(',').filter(Boolean));
+    ignored.add('MissingIntentFilterForMediaSearch');
+    app.$['tools:ignore'] = [...ignored].join(',');
     return cfg;
   });
 }
@@ -119,8 +145,31 @@ function writeAutomotiveDesc(config) {
   ]);
 }
 
+function configureAutoLint(config) {
+  return withAppBuildGradle(config, (cfg) => {
+    if (cfg.modResults.language !== 'groovy') {
+      throw new Error('withAndroidAuto: only Groovy app build.gradle files are supported');
+    }
+    const start = '// @generated begin withAndroidAutoLint';
+    const end = '// @generated end withAndroidAutoLint';
+    const previous = new RegExp(`${start}[\\s\\S]*?${end}\\n?`, 'g');
+    const block = `${start}
+// Voice search remains disabled until the MediaLibraryService implements it.
+android {
+    lint {
+        disable 'MissingIntentFilterForMediaSearch'
+    }
+}
+${end}
+`;
+    cfg.modResults.contents = `${cfg.modResults.contents.replace(previous, '').trimEnd()}\n\n${block}`;
+    return cfg;
+  });
+}
+
 module.exports = function withAndroidAuto(config) {
   config = configureAutoManifest(config);
+  config = configureAutoLint(config);
   config = writeAutomotiveDesc(config);
   return config;
 };

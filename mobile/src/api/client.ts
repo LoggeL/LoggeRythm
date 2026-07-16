@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { getApiBase } from '../config';
+import { ensureApiCompatibility } from './compatibility';
 import type { DeezerId } from './types';
 import {
   decodeStoredSession,
@@ -73,13 +74,35 @@ async function ensureLoaded(): Promise<void> {
   }
 }
 
-async function storeSession(next: StoredSession): Promise<void> {
-  await mutateSession(async () => {
+async function storeSession(
+  next: StoredSession,
+  expectedRevision: number,
+): Promise<boolean> {
+  return mutateSession(async () => {
+    if (expectedRevision !== sessionRevision) return false;
     await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
     session = next;
     loaded = true;
     sessionRevision += 1;
+    return true;
   });
+}
+
+async function deleteStoredSession(): Promise<void> {
+  const failures: string[] = [];
+  try {
+    await SecureStore.deleteItemAsync(SESSION_KEY);
+  } catch (error) {
+    failures.push(`SecureStore: ${(error as Error).message}`);
+  }
+  try {
+    await AsyncStorage.removeItem(LEGACY_SESSION_KEY);
+  } catch (error) {
+    failures.push(`legacy AsyncStorage: ${(error as Error).message}`);
+  }
+  if (failures.length > 0) {
+    throw new Error(`Failed to clear the local session (${failures.join('; ')})`);
+  }
 }
 
 export async function hasSession(): Promise<boolean> {
@@ -90,29 +113,33 @@ export async function hasSession(): Promise<boolean> {
 async function removeSession(expectedRevision?: number): Promise<boolean> {
   return mutateSession(async () => {
     if (expectedRevision !== undefined && expectedRevision !== sessionRevision) return false;
-    const failures: string[] = [];
+    let deletionError: unknown;
     try {
-      await SecureStore.deleteItemAsync(SESSION_KEY);
+      await deleteStoredSession();
     } catch (error) {
-      failures.push(`SecureStore: ${(error as Error).message}`);
-    }
-    try {
-      await AsyncStorage.removeItem(LEGACY_SESSION_KEY);
-    } catch (error) {
-      failures.push(`legacy AsyncStorage: ${(error as Error).message}`);
+      deletionError = error;
     }
     session = null;
     loaded = true;
     sessionRevision += 1;
-    if (failures.length > 0) {
-      throw new Error(`Failed to clear the local session (${failures.join('; ')})`);
-    }
+    if (deletionError !== undefined) throw deletionError;
     return true;
   });
 }
 
 export async function clearSession(): Promise<void> {
   await removeSession();
+}
+
+/**
+ * Retry a failed on-disk deletion after an authoritative 401 invalidated the
+ * in-memory session. Never delete before initial load or after a newer login.
+ */
+export async function retryInvalidatedSessionCleanup(): Promise<void> {
+  await mutateSession(async () => {
+    if (!loaded || session !== null) return;
+    await deleteStoredSession();
+  });
 }
 
 export function onSessionInvalidated(listener: () => void): () => void {
@@ -148,13 +175,15 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions<T> {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  method?: 'DELETE' | 'GET' | 'HEAD' | 'OPTIONS' | 'PATCH' | 'POST' | 'PUT' | 'TRACE';
   body?: unknown;
   /** Capture and persist the Set-Cookie session after the response body parses successfully. */
   captureSession?: boolean;
   /** Do not attach the manually managed session cookie. */
   noAuth?: boolean;
   signal?: AbortSignal;
+  /** Exact generated 2xx statuses accepted for this operation. */
+  successStatuses?: readonly number[];
   timeoutMs?: number;
   decode?: (value: unknown) => T;
 }
@@ -172,8 +201,9 @@ function errorDetail(text: string, statusText: string): string {
 }
 
 export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}): Promise<T> {
-  await ensureLoaded();
   const base = await getApiBase();
+  await ensureApiCompatibility(base);
+  await ensureLoaded();
   const url = `${base}${path}`;
   const method = opts.method ?? 'GET';
 
@@ -229,6 +259,16 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
     );
   }
 
+  if (opts.successStatuses !== undefined && !opts.successStatuses.includes(res.status)) {
+    throw new ApiError(
+      res.status,
+      text,
+      `${method} ${path} returned undocumented success status ${res.status}; expected ${
+        opts.successStatuses.join(', ')
+      }`,
+    );
+  }
+
   if (res.status === 204) {
     if (text.length > 0) {
       throw new ApiError(res.status, text, `${method} ${path} returned a body with HTTP 204`);
@@ -268,7 +308,9 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
     } catch (error) {
       throw new ApiError(res.status, text, (error as Error).message);
     }
-    await storeSession(next);
+    if (!(await storeSession(next, requestSessionRevision))) {
+      throw new Error('Authentication response was invalidated by a newer session transition');
+    }
   }
   return parsed;
 }
@@ -278,14 +320,16 @@ export async function streamSource(deezerId: DeezerId): Promise<{
   uri: string;
   headers: Record<string, string>;
 }> {
-  await ensureLoaded();
   const base = await getApiBase();
+  await ensureApiCompatibility(base);
+  await ensureLoaded();
   const uri = `${base}/api/tracks/${deezerId}/stream`;
   if (session === null) throw new Error(`Cannot stream track ${deezerId}: no authenticated session`);
   return { uri, headers: { Cookie: sessionCookieHeader(session, uri) } };
 }
 
 export async function authenticatedHeadersFor(url: string): Promise<Record<string, string>> {
+  await ensureApiCompatibility(new URL(url).origin);
   await ensureLoaded();
   if (session === null) throw new Error(`Cannot authenticate ${url}: no local session`);
   return { Cookie: sessionCookieHeader(session, url) };

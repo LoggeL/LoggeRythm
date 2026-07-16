@@ -37,11 +37,17 @@ export function trackToMediaItem(
   track: Track,
   apiBase: string,
   streamHeaders: Record<string, string>,
-  options: { mediaId?: string; radio?: boolean } = {},
+  options: { mediaId?: string; radio?: boolean; explicitDownloadUri?: string } = {},
 ): MediaItem {
+  const explicitDownloadUri = options.explicitDownloadUri?.trim();
+  if (explicitDownloadUri !== undefined && !explicitDownloadUri.startsWith('file://')) {
+    throw new Error(`Explicit download for track ${track.id} must use an app-private file URI`);
+  }
   return {
     mediaId: options.mediaId ?? `track:${track.id}`,
-    url: { uri: `${apiBase}/api/tracks/${track.id}/stream`, headers: streamHeaders },
+    url: explicitDownloadUri === undefined
+      ? { uri: `${apiBase}/api/tracks/${track.id}/stream`, headers: streamHeaders }
+      : { uri: explicitDownloadUri },
     title: track.title,
     artist: track.artist,
     albumTitle: track.album,
@@ -50,6 +56,7 @@ export function trackToMediaItem(
     extras: {
       track: track as unknown as Record<string, unknown>,
       radio: options.radio === true,
+      explicitDownload: explicitDownloadUri !== undefined,
     },
   };
 }
@@ -76,4 +83,12 @@ export function mediaItemToTrack(item: MediaItem | null | undefined): Track | nu
 
 export function mediaItemIsRadio(item: MediaItem | null | undefined): boolean {
   return item?.extras?.radio === true;
+}
+
+/** True only for queue entries assembled from the verified explicit-download registry. */
+export function mediaItemUsesExplicitDownload(item: MediaItem | null | undefined): boolean {
+  const uri = typeof item?.url === 'object' && item.url !== null ? item.url.uri : null;
+  return item?.extras?.explicitDownload === true
+    && typeof uri === 'string'
+    && uri.startsWith('file://');
 }

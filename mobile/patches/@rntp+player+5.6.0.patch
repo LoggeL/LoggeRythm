@@ -21,10 +21,10 @@ index 32ae595..c340802 100644
  react {
 diff --git a/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/BrowseTreeStorageInstrumentedTest.kt b/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/BrowseTreeStorageInstrumentedTest.kt
 new file mode 100644
-index 0000000..a623ff6
+index 0000000..b0adfe0
 --- /dev/null
 +++ b/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/BrowseTreeStorageInstrumentedTest.kt
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,57 @@
 +package com.doublesymmetry.trackplayer.models
 +
 +import androidx.test.core.app.ApplicationProvider
@@ -33,6 +33,7 @@ index 0000000..a623ff6
 +import org.junit.Assert.assertEquals
 +import org.junit.Assert.assertFalse
 +import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
 +import org.junit.Assert.assertTrue
 +import org.junit.Test
 +import org.junit.runner.RunWith
@@ -74,6 +75,117 @@ index 0000000..a623ff6
 +
 +    assertEquals(uri, restored.categories.single().items.single().url)
 +    assertEquals("sf_session=instrumented-token", MediaHeaders.get(uri)?.get("Cookie"))
++
++    BrowseTree.clear(context)
++    assertNull(prefs.getString("browse_tree", null))
++    assertNull(MediaHeaders.get(uri))
++    assertTrue(BrowseTree.load(context).categories.isEmpty())
++  }
++}
+diff --git a/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/PlayerStateStorageInstrumentedTest.kt b/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/PlayerStateStorageInstrumentedTest.kt
+new file mode 100644
+index 0000000..5b4894d
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/androidTest/java/com/doublesymmetry/trackplayer/models/PlayerStateStorageInstrumentedTest.kt
+@@ -0,0 +1,60 @@
++package com.doublesymmetry.trackplayer.models
++
++import androidx.media3.common.Player
++import androidx.test.core.app.ApplicationProvider
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.doublesymmetry.trackplayer.TrackPlayerModule.Companion.PLAYER_PREFS_NAME
++import kotlinx.serialization.json.JsonObject
++import kotlinx.serialization.json.JsonPrimitive
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import org.junit.runner.RunWith
++
++@RunWith(AndroidJUnit4::class)
++class PlayerStateStorageInstrumentedTest {
++  @Test
++  fun androidKeystoreRoundTripProtectsAuthenticatedQueueAndProductMetadata() {
++    val context = ApplicationProvider.getApplicationContext<android.content.Context>()
++    val prefs = context.getSharedPreferences(PLAYER_PREFS_NAME, android.content.Context.MODE_PRIVATE)
++    assertTrue("Could not clear TrackPlayer test preferences", prefs.edit().clear().commit())
++    val token = "sf_session=instrumented-player-token"
++    val stableId = "context:playlist:one:0:track-1"
++    val state = PersistedPlayerState(
++      items = listOf(
++        PersistedPlayerMediaItem(
++          mediaId = "queue:1:0:track-1",
++          url = "https://example.com/track-1.mp3",
++          title = "Track 1",
++          duration = 180.0,
++          headers = mapOf("Cookie" to token),
++          extras = JsonObject(
++            mapOf(
++              "queueOrigin" to JsonPrimitive("context"),
++              "queueStableId" to JsonPrimitive(stableId),
++              "queueOriginalContextOrder" to JsonPrimitive(0),
++            ),
++          ),
++        ),
++      ),
++      activeIndex = 0,
++      positionMs = 37_000L,
++      repeatMode = Player.REPEAT_MODE_ONE,
++      shuffleEnabled = false,
++      queuePersistence = QueuePersistenceState(true, listOf(stableId)),
++    )
++
++    val storage = PlayerStateStorage()
++    storage.store(context, state)
++    val persisted = prefs.getString(PLAYER_STATE_KEY, null)
++    assertNotNull(persisted)
++    assertTrue(persisted!!.startsWith("aes-gcm-v1:"))
++    assertFalse(persisted.contains(token))
++    assertFalse(persisted.contains(stableId))
++
++    val restored = storage.load(context)
++    assertEquals(state, restored)
++  }
++}
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/AutomaticAudioCacheEviction.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/AutomaticAudioCacheEviction.kt
+new file mode 100644
+index 0000000..7301b83
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/AutomaticAudioCacheEviction.kt
+@@ -0,0 +1,34 @@
++/*
++ * Copyright (c) Double Symmetry GmbH
++ * Commercial use requires a license. See https://rntp.dev/pricing
++ */
++
++package com.doublesymmetry.trackplayer
++
++import androidx.annotation.OptIn
++import androidx.media3.common.util.UnstableApi
++import androidx.media3.datasource.cache.Cache
++import java.io.File
++
++/** Synchronous cache eviction used by account cleanup's awaitable native command. */
++internal object AutomaticAudioCacheEviction {
++  @OptIn(UnstableApi::class)
++  fun clear(cache: Cache): Int {
++    val keys = cache.keys.toList()
++    keys.forEach(cache::removeResource)
++
++    val remaining = cache.keys.toList()
++    check(remaining.isEmpty()) {
++      "Automatic audio cache eviction left ${remaining.size} resource(s) behind"
++    }
++    return keys.size
++  }
++
++  /** A cache-disabled service may still inherit an old directory from an earlier configuration. */
++  fun clearInactiveDirectory(directory: File) {
++    if (!directory.exists()) return
++    check(directory.deleteRecursively() && !directory.exists()) {
++      "Automatic audio cache directory could not be removed"
++    }
 +  }
 +}
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/ControllerOperationQueue.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/ControllerOperationQueue.kt
@@ -295,10 +407,10 @@ index 0000000..a96a640
 +  }
 +}
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt
-index 9a391d0..b6ed00d 100644
+index 9a391d0..b6d936d 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/MainThreadMediaController.kt
-@@ -10,47 +10,67 @@ import android.os.Looper
+@@ -10,47 +10,72 @@ import android.os.Looper
  import androidx.media3.session.MediaController
  import java.util.concurrent.FutureTask
 
@@ -335,18 +447,23 @@ index 9a391d0..b6ed00d 100644
    }
 
 -  /** Fire-and-forget: dispatches [block] to the main thread with the controller. */
-+  fun failConnection(error: Throwable) {
-+    if (isMainThread()) operations.fail(error)
-+    else mainHandler.post { operations.fail(error) }
-+  }
-+
-+  /** Queues while connecting and otherwise dispatches to the connected main-thread controller. */
-   fun run(block: (MediaController?) -> Unit) {
+-  fun run(block: (MediaController?) -> Unit) {
 -    if (isMainThread()) {
 -      block(controller)
 -    } else {
 -      mainHandler.post { block(controller) }
--    }
++  /** Marks failure before notifying JS, so an immediate retry observes FAILED rather than CONNECTING. */
++  fun failConnection(error: Throwable, afterFailure: () -> Unit = {}) {
++    val fail = {
++      operations.fail(error)
++      afterFailure()
+     }
++    if (isMainThread()) fail()
++    else mainHandler.post(fail)
++  }
++
++  /** Queues while connecting and otherwise dispatches to the connected main-thread controller. */
++  fun run(block: (MediaController?) -> Unit) {
 +    operations.run { block(it) }
    }
 
@@ -414,42 +531,229 @@ index 0000000..83e3bfd
 +    controllerUid: Int,
 +  ): Boolean = controllerUid == appUid
 +}
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/SleepTimerController.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/SleepTimerController.kt
+index 75d8b98..eb1d5d8 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/SleepTimerController.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/SleepTimerController.kt
+@@ -22,6 +22,7 @@ class SleepTimerController(private val player: Player) {
+         private set
+     var sleepTimerPreviousIndex: Int? = null
+         private set
++    private var sleepTimerFollowsCurrentItem: Boolean = false
+     private var sleepTimerPreFadeVolume: Float? = null
+
+     fun sleepAfterTime(seconds: Double, fadeOutSeconds: Double) {
+@@ -44,6 +45,10 @@ class SleepTimerController(private val player: Player) {
+         sleepTimerType = "mediaItem"
+         sleepTimerTargetIndex = index
+         sleepTimerPreviousIndex = player.currentMediaItemIndex
++        // The app's "end of track" action targets the active item. Match the
++        // web contract by keeping that intent attached to whichever item is
++        // current after a manual skip or queue edit, until one ends naturally.
++        sleepTimerFollowsCurrentItem = index == player.currentMediaItemIndex
+         onStateChanged?.invoke()
+     }
+
+@@ -71,20 +76,53 @@ class SleepTimerController(private val player: Player) {
+      * Call when a media item transition occurs.
+      * Returns true if the timer fired.
+      */
+-    fun handleItemTransition(newIndex: Int): Boolean {
++    fun handleItemTransition(newIndex: Int, reason: Int): Boolean {
+         if (sleepTimerType == "mediaItem") {
+             val targetIndex = sleepTimerTargetIndex
+-            if (targetIndex != null && sleepTimerPreviousIndex == targetIndex && newIndex != targetIndex) {
++            val targetCompleted =
++                targetIndex != null &&
++                    sleepTimerPreviousIndex == targetIndex &&
++                    (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
++                        reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
++            if (targetCompleted) {
+                 onTriggered?.invoke("mediaItem")
+                 cancelInternal(restoreVolume = false)
+                 sleepTimerPreviousIndex = newIndex
+                 return true
+             }
++
++            // A manual Next/Previous/jump does not mean that the track ended.
++            // For the app's current-item mode, carry the timer to the newly
++            // selected item just like the production web player's boolean
++            // "sleep after track" state. A future-index timer keeps its target.
++            if (sleepTimerFollowsCurrentItem && newIndex >= 0) {
++                if (sleepTimerTargetIndex != newIndex) {
++                    sleepTimerTargetIndex = newIndex
++                    onStateChanged?.invoke()
++                }
++            }
+         }
+         sleepTimerPreviousIndex = newIndex
+         return false
+     }
+
++    /** Fires a current/target-item timer when playback reaches the end of the queue. */
++    fun handlePlaybackEnded(currentIndex: Int): Boolean {
++        if (sleepTimerType != "mediaItem" || sleepTimerTargetIndex != currentIndex) return false
++        onTriggered?.invoke("mediaItem")
++        cancelInternal(restoreVolume = false)
++        return true
++    }
++
++    /** Keeps current-item mode bound to the active occurrence across queue index shifts. */
++    fun syncMediaItemTargetToCurrentIndex(currentIndex: Int) {
++        if (sleepTimerType != "mediaItem" || !sleepTimerFollowsCurrentItem || currentIndex < 0) return
++        if (sleepTimerTargetIndex == currentIndex && sleepTimerPreviousIndex == currentIndex) return
++        sleepTimerTargetIndex = currentIndex
++        sleepTimerPreviousIndex = currentIndex
++        onStateChanged?.invoke()
++    }
++
+     /**
+      * Simulate one wall-clock second passing.
+      * In production, called by a Timer on the main thread.
+@@ -123,6 +161,7 @@ class SleepTimerController(private val player: Player) {
+         sleepTimerFadeOutSeconds = 0.0
+         sleepTimerTargetIndex = null
+         sleepTimerPreviousIndex = null
++        sleepTimerFollowsCurrentItem = false
+         onStateChanged?.invoke()
+     }
+ }
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
-index 7da495f..f47a639 100644
+index 7da495f..a9e5824 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerModule.kt
-@@ -60,18 +60,22 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+@@ -15,12 +15,15 @@ import androidx.media3.session.MediaController
+ import androidx.media3.session.SessionCommand
+ import androidx.media3.session.SessionToken
+ import com.facebook.react.bridge.Arguments
++import com.facebook.react.bridge.Promise
+ import com.facebook.react.bridge.ReactApplicationContext
+ import com.facebook.react.bridge.ReactMethod
+ import com.facebook.react.bridge.ReadableArray
+ import com.facebook.react.bridge.ReadableMap
++import com.facebook.react.bridge.ReadableType
+ import com.facebook.react.bridge.WritableArray
+ import com.facebook.react.bridge.WritableMap
++import com.facebook.react.modules.core.DeviceEventManagerModule
+ import com.google.common.util.concurrent.MoreExecutors
+ import com.doublesymmetry.trackplayer.extensions.emitEvent
+ import androidx.media3.datasource.cache.ContentMetadata
+@@ -34,6 +37,8 @@ import com.doublesymmetry.trackplayer.models.PlaybackErrorEvent
+ import com.doublesymmetry.trackplayer.models.PlaybackStateChangedEvent
+ import com.doublesymmetry.trackplayer.models.QueueChangedEvent
+ import com.doublesymmetry.trackplayer.models.PlayerConfig
++import com.doublesymmetry.trackplayer.models.PlayerStateRegistry
++import com.doublesymmetry.trackplayer.models.QueuePersistenceState
+ import com.doublesymmetry.trackplayer.models.PlaybackProgressUpdatedEvent
+ import org.json.JSONObject
+
+@@ -58,23 +63,41 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+
+   @ReactMethod
    override fun setupPlayer(map: ReadableMap) {
-     val config = PlayerConfig.fromReadableMap(map)
-     config.store(context)
+-    val config = PlayerConfig.fromReadableMap(map)
+-    config.store(context)
 -    controller.run {
-+    controller.beginConnection {
-       val sessionToken = SessionToken(context, ComponentName(context, TrackPlayerPlaybackService::class.java))
-       val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-       controllerFuture.addListener(
-         {
+-      val sessionToken = SessionToken(context, ComponentName(context, TrackPlayerPlaybackService::class.java))
+-      val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
+-      controllerFuture.addListener(
+-        {
 -          val mc = controllerFuture.get()
 -          mc.addListener(this)
 -          controller.set(mc)
 -          mc.sendCustomCommand(
 -            SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
 -            Bundle.EMPTY
--          )
-+          try {
-+            val mc = controllerFuture.get()
-+            mc.addListener(this)
-+            mc.sendCustomCommand(
-+              SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
-+              Bundle.EMPTY
-+            )
-+            controller.set(mc)
-+          } catch (error: Throwable) {
-+            controller.failConnection(error.cause ?: error)
++    try {
++      val config = PlayerConfig.fromReadableMap(map)
++      config.store(context)
++      controller.beginConnection {
++        try {
++          val sessionToken = SessionToken(context, ComponentName(context, TrackPlayerPlaybackService::class.java))
++          val controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
++          controllerFuture.addListener(
++            {
++              var mediaController: MediaController? = null
++              try {
++                mediaController = controllerFuture.get()
++                mediaController.addListener(this)
++                mediaController.sendCustomCommand(
++                  SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
++                  Bundle.EMPTY
++                )
++                controller.set(mediaController)
++                emitPlayerSetupReady()
++              } catch (error: Throwable) {
++                mediaController?.removeListener(this)
++                mediaController?.release()
++                failPlayerSetup(error.cause ?: error)
++              }
++            },
++            MoreExecutors.directExecutor()
+           )
+-        },
+-        MoreExecutors.directExecutor()
+-      )
++        } catch (error: Throwable) {
++          failPlayerSetup(error.cause ?: error)
++        }
++      }
++    } catch (error: Throwable) {
++      // Parsing/persistence errors happen before CONNECTING; invalid duplicate lifecycle calls can
++      // also fail beginConnection. Both must settle the JS promise without corrupting a live queue.
++      emitPlayerSetupFailed(error.cause ?: error)
+     }
+   }
+
+@@ -171,9 +194,44 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+   }
+
+   @ReactMethod
+-  override fun clearCache() {
+-    java.util.concurrent.Executors.newSingleThreadExecutor().execute {
+-      TrackPlayerPlaybackService.clearCache()
++  override fun clearCache(promise: Promise) {
++    try {
++      controller.run { mediaController ->
++        try {
++          val connectedController = checkNotNull(mediaController) {
++            "MediaController is not connected"
 +          }
-         },
-         MoreExecutors.directExecutor()
-       )
-@@ -262,6 +266,7 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
++          val resultFuture = connectedController.sendCustomCommand(
++            SessionCommand(
++              TrackPlayerPlaybackService.COMMAND_CLEAR_AUTOMATIC_AUDIO_CACHE,
++              Bundle.EMPTY,
++            ),
++            Bundle.EMPTY,
++          )
++          resultFuture.addListener(
++            {
++              try {
++                val result = resultFuture.get()
++                if (result.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS) {
++                  promise.resolve(null)
++                } else {
++                  promise.reject(
++                    CACHE_CLEAR_ERROR_CODE,
++                    "Automatic audio cache eviction failed (native result ${result.resultCode})",
++                  )
++                }
++              } catch (_: Throwable) {
++                promise.reject(CACHE_CLEAR_ERROR_CODE, CACHE_CLEAR_ERROR_MESSAGE)
++              }
++            },
++            MoreExecutors.directExecutor(),
++          )
++        } catch (_: Throwable) {
++          promise.reject(CACHE_CLEAR_ERROR_CODE, CACHE_CLEAR_ERROR_MESSAGE)
++        }
++      }
++    } catch (_: Throwable) {
++      promise.reject(CACHE_CLEAR_ERROR_CODE, CACHE_CLEAR_ERROR_MESSAGE)
+     }
+   }
+
+@@ -262,9 +320,46 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
    @ReactMethod
    override fun clear() {
      controller.run { it?.clearMediaItems() }
@@ -457,9 +761,55 @@ index 7da495f..f47a639 100644
      context.emitEvent(QueueChangedEvent())
    }
 
-@@ -467,7 +472,9 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
++  /** Persist product shuffle state alongside the encrypted native timeline. */
++  @ReactMethod
++  override fun setQueuePersistenceState(
++    contextShuffleEnabled: Boolean,
++    contextShuffleRestoreOrder: ReadableArray,
++  ) {
++    val restoreOrder = (0 until contextShuffleRestoreOrder.size()).map { index ->
++      if (contextShuffleRestoreOrder.getType(index) != ReadableType.String) {
++        throw IllegalArgumentException("Queue shuffle restore ID at index $index must be a string")
++      }
++      contextShuffleRestoreOrder.getString(index)
++        ?: throw IllegalArgumentException("Queue shuffle restore ID at index $index must not be null")
++    }
++    PlayerStateRegistry.updateQueuePersistence(
++      context,
++      QueuePersistenceState(contextShuffleEnabled, restoreOrder),
++    )
++  }
++
++  @ReactMethod(isBlockingSynchronousMethod = true)
++  override fun getQueuePersistenceState(): WritableMap {
++    val state = PlayerStateRegistry.getQueuePersistence(context)
++    val restoreOrder = Arguments.createArray()
++    state.contextShuffleRestoreOrder.forEach(restoreOrder::pushString)
++    return Arguments.createMap().apply {
++      putBoolean("contextShuffleEnabled", state.contextShuffleEnabled)
++      putArray("contextShuffleRestoreOrder", restoreOrder)
++    }
++  }
++
++  /** Account cleanup must delete the encrypted queue even before setupPlayer(). */
++  @ReactMethod
++  override fun clearPersistedQueue() {
++    PlayerStateRegistry.clear(context)
++  }
++
+   // endregion
+
+   // region Queue - Replace & Reorder
+@@ -465,9 +560,15 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+   @ReactMethod
+   override fun setBrowseTree(categories: ReadableArray) {
      val browseTree = BrowseTree.fromReadableArray(categories)
-     browseTree.store(context)
+-    browseTree.store(context)
++    if (browseTree.categories.isEmpty()) {
++      BrowseTree.clear(context)
++    } else {
++      browseTree.store(context)
++    }
 
 -    controller.run { mc ->
 +    // Persistence is authoritative. Before setup (fresh-install logout/cleanup), there is no
@@ -468,7 +818,7 @@ index 7da495f..f47a639 100644
        mc?.sendCustomCommand(
          SessionCommand(TrackPlayerPlaybackService.COMMAND_UPDATE_BROWSE_TREE, Bundle.EMPTY),
          Bundle.EMPTY
-@@ -606,10 +613,11 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+@@ -606,10 +707,11 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
 
    @ReactMethod
    override fun destroy() {
@@ -482,11 +832,153 @@ index 7da495f..f47a639 100644
      }
      MediaHeaders.clear()
    }
+@@ -678,6 +780,25 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+
+   // region Helpers
+
++  private fun emitPlayerSetupReady() {
++    context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
++      .emit(EVENT_PLAYER_SETUP_READY, Arguments.createMap())
++  }
++
++  private fun failPlayerSetup(error: Throwable) {
++    controller.failConnection(error) {
++      emitPlayerSetupFailed(error)
++    }
++  }
++
++  private fun emitPlayerSetupFailed(error: Throwable) {
++    val payload = Arguments.createMap().apply {
++      putString("message", error.message ?: error.javaClass.simpleName)
++    }
++    context.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
++      .emit(EVENT_PLAYER_SETUP_FAILED, payload)
++  }
++
+   private fun classifyError(error: PlaybackException): String {
+     return when (error.errorCode) {
+       PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+@@ -736,5 +857,9 @@ class TrackPlayerModule internal constructor(private val context: ReactApplicati
+   companion object {
+     const val NAME = "TrackPlayer"
+     const val PLAYER_PREFS_NAME = "TrackPlayerPrefs"
++    internal const val EVENT_PLAYER_SETUP_READY = "event.player-setup-ready"
++    internal const val EVENT_PLAYER_SETUP_FAILED = "event.player-setup-failed"
++    private const val CACHE_CLEAR_ERROR_CODE = "automatic_audio_cache_eviction_failed"
++    private const val CACHE_CLEAR_ERROR_MESSAGE = "Automatic audio cache eviction failed"
+   }
+ }
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
-index 9c0906b..6a23f41 100644
+index 9c0906b..f6710a4 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/TrackPlayerPlaybackService.kt
-@@ -388,27 +388,46 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -54,6 +54,7 @@ import com.doublesymmetry.trackplayer.models.MetadataReceivedEvent
+ import com.doublesymmetry.trackplayer.models.StreamMetadataExtractor
+ import com.doublesymmetry.trackplayer.models.PlayerCommand
+ import com.doublesymmetry.trackplayer.models.PlayerConfig
++import com.doublesymmetry.trackplayer.models.PlayerStateRegistry
+ import com.doublesymmetry.trackplayer.models.RemoteControlHandling
+ import com.doublesymmetry.trackplayer.models.RemotePlayEvent
+ import com.doublesymmetry.trackplayer.models.RemotePauseEvent
+@@ -80,6 +81,7 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+   private var activePlayer: Player? = null
+   private var progressSyncTimer: java.util.Timer? = null
+   private var progressSyncExecutor: java.util.concurrent.ExecutorService? = null
++  private var playerStateTimer: java.util.Timer? = null
+
+   private var sleepTimerController: SleepTimerController? = null
+   private var sleepTimer: java.util.Timer? = null
+@@ -179,9 +181,19 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+
+     this.activePlayer = activePlayer
+
++    if (PlayerStateRegistry.restoreOrClear(this, activePlayer)) {
++      android.util.Log.i(
++        "TrackPlayer",
++        "Restored ${activePlayer.mediaItemCount} persisted queue items at " +
++          "index ${activePlayer.currentMediaItemIndex}",
++      )
++    }
++
+     val controller = SleepTimerController(activePlayer)
+     sleepTimerController = controller
+     controller.onTriggered = { type ->
++      sleepTimer?.cancel()
++      sleepTimer = null
+       this@TrackPlayerPlaybackService.emitEvent(SleepTimerTriggeredEvent(type))
+       if (type == "mediaItem") {
+         // Defer pause to next run loop — calling during transition gets overridden
+@@ -192,18 +204,58 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+
+     activePlayer.addListener(object : Player.Listener {
+       override fun onIsPlayingChanged(isPlaying: Boolean) {
+-        if (isPlaying) startProgressSyncTimer() else stopProgressSyncTimer(fireFinalTick = true)
++        if (isPlaying) {
++          startProgressSyncTimer()
++          startPlayerStateTimer()
++        } else {
++          stopProgressSyncTimer(fireFinalTick = true)
++          stopPlayerStateTimer()
++        }
++        persistPlayerState()
+       }
+
+       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+         val currentIndex = activePlayer?.currentMediaItemIndex ?: 0
+-        sleepTimerController?.handleItemTransition(currentIndex)
++        sleepTimerController?.handleItemTransition(currentIndex, reason)
+         lastStreamMetadata = null
++        persistPlayerState()
+       }
+
+       override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+         if (sleepTimerController?.sleepTimerType == "mediaItem" && (activePlayer?.mediaItemCount ?: 0) == 0) {
+           sleepTimerController?.cancelInternal(restoreVolume = false)
++        } else {
++          sleepTimerController?.syncMediaItemTargetToCurrentIndex(
++            activePlayer?.currentMediaItemIndex ?: -1,
++          )
++        }
++        persistPlayerState()
++      }
++
++      override fun onPositionDiscontinuity(
++        oldPosition: Player.PositionInfo,
++        newPosition: Player.PositionInfo,
++        reason: Int,
++      ) {
++        persistPlayerState()
++      }
++
++      override fun onRepeatModeChanged(repeatMode: Int) {
++        persistPlayerState()
++      }
++
++      override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
++        persistPlayerState()
++      }
++
++      override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
++        persistPlayerState()
++      }
++
++      override fun onPlaybackStateChanged(playbackState: Int) {
++        if (playbackState == Player.STATE_ENDED) {
++          sleepTimerController?.handlePlaybackEnded(activePlayer?.currentMediaItemIndex ?: -1)
++          persistPlayerState()
+         }
+       }
+
+@@ -355,6 +407,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+   }
+
+   override fun onDestroy() {
++    stopPlayerStateTimer()
++    persistPlayerState()
+     mediaSession?.run {
+       player.release()
+       release()
+@@ -388,27 +442,46 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
      session: MediaSession,
      controller: MediaSession.ControllerInfo
    ): MediaSession.ConnectionResult {
@@ -536,8 +1028,81 @@ index 9c0906b..6a23f41 100644
          }
          return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
        }
-@@ -626,25 +645,44 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+@@ -424,7 +497,12 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
+       COMMAND_PLAY -> {
+-        activePlayer?.play()
++        activePlayer?.let { player ->
++          if (player.playbackState == Player.STATE_IDLE && player.mediaItemCount > 0) {
++            player.prepare()
++          }
++          player.play()
++        }
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
+       COMMAND_PAUSE -> {
+@@ -464,6 +542,8 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+       }
+       COMMAND_SLEEP_AFTER_MEDIA_ITEM -> {
+         val index = args.getInt("index")
++        sleepTimer?.cancel()
++        sleepTimer = null
+         sleepTimerController?.sleepAfterMediaItemAtIndex(index)
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
+@@ -483,6 +563,15 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+         cancelPreloadUri(uri)
+         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+       }
++      COMMAND_CLEAR_AUTOMATIC_AUDIO_CACHE -> {
++        return try {
++          clearAutomaticAudioCache()
++          Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
++        } catch (cause: Throwable) {
++          android.util.Log.e("TrackPlayer", "Automatic audio cache eviction failed", cause)
++          Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_IO))
++        }
++      }
+     }
+     return super.onCustomCommand(session, controller, customCommand, args)
+   }
+@@ -624,27 +713,79 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
 
+   // endregion
+
++  // region Player State Persistence
++
++  private fun persistPlayerState() {
++    val player = activePlayer ?: return
++    try {
++      PlayerStateRegistry.persist(this, player)
++    } catch (cause: Exception) {
++      // Keep the live player usable. The next state event retries; the encrypted snapshot is never
++      // replaced with plaintext or a partial write.
++      android.util.Log.e("TrackPlayer", "Could not persist encrypted player state", cause)
++    }
++  }
++
++  private fun startPlayerStateTimer() {
++    stopPlayerStateTimer()
++    val handler = Handler(Looper.getMainLooper())
++    playerStateTimer = java.util.Timer().apply {
++      scheduleAtFixedRate(object : java.util.TimerTask() {
++        override fun run() {
++          handler.post { persistPlayerState() }
++        }
++      }, PLAYER_STATE_POSITION_INTERVAL_MS, PLAYER_STATE_POSITION_INTERVAL_MS)
++    }
++  }
++
++  private fun stopPlayerStateTimer() {
++    playerStateTimer?.cancel()
++    playerStateTimer = null
++  }
++
++  // endregion
++
    // region Session Commands
 
 -  private fun buildSessionCommands() =
@@ -575,6 +1140,7 @@ index 9c0906b..6a23f41 100644
 +          add(SessionCommand(COMMAND_CANCEL_SLEEP_TIMER, Bundle.EMPTY))
 +          add(SessionCommand(COMMAND_PRELOAD, Bundle.EMPTY))
 +          add(SessionCommand(COMMAND_CANCEL_PRELOAD, Bundle.EMPTY))
++          add(SessionCommand(COMMAND_CLEAR_AUTOMATIC_AUDIO_CACHE, Bundle.EMPTY))
 +        }
 +      }
        .build()
@@ -597,11 +1163,66 @@ index 9c0906b..6a23f41 100644
    // endregion
 
    // region Player Commands
+@@ -823,6 +964,27 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+     activePreloads.remove(uri)?.cancel(true)
+   }
+
++  /**
++   * Runs in MediaSession command order after pause/queue cleanup. It also owns those final
++   * playback boundaries defensively so no departing-account stream can refill the cache after
++   * this method has verified eviction.
++   */
++  @OptIn(UnstableApi::class)
++  private fun clearAutomaticAudioCache(): Int {
++    activePlayer?.stop()
++    activePlayer?.clearMediaItems()
++    activePreloads.values.toList().forEach { it.cancel(true) }
++    activePreloads.clear()
++
++    val cache = simpleCache
++    if (cache != null) return AutomaticAudioCacheEviction.clear(cache)
++
++    AutomaticAudioCacheEviction.clearInactiveDirectory(
++      File(cacheDir, AUTOMATIC_AUDIO_CACHE_DIRECTORY),
++    )
++    return 0
++  }
++
+   // endregion
+
+   // region Progress Sync
+@@ -910,6 +1072,7 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+   // endregion
+
+   companion object {
++    private const val PLAYER_STATE_POSITION_INTERVAL_MS = 5_000L
+     const val BROWSE_ROOT_ID = "trackplayer_root"
+     const val COMMAND_UPDATE_COMMANDS = "trackplayer.update_commands"
+     const val COMMAND_UPDATE_BROWSE_TREE = "trackplayer.update_browse_tree"
+@@ -928,16 +1091,12 @@ class TrackPlayerPlaybackService: MediaLibraryService(), MediaLibraryService.Med
+     const val SLEEP_TIMER_STATE_KEY = "sleep_timer_state"
+     const val COMMAND_PRELOAD = "trackplayer.preload"
+     const val COMMAND_CANCEL_PRELOAD = "trackplayer.cancel_preload"
++    const val COMMAND_CLEAR_AUTOMATIC_AUDIO_CACHE = "trackplayer.clear_automatic_audio_cache"
++    private const val AUTOMATIC_AUDIO_CACHE_DIRECTORY = "trackplayer_cache"
+
+     @Volatile
+     var sharedCache: SimpleCache? = null
+       private set
+
+-    /** Removes all entries from the shared cache. Safe to call from any thread. */
+-    fun clearCache() {
+-      sharedCache?.let { cache ->
+-        cache.keys.toList().forEach { key -> cache.removeResource(key) }
+-      }
+-    }
+   }
+ }
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt
-index 8b7ea92..59d9688 100644
+index 8b7ea92..c54740d 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/BrowseTree.kt
-@@ -8,14 +8,188 @@ package com.doublesymmetry.trackplayer.models
+@@ -8,14 +8,196 @@ package com.doublesymmetry.trackplayer.models
  import android.content.Context
  import android.net.Uri
  import android.os.Bundle
@@ -786,11 +1407,19 @@ index 8b7ea92..59d9688 100644
 +      throw cause
 +    }
 +  }
++
++  @Synchronized
++  fun clear(context: Context, storage: BrowseTreeStorage) {
++    // Headers contain the account credential. Remove them even if durable
++    // preference deletion fails so the live process cannot reuse old auth.
++    MediaHeaders.clearBrowse()
++    storage.clear(context)
++  }
 +}
 
  @Serializable
  data class BrowseCategory(
-@@ -28,6 +202,7 @@ data class BrowseCategory(
+@@ -28,6 +210,7 @@ data class BrowseCategory(
  data class BrowseMediaItem(
    val mediaId: String,
    val url: String? = null,
@@ -798,7 +1427,7 @@ index 8b7ea92..59d9688 100644
    val title: String? = null,
    val artist: String? = null,
    val albumTitle: String? = null,
-@@ -86,9 +261,30 @@ data class BrowseMediaItem(
+@@ -86,9 +269,30 @@ data class BrowseMediaItem(
  data class BrowseTree(
    val categories: List<BrowseCategory> = emptyList(),
  ) {
@@ -832,12 +1461,16 @@ index 8b7ea92..59d9688 100644
    }
 
    fun findCategory(mediaId: String): BrowseCategory? =
-@@ -105,51 +301,61 @@ data class BrowseTree(
+@@ -105,51 +309,66 @@ data class BrowseTree(
    }
 
    companion object {
 -    private const val BROWSE_TREE_KEY = "browse_tree"
--
++    internal fun clear(
++      context: Context,
++      storage: BrowseTreeStorage = BrowseTreeStorage(),
++    ) = BrowseTreeRegistry.clear(context, storage)
+
 -    fun load(context: Context): BrowseTree {
 -      val prefs = context.getSharedPreferences(PLAYER_PREFS_NAME, Context.MODE_PRIVATE)
 -      val json = prefs.getString(BROWSE_TREE_KEY, null) ?: return BrowseTree()
@@ -921,7 +1554,7 @@ index 8b7ea92..59d9688 100644
            extras = MediaItemExtras.parseJson(itemMap),
            children = children,
          ))
-@@ -157,6 +363,144 @@ data class BrowseTree(
+@@ -157,6 +376,144 @@ data class BrowseTree(
        return items
      }
 
@@ -1108,8 +1741,441 @@ index 0cb0889..f26ec4a 100644
 +    clearBrowse()
 +  }
  }
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaItemExtras.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaItemExtras.kt
+index bc48cec..890a7a1 100644
+--- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaItemExtras.kt
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/MediaItemExtras.kt
+@@ -32,11 +32,14 @@ internal object MediaItemExtras {
+
+   fun jsonToBundle(json: JsonObject): Bundle = jsonObjectToBundle(json)
+
++  /** JSON form used by encrypted player-state persistence. */
++  fun bundleToJsonObject(bundle: Bundle): JsonObject = bundleToJson(bundle)
++
+   fun attachToMetadataExtras(metadataExtras: Bundle, payload: Bundle?) {
+     payload?.let { metadataExtras.putBundle(METADATA_KEY, it) }
+   }
+
+-  private fun bundleToJsonObject(bundle: Bundle): JsonObject {
++  private fun bundleToJson(bundle: Bundle): JsonObject {
+     val content = linkedMapOf<String, JsonElement>()
+     for (key in bundle.keySet()) {
+       @Suppress("DEPRECATION")
+@@ -53,7 +56,7 @@ internal object MediaItemExtras {
+     is Double -> JsonPrimitive(value)
+     is Float -> JsonPrimitive(value.toDouble())
+     is String -> JsonPrimitive(value)
+-    is Bundle -> bundleToJsonObject(value)
++    is Bundle -> bundleToJson(value)
+     is ArrayList<*> -> JsonArray(value.map { bundleValueToJson(it) })
+     else -> JsonPrimitive(value.toString())
+   }
+@@ -79,6 +82,14 @@ internal object MediaItemExtras {
+         bundle.putSerializable(key, list)
+       }
+       is JsonPrimitive -> {
++        // kotlinx.serialization's *OrNull accessors also parse quoted JSON
++        // strings. Preserve an app-provided string before attempting numeric
++        // coercion or identifiers such as "1483825282" become Android Longs
++        // and cross the React Native bridge as numbers after process restore.
++        if (value.isString) {
++          bundle.putString(key, value.content)
++          return
++        }
+         value.booleanOrNull?.let { bundle.putBoolean(key, it); return }
+         value.longOrNull?.let { bundle.putLong(key, it); return }
+         value.doubleOrNull?.let { bundle.putDouble(key, it); return }
+@@ -92,7 +103,9 @@ internal object MediaItemExtras {
+     JsonNull -> null
+     is JsonObject -> jsonObjectToBundle(element)
+     is JsonArray -> element.map { jsonElementToValue(it) }
+-    is JsonPrimitive -> {
++    is JsonPrimitive -> if (element.isString) {
++      element.content
++    } else {
+       element.booleanOrNull
+         ?: element.longOrNull
+         ?: element.doubleOrNull
+diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/PlayerState.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/PlayerState.kt
+new file mode 100644
+index 0000000..98e19aa
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/PlayerState.kt
+@@ -0,0 +1,372 @@
++/*
++ * Copyright (c) Double Symmetry GmbH
++ * Commercial use requires a license. See https://rntp.dev/pricing
++ */
++
++package com.doublesymmetry.trackplayer.models
++
++import android.content.Context
++import android.security.keystore.KeyGenParameterSpec
++import android.security.keystore.KeyProperties
++import android.util.Base64
++import android.util.Log
++import androidx.media3.common.MediaItem
++import androidx.media3.common.Player
++import com.doublesymmetry.trackplayer.TrackPlayerModule.Companion.PLAYER_PREFS_NAME
++import kotlinx.serialization.Serializable
++import kotlinx.serialization.encodeToString
++import kotlinx.serialization.json.Json
++import kotlinx.serialization.json.JsonObject
++import java.nio.charset.StandardCharsets
++import java.security.KeyStore
++import javax.crypto.Cipher
++import javax.crypto.KeyGenerator
++import javax.crypto.SecretKey
++import javax.crypto.spec.GCMParameterSpec
++
++internal const val PLAYER_STATE_KEY = "player_state_v1"
++private const val PLAYER_STATE_VERSION = 1
++private const val ENCRYPTED_PREFIX = "aes-gcm-v1"
++private const val PLAYER_STATE_KEY_ALIAS = "rntp.player-state.v1"
++private const val ANDROID_KEYSTORE = "AndroidKeyStore"
++private const val AES_GCM = "AES/GCM/NoPadding"
++private val PLAYER_STATE_AAD = "rntp-player-state-v1".toByteArray(StandardCharsets.UTF_8)
++private val PLAYER_STATE_JSON = Json {
++  encodeDefaults = true
++  ignoreUnknownKeys = false
++}
++
++@Serializable
++internal data class QueuePersistenceState(
++  val contextShuffleEnabled: Boolean = false,
++  val contextShuffleRestoreOrder: List<String> = emptyList(),
++) {
++  fun validated(): QueuePersistenceState {
++    val seen = mutableSetOf<String>()
++    for (stableId in contextShuffleRestoreOrder) {
++      require(stableId.isNotBlank()) { "Queue shuffle restore IDs must not be blank" }
++      require(seen.add(stableId)) {
++        "Queue shuffle restore order contains duplicate stable id '$stableId'"
++      }
++    }
++    require(contextShuffleEnabled || contextShuffleRestoreOrder.isEmpty()) {
++      "A disabled context shuffle cannot retain a restore order"
++    }
++    return this
++  }
++}
++
++@Serializable
++internal data class PersistedPlayerMediaItem(
++  val mediaId: String,
++  val url: String,
++  val title: String? = null,
++  val artist: String? = null,
++  val albumTitle: String? = null,
++  val artworkUrl: String? = null,
++  val duration: Double? = null,
++  val isLive: Boolean? = null,
++  val mimeType: String? = null,
++  val headers: Map<String, String>? = null,
++  val extras: JsonObject? = null,
++) {
++  fun validated(): PersistedPlayerMediaItem {
++    require(mediaId.isNotBlank()) { "Persisted player mediaId must not be blank" }
++    require(url.isNotBlank()) { "Persisted player URL must not be blank" }
++    headers?.keys?.forEach { key ->
++      require(key.isNotBlank()) { "Persisted player header names must not be blank" }
++    }
++    return this
++  }
++
++  fun toMediaItem(context: Context): MediaItem = TrackPlayerMediaItem(
++    mediaId = mediaId,
++    url = url,
++    title = title,
++    artist = artist,
++    albumTitle = albumTitle,
++    artworkUrl = artworkUrl,
++    duration = duration,
++    isLive = isLive,
++    mimeType = mimeType,
++    headers = headers,
++    extras = extras?.let(MediaItemExtras::jsonToBundle),
++  ).asMediaItem(context)
++
++  companion object {
++    fun fromMediaItem(item: MediaItem): PersistedPlayerMediaItem {
++      val descriptor = TrackPlayerMediaItem.fromMediaItem(item)
++      val url = descriptor.url
++      return PersistedPlayerMediaItem(
++        mediaId = item.mediaId,
++        url = url,
++        title = descriptor.title,
++        artist = descriptor.artist,
++        albumTitle = descriptor.albumTitle,
++        artworkUrl = descriptor.artworkUrl,
++        duration = descriptor.duration,
++        isLive = descriptor.isLive,
++        mimeType = item.localConfiguration?.mimeType,
++        headers = MediaHeaders.get(url)?.toMap(),
++        extras = descriptor.extras?.let(MediaItemExtras::bundleToJsonObject),
++      ).validated()
++    }
++  }
++}
++
++@Serializable
++internal data class PersistedPlayerState(
++  val version: Int = PLAYER_STATE_VERSION,
++  val items: List<PersistedPlayerMediaItem>,
++  val activeIndex: Int,
++  val positionMs: Long,
++  val repeatMode: Int,
++  val shuffleEnabled: Boolean,
++  val queuePersistence: QueuePersistenceState = QueuePersistenceState(),
++) {
++  fun validated(): PersistedPlayerState {
++    require(version == PLAYER_STATE_VERSION) {
++      "Unsupported persisted player-state version $version"
++    }
++    require(items.isNotEmpty()) { "Persisted player state must contain at least one item" }
++    items.forEach(PersistedPlayerMediaItem::validated)
++    require(activeIndex in items.indices) {
++      "Persisted active index $activeIndex is outside a ${items.size}-item queue"
++    }
++    require(positionMs >= 0L) { "Persisted player position must not be negative" }
++    require(
++      repeatMode == Player.REPEAT_MODE_OFF ||
++        repeatMode == Player.REPEAT_MODE_ONE ||
++        repeatMode == Player.REPEAT_MODE_ALL,
++    ) { "Persisted repeat mode $repeatMode is invalid" }
++    queuePersistence.validated()
++    return this
++  }
++
++  companion object {
++    fun capture(player: Player, queuePersistence: QueuePersistenceState): PersistedPlayerState {
++      require(player.mediaItemCount > 0) { "Cannot persist an empty player queue" }
++      val activeIndex = player.currentMediaItemIndex
++      require(activeIndex in 0 until player.mediaItemCount) {
++        "Cannot persist active index $activeIndex for a ${player.mediaItemCount}-item queue"
++      }
++      val items = (0 until player.mediaItemCount).map { index ->
++        PersistedPlayerMediaItem.fromMediaItem(player.getMediaItemAt(index))
++      }
++      return PersistedPlayerState(
++        items = items,
++        activeIndex = activeIndex,
++        positionMs = player.currentPosition.coerceAtLeast(0L),
++        repeatMode = player.repeatMode,
++        shuffleEnabled = player.shuffleModeEnabled,
++        queuePersistence = queuePersistence.validated(),
++      ).validated()
++    }
++  }
++}
++
++private object AndroidPlayerStateKey {
++  private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
++
++  @Synchronized
++  fun requireExisting(): SecretKey {
++    val entry = keyStore().getEntry(PLAYER_STATE_KEY_ALIAS, null)
++      ?: throw IllegalStateException(
++        "Player-state encryption key '$PLAYER_STATE_KEY_ALIAS' is missing",
++      )
++    if (entry !is KeyStore.SecretKeyEntry) {
++      throw IllegalStateException(
++        "Player-state key '$PLAYER_STATE_KEY_ALIAS' has unexpected type ${entry::class.java.name}",
++      )
++    }
++    return entry.secretKey
++  }
++
++  @Synchronized
++  fun getOrCreate(): SecretKey {
++    val store = keyStore()
++    val existing = store.getEntry(PLAYER_STATE_KEY_ALIAS, null)
++    if (existing != null) {
++      if (existing !is KeyStore.SecretKeyEntry) {
++        throw IllegalStateException(
++          "Player-state key '$PLAYER_STATE_KEY_ALIAS' has unexpected type " +
++            existing::class.java.name,
++        )
++      }
++      return existing.secretKey
++    }
++
++    val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
++    generator.init(
++      KeyGenParameterSpec.Builder(
++        PLAYER_STATE_KEY_ALIAS,
++        KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
++      )
++        .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
++        .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
++        .setKeySize(256)
++        .build(),
++    )
++    return generator.generateKey()
++  }
++}
++
++internal class PlayerStateStorage(
++  private val encryptionKey: () -> SecretKey = { AndroidPlayerStateKey.getOrCreate() },
++  private val decryptionKey: () -> SecretKey = { AndroidPlayerStateKey.requireExisting() },
++) {
++  fun store(context: Context, state: PersistedPlayerState) {
++    val validated = state.validated()
++    val encoded = try {
++      val plaintext = PLAYER_STATE_JSON.encodeToString(validated)
++        .toByteArray(StandardCharsets.UTF_8)
++      val cipher = Cipher.getInstance(AES_GCM)
++      cipher.init(Cipher.ENCRYPT_MODE, encryptionKey())
++      cipher.updateAAD(PLAYER_STATE_AAD)
++      val ciphertext = cipher.doFinal(plaintext)
++      listOf(
++        ENCRYPTED_PREFIX,
++        Base64.encodeToString(cipher.iv, Base64.NO_WRAP),
++        Base64.encodeToString(ciphertext, Base64.NO_WRAP),
++      ).joinToString(":")
++    } catch (cause: Exception) {
++      throw IllegalStateException("Player state could not be encrypted: ${cause.message}", cause)
++    }
++    val prefs = context.getSharedPreferences(PLAYER_PREFS_NAME, Context.MODE_PRIVATE)
++    if (!prefs.edit().putString(PLAYER_STATE_KEY, encoded).commit()) {
++      throw IllegalStateException("Failed to persist encrypted player state")
++    }
++  }
++
++  fun load(context: Context): PersistedPlayerState? {
++    val prefs = context.getSharedPreferences(PLAYER_PREFS_NAME, Context.MODE_PRIVATE)
++    val encoded = prefs.getString(PLAYER_STATE_KEY, null) ?: return null
++    val parts = encoded.split(':')
++    if (parts.size != 3 || parts[0] != ENCRYPTED_PREFIX) {
++      throw IllegalStateException("Stored player state has an unsupported encrypted format")
++    }
++    val plaintext = try {
++      val iv = Base64.decode(parts[1], Base64.NO_WRAP)
++      val ciphertext = Base64.decode(parts[2], Base64.NO_WRAP)
++      val cipher = Cipher.getInstance(AES_GCM)
++      cipher.init(Cipher.DECRYPT_MODE, decryptionKey(), GCMParameterSpec(128, iv))
++      cipher.updateAAD(PLAYER_STATE_AAD)
++      String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8)
++    } catch (cause: Exception) {
++      throw IllegalStateException("Stored player state could not be decrypted: ${cause.message}", cause)
++    }
++    return try {
++      PLAYER_STATE_JSON.decodeFromString<PersistedPlayerState>(plaintext).validated()
++    } catch (cause: Exception) {
++      throw IllegalStateException("Stored decrypted player state is invalid: ${cause.message}", cause)
++    }
++  }
++
++  fun clear(context: Context) {
++    val prefs = context.getSharedPreferences(PLAYER_PREFS_NAME, Context.MODE_PRIVATE)
++    if (!prefs.edit().remove(PLAYER_STATE_KEY).commit()) {
++      throw IllegalStateException("Failed to delete persisted player state")
++    }
++  }
++}
++
++/**
++ * Owns the encrypted timeline snapshot and the product queue state that Media3 cannot express
++ * (manual/context shuffle uses physical moves while native global shuffle remains disabled).
++ */
++internal object PlayerStateRegistry {
++  private var queuePersistence = QueuePersistenceState()
++  private var initialized = false
++
++  @Synchronized
++  fun restoreOrClear(
++    context: Context,
++    player: Player,
++    storage: PlayerStateStorage = PlayerStateStorage(),
++  ): Boolean {
++    MediaHeaders.clearPlayer()
++    return try {
++      val state = storage.load(context)
++      if (state == null) {
++        queuePersistence = QueuePersistenceState()
++        initialized = true
++        false
++      } else {
++        queuePersistence = state.queuePersistence.validated()
++        initialized = true
++        val restoredItems = state.items.map { it.toMediaItem(context) }
++        player.setMediaItems(restoredItems, state.activeIndex, state.positionMs)
++        player.repeatMode = state.repeatMode
++        player.shuffleModeEnabled = state.shuffleEnabled
++        // A process restart restores intent and position, never unsolicited playback.
++        player.pause()
++        true
++      }
++    } catch (cause: Exception) {
++      MediaHeaders.clearPlayer()
++      queuePersistence = QueuePersistenceState()
++      initialized = true
++      try {
++        storage.clear(context)
++      } catch (cleanupCause: Exception) {
++        cause.addSuppressed(cleanupCause)
++      }
++      Log.e("TrackPlayer", "Discarded invalid persisted player state", cause)
++      false
++    }
++  }
++
++  @Synchronized
++  fun persist(
++    context: Context,
++    player: Player,
++    storage: PlayerStateStorage = PlayerStateStorage(),
++  ) {
++    if (player.mediaItemCount == 0) {
++      storage.clear(context)
++      MediaHeaders.clearPlayer()
++      queuePersistence = QueuePersistenceState()
++      initialized = true
++      return
++    }
++    storage.store(context, PersistedPlayerState.capture(player, queuePersistence))
++    initialized = true
++  }
++
++  @Synchronized
++  fun updateQueuePersistence(
++    context: Context,
++    next: QueuePersistenceState,
++    storage: PlayerStateStorage = PlayerStateStorage(),
++  ) {
++    val validated = next.validated()
++    queuePersistence = validated
++    initialized = true
++    val existing = storage.load(context) ?: return
++    storage.store(context, existing.copy(queuePersistence = validated))
++  }
++
++  @Synchronized
++  fun getQueuePersistence(
++    context: Context,
++    storage: PlayerStateStorage = PlayerStateStorage(),
++  ): QueuePersistenceState {
++    if (!initialized) {
++      queuePersistence = storage.load(context)?.queuePersistence?.validated()
++        ?: QueuePersistenceState()
++      initialized = true
++    }
++    return queuePersistence
++  }
++
++  @Synchronized
++  fun clear(
++    context: Context,
++    storage: PlayerStateStorage = PlayerStateStorage(),
++  ) {
++    storage.clear(context)
++    MediaHeaders.clearPlayer()
++    queuePersistence = QueuePersistenceState()
++    initialized = true
++  }
++}
 diff --git a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt
-index 43b2934..798f255 100644
+index 43b2934..46a163e 100644
 --- a/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt
 +++ b/node_modules/@rntp/player/android/src/main/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItem.kt
 @@ -57,18 +57,11 @@ data class TrackPlayerMediaItem(
@@ -1132,6 +2198,77 @@ index 43b2934..798f255 100644
      if (uri.scheme == "http" || uri.scheme == "https") {
        requestMetadataBuilder.setMediaUri(uri)
      }
+@@ -190,8 +183,12 @@ data class TrackPlayerMediaItem(
+         artist = metadata.artist?.toString(),
+         albumTitle = metadata.albumTitle?.toString(),
+         artworkUrl = metadata.artworkUri?.toString(),
+-        duration = metadataExtras?.getDouble("duration"),
++        duration = if (metadataExtras?.containsKey("duration") == true) {
++          metadataExtras.getDouble("duration")
++        } else null,
+         isLive = if (metadataExtras?.containsKey("isLive") == true) metadataExtras.getBoolean("isLive") else null,
++        mimeType = mediaItem.localConfiguration?.mimeType,
++        headers = mediaItem.localConfiguration?.uri?.toString()?.let(MediaHeaders::get),
+         extras = metadataExtras?.getBundle(MediaItemExtras.METADATA_KEY),
+       )
+     }
+diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/AutomaticAudioCacheEvictionTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/AutomaticAudioCacheEvictionTest.kt
+new file mode 100644
+index 0000000..6147a7c
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/AutomaticAudioCacheEvictionTest.kt
+@@ -0,0 +1,51 @@
++package com.doublesymmetry.trackplayer
++
++import androidx.media3.datasource.cache.Cache
++import io.mockk.every
++import io.mockk.mockk
++import java.nio.file.Files
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertThrows
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class AutomaticAudioCacheEvictionTest {
++  @Test
++  fun removesEveryResourceAndReportsTheCompletedCount() {
++    val resources = linkedSetOf("first", "second")
++    val cache = mockk<Cache>()
++    every { cache.keys } answers { resources.toSet() }
++    every { cache.removeResource(any()) } answers {
++      resources.remove(firstArg())
++      Unit
++    }
++
++    assertEquals(2, AutomaticAudioCacheEviction.clear(cache))
++    assertTrue(resources.isEmpty())
++  }
++
++  @Test
++  fun failsInsteadOfReportingSuccessWhenAResourceSurvives() {
++    val cache = mockk<Cache>()
++    every { cache.keys } returns setOf("stubborn")
++    every { cache.removeResource("stubborn") } returns Unit
++
++    val error = assertThrows(IllegalStateException::class.java) {
++      AutomaticAudioCacheEviction.clear(cache)
++    }
++    assertTrue(error.message.orEmpty().contains("1 resource"))
++  }
++
++  @Test
++  fun removesAStaleDirectoryWhenNoActiveCacheOwnsIt() {
++    val directory = Files.createTempDirectory("rntp-automatic-cache").toFile()
++    val nested = directory.resolve("cached.resource")
++    nested.writeText("departing account audio")
++    assertTrue(nested.exists())
++
++    AutomaticAudioCacheEviction.clearInactiveDirectory(directory)
++
++    assertFalse(directory.exists())
++  }
++}
 diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactoryTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactoryTest.kt
 index f0e0ecb..9bebaa0 100644
 --- a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/HeaderInjectingDataSourceFactoryTest.kt
@@ -1196,10 +2333,10 @@ index f0e0ecb..9bebaa0 100644
      val stub = StubDataSource()
 diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MainThreadMediaControllerTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MainThreadMediaControllerTest.kt
 new file mode 100644
-index 0000000..809c1e4
+index 0000000..c952dab
 --- /dev/null
 +++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MainThreadMediaControllerTest.kt
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,141 @@
 +package com.doublesymmetry.trackplayer
 +
 +import org.junit.Assert.assertEquals
@@ -1323,6 +2460,23 @@ index 0000000..809c1e4
 +    assertSame(cause, error.cause)
 +    assertTrue(error.message.orEmpty().contains("connection failed"))
 +  }
++
++  @Test
++  fun failedConnectionCanBeRetriedAndPublishesOnlyTheReplacementController() {
++    val queue = ControllerOperationQueue<String>()
++    val calls = mutableListOf<String>()
++    queue.beginConnection()
++    queue.run { calls += "stale:$it" }
++    queue.fail(SecurityException("session rejected"))
++
++    queue.beginConnection()
++    queue.run { calls += "retry:$it" }
++    assertNull(queue.controllerForSynchronousRead())
++    queue.connect("connected-after-retry")
++
++    assertEquals(listOf("retry:connected-after-retry"), calls)
++    assertEquals("connected-after-retry", queue.controllerForSynchronousRead())
++  }
 +}
 diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicyTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/MediaControllerTrustPolicyTest.kt
 new file mode 100644
@@ -1401,8 +2555,173 @@ index 0000000..72f68b0
 +    )
 +  }
 +}
+diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/SleepTimerIntegrationTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/SleepTimerIntegrationTest.kt
+index 1b93e97..6a4537f 100644
+--- a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/SleepTimerIntegrationTest.kt
++++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/SleepTimerIntegrationTest.kt
+@@ -2,6 +2,7 @@ package com.doublesymmetry.trackplayer
+
+ import androidx.media3.common.MediaItem
+ import androidx.media3.common.MediaMetadata
++import androidx.media3.common.Player
+ import androidx.media3.exoplayer.ExoPlayer
+ import org.junit.After
+ import org.junit.Before
+@@ -278,19 +279,13 @@ class SleepTimerIntegrationTest {
+     // ========================================================================
+
+     @Test
+-    fun `mediaItem timer pauses after target index`() {
+-        // Guards bug #3: pause being overridden during media-item transitions.
++    fun `mediaItem timer fires after natural target completion`() {
++        // Guards bug #3: pause being overridden during automatic transitions.
+         player.setMediaItems(buildQueue(3))
+-        // Target is index 1; we are currently at index 1 (just finished it)
+         controller.sleepAfterMediaItemAtIndex(index = 1)
+-        // Manually set previousIndex to simulate we are sitting at index 1
+-        // The controller reads player.currentMediaItemIndex in sleepAfterMediaItemAtIndex,
+-        // so we need the player to be at index 1. Since we can't easily seek in Robolectric
+-        // without media loaded, we use handleItemTransition to simulate the transition flow.
+-        // First simulate arriving at index 1 (so previousIndex becomes 1)
+-        controller.handleItemTransition(1)
++        controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+
+-        val fired = controller.handleItemTransition(2)
++        val fired = controller.handleItemTransition(2, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+
+         assertTrue("sleep timer should fire when transitioning past target index", fired)
+         assertEquals("mediaItem", triggeredTypes.lastOrNull())
+@@ -304,7 +299,7 @@ class SleepTimerIntegrationTest {
+         controller.sleepAfterMediaItemAtIndex(index = 1)
+
+         // Transition from 0 → 1 (arriving at target, not leaving it)
+-        val fired = controller.handleItemTransition(1)
++        val fired = controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+
+         assertFalse("arriving at target index must not fire the timer", fired)
+         assertTrue("player must not be paused", player.playWhenReady)
+@@ -317,31 +312,91 @@ class SleepTimerIntegrationTest {
+         controller.sleepAfterMediaItemAtIndex(index = 2)
+
+         // 0 → 1 (pre-target)
+-        val firedAt1 = controller.handleItemTransition(1)
++        val firedAt1 = controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+         assertFalse("must not fire when previous (0) ≠ target (2)", firedAt1)
+         assertTrue(player.playWhenReady)
+
+         // 1 → 2 (arriving at target)
+-        val firedAt2 = controller.handleItemTransition(2)
++        val firedAt2 = controller.handleItemTransition(2, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+         assertFalse("must not fire when arriving at target", firedAt2)
+         assertTrue(player.playWhenReady)
+
+         // 2 → 3 (leaving target — fires)
+-        val firedAt3 = controller.handleItemTransition(3)
++        val firedAt3 = controller.handleItemTransition(3, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+         assertTrue("must fire when leaving target index", firedAt3)
+     }
+
+     @Test
+-    fun `mediaItem timer fires on departure regardless of direction`() {
+-        // Production code fires when previousIndex == targetIndex && newIndex != targetIndex.
+-        // A skip-backward that departs the target index also fires.
++    fun `manual departure from a future target does not count as completion`() {
+         player.setMediaItems(buildQueue(3))
+-        // player starts at index 0; set target=2, then simulate arriving at 2 first
+         controller.sleepAfterMediaItemAtIndex(index = 2)
+-        controller.handleItemTransition(2) // arrive at target → previousIndex = 2
++        controller.handleItemTransition(2, Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+
+-        val fired = controller.handleItemTransition(1) // skip backward from target
+-        assertTrue("departing target (backward skip) fires the timer per production logic", fired)
++        val fired = controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
++
++        assertFalse("a manual skip is not a completed track", fired)
++        assertEquals(2, controller.getState()!!["index"])
++    }
++
++    @Test
++    fun `current-item timer follows manual next then fires on natural completion`() {
++        player.setMediaItems(buildQueue(3))
++        controller.sleepAfterMediaItemAtIndex(index = 0)
++
++        val firedOnSkip = controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
++
++        assertFalse("manual Next must keep the timer armed", firedOnSkip)
++        assertEquals(1, controller.getState()!!["index"])
++
++        val firedOnCompletion =
++            controller.handleItemTransition(2, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
++        assertTrue("the newly-current item must stop playback when it completes", firedOnCompletion)
++        assertNull(controller.getState())
++    }
++
++    @Test
++    fun `repeat-one completion fires even when the queue index does not change`() {
++        player.setMediaItems(buildQueue(1))
++        controller.sleepAfterMediaItemAtIndex(index = 0)
++
++        val fired = controller.handleItemTransition(0, Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)
++
++        assertTrue("repeat transition represents a completed current item", fired)
++        assertNull(controller.getState())
++    }
++
++    @Test
++    fun `end of final queue item fires without an item transition`() {
++        player.setMediaItems(buildQueue(1))
++        controller.sleepAfterMediaItemAtIndex(index = 0)
++
++        val fired = controller.handlePlaybackEnded(currentIndex = 0)
++
++        assertTrue(fired)
++        assertEquals("mediaItem", triggeredTypes.lastOrNull())
++        assertNull(controller.getState())
++    }
++
++    @Test
++    fun `current-item timer follows queue index shifts`() {
++        player.setMediaItems(buildQueue(4))
++        controller.sleepAfterMediaItemAtIndex(index = 0)
++
++        controller.syncMediaItemTargetToCurrentIndex(currentIndex = 2)
++
++        assertEquals(2, controller.getState()!!["index"])
++        assertTrue(
++            controller.handleItemTransition(3, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
++        )
++    }
++
++    @Test
++    fun `playback ended away from a future target keeps timer armed`() {
++        player.setMediaItems(buildQueue(3))
++        controller.sleepAfterMediaItemAtIndex(index = 2)
++
++        assertFalse(controller.handlePlaybackEnded(currentIndex = 0))
++        assertEquals(2, controller.getState()!!["index"])
+     }
+
+     // ========================================================================
+@@ -354,7 +409,7 @@ class SleepTimerIntegrationTest {
+         controller.sleepAfterMediaItemAtIndex(index = 0)
+         controller.cancel()
+
+-        val fired = controller.handleItemTransition(1)
++        val fired = controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+
+         assertFalse("cancelled timer must not fire on transition", fired)
+         assertTrue("player must not be paused", player.playWhenReady)
+@@ -379,7 +434,7 @@ class SleepTimerIntegrationTest {
+     fun `getState returns null after mediaItem timer fires`() {
+         player.setMediaItems(buildQueue(2))
+         controller.sleepAfterMediaItemAtIndex(index = 0)
+-        controller.handleItemTransition(1) // fires
++        controller.handleItemTransition(1, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) // fires
+
+         assertNull(controller.getState())
+     }
 diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt
-index 34a1e21..1b155cc 100644
+index 34a1e21..82d31b0 100644
 --- a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt
 +++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/BrowseTreeTest.kt
 @@ -1,5 +1,7 @@
@@ -1413,7 +2732,7 @@ index 34a1e21..1b155cc 100644
  import kotlinx.serialization.json.JsonObject
  import kotlinx.serialization.json.JsonPrimitive
  import kotlinx.serialization.json.doubleOrNull
-@@ -9,10 +11,46 @@ import org.junit.Assert.*
+@@ -9,10 +11,73 @@ import org.junit.Assert.*
  import org.junit.runner.RunWith
  import org.robolectric.RobolectricTestRunner
  import org.robolectric.RuntimeEnvironment
@@ -1457,10 +2776,37 @@ index 34a1e21..1b155cc 100644
 +        assertNull(mediaItem.requestMetadata.extras)
 +    }
 +
++    @Test
++    fun `clear deletes persisted tree and authenticated headers`() {
++        val uri = "https://example.com/private.mp3"
++        val context = RuntimeEnvironment.getApplication()
++        val storage = storage()
++        val tree = BrowseTree(listOf(
++            BrowseCategory("private", "Private", listOf(
++                BrowseMediaItem(
++                    mediaId = "private-track",
++                    url = uri,
++                    headers = mapOf("Cookie" to "sf_session=departing-token"),
++                ),
++            )),
++        ))
++
++        tree.store(context, storage)
++        val prefs = context.getSharedPreferences("TrackPlayerPrefs", 0)
++        assertNotNull(prefs.getString("browse_tree", null))
++        assertEquals("sf_session=departing-token", MediaHeaders.get(uri)?.get("Cookie"))
++
++        BrowseTree.clear(context, storage)
++
++        assertNull(prefs.getString("browse_tree", null))
++        assertNull(MediaHeaders.get(uri))
++        assertTrue(BrowseTree.load(context, storage).categories.isEmpty())
++    }
++
      @Test
      fun `store and load round-trip preserves data`() {
          val tree = BrowseTree(listOf(
-@@ -21,8 +59,9 @@ class BrowseTreeTest {
+@@ -21,8 +86,9 @@ class BrowseTreeTest {
              ))
          ))
          val context = RuntimeEnvironment.getApplication()
@@ -1472,7 +2818,7 @@ index 34a1e21..1b155cc 100644
 
          assertEquals(1, loaded.categories.size)
          assertEquals("Music", loaded.categories[0].title)
-@@ -30,22 +69,175 @@ class BrowseTreeTest {
+@@ -30,22 +96,175 @@ class BrowseTreeTest {
      }
 
      @Test
@@ -1653,7 +2999,7 @@ index 34a1e21..1b155cc 100644
      @Test
      fun `findCategory returns matching category`() {
          val tree = BrowseTree(listOf(
-@@ -158,8 +350,9 @@ class BrowseTreeTest {
+@@ -158,8 +377,9 @@ class BrowseTreeTest {
              ))
          ))
          val context = RuntimeEnvironment.getApplication()
@@ -1665,7 +3011,7 @@ index 34a1e21..1b155cc 100644
 
          val album = loaded.categories[0].items[0]
          assertEquals("album", album.mediaId)
-@@ -184,8 +377,9 @@ class BrowseTreeTest {
+@@ -184,8 +404,9 @@ class BrowseTreeTest {
              ))
          ))
          val context = RuntimeEnvironment.getApplication()
@@ -1677,7 +3023,7 @@ index 34a1e21..1b155cc 100644
 
          val extras = loaded.categories[0].items[0].extras
          assertNotNull(extras)
-@@ -247,6 +441,11 @@ class BrowseTreeTest {
+@@ -247,6 +468,11 @@ class BrowseTreeTest {
          ))
      }
 
@@ -1689,6 +3035,223 @@ index 34a1e21..1b155cc 100644
      @Test
      fun `findPlayableSiblings returns category-level siblings and start index`() {
          val tree = playlistTree()
+diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/PlayerStateTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/PlayerStateTest.kt
+new file mode 100644
+index 0000000..1c60fdf
+--- /dev/null
++++ b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/PlayerStateTest.kt
+@@ -0,0 +1,211 @@
++package com.doublesymmetry.trackplayer.models
++
++import android.os.Bundle
++import androidx.media3.common.Player
++import androidx.media3.exoplayer.ExoPlayer
++import com.doublesymmetry.trackplayer.TrackPlayerModule.Companion.PLAYER_PREFS_NAME
++import org.junit.After
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertNotNull
++import org.junit.Assert.assertNull
++import org.junit.Assert.assertTrue
++import org.junit.Before
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.RobolectricTestRunner
++import org.robolectric.RuntimeEnvironment
++import org.robolectric.annotation.Config
++import javax.crypto.KeyGenerator
++import javax.crypto.SecretKey
++
++@RunWith(RobolectricTestRunner::class)
++@Config(sdk = [33])
++class PlayerStateTest {
++  private val context get() = RuntimeEnvironment.getApplication()
++  private lateinit var key: SecretKey
++  private lateinit var storage: PlayerStateStorage
++  private var players = mutableListOf<ExoPlayer>()
++
++  @Before
++  fun setUp() {
++    key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
++    storage = PlayerStateStorage(encryptionKey = { key }, decryptionKey = { key })
++    context.getSharedPreferences(PLAYER_PREFS_NAME, 0).edit().clear().commit()
++    MediaHeaders.clear()
++  }
++
++  @After
++  fun tearDown() {
++    players.forEach(ExoPlayer::release)
++    players.clear()
++    MediaHeaders.clear()
++  }
++
++  private fun player(): ExoPlayer = ExoPlayer.Builder(context).build().also(players::add)
++
++  private fun mediaItem(
++    mediaId: String,
++    cookie: String,
++    origin: String,
++    order: Double? = null,
++  ) = TrackPlayerMediaItem(
++    mediaId = mediaId,
++    url = "https://example.com/$mediaId.mp3",
++    title = "Track $mediaId",
++    artist = "Persistence Artist",
++    duration = 180.0,
++    headers = mapOf("Cookie" to cookie),
++    extras = Bundle().apply {
++      putString("queueOrigin", origin)
++      putString("queueContextType", "playlist")
++      putString("queueContextId", "playlist-1")
++      order?.let { putDouble("queueOriginalContextOrder", it) }
++      putString("queueStableId", "stable:$mediaId")
++      putBundle("track", Bundle().apply {
++        putString("id", mediaId)
++        putString("title", "Track $mediaId")
++      })
++    },
++  ).asMediaItem(context)
++
++  @Test
++  fun `encrypted timeline round trip preserves queue metadata active position repeat and shuffle`() {
++    val original = player()
++    val activeCookie = "sf_session=secret-active-token"
++    val queue = listOf(
++      mediaItem("history", "sf_session=history-token", "context", 0.0),
++      mediaItem("active", activeCookie, "context", 1.0),
++      mediaItem("manual", "sf_session=manual-token", "manual"),
++      mediaItem("future", "sf_session=future-token", "context", 2.0),
++    )
++    original.setMediaItems(queue, 1, 42_125L)
++    original.repeatMode = Player.REPEAT_MODE_ALL
++    original.shuffleModeEnabled = false
++    val restoreOrder = listOf("stable:future")
++    PlayerStateRegistry.updateQueuePersistence(
++      context,
++      QueuePersistenceState(true, restoreOrder),
++      storage,
++    )
++
++    PlayerStateRegistry.persist(context, original, storage)
++
++    val encoded = context.getSharedPreferences(PLAYER_PREFS_NAME, 0)
++      .getString(PLAYER_STATE_KEY, null)
++    assertNotNull(encoded)
++    assertTrue(encoded!!.startsWith("aes-gcm-v1:"))
++    assertFalse(encoded.contains(activeCookie))
++    assertFalse(encoded.contains("stable:future"))
++
++    MediaHeaders.clearPlayer()
++    val restored = player()
++    assertTrue(PlayerStateRegistry.restoreOrClear(context, restored, storage))
++
++    assertEquals(4, restored.mediaItemCount)
++    assertEquals(1, restored.currentMediaItemIndex)
++    assertEquals(42_125L, restored.currentPosition)
++    assertEquals(Player.REPEAT_MODE_ALL, restored.repeatMode)
++    assertFalse(restored.shuffleModeEnabled)
++    assertFalse(restored.playWhenReady)
++
++    val active = TrackPlayerMediaItem.fromMediaItem(restored.getMediaItemAt(1))
++    assertEquals("stable:active", active.extras?.getString("queueStableId"))
++    assertEquals("context", active.extras?.getString("queueOrigin"))
++    assertEquals("playlist", active.extras?.getString("queueContextType"))
++    assertEquals("playlist-1", active.extras?.getString("queueContextId"))
++    assertEquals(1.0, active.extras?.getDouble("queueOriginalContextOrder"))
++    assertEquals("active", active.extras?.getBundle("track")?.getString("id"))
++    assertEquals(activeCookie, MediaHeaders.get(active.url)?.get("Cookie"))
++    assertEquals(
++      QueuePersistenceState(true, restoreOrder),
++      PlayerStateRegistry.getQueuePersistence(context, storage),
++    )
++  }
++
++  @Test
++  fun `encrypted restore preserves numeric-looking track identifiers as strings`() {
++    val trackId = "1483825282"
++    val original = player()
++    val trackExtras = Bundle().apply {
++      putString("id", trackId)
++      putString("title", "Numeric identifier")
++      putString("artist", "Persistence Artist")
++      putString("artist_id", "123456")
++      putString("album_id", "987654")
++      putSerializable(
++        "artists",
++        arrayListOf(Bundle().apply {
++          putString("id", "123456")
++          putString("name", "Persistence Artist")
++        }),
++      )
++    }
++    val item = TrackPlayerMediaItem(
++      mediaId = "queue:2:0:$trackId",
++      url = "https://example.com/$trackId.mp3",
++      title = "Numeric identifier",
++      artist = "Persistence Artist",
++      headers = mapOf("Cookie" to "sf_session=token"),
++      extras = Bundle().apply { putBundle("track", trackExtras) },
++    ).asMediaItem(context)
++    original.setMediaItem(item)
++
++    PlayerStateRegistry.persist(context, original, storage)
++
++    val restored = player()
++    assertTrue(PlayerStateRegistry.restoreOrClear(context, restored, storage))
++    val restoredTrack = TrackPlayerMediaItem
++      .fromMediaItem(restored.currentMediaItem!!)
++      .extras
++      ?.getBundle("track")
++    assertNotNull(restoredTrack)
++    assertEquals(trackId, restoredTrack!!.getString("id"))
++    assertEquals("123456", restoredTrack.getString("artist_id"))
++    assertEquals("987654", restoredTrack.getString("album_id"))
++
++    @Suppress("DEPRECATION")
++    val restoredArtists = restoredTrack.getSerializable("artists") as? ArrayList<*>
++    assertNotNull(restoredArtists)
++    val restoredArtist = restoredArtists!![0] as Bundle
++    assertEquals("123456", restoredArtist.getString("id"))
++  }
++
++  @Test
++  fun `persisting an empty queue deletes account scoped queue and product shuffle state`() {
++    val original = player()
++    original.setMediaItem(mediaItem("active", "sf_session=token", "context", 0.0))
++    PlayerStateRegistry.updateQueuePersistence(
++      context,
++      QueuePersistenceState(true, listOf("stable:active")),
++      storage,
++    )
++    PlayerStateRegistry.persist(context, original, storage)
++    assertNotNull(storage.load(context))
++
++    original.clearMediaItems()
++    PlayerStateRegistry.persist(context, original, storage)
++
++    assertNull(storage.load(context))
++    assertEquals(
++      QueuePersistenceState(),
++      PlayerStateRegistry.getQueuePersistence(context, storage),
++    )
++    assertNull(MediaHeaders.get("https://example.com/active.mp3"))
++  }
++
++  @Test
++  fun `corrupt or plaintext state is discarded without populating the player`() {
++    val prefs = context.getSharedPreferences(PLAYER_PREFS_NAME, 0)
++    prefs.edit().putString(
++      PLAYER_STATE_KEY,
++      "{\"headers\":{\"Cookie\":\"sf_session=plaintext\"}}",
++    ).commit()
++    val restored = player()
++
++    assertFalse(PlayerStateRegistry.restoreOrClear(context, restored, storage))
++
++    assertEquals(0, restored.mediaItemCount)
++    assertNull(prefs.getString(PLAYER_STATE_KEY, null))
++  }
++}
 diff --git a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItemTest.kt b/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItemTest.kt
 index bd6a0c1..6af8300 100644
 --- a/node_modules/@rntp/player/android/src/test/java/com/doublesymmetry/trackplayer/models/TrackPlayerMediaItemTest.kt
@@ -1721,3 +3284,587 @@ index bd6a0c1..6af8300 100644
      }
 
      @Test
+diff --git a/node_modules/@rntp/player/ios/TrackPlayer.swift b/node_modules/@rntp/player/ios/TrackPlayer.swift
+index 966277d..60a67b8 100644
+--- a/node_modules/@rntp/player/ios/TrackPlayer.swift
++++ b/node_modules/@rntp/player/ios/TrackPlayer.swift
+@@ -159,10 +159,14 @@ class TrackPlayer: RCTEventEmitter {
+     player.retry()
+   }
+
+-  @objc(clearCache)
+-  func clearCache() {
++  @objc(clearCache:rejecter:)
++  func clearCache(
++    resolve: RCTPromiseResolveBlock,
++    rejecter reject: RCTPromiseRejectBlock
++  ) {
+     player.cancelAllDownloads()
+     audioCache?.removeAll()
++    resolve(nil)
+   }
+
+   @objc(preload:duration:)
+diff --git a/node_modules/@rntp/player/ios/TrackPlayerBridge.mm b/node_modules/@rntp/player/ios/TrackPlayerBridge.mm
+index ed09556..ca304ad 100644
+--- a/node_modules/@rntp/player/ios/TrackPlayerBridge.mm
++++ b/node_modules/@rntp/player/ios/TrackPlayerBridge.mm
+@@ -28,7 +28,8 @@ @implementation TrackPlayer (RCTExternModule)
+ RCT_EXTERN_METHOD(skipToPrevious);
+ RCT_EXTERN_METHOD(skipToIndex:(double)index);
+ RCT_EXTERN_METHOD(retry);
+-RCT_EXTERN_METHOD(clearCache);
++RCT_EXTERN_METHOD(clearCache:(RCTPromiseResolveBlock)resolve
++                  rejecter:(RCTPromiseRejectBlock)reject);
+ RCT_EXTERN_METHOD(preload:(NSDictionary *)item duration:(double)duration);
+ RCT_EXTERN_METHOD(cancelPreload:(NSDictionary *)item);
+ RCT_EXTERN_METHOD(setPlaybackSpeed:(double)speed);
+diff --git a/node_modules/@rntp/player/lib/commonjs/audio.js b/node_modules/@rntp/player/lib/commonjs/audio.js
+index d8ef911..c4f3c5f 100644
+--- a/node_modules/@rntp/player/lib/commonjs/audio.js
++++ b/node_modules/@rntp/player/lib/commonjs/audio.js
+@@ -10,6 +10,7 @@ exports.cancelPreload = cancelPreload;
+ exports.cancelSleepTimer = cancelSleepTimer;
+ exports.clear = clear;
+ exports.clearCache = clearCache;
++exports.clearPersistedQueue = clearPersistedQueue;
+ exports.destroy = destroy;
+ exports.getActiveMediaItem = getActiveMediaItem;
+ exports.getActiveMediaItemIndex = getActiveMediaItemIndex;
+@@ -17,6 +18,7 @@ exports.getPlaybackSpeed = getPlaybackSpeed;
+ exports.getPlaybackState = getPlaybackState;
+ exports.getProgress = getProgress;
+ exports.getQueue = getQueue;
++exports.getQueuePersistenceState = getQueuePersistenceState;
+ exports.getRepeatMode = getRepeatMode;
+ exports.getSleepTimer = getSleepTimer;
+ exports.getVolume = getVolume;
+@@ -40,6 +42,7 @@ exports.setCommands = setCommands;
+ exports.setMediaItem = setMediaItem;
+ exports.setMediaItems = setMediaItems;
+ exports.setPlaybackSpeed = setPlaybackSpeed;
++exports.setQueuePersistenceState = setQueuePersistenceState;
+ exports.setRepeatMode = setRepeatMode;
+ exports.setShuffleEnabled = setShuffleEnabled;
+ exports.setVolume = setVolume;
+@@ -64,6 +67,8 @@ var _backgroundEvents = require("./backgroundEvents.js");
+ let isPlayerSetup = false;
+ let hasWarnedIosBackgroundHandler = false;
+ let hasWarnedWebBackgroundHandler = false;
++const PLAYER_SETUP_READY_EVENT = 'event.player-setup-ready';
++const PLAYER_SETUP_FAILED_EVENT = 'event.player-setup-failed';
+
+ // Matches RFC 3986 URI schemes (e.g. `http:`, `file:`, `asset:`,
+ // `content:`, `ipod-library:`, `data:`).
+@@ -167,14 +172,46 @@ function normalizePlayerConfig(options) {
+  *
+  * @remarks
+  * - **Android**: Should be called while the app is in the foreground
+- * - Calling twice will throw
++ * - Resolves only after Android's MediaController is connected
++ * - Calling twice will reject
+  */
+-function setupPlayer(options = {}) {
++async function setupPlayer(options = {}) {
+   if (isPlayerSetup) {
+     throw new Error('Player is already set up. setupPlayer() should only be called once.');
+   }
+-  _trackPlayerModule.TrackPlayer.setupPlayer(normalizePlayerConfig(options));
+   isPlayerSetup = true;
++  try {
++    const config = normalizePlayerConfig(options);
++    if (_reactNative.Platform.OS !== 'android') {
++      _trackPlayerModule.TrackPlayer.setupPlayer(config);
++      return;
++    }
++    await new Promise((resolve, reject) => {
++      let settled = false;
++      let readySubscription = null;
++      let failedSubscription = null;
++      const cleanup = () => {
++        readySubscription?.remove();
++        failedSubscription?.remove();
++      };
++      const settle = operation => {
++        if (settled) return;
++        settled = true;
++        cleanup();
++        operation();
++      };
++      try {
++        readySubscription = _trackPlayerModule.emitter.addListener(PLAYER_SETUP_READY_EVENT, () => settle(resolve));
++        failedSubscription = _trackPlayerModule.emitter.addListener(PLAYER_SETUP_FAILED_EVENT, event => settle(() => reject(new Error(event?.message || 'Android MediaController connection failed'))));
++        _trackPlayerModule.TrackPlayer.setupPlayer(config);
++      } catch (error) {
++        settle(() => reject(error));
++      }
++    });
++  } catch (error) {
++    isPlayerSetup = false;
++    throw error;
++  }
+ }
+
+ /**
+@@ -345,9 +382,27 @@ function clear() {
+   _trackPlayerModule.TrackPlayer.clear();
+ }
+
+-/** Clears the on-disk audio cache. For debugging; next playback will re-download. */
++/** Persist queue semantics that are intentionally implemented above native global shuffle. */
++function setQueuePersistenceState(state) {
++  _trackPlayerModule.TrackPlayer.setQueuePersistenceState(state.contextShuffleEnabled, [...state.contextShuffleRestoreOrder]);
++}
++
++/** Read product queue semantics restored with the encrypted native timeline. */
++function getQueuePersistenceState() {
++  return _trackPlayerModule.TrackPlayer.getQueuePersistenceState();
++}
++
++/** Delete encrypted queue state even when the native MediaController has not been set up. */
++function clearPersistedQueue() {
++  _trackPlayerModule.TrackPlayer.clearPersistedQueue();
++}
++
++/**
++ * Clears the automatic on-disk audio cache.
++ * Resolves only after native eviction has completed and rejects if it cannot be verified.
++ */
+ function clearCache() {
+-  _trackPlayerModule.TrackPlayer.clearCache();
++  return _trackPlayerModule.TrackPlayer.clearCache();
+ }
+
+ /**
+diff --git a/node_modules/@rntp/player/lib/commonjs/web/WebTrackPlayer.js b/node_modules/@rntp/player/lib/commonjs/web/WebTrackPlayer.js
+index 87349d4..83757f4 100644
+--- a/node_modules/@rntp/player/lib/commonjs/web/WebTrackPlayer.js
++++ b/node_modules/@rntp/player/lib/commonjs/web/WebTrackPlayer.js
+@@ -346,6 +346,7 @@ class WebTrackPlayer {
+   }
+   clearCache() {
+     this.engine?.clearCache();
++    return Promise.resolve();
+   }
+
+   // ── Sleep timer ─────────────────────────────────────
+diff --git a/node_modules/@rntp/player/lib/module/audio.js b/node_modules/@rntp/player/lib/module/audio.js
+index cbda655..522ba21 100644
+--- a/node_modules/@rntp/player/lib/module/audio.js
++++ b/node_modules/@rntp/player/lib/module/audio.js
+@@ -12,6 +12,8 @@ import { headlessDataToBackgroundEvent } from "./backgroundEvents.js";
+ let isPlayerSetup = false;
+ let hasWarnedIosBackgroundHandler = false;
+ let hasWarnedWebBackgroundHandler = false;
++const PLAYER_SETUP_READY_EVENT = 'event.player-setup-ready';
++const PLAYER_SETUP_FAILED_EVENT = 'event.player-setup-failed';
+
+ // Matches RFC 3986 URI schemes (e.g. `http:`, `file:`, `asset:`,
+ // `content:`, `ipod-library:`, `data:`).
+@@ -115,14 +117,46 @@ function normalizePlayerConfig(options) {
+  *
+  * @remarks
+  * - **Android**: Should be called while the app is in the foreground
+- * - Calling twice will throw
++ * - Resolves only after Android's MediaController is connected
++ * - Calling twice will reject
+  */
+-export function setupPlayer(options = {}) {
++export async function setupPlayer(options = {}) {
+   if (isPlayerSetup) {
+     throw new Error('Player is already set up. setupPlayer() should only be called once.');
+   }
+-  TrackPlayer.setupPlayer(normalizePlayerConfig(options));
+   isPlayerSetup = true;
++  try {
++    const config = normalizePlayerConfig(options);
++    if (Platform.OS !== 'android') {
++      TrackPlayer.setupPlayer(config);
++      return;
++    }
++    await new Promise((resolve, reject) => {
++      let settled = false;
++      let readySubscription = null;
++      let failedSubscription = null;
++      const cleanup = () => {
++        readySubscription?.remove();
++        failedSubscription?.remove();
++      };
++      const settle = operation => {
++        if (settled) return;
++        settled = true;
++        cleanup();
++        operation();
++      };
++      try {
++        readySubscription = emitter.addListener(PLAYER_SETUP_READY_EVENT, () => settle(resolve));
++        failedSubscription = emitter.addListener(PLAYER_SETUP_FAILED_EVENT, event => settle(() => reject(new Error(event?.message || 'Android MediaController connection failed'))));
++        TrackPlayer.setupPlayer(config);
++      } catch (error) {
++        settle(() => reject(error));
++      }
++    });
++  } catch (error) {
++    isPlayerSetup = false;
++    throw error;
++  }
+ }
+
+ /**
+@@ -293,9 +327,27 @@ export function clear() {
+   TrackPlayer.clear();
+ }
+
+-/** Clears the on-disk audio cache. For debugging; next playback will re-download. */
++/** Persist queue semantics that are intentionally implemented above native global shuffle. */
++export function setQueuePersistenceState(state) {
++  TrackPlayer.setQueuePersistenceState(state.contextShuffleEnabled, [...state.contextShuffleRestoreOrder]);
++}
++
++/** Read product queue semantics restored with the encrypted native timeline. */
++export function getQueuePersistenceState() {
++  return TrackPlayer.getQueuePersistenceState();
++}
++
++/** Delete encrypted queue state even when the native MediaController has not been set up. */
++export function clearPersistedQueue() {
++  TrackPlayer.clearPersistedQueue();
++}
++
++/**
++ * Clears the automatic on-disk audio cache.
++ * Resolves only after native eviction has completed and rejects if it cannot be verified.
++ */
+ export function clearCache() {
+-  TrackPlayer.clearCache();
++  return TrackPlayer.clearCache();
+ }
+
+ /**
+diff --git a/node_modules/@rntp/player/lib/module/web/WebTrackPlayer.js b/node_modules/@rntp/player/lib/module/web/WebTrackPlayer.js
+index 7ed0aea..fcb1894 100644
+--- a/node_modules/@rntp/player/lib/module/web/WebTrackPlayer.js
++++ b/node_modules/@rntp/player/lib/module/web/WebTrackPlayer.js
+@@ -342,6 +342,7 @@ export class WebTrackPlayer {
+   }
+   clearCache() {
+     this.engine?.clearCache();
++    return Promise.resolve();
+   }
+
+   // ── Sleep timer ─────────────────────────────────────
+diff --git a/node_modules/@rntp/player/lib/typescript/src/NativeTrackPlayer.d.ts b/node_modules/@rntp/player/lib/typescript/src/NativeTrackPlayer.d.ts
+index e0f4a59..eab6a5c 100644
+--- a/node_modules/@rntp/player/lib/typescript/src/NativeTrackPlayer.d.ts
++++ b/node_modules/@rntp/player/lib/typescript/src/NativeTrackPlayer.d.ts
+@@ -15,7 +15,7 @@ export interface Spec extends TurboModule {
+     skipToPrevious(): void;
+     skipToIndex(index: number): void;
+     retry(): void;
+-    clearCache(): void;
++    clearCache(): Promise<void>;
+     setPlaybackSpeed(speed: number): void;
+     setVolume(volume: number): void;
+     setMediaItem(mediaItem: UnsafeObject): void;
+@@ -27,6 +27,9 @@ export interface Spec extends TurboModule {
+     removeMediaItem(index: number): void;
+     removeMediaItems(fromIndex: number, toIndex: number): void;
+     clear(): void;
++    setQueuePersistenceState(contextShuffleEnabled: boolean, contextShuffleRestoreOrder: ReadonlyArray<string>): void;
++    getQueuePersistenceState(): UnsafeObject;
++    clearPersistedQueue(): void;
+     replaceMediaItem(index: number, mediaItem: UnsafeObject): void;
+     moveMediaItem(fromIndex: number, toIndex: number): void;
+     updateMetadata(index: number, metadata: UnsafeObject): void;
+diff --git a/node_modules/@rntp/player/lib/typescript/src/audio.d.ts b/node_modules/@rntp/player/lib/typescript/src/audio.d.ts
+index 6cb3306..e543060 100644
+--- a/node_modules/@rntp/player/lib/typescript/src/audio.d.ts
++++ b/node_modules/@rntp/player/lib/typescript/src/audio.d.ts
+@@ -7,6 +7,10 @@ import { type PlayerConfig, type RemoteControlConfig, type BrowseCategory, type
+ import { Event, type EventPayloadByEvent, type BackgroundEvent } from './events';
+ import { type PlaybackState } from './events';
+ export type BackgroundEventHandler = (event: BackgroundEvent) => Promise<void>;
++export interface QueuePersistenceState {
++    contextShuffleEnabled: boolean;
++    contextShuffleRestoreOrder: string[];
++}
+ /**
+  * Initializes the native player and applies initial options.
+  * Must be called once before using any other API.
+@@ -14,9 +18,10 @@ export type BackgroundEventHandler = (event: BackgroundEvent) => Promise<void>;
+  *
+  * @remarks
+  * - **Android**: Should be called while the app is in the foreground
+- * - Calling twice will throw
++ * - Resolves only after Android's MediaController is connected
++ * - Calling twice will reject
+  */
+-export declare function setupPlayer(options?: PlayerConfig): void;
++export declare function setupPlayer(options?: PlayerConfig): Promise<void>;
+ /**
+  * Android only. Headless JS handler while the app UI is backgrounded. Normalizes Headless
+  * payloads to {@link BackgroundEvent} before invoking the handler.
+@@ -96,8 +101,17 @@ export declare function removeMediaItem(index: number): void;
+ export declare function removeMediaItems(fromIndex: number, toIndex: number): void;
+ /** Clear all media items from the queue. */
+ export declare function clear(): void;
+-/** Clears the on-disk audio cache. For debugging; next playback will re-download. */
+-export declare function clearCache(): void;
++/** Persist queue semantics that are intentionally implemented above native global shuffle. */
++export declare function setQueuePersistenceState(state: QueuePersistenceState): void;
++/** Read product queue semantics restored with the encrypted native timeline. */
++export declare function getQueuePersistenceState(): QueuePersistenceState;
++/** Delete encrypted queue state even when the native MediaController has not been set up. */
++export declare function clearPersistedQueue(): void;
++/**
++ * Clears the automatic on-disk audio cache.
++ * Resolves only after native eviction has completed and rejects if it cannot be verified.
++ */
++export declare function clearCache(): Promise<void>;
+ /**
+  * Preload a media item into the cache for instant playback later.
+  * Works independently of the queue — any future play of the same URL
+diff --git a/node_modules/@rntp/player/lib/typescript/src/web/WebTrackPlayer.d.ts b/node_modules/@rntp/player/lib/typescript/src/web/WebTrackPlayer.d.ts
+index 37e0c8f..31559b7 100644
+--- a/node_modules/@rntp/player/lib/typescript/src/web/WebTrackPlayer.d.ts
++++ b/node_modules/@rntp/player/lib/typescript/src/web/WebTrackPlayer.d.ts
+@@ -84,7 +84,7 @@ export declare class WebTrackPlayer {
+     updateProgressSyncHeaders(_headers: Record<string, string>): void;
+     preload(item: ResolvedMediaItem, _duration: number): void;
+     cancelPreload(item: ResolvedMediaItem): void;
+-    clearCache(): void;
++    clearCache(): Promise<void>;
+     sleepAfterTime(seconds: number, fadeOutSeconds: number): void;
+     sleepAfterMediaItemAtIndex(index: number): void;
+     getSleepTimer(): Record<string, unknown> | null;
+diff --git a/node_modules/@rntp/player/src/NativeTrackPlayer.ts b/node_modules/@rntp/player/src/NativeTrackPlayer.ts
+index 8f955c4..02f6680 100644
+--- a/node_modules/@rntp/player/src/NativeTrackPlayer.ts
++++ b/node_modules/@rntp/player/src/NativeTrackPlayer.ts
+@@ -21,7 +21,7 @@ export interface Spec extends TurboModule {
+   skipToPrevious(): void;
+   skipToIndex(index: number): void;
+   retry(): void;
+-  clearCache(): void;
++  clearCache(): Promise<void>;
+   setPlaybackSpeed(speed: number): void;
+   setVolume(volume: number): void;
+
+@@ -45,6 +45,12 @@ export interface Spec extends TurboModule {
+   removeMediaItem(index: number): void;
+   removeMediaItems(fromIndex: number, toIndex: number): void;
+   clear(): void;
++  setQueuePersistenceState(
++    contextShuffleEnabled: boolean,
++    contextShuffleRestoreOrder: ReadonlyArray<string>
++  ): void;
++  getQueuePersistenceState(): UnsafeObject;
++  clearPersistedQueue(): void;
+
+   // Queue - replace & reorder
+   replaceMediaItem(index: number, mediaItem: UnsafeObject): void;
+diff --git a/node_modules/@rntp/player/src/audio.ts b/node_modules/@rntp/player/src/audio.ts
+index 5ca71f7..be6b1ae 100644
+--- a/node_modules/@rntp/player/src/audio.ts
++++ b/node_modules/@rntp/player/src/audio.ts
+@@ -37,6 +37,11 @@ let isPlayerSetup = false;
+ let hasWarnedIosBackgroundHandler = false;
+ let hasWarnedWebBackgroundHandler = false;
+
++// Internal Android lifecycle events. They deliberately stay out of the public playback Event
++// enum: these settle setupPlayer itself rather than representing ongoing player activity.
++const PLAYER_SETUP_READY_EVENT = 'event.player-setup-ready';
++const PLAYER_SETUP_FAILED_EVENT = 'event.player-setup-failed';
++
+ // Matches RFC 3986 URI schemes (e.g. `http:`, `file:`, `asset:`,
+ // `content:`, `ipod-library:`, `data:`).
+ const HAS_URI_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+@@ -113,6 +118,11 @@ function resolveMediaItem(item: MediaItem): MediaItem {
+
+ export type BackgroundEventHandler = (event: BackgroundEvent) => Promise<void>;
+
++export interface QueuePersistenceState {
++  contextShuffleEnabled: boolean;
++  contextShuffleRestoreOrder: string[];
++}
++
+ // ─── Setup ───────────────────────────────────────────
+
+ /**
+@@ -149,17 +159,64 @@ function normalizePlayerConfig(options: PlayerConfig) {
+  *
+  * @remarks
+  * - **Android**: Should be called while the app is in the foreground
+- * - Calling twice will throw
++ * - Resolves only after Android's MediaController is connected
++ * - Calling twice will reject
+  */
+-export function setupPlayer(options: PlayerConfig = {}): void {
++export async function setupPlayer(options: PlayerConfig = {}): Promise<void> {
+   if (isPlayerSetup) {
+     throw new Error(
+       'Player is already set up. setupPlayer() should only be called once.'
+     );
+   }
+
+-  TrackPlayer.setupPlayer(normalizePlayerConfig(options));
+   isPlayerSetup = true;
++  try {
++    const config = normalizePlayerConfig(options);
++    if (Platform.OS !== 'android') {
++      TrackPlayer.setupPlayer(config);
++      return;
++    }
++
++    await new Promise<void>((resolve, reject) => {
++      let settled = false;
++      let readySubscription: EmitterSubscription | null = null;
++      let failedSubscription: EmitterSubscription | null = null;
++      const cleanup = () => {
++        readySubscription?.remove();
++        failedSubscription?.remove();
++      };
++      const settle = (operation: () => void) => {
++        if (settled) return;
++        settled = true;
++        cleanup();
++        operation();
++      };
++      try {
++        readySubscription = emitter.addListener(
++          PLAYER_SETUP_READY_EVENT,
++          () => settle(resolve)
++        );
++        failedSubscription = emitter.addListener(
++          PLAYER_SETUP_FAILED_EVENT,
++          (event: { message?: string }) =>
++            settle(() =>
++              reject(
++                new Error(
++                  event?.message || 'Android MediaController connection failed'
++                )
++              )
++            )
++        );
++        TrackPlayer.setupPlayer(config);
++      } catch (error) {
++        settle(() => reject(error));
++      }
++    });
++  } catch (error) {
++    // Android's native queue also returns to FAILED and accepts a new setup attempt.
++    isPlayerSetup = false;
++    throw error;
++  }
+ }
+
+ /**
+@@ -344,9 +401,30 @@ export function clear(): void {
+   TrackPlayer.clear();
+ }
+
+-/** Clears the on-disk audio cache. For debugging; next playback will re-download. */
+-export function clearCache(): void {
+-  TrackPlayer.clearCache();
++/** Persist queue semantics that are intentionally implemented above native global shuffle. */
++export function setQueuePersistenceState(state: QueuePersistenceState): void {
++  TrackPlayer.setQueuePersistenceState(
++    state.contextShuffleEnabled,
++    state.contextShuffleRestoreOrder
++  );
++}
++
++/** Read product queue semantics restored with the encrypted native timeline. */
++export function getQueuePersistenceState(): QueuePersistenceState {
++  return TrackPlayer.getQueuePersistenceState() as unknown as QueuePersistenceState;
++}
++
++/** Delete encrypted queue state even when the native MediaController has not been set up. */
++export function clearPersistedQueue(): void {
++  TrackPlayer.clearPersistedQueue();
++}
++
++/**
++ * Clears the automatic on-disk audio cache.
++ * Resolves only after native eviction has completed and rejects if it cannot be verified.
++ */
++export function clearCache(): Promise<void> {
++  return TrackPlayer.clearCache();
+ }
+
+ /**
+diff --git a/node_modules/@rntp/player/src/web/WebTrackPlayer.ts b/node_modules/@rntp/player/src/web/WebTrackPlayer.ts
+index aa71046..46b22cb 100644
+--- a/node_modules/@rntp/player/src/web/WebTrackPlayer.ts
++++ b/node_modules/@rntp/player/src/web/WebTrackPlayer.ts
+@@ -51,6 +51,10 @@ export class WebTrackPlayer {
+   private lastProgressEmitMs = 0;
+   private mediaSession: MediaSessionController;
+   private firstPlayingSeen = false;
++  private queuePersistenceState = {
++    contextShuffleEnabled: false,
++    contextShuffleRestoreOrder: [] as string[],
++  };
+
+   private sleepTimer = new SleepTimerController({
+     pause: () => this.pause(),
+@@ -109,6 +113,7 @@ export class WebTrackPlayer {
+     this.provider = null;
+     this.engine = null;
+     this.queue.clear();
++    this.clearPersistedQueue();
+     this.playWhenReady = false;
+     this.engineState = 'idle';
+     this.lastEmittedState = PlaybackState.Idle;
+@@ -263,6 +268,7 @@ export class WebTrackPlayer {
+   clear(): void {
+     this.requireSetup('clear');
+     this.queue.clear();
++    this.clearPersistedQueue();
+     this.engine?.stop();
+     this.playWhenReady = false;
+     this.emitQueueChanged();
+@@ -270,6 +276,32 @@ export class WebTrackPlayer {
+     this.emitDerivedState();
+   }
+
++  setQueuePersistenceState(
++    contextShuffleEnabled: boolean,
++    contextShuffleRestoreOrder: readonly string[]
++  ): void {
++    this.queuePersistenceState = {
++      contextShuffleEnabled,
++      contextShuffleRestoreOrder: [...contextShuffleRestoreOrder],
++    };
++  }
++
++  getQueuePersistenceState(): Record<string, unknown> {
++    return {
++      contextShuffleEnabled: this.queuePersistenceState.contextShuffleEnabled,
++      contextShuffleRestoreOrder: [
++        ...this.queuePersistenceState.contextShuffleRestoreOrder,
++      ],
++    };
++  }
++
++  clearPersistedQueue(): void {
++    this.queuePersistenceState = {
++      contextShuffleEnabled: false,
++      contextShuffleRestoreOrder: [],
++    };
++  }
++
+   replaceMediaItem(index: number, mediaItem: ResolvedMediaItem): void {
+     this.requireSetup('replaceMediaItem');
+     const isActive = index === this.queue.currentIndex;
+@@ -398,8 +430,9 @@ export class WebTrackPlayer {
+     this.engineForItem(item)?.cancelPreload(item);
+   }
+
+-  clearCache(): void {
++  clearCache(): Promise<void> {
+     this.engine?.clearCache();
++    return Promise.resolve();
+   }
+
+   // ── Sleep timer ─────────────────────────────────────

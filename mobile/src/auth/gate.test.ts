@@ -20,9 +20,9 @@ describe('post-login app gate', () => {
     expect(appGate({ ...approved, is_approved: false }, false, null)).toBe('pending');
   });
 
-  it('allows admins while approval is pending', () => {
+  it('keeps an unapproved admin behind the same production approval gate', () => {
     expect(appGate({ ...approved, is_approved: false, is_admin: true }, false, null)).toBe(
-      'authenticated',
+      'pending',
     );
   });
 });

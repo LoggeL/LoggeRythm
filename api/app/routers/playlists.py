@@ -17,8 +17,10 @@ from ..db.session import get_db
 from ..schemas.playlist import (
     PlaylistCreate,
     PlaylistDetail,
+    PlaylistEntryReorder,
     PlaylistReorder,
     PlaylistSummary,
+    PlaylistTrackEntry,
     PlaylistUpdate,
 )
 from ..schemas.track import Track, dump_artists, load_artists
@@ -55,9 +57,9 @@ def _get_owned_playlist(db: Session, playlist_id: int, user: User) -> Playlist:
     return pl
 
 
-def _pt_to_track(pt: PlaylistTrack) -> Track:
+def _pt_to_track(pt: PlaylistTrack) -> PlaylistTrackEntry:
     artists = load_artists(pt.artists_json, pt.artist)
-    return Track(
+    return PlaylistTrackEntry(
         id=pt.deezer_id,
         title=pt.title,
         artist=pt.artist,
@@ -68,7 +70,19 @@ def _pt_to_track(pt: PlaylistTrack) -> Track:
         cover=pt.cover_url or "",
         duration_sec=pt.duration_sec,
         preview_url=None,
+        playlist_entry_id=pt.id,
     )
+
+
+def _ordered_tracks(pl: Playlist) -> list[PlaylistTrack]:
+    """Return a deterministic occurrence order, including legacy position ties."""
+    return sorted(pl.tracks, key=lambda track: (track.position, track.id))
+
+
+def _normalize_positions(tracks: list[PlaylistTrack]) -> None:
+    ordered = sorted(tracks, key=lambda item: (item.position, item.id))
+    for position, track in enumerate(ordered):
+        track.position = position
 
 
 def _summary(
@@ -154,7 +168,7 @@ def get_playlist(
         is_public=pl.is_public,
         is_owner=is_owner,
         owner_name=owner.display_name if owner else None,
-        tracks=[_pt_to_track(pt) for pt in pl.tracks],
+        tracks=[_pt_to_track(pt) for pt in _ordered_tracks(pl)],
     )
 
 
@@ -175,7 +189,7 @@ async def export_playlist(
             artist=track.artist,
             title=track.title,
         )
-        for track in pl.tracks
+        for track in _ordered_tracks(pl)
     ]
     try:
         archive_path, archive_filename = await run_in_threadpool(
@@ -317,7 +331,7 @@ def add_track(
             album_id=str(track.album_id or ""),
             cover_url=track.cover or None,
             duration_sec=track.duration_sec,
-            position=(next_pos or -1) + 1,
+            position=int(next_pos if next_pos is not None else -1) + 1,
         )
     )
     # Set a cover from the first added track if the playlist has none.
@@ -385,6 +399,69 @@ def reorder_tracks(
     for pt in pl.tracks:
         if pt.deezer_id in position_of:
             pt.position = position_of[pt.deezer_id]
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{playlist_id}/tracks/entries/order",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def reorder_playlist_entries(
+    playlist_id: int,
+    body: PlaylistEntryReorder,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Atomically reorder an exact stable-entry snapshot.
+
+    A stale add/remove or a duplicate ID is rejected instead of partially
+    mutating positions.  This is the duplicate-safe v2 contract; the legacy
+    Deezer-ID route above remains available to existing callers.
+    """
+    pl = _get_owned_playlist(db, playlist_id, user)
+    tracks = _ordered_tracks(pl)
+    current_ids = [track.id for track in tracks]
+    requested_ids = body.entry_ids
+    if (
+        len(requested_ids) != len(current_ids)
+        or len(set(requested_ids)) != len(requested_ids)
+        or set(requested_ids) != set(current_ids)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Playlist entries changed; reload before reordering",
+        )
+    by_id = {track.id: track for track in tracks}
+    for position, entry_id in enumerate(requested_ids):
+        by_id[entry_id].position = position
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/{playlist_id}/tracks/entries/{entry_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_playlist_entry(
+    playlist_id: int,
+    entry_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Remove exactly one stable playlist occurrence, even for duplicates."""
+    pl = _get_owned_playlist(db, playlist_id, user)
+    entry = db.scalar(
+        select(PlaylistTrack).where(
+            PlaylistTrack.playlist_id == pl.id,
+            PlaylistTrack.id == entry_id,
+        )
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Playlist entry not found")
+    db.delete(entry)
+    remaining = [track for track in _ordered_tracks(pl) if track.id != entry_id]
+    _normalize_positions(remaining)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

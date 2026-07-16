@@ -10,6 +10,8 @@ export function appGate(
   if (bootstrapping) return 'loading';
   if (bootstrapError !== null) return 'bootstrap-error';
   if (user === null) return 'login';
-  if (!user.is_approved && !user.is_admin) return 'pending';
+  // Approval is the content gate for every account. Admin capability does not
+  // imply approval; this intentionally matches the production web shell.
+  if (!user.is_approved) return 'pending';
   return 'authenticated';
 }

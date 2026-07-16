@@ -4,8 +4,11 @@
     "slug": "loggerythm",
     "version": "1.0.1",
     "orientation": "default",
+    "scheme": "loggerythm",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a14",
+    "primaryColor": "#7c5cff",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -16,13 +19,14 @@
     },
     "android": {
       "package": "top.logge.loggerythm",
+      "icon": "./assets/android-icon-legacy.png",
       "allowBackup": false,
       "adaptiveIcon": {
-        "backgroundColor": "#0b0b0d",
+        "backgroundColor": "#0a0a14",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
+      "predictiveBackGestureEnabled": true,
       "permissions": [
         "INTERNET",
         "WAKE_LOCK",
@@ -47,7 +51,6 @@
           }
         }
       ],
-      "./plugins/withAndroidAuto",
       "./plugins/withNotificationIcon",
       "./plugins/withReleaseSigning",
       "./plugins/withNoBackup",
@@ -57,7 +60,13 @@
           "configureAndroidBackup": false
         }
       ],
-      "expo-system-ui"
+      "expo-system-ui",
+      "@react-native-vector-icons/material-design-icons",
+      "./plugins/withAndroidAuto",
+      "./plugins/withMusicVolumeControl",
+      "./plugins/withOfflineDownloads",
+      "./plugins/withSharedTextIntent",
+      "./plugins/withAndroidLauncherAssets"
     ]
   }
 }

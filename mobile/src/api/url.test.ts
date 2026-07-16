@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveServerUrl } from './url';
+import { resolveServerUrl, tryResolveServerUrl } from './url';
 
 describe('resolveServerUrl', () => {
   it('resolves API-relative media against the server origin', () => {
@@ -18,5 +18,15 @@ describe('resolveServerUrl', () => {
     expect(() => resolveServerUrl('file:///secret', 'https://music.example')).toThrow(
       'must use http:// or https://',
     );
+  });
+});
+
+describe('tryResolveServerUrl', () => {
+  it('returns a safe URL or null without crashing a render path', () => {
+    expect(tryResolveServerUrl('/avatar.png', 'https://music.example')).toBe(
+      'https://music.example/avatar.png',
+    );
+    expect(tryResolveServerUrl('file:///secret', 'https://music.example')).toBeNull();
+    expect(tryResolveServerUrl(null, 'https://music.example')).toBeNull();
   });
 });

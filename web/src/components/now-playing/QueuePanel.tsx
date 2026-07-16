@@ -31,8 +31,8 @@ export default function QueuePanel({
   const clearQueue = usePlayerStore((s) => s.clearQueue);
 
   const upcoming = queue.map((t, i) => ({ t, i })).filter(({ i }) => i > index);
-  const userUpcoming = upcoming.filter(({ i }) => origins[i] === "user");
-  const contextUpcoming = upcoming.filter(({ i }) => origins[i] !== "user");
+  const manualUpcoming = upcoming.filter(({ i }) => origins[i] === "manual");
+  const contextUpcoming = upcoming.filter(({ i }) => origins[i] !== "manual");
 
   const renderItem = ({ t, i }: { t: Track; i: number }) => (
     <li
@@ -132,12 +132,12 @@ export default function QueuePanel({
           </>
         )}
 
-        {userUpcoming.length > 0 && (
+        {manualUpcoming.length > 0 && (
           <>
             <p className="mb-2 text-[11px] uppercase tracking-widest text-muted">
               Als Nächstes in der Warteschlange
             </p>
-            <ul className="mb-5 flex flex-col">{userUpcoming.map(renderItem)}</ul>
+            <ul className="mb-5 flex flex-col">{manualUpcoming.map(renderItem)}</ul>
           </>
         )}
 
