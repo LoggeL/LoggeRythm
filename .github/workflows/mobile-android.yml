@@ -73,6 +73,7 @@ jobs:
           python -m pip install -r requirements.txt
           python -m app.openapi_contract check
           python -m app.android_contract check
+          python -m unittest discover -s tests
 
       - name: Typecheck, lint, and unit test
         working-directory: mobile

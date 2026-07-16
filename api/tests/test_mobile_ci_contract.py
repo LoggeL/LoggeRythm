@@ -19,6 +19,7 @@ class MobileCiContractTests(unittest.TestCase):
         self.assertEqual(workflow.count('- "api/**"'), 2)
         self.assertIn('python -m app.openapi_contract check', workflow)
         self.assertIn('python -m app.android_contract check', workflow)
+        self.assertIn('python -m unittest discover -s tests', workflow)
         self.assertIn('run: npm run check', workflow)
         self.assertIn('npx expo prebuild --platform android --clean --no-install', workflow)
         self.assertIn(':app:testReleaseUnitTest :app:assembleRelease', workflow)
@@ -30,8 +31,7 @@ class MobileCiContractTests(unittest.TestCase):
         self.assertEqual(workflow.count('- "mobile/src/api/generated/**"'), 2)
         self.assertIn('python -m app.openapi_contract check', workflow)
         self.assertIn('python -m app.android_contract check', workflow)
-        self.assertIn('tests.test_openapi_contract', workflow)
-        self.assertIn('tests.test_mobile_ci_contract', workflow)
+        self.assertIn('python -m unittest discover -s tests', workflow)
 
 
 if __name__ == "__main__":
