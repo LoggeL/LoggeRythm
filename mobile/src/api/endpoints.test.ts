@@ -35,6 +35,7 @@ import {
   partySetCurrent,
   partySetPlayback,
   preloadTrack,
+  recordPlay,
   register,
   removeFromPlaylist,
   removePlaylistEntry,
@@ -86,6 +87,20 @@ describe('API endpoint URL construction', () => {
       '/api/me/likes/contains?ids=12%2C34',
       expect.any(Object),
     );
+  });
+
+  it('forwards a native play-event UUID as the idempotency header contract', () => {
+    const track = { id: '42' } as Track;
+    const eventId = '123e4567-e89b-42d3-a456-426614174000';
+
+    recordPlay(track, 4_000, eventId);
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/me/plays', {
+      method: 'POST',
+      body: track,
+      timeoutMs: 4_000,
+      idempotencyKey: eventId,
+    });
   });
 });
 

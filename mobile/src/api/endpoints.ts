@@ -521,12 +521,17 @@ export function getStats(signal?: AbortSignal): Promise<UserStats> {
   return apiRequest<UserStats>('/api/me/stats', { signal, decode: decodeUserStats });
 }
 
-/** Record a play (drives personal stats). Body is the full Track (server denormalizes it). */
-export function recordPlay(track: Track, timeoutMs?: number): Promise<void> {
+/** Record a play (drives personal stats), optionally replay-safe by native event UUID. */
+export function recordPlay(
+  track: Track,
+  timeoutMs?: number,
+  eventId?: string,
+): Promise<void> {
   return apiRequest<void>('/api/me/plays', {
     method: 'POST',
     body: track,
     timeoutMs,
+    ...(eventId === undefined ? {} : { idempotencyKey: eventId }),
   });
 }
 

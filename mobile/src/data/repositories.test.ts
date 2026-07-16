@@ -143,13 +143,14 @@ describe('music repository wiring', () => {
     await expect(
       musicRepository.preloadTrack('42', { signal, timeoutMs: 2_500 }),
     ).resolves.toBeUndefined();
-    await expect(musicRepository.recordPlay(played, 4_000)).resolves.toBeUndefined();
+    const eventId = '123e4567-e89b-42d3-a456-426614174000';
+    await expect(musicRepository.recordPlay(played, 4_000, eventId)).resolves.toBeUndefined();
     expect(musicRepository.getRadio).toBe(endpoints.getRadio);
     expect(musicRepository.preloadTrack).toBe(endpoints.preloadTrack);
     expect(musicRepository.recordPlay).toBe(endpoints.recordPlay);
     expect(endpoints.getRadio).toHaveBeenCalledOnce();
     expect(endpoints.getRadio).toHaveBeenCalledWith('42', signal, 4_000);
     expect(endpoints.preloadTrack).toHaveBeenCalledWith('42', { signal, timeoutMs: 2_500 });
-    expect(endpoints.recordPlay).toHaveBeenCalledWith(played, 4_000);
+    expect(endpoints.recordPlay).toHaveBeenCalledWith(played, 4_000, eventId);
   });
 });

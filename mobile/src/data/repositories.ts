@@ -155,7 +155,7 @@ export interface AdminRepository {
 
 export interface PlayerRepository {
   getRadio(seedId: DeezerId, signal?: AbortSignal, timeoutMs?: number): Promise<Track[]>;
-  recordPlay(track: Track, timeoutMs?: number): Promise<void>;
+  recordPlay(track: Track, timeoutMs?: number, eventId?: string): Promise<void>;
 }
 
 /** Complete compatibility adapter composed from feature-sized capabilities. */

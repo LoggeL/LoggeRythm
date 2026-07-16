@@ -184,6 +184,8 @@ interface RequestOptions<T> {
   signal?: AbortSignal;
   /** Exact generated 2xx statuses accepted for this operation. */
   successStatuses?: readonly number[];
+  /** Canonical UUID used by replay-safe mutation endpoints. */
+  idempotencyKey?: string;
   timeoutMs?: number;
   decode?: (value: unknown) => T;
 }
@@ -209,6 +211,9 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
 
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (opts.idempotencyKey !== undefined) {
+    headers['Idempotency-Key'] = opts.idempotencyKey;
+  }
   const requestSession = session;
   const requestSessionRevision = sessionRevision;
   if (!opts.noAuth && requestSession !== null) {

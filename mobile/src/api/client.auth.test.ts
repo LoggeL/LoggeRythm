@@ -70,6 +70,29 @@ describe('authenticated client lifecycle', () => {
     expect(mocks.secureStore.deleteItemAsync).not.toHaveBeenCalled();
   });
 
+  it('sends a replay-safe mutation key without weakening the authenticated cookie', async () => {
+    const client = await import('./client');
+    const eventId = '123e4567-e89b-42d3-a456-426614174000';
+
+    await expect(client.apiRequest('/api/me/plays', {
+      method: 'POST',
+      body: { id: '42' },
+      idempotencyKey: eventId,
+    })).resolves.toEqual({ ok: true });
+
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      'https://music.example.test/api/me/plays',
+      expect.objectContaining({
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': eventId,
+          Cookie: 'sf_session=stored-session-token',
+        },
+      }),
+    );
+  });
+
   it('invalidates the stored session and notifies AuthProvider on 401', async () => {
     mocks.fetch.mockResolvedValueOnce(new Response(
       JSON.stringify({ detail: 'Not authenticated' }),
