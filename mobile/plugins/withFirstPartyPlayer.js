@@ -2,6 +2,7 @@ const {
   withAndroidManifest,
   withAppBuildGradle,
   withDangerousMod,
+  withSettingsGradle,
 } = require('expo/config-plugins');
 const fs = require('fs');
 const path = require('path');
@@ -13,6 +14,9 @@ const UNSUPPORTED_SEARCH_ACTION = 'android.media.action.MEDIA_PLAY_FROM_SEARCH';
 const PLAYER_SERVICE_NAME = 'top.logge.loggerythm.player.LoggeRythmMediaLibraryService';
 const MEDIA3_LIBRARY_SERVICE_ACTION = 'androidx.media3.session.MediaLibraryService';
 const MEDIA_BROWSER_SERVICE_ACTION = 'android.media.browse.MediaBrowserService';
+const HOSTILE_CONTROLLER_TEST_PROJECT = ':loggerythm_player-hostile-controller';
+const HOSTILE_CONTROLLER_TEST_DIRECTORY =
+  '../modules/loggerythm-player/android-test-controller';
 const WEB_LINK_PATHS = [
   { 'android:path': '/' },
   ...['register', 'album', 'artist', 'playlist', 'genre', 'account', 'search', 'radio', 'library']
@@ -140,6 +144,28 @@ function configureAutoLint(config) {
   });
 }
 
+function transformTestControllerSettings(source) {
+  const start = '// @generated begin withFirstPartyPlayer hostile-controller test app';
+  const end = '// @generated end withFirstPartyPlayer hostile-controller test app';
+  const previous = new RegExp(`${start}[\\s\\S]*?${end}\\n?`, 'g');
+  const block = `${start}
+include '${HOSTILE_CONTROLLER_TEST_PROJECT}'
+project('${HOSTILE_CONTROLLER_TEST_PROJECT}').projectDir =
+    new File(rootDir, '${HOSTILE_CONTROLLER_TEST_DIRECTORY}')
+${end}`;
+  return `${source.replace(previous, '').trimEnd()}\n\n${block}\n`;
+}
+
+function configureTestControllerProject(config) {
+  return withSettingsGradle(config, (cfg) => {
+    if (cfg.modResults.language !== 'groovy') {
+      throw new Error('withFirstPartyPlayer: only Groovy settings.gradle files are supported');
+    }
+    cfg.modResults.contents = transformTestControllerSettings(cfg.modResults.contents);
+    return cfg;
+  });
+}
+
 function writeAutomotiveDescriptor(config) {
   return withDangerousMod(config, [
     'android',
@@ -165,6 +191,7 @@ module.exports = function withFirstPartyPlayer(config, options = {}) {
     return cfg;
   });
   next = configureAutoLint(next);
+  next = configureTestControllerProject(next);
   return writeAutomotiveDescriptor(next);
 };
 
@@ -173,3 +200,5 @@ module.exports.WEB_LINK_HOST = WEB_LINK_HOST;
 module.exports.configureManifestObject = configureManifestObject;
 module.exports.configureAutoLint = configureAutoLint;
 module.exports.transformAutoLint = transformAutoLint;
+module.exports.configureTestControllerProject = configureTestControllerProject;
+module.exports.transformTestControllerSettings = transformTestControllerSettings;

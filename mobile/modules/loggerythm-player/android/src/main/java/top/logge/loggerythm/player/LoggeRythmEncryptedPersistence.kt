@@ -112,10 +112,14 @@ internal class LoggeRythmEncryptedStateStore(
   private val codec: LoggeRythmPersistedStateCodec,
   private val cipher: LoggeRythmEncryptedCipher,
   private val blobFile: LoggeRythmEncryptedBlobFile,
-  private val expectedBinding: LoggeRythmPersistedSessionBinding,
+  /**
+   * `null` is reserved for service-only restore from AES-GCM-authenticated ciphertext. Saving is
+   * forbidden in that mode; normal Activity/React setup always supplies an independent binding.
+   */
+  private val expectedBinding: LoggeRythmPersistedSessionBinding?,
 ) {
   init {
-    codec.requireValidBinding(expectedBinding)
+    expectedBinding?.let(codec::requireValidBinding)
   }
 
   @Synchronized
@@ -125,7 +129,12 @@ internal class LoggeRythmEncryptedStateStore(
       val envelope = blobFile.read() ?: return LoggeRythmEncryptedLoadOutcome.Absent
       val payload = LoggeRythmEncryptedEnvelopeCodec.decode(envelope)
       plaintext = cipher.decrypt(payload, AAD)
-      LoggeRythmEncryptedLoadOutcome.Restored(codec.decode(plaintext, expectedBinding))
+      val state = if (expectedBinding == null) {
+        codec.decodeAuthenticatedSelfBound(plaintext)
+      } else {
+        codec.decode(plaintext, expectedBinding)
+      }
+      LoggeRythmEncryptedLoadOutcome.Restored(state)
     } catch (_: Exception) {
       clearAfterInvalidState()
       LoggeRythmEncryptedLoadOutcome.DiscardedInvalid
@@ -140,7 +149,9 @@ internal class LoggeRythmEncryptedStateStore(
 
   @Synchronized
   fun save(state: LoggeRythmPersistedPlayerState) {
-    if (state.sessionBinding != expectedBinding) {
+    val exactBinding = expectedBinding
+      ?: throw LoggeRythmPersistedStateException("session-binding-required")
+    if (state.sessionBinding != exactBinding) {
       throw LoggeRythmPersistedStateException("session-binding-mismatch")
     }
     var plaintext: ByteArray? = null
@@ -179,7 +190,10 @@ internal class LoggeRythmEncryptedStateStore(
   }
 
   companion object {
-    /** Fixed app/schema identity only: account, origin, URI, and secrets never enter AAD. */
+    /**
+     * Fixed legacy-compatible app identity only: account, origin, URI, and secrets never enter
+     * AAD. Keep this value stable so schema-v1 ciphertext can be read and migrated to v2.
+     */
     private val AAD =
       "top.logge.loggerythm.player|persisted-state|json-v1|envelope-v1"
         .toByteArray(Charsets.UTF_8)

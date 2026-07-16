@@ -1,5 +1,7 @@
 package top.logge.loggerythm.player
 
+import android.content.Intent
+import android.os.IBinder
 import android.os.Process
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -19,6 +21,7 @@ import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 
 internal data class ControllerTrustSignals(
   val self: Boolean,
@@ -30,6 +33,144 @@ internal data class ControllerTrustSignals(
   val trustedLegacyMediaButton: Boolean,
 )
 
+internal enum class LoggeRythmPlatformProbePhase {
+  ARMED,
+  RAW_BIND_STARTED,
+  LOOKUP_RECORDED,
+  NULL_BIND_CONFIRMED,
+  NULL_BIND_WITHOUT_LOOKUP,
+  LIVE_BINDER_RETURNED,
+  BIND_FAILED,
+}
+
+internal data class LoggeRythmPlatformProbeControllerObservation(
+  val uid: Int,
+  val packageName: String,
+  val controllerVersion: Int,
+  val trusted: Boolean,
+  val allowed: Boolean,
+)
+
+internal data class LoggeRythmPlatformProbeObservation(
+  val requestId: String,
+  val phase: LoggeRythmPlatformProbePhase,
+  val matchedRawBindCount: Int,
+  val uncorrelatedRawBindCount: Int,
+  val lookupCount: Int,
+  val matchedController: LoggeRythmPlatformProbeControllerObservation?,
+)
+
+/**
+ * Process-only instrumentation evidence for Media3's legacy service lookup. A random request ID is
+ * observed around the unchanged [MediaLibraryService.onBind] implementation; it never changes the
+ * selected session, returned binder, controller policy, or admission result. Unarmed requests and
+ * binds without the exact request ID are no-ops.
+ */
+internal object LoggeRythmPlatformProbeObservationHook {
+  const val REQUEST_ID_EXTRA_KEY = "top.logge.loggerythm.player.test.PLATFORM_PROBE_NONCE"
+  const val PLATFORM_BROWSER_SERVICE_ACTION = "android.media.browse.MediaBrowserService"
+
+  private data class ArmedProbe(
+    val requestId: String,
+    var phase: LoggeRythmPlatformProbePhase = LoggeRythmPlatformProbePhase.ARMED,
+    var matchedRawBindCount: Int = 0,
+    var uncorrelatedRawBindCount: Int = 0,
+    var lookupCount: Int = 0,
+    var matchedController: LoggeRythmPlatformProbeControllerObservation? = null,
+    var trackedBindActive: Boolean = false,
+  )
+
+  private var armedProbe: ArmedProbe? = null
+
+  @Synchronized
+  fun arm(requestId: String) {
+    require(requestId.isNotBlank() && requestId.length <= MAX_REQUEST_ID_LENGTH)
+    armedProbe = ArmedProbe(requestId)
+  }
+
+  @Synchronized
+  fun beginRawBind(action: String?, suppliedRequestId: String?): Boolean {
+    val probe = armedProbe ?: return false
+    if (action != PLATFORM_BROWSER_SERVICE_ACTION || suppliedRequestId == null) return false
+    if (suppliedRequestId != probe.requestId) {
+      probe.uncorrelatedRawBindCount += 1
+      return false
+    }
+    probe.matchedRawBindCount += 1
+    probe.trackedBindActive = true
+    probe.phase = LoggeRythmPlatformProbePhase.RAW_BIND_STARTED
+    return true
+  }
+
+  @UnstableApi
+  fun recordLookup(controller: MediaSession.ControllerInfo, allowed: Boolean) {
+    recordLookup(
+      LoggeRythmPlatformProbeControllerObservation(
+        uid = controller.uid,
+        packageName = controller.packageName,
+        controllerVersion = controller.controllerVersion,
+        trusted = controller.isTrusted,
+        allowed = allowed,
+      ),
+    )
+  }
+
+  @Synchronized
+  internal fun recordLookup(controller: LoggeRythmPlatformProbeControllerObservation) {
+    val probe = armedProbe ?: return
+    if (!probe.trackedBindActive) return
+    probe.lookupCount += 1
+    probe.matchedController = controller
+    probe.phase = LoggeRythmPlatformProbePhase.LOOKUP_RECORDED
+  }
+
+  @Synchronized
+  fun completeRawBind(tracked: Boolean, binderReturned: Boolean) {
+    if (!tracked) return
+    val probe = armedProbe ?: return
+    if (!probe.trackedBindActive) return
+    probe.trackedBindActive = false
+    probe.phase = when {
+      binderReturned -> LoggeRythmPlatformProbePhase.LIVE_BINDER_RETURNED
+      probe.lookupCount == 0 -> LoggeRythmPlatformProbePhase.NULL_BIND_WITHOUT_LOOKUP
+      else -> LoggeRythmPlatformProbePhase.NULL_BIND_CONFIRMED
+    }
+  }
+
+  @Synchronized
+  fun failRawBind(tracked: Boolean) {
+    if (!tracked) return
+    val probe = armedProbe ?: return
+    probe.trackedBindActive = false
+    probe.phase = LoggeRythmPlatformProbePhase.BIND_FAILED
+  }
+
+  @Synchronized
+  fun drain(requestId: String): LoggeRythmPlatformProbeObservation? {
+    val probe = armedProbe ?: return null
+    if (requestId != probe.requestId) return null
+    armedProbe = null
+    return LoggeRythmPlatformProbeObservation(
+      requestId = probe.requestId,
+      phase = probe.phase,
+      matchedRawBindCount = probe.matchedRawBindCount,
+      uncorrelatedRawBindCount = probe.uncorrelatedRawBindCount,
+      lookupCount = probe.lookupCount,
+      matchedController = probe.matchedController,
+    )
+  }
+
+  private const val MAX_REQUEST_ID_LENGTH = 256
+}
+
+private enum class ServiceOnlyRestoreState {
+  IDLE,
+  RUNNING,
+  RESTORED,
+  EMPTY,
+  FAILED,
+}
+
 @UnstableApi
 internal object LoggeRythmControllerPolicy {
   fun accepts(signals: ControllerTrustSignals): Boolean =
@@ -38,7 +179,28 @@ internal object LoggeRythmControllerPolicy {
       signals.trusted
 
   fun isSelf(controller: MediaSession.ControllerInfo, appUid: Int, appPackage: String): Boolean =
-    controller.uid == appUid && controller.packageName == appPackage
+    isSelfIdentity(
+      controllerUid = controller.uid,
+      controllerPackage = controller.packageName,
+      controllerVersion = controller.controllerVersion,
+      appUid = appUid,
+      appPackage = appPackage,
+    )
+
+  /** Legacy package placeholders are self only when Media3 also preserves the exact app UID. */
+  fun isSelfIdentity(
+    controllerUid: Int,
+    controllerPackage: String,
+    controllerVersion: Int,
+    appUid: Int,
+    appPackage: String,
+  ): Boolean = controllerUid == appUid && (
+    controllerPackage == appPackage ||
+      (
+        controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION &&
+          controllerPackage == MediaSession.ControllerInfo.LEGACY_CONTROLLER_PACKAGE_NAME
+        )
+    )
 
   fun commandProfile(self: Boolean, mediaNotification: Boolean): RemoteControllerProfile = when {
     mediaNotification -> RemoteControllerProfile.NOTIFICATION
@@ -75,7 +237,11 @@ class LoggeRythmMediaLibraryService :
   private lateinit var librarySession: MediaLibrarySession
   private lateinit var playerCache: LoggeRythmPlayerCache
   private lateinit var persistedCoordinator: LoggeRythmPersistedPlayerCoordinator
+  private lateinit var remoteCommandInstaller: LoggeRythmDurableRemoteCommandInstaller
   private val remoteCommandPolicy = LoggeRythmRemoteCommandPolicy()
+  private var remotePolicyExplicitlyReset = false
+  private var serviceOnlyRestoreState = ServiceOnlyRestoreState.IDLE
+  private val serviceOnlyRestoreWaiters = mutableListOf<() -> Unit>()
   private val browseTreeObserver = object : LoggeRythmBrowseTreeObserver {
     override fun onBrowseTreeChanged(change: RuntimeBrowseTreeChange) {
       notifyBrowseTreeChanged(change)
@@ -130,6 +296,15 @@ class LoggeRythmMediaLibraryService :
       clearCache = playerCache::clearCache,
     )
     librarySession = MediaLibrarySession.Builder(this, player, LibraryCallback()).build()
+    remoteCommandInstaller = LoggeRythmDurableRemoteCommandInstaller(
+      resetPolicy = remoteCommandPolicy::reset,
+      installPolicy = { capabilities ->
+        remotePolicyExplicitlyReset = false
+        remoteCommandPolicy.install(capabilities)
+      },
+      refreshConnectedControllers = ::refreshConnectedControllerCommands,
+      persist = persistedCoordinator::onRemoteCommandsInstalled,
+    )
     LoggeRythmBrowseTreeServiceBridge.attach(browseTreeObserver)
     LoggeRythmCacheServiceBridge.attach(cacheControl)
     LoggeRythmPersistedServiceBridge.attach(persistedCoordinator)
@@ -137,15 +312,40 @@ class LoggeRythmMediaLibraryService :
     cacheControl.onQueueGenerationChanged(LoggeRythmPlayerRuntime.currentQueueGeneration())
   }
 
-  override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? =
-    librarySession.takeIf {
-      LoggeRythmControllerPolicy.isAllowed(
-        it,
-        controllerInfo,
-        applicationInfo.uid,
-        packageName,
-      )
+  override fun onBind(intent: Intent?): IBinder? {
+    val tracked = LoggeRythmPlatformProbeObservationHook.beginRawBind(
+      action = intent?.action,
+      suppliedRequestId = intent?.getStringExtra(
+        LoggeRythmPlatformProbeObservationHook.REQUEST_ID_EXTRA_KEY,
+      ),
+    )
+    return try {
+      super.onBind(intent).also { binder ->
+        LoggeRythmPlatformProbeObservationHook.completeRawBind(
+          tracked = tracked,
+          binderReturned = binder != null,
+        )
+      }
+    } catch (error: Throwable) {
+      LoggeRythmPlatformProbeObservationHook.failRawBind(tracked)
+      throw error
     }
+  }
+
+  override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
+    val allowed = LoggeRythmControllerPolicy.isAllowed(
+      librarySession,
+      controllerInfo,
+      applicationInfo.uid,
+      packageName,
+    )
+    LoggeRythmPlatformProbeObservationHook.recordLookup(controllerInfo, allowed)
+    if (!allowed) return null
+    if (controllerProfile(librarySession, controllerInfo) == RemoteControllerProfile.TRUSTED_BROWSER) {
+      ensureServiceOnlyRestore()
+    }
+    return librarySession
+  }
 
   override fun onDestroy() {
     LoggeRythmMediaSessionServiceBridge.detach(this)
@@ -153,7 +353,10 @@ class LoggeRythmMediaLibraryService :
     LoggeRythmCacheServiceBridge.detach(cacheControl)
     // Coordinator.close() clears the runtime tree; the session is being released, so detach first.
     LoggeRythmBrowseTreeServiceBridge.detach(browseTreeObserver)
+    remoteCommandInstaller.close()
     persistedCoordinator.close()
+    serviceOnlyRestoreState = ServiceOnlyRestoreState.FAILED
+    finishServiceOnlyRestoreWaiters()
     player.removeListener(preloadListener)
     librarySession.release()
     player.release()
@@ -161,28 +364,23 @@ class LoggeRythmMediaLibraryService :
     super.onDestroy()
   }
 
-  override fun installRemoteCommands(capabilities: Set<RemotePlayerCapability>) {
+  override fun installRemoteCommands(
+    capabilities: Set<RemotePlayerCapability>,
+    callback: (Result<Unit>) -> Unit,
+  ) {
     if (!persistedCoordinator.isReady()) {
-      throw LoggeRythmPersistedPlayerException("player-session-not-ready")
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-session-not-ready")))
+      return
     }
-    remoteCommandPolicy.install(capabilities)
-    try {
-      refreshConnectedControllerCommands()
-    } catch (error: Exception) {
-      // A partially published policy must never outlive a rejected setup command.
-      // The request callback below also consults this reset policy, so even a
-      // legacy controller with stale advertised buttons cannot execute them.
-      remoteCommandPolicy.reset()
-      runCatching(::refreshConnectedControllerCommands)
-      throw error
-    }
+    remoteCommandInstaller.install(capabilities, callback)
   }
 
   override fun resetRemoteCommands() {
-    remoteCommandPolicy.reset()
-    // The in-memory policy is already fail-closed even if a legacy controller
-    // cannot consume an availability update during teardown.
-    runCatching(::refreshConnectedControllerCommands)
+    remotePolicyExplicitlyReset = true
+    // Invalidate the service publisher before its old persistence completion can run, then queue
+    // the coordinator's committed-policy rollback behind that already-admitted write.
+    persistedCoordinator.cancelPendingRemoteCommandUpdate()
+    remoteCommandInstaller.reset()
   }
 
   private fun notifyBrowseTreeChanged(change: RuntimeBrowseTreeChange) {
@@ -226,20 +424,79 @@ class LoggeRythmMediaLibraryService :
     }
   }
 
+  private fun ensureServiceOnlyRestore() {
+    if (serviceOnlyRestoreState != ServiceOnlyRestoreState.IDLE) return
+    serviceOnlyRestoreState = ServiceOnlyRestoreState.RUNNING
+    persistedCoordinator.restoreServiceOnly { result ->
+      result.fold(
+        onSuccess = { restored ->
+          if (restored) {
+            val capabilities = publishableRestoredRemoteCapabilities(
+              explicitlyReset = remotePolicyExplicitlyReset,
+              committedCapabilities = persistedCoordinator.publicState().remoteCapabilities,
+            )
+            if (capabilities == null) remoteCommandPolicy.reset()
+            else remoteCommandPolicy.install(capabilities)
+            serviceOnlyRestoreState = ServiceOnlyRestoreState.RESTORED
+          } else {
+            remoteCommandPolicy.reset()
+            serviceOnlyRestoreState = ServiceOnlyRestoreState.EMPTY
+          }
+        },
+        onFailure = {
+          remoteCommandPolicy.reset()
+          serviceOnlyRestoreState = ServiceOnlyRestoreState.FAILED
+        },
+      )
+      runCatching(::refreshConnectedControllerCommands)
+      finishServiceOnlyRestoreWaiters()
+    }
+  }
+
+  private fun finishServiceOnlyRestoreWaiters() {
+    val admitted = serviceOnlyRestoreWaiters.toList()
+    serviceOnlyRestoreWaiters.clear()
+    admitted.forEach { waiter -> runCatching(waiter) }
+  }
+
+  private fun <T> afterServiceOnlyRestore(action: () -> T): ListenableFuture<T> {
+    ensureServiceOnlyRestore()
+    if (serviceOnlyRestoreState != ServiceOnlyRestoreState.RUNNING) {
+      return try {
+        Futures.immediateFuture(action())
+      } catch (error: Exception) {
+        Futures.immediateFailedFuture(error)
+      }
+    }
+    val future = SettableFuture.create<T>()
+    serviceOnlyRestoreWaiters += {
+      if (!future.isCancelled) {
+        try {
+          future.set(action())
+        } catch (error: Exception) {
+          future.setException(error)
+        }
+      }
+    }
+    return future
+  }
+
   private inner class LibraryCallback : MediaLibrarySession.Callback {
     override fun onConnect(
       session: MediaSession,
       controller: MediaSession.ControllerInfo,
     ): MediaSession.ConnectionResult {
-      if (!LoggeRythmControllerPolicy.isAllowed(
-          session,
-          controller,
-          applicationInfo.uid,
-          packageName,
-        )) {
+      val allowed = LoggeRythmControllerPolicy.isAllowed(
+        session,
+        controller,
+        applicationInfo.uid,
+        packageName,
+      )
+      if (!allowed) {
         return MediaSession.ConnectionResult.reject()
       }
       val profile = controllerProfile(session, controller)
+      if (profile == RemoteControllerProfile.TRUSTED_BROWSER) ensureServiceOnlyRestore()
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(remoteCommandPolicy.sessionCommands(profile))
         .setAvailablePlayerCommands(remoteCommandPolicy.playerCommands(profile))
@@ -268,9 +525,11 @@ class LoggeRythmMediaLibraryService :
       browser: MediaSession.ControllerInfo,
       params: LibraryParams?,
     ): ListenableFuture<LibraryResult<MediaItem>> {
-      val tree = LoggeRythmPlayerRuntime.browseTree()
-      val root = checkNotNull(tree.nodes[tree.rootId]).mediaItem
-      return Futures.immediateFuture(LibraryResult.ofItem(root, params))
+      return afterServiceOnlyRestore {
+        val tree = LoggeRythmPlayerRuntime.browseTree()
+        val root = checkNotNull(tree.nodes[tree.rootId]).mediaItem
+        LibraryResult.ofItem(root, params)
+      }
     }
 
     override fun onGetItem(
@@ -278,9 +537,11 @@ class LoggeRythmMediaLibraryService :
       browser: MediaSession.ControllerInfo,
       mediaId: String,
     ): ListenableFuture<LibraryResult<MediaItem>> {
-      val item = LoggeRythmPlayerRuntime.browseItem(mediaId)
-        ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
-      return Futures.immediateFuture(LibraryResult.ofItem(item, null))
+      return afterServiceOnlyRestore {
+        val item = LoggeRythmPlayerRuntime.browseItem(mediaId)
+        if (item == null) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+        else LibraryResult.ofItem(item, null)
+      }
     }
 
     override fun onGetChildren(
@@ -294,15 +555,22 @@ class LoggeRythmMediaLibraryService :
       if (page < 0 || pageSize <= 0) {
         return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
       }
-      val tree = LoggeRythmPlayerRuntime.browseTree()
-      val parent = tree.nodes[parentId]
-        ?: return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
-      val from = (page.toLong() * pageSize.toLong()).coerceAtMost(parent.childIds.size.toLong()).toInt()
-      val to = (from.toLong() + pageSize.toLong()).coerceAtMost(parent.childIds.size.toLong()).toInt()
-      val children = parent.childIds.subList(from, to).mapNotNull { tree.nodes[it]?.mediaItem }
-      return Futures.immediateFuture(
-        LibraryResult.ofItemList(ImmutableList.copyOf(children), params),
-      )
+      return afterServiceOnlyRestore {
+        val tree = LoggeRythmPlayerRuntime.browseTree()
+        val parent = tree.nodes[parentId]
+        if (parent == null) {
+          LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
+        } else {
+          val from = (page.toLong() * pageSize.toLong())
+            .coerceAtMost(parent.childIds.size.toLong())
+            .toInt()
+          val to = (from.toLong() + pageSize.toLong())
+            .coerceAtMost(parent.childIds.size.toLong())
+            .toInt()
+          val children = parent.childIds.subList(from, to).mapNotNull { tree.nodes[it]?.mediaItem }
+          LibraryResult.ofItemList(ImmutableList.copyOf(children), params)
+        }
+      }
     }
 
     override fun onAddMediaItems(
@@ -310,24 +578,22 @@ class LoggeRythmMediaLibraryService :
       controller: MediaSession.ControllerInfo,
       mediaItems: List<MediaItem>,
     ): ListenableFuture<List<MediaItem>> {
-      if (playerCache.isClearing()) {
-        return Futures.immediateFailedFuture(IllegalStateException("player-cache-clearing"))
+      return afterServiceOnlyRestore {
+        if (playerCache.isClearing()) throw IllegalStateException("player-cache-clearing")
+        if (!persistedCoordinator.isReady()) throw IllegalStateException("player-session-not-ready")
+        if (LoggeRythmControllerPolicy.isSelf(
+            controller,
+            applicationInfo.uid,
+            packageName,
+          ) && mediaItems.all { it.localConfiguration != null }) {
+          mediaItems
+        } else {
+          mediaItems.map { requested ->
+            LoggeRythmPlayerRuntime.browseItem(requested.mediaId)
+              ?: throw SecurityException("media-item-not-available")
+          }
+        }
       }
-      if (!persistedCoordinator.isReady()) {
-        return Futures.immediateFailedFuture(IllegalStateException("player-session-not-ready"))
-      }
-      if (LoggeRythmControllerPolicy.isSelf(
-          controller,
-          applicationInfo.uid,
-          packageName,
-        ) && mediaItems.all { it.localConfiguration != null }) {
-        return Futures.immediateFuture(mediaItems)
-      }
-      val resolved = mediaItems.map { requested ->
-        LoggeRythmPlayerRuntime.browseItem(requested.mediaId)
-          ?: return Futures.immediateFailedFuture(SecurityException("media-item-not-available"))
-      }
-      return Futures.immediateFuture(resolved)
     }
 
     override fun onSetMediaItems(
@@ -337,37 +603,31 @@ class LoggeRythmMediaLibraryService :
       startIndex: Int,
       startPositionMs: Long,
     ): ListenableFuture<MediaItemsWithStartPosition> {
-      if (playerCache.isClearing()) {
-        return Futures.immediateFailedFuture(IllegalStateException("player-cache-clearing"))
-      }
-      if (!persistedCoordinator.isReady()) {
-        return Futures.immediateFailedFuture(IllegalStateException("player-session-not-ready"))
-      }
+      return afterServiceOnlyRestore {
+        if (playerCache.isClearing()) throw IllegalStateException("player-cache-clearing")
+        if (!persistedCoordinator.isReady()) throw IllegalStateException("player-session-not-ready")
 
-      val profile = controllerProfile(mediaSession, controller)
-      if (
-        profile == RemoteControllerProfile.INTERNAL &&
-        mediaItems.all { it.localConfiguration != null }
-      ) {
-        return Futures.immediateFuture(
-          MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs),
-        )
+        val profile = controllerProfile(mediaSession, controller)
+        if (
+          profile == RemoteControllerProfile.INTERNAL &&
+          mediaItems.all { it.localConfiguration != null }
+        ) {
+          MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
+        } else {
+          // A browse controller may select exactly one published leaf. Ignore every caller-owned
+          // URI/metadata field and resolve the direct parent's ordered playable children instead.
+          if (
+            profile != RemoteControllerProfile.TRUSTED_BROWSER ||
+            !remoteCommandPolicy.permits(profile, Player.COMMAND_SET_MEDIA_ITEM) ||
+            mediaItems.size != 1
+          ) {
+            throw SecurityException("media-item-not-available")
+          }
+          val selection = LoggeRythmPlayerRuntime.playableBrowseSiblings(mediaItems.single().mediaId)
+            ?: throw SecurityException("media-item-not-available")
+          MediaItemsWithStartPosition(selection.mediaItems, selection.startIndex, 0L)
+        }
       }
-
-      // A browse controller may select exactly one published leaf. Ignore every caller-owned
-      // URI/metadata field and resolve the direct parent's ordered playable children instead.
-      if (
-        profile != RemoteControllerProfile.TRUSTED_BROWSER ||
-        !remoteCommandPolicy.permits(profile, Player.COMMAND_SET_MEDIA_ITEM) ||
-        mediaItems.size != 1
-      ) {
-        return Futures.immediateFailedFuture(SecurityException("media-item-not-available"))
-      }
-      val selection = LoggeRythmPlayerRuntime.playableBrowseSiblings(mediaItems.single().mediaId)
-        ?: return Futures.immediateFailedFuture(SecurityException("media-item-not-available"))
-      return Futures.immediateFuture(
-        MediaItemsWithStartPosition(selection.mediaItems, selection.startIndex, 0L),
-      )
     }
   }
 }

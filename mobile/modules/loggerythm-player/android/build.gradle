@@ -40,6 +40,13 @@ repositories {
     mavenCentral()
 }
 
+def hostileControllerProject = project(":loggerythm_player-hostile-controller")
+def hostileControllerApk = files(
+    hostileControllerProject.layout.buildDirectory.file(
+        "outputs/apk/debug/loggerythm_player-hostile-controller-debug.apk",
+    ),
+).builtBy(":loggerythm_player-hostile-controller:assembleDebug")
+
 dependencies {
     implementation "com.facebook.react:react-android"
     implementation "androidx.media3:media3-exoplayer:$media3Version"
@@ -52,4 +59,8 @@ dependencies {
 
     androidTestImplementation "androidx.test:runner:1.7.0"
     androidTestImplementation "androidx.test.ext:junit:1.1.5"
+    // Installs a genuinely separate application/UID alongside the instrumentation APK.
+    // Use the final APK artifact directly so none of its already-dexed runtime JARs can be
+    // mistaken for additional test-utility APKs by the Android Gradle Plugin.
+    androidTestUtil hostileControllerApk
 }

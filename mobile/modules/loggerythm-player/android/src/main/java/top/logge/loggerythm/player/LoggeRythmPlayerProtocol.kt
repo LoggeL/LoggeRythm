@@ -20,7 +20,12 @@ internal data class PlayerItemSpec(
   val durationMs: Long?,
   val cookie: String?,
   val extrasJson: String,
-)
+) {
+  override fun toString(): String =
+    "PlayerItemSpec(id=<redacted>, url=<redacted>, title=<redacted>, artist=<redacted>, " +
+      "album=<redacted>, artworkUrl=<redacted>, durationMs=$durationMs, cookie=<redacted>, " +
+      "extrasJson=<redacted>)"
+}
 
 internal data class PlayerSetupSpec(
   val sessionBinding: LoggeRythmPersistedSessionBinding,
@@ -75,9 +80,16 @@ internal data class BrowseNodeSpec(
   val url: String?,
   val cookie: String?,
   val children: List<BrowseNodeSpec>,
-)
+) {
+  override fun toString(): String =
+    "BrowseNodeSpec(id=<redacted>, title=<redacted>, subtitle=<redacted>, " +
+      "artist=<redacted>, album=<redacted>, artworkUrl=<redacted>, durationMs=$durationMs, " +
+      "playable=$playable, url=<redacted>, cookie=<redacted>, children=<redacted:${children.size}>)"
+}
 
-internal data class BrowseTreeSpec(val root: BrowseNodeSpec)
+internal data class BrowseTreeSpec(val root: BrowseNodeSpec) {
+  override fun toString(): String = "BrowseTreeSpec(root=<redacted>)"
+}
 
 internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
   private val canonicalPrivateRoots = privateRoots.map { it.canonicalFile }.distinct()

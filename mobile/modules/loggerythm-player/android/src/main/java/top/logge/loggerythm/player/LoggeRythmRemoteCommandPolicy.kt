@@ -12,6 +12,12 @@ internal enum class RemoteControllerProfile {
   TRUSTED_BROWSER,
 }
 
+internal fun publishableRestoredRemoteCapabilities(
+  explicitlyReset: Boolean,
+  committedCapabilities: Set<RemotePlayerCapability>?,
+): Set<RemotePlayerCapability>? =
+  if (explicitlyReset) null else committedCapabilities?.toSet()
+
 /** Service-owned, process-only permissions for notification and trusted external controllers. */
 @UnstableApi
 internal class LoggeRythmRemoteCommandPolicy {
@@ -130,8 +136,108 @@ internal class LoggeRythmRemoteCommandPolicy {
   }
 }
 
+/**
+ * Publishes a remote command policy only after the complete encrypted player snapshot containing
+ * it has been durably replaced. While the write is pending (and after any failure), externally
+ * mutable commands remain reset. The injected persistence boundary makes ordering and failures
+ * deterministic in local JVM tests.
+ */
+internal class LoggeRythmDurableRemoteCommandInstaller(
+  private val resetPolicy: () -> Unit,
+  private val installPolicy: (Set<RemotePlayerCapability>) -> Unit,
+  private val refreshConnectedControllers: () -> Unit,
+  private val persist: (Set<RemotePlayerCapability>, (Result<Unit>) -> Unit) -> Unit,
+) {
+  private var generation = 0L
+  private var pending: ((Result<Unit>) -> Unit)? = null
+  private var closed = false
+
+  fun install(
+    capabilities: Set<RemotePlayerCapability>,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    if (closed) {
+      callback(failure("player-session-control-unavailable"))
+      return
+    }
+    if (pending != null) {
+      callback(failure("player-command-policy-update-active"))
+      return
+    }
+    generation = nextGeneration(generation)
+    val ticket = generation
+    val snapshot = capabilities.toSet()
+    pending = callback
+    resetPolicy()
+    runCatching(refreshConnectedControllers)
+    try {
+      persist(snapshot) { result -> finish(ticket, snapshot, result) }
+    } catch (_: Exception) {
+      finish(ticket, capabilities, failure("player-persistence-save-failed"))
+    }
+  }
+
+  /** Cancels one in-flight install and prevents its late persistence callback from republishing. */
+  fun reset() {
+    if (closed) return
+    generation = nextGeneration(generation)
+    resetPolicy()
+    runCatching(refreshConnectedControllers)
+    val callback = pending
+    pending = null
+    callback?.let {
+      runCatching { it(failure("player-command-policy-update-cancelled")) }
+    }
+  }
+
+  fun close() {
+    if (closed) return
+    closed = true
+    generation = nextGeneration(generation)
+    resetPolicy()
+    val callback = pending
+    pending = null
+    callback?.let { runCatching { it(failure("player-persistence-closed")) } }
+  }
+
+  private fun finish(
+    ticket: Long,
+    capabilities: Set<RemotePlayerCapability>,
+    result: Result<Unit>,
+  ) {
+    if (closed || ticket != generation) return
+    val callback = pending ?: return
+    pending = null
+    if (result.isSuccess) {
+      installPolicy(capabilities.toSet())
+      // Availability propagation is best-effort. Request admission consults the already-installed
+      // policy, so an obsolete controller cannot bypass it even if Media3 rejects a UI refresh.
+      runCatching(refreshConnectedControllers)
+      runCatching { callback(Result.success(Unit)) }
+    } else {
+      resetPolicy()
+      runCatching(refreshConnectedControllers)
+      runCatching {
+        callback(Result.failure(
+          result.exceptionOrNull()
+            ?: LoggeRythmPersistedPlayerException("player-persistence-save-failed"),
+        ))
+      }
+    }
+  }
+
+  private fun <T> failure(code: String): Result<T> =
+    Result.failure(LoggeRythmPersistedPlayerException(code))
+
+  private fun nextGeneration(value: Long): Long =
+    if (value == Long.MAX_VALUE) 1L else value + 1L
+}
+
 internal interface LoggeRythmMediaSessionServiceControl {
-  fun installRemoteCommands(capabilities: Set<RemotePlayerCapability>)
+  fun installRemoteCommands(
+    capabilities: Set<RemotePlayerCapability>,
+    callback: (Result<Unit>) -> Unit,
+  )
   fun resetRemoteCommands()
 }
 
@@ -151,10 +257,18 @@ internal object LoggeRythmMediaSessionServiceBridge {
     if (control === value) control = null
   }
 
-  fun installRemoteCommands(capabilities: Set<RemotePlayerCapability>) {
+  fun installRemoteCommands(
+    capabilities: Set<RemotePlayerCapability>,
+    callback: (Result<Unit>) -> Unit,
+  ) {
     val active = synchronized(lock) { control }
-      ?: throw LoggeRythmPersistedPlayerException("player-session-control-unavailable")
-    active.installRemoteCommands(capabilities)
+    if (active == null) {
+      callback(Result.failure(
+        LoggeRythmPersistedPlayerException("player-session-control-unavailable"),
+      ))
+    } else {
+      active.installRemoteCommands(capabilities, callback)
+    }
   }
 
   fun resetRemoteCommands() {

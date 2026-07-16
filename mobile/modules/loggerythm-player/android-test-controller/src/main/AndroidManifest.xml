@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <permission
+        android:name="top.logge.loggerythm.player.hostilecontroller.permission.BIND_PROBE"
+        android:protectionLevel="signature" />
+
+    <queries>
+        <package android:name="top.logge.loggerythm.player.test" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/no_backup_rules"
+        android:fullBackupContent="false"
+        android:label="LoggeRythm hostile-controller test helper"
+        android:supportsRtl="false"
+        android:usesCleartextTraffic="false"
+        tools:ignore="MissingApplicationIcon">
+        <service
+            android:name=".HostileControllerProbeService"
+            android:exported="true"
+            android:permission="top.logge.loggerythm.player.hostilecontroller.permission.BIND_PROBE">
+            <intent-filter>
+                <action android:name="top.logge.loggerythm.player.hostilecontroller.RUN_PROBE" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

@@ -132,16 +132,26 @@ class LoggeRythmPlayerModule(
           reject(promise, PlayerProtocolException("player-cleanup-active"))
           return@withController
         }
+        if (parsed is PlayerCommand.SetCommands) {
+          if (!LoggeRythmPersistedServiceBridge.isReady()) {
+            reject(promise, LoggeRythmPersistedPlayerException("player-session-not-ready"))
+            return@withController
+          }
+          LoggeRythmMediaSessionServiceBridge.installRemoteCommands(
+            parsed.capabilities,
+          ) { result ->
+            result.fold(
+              onSuccess = { resolveSnapshot(promise, active) },
+              onFailure = { reject(promise, it) },
+            )
+          }
+          return@withController
+        }
         settleOnMain(promise) {
           if (!LoggeRythmPersistedServiceBridge.isReady()) {
             throw LoggeRythmPersistedPlayerException("player-session-not-ready")
           }
-          val handled = if (parsed is PlayerCommand.SetCommands) {
-            LoggeRythmMediaSessionServiceBridge.installRemoteCommands(parsed.capabilities)
-            true
-          } else {
-            LoggeRythmPersistedServiceBridge.applyAuxiliaryCommand(parsed)
-          }
+          val handled = LoggeRythmPersistedServiceBridge.applyAuxiliaryCommand(parsed)
           if (!handled) {
             applyCommand(active, parsed)
             LoggeRythmPersistedServiceBridge.onCommandApplied(parsed)
@@ -164,7 +174,19 @@ class LoggeRythmPlayerModule(
           throw LoggeRythmPersistedPlayerException("player-session-not-ready")
         }
         val installed = LoggeRythmPlayerRuntime.installBrowseTree(tree)
-        Arguments.createMap().apply { putDouble("revision", installed.revision.toDouble()) }
+        LoggeRythmPersistedServiceBridge.onBrowseTreeInstalled { result ->
+          result.fold(
+            onSuccess = {
+              promise.resolve(
+                Arguments.createMap().apply {
+                  putDouble("revision", installed.revision.toDouble())
+                },
+              )
+            },
+            onFailure = { reject(promise, it) },
+          )
+        }
+        null
       }
     }
   }

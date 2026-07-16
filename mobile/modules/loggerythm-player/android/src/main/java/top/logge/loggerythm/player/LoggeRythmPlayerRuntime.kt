@@ -76,6 +76,7 @@ internal object LoggeRythmPlayerRuntime {
   private var queueSources: List<PlayerItemSpec> = emptyList()
   private var queueExtras: Map<String, String> = emptyMap()
   private var browseTree: RuntimeBrowseTree = defaultBrowseTree()
+  private var browseTreeSpec: BrowseTreeSpec? = null
 
   /**
    * Installs the only account/origin identity allowed to own live player sources. A changed
@@ -91,6 +92,7 @@ internal object LoggeRythmPlayerRuntime {
       queueSources = emptyList()
       queueExtras = emptyMap()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
+      browseTreeSpec = null
       Triple(
         true,
         queueGeneration.incrementAndGet(),
@@ -209,6 +211,7 @@ internal object LoggeRythmPlayerRuntime {
       cookieVault.replaceBrowse(cookies)
       val previousTree = browseTree
       browseTree = tree
+      browseTreeSpec = spec
       tree to publicTreeChange(previousTree, tree)
     }
     LoggeRythmBrowseTreeServiceBridge.publish(change)
@@ -216,6 +219,9 @@ internal object LoggeRythmPlayerRuntime {
   }
 
   fun browseTree(): RuntimeBrowseTree = synchronized(lock) { browseTree }
+
+  /** Private, validated source form used only by encrypted persistence. */
+  fun persistedBrowseTree(): BrowseTreeSpec? = synchronized(lock) { browseTreeSpec }
 
   fun browseItem(mediaId: String): MediaItem? = synchronized(lock) {
     browseTree.nodes[mediaId]?.mediaItem
@@ -289,6 +295,7 @@ internal object LoggeRythmPlayerRuntime {
       queueSources = emptyList()
       queueExtras = emptyMap()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
+      browseTreeSpec = null
       queueGeneration.incrementAndGet() to publicTreeChange(previousTree, browseTree)
     }
     LoggeRythmCacheServiceBridge.queueChanged(revision)
@@ -303,6 +310,7 @@ internal object LoggeRythmPlayerRuntime {
       queueSources = emptyList()
       queueExtras = emptyMap()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
+      browseTreeSpec = null
       queueGeneration.incrementAndGet() to publicTreeChange(previousTree, browseTree)
     }
     LoggeRythmCacheServiceBridge.queueChanged(revision)

@@ -35,10 +35,58 @@ class LoggeRythmPersistedStateTest {
     )
     assertEquals("all", restored.repeatMode)
     assertEquals(listOf("stable:one", "stable:two"), restored.contextShuffle.restoreOrder)
+    assertEquals(setOf(RemotePlayerCapability.PLAY_PAUSE, RemotePlayerCapability.NEXT), restored.remoteCapabilities)
+    assertEquals("track:auto-one", restored.browseTree?.root?.children?.single()?.children?.single()?.id)
     assertFalse(restored.queue.first().toString().contains("sf_session"))
     assertFalse(restored.toString().contains(binding.accountScope))
     assertFalse(restored.toString().contains(binding.origin))
+    assertFalse(restored.toString().contains("browse-session"))
+    assertFalse(restored.browseTree.toString().contains("browse-session"))
+    assertFalse(restored.queue.first().toPlayerItemSpec().toString().contains("sf_session"))
     assertEquals(restored.queue.first(), restored.queue.first().toPlayerItemSpec().toPersistedQueueItem())
+  }
+
+  @Test
+  fun authenticatedServiceOnlyDecodeUsesEncryptedBindingButExactDecodeStillRejectsOtherAccount() {
+    val encoded = codec.encode(sampleState())
+
+    assertEquals(sampleState(), codec.decodeAuthenticatedSelfBound(encoded))
+    assertCode("session-binding-mismatch") {
+      codec.decode(encoded, binding.copy(accountScope = "user:442"))
+    }
+  }
+
+  @Test
+  fun migratesSchemaV1QueueBindingAndPlaybackStateWithoutInventingBrowseOrCommandPolicy() {
+    val state = sampleState()
+    val legacy = JSONObject(String(codec.encode(state), StandardCharsets.UTF_8))
+      .put("version", 1)
+      .apply {
+        remove("browseTree")
+        remove("remoteCapabilities")
+      }
+      .toString()
+      .toByteArray(StandardCharsets.UTF_8)
+    val expected = state.copy(browseTree = null, remoteCapabilities = null)
+
+    assertEquals(expected, codec.decode(legacy, binding))
+    assertEquals(expected, codec.decodeAuthenticatedSelfBound(legacy))
+  }
+
+  @Test
+  fun rejectsCrossOriginBrowseCookiesAndNonCanonicalBrowseRoot() {
+    val crossOrigin = sampleState().copy(
+      browseTree = sampleBrowseTree(
+        url = "https://cdn.example/auto-one",
+        cookie = "browse-session=opaque",
+      ),
+    )
+    assertCode("cookie-origin-mismatch") { codec.encode(crossOrigin) }
+    assertCode("browse-root-id-invalid") {
+      codec.encode(sampleState().copy(
+        browseTree = BrowseTreeSpec(sampleBrowseTree().root.copy(id = "other:root")),
+      ))
+    }
   }
 
   @Test
@@ -65,15 +113,24 @@ class LoggeRythmPersistedStateTest {
     }
     assertCode("json-invalid") {
       val duplicateVersion = String(codec.encode(sampleState()), StandardCharsets.UTF_8)
-        .replaceFirst("\"version\":1", "\"version\":1,\"version\":1")
+        .replaceFirst(
+          "\"version\":${LoggeRythmPersistedStateCodec.SCHEMA_VERSION}",
+          "\"version\":${LoggeRythmPersistedStateCodec.SCHEMA_VERSION}," +
+            "\"version\":${LoggeRythmPersistedStateCodec.SCHEMA_VERSION}",
+        )
       codec.decode(duplicateVersion.toByteArray(), binding)
     }
     assertCode("json-depth-invalid") {
-      codec.decode(("{\"nested\":" + "[".repeat(17) + "0" + "]".repeat(17) + "}").toByteArray(), binding)
+      codec.decode(("{\"nested\":" + "[".repeat(33) + "0" + "]".repeat(33) + "}").toByteArray(), binding)
     }
     assertCode("state-version-unsupported") {
       valid.remove("surprise")
-      codec.decode(valid.put("version", 2).toString().toByteArray(), binding)
+      codec.decode(
+        valid.put("version", LoggeRythmPersistedStateCodec.SCHEMA_VERSION + 1)
+          .toString()
+          .toByteArray(),
+        binding,
+      )
     }
     assertCode("state-size-invalid") {
       codec.decode(ByteArray(LoggeRythmPersistedStateCodec.MAX_STATE_JSON_BYTES + 1), binding)
@@ -251,6 +308,58 @@ class LoggeRythmPersistedStateTest {
       restoreOrder = listOf("stable:one", "stable:two"),
     ),
     sleep = sleep,
+    browseTree = sampleBrowseTree(),
+    remoteCapabilities = setOf(
+      RemotePlayerCapability.PLAY_PAUSE,
+      RemotePlayerCapability.NEXT,
+    ),
+  )
+
+  private fun sampleBrowseTree(
+    url: String = "https://loggerythm.logge.top/api/tracks/auto-one/stream",
+    cookie: String? = "browse-session=opaque",
+  ): BrowseTreeSpec = BrowseTreeSpec(
+    BrowseNodeSpec(
+      id = LoggeRythmPlayerRuntime.BROWSE_ROOT_ID,
+      title = "LoggeRythm",
+      subtitle = null,
+      artist = null,
+      album = null,
+      artworkUrl = null,
+      durationMs = null,
+      playable = false,
+      url = null,
+      cookie = null,
+      children = listOf(
+        BrowseNodeSpec(
+          id = "library:liked",
+          title = "Liked",
+          subtitle = null,
+          artist = null,
+          album = null,
+          artworkUrl = null,
+          durationMs = null,
+          playable = false,
+          url = null,
+          cookie = null,
+          children = listOf(
+            BrowseNodeSpec(
+              id = "track:auto-one",
+              title = "Auto One",
+              subtitle = null,
+              artist = "Artist",
+              album = "Album",
+              artworkUrl = "https://loggerythm.logge.top/art/auto-one.webp",
+              durationMs = 180_000L,
+              playable = true,
+              url = url,
+              cookie = cookie,
+              children = emptyList(),
+            ),
+          ),
+        ),
+      ),
+    ),
   )
 
   private fun sampleItem(id: String, order: Int): LoggeRythmPersistedQueueItem =

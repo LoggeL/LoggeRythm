@@ -5,6 +5,7 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
+import java.util.ArrayDeque
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
@@ -139,11 +140,15 @@ internal data class LoggeRythmPersistedPlayerState(
   val repeatMode: String,
   val contextShuffle: LoggeRythmPersistedContextShuffle,
   val sleep: LoggeRythmPersistedSleepState?,
+  val browseTree: BrowseTreeSpec? = null,
+  /** `null` means the service command policy had not been configured yet. */
+  val remoteCapabilities: Set<RemotePlayerCapability>? = null,
 ) {
   override fun toString(): String =
     "LoggeRythmPersistedPlayerState(sessionBinding=<redacted>, queue=<redacted:${queue.size}>, " +
       "activeIndex=$activeIndex, positionMs=$positionMs, repeatMode=$repeatMode, " +
-      "contextShuffle=$contextShuffle, sleep=$sleep)"
+      "contextShuffle=$contextShuffle, sleep=$sleep, browseTree=<redacted>, " +
+      "remoteCapabilities=<public:${remoteCapabilities?.size ?: 0}>)"
 }
 
 /**
@@ -170,6 +175,8 @@ internal class LoggeRythmPersistedStateCodec(
       .put("repeatMode", normalized.repeatMode)
       .put("contextShuffle", contextShuffleJson(normalized.contextShuffle))
       .put("sleep", sleepJson(normalized.sleep))
+      .put("browseTree", browseTreeJson(normalized.browseTree))
+      .put("remoteCapabilities", remoteCapabilitiesJson(normalized.remoteCapabilities))
     val encoded = root.toString().toByteArray(StandardCharsets.UTF_8)
     if (encoded.size > MAX_STATE_JSON_BYTES) fail("state-size-invalid")
     return encoded
@@ -179,14 +186,39 @@ internal class LoggeRythmPersistedStateCodec(
     encoded: ByteArray,
     expectedBinding: LoggeRythmPersistedSessionBinding,
   ): LoggeRythmPersistedPlayerState {
+    return decodeRoot(parseRoot(encoded), expectedBinding)
+  }
+
+  /**
+   * Restores the binding carried by authenticated ciphertext when no Activity/React process is
+   * alive to supply it. Callers must only use this after AES-GCM verification; plaintext or
+   * caller-owned input must continue to use [decode] with an independently expected binding.
+   */
+  fun decodeAuthenticatedSelfBound(encoded: ByteArray): LoggeRythmPersistedPlayerState {
+    return decodeRoot(parseRoot(encoded), expectedBinding = null)
+  }
+
+  private fun parseRoot(encoded: ByteArray): JSONObject {
     if (encoded.isEmpty() || encoded.size > MAX_STATE_JSON_BYTES) fail("state-size-invalid")
     val root = parseExactObject(encoded)
-    requireExactKeys(root, ROOT_KEYS)
-    if (requiredInt(root, "version") != SCHEMA_VERSION) fail("state-version-unsupported")
+    when (requiredInt(root, "version")) {
+      LEGACY_SCHEMA_VERSION -> requireExactKeys(root, LEGACY_ROOT_KEYS)
+      SCHEMA_VERSION -> requireExactKeys(root, ROOT_KEYS)
+      else -> fail("state-version-unsupported")
+    }
+    return root
+  }
 
+  private fun decodeRoot(
+    root: JSONObject,
+    expectedBinding: LoggeRythmPersistedSessionBinding?,
+  ): LoggeRythmPersistedPlayerState {
+    val schemaVersion = requiredInt(root, "version")
     val binding = parseSessionBinding(requiredObject(root, "sessionBinding"))
-    requireValidBinding(expectedBinding)
-    if (binding != expectedBinding) fail("session-binding-mismatch")
+    if (expectedBinding != null) {
+      requireValidBinding(expectedBinding)
+      if (binding != expectedBinding) fail("session-binding-mismatch")
+    }
     val queueValues = requiredArray(root, "queue")
     val activeIndex = requiredNullableInt(root, "activeIndex")
     val positionMs = requiredLong(root, "positionMs")
@@ -199,6 +231,8 @@ internal class LoggeRythmPersistedStateCodec(
       repeatMode = requiredString(root, "repeatMode", 8),
       contextShuffle = parseContextShuffle(requiredObject(root, "contextShuffle")),
       sleep = parseSleep(root),
+      browseTree = if (schemaVersion >= 2) parseBrowseTree(root) else null,
+      remoteCapabilities = if (schemaVersion >= 2) parseRemoteCapabilities(root) else null,
     )
     return validateAndNormalize(state)
   }
@@ -229,9 +263,92 @@ internal class LoggeRythmPersistedStateCodec(
     }
 
     validateCookieOrigins(parsedQueue, state.sessionBinding.origin)
+    val parsedBrowseTree = normalizeBrowseTree(state.browseTree)
+    validateBrowseCookieOrigins(parsedBrowseTree, state.sessionBinding.origin)
     validateContextShuffle(parsedQueue, state.contextShuffle)
     validateSleep(parsedQueue, state.activeIndex, state.sleep)
-    return state.copy(queue = parsedQueue)
+    return state.copy(queue = parsedQueue, browseTree = parsedBrowseTree)
+  }
+
+  private fun normalizeBrowseTree(value: BrowseTreeSpec?): BrowseTreeSpec? {
+    if (value == null) return null
+    val encoded = JSONObject().put("root", browseNodeJson(value.root)).toString()
+    val parsed = try {
+      playerProtocol.parseBrowseTree(encoded)
+    } catch (error: PlayerProtocolException) {
+      fail("browse-${error.code}")
+    }
+    if (parsed.root.id != LoggeRythmPlayerRuntime.BROWSE_ROOT_ID) {
+      fail("browse-root-id-invalid")
+    }
+    requireSameBrowseUris(value.root, parsed.root)
+    return parsed
+  }
+
+  private fun parseBrowseTree(root: JSONObject): BrowseTreeSpec? {
+    if (root.isNull("browseTree")) return null
+    val value = requiredObject(root, "browseTree")
+    val parsed = try {
+      playerProtocol.parseBrowseTree(value.toString())
+    } catch (error: PlayerProtocolException) {
+      fail("browse-${error.code}")
+    }
+    if (parsed.root.id != LoggeRythmPlayerRuntime.BROWSE_ROOT_ID) {
+      fail("browse-root-id-invalid")
+    }
+    requireCanonicalBrowseJson(requiredObject(value, "root"), parsed.root)
+    return parsed
+  }
+
+  private fun parseRemoteCapabilities(root: JSONObject): Set<RemotePlayerCapability>? {
+    if (root.isNull("remoteCapabilities")) return null
+    val values = requiredArray(root, "remoteCapabilities")
+    if (values.length() > RemotePlayerCapability.entries.size) fail("remote-capability-count-invalid")
+    val result = linkedSetOf<RemotePlayerCapability>()
+    repeat(values.length()) { index ->
+      val wireValue = values.opt(index) as? String ?: fail("remote-capability-invalid")
+      val capability = RemotePlayerCapability.entries.firstOrNull { it.wireValue == wireValue }
+        ?: fail("remote-capability-invalid")
+      if (!result.add(capability)) fail("remote-capability-duplicate")
+    }
+    return result.toSet()
+  }
+
+  private fun requireSameBrowseUris(source: BrowseNodeSpec, parsed: BrowseNodeSpec) {
+    if (
+      source.url != parsed.url ||
+      source.artworkUrl != parsed.artworkUrl ||
+      source.children.size != parsed.children.size
+    ) {
+      fail("browse-uri-not-canonical")
+    }
+    if (parsed.durationMs != null && parsed.durationMs > MAX_DURATION_MS) {
+      fail("browse-duration-invalid")
+    }
+    source.children.indices.forEach { index ->
+      requireSameBrowseUris(source.children[index], parsed.children[index])
+    }
+  }
+
+  private fun requireCanonicalBrowseJson(raw: JSONObject, parsed: BrowseNodeSpec) {
+    val rawUrl = optionalString(raw, "url", MAX_URI_LENGTH)
+    val rawArtwork = optionalString(raw, "artworkUrl", MAX_URI_LENGTH)
+    if (rawUrl != parsed.url || rawArtwork != parsed.artworkUrl) {
+      fail("browse-uri-not-canonical")
+    }
+    if (parsed.durationMs != null && parsed.durationMs > MAX_DURATION_MS) {
+      fail("browse-duration-invalid")
+    }
+    val rawChildren = raw.opt("children")
+    val values = when (rawChildren) {
+      null, JSONObject.NULL -> JSONArray()
+      is JSONArray -> rawChildren
+      else -> fail("browse-array-value-invalid")
+    }
+    if (values.length() != parsed.children.size) fail("browse-children-invalid")
+    parsed.children.indices.forEach { index ->
+      requireCanonicalBrowseJson(requiredObject(values, index), parsed.children[index])
+    }
   }
 
   private fun parseQueue(
@@ -414,6 +531,32 @@ internal class LoggeRythmPersistedStateCodec(
       add(utf8Bytes(item.extrasJson))
     }
     state.contextShuffle.restoreOrder.forEach { add(jsonStringBytes(it)) }
+    state.remoteCapabilities?.forEach { add(jsonStringBytes(it.wireValue)) }
+    state.browseTree?.let { tree ->
+      val pending = ArrayDeque<Pair<BrowseNodeSpec, Int>>()
+      pending.add(tree.root to 0)
+      var nodeCount = 0
+      while (pending.isNotEmpty()) {
+        val (node, depth) = pending.removeLast()
+        if (depth > LoggeRythmPlayerProtocol.MAX_BROWSE_DEPTH) {
+          fail("browse-browse-depth-exceeded")
+        }
+        nodeCount += 1
+        if (nodeCount > LoggeRythmPlayerProtocol.MAX_BROWSE_NODES) {
+          fail("browse-browse-node-limit-exceeded")
+        }
+        add(224L)
+        add(jsonStringBytes(node.id))
+        add(jsonStringBytes(node.title))
+        node.subtitle?.let { add(jsonStringBytes(it)) }
+        node.artist?.let { add(jsonStringBytes(it)) }
+        node.album?.let { add(jsonStringBytes(it)) }
+        node.artworkUrl?.let { add(jsonStringBytes(it)) }
+        node.url?.let { add(jsonStringBytes(it)) }
+        node.cookie?.let { add(jsonStringBytes(it)) }
+        node.children.asReversed().forEach { child -> pending.add(child to depth + 1) }
+      }
+    }
   }
 
   private fun jsonStringBytes(value: String): Long {
@@ -466,6 +609,26 @@ internal class LoggeRythmPersistedStateCodec(
         fail("cookie-origin-invalid")
       }
       if (origin != boundOrigin) fail("cookie-origin-mismatch")
+    }
+  }
+
+  private fun validateBrowseCookieOrigins(
+    tree: BrowseTreeSpec?,
+    boundOrigin: String,
+  ) {
+    if (tree == null) return
+    val pending = ArrayDeque<BrowseNodeSpec>()
+    pending.add(tree.root)
+    while (pending.isNotEmpty()) {
+      val node = pending.removeLast()
+      if (node.cookie != null) {
+        val url = node.url ?: fail("browse-cookie-origin-invalid")
+        validateCookieOrigins(
+          listOf(LoggeRythmPersistedQueueItem(id = node.id, url = url, cookie = node.cookie)),
+          boundOrigin,
+        )
+      }
+      node.children.asReversed().forEach(pending::add)
     }
   }
 
@@ -536,6 +699,35 @@ internal class LoggeRythmPersistedStateCodec(
       .put("targetIndex", value.targetIndex)
       .put("followsCurrentItem", value.followsCurrentItem)
   }
+
+  private fun browseTreeJson(value: BrowseTreeSpec?): Any = if (value == null) {
+    JSONObject.NULL
+  } else {
+    JSONObject().put("root", browseNodeJson(value.root))
+  }
+
+  private fun browseNodeJson(node: BrowseNodeSpec): JSONObject = JSONObject().also { value ->
+    value.put("id", node.id)
+    value.put("title", node.title)
+    node.subtitle?.let { value.put("subtitle", it) }
+    node.artist?.let { value.put("artist", it) }
+    node.album?.let { value.put("album", it) }
+    node.artworkUrl?.let { value.put("artworkUrl", it) }
+    node.durationMs?.let { value.put("durationMs", it) }
+    if (node.playable) value.put("playable", true)
+    node.url?.let { value.put("url", it) }
+    node.cookie?.let { value.put("headers", JSONObject().put("Cookie", it)) }
+    if (node.children.isNotEmpty()) {
+      value.put("children", JSONArray().also { children ->
+        node.children.forEach { child -> children.put(browseNodeJson(child)) }
+      })
+    }
+  }
+
+  private fun remoteCapabilitiesJson(value: Set<RemotePlayerCapability>?): Any =
+    value?.let { capabilities ->
+      JSONArray(capabilities.map(RemotePlayerCapability::wireValue).sorted())
+    } ?: JSONObject.NULL
 
   private fun parseExactObject(encoded: ByteArray): JSONObject {
     if (encoded.isEmpty() || encoded.size > MAX_STATE_JSON_BYTES) fail("json-size-invalid")
@@ -665,13 +857,14 @@ internal class LoggeRythmPersistedStateCodec(
   private fun fail(code: String): Nothing = throw LoggeRythmPersistedStateException(code)
 
   companion object {
-    internal const val SCHEMA_VERSION = 1
+    internal const val SCHEMA_VERSION = 2
+    private const val LEGACY_SCHEMA_VERSION = 1
     internal const val MAX_STATE_JSON_BYTES = 2_000_000
     internal const val MAX_QUEUE_ITEMS = 2_000
     private const val MAX_URI_LENGTH = 4_096
     private const val MAX_STABLE_ID_LENGTH = 512
     private const val MAX_CONTEXT_ID_LENGTH = 512
-    private const val MAX_JSON_NESTING = 16
+    private const val MAX_JSON_NESTING = 32
     private const val MAX_POSITION_MS = 315_576_000_000L // Ten Julian years.
     private const val MAX_DURATION_MS = MAX_POSITION_MS
     private const val MIN_TRIGGER_EPOCH_MS = 946_684_800_000L // 2000-01-01 UTC.
@@ -687,7 +880,10 @@ internal class LoggeRythmPersistedStateCodec(
       "repeatMode",
       "contextShuffle",
       "sleep",
+      "browseTree",
+      "remoteCapabilities",
     )
+    private val LEGACY_ROOT_KEYS = ROOT_KEYS - setOf("browseTree", "remoteCapabilities")
     private val SESSION_BINDING_KEYS = setOf("accountScope", "origin")
     private val CONTEXT_SHUFFLE_KEYS = setOf("enabled", "restoreOrder")
     private val TIME_SLEEP_KEYS = setOf("type", "triggerAtEpochMs", "fadeOutMs")

@@ -29,13 +29,15 @@ class LoggeRythmPlayerRuntimeBrowseTest {
   @Test
   fun stableRootAndEmptyContainersRemainBrowsable() {
     val emptyCategory = container("library:empty", "Empty")
-    val installed = LoggeRythmPlayerRuntime.installBrowseTree(tree(emptyCategory))
+    val sourceTree = tree(emptyCategory)
+    val installed = LoggeRythmPlayerRuntime.installBrowseTree(sourceTree)
 
     assertEquals(LoggeRythmPlayerRuntime.BROWSE_ROOT_ID, installed.rootId)
     assertEquals(LoggeRythmPlayerRuntime.BROWSE_ROOT_ID, installed.nodes.keys.first())
     assertTrue(installed.nodes.getValue(installed.rootId).mediaItem.mediaMetadata.isBrowsable == true)
     assertTrue(installed.nodes.getValue(emptyCategory.id).mediaItem.mediaMetadata.isBrowsable == true)
     assertFalse(installed.nodes.getValue(emptyCategory.id).mediaItem.mediaMetadata.isPlayable == true)
+    assertEquals(sourceTree, LoggeRythmPlayerRuntime.persistedBrowseTree())
 
     val wrongRoot = tree(emptyCategory).copy(
       root = tree(emptyCategory).root.copy(id = "unstable-root"),
@@ -104,6 +106,7 @@ class LoggeRythmPlayerRuntimeBrowseTest {
 
       changes.clear()
       LoggeRythmPlayerRuntime.clearSessionAndAllData()
+      assertNull(LoggeRythmPlayerRuntime.persistedBrowseTree())
       assertEquals(
         mapOf(
           LoggeRythmPlayerRuntime.BROWSE_ROOT_ID to 0,

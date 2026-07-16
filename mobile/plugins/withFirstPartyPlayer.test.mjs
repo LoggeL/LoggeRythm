@@ -99,6 +99,43 @@ describe('withFirstPartyPlayer app integration', () => {
     expect(once).toContain("disable 'MissingIntentFilterForMediaSearch'");
     expect(once).not.toContain('androidx.media3:');
   });
+
+  it('wires the separate-package hostile-controller helper idempotently', () => {
+    const once = plugin.transformTestControllerSettings("include ':app'\n");
+    expect(plugin.transformTestControllerSettings(once)).toBe(once);
+    expect(once.match(/include ':loggerythm_player-hostile-controller'/g)).toHaveLength(1);
+    expect(once).toContain("new File(rootDir, '../modules/loggerythm-player/android-test-controller')");
+  });
+
+  it('keeps the hostile-controller helper a separate unprivileged test APK', () => {
+    const helperBuild = readModuleFile('android-test-controller', 'build.gradle');
+    const helperManifest = readModuleFile(
+      'android-test-controller',
+      'src',
+      'main',
+      'AndroidManifest.xml',
+    );
+    const instrumentationManifest = readModuleFile(
+      'android',
+      'src',
+      'androidTest',
+      'AndroidManifest.xml',
+    );
+
+    expect(helperBuild).toContain('apply plugin: "com.android.application"');
+    expect(helperBuild).toContain(
+      'applicationId "top.logge.loggerythm.player.hostilecontroller"',
+    );
+    expect(helperManifest).not.toContain('android:sharedUserId');
+    expect(helperManifest).not.toContain('android.permission.MEDIA_CONTENT_CONTROL');
+    expect(helperManifest).toContain('android:protectionLevel="signature"');
+    expect(helperManifest).toContain(
+      'android:permission="top.logge.loggerythm.player.hostilecontroller.permission.BIND_PROBE"',
+    );
+    expect(instrumentationManifest).toContain(
+      'android:name="top.logge.loggerythm.player.hostilecontroller.permission.BIND_PROBE"',
+    );
+  });
 });
 
 describe('loggerythm-player Android library contract', () => {
