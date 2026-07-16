@@ -129,6 +129,7 @@ jobs:
           fi
 
       - name: Verify standalone APK contents and Android Auto manifest
+        id: verify-arm64-release
         working-directory: mobile/android
         run: |
           set -euo pipefail
@@ -328,7 +329,7 @@ jobs:
             sha256sum LoggeRythm-native-x86_64-qa.apk
 
       - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.verify-arm64-release.outcome == 'success' }}
         with:
           name: loggerythm-native-arm64-v8a-apk
           path: |

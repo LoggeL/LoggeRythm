@@ -30,6 +30,9 @@
     "typescript": "~6.0.3",
     "vitest": "^4.1.10"
   },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
@@ -37,6 +40,7 @@
     "web": "expo start --web",
     "generate:android-icons": "node scripts/generate_android_brand_assets.mjs",
     "check:android-icons": "node scripts/generate_android_brand_assets.mjs --check",
+    "check:dependency-security": "node scripts/verify_dependency_security.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
@@ -44,7 +48,7 @@
     "smoke:android": "python3 scripts/android_smoke.py",
     "qa:android-release": "python3 scripts/android_smoke.py",
     "qa:android-session": "python3 scripts/android_session_qa.py",
-    "check": "npm run check:android-icons && npm run typecheck && npm run lint && npm test"
+    "check": "npm run check:android-icons && npm run check:dependency-security && npm run typecheck && npm run lint && npm test"
   },
   "private": true
 }
