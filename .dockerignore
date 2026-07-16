@@ -1,0 +1,8 @@
+.git
+**/.git
+**/.venv
+**/node_modules
+web/.next
+api/spotifrei*.db
+api/storage
+.DS_Store

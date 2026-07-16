@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "LoggeRythm",
+    "slug": "loggerythm",
+    "version": "1.0.2",
+    "orientation": "default",
+    "scheme": "loggerythm",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0a0a14",
+    "primaryColor": "#7c5cff",
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
+    },
+    "android": {
+      "package": "top.logge.loggerythm",
+      "icon": "./assets/android-icon-legacy.png",
+      "allowBackup": false,
+      "adaptiveIcon": {
+        "backgroundColor": "#0a0a14",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": true,
+      "permissions": [
+        "INTERNET",
+        "WAKE_LOCK",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": false
+          }
+        }
+      ],
+      "./plugins/withNotificationIcon",
+      "./plugins/withReleaseSigning",
+      "./plugins/withNoBackup",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": false
+        }
+      ],
+      "expo-system-ui",
+      "@react-native-vector-icons/material-design-icons",
+      "./plugins/withFirstPartyPlayer",
+      "./plugins/withMusicVolumeControl",
+      "./plugins/withOfflineDownloads",
+      "./plugins/withSharedTextIntent",
+      "./plugins/withAndroidLauncherAssets"
+    ]
+  }
+}

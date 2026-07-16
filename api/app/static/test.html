@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpotiFrei — Stream-Spike</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; background:#121212; color:#eee; max-width:760px; margin:2rem auto; padding:0 1rem; }
+    h1 { font-weight:800; letter-spacing:-.02em; }
+    .accent { color:#7c5cff; }
+    input { padding:.6rem .8rem; border-radius:8px; border:1px solid #333; background:#1c1c1c; color:#eee; width:60%; }
+    button { padding:.6rem 1rem; border-radius:8px; border:0; background:#7c5cff; color:#fff; cursor:pointer; }
+    ul { list-style:none; padding:0; }
+    li { display:flex; align-items:center; gap:.8rem; padding:.5rem; border-radius:8px; }
+    li:hover { background:#1c1c1c; }
+    li img { width:48px; height:48px; border-radius:4px; }
+    .meta { flex:1; min-width:0; }
+    .meta b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .meta small { color:#aaa; }
+    audio { width:100%; margin-top:1rem; }
+    #status { color:#aaa; font-size:.9rem; min-height:1.2em; }
+  </style>
+</head>
+<body>
+  <h1>Spoti<span class="accent">Frei</span> — Stream-Spike</h1>
+  <p id="status">Health-Check läuft …</p>
+  <div>
+    <input id="q" placeholder="Song suchen … (z.B. Daft Punk)" value="Daft Punk" />
+    <button onclick="search()">Suchen</button>
+  </div>
+  <ul id="results"></ul>
+  <audio id="player" controls preload="auto"></audio>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const player = document.getElementById('player');
+
+    async function health() {
+      try {
+        const r = await fetch('/api/health/deezer');
+        const j = await r.json();
+        statusEl.textContent = j.ok ? '✅ Deezer-Login ok' : '❌ Deezer-Login fehlgeschlagen (ARL prüfen)';
+      } catch (e) { statusEl.textContent = '❌ Health-Check fehlgeschlagen: ' + e; }
+    }
+
+    async function search() {
+      const q = document.getElementById('q').value;
+      statusEl.textContent = 'Suche …';
+      const r = await fetch('/api/search?q=' + encodeURIComponent(q));
+      const items = await r.json();
+      statusEl.textContent = items.length + ' Treffer';
+      const ul = document.getElementById('results');
+      ul.innerHTML = '';
+      for (const it of items) {
+        const li = document.createElement('li');
+        li.innerHTML = `<img src="${it.img_url}" alt="" />
+          <div class="meta"><b>${it.title}</b><small>${it.artist} — ${it.album}</small></div>
+          <button>▶︎</button>`;
+        li.querySelector('button').onclick = () => play(it);
+        ul.appendChild(li);
+      }
+    }
+
+    function play(it) {
+      statusEl.textContent = `Lade „${it.title}" … (erster Abruf lädt + entschlüsselt den ganzen Track)`;
+      player.src = '/api/tracks/' + it.id + '/stream';
+      player.play().catch(() => {});
+      player.onplaying = () => statusEl.textContent = `▶︎ ${it.title} — ${it.artist}`;
+      player.onerror = () => statusEl.textContent = '❌ Wiedergabe fehlgeschlagen';
+    }
+
+    health();
+  </script>
+</body>
+</html>

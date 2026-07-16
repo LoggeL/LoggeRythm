@@ -1,0 +1,338 @@
+name: Native Android QA
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "contracts/**"
+      - "mobile/**"
+      - "api/**"
+      - "web/public/Logo.svg"
+      - "web/src/store/player.ts"
+      - "web/src/store/queuePolicy.ts"
+      - "web/tests/product-queue-golden.test.mjs"
+      - ".github/workflows/mobile-android.yml"
+  pull_request:
+    paths:
+      - "contracts/**"
+      - "mobile/**"
+      - "api/**"
+      - "web/public/Logo.svg"
+      - "web/src/store/player.ts"
+      - "web/src/store/queuePolicy.ts"
+      - "web/tests/product-queue-golden.test.mjs"
+      - ".github/workflows/mobile-android.yml"
+  workflow_dispatch:
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            mobile/package-lock.json
+            web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+        with:
+          # Skip the obsolete `tools` package (the setup-android default), which
+          # pulls in the flaky Android Emulator download we never use for a
+          # headless APK build. Gradle's AGP auto-fetches the platform and
+          # build-tools it needs; licenses are pre-accepted by this action.
+          packages: platform-tools
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Validate API and generated Android contracts
+        working-directory: api
+        run: |
+          python -m pip install -r requirements.txt
+          python -m app.openapi_contract check
+          python -m app.android_contract check
+
+      - name: Typecheck, lint, and unit test
+        working-directory: mobile
+        run: npm run check
+
+      - name: Validate shared browser queue golden contract
+        working-directory: web
+        run: |
+          npm ci
+          npx tsc --noEmit --incremental false
+          npx eslint src/store/queuePolicy.ts src/store/player.ts tests/product-queue-golden.test.mjs
+          node --test tests/product-queue-golden.test.mjs
+
+      - name: Validate Expo dependencies and config
+        working-directory: mobile
+        run: npx expo-doctor
+
+      - name: Generate native Android project
+        working-directory: mobile
+        env:
+          CI: "true"
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Verify generated Android launcher branding
+        working-directory: mobile
+        run: node scripts/verify_generated_android_launcher_assets.mjs
+
+      - name: Verify first-party player source and generated native tree
+        working-directory: mobile
+        run: node scripts/verify_first_party_player_gate.mjs
+
+      - name: Android lint, unit tests, and optimized standalone APK
+        working-directory: mobile/android
+        env:
+          # This public QA artifact is deliberately test-signed. Production
+          # releases can provide the ANDROID_KEYSTORE_* / ANDROID_KEY_* secrets
+          # and omit this explicit fallback.
+          ALLOW_DEBUG_RELEASE_SIGNING: "true"
+          NODE_ENV: production
+        run: |
+          : "${GITHUB_RUN_NUMBER:?GitHub did not provide GITHUB_RUN_NUMBER}"
+          export ANDROID_VERSION_CODE=$((10000 + GITHUB_RUN_NUMBER))
+          chmod +x ./gradlew
+          ./gradlew --no-daemon \
+            :loggerythm_player-native:testReleaseUnitTest \
+            :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease \
+            -PreactNativeArchitectures=arm64-v8a \
+            -PhermesEnabled=true \
+            -Pandroid.enableMinifyInReleaseBuilds=true \
+            -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+          if grep -Eq 'id="(IconExtension|IconLauncherShape)"' app/build/reports/lint-results-release.xml; then
+            echo 'Release lint found a launcher encoding or full-square silhouette regression' >&2
+            exit 1
+          fi
+
+      - name: Verify standalone APK contents and Android Auto manifest
+        working-directory: mobile/android
+        run: |
+          set -euo pipefail
+          fail() {
+            echo "APK verification failed: $*" >&2
+            exit 1
+          }
+          require_file() {
+            test -s "$1" || fail "$2"
+          }
+          require_fixed() {
+            grep -Fq -- "$1" "$2" || fail "$3"
+          }
+          require_regex() {
+            grep -Eq -- "$1" "$2" || fail "$3"
+          }
+          apk=app/build/outputs/apk/release/app-release.apk
+          require_file "$apk" "release APK is missing or empty: $apk"
+          unzip -Z1 "$apk" > /tmp/apk-files.txt
+          require_regex '^assets/index[.]android[.]bundle$' /tmp/apk-files.txt 'Hermes bundle is missing from the APK'
+          require_regex '^lib/arm64-v8a/' /tmp/apk-files.txt 'APK has no arm64-v8a native libraries'
+          if grep -Eq '^lib/(armeabi-v7a|x86|x86_64)/' /tmp/apk-files.txt; then
+            echo 'Unexpected non-arm64 native library in APK' >&2
+            exit 1
+          fi
+          python3 - "$apk" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as apk_zip:
+              bundle = apk_zip.read('assets/index.android.bundle')
+              if bundle[:4].hex() != 'c61fbc03':
+                  raise SystemExit('APK verification failed: bundle is not Hermes bytecode')
+              if b'https://loggerythm.logge.top' not in bundle:
+                  raise SystemExit('APK verification failed: production server URL missing from bundle')
+              if b'10.0.2.2' in bundle:
+                  raise SystemExit('APK verification failed: emulator server URL leaked into release bundle')
+              if b':8081' in bundle:
+                  raise SystemExit('APK verification failed: Metro/dev-server port leaked into release bundle')
+          PY
+          require_file app/build/outputs/mapping/release/mapping.txt 'R8 code mapping is missing or empty'
+          require_file app/build/outputs/mapping/release/resources.txt 'R8 resource mapping is missing or empty'
+          build_tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          aapt="$build_tools/aapt"
+          "$build_tools/apksigner" verify --verbose "$apk" || fail 'APK signature verification failed'
+          "$build_tools/zipalign" -c -P 16 4 "$apk" || fail 'APK zip alignment verification failed'
+          "$aapt" dump badging "$apk" > /tmp/badging.txt
+          "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
+          "$aapt" dump resources "$apk" > /tmp/resources.txt
+          require_fixed "application-label:'LoggeRythm'" /tmp/badging.txt 'application label is not LoggeRythm'
+          require_regex "application-icon-[0-9]+:'res/[^']+'" /tmp/badging.txt 'badging reports no packaged application icon'
+          launcher_icon=$(awk -F"'" '/^application-icon-[0-9]+:/{print $2; exit}' /tmp/badging.txt)
+          test -n "$launcher_icon" || fail 'could not resolve the packaged launcher icon path'
+          "$aapt" dump xmltree "$apk" "$launcher_icon" > /tmp/launcher-icon.txt
+          require_fixed 'top.logge.loggerythm.player.LoggeRythmMediaLibraryService' /tmp/manifest.txt 'First-party playback service is missing from the manifest'
+          require_fixed 'android:foregroundServiceType' /tmp/manifest.txt 'playback foreground service type is missing from the manifest'
+          require_fixed 'androidx.media3.session.MediaLibraryService' /tmp/manifest.txt 'Media3 library-service action is missing from the manifest'
+          require_fixed 'android.media.browse.MediaBrowserService' /tmp/manifest.txt 'platform media-browser action is missing from the manifest'
+          require_fixed 'com.google.android.gms.car.application' /tmp/manifest.txt 'Android Auto metadata is missing from the manifest'
+          require_fixed 'androidx.car.app.TintableAttributionIcon' /tmp/manifest.txt 'Android Auto attribution icon metadata is missing from the manifest'
+          require_fixed 'android.intent.category.LAUNCHER' /tmp/manifest.txt 'launcher activity is missing from the manifest'
+          python3 - /tmp/manifest.txt /tmp/resources.txt /tmp/launcher-icon.txt <<'PY'
+          import re, sys
+
+          manifest = open(sys.argv[1], encoding='utf-8').read()
+          resources = open(sys.argv[2], encoding='utf-8').read()
+          launcher = open(sys.argv[3], encoding='utf-8').read()
+
+          def resource_id(resource_name: str) -> str:
+              resource_ids = re.findall(
+                  rf'^\s*spec resource (0x[0-9a-fA-F]+) \S+:{re.escape(resource_name)}:',
+                  resources,
+                  re.MULTILINE,
+              )
+              if len(resource_ids) != 1:
+                  raise SystemExit(
+                      f'APK verification failed: expected exactly one {resource_name} resource; '
+                      f'found {len(resource_ids)}'
+                  )
+              return resource_ids[0]
+
+          def require_manifest_resource(attribute: str, resource_name: str) -> None:
+              expected_id = resource_id(resource_name)
+              manifest_reference = re.compile(
+                  rf'^\s+A: android:{re.escape(attribute)}\([^)]*\)=@{re.escape(expected_id)}$',
+                  re.MULTILINE,
+              )
+              if manifest_reference.search(manifest) is None:
+                  raise SystemExit(
+                      f'APK verification failed: manifest android:{attribute} does not reference '
+                      f'{resource_name} ({expected_id})'
+                  )
+
+          def require_metadata_resource(metadata_name: str, resource_name: str) -> None:
+              expected_id = resource_id(resource_name)
+              metadata = re.compile(
+                  rf'^\s+E: meta-data[^\n]*\n'
+                  rf'\s+A: android:name\([^)]*\)="{re.escape(metadata_name)}"[^\n]*\n'
+                  rf'\s+A: android:resource\([^)]*\)=@{re.escape(expected_id)}$',
+                  re.MULTILINE,
+              )
+              if metadata.search(manifest) is None:
+                  raise SystemExit(
+                      f'APK verification failed: metadata {metadata_name} does not reference '
+                      f'{resource_name} ({expected_id})'
+                  )
+
+          def require_launcher_resource(element: str, resource_name: str) -> None:
+              expected_id = resource_id(resource_name)
+              reference = re.compile(
+                  rf'^\s+E: {re.escape(element)}[^\n]*\n'
+                  rf'\s+A: android:drawable\([^)]*\)=@{re.escape(expected_id)}$',
+                  re.MULTILINE,
+              )
+              if reference.search(launcher) is None:
+                  raise SystemExit(
+                      f'APK verification failed: adaptive icon {element} does not reference '
+                      f'{resource_name} ({expected_id})'
+                  )
+
+          require_manifest_resource('icon', 'mipmap/ic_launcher')
+          require_manifest_resource('roundIcon', 'mipmap/ic_launcher_round')
+          require_metadata_resource(
+              'com.google.android.gms.car.application',
+              'xml/automotive_app_desc',
+          )
+          require_metadata_resource(
+              'androidx.car.app.TintableAttributionIcon',
+              'drawable/ic_stat_music',
+          )
+          if re.search(
+              r'^\s+E: adaptive-icon[^\n]*\n'
+              r'\s+E: background[^\n]*\n'
+              r'\s+A: android:drawable\([^)]*\)=@[0-9a-fA-Fx]+$',
+              launcher,
+              re.MULTILINE,
+          ) is None:
+              raise SystemExit('APK verification failed: adaptive icon background is missing')
+          require_launcher_resource('foreground', 'mipmap/ic_launcher_foreground')
+          require_launcher_resource('monochrome', 'mipmap/ic_launcher_monochrome')
+          PY
+          require_fixed ':xml/automotive_app_desc:' /tmp/resources.txt 'Android Auto descriptor resource is missing'
+          require_fixed ':mipmap/ic_launcher:' /tmp/resources.txt 'launcher icon resource is missing'
+          require_fixed ':mipmap/ic_launcher_foreground:' /tmp/resources.txt 'adaptive launcher foreground resource is missing'
+          require_fixed ':mipmap/ic_launcher_monochrome:' /tmp/resources.txt 'adaptive monochrome launcher resource is missing'
+          require_fixed ':drawable/ic_stat_music:' /tmp/resources.txt 'notification/Android Auto attribution icon was removed from the APK'
+          node ../scripts/verify_first_party_player_gate.mjs --apk "$apk"
+          mkdir -p release-evidence/r8
+          cp "$apk" LoggeRythm-native-arm64-v8a.apk
+          cp app/build/outputs/mapping/release/mapping.txt release-evidence/r8/mapping-arm64-v8a.txt
+          cp app/build/outputs/mapping/release/resources.txt release-evidence/r8/resources-arm64-v8a.txt
+          sha256sum LoggeRythm-native-arm64-v8a.apk
+
+      - name: Enable KVM for native instrumentation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Standalone x86_64 cold/warm release QA
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        env:
+          ALLOW_DEBUG_RELEASE_SIGNING: "true"
+          NODE_ENV: production
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          working-directory: mobile/android
+          script: |
+            set -euo pipefail
+            : "${GITHUB_RUN_NUMBER:?GitHub did not provide GITHUB_RUN_NUMBER}"
+            export ANDROID_VERSION_CODE=$((20000 + GITHUB_RUN_NUMBER))
+            chmod +x ./gradlew
+            ./gradlew --no-daemon \
+              :loggerythm_player-native:connectedDebugAndroidTest
+            ./gradlew --no-daemon :app:clean :app:assembleRelease \
+              -PreactNativeArchitectures=x86_64 \
+              -PhermesEnabled=true \
+              -Pandroid.enableMinifyInReleaseBuilds=true \
+              -Pandroid.enableShrinkResourcesInReleaseBuilds=true
+            npm --prefix .. run qa:android-release -- \
+              --apk android/app/build/outputs/apk/release/app-release.apk \
+              --startup-only \
+              --output-dir android-smoke-evidence
+            cp app/build/outputs/apk/release/app-release.apk LoggeRythm-native-x86_64-qa.apk
+            sha256sum LoggeRythm-native-x86_64-qa.apk
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: loggerythm-native-arm64-v8a-apk
+          path: |
+            mobile/android/LoggeRythm-native-arm64-v8a.apk
+            mobile/android/release-evidence/r8/*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loggerythm-native-x86_64-qa-apk-and-smoke
+          path: |
+            mobile/android/LoggeRythm-native-x86_64-qa.apk
+            mobile/android-smoke-evidence/**
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: android-native-test-reports
+          path: |
+            mobile/modules/loggerythm-player/android/build/reports/**
+            mobile/modules/loggerythm-player/android/build/test-results/**
+            mobile/android-smoke-evidence/**
+          if-no-files-found: warn
