@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Event, RepeatMode, type MediaItem } from './player';
 import type { Track } from '../api/types';
 import {
@@ -9,11 +9,14 @@ import {
   playNext,
   playTrackRow,
   playTracks,
+  prepareRadioPlaybackCompletionItems,
   prev,
   resetControllerState,
+  setPlaybackEventDrainerForTests,
   startRadio,
   toggleShuffle,
 } from './controller';
+import type { RadioPlaybackEvent } from './playbackEventJournal';
 import { mediaItemUsesExplicitDownload } from './mediaItem';
 import {
   queueContextOf,
@@ -56,6 +59,8 @@ const mocks = vi.hoisted(() => ({
   recordPlay: vi.fn(),
   invalidateListeningStats: vi.fn(),
   clearPlayerError: vi.fn(),
+  drainPlaybackEvents: vi.fn(),
+  mapMediaItemToNativeQueueItem: vi.fn(),
 }));
 
 vi.mock('./player', async () => {
@@ -85,6 +90,7 @@ vi.mock('./player', async () => {
     },
     Event,
     RepeatMode,
+    mapMediaItemToNativeQueueItem: mocks.mapMediaItemToNativeQueueItem,
   };
 });
 vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
@@ -142,7 +148,34 @@ function media(id: string, origin: 'manual' | 'context' = 'context', radio = fal
 
 const ids = () => mocks.queue.map((item) => (item.extras?.track as Track).id);
 
+function radioJournalEvent(item: MediaItem, generation = 33): RadioPlaybackEvent {
+  const value = item.extras?.track as Track;
+  return {
+    schemaVersion: 1,
+    eventId: '123e4567-e89b-42d3-a456-426614174002',
+    type: 'RADIO',
+    createdAtMs: 1_784_230_000_000,
+    attempt: 0,
+    track: {
+      id: value.id,
+      title: value.title,
+      artist: value.artist,
+      artistId: value.artist_id,
+      artists: value.artists,
+      album: value.album,
+      albumId: value.album_id,
+      durationSec: value.duration_sec,
+      rank: value.rank,
+      releaseDate: value.release_date,
+    },
+    activeMediaId: item.mediaId!,
+    queueGeneration: generation,
+  };
+}
+
 describe('controller Phase-0 queue contract', () => {
+  let restorePlaybackEventDrainer = (): void => undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.queue = [];
@@ -206,8 +239,25 @@ describe('controller Phase-0 queue contract', () => {
     mocks.getRadio.mockResolvedValue([]);
     mocks.recordPlay.mockResolvedValue(undefined);
     mocks.invalidateListeningStats.mockResolvedValue(undefined);
+    mocks.drainPlaybackEvents.mockResolvedValue({ claimed: 0, completed: 0, retried: 0 });
+    mocks.mapMediaItemToNativeQueueItem.mockImplementation((item: MediaItem) => {
+      const source = typeof item.url === 'object' && item.url !== null
+        ? String(item.url.uri)
+        : String(item.url);
+      return {
+        id: item.mediaId!,
+        url: source,
+        title: item.title,
+        extras: item.extras,
+      };
+    });
+    restorePlaybackEventDrainer = setPlaybackEventDrainerForTests({
+      drain: mocks.drainPlaybackEvents,
+    });
     resetControllerState();
   });
+
+  afterEach(() => restorePlaybackEventDrainer());
 
   it('creates context queues with authenticated media and starts at the requested index', async () => {
     await playTracks([track('a'), track('b'), track('c')], 1, {
@@ -543,11 +593,10 @@ describe('controller Phase-0 queue contract', () => {
       resolveRadio = resolve;
     }));
 
-    const pending = handleBackgroundPlaybackEvent({
-      type: Event.MediaItemTransition,
-      item: mocks.queue[0],
-      index: 0,
-    });
+    const pending = prepareRadioPlaybackCompletionItems(
+      radioJournalEvent(mocks.queue[0]),
+      4_000,
+    );
     await vi.waitFor(() => expect(mocks.getRadio).toHaveBeenCalledOnce());
     expect(mocks.getRadio).toHaveBeenCalledWith('seed', undefined, 4_000);
     mocks.queue.push(media('arrived-during-request', 'manual', true));
@@ -557,15 +606,21 @@ describe('controller Phase-0 queue contract', () => {
       track('new-1'),
       track('new-2'),
     ]);
-    await pending;
+    const completion = await pending;
 
-    expect(ids()).toEqual(['seed', 'arrived-during-request', 'new-1', 'new-2']);
-    expect(mocks.queue.slice(2).map(queueOriginOf)).toEqual(['context', 'context']);
-    expect(mocks.recordPlay).toHaveBeenCalledWith(track('seed'), 4_000);
-    expect(mocks.invalidateListeningStats).toHaveBeenCalledOnce();
+    expect(ids()).toEqual(['seed', 'arrived-during-request']);
+    expect(completion.map((item) => (item.extras?.track as Track).id)).toEqual([
+      'new-1',
+      'new-2',
+    ]);
+    expect(completion.map((item) => item.extras?.queueOrigin)).toEqual([
+      'context',
+      'context',
+    ]);
+    expect(mocks.addMediaItems).not.toHaveBeenCalled();
   });
 
-  it('invalidates account stats only after play history persists successfully', async () => {
+  it('routes transition bookkeeping only through the durable coalesced drain', async () => {
     const active = media('active', 'context', false);
     mocks.queue = [active];
     mocks.activeIndex = 0;
@@ -575,15 +630,16 @@ describe('controller Phase-0 queue contract', () => {
       item: active,
       index: 0,
     });
-    expect(mocks.invalidateListeningStats).toHaveBeenCalledOnce();
+    expect(mocks.drainPlaybackEvents).toHaveBeenCalledOnce();
+    expect(mocks.recordPlay).not.toHaveBeenCalled();
+    expect(mocks.invalidateListeningStats).not.toHaveBeenCalled();
 
-    mocks.recordPlay.mockRejectedValueOnce(new Error('history unavailable'));
-    await handleBackgroundPlaybackEvent({
+    mocks.drainPlaybackEvents.mockRejectedValueOnce(new Error('journal unavailable'));
+    await expect(handleBackgroundPlaybackEvent({
       type: Event.MediaItemTransition,
       item: active,
       index: 0,
-    });
-    expect(mocks.invalidateListeningStats).toHaveBeenCalledOnce();
+    })).resolves.toBeUndefined();
   });
 
   it('does not append stale radio results after a native Android Auto queue replacement', async () => {
@@ -595,15 +651,14 @@ describe('controller Phase-0 queue contract', () => {
       resolveRadio = resolve;
     }));
 
-    const pending = handleBackgroundPlaybackEvent({
-      type: Event.MediaItemTransition,
-      item: seed,
-      index: 0,
-    });
+    const pending = prepareRadioPlaybackCompletionItems(
+      radioJournalEvent(seed),
+      4_000,
+    );
     await vi.waitFor(() => expect(mocks.getRadio).toHaveBeenCalledOnce());
     mocks.queue = [media('auto-selection', 'context', false)];
     resolveRadio([track('stale')]);
-    await pending;
+    await expect(pending).resolves.toEqual([]);
 
     expect(ids()).toEqual(['auto-selection']);
     expect(mocks.addMediaItems).not.toHaveBeenCalled();

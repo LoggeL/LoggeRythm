@@ -1,20 +1,28 @@
 import Player, {
   Event,
   RepeatMode,
+  mapMediaItemToNativeQueueItem,
   type BackgroundEvent,
   type MediaItem,
   type MediaItemTransitionEvent,
+  type NativeQueueWireItem,
   type PlaybackErrorEvent,
   type PlaybackProgressUpdatedEvent,
 } from './player';
 import type { Track } from '../api/types';
 import { authenticatedHeadersFor } from '../api/client';
 import { getApiBase } from '../config';
-import { invalidateListeningStats } from '../data/queryClient';
+import { invalidateListeningStats, musicCacheScope } from '../data/queryClient';
 import { musicRepository } from '../data/repositories';
 import { strings } from '../localization';
 import { offlineUriForTrack } from '../offline/registry';
 import { clearPlayerError, reportPlayerError, UserFacingPlayerError } from './errors';
+import {
+  PlaybackEventDrainer,
+  trackFromPlaybackEventMetadata,
+  type PlaybackEventDrainResult,
+  type RadioPlaybackEvent,
+} from './playbackEventJournal';
 import { clearPlayerNotice, reportPlayerNotice } from './notices';
 import {
   mediaItemIsRadio,
@@ -52,18 +60,89 @@ import {
 } from './queueContract';
 
 let listenersInstalled = false;
-let extending = false;
 let queueGeneration = 0;
 let itemSequence = 0;
 let contextShuffleEnabled = false;
 let contextShuffleRestoreOrder: string[] = [];
-const BACKGROUND_REQUEST_TIMEOUT_MS = 4_000;
 const BACKGROUND_RECOVERY_REQUEST_TIMEOUT_MS = 2_500;
 const BACKGROUND_RECOVERY_BUDGET_MS = 4_500;
 const FOREGROUND_RECOVERY_REQUEST_TIMEOUT_MS = 5_000;
 const FOREGROUND_RECOVERY_BUDGET_MS = 20_000;
 const QUEUE_MUTATION_TIMEOUT_MS = 1_500;
 const QUEUE_MUTATION_POLL_MS = 25;
+
+interface PlaybackEventDrainPort {
+  drain(): Promise<Readonly<PlaybackEventDrainResult>>;
+}
+
+let defaultPlaybackEventDrainer: PlaybackEventDrainPort | null = null;
+let injectedPlaybackEventDrainer: PlaybackEventDrainPort | null = null;
+
+async function authorizePlaybackEventBinding() {
+  const origin = await getApiBase();
+  const [{ readOfflineIdentity }, playerSetup] = await Promise.all([
+    import('../auth/offlineIdentity'),
+    import('./setup'),
+  ]);
+  const identity = await readOfflineIdentity(origin);
+  if (identity === null || !identity.is_approved) {
+    throw new Error('Approved offline playback identity is unavailable');
+  }
+  const queryScope = musicCacheScope(origin, identity.id);
+  const binding = playerSetup.playerSessionBindingFromQueryScope(queryScope);
+  await playerSetup.ensurePlayer(queryScope);
+  return binding;
+}
+
+function playbackEventDrainer(): PlaybackEventDrainPort {
+  if (injectedPlaybackEventDrainer !== null) return injectedPlaybackEventDrainer;
+  defaultPlaybackEventDrainer ??= new PlaybackEventDrainer({
+    native: {
+      claimPlaybackEvents: async (maxEvents, leaseMs) =>
+        (await import('./nativePlayerPort'))
+          .getPlaybackEventJournalNativePort()
+          .claimPlaybackEvents(maxEvents, leaseMs),
+      ackPlaybackEvent: async (leaseId, eventId) =>
+        (await import('./nativePlayerPort'))
+          .getPlaybackEventJournalNativePort()
+          .ackPlaybackEvent(leaseId, eventId),
+      retryPlaybackEvent: async (leaseId, eventId, notBeforeEpochMs) =>
+        (await import('./nativePlayerPort'))
+          .getPlaybackEventJournalNativePort()
+          .retryPlaybackEvent(leaseId, eventId, notBeforeEpochMs),
+      completeRadioPlaybackEvent: async (leaseId, eventId, payloadJson) =>
+        (await import('./nativePlayerPort'))
+          .getPlaybackEventJournalNativePort()
+          .completeRadioPlaybackEvent(leaseId, eventId, payloadJson),
+    },
+    authorizeBinding: authorizePlaybackEventBinding,
+    recordPlay: (track, timeoutMs, eventId) =>
+      musicRepository.recordPlay(track, timeoutMs, eventId),
+    prepareRadioItems: prepareRadioPlaybackCompletionItems,
+    onPlayRecorded: () => invalidateListeningStats(),
+  });
+  return defaultPlaybackEventDrainer;
+}
+
+/** One shared entry point for foreground listeners and Android Headless JS. */
+export function drainDurablePlaybackEvents(): Promise<Readonly<PlaybackEventDrainResult>> {
+  try {
+    return playbackEventDrainer().drain();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+}
+
+/** Narrow deterministic injection seam; production always uses the strict native journal. */
+export function setPlaybackEventDrainerForTests(
+  drainer: PlaybackEventDrainPort,
+): () => void {
+  const previous = injectedPlaybackEventDrainer;
+  injectedPlaybackEventDrainer = drainer;
+  return () => {
+    injectedPlaybackEventDrainer = previous;
+  };
+}
 
 let recoveryBudget: RecoveryBudgetState = createRecoveryBudget();
 let recoveryEpoch = 0;
@@ -807,30 +886,13 @@ export async function toggleShuffle(
 
 async function handleMediaItemTransition(
   event: MediaItemTransitionEvent,
-  requestTimeoutMs?: number,
 ): Promise<void> {
   noteMediaItemTransition(event);
-  let bookkeepingFailed = false;
   try {
-    const operations: Promise<void>[] = [];
-    const track = mediaItemToTrack(event.item);
-    const recordResultIndex = track === null ? null : operations.length;
-    if (track !== null) operations.push(musicRepository.recordPlay(track, requestTimeoutMs));
-    operations.push(maybeExtendRadio(event.index, requestTimeoutMs));
-    const results = await Promise.allSettled(operations);
-    if (
-      recordResultIndex !== null &&
-      results[recordResultIndex]?.status === 'fulfilled'
-    ) {
-      void invalidateListeningStats().catch(() => undefined);
-    }
-    bookkeepingFailed = results.some((result) => result.status === 'rejected');
+    await drainDurablePlaybackEvents();
   } catch {
-    // Transition side effects are not audio control. Even malformed bookkeeping
-    // metadata must not become an unhandled listener rejection or stop playback.
-    bookkeepingFailed = true;
-  }
-  if (bookkeepingFailed) {
+    // Durable bookkeeping is isolated from transport. Native keeps an unacked
+    // or explicitly retried event; JavaScript never needs diagnostic payloads.
     const mediaId = event.item?.mediaId;
     reportPlayerNotice(
       'bookkeeping',
@@ -1143,7 +1205,7 @@ function requestPlaybackRecovery(
 /** Called by Android's headless playback task while the UI is backgrounded. */
 export async function handleBackgroundPlaybackEvent(event: BackgroundEvent): Promise<void> {
   if (event.type === Event.MediaItemTransition) {
-    await handleMediaItemTransition(event, BACKGROUND_REQUEST_TIMEOUT_MS);
+    await handleMediaItemTransition(event);
   } else if (event.type === Event.PlaybackProgressUpdated) {
     notePlaybackProgress(event);
   } else if (event.type === Event.PlaybackError) {
@@ -1172,62 +1234,72 @@ export function installPlaybackListeners(): void {
   listenersInstalled = true;
 }
 
-async function maybeExtendRadio(activeIndex: number, requestTimeoutMs?: number): Promise<void> {
-  if (extending) return;
-  const generation = queueGeneration;
-  const queue = Player.getQueue();
-  const active = queue[activeIndex];
-  if (!mediaItemIsRadio(active) || queue.length - activeIndex > 2) return;
-  const seed = mediaItemToTrack(active);
-  if (seed === null) throw new Error(`Radio queue item ${activeIndex} has no Track metadata`);
-
-  extending = true;
-  try {
-    const similar = await musicRepository.getRadio(seed.id, undefined, requestTimeoutMs);
-    if (generation !== queueGeneration) return;
-
-    // The active item or queue can change natively while the HTTP request is in
-    // flight (including from Android Auto). Re-read the canonical queue before
-    // deciding whether and what to append.
-    const current = getQueueSnapshot();
-    if (current.activeIndex === null) return;
-    const currentActive = current.items[current.activeIndex];
-    if (!mediaItemIsRadio(currentActive) || current.items.length - current.activeIndex > 2) return;
-    const existing = new Set(
-      current.items
-        .map((item) => mediaItemToTrack(item)?.id)
-        .filter((id): id is string => id !== undefined),
-    );
-    const fresh = uniqueTracksNotInQueue(similar, existing, 5);
-    if (fresh.length > 0) {
-      const sources = await mediaSources(fresh);
-      if (generation !== queueGeneration) return;
-      const context = queueContextOf(currentActive) ?? {
-        type: 'radio' as const,
-        id: seed.id,
-        label: strings.queue.trackRadioContext(seed.title),
-      };
-      const firstOrder = nextOriginalContextOrder(current.items);
-      Player.addMediaItems(
-        fresh.map((track, index) =>
-          queueMediaItem(track, sources[index], {
-            mediaId: nextMediaId('radio', track),
-            origin: 'context',
-            radio: true,
-            context,
-            originalContextOrder: firstOrder + index,
-            stableId: contextStableId(context, firstOrder + index, track),
-          }),
-        ),
-      );
-    }
-  } finally {
-    extending = false;
+/**
+ * Prepare, but never append, one radio extension. Native validates the leased
+ * event's generation/active item and atomically appends these items with event
+ * completion, closing the previous append-then-ack crash window.
+ */
+export async function prepareRadioPlaybackCompletionItems(
+  event: Readonly<RadioPlaybackEvent>,
+  requestTimeoutMs: number,
+): Promise<readonly NativeQueueWireItem[]> {
+  const initial = getQueueSnapshot();
+  if (initial.activeIndex === null) return [];
+  const initialActive = initial.items[initial.activeIndex];
+  const initialTrack = mediaItemToTrack(initialActive);
+  if (
+    initialActive.mediaId !== event.activeMediaId
+    || !mediaItemIsRadio(initialActive)
+    || initial.items.length - initial.activeIndex > 2
+    || initialTrack?.id !== event.track.id
+  ) {
+    return [];
   }
+
+  const seed = trackFromPlaybackEventMetadata(event.track);
+  const similar = await musicRepository.getRadio(seed.id, undefined, requestTimeoutMs);
+
+  // Re-read after HTTP so Android Auto replacement and foreground queue changes
+  // become an empty stale completion. Native repeats this check transactionally.
+  const current = getQueueSnapshot();
+  if (current.activeIndex === null) return [];
+  const currentActive = current.items[current.activeIndex];
+  const currentTrack = mediaItemToTrack(currentActive);
+  if (
+    currentActive.mediaId !== event.activeMediaId
+    || !mediaItemIsRadio(currentActive)
+    || current.items.length - current.activeIndex > 2
+    || currentTrack?.id !== seed.id
+  ) {
+    return [];
+  }
+  const existing = new Set(
+    current.items
+      .map((item) => mediaItemToTrack(item)?.id)
+      .filter((id): id is string => id !== undefined),
+  );
+  const fresh = uniqueTracksNotInQueue(similar, existing, 5);
+  if (fresh.length === 0) return [];
+  const sources = await mediaSources(fresh);
+  const context = queueContextOf(currentActive) ?? {
+    type: 'radio' as const,
+    id: seed.id,
+    label: strings.queue.trackRadioContext(seed.title),
+  };
+  const firstOrder = nextOriginalContextOrder(current.items);
+  return fresh.map((track, index) => mapMediaItemToNativeQueueItem(
+    queueMediaItem(track, sources[index], {
+      mediaId: nextMediaId('radio', track),
+      origin: 'context',
+      radio: true,
+      context,
+      originalContextOrder: firstOrder + index,
+      stableId: contextStableId(context, firstOrder + index, track),
+    }),
+  ));
 }
 
 export function resetControllerState(): void {
-  extending = false;
   queueGeneration += 1;
   resetContextShuffleState();
   recoveryEpoch += 1;

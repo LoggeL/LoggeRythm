@@ -43,6 +43,10 @@ function nativeModule(): LoggeRythmPlayerNativeModule {
     setBrowseTree: vi.fn(async () => undefined),
     clearPersistedState: vi.fn(async () => undefined),
     clearCache: vi.fn(async () => undefined),
+    claimPlaybackEvents: vi.fn(async () => ''),
+    ackPlaybackEvent: vi.fn(async () => undefined),
+    retryPlaybackEvent: vi.fn(async () => undefined),
+    completeRadioPlaybackEvent: vi.fn(async () => undefined),
     addListener: vi.fn(),
     removeListeners: vi.fn(),
   };

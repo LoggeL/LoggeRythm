@@ -1,11 +1,25 @@
 import { registerRootComponent } from 'expo';
+import { AppRegistry } from 'react-native';
 import Player from './src/player/player';
 
 import App from './App';
-import { handleBackgroundPlaybackEvent } from './src/player/controller';
+import {
+  drainDurablePlaybackEvents,
+  handleBackgroundPlaybackEvent,
+} from './src/player/controller';
+import { PLAYBACK_EVENT_HEADLESS_TASK } from './src/player/playbackEventJournal';
+
+// Native owns scheduling and the durable lease. Foreground requests coalesce
+// with this same drain, so React startup cannot process one event twice.
+AppRegistry.registerHeadlessTask(
+  PLAYBACK_EVENT_HEADLESS_TASK,
+  () => async () => {
+    await drainDurablePlaybackEvents();
+  },
+);
 
 // Android: register before the app. Transport controls remain native,
-// while transition/error events keep radio and play history working in background.
+// while progress/error compatibility events retain recovery behavior.
 Player.registerBackgroundEventHandler(() => handleBackgroundPlaybackEvent);
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);

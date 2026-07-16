@@ -6,6 +6,7 @@ import {
   handleBackgroundPlaybackEvent,
   installPlaybackListeners,
   resetControllerState,
+  setPlaybackEventDrainerForTests,
 } from './controller';
 import { withQueueOrigin } from './queueContract';
 
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   reportPlayerError: vi.fn(),
   clearPlayerNotice: vi.fn(),
   reportPlayerNotice: vi.fn(),
+  drainPlaybackEvents: vi.fn(),
 }));
 
 vi.mock('./player', async () => {
@@ -119,6 +121,8 @@ function backgroundError(error: PlaybackErrorEvent) {
 }
 
 describe('native playback recovery integration', () => {
+  let restorePlaybackEventDrainer = (): void => undefined;
+
   beforeAll(() => {
     mocks.addEventListener.mockImplementation(
       (event: string, listener: (payload: never) => void) => {
@@ -166,10 +170,15 @@ describe('native playback recovery integration', () => {
     mocks.preloadTrack.mockResolvedValue(undefined);
     mocks.getRadio.mockResolvedValue([]);
     mocks.recordPlay.mockResolvedValue(undefined);
+    mocks.drainPlaybackEvents.mockResolvedValue({ claimed: 0, completed: 0, retried: 0 });
+    restorePlaybackEventDrainer = setPlaybackEventDrainerForTests({
+      drain: mocks.drainPlaybackEvents,
+    });
     resetControllerState();
   });
 
   afterEach(() => {
+    restorePlaybackEventDrainer();
     vi.useRealTimers();
   });
 
@@ -252,8 +261,7 @@ describe('native playback recovery integration', () => {
 
   it('keeps transition bookkeeping failures out of the fatal player channel', async () => {
     const diagnostic = 'backend internal sf_session=must-not-leak';
-    mocks.recordPlay.mockRejectedValueOnce(new Error(diagnostic));
-    mocks.getRadio.mockRejectedValueOnce(new Error(diagnostic));
+    mocks.drainPlaybackEvents.mockRejectedValueOnce(new Error(diagnostic));
     const before = [...mocks.queue];
 
     await expect(
@@ -278,7 +286,7 @@ describe('native playback recovery integration', () => {
     expect(mocks.queue).toEqual(before);
   });
 
-  it('contains malformed transition metadata without leaking or interrupting audio', async () => {
+  it('ignores untrusted foreground transition metadata and drains only the native journal', async () => {
     const malformed = { ...mocks.queue[0], extras: { radio: true } };
 
     await expect(
@@ -290,12 +298,8 @@ describe('native playback recovery integration', () => {
     ).resolves.toBeUndefined();
 
     expect(mocks.recordPlay).not.toHaveBeenCalled();
-    expect(mocks.reportPlayerNotice).toHaveBeenCalledWith(
-      'bookkeeping',
-      'transition:queue:bad',
-      strings.player.bookkeepingFailedTitle,
-      strings.player.bookkeepingFailedMessage,
-    );
+    expect(mocks.drainPlaybackEvents).toHaveBeenCalledOnce();
+    expect(mocks.reportPlayerNotice).not.toHaveBeenCalled();
     expect(mocks.reportPlayerError).not.toHaveBeenCalled();
     expect(mocks.pause).not.toHaveBeenCalled();
     expect(mocks.skipToNext).not.toHaveBeenCalled();

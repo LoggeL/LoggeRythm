@@ -110,9 +110,29 @@ export interface LoggeRythmPlayerNativeModule {
   setBrowseTree(treeJson: string): Promise<unknown>;
   clearPersistedState(): Promise<unknown>;
   clearCache(): Promise<unknown>;
+  claimPlaybackEvents(maxEvents: number, leaseMs: number): Promise<string>;
+  ackPlaybackEvent(leaseId: string, eventId: string): Promise<unknown>;
+  retryPlaybackEvent(
+    leaseId: string,
+    eventId: string,
+    notBeforeEpochMs: number,
+  ): Promise<unknown>;
+  completeRadioPlaybackEvent(
+    leaseId: string,
+    eventId: string,
+    payloadJson: string,
+  ): Promise<unknown>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }
+
+export type PlaybackEventJournalNativePort = Pick<
+  LoggeRythmPlayerNativeModule,
+  | 'claimPlaybackEvents'
+  | 'ackPlaybackEvent'
+  | 'retryPlaybackEvent'
+  | 'completeRadioPlaybackEvent'
+>;
 
 export interface NativeEventSubscription {
   remove(): void;
@@ -173,7 +193,7 @@ export interface NativeSnapshotV1 {
   errorCode: string | null;
 }
 
-interface NativeQueueWireItem {
+export interface NativeQueueWireItem {
   id: string;
   url: string;
   title?: string;
@@ -418,7 +438,7 @@ function artworkUrl(item: MediaItem): string | undefined {
   return undefined;
 }
 
-function toNativeQueueItem(item: MediaItem): NativeQueueWireItem {
+export function mapMediaItemToNativeQueueItem(item: MediaItem): NativeQueueWireItem {
   validateMediaItem(item);
   const source = sourceUrl(item);
   const publicItem = sanitizeMediaItemForPublic(item);
@@ -1105,7 +1125,7 @@ export class NativeBackedPlayerPort implements PlayerPort {
       rawItems.push(source);
     }
     const payload = {
-      items: rawItems.map(toNativeQueueItem),
+      items: rawItems.map(mapMediaItemToNativeQueueItem),
       startIndex: activeIndex,
       startPositionMs: secondsToMilliseconds(startPosition, 'queue start position'),
     };
@@ -1549,6 +1569,32 @@ export function createNativePlayerPort(
   dependencies: NativePlayerPortDependencies,
 ): NativeBackedPlayerPort {
   return new NativeBackedPlayerPort(dependencies);
+}
+
+/** Runtime-checked native journal seam used by foreground and Headless JS drains. */
+export function getPlaybackEventJournalNativePort(): PlaybackEventJournalNativePort {
+  const candidate = NativeModules.LoggeRythmPlayer as
+    | Partial<LoggeRythmPlayerNativeModule>
+    | undefined;
+  if (
+    candidate === undefined
+    || typeof candidate.claimPlaybackEvents !== 'function'
+    || typeof candidate.ackPlaybackEvent !== 'function'
+    || typeof candidate.retryPlaybackEvent !== 'function'
+    || typeof candidate.completeRadioPlaybackEvent !== 'function'
+  ) {
+    throw new Error('Playback event native contract is unavailable');
+  }
+  return {
+    claimPlaybackEvents: (maxEvents, leaseMs) =>
+      candidate.claimPlaybackEvents!(maxEvents, leaseMs),
+    ackPlaybackEvent: (leaseId, eventId) =>
+      candidate.ackPlaybackEvent!(leaseId, eventId),
+    retryPlaybackEvent: (leaseId, eventId, notBeforeEpochMs) =>
+      candidate.retryPlaybackEvent!(leaseId, eventId, notBeforeEpochMs),
+    completeRadioPlaybackEvent: (leaseId, eventId, payloadJson) =>
+      candidate.completeRadioPlaybackEvent!(leaseId, eventId, payloadJson),
+  };
 }
 
 function nativeDependencies(): NativePlayerPortDependencies {
