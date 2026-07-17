@@ -1,8 +1,19 @@
 # Android ↔ Web Parity TODO
 
-**Status:** Active parity sprint — substantial working-tree progress; P0/P1 release gates remain open
+**Status:** Stable Android MVP accepted; full web-parity backlog remains active but is no longer the immediate release scope
 
 **Acceptance snapshot:** 35/62 P0 and 76/124 P1 work items are closed at this evidence revision; 27 P0 and 48 P1 items remain open. That is 111/186 closed (60% rounded). PLAYER-13 and the durable playback-event boundary PLAYER-16 remain open until their authenticated/background device matrices pass.
+
+**MVP scope decision (2026-07-17):** The accepted near-term Android product is
+the published RC.2 baseline: safe production/custom-server sign-in, stored
+session restore, logout with production reset, the five primary tabs, Profile,
+first-party Media3 playback infrastructure, background media, and Android Auto.
+Party/admin/public-profile parity, exhaustive account/fault forensics, and the
+remaining P1/P2 web differences stay in this document as follow-up work rather
+than expanding the current stabilization milestone. This scope decision does
+not promote the debug-signed prerelease to production: production v2 metadata,
+protected signing/AAB ownership, and credential remediation remain mandatory
+before a production/latest release.
 
 **Baseline:** 2026-07-15; evidence updated through 2026-07-17
 

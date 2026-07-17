@@ -44,11 +44,13 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:qa-tools": "python3 -m unittest discover -s scripts -p 'test_*.py'",
     "test:watch": "vitest",
     "smoke:android": "python3 scripts/android_smoke.py",
     "qa:android-release": "python3 scripts/android_smoke.py",
     "qa:android-session": "python3 scripts/android_session_qa.py",
-    "check": "npm run check:android-icons && npm run check:dependency-security && npm run typecheck && npm run lint && npm test"
+    "qa:android-auth": "python3 scripts/android_auth_qa.py",
+    "check": "npm run check:android-icons && npm run check:dependency-security && npm run typecheck && npm run lint && npm test && npm run test:qa-tools"
   },
   "private": true
 }

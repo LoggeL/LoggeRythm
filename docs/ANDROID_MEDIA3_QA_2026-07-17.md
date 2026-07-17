@@ -308,3 +308,36 @@ stopped before credentials at the tested redirect boundary.
 - The APK is debug-certificate signed and is suitable only for a GitHub
   prerelease. It must not be marked latest or represented as production
   signing/AAB/Play delivery.
+
+## Android MVP stabilization closeout
+
+The immediate product scope was reduced on 2026-07-17 to the stable core
+already represented by RC.2: custom-server compatibility and login, stored
+session restore, logout/production reset, five tabs, Profile, Media3, and
+Android Auto. The broader parity matrix remains a durable backlog rather than
+an RC.2 acceptance claim.
+
+Two credential-safe QA modules now make that core repeatable:
+
+- `mobile/scripts/auth_qa_server.py` owns a disposable in-memory auth server.
+  Its public listener exposes only ordinary version/auth/likes/playlists
+  routes; approval, one-shot faults, invites, and seed data are direct
+  in-process controls. The evidence ledger contains only sequence, method,
+  path, and status.
+- `mobile/scripts/android_auth_qa.py` exposes one fixed `run_auth_qa` seam for
+  production-default, incompatible-preflight, invalid/valid custom login,
+  five-tab/Profile, force-stop restore, logout/reset, and crash/privacy checks.
+  Generated credentials reach Android only through `adb shell sh` standard
+  input. Registration/pending, authoritative 401/403, and root cleanup
+  forensics are explicitly reported as deferred instead of being silently
+  counted as passed.
+
+All 60 Python QA-tool tests pass, and `npm run check` now includes this suite.
+One final exact-RC.2 attempt on `emulator-5554` was correctly classified as an
+infrastructure failure before app interaction: two fresh Cloudflare quick
+tunnels never forwarded `/api/version` to the local disposable server, so the
+ledger remained empty and no credential-bearing request occurred. That failed
+external tunnel attempt adds no Android acceptance claim and does not replace
+the successful exact-APK custom-login/restore/Profile/logout evidence recorded
+above. RC.2 therefore remains the stable MVP artifact; no byte-identical APK
+was republished merely to attach host-side QA tooling.
