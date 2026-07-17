@@ -1,13 +1,13 @@
 # Android Media3 QA evidence — 2026-07-17
 
 This is the canonical evidence and exception ledger for the published
-first-party Media3 Android `1.0.3`/`10014` milestone and the exact local
-`1.0.3`/`10015` RC.2 candidate. Both are debug-signed QA artifacts, not
-production signing, Play delivery, or full web-parity acceptance. The prior
-`1.0.2`/`10013` record remains unchanged in
+first-party Media3 Android `1.0.3`/`10014` RC.1 and `1.0.3`/`10015` RC.2
+milestones. Both are debug-signed QA artifacts, not production signing, Play
+delivery, or full web-parity acceptance. The prior `1.0.2`/`10013` record
+remains unchanged in
 [`ANDROID_MEDIA3_QA_2026-07-16.md`](./ANDROID_MEDIA3_QA_2026-07-16.md).
 
-## Source, workflow, and publication
+## RC.1 source, workflow, and publication
 
 - Source commit:
   `d979e9bc856dd07ae6dcc05c0dca72e0a46b660c`
@@ -162,17 +162,36 @@ production credential was entered or sent.
 These exceptions are authoritative: absence from a failure log is not evidence
 that an unexecuted matrix passed.
 
-## Local RC.2 candidate — pending commit, CI, tag, and publication
+## Published RC.2 — Stats, locale, auth, and custom server
 
-This section records the newer Stats/Locale/Auth/Custom-Server parity candidate without
-rewriting the published RC.1 evidence above. Until the exact source commit,
-dispatched workflows, tag, GitHub release, and uploaded asset digests exist,
-this is local evidence only.
+This section records the newer Stats/Locale/Auth/Custom-Server parity milestone
+without rewriting the published RC.1 evidence above.
+
+- Source commit:
+  `7692aa80b443abb3c18ced03a2654e9ce127f64d`
+- Source tree:
+  `7768d727c4fb24625a93871e21cabc1cd8b369a3`
+- GitHub Actions:
+  [`29573843730`](https://github.com/LoggeL/LoggeRythm/actions/runs/29573843730),
+  `success` in 20m03s
+- QA job: `87863676334`
+- Annotated tag and QA prerelease:
+  [`android-media3-v1.0.3-rc.2`](https://github.com/LoggeL/LoggeRythm/releases/tag/android-media3-v1.0.3-rc.2)
+- Release policy: non-draft prerelease, explicitly not latest
+- Uploaded APK asset ID: `480278869`
+- Uploaded APK digest:
+  `sha256:5f3f06de497b046a8682fce0e35f40edd1f7c2188d17bd0b141d6f765c055c17`
+
+The annotated remote tag peels to the source commit above. GitHub rebuilt the
+exact source, repeated the contract/unit/lint/release gates, verified the ARM64
+APK structure, and passed an API 36 x86_64 cold/warm emulator run before the
+local exact-APK asset and checksum were published.
 
 ### APK identity
 
 - Package/version: `top.logge.loggerythm`, `1.0.3` (`versionCode 10015`)
-- File: local `mobile/android/app/build/outputs/apk/release/app-release.apk`
+- File:
+  `LoggeRythm-1.0.3-10015-arm64-CustomServer-RC2-debug-signed.apk`
 - Size: `27,661,624` bytes
 - SHA-256:
   `5f3f06de497b046a8682fce0e35f40edd1f7c2188d17bd0b141d6f765c055c17`
@@ -190,7 +209,7 @@ this is local evidence only.
   zero findings
 
 This APK was rebuilt after the final Search-history and Stats-contract P1
-corrections. Earlier local b10015 hashes are obsolete and must not be uploaded.
+corrections. Earlier local b10015 hashes are obsolete and were not uploaded.
 
 ### Contract and regression evidence
 
