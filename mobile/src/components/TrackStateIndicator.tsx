@@ -5,6 +5,7 @@ import type {
   TrackPresentationState,
 } from '../player/trackPresentation';
 import { colors } from '../theme';
+import AppIcon from './AppIcon';
 
 export interface TrackStateIndicatorCopy {
   playing: string;
@@ -63,13 +64,13 @@ export default function TrackStateIndicator({
       : null;
   const rolling =
     rollingSeconds === null ? null : copy.rollingDeviceCache(rollingSeconds);
-  const labels = [phase, downloaded, server, rolling].filter(
+  const buffering = presentation.playback === 'buffering';
+  const labels = [buffering ? phase : null, downloaded, server, rolling].filter(
     (label): label is string => label !== null && label.trim().length > 0,
   );
 
   if (labels.length === 0) return null;
 
-  const buffering = presentation.playback === 'buffering';
   return (
     <View
       testID={testID}
@@ -78,45 +79,45 @@ export default function TrackStateIndicator({
       accessibilityState={{ selected: presentation.active, busy: buffering }}
       style={styles.container}
     >
-      {phase !== null ? (
-        <View testID={`${testID}-phase`} accessible={false} style={styles.fact}>
-          {buffering ? (
-            <ActivityIndicator
-              testID={`${testID}-buffering-spinner`}
-              accessible={false}
-              color={colors.accent}
-              size="small"
-            />
-          ) : null}
-          <Text accessible={false} style={styles.phaseText}>{phase}</Text>
+      {buffering ? (
+        <View testID={`${testID}-phase`} accessible={false} style={styles.iconFact}>
+          <ActivityIndicator
+            testID={`${testID}-buffering-spinner`}
+            accessible={false}
+            color={colors.accent}
+            size="small"
+          />
         </View>
       ) : null}
       {downloaded !== null ? (
-        <Text
+        <View
           testID={`${testID}-downloaded`}
           accessible={false}
-          style={[styles.fact, styles.downloadedText]}
+          style={styles.iconFact}
         >
-          {downloaded}
-        </Text>
+          <AppIcon name="download-circle" color={colors.success} size={15} />
+        </View>
       ) : null}
       {server !== null ? (
-        <Text
+        <View
           testID={`${testID}-server-cache`}
           accessible={false}
-          style={[styles.fact, styles.serverText]}
+          style={styles.iconFact}
         >
-          {server}
-        </Text>
+          <AppIcon name="cloud-check-outline" color={colors.textSecondary} size={15} />
+        </View>
       ) : null}
       {rolling !== null ? (
-        <Text
+        <View
           testID={`${testID}-rolling-cache`}
           accessible={false}
-          style={[styles.fact, styles.rollingText]}
+          style={styles.rollingFact}
         >
-          {rolling}
-        </Text>
+          <AppIcon name="cached" color={colors.warning} size={13} />
+          <Text accessible={false} style={styles.rollingText}>
+            {Math.round(rollingSeconds as number)}s
+          </Text>
+        </View>
       ) : null}
     </View>
   );
@@ -127,20 +128,27 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
+    flexWrap: 'nowrap',
+    gap: 3,
+    marginLeft: 4,
   },
-  fact: {
+  iconFact: {
+    width: 21,
+    height: 21,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderRadius: 10,
+    justifyContent: 'center',
+    borderRadius: 7,
     backgroundColor: colors.surfaceElevated,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
   },
-  phaseText: { color: colors.accentSoft, fontSize: 11, fontWeight: '700' },
-  downloadedText: { color: colors.success, fontSize: 11, fontWeight: '700' },
-  serverText: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
-  rollingText: { color: colors.warning, fontSize: 11, fontWeight: '600' },
+  rollingFact: {
+    height: 21,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+    borderRadius: 7,
+    backgroundColor: colors.surfaceElevated,
+    paddingHorizontal: 4,
+  },
+  rollingText: { color: colors.warning, fontSize: 9, fontWeight: '700' },
 });

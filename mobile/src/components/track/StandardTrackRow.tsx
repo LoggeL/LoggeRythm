@@ -161,16 +161,20 @@ export default function StandardTrackRow({
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: 112,
+    minHeight: 72,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  activeContainer: { backgroundColor: colors.surface },
+  activeContainer: {
+    backgroundColor: colors.surface,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+  },
   row: {
-    minHeight: 112,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingLeft: 12,
   },
   position: {
@@ -209,7 +213,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(10,10,20,0.86)',
   },
-  metadata: { minWidth: 0, flex: 1, paddingRight: 6 },
+  metadata: {
+    minWidth: 0,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingRight: 6,
+  },
   actions: {
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,

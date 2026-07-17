@@ -299,7 +299,15 @@ export function getLyrics(
   const track = deezerId === undefined ? '' : `&deezer_id=${encodeURIComponent(deezerId)}`;
   return apiRequest<LyricsResponse>(
     `/api/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}${track}`,
-    { signal, decode: decodeLyricsResponse },
+    {
+      signal,
+      // A cache miss can perform two bounded LRCLIB lookups, materialize the
+      // complete track, and run a 90-second Groq transcription. The ordinary
+      // 20-second request budget aborts that valid server operation before it
+      // can return and persist the generated lyrics.
+      timeoutMs: 180_000,
+      decode: decodeLyricsResponse,
+    },
   );
 }
 

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { colors, metrics } from '../../theme';
+import { colors } from '../../theme';
 import type { TrackMetadata } from './trackMetadata';
 
 export interface TrackIdentityCopy {
@@ -24,8 +24,9 @@ export interface TrackIdentityLinksProps {
 }
 
 /**
- * Identity-only content for use beside a dedicated playback control. It never
- * creates a play responder, so catalog links can remain sibling Pressables.
+ * The shared, bounded identity presentation for every track surface. Catalog
+ * navigation uses inline Text links so every title remains one line and all
+ * secondary metadata shares exactly one ellipsized line.
  */
 export default function TrackIdentityLinks({
   metadata,
@@ -46,26 +47,40 @@ export default function TrackIdentityLinks({
   const durationText = showDuration && metadata.duration !== null
     ? copy.duration(metadata.duration)
     : null;
+  const hasAlbum = showAlbumLabel && metadata.album.trim().length > 0;
+  const hasFacts = durationText !== null || popularityText !== null;
 
   return (
     <View testID={testID} style={styles.container}>
       {metadata.albumRoute !== null ? (
-        <Pressable
+        <Text
           testID={`${testID}-album-link`}
           accessibilityRole="link"
           accessibilityLabel={copy.openAlbum(albumActionLabel)}
           onPress={() => onOpenAlbum(metadata.albumRoute as AlbumRouteParams)}
-          style={({ pressed }) => [styles.link, pressed && styles.pressed]}
+          style={styles.title}
+          numberOfLines={1}
+          ellipsizeMode="tail"
         >
-          <Text style={styles.title} numberOfLines={1}>{metadata.title}</Text>
-        </Pressable>
+          {metadata.title}
+        </Text>
       ) : (
-        <View testID={`${testID}-title-text`} style={styles.inertLine}>
-          <Text style={styles.title} numberOfLines={1}>{metadata.title}</Text>
-        </View>
+        <Text
+          testID={`${testID}-title-text`}
+          style={styles.title}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {metadata.title}
+        </Text>
       )}
 
-      <View testID={`${testID}-artists`} style={styles.artistRow}>
+      <Text
+        testID={`${testID}-details`}
+        style={styles.details}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {metadata.artists.map((artist, index) => (
           <React.Fragment key={artist.key}>
             {index > 0 ? (
@@ -78,86 +93,79 @@ export default function TrackIdentityLinks({
               </Text>
             ) : null}
             {artist.route !== null ? (
-              <Pressable
+              <Text
                 testID={`${testID}-artist-link-${index}`}
                 accessibilityRole="link"
                 accessibilityLabel={copy.openArtist(artist.name)}
                 onPress={() => onOpenArtist(artist.route as ArtistRouteParams)}
-                style={({ pressed }) => [styles.artistLink, pressed && styles.pressed]}
+                style={styles.secondary}
               >
-                <Text style={styles.secondary}>{artist.name}</Text>
-              </Pressable>
+                {artist.name}
+              </Text>
             ) : (
               <Text
                 testID={`${testID}-artist-text-${index}`}
-                style={styles.inertArtist}
+                style={styles.secondary}
               >
                 {artist.name}
               </Text>
             )}
           </React.Fragment>
         ))}
-      </View>
 
-      {showAlbumLabel && metadata.album.trim().length > 0 ? (
-        metadata.albumRoute !== null ? (
-          <Pressable
-            testID={`${testID}-album-label-link`}
-            accessibilityRole="link"
-            accessibilityLabel={copy.openAlbum(metadata.album)}
-            onPress={() => onOpenAlbum(metadata.albumRoute as AlbumRouteParams)}
-            style={({ pressed }) => [styles.link, pressed && styles.pressed]}
-          >
-            <Text style={styles.album} numberOfLines={1}>{metadata.album}</Text>
-          </Pressable>
-        ) : (
-          <Text testID={`${testID}-album-label-text`} style={styles.album} numberOfLines={1}>
-            {metadata.album}
-          </Text>
-        )
-      ) : null}
+        {hasAlbum ? (
+          <>
+            <Text accessible={false} style={styles.secondary}>{' · '}</Text>
+            {metadata.albumRoute !== null ? (
+              <Text
+                testID={`${testID}-album-label-link`}
+                accessibilityRole="link"
+                accessibilityLabel={copy.openAlbum(metadata.album)}
+                onPress={() => onOpenAlbum(metadata.albumRoute as AlbumRouteParams)}
+                style={styles.secondary}
+              >
+                {metadata.album}
+              </Text>
+            ) : (
+              <Text testID={`${testID}-album-label-text`} style={styles.secondary}>
+                {metadata.album}
+              </Text>
+            )}
+          </>
+        ) : null}
 
-      {durationText !== null || popularityText !== null ? (
-        <View testID={`${testID}-facts`} style={styles.factRow}>
-          {durationText !== null ? (
-            <Text testID={`${testID}-duration`} style={styles.fact}>{durationText}</Text>
-          ) : null}
-          {durationText !== null && popularityText !== null ? (
+        {hasFacts ? (
+          <>
             <Text accessible={false} style={styles.fact}>{' · '}</Text>
-          ) : null}
-          {popularityText !== null ? (
-            <Text testID={`${testID}-popularity`} style={styles.fact}>{popularityText}</Text>
-          ) : null}
-        </View>
-      ) : null}
+            {durationText !== null ? (
+              <Text testID={`${testID}-duration`} style={styles.fact}>{durationText}</Text>
+            ) : null}
+            {durationText !== null && popularityText !== null ? (
+              <Text accessible={false} style={styles.fact}>{' · '}</Text>
+            ) : null}
+            {popularityText !== null ? (
+              <Text testID={`${testID}-popularity`} style={styles.fact}>{popularityText}</Text>
+            ) : null}
+          </>
+        ) : null}
+      </Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { minWidth: 0, flex: 1 },
-  link: {
-    minWidth: metrics.minimumTouchTarget,
-    minHeight: metrics.minimumTouchTarget,
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
+  container: { minWidth: 0, flex: 1, justifyContent: 'center' },
+  title: {
+    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 19,
   },
-  inertLine: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center' },
-  artistRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
-  artistLink: {
-    minWidth: metrics.minimumTouchTarget,
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-  },
-  inertArtist: {
-    minHeight: metrics.minimumTouchTarget,
-    textAlignVertical: 'center',
+  details: {
     color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
   },
-  pressed: { opacity: 0.72 },
-  title: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  secondary: { color: colors.textSecondary, fontSize: 13 },
-  album: { color: colors.textSecondary, fontSize: 12 },
-  factRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
+  secondary: { color: colors.textSecondary, fontSize: 12 },
   fact: { color: colors.textSecondary, fontSize: 11 },
 });

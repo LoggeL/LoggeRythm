@@ -52,14 +52,10 @@ function presentation(
 }
 
 describe('TrackStateIndicator', () => {
-  it('renders selected playing state without a busy claim', () => {
+  it('leaves playing state to the row color instead of rendering a tag', () => {
     const rendered = TrackStateIndicator({ presentation: presentation(), copy });
-    const container = byTestID(rendered, 'track-state');
 
-    expect(container?.props.accessibilityLabel).toBe('Playing');
-    expect(container?.props.accessibilityState).toEqual({ selected: true, busy: false });
-    expect(byTestID(rendered, 'track-state-phase')).not.toBeNull();
-    expect(byTestID(rendered, 'track-state-buffering-spinner')).toBeNull();
+    expect(rendered).toBeNull();
   });
 
   it('makes buffering both visible and accessibility-busy', () => {
@@ -87,7 +83,7 @@ describe('TrackStateIndicator', () => {
     });
 
     expect(byTestID(rendered, 'track-state')?.props.accessibilityLabel).toBe(
-      'Paused. Stored on the server. Rolling device cache 61.5s',
+      'Stored on the server. Rolling device cache 61.5s',
     );
     expect(byTestID(rendered, 'track-state-server-cache')).not.toBeNull();
     expect(byTestID(rendered, 'track-state-rolling-cache')).not.toBeNull();

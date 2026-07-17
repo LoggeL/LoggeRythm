@@ -39,7 +39,7 @@ export default function BrandLockup({
     >
       <Image
         accessible={false}
-        source={require('../../assets/icon.png')}
+        source={require('../../assets/android-icon-foreground.png')}
         resizeMode="contain"
         style={{ width: markSize, height: markSize }}
       />

@@ -310,7 +310,11 @@ describe('web-parity endpoint contracts', () => {
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(
       3,
       '/api/lyrics?artist=AC%2FDC&title=One%20%26%20Two&deezer_id=12',
-      expect.objectContaining({ decode: expect.any(Function) }),
+      expect.objectContaining({
+        decode: expect.any(Function),
+        signal: undefined,
+        timeoutMs: 180_000,
+      }),
     );
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(
       4,

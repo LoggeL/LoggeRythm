@@ -39,6 +39,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
   SleepTimerPanel: 'SleepTimerPanel',
 }));
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
+vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
 vi.mock('../api/url', () => ({ resolveServerUrl: (value: string) => value }));
 vi.mock('../config', () => ({
   getCurrentApiBase: () => 'https://music.example.test',

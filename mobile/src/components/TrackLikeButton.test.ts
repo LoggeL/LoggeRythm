@@ -67,6 +67,13 @@ function propsOf(node: React.ReactNode): ElementProps {
   return (node as React.ReactElement<ElementProps>).props;
 }
 
+function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
+  if (Array.isArray(node)) return node.flatMap(elements);
+  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
+  const element = node as React.ReactElement<ElementProps>;
+  return [element, ...elements(element.props.children)];
+}
+
 const track: Track = {
   id: 'track-1',
   title: 'Midnight Signal',
@@ -119,6 +126,25 @@ describe('TrackLikeButton', () => {
     expect(props.accessibilityLabel).toBe(`${strings.player.unlikeTrack}: ${track.title}`);
     expect(props.accessibilityState).toEqual({ checked: true, disabled: true, busy: true });
     expect(props.disabled).toBe(true);
+  });
+
+  it('hands authoritative liked transitions to the shared celebration glyph', () => {
+    const unliked = TrackLikeButton({ track });
+    const unlikedGlyph = elements(unliked).find(
+      (element) =>
+        typeof element.type === 'function'
+        && element.type.name === 'EpicLikeGlyph',
+    );
+    expect(unlikedGlyph?.props.liked).toBe(false);
+
+    hooks.liked = true;
+    const liked = TrackLikeButton({ track });
+    const likedGlyph = elements(liked).find(
+      (element) =>
+        typeof element.type === 'function'
+        && element.type.name === 'EpicLikeGlyph',
+    );
+    expect(likedGlyph?.props.liked).toBe(true);
   });
 
   it('turns an authoritative query failure into a generic, enabled retry action', () => {

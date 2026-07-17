@@ -1,0 +1,1 @@
+-keep class top.logge.loggerythm.updater.LoggeRythmUpdateInstallReceiver { *; }

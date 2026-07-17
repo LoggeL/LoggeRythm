@@ -53,7 +53,6 @@ export function NowPlayingBackdrop({
       ) : null}
       <View testID={`${testID}-brand-wash`} accessible={false} style={styles.brandWash} />
       <View accessible={false} style={styles.backdropDim} />
-      <View accessible={false} style={styles.backdropFloor} />
     </View>
   );
 }
@@ -138,7 +137,7 @@ const styles = StyleSheet.create({
   },
   backdropImage: {
     ...absoluteFill,
-    opacity: 0.34,
+    opacity: 0.18,
     transform: [{ scale: 1.16 }],
   },
   brandWash: {
@@ -148,18 +147,10 @@ const styles = StyleSheet.create({
     top: -120,
     left: -90,
     borderRadius: 170,
-    backgroundColor: '#7c5cff38',
+    backgroundColor: '#7c5cff24',
   },
   backdropDim: {
     ...absoluteFill,
-    backgroundColor: '#0a0a1494',
-  },
-  backdropFloor: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    left: 0,
-    height: '42%',
     backgroundColor: '#0a0a14d6',
   },
   frame: {
