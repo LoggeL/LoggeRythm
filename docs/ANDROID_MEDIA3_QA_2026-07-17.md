@@ -296,11 +296,13 @@ stopped before credentials at the tested redirect boundary.
 - Production still returns anonymous HTTP 404 from `/api/version`; no real
   production credential was sent, and production-authenticated API/media
   behavior remains untested.
-- Disposable custom-server login, force-stop `/me` restoration, full-origin
-  Profile disclosure, logout reset, Media3 setup, and Android Auto browse-tree
-  readiness are proven on the exact APK. Custom registration/invite,
-  pending-approval UI, authoritative 401/403, Forget, account replacement, and
-  production/app-link intent delivery remain open.
+- Disposable custom-server login and registration, relative invites,
+  pending/approved transitions, force-stop `/me` restoration, Retry/Forget,
+  authoritative 401, non-destructive 403 Retry, full-origin disclosure,
+  logout/auth-session cleanup, production reset, restart without `/me`, Media3
+  setup, and Android Auto browse-tree readiness are proven on the exact APK.
+  Account replacement, full cleanup forensics, and production/app-link intent
+  delivery remain open.
 - No real track playback, playback-event journal delivery, full account-switch
   or filesystem/cache/notification cleanup, Android Auto DHU/Assistant, or full
   accessibility/device matrix is claimed.
@@ -326,18 +328,52 @@ Two credential-safe QA modules now make that core repeatable:
   path, and status.
 - `mobile/scripts/android_auth_qa.py` exposes one fixed `run_auth_qa` seam for
   production-default, incompatible-preflight, invalid/valid custom login,
-  five-tab/Profile, force-stop restore, logout/reset, and crash/privacy checks.
-  Generated credentials reach Android only through `adb shell sh` standard
-  input. Registration/pending, authoritative 401/403, and root cleanup
-  forensics are explicitly reported as deferred instead of being silently
-  counted as passed.
+  five-tab/Profile, force-stop restore, logout/reset, relative-invite
+  registration, pending restore/Retry/Forget, pending→approved recheck,
+  non-destructive 403 Retry, authoritative 401 session removal, and
+  crash/privacy checks. Generated credentials reach Android only through
+  `adb shell sh` standard input. Only root filesystem cleanup forensics are
+  explicitly deferred instead of being silently counted as passed.
 
-All 60 Python QA-tool tests pass, and `npm run check` now includes this suite.
-One final exact-RC.2 attempt on `emulator-5554` was correctly classified as an
-infrastructure failure before app interaction: two fresh Cloudflare quick
-tunnels never forwarded `/api/version` to the local disposable server, so the
-ledger remained empty and no credential-bearing request occurred. That failed
-external tunnel attempt adds no Android acceptance claim and does not replace
-the successful exact-APK custom-login/restore/Profile/logout evidence recorded
-above. RC.2 therefore remains the stable MVP artifact; no byte-identical APK
-was republished merely to attach host-side QA tooling.
+All 86 Python QA-tool tests pass, and `npm run check` includes this suite.
+
+### Exact-RC.2 automated auth/session acceptance
+
+The exact published RC.2 APK, SHA-256
+`5f3f06de497b046a8682fce0e35f40edd1f7c2188d17bd0b141d6f765c055c17`,
+passed all 12 fixed scenarios on `emulator-5554` (API 36 ARM64) from
+`2026-07-17T13:39:58Z` through `2026-07-17T13:47:42Z`. The final explicit-QUIC
+run records:
+
+- `status=passed`, 12/12 scenarios passed, and no failure kind or message;
+- `crash_free=true` and `teardown_complete=true`;
+- 154 API events reduced to sequence, method, path, and status only; and
+- only `root_filesystem_cleanup_forensics` deferred.
+
+The durable redacted report is
+[`ANDROID_AUTH_QA_RC2_2026-07-17.json`](./evidence/ANDROID_AUTH_QA_RC2_2026-07-17.json),
+SHA-256
+`4e6e60194c0e15b359d2e937a5913ca323c0af7c8b4f7ee9a8eae322f198a287`.
+It contains no generated credential, cookie, response body, raw UI text, or
+quick-tunnel origin, and its evidence path is portable. The accepted rerun
+additionally requires a fresh `/api/auth/me` HTTP 200 after pending Retry,
+proves that logout restart emits no `/api/auth/me`, and fails closed unless
+every transient device-side UI dump is deleted and confirmed absent.
+
+Earlier exact-RC.2 HTTP/2 and pre-fix QUIC quick-tunnel attempts remain
+historical infrastructure failures: they never forwarded `/api/version` to the
+local disposable server, their ledgers remained empty, and no
+credential-bearing request occurred. They add no Android acceptance claim and
+are not reclassified by the later passing run. The explicit-QUIC success above
+supersedes only the infrastructure blockage, not that historical record.
+
+QA-06 is therefore closed for the observable auth/session boundary:
+auth-session removal on logout and authoritative 401, production-origin reset,
+and a subsequent restart without `/me`. Harness teardown used `pm clear` only
+to remove generated QA state after assertions; it is not evidence that the app
+cleared every filesystem/player/query/download/notification/Android Auto scope.
+Account-switch and complete cleanup forensics remain open under
+AUTH-05/DATA-03/SEC-05 and QA-18. The fresh anonymous production check still
+returns HTTP 404 with `{"detail":"Not Found"}` at `/api/version`; no production
+credential was sent. RC.2 remains the stable debug-signed MVP artifact, and no
+byte-identical APK was republished merely to attach host-side QA tooling.

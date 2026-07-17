@@ -51,6 +51,10 @@ class CandidateFailure(AuthQaFailure):
     """The candidate APK violated an observable acceptance criterion."""
 
 
+class _DisabledControlFailure(CandidateFailure):
+    """A required native control exists but cannot currently be activated."""
+
+
 class InfrastructureFailure(AuthQaFailure):
     """ADB, emulator, server, TLS tunnel, or filesystem infrastructure failed."""
 
@@ -78,14 +82,16 @@ class AuthScenario(str, Enum):
     VALID_LOGIN = "valid_login"
     STORED_SESSION_RESTORE = "stored_session_restore"
     LOGOUT_PRODUCTION_RESET = "logout_production_reset"
+    RELATIVE_INVITE_REGISTRATION = "relative_invite_registration"
+    PENDING_RESTORE_RETRY_FORGET = "pending_restore_retry_forget"
+    PENDING_APPROVAL_RECHECK = "pending_approval_recheck"
+    FORBIDDEN_RETRY = "forbidden_retry"
+    UNAUTHORIZED_CLEANUP = "unauthorized_cleanup"
     CRASH_PRIVACY_AUDIT = "crash_privacy_audit"
 
 
 AUTH_SCENARIO_SEQUENCE: tuple[AuthScenario, ...] = tuple(AuthScenario)
 DEFERRED_SCENARIOS = (
-    "invited_and_pending_registration",
-    "pending_503_retry_and_forget",
-    "stored_session_403_and_401_cleanup",
     "root_filesystem_cleanup_forensics",
 )
 
@@ -123,7 +129,7 @@ class AuthQaReport:
 
     def to_dict(self) -> dict[str, object]:
         value = asdict(self)
-        value["evidence_path"] = str(self.evidence_path)
+        value["evidence_path"] = self.evidence_path.name
         return value
 
 
@@ -359,6 +365,20 @@ class _SafeAdb:
         self.pid = ""
         self.launch()
 
+    def _delete_remote_ui_dump(self) -> None:
+        removed = self._adb(
+            ("shell", "rm", "-f", REMOTE_UI_DUMP),
+            check=False,
+            timeout=10,
+        )
+        remaining = self._adb(
+            ("shell", "ls", REMOTE_UI_DUMP),
+            check=False,
+            timeout=10,
+        )
+        if removed.returncode != 0 or remaining.returncode == 0:
+            raise PrivacyFailure("Device-side UI evidence cleanup failed")
+
     def _raw_nodes(self, phase: str) -> list[dict[str, str]]:
         """Read raw nodes transiently, always deleting the device-side XML."""
 
@@ -380,11 +400,7 @@ class _SafeAdb:
                         readback = candidate
                         break
             finally:
-                self._adb(
-                    ("shell", "rm", "-f", REMOTE_UI_DUMP),
-                    check=False,
-                    timeout=10,
-                )
+                self._delete_remote_ui_dump()
             if attempt < 3:
                 time.sleep(0.4)
         if readback is None:
@@ -510,12 +526,91 @@ class _SafeAdb:
         swipes: int = 7,
     ) -> dict[str, str]:
         for attempt in range(swipes + 1):
-            node = self._find_raw(self._raw_nodes(f"{phase}-{attempt:02d}"), suffix, interactive=interactive)
+            nodes = self._raw_nodes(f"{phase}-{attempt:02d}")
+            node = self._find_raw(nodes, suffix, interactive=interactive)
             if node is not None:
                 return node
+            if interactive and self._find_raw(nodes, suffix, interactive=False) is not None:
+                raise _DisabledControlFailure(
+                    f"Required testID {suffix!r} was present but disabled during {phase}",
+                )
             if attempt < swipes:
                 self._swipe(direction)
         raise CandidateFailure(f"Required testID {suffix!r} was absent during {phase}")
+
+    def _wait_and_tap(
+        self,
+        suffix: str,
+        phase: str,
+        *,
+        direction: str = "up",
+        attempts: int = 8,
+        interval: float = 0.25,
+        swipes: int = 7,
+    ) -> None:
+        if attempts < 1:
+            raise InfrastructureFailure("Native control wait attempts must be positive")
+        saw_disabled = False
+        for attempt in range(attempts):
+            try:
+                node = self._find_with_scroll(
+                    suffix,
+                    f"{phase}-ready-{attempt:02d}",
+                    interactive=True,
+                    direction=direction,
+                    swipes=swipes if attempt == 0 else 0,
+                )
+            except _DisabledControlFailure:
+                saw_disabled = True
+                if attempt + 1 == attempts:
+                    raise CandidateFailure(
+                        f"Required testID {suffix!r} remained present but disabled during {phase}",
+                    ) from None
+                if interval > 0:
+                    time.sleep(interval)
+                continue
+            except CandidateFailure:
+                if attempt + 1 == attempts:
+                    state = "present but disabled" if saw_disabled else "absent"
+                    raise CandidateFailure(
+                        f"Required testID {suffix!r} remained {state} during {phase}",
+                    ) from None
+                if interval > 0:
+                    time.sleep(interval)
+                continue
+            self._tap_node(suffix, node)
+            return
+        raise InfrastructureFailure("Native control wait retry invariant failed")
+
+    def _wait_for_present(
+        self,
+        suffix: str,
+        phase: str,
+        *,
+        direction: str = "up",
+        attempts: int = 8,
+        interval: float = 0.25,
+        swipes: int = 7,
+    ) -> dict[str, str]:
+        if attempts < 1:
+            raise InfrastructureFailure("Native control presence attempts must be positive")
+        for attempt in range(attempts):
+            try:
+                return self._find_with_scroll(
+                    suffix,
+                    f"{phase}-present-{attempt:02d}",
+                    interactive=False,
+                    direction=direction,
+                    swipes=swipes if attempt == 0 else 0,
+                )
+            except CandidateFailure:
+                if attempt + 1 == attempts:
+                    raise CandidateFailure(
+                        f"Required testID {suffix!r} remained absent during {phase}",
+                    ) from None
+                if interval > 0:
+                    time.sleep(interval)
+        raise InfrastructureFailure("Native control presence retry invariant failed")
 
     def _tap_node(self, suffix: str, node: Mapping[str, str]) -> None:
         if _resource_suffix(node.get("resource-id", "")) != suffix:
@@ -540,6 +635,56 @@ class _SafeAdb:
         # evidence.  It is consumed by the device shell directly from stdin.
         self._adb(("shell", "sh"), timeout=120, stdin=script)
 
+    def _acquire_field_focus(
+        self,
+        suffix: str,
+        *,
+        direction: str,
+        tap_attempts: int = 3,
+        polls_per_tap: int = 2,
+        interval: float = 0.2,
+    ) -> dict[str, str]:
+        if tap_attempts < 1 or polls_per_tap < 1:
+            raise InfrastructureFailure("Native field focus retry limits must be positive")
+        node = self._find_with_scroll(
+            suffix,
+            f"{suffix}-focus-target",
+            interactive=True,
+            direction=direction,
+        )
+        swipe_used = False
+        for tap_attempt in range(tap_attempts):
+            self._tap_node(suffix, node)
+            for poll in range(polls_per_tap):
+                if interval > 0:
+                    time.sleep(interval)
+                nodes = self._raw_nodes(
+                    f"{suffix}-focus-{tap_attempt:02d}-{poll:02d}",
+                )
+                candidate = self._find_raw(nodes, suffix, interactive=True)
+                if candidate is None:
+                    continue
+                node = candidate
+                if candidate.get("focused") == "true":
+                    return candidate
+            if tap_attempt + 1 < tap_attempts:
+                if not swipe_used:
+                    self._swipe(direction)
+                    swipe_used = True
+                try:
+                    node = self._find_with_scroll(
+                        suffix,
+                        f"{suffix}-focus-retry-{tap_attempt:02d}",
+                        interactive=True,
+                        direction=direction,
+                        swipes=0,
+                    )
+                except CandidateFailure:
+                    # Retain the last safe native bounds for the bounded retry.
+                    # The final error deliberately exposes only the testID.
+                    pass
+        raise CandidateFailure(f"Android did not focus required testID {suffix!r}")
+
     def _enter_field(
         self,
         suffix: str,
@@ -549,36 +694,29 @@ class _SafeAdb:
         direction: str = "up",
         verify: bool,
     ) -> None:
-        node = self._find_with_scroll(
-            suffix,
-            phase,
-            interactive=True,
-            direction=direction,
-        )
-        self._tap_node(suffix, node)
-        time.sleep(0.25)
-        focused = self._find_with_scroll(
-            suffix,
-            f"{phase}-focused",
-            interactive=True,
-            direction=direction,
-            swipes=1,
-        )
-        current = focused.get("text", "")
-        if current and current == focused.get("hint", ""):
-            current = ""
-        clear_count = max(len(current), 140 if focused.get("password") == "true" else 1)
-        clear_script = (
-            "set -eu\n"
-            "input keyevent KEYCODE_MOVE_END\n"
-            + "\n".join("input keyevent KEYCODE_DEL" for _ in range(clear_count))
-            + "\n"
-        )
-        self._shell_stdin(clear_script)
-        if value:
-            self._shell_stdin(_input_text_script(value))
-        if verify and not self._field_value_matches(suffix, value, f"{phase}-verify"):
-            raise CandidateFailure(f"Android did not retain the exact {suffix!r} field value")
+        entry_attempts = 2 if verify else 1
+        for entry_attempt in range(entry_attempts):
+            focused = self._acquire_field_focus(suffix, direction=direction)
+            current = focused.get("text", "")
+            if current and current == focused.get("hint", ""):
+                current = ""
+            clear_count = max(len(current), 140 if focused.get("password") == "true" else 1)
+            clear_script = (
+                "set -eu\n"
+                "input keyevent KEYCODE_MOVE_END\n"
+                + "\n".join("input keyevent KEYCODE_DEL" for _ in range(clear_count))
+                + "\n"
+            )
+            self._shell_stdin(clear_script)
+            if value:
+                self._shell_stdin(_input_text_script(value))
+            if not verify or self._field_value_matches(
+                suffix,
+                value,
+                f"{phase}-verify-{entry_attempt:02d}",
+            ):
+                return
+        raise CandidateFailure(f"Android did not retain the exact {suffix!r} field value")
 
     def _field_value_matches(self, suffix: str, expected: str, phase: str) -> bool:
         # Text is compared only in memory and reduced to one boolean.  It never
@@ -633,7 +771,7 @@ class _SafeAdb:
         self._enter_field("login-email", email, "login-email", verify=True)
         self._enter_field("login-password", password, "login-password", verify=False)
         self.dismiss_keyboard()
-        self.tap("login-submit", "login-submit")
+        self._wait_and_tap("login-submit", "login-submit")
 
     def open_relative_invite(self) -> None:
         # This fixed marker is deliberately non-secret.  The real invite is
@@ -678,11 +816,24 @@ class _SafeAdb:
 
     def enter_registration_mode(self) -> None:
         self._scroll_to_top()
-        self.tap("auth-mode-toggle", "registration-mode", direction="up")
-        self._find_with_scroll(
+        try:
+            self._find_with_scroll(
+                "register-submit",
+                "registration-mode-existing",
+                interactive=False,
+                direction="up",
+            )
+            return
+        except CandidateFailure:
+            pass
+        self._wait_and_tap(
+            "auth-mode-toggle",
+            "registration-mode",
+            direction="up",
+        )
+        self._wait_for_present(
             "register-submit",
             "registration-mode-ready",
-            interactive=False,
             direction="up",
         )
 
@@ -702,20 +853,22 @@ class _SafeAdb:
         )
         self._enter_field("login-email", email, "register-email", verify=True)
         self._enter_field("login-password", password, "register-password", verify=False)
+        self.dismiss_keyboard()
         self._enter_field(
             "register-confirm-password",
             password,
             "register-confirm-password",
             verify=False,
         )
+        self.dismiss_keyboard()
         self._enter_field(
             "register-invite",
             invite or "",
             "register-invite",
-            verify=invite is None,
+            verify=True,
         )
         self.dismiss_keyboard()
-        self.tap("register-submit", "register-submit", direction="up")
+        self._wait_and_tap("register-submit", "register-submit", direction="up")
 
     def assert_pending_origin(self, origin: str) -> None:
         if not self._field_text_contains(
@@ -826,8 +979,44 @@ def _app_crash_reason(logcat: str, pid: str) -> str | None:
     return None
 
 
+def _cloudflared_quick_tunnel_command(
+    executable: Path,
+    local_origin: str,
+) -> tuple[str, ...]:
+    return (
+        str(executable),
+        "tunnel",
+        "--url",
+        local_origin,
+        "--no-autoupdate",
+        "--protocol",
+        "quic",
+        "--loglevel",
+        "info",
+    )
+
+
+@dataclass(frozen=True)
+class _CloudflaredAttemptSignals:
+    origin: str = ""
+    registered: bool = False
+
+    @property
+    def ready_to_probe(self) -> bool:
+        return bool(self.origin and self.registered)
+
+    def consume(self, line: str) -> _CloudflaredAttemptSignals:
+        match = _CloudflaredQuickTunnel.URL_PATTERN.search(line)
+        origin = self.origin or (match.group(0).lower() if match is not None else "")
+        registered = self.registered or "Registered tunnel connection" in line
+        return _CloudflaredAttemptSignals(origin=origin, registered=registered)
+
+
 class _CloudflaredQuickTunnel:
     URL_PATTERN = re.compile(r"https://[a-z0-9-]+\.trycloudflare\.com", re.IGNORECASE)
+    MAX_ATTEMPTS = 3
+    REGISTRATION_PROPAGATION_SECONDS = 10.0
+    READINESS_SECONDS = 90.0
 
     def __init__(self, executable: Path, local_origin: str, deadline: _Deadline) -> None:
         self.executable = executable
@@ -839,16 +1028,24 @@ class _CloudflaredQuickTunnel:
         self._threads: list[threading.Thread] = []
 
     def start(self) -> _CloudflaredQuickTunnel:
-        command = (
-            str(self.executable),
-            "tunnel",
-            "--url",
+        for attempt in range(1, self.MAX_ATTEMPTS + 1):
+            self.deadline.remaining()
+            try:
+                self._start_attempt()
+                return self
+            except InfrastructureFailure:
+                self._close_attempt()
+                if attempt == self.MAX_ATTEMPTS:
+                    raise InfrastructureFailure(
+                        "cloudflared could not establish a ready HTTPS quick tunnel "
+                        f"after {self.MAX_ATTEMPTS} attempts",
+                    ) from None
+        raise InfrastructureFailure("cloudflared quick-tunnel retry invariant failed")
+
+    def _start_attempt(self) -> None:
+        command = _cloudflared_quick_tunnel_command(
+            self.executable,
             self.local_origin,
-            "--no-autoupdate",
-            "--protocol",
-            "http2",
-            "--loglevel",
-            "info",
         )
         try:
             self.process = subprocess.Popen(
@@ -877,6 +1074,7 @@ class _CloudflaredQuickTunnel:
             thread.start()
             self._threads.append(thread)
 
+        signals = _CloudflaredAttemptSignals()
         end = time.monotonic() + self.deadline.remaining(45)
         while time.monotonic() < end:
             if self.process.poll() is not None:
@@ -885,15 +1083,16 @@ class _CloudflaredQuickTunnel:
                 line = self._lines.get(timeout=0.25)
             except queue.Empty:
                 continue
-            match = self.URL_PATTERN.search(line)
-            if match is not None:
-                self.origin = match.group(0).lower()
+            signals = signals.consume(line)
+            if signals.ready_to_probe:
+                self.origin = signals.origin
+                time.sleep(self.REGISTRATION_PROPAGATION_SECONDS)
                 self._wait_ready()
-                return self
-        raise InfrastructureFailure("cloudflared did not publish a quick-tunnel origin")
+                return
+        raise InfrastructureFailure("cloudflared did not register a quick-tunnel origin")
 
     def _wait_ready(self) -> None:
-        end = time.monotonic() + self.deadline.remaining(45)
+        end = time.monotonic() + self.deadline.remaining(self.READINESS_SECONDS)
         while time.monotonic() < end:
             request = Request(
                 f"{self.origin}/api/version",
@@ -910,18 +1109,40 @@ class _CloudflaredQuickTunnel:
         raise InfrastructureFailure("The HTTPS quick tunnel never reached the disposable server")
 
     def close(self) -> None:
+        self._close_attempt()
+
+    def _close_attempt(self) -> None:
         process = self.process
-        if process is None:
-            return
-        if process.poll() is None:
-            process.terminate()
+        threads = tuple(self._threads)
+        cleanup_failed = False
+        try:
+            if process is not None and process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=8)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+        except BaseException:  # noqa: BLE001 - cleanup must stay redacted
+            cleanup_failed = True
+            if process is not None:
+                try:
+                    process.kill()
+                    process.wait(timeout=5)
+                except BaseException:
+                    pass
+        for thread in threads:
             try:
-                process.wait(timeout=8)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        for thread in self._threads:
-            thread.join(timeout=0.25)
+                thread.join(timeout=1)
+                cleanup_failed = thread.is_alive() or cleanup_failed
+            except BaseException:  # noqa: BLE001 - cleanup must stay redacted
+                cleanup_failed = True
+        self.process = None
+        self.origin = ""
+        self._threads = []
+        self._lines = queue.Queue()
+        if cleanup_failed:
+            raise InfrastructureFailure("cloudflared quick-tunnel cleanup failed")
 
 
 def _ledger_events(server: Any) -> tuple[ApiEvent, ...]:
@@ -1011,6 +1232,11 @@ class _AuthQaEngine:
             AuthScenario.VALID_LOGIN: self._valid_login,
             AuthScenario.STORED_SESSION_RESTORE: self._stored_session_restore,
             AuthScenario.LOGOUT_PRODUCTION_RESET: self._logout_production_reset,
+            AuthScenario.RELATIVE_INVITE_REGISTRATION: self._relative_invite_registration,
+            AuthScenario.PENDING_RESTORE_RETRY_FORGET: self._pending_restore_retry_forget,
+            AuthScenario.PENDING_APPROVAL_RECHECK: self._pending_approval_recheck,
+            AuthScenario.FORBIDDEN_RETRY: self._forbidden_retry,
+            AuthScenario.UNAUTHORIZED_CLEANUP: self._unauthorized_cleanup,
             AuthScenario.CRASH_PRIVACY_AUDIT: self._crash_privacy_audit,
         }
         _run_scenario_plan(actions, self._record)
@@ -1115,10 +1341,23 @@ class _AuthQaEngine:
         )
         self.device.wait_signed_out("logout-result")
         self.device.assert_production_default()
+        me_before_restart = sum(
+            event.path == "/api/auth/me" for event in _ledger_events(self.server)
+        )
         self.device.restart()
         self.device.wait_signed_out("logout-restart")
         self.device.assert_production_default()
-        return ("logout_success_observed", "production_reset", "restart_stays_signed_out")
+        me_after_restart = sum(
+            event.path == "/api/auth/me" for event in _ledger_events(self.server)
+        )
+        if me_after_restart != me_before_restart:
+            raise CandidateFailure("A logged-out session attempted /me after another restart")
+        return (
+            "logout_success_observed",
+            "production_reset",
+            "restart_stays_signed_out",
+            "restart_no_me",
+        )
 
     def _relative_invite_registration(self) -> tuple[str, ...]:
         self.invite = str(self.server.issue_invite())
@@ -1157,6 +1396,7 @@ class _AuthQaEngine:
 
     def _register_pending(self, email: str, password: str, label: str) -> None:
         self.device.configure_server(self.tunnel.origin)
+        self.device.dismiss_keyboard()
         self.device.enter_registration_mode()
         after = len(_ledger_events(self.server))
         self.device.submit_registration(label, email, password, None)
@@ -1193,7 +1433,17 @@ class _AuthQaEngine:
             "pending restore 503",
         )
         self.device.wait_restore_error("pending-503-restore-error")
+        after_retry = len(_ledger_events(self.server))
         self.device.tap_session_retry()
+        _wait_for_event(
+            self.server,
+            after_retry,
+            lambda event: event.method == "GET"
+            and event.path == "/api/auth/me"
+            and event.status == 200,
+            self.deadline,
+            "pending Retry /me",
+        )
         self.device.wait_pending("pending-retry")
 
         self.server.fault_next("/api/auth/me", 503)
@@ -1215,7 +1465,7 @@ class _AuthQaEngine:
         return (
             "pending_cold_restore",
             "503_restore_error",
-            "retry_returns_pending",
+            "retry_me_200_returns_pending",
             "forget_is_local_only",
             "forget_resets_production",
         )
@@ -1384,13 +1634,14 @@ def run_auth_qa(request: AuthQaRequest) -> AuthQaReport:
     tunnel: _CloudflaredQuickTunnel | None = None
     device: _SafeAdb | None = None
     engine: _AuthQaEngine | None = None
-    teardown_complete = False
+    teardown_complete = True
     failure_kind: str | None = None
     failure_message: str | None = None
 
     try:
         server_type = _load_server_type()
-        server = server_type().start()
+        server = server_type()
+        server.start()
         server.seed_account(
             generated.approved_email,
             generated.approved_password,
@@ -1401,7 +1652,8 @@ def run_auth_qa(request: AuthQaRequest) -> AuthQaReport:
             _resolve_cloudflared(request.cloudflared_path),
             str(server.origin),
             deadline,
-        ).start()
+        )
+        tunnel.start()
         device = _SafeAdb(_resolve_adb(request.adb_path), request.serial, deadline)
         device.install_and_launch(apk)
         engine = _AuthQaEngine(request, deadline, server, tunnel, device, generated)
@@ -1416,7 +1668,7 @@ def run_auth_qa(request: AuthQaRequest) -> AuthQaReport:
     finally:
         if device is not None:
             try:
-                teardown_complete = device.teardown()
+                teardown_complete = device.teardown() and teardown_complete
             except BaseException:  # noqa: BLE001 - teardown status is evidence, not another leak
                 teardown_complete = False
         if tunnel is not None:

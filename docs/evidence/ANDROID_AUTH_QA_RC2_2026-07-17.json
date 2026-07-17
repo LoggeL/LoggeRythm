@@ -1,0 +1,1054 @@
+{
+  "api_events": [
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 1,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/",
+      "sequence": 2,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 3,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 4,
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "sequence": 5,
+      "status": 401
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 6,
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "sequence": 7,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/likes",
+      "sequence": 8,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists",
+      "sequence": 9,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 10,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 11,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 12,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 13,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 14,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 15,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 16,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 17,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 18,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 19,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 20,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 21,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 22,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 23,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 24,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 25,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 26,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 27,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 28,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 29,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 30,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 31,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 32,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 33,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists",
+      "sequence": 34,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/likes",
+      "sequence": 35,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 36,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 37,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 38,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 39,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 40,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 41,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 42,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 43,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 44,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 45,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 46,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 47,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 48,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 49,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 50,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 51,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 52,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 53,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 54,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 55,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 56,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 57,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 58,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 59,
+      "status": 404
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "sequence": 60,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 61,
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "sequence": 62,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/likes",
+      "sequence": 63,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists",
+      "sequence": 64,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 65,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 66,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 67,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 68,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 69,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 70,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 71,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 72,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 73,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 74,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 75,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 76,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 77,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 78,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 79,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 80,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 81,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 82,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 83,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 84,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 85,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 86,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 87,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 88,
+      "status": 404
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "sequence": 89,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 90,
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "sequence": 91,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 92,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 93,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 94,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 95,
+      "status": 503
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 96,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 97,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 98,
+      "status": 503
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 99,
+      "status": 200
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/register",
+      "sequence": 100,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 101,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists",
+      "sequence": 102,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/likes",
+      "sequence": 103,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 104,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 105,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 106,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 107,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 108,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 109,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 110,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 111,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 112,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 113,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 114,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 115,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 116,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 117,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 118,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 119,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 120,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 121,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 122,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 123,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 124,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 125,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 126,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 127,
+      "status": 403
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 128,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists",
+      "sequence": 129,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/likes",
+      "sequence": 130,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 131,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 132,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 133,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 134,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 135,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 136,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 137,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 138,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 139,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 140,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/release-radar",
+      "sequence": 141,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 142,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/mixes",
+      "sequence": 143,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/because-you-listened",
+      "sequence": 144,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/home/charts-collections",
+      "sequence": 145,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/playlists/public",
+      "sequence": 146,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/new-releases",
+      "sequence": 147,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/charts",
+      "sequence": 148,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/genres",
+      "sequence": 149,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/cached-tracks",
+      "sequence": 150,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 151,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/stats",
+      "sequence": 152,
+      "status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/api/version",
+      "sequence": 153,
+      "status": 200
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/me",
+      "sequence": 154,
+      "status": 401
+    }
+  ],
+  "apk_sha256": "5f3f06de497b046a8682fce0e35f40edd1f7c2188d17bd0b141d6f765c055c17",
+  "completed_at_utc": "2026-07-17T13:47:42Z",
+  "crash_free": true,
+  "deferred_scenarios": [
+    "root_filesystem_cleanup_forensics"
+  ],
+  "evidence_path": "auth-qa-report.json",
+  "failure_kind": null,
+  "failure_message": null,
+  "scenarios": [
+    {
+      "checks": [
+        "fresh_install_signed_out",
+        "production_origin_exact"
+      ],
+      "scenario": "production_default",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "preflight_observed",
+        "login_post_blocked",
+        "signed_out_preserved"
+      ],
+      "scenario": "incompatible_preflight",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "login_401_observed",
+        "signed_out_preserved"
+      ],
+      "scenario": "invalid_login",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "login_success_observed",
+        "five_tab_shell",
+        "profile_origin_full"
+      ],
+      "scenario": "valid_login",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "cold_restore_me_200",
+        "same_origin_restored",
+        "five_tab_shell"
+      ],
+      "scenario": "stored_session_restore",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "logout_success_observed",
+        "production_reset",
+        "restart_stays_signed_out",
+        "restart_no_me"
+      ],
+      "scenario": "logout_production_reset",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "relative_marker_applied",
+        "custom_origin_preserved",
+        "manual_invite_via_stdin",
+        "invited_account_approved"
+      ],
+      "scenario": "relative_invite_registration",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "pending_cold_restore",
+        "503_restore_error",
+        "retry_me_200_returns_pending",
+        "forget_is_local_only",
+        "forget_resets_production"
+      ],
+      "scenario": "pending_restore_retry_forget",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "approval_direct_control",
+        "recheck_me_200",
+        "pending_to_shell"
+      ],
+      "scenario": "pending_approval_recheck",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "403_restore_error",
+        "session_preserved",
+        "retry_restores_same_origin"
+      ],
+      "scenario": "forbidden_retry",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "401_authoritative",
+        "session_removed",
+        "production_reset",
+        "restart_no_me"
+      ],
+      "scenario": "unauthorized_cleanup",
+      "status": "passed"
+    },
+    {
+      "checks": [
+        "fresh_process_alive",
+        "app_scoped_logcat_clean",
+        "raw_ui_not_persisted"
+      ],
+      "scenario": "crash_privacy_audit",
+      "status": "passed"
+    }
+  ],
+  "serial": "emulator-5554",
+  "started_at_utc": "2026-07-17T13:39:58Z",
+  "status": "passed",
+  "teardown_complete": true
+}
