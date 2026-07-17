@@ -91,6 +91,21 @@ describe('Search remote-state accessibility primitives', () => {
     expect(byTestId(rendered, 'status').props.accessibilityLiveRegion).toBe('polite');
   });
 
+  it('keeps stale cache detail accessible behind one compact visual marker', () => {
+    const rendered = SearchPoliteStatus({
+      testID: 'stale',
+      message: 'Showing saved data',
+      compact: true,
+    });
+
+    expect(byTestId(rendered, 'stale').props).toMatchObject({
+      accessible: true,
+      accessibilityLabel: 'Showing saved data',
+      accessibilityLiveRegion: 'polite',
+    });
+    expect(elements(rendered).some((element) => element.type === 'Text')).toBe(false);
+  });
+
   it('rejects an action without matching accessible copy', () => {
     expect(() => SearchErrorNotice({ testID: 'bad', message: 'Bad', onAction: vi.fn() }))
       .toThrow('both a label and callback');

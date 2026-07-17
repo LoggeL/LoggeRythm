@@ -106,6 +106,13 @@ describe('shared track compositions', () => {
       busy: true,
     });
     expect(byTestID(rendered, 'row-42-position').props.children).toBe(4);
+    expect(byTestID(rendered, 'row-42-container').props.style).toEqual([
+      expect.objectContaining({ minHeight: 72 }),
+      expect.objectContaining({
+        borderLeftWidth: 3,
+        borderLeftColor: '#7c5cff',
+      }),
+    ]);
     (byTestID(rendered, 'row-42').props.onPress as () => void)();
     (byTestID(rendered, 'row-42-actions').props.onPress as () => void)();
     expect(onPlay).toHaveBeenCalledOnce();

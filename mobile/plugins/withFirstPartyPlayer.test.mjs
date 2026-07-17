@@ -254,6 +254,31 @@ describe('loggerythm-player Android library contract', () => {
     expect(manifest).toContain('android.media.browse.MediaBrowserService');
   });
 
+  it('publishes an immutable explicit app activity for notification and system-player taps', () => {
+    const service = fs.readFileSync(
+      path.join(javaRoot, 'LoggeRythmMediaLibraryService.kt'),
+      'utf8',
+    );
+    const sessionActivity = fs.readFileSync(
+      path.join(javaRoot, 'LoggeRythmSessionActivity.kt'),
+      'utf8',
+    );
+    expect(service).toContain(
+      '.setSessionActivity(LoggeRythmSessionActivity.pendingIntent(this))',
+    );
+    expect(sessionActivity).toContain(
+      'context.packageManager.getLaunchIntentForPackage(context.packageName)',
+    );
+    expect(sessionActivity).toContain('.setComponent(component)');
+    expect(sessionActivity).toContain('.setPackage(context.packageName)');
+    expect(sessionActivity).toContain('Intent.FLAG_ACTIVITY_NEW_TASK');
+    expect(sessionActivity).toContain('Intent.FLAG_ACTIVITY_CLEAR_TOP');
+    expect(sessionActivity).toContain('Intent.FLAG_ACTIVITY_SINGLE_TOP');
+    expect(sessionActivity).toContain(
+      'PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE',
+    );
+  });
+
   it('keeps the Headless JS drain shell private, data-free, and task-key aligned', () => {
     const service = fs.readFileSync(
       path.join(javaRoot, 'LoggeRythmPlaybackEventHeadlessService.kt'),

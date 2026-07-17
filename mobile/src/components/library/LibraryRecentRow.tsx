@@ -129,14 +129,18 @@ export function LibraryRecentRow({
 
 const styles = StyleSheet.create({
   row: {
-    minHeight: metrics.minimumTouchTarget * 2,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  activeRow: { backgroundColor: colors.surface },
+  activeRow: {
+    backgroundColor: colors.surface,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+  },
   playControl: {
-    minWidth: 106,
-    minHeight: metrics.minimumTouchTarget * 2,
+    minWidth: 100,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -173,7 +177,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.accent,
   },
-  meta: { minWidth: 0, flex: 1, paddingHorizontal: 8, paddingVertical: 8 },
+  meta: {
+    minWidth: 0,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
   actions: {
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,

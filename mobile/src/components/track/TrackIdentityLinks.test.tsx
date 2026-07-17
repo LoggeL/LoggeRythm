@@ -1,7 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
-import { metrics } from '../../theme';
 import TrackIdentityLinks, { type TrackIdentityCopy } from './TrackIdentityLinks';
 import { buildTrackMetadata } from './trackMetadata';
 
@@ -67,7 +66,7 @@ const track: Track = {
 };
 
 describe('TrackIdentityLinks', () => {
-  it('publishes exact album and per-credit routes as sibling 48 dp links', () => {
+  it('keeps exact album and artist routes inside two bounded text lines', () => {
     const onOpenAlbum = vi.fn();
     const onOpenArtist = vi.fn();
     const rendered = TrackIdentityLinks({
@@ -94,14 +93,13 @@ describe('TrackIdentityLinks', () => {
     expect(invalid.props.accessibilityRole).toBeUndefined();
     expect(invalid.props.onPress).toBeUndefined();
     expect(invalid.props.children).toBe('Legacy Guest');
-
-    for (const link of [title, album, primary, featured]) {
-      const style = link.props.style as (state: { pressed: boolean }) => unknown[];
-      expect(style({ pressed: false })).toContainEqual(expect.objectContaining({
-        minHeight: metrics.minimumTouchTarget,
-        minWidth: metrics.minimumTouchTarget,
-      }));
-    }
+    expect(title.props.numberOfLines).toBe(1);
+    expect(title.props.ellipsizeMode).toBe('tail');
+    expect(byTestId(rendered, 'track-identity-details').props).toMatchObject({
+      numberOfLines: 1,
+      ellipsizeMode: 'tail',
+    });
+    expect(elements(rendered).some((element) => element.type === 'Pressable')).toBe(false);
 
     (title.props.onPress as () => void)();
     (album.props.onPress as () => void)();

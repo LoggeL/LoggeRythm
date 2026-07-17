@@ -1,0 +1,17 @@
+{
+  "name": "@loggerythm/updater-native",
+  "version": "0.1.0",
+  "description": "First-party Android release update installer for LoggeRythm",
+  "license": "MIT",
+  "private": true,
+  "main": "src/index.js",
+  "react-native": "src/index.js",
+  "files": [
+    "android",
+    "react-native.config.js",
+    "src"
+  ],
+  "peerDependencies": {
+    "react-native": ">=0.86.0"
+  }
+}

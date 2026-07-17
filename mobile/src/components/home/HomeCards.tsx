@@ -107,21 +107,23 @@ export function HomeRecentCard({
           )}
         </View>
       </Pressable>
-      <TrackIdentityLinks
-        metadata={buildTrackMetadata(play)}
-        testID={`${testID}-identity`}
-        copy={trackIdentityCopy}
-        onOpenAlbum={onOpenAlbum}
-        onOpenArtist={onOpenArtist}
-        showAlbumLabel={false}
-        showDuration={false}
-        showPopularity={false}
-      />
-      <TrackStateIndicator
-        presentation={presentation}
-        copy={trackStateIndicatorCopy}
-        testID={`${testID}-state`}
-      />
+      <View style={styles.recentIdentity}>
+        <TrackIdentityLinks
+          metadata={buildTrackMetadata(play)}
+          testID={`${testID}-identity`}
+          copy={trackIdentityCopy}
+          onOpenAlbum={onOpenAlbum}
+          onOpenArtist={onOpenArtist}
+          showAlbumLabel={false}
+          showDuration={false}
+          showPopularity={false}
+        />
+        <TrackStateIndicator
+          presentation={presentation}
+          copy={trackStateIndicatorCopy}
+          testID={`${testID}-state`}
+        />
+      </View>
     </View>
   );
 }
@@ -239,8 +241,19 @@ export function HomeGenreCard({ genre, testID, onPress }: GenreCardProps) {
 
 const styles = StyleSheet.create({
   trackCard: { width: 152, minHeight: 210 },
-  recentCard: { width: 152, minHeight: 248 },
-  activeTrackCard: { backgroundColor: colors.surface, borderRadius: 12 },
+  recentCard: { width: 152, minHeight: 220 },
+  activeTrackCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
+  recentIdentity: {
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 5,
+  },
   recentPlay: { position: 'relative' },
   recentPlayBadge: {
     position: 'absolute',

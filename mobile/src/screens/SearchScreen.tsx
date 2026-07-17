@@ -384,6 +384,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   };
   const primaryIssuesPresent = searchState.issues.length > 0;
   const primaryLoadingPresent = searchState.loadingKeys.length > 0;
+  const primaryStaleNotice =
+    !primaryIssuesPresent
+    && !primaryLoadingPresent
+    && searchState.refreshingKeys.length === 0
+    && searchState.staleKeys.length > 0;
   const searchFeedback = ready ? (
     <>
       {searchState.issues.map((issue) => {
@@ -420,13 +425,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
           label={strings.search.remoteRefreshing(strings.search.tabs.all)}
         />
       ) : null}
-      {!primaryIssuesPresent
-        && !primaryLoadingPresent
-        && searchState.refreshingKeys.length === 0
-        && searchState.staleKeys.length > 0 ? (
+      {primaryStaleNotice ? (
           <SearchPoliteStatus
             testID="search-results-stale"
             message={strings.search.remoteStale(strings.search.tabs.all)}
+            compact
           />
         ) : null}
     </>
@@ -463,10 +466,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         ? strings.search.remoteLoading(strings.search.metadataTitle)
         : strings.search.remoteRefreshing(strings.search.metadataTitle)}
     />
-  ) : metadataState.staleKeys.length > 0 ? (
+  ) : metadataState.staleKeys.length > 0 && !primaryStaleNotice ? (
     <SearchPoliteStatus
       testID="search-metadata-stale"
       message={strings.search.remoteStale(strings.search.metadataTitle)}
+      compact
     />
   ) : null;
 

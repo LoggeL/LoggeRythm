@@ -20,6 +20,7 @@ import {
   SleepTimerPanel,
 } from '../components/profile/ProfileSections';
 import LanguageSelector from '../components/profile/LanguageSelector';
+import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, musicRepository, queryKeys } from '../data';
 import { strings } from '../localization';
@@ -108,6 +109,7 @@ export default function ProfileScreen() {
           serverOrigin={apiBase}
         />
         <LanguageSelector />
+        <AndroidUpdateCard />
         <ProfileEditForm
           key={`${user.display_name ?? ''}:${user.email}`}
           user={user}

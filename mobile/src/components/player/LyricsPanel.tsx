@@ -13,6 +13,7 @@ import { musicQueries } from '../../data';
 import type { RemoteFetchStatus } from '../../data/remoteState';
 import { strings } from '../../localization';
 import { colors, metrics } from '../../theme';
+import AppIcon from '../AppIcon';
 import {
   activeLyricIndex,
   lyricLineKey,
@@ -126,9 +127,19 @@ export function LyricsPanelView({
               </Text>
             ) : null}
             {response.cached ? (
-              <Text testID="lyrics-cached" style={styles.badge}>
-                {strings.player.lyrics.cached}
-              </Text>
+              <View
+                testID="lyrics-cached"
+                accessible
+                accessibilityRole="image"
+                accessibilityLabel={strings.player.lyrics.cached}
+                style={styles.cachedIcon}
+              >
+                <AppIcon
+                  name="database-check-outline"
+                  color={colors.textSecondary}
+                  size={14}
+                />
+              </View>
             ) : null}
             {provider !== null ? (
               <Text testID="lyrics-source" style={styles.source}>{provider}</Text>
@@ -338,6 +349,14 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     fontSize: 10,
     fontWeight: '800',
+  },
+  cachedIcon: {
+    width: 26,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    backgroundColor: colors.surfaceElevated,
   },
   source: { color: colors.textSecondary, fontSize: 10 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },

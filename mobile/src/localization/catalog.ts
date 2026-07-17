@@ -261,6 +261,19 @@ export interface StringCatalog {
     noActiveTrack: string;
     noRemainingTime: string;
     sleepSetFailed: string;
+    update: {
+      title: string;
+      checking: string;
+      current: (version: string) => string;
+      available: (version: string, megabytes: number) => string;
+      install: string;
+      downloading: string;
+      retryInstall: string;
+      permission: string;
+      confirm: (version: string) => string;
+      failed: string;
+      safety: string;
+    };
     dangerTitle: string;
     dangerBody: string;
     deleteAccount: string;
@@ -830,6 +843,23 @@ export const de: StringCatalog = {
     noActiveTrack: 'Für diese Aktion muss ein Titel aktiv sein.',
     noRemainingTime: 'Für den aktuellen Titel ist keine Restzeit verfügbar.',
     sleepSetFailed: 'Sleep-Timer konnte nicht geändert werden',
+    update: {
+      title: 'Android-Updates',
+      checking: 'GitHub Releases werden auf eine neue stabile Version geprüft…',
+      current: (version) => `Version ${version} ist aktuell.`,
+      available: (version, megabytes) =>
+        `Version ${version} ist verfügbar (${megabytes} MB).`,
+      install: 'Update laden',
+      downloading: 'Update wird geprüft und geladen…',
+      retryInstall: 'Berechtigung prüfen und fortfahren',
+      permission:
+        'Erlaube LoggeRythm in den Android-Einstellungen Updates zu installieren und tippe danach erneut.',
+      confirm: (version) =>
+        `Version ${version} wurde sicher geprüft. Bestätige die Installation im Android-Dialog.`,
+      failed: 'Update fehlgeschlagen',
+      safety:
+        'Es werden nur stabile APKs aus LoggeL/LoggeRythm akzeptiert. SHA-256, Paketname, Version und App-Signatur werden vor der Android-Bestätigung geprüft.',
+    },
     dangerTitle: 'Gefahrenbereich',
     dangerBody: 'Das Konto und alle zugehörigen Daten werden dauerhaft gelöscht.',
     deleteAccount: 'Konto löschen',
@@ -1336,7 +1366,25 @@ export const en: StringCatalog = {
     endOfTrack: 'End of track', currentTrackRemaining: 'Current time remaining',
     cancelTimer: 'Cancel sleep timer', noActiveTrack: 'A track must be active for this action.',
     noRemainingTime: 'The current track has no available time remaining.',
-    sleepSetFailed: 'The sleep timer could not be changed', dangerTitle: 'Danger zone',
+    sleepSetFailed: 'The sleep timer could not be changed',
+    update: {
+      title: 'Android updates',
+      checking: 'Checking GitHub Releases for a newer stable version…',
+      current: (version) => `Version ${version} is up to date.`,
+      available: (version, megabytes) =>
+        `Version ${version} is available (${megabytes} MB).`,
+      install: 'Download update',
+      downloading: 'Verifying and downloading update…',
+      retryInstall: 'Check permission and continue',
+      permission:
+        'Allow LoggeRythm to install updates in Android settings, then tap again.',
+      confirm: (version) =>
+        `Version ${version} passed verification. Confirm installation in Android's system dialog.`,
+      failed: 'Update failed',
+      safety:
+        'Only stable APKs from LoggeL/LoggeRythm are accepted. SHA-256, package, version, and app signature are verified before Android asks for confirmation.',
+    },
+    dangerTitle: 'Danger zone',
     dangerBody: 'Your account and all associated data will be permanently deleted.',
     deleteAccount: 'Delete account', deleteTitle: 'Permanently delete account?',
     deleteWarning: 'This cannot be undone. Your playlists, likes, and listening history will be deleted.',

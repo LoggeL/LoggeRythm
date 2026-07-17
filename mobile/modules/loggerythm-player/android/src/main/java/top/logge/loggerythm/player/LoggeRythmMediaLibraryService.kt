@@ -295,7 +295,9 @@ class LoggeRythmMediaLibraryService :
       player = player,
       clearCache = playerCache::clearCache,
     )
-    librarySession = MediaLibrarySession.Builder(this, player, LibraryCallback()).build()
+    librarySession = MediaLibrarySession.Builder(this, player, LibraryCallback())
+      .setSessionActivity(LoggeRythmSessionActivity.pendingIntent(this))
+      .build()
     remoteCommandInstaller = LoggeRythmDurableRemoteCommandInstaller(
       resetPolicy = remoteCommandPolicy::reset,
       installPolicy = { capabilities ->

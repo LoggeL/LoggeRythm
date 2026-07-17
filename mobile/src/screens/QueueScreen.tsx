@@ -650,7 +650,9 @@ export function QueueSurface({
                     testID={`${rowTestId}-state`}
                   />
                   {upcoming && row.origin === 'manual' && (
-                    <Text style={styles.manualPriority}>{strings.queue.manualPriority}</Text>
+                    <Text numberOfLines={1} style={styles.manualPriority}>
+                      {strings.queue.manualPriority}
+                    </Text>
                   )}
                 </View>
 
@@ -824,7 +826,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' },
   emptyDetail: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
   row: {
-    minHeight: 112,
+    minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -832,18 +834,40 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 8,
   },
-  activeRow: { backgroundColor: colors.surface },
+  activeRow: {
+    backgroundColor: colors.surface,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+  },
   trackButton: {
-    width: 52,
-    height: 52,
+    width: metrics.minimumTouchTarget,
+    height: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 10,
+    marginVertical: 8,
   },
-  artwork: { width: 52, height: 52, borderRadius: 5, backgroundColor: colors.surfaceElevated },
+  artwork: {
+    width: metrics.minimumTouchTarget,
+    height: metrics.minimumTouchTarget,
+    borderRadius: 5,
+    backgroundColor: colors.surfaceElevated,
+  },
   artworkPlaceholder: { borderWidth: 1, borderColor: colors.border },
-  metadata: { flex: 1, minWidth: 0, marginLeft: 11, paddingVertical: 6 },
-  manualPriority: { color: colors.textSecondary, fontSize: 9, fontWeight: '800', marginTop: 4 },
+  metadata: {
+    flex: 1,
+    minWidth: 0,
+    marginLeft: 9,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  manualPriority: {
+    maxWidth: 30,
+    color: colors.textSecondary,
+    fontSize: 8,
+    fontWeight: '800',
+    marginLeft: 3,
+  },
   actions: { flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
   actionButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
   actionText: { color: colors.textSecondary, fontSize: 18, fontWeight: '700' },

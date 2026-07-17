@@ -139,7 +139,8 @@ describe('HomeRecentCard', () => {
       onOpenAlbum,
       onOpenArtist,
     });
-    const [playControl, identity, state] = childrenOf(card);
+    const [playControl, identityRow] = childrenOf(card);
+    const [identity, state] = childrenOf(identityRow);
     const playProps = propsOf(playControl);
     const identityProps = propsOf(identity);
 

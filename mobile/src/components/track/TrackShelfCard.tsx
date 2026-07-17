@@ -74,21 +74,23 @@ export default function TrackShelfCard({
           )}
         </View>
       </Pressable>
-      <TrackIdentityLinks
-        metadata={buildTrackMetadata(track)}
-        testID={`${testID}-identity`}
-        copy={trackIdentityCopy}
-        onOpenAlbum={onOpenAlbum}
-        onOpenArtist={onOpenArtist}
-        showAlbumLabel={false}
-        showDuration={false}
-        showPopularity={false}
-      />
-      <TrackStateIndicator
-        presentation={presentation}
-        copy={trackStateIndicatorCopy}
-        testID={`${testID}-state`}
-      />
+      <View style={styles.identityRow}>
+        <TrackIdentityLinks
+          metadata={buildTrackMetadata(track)}
+          testID={`${testID}-identity`}
+          copy={trackIdentityCopy}
+          onOpenAlbum={onOpenAlbum}
+          onOpenArtist={onOpenArtist}
+          showAlbumLabel={false}
+          showDuration={false}
+          showPopularity={false}
+        />
+        <TrackStateIndicator
+          presentation={presentation}
+          copy={trackStateIndicatorCopy}
+          testID={`${testID}-state`}
+        />
+      </View>
       <View style={styles.actionsRow}>
         <TrackLikeButton track={track} testID={`${testID}-like`} />
         {onActions === undefined ? null : (
@@ -108,8 +110,12 @@ export default function TrackShelfCard({
 }
 
 const styles = StyleSheet.create({
-  card: { width: 176, minHeight: 300, padding: 8, borderRadius: 14 },
-  activeCard: { backgroundColor: colors.surface },
+  card: { width: 176, minHeight: 272, padding: 8, borderRadius: 14 },
+  activeCard: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.accent,
+  },
   artworkButton: { width: 160, height: 160, borderRadius: 12 },
   artwork: {
     width: 160,
@@ -147,6 +153,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(10,10,20,0.86)',
+  },
+  identityRow: {
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginTop: 5,
   },
   actionsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   action: {

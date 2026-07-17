@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { RemoteVisualState } from '../../data/remoteState';
 import { colors, metrics } from '../../theme';
+import AppIcon from '../AppIcon';
 
 interface SearchLoadingStatusProps {
   testID: string;
@@ -75,9 +76,27 @@ export function SearchErrorNotice({
 interface SearchPoliteStatusProps {
   testID: string;
   message: string;
+  compact?: boolean;
 }
 
-export function SearchPoliteStatus({ testID, message }: SearchPoliteStatusProps) {
+export function SearchPoliteStatus({
+  testID,
+  message,
+  compact = false,
+}: SearchPoliteStatusProps) {
+  if (compact) {
+    return (
+      <View
+        testID={testID}
+        accessible
+        accessibilityLabel={message}
+        accessibilityLiveRegion="polite"
+        style={styles.compactStatus}
+      >
+        <AppIcon name="database-check-outline" color={colors.textSecondary} size={14} />
+      </View>
+    );
+  }
   return (
     <Text testID={testID} accessibilityLiveRegion="polite" style={styles.statusText}>
       {message}
@@ -159,7 +178,7 @@ export function SearchRemoteBoundary({
         <SearchLoadingStatus testID={`${id}-refreshing`} label={refreshingLabel} />
       ) : null}
       {state.notice === 'stale' ? (
-        <SearchPoliteStatus testID={`${id}-stale`} message={staleLabel} />
+        <SearchPoliteStatus testID={`${id}-stale`} message={staleLabel} compact />
       ) : null}
     </>
   );
@@ -176,6 +195,15 @@ const styles = StyleSheet.create({
   },
   status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   statusText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
+  compactStatus: {
+    width: 24,
+    height: 24,
+    marginHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    backgroundColor: colors.surfaceElevated,
+  },
   errorBox: {
     marginHorizontal: 16,
     marginBottom: 12,
