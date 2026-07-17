@@ -9,14 +9,47 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.TransferListener
 import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import okhttp3.OkHttpClient
+
+/**
+ * Creates the only HTTP transport used by Media3. Redirects stay disabled even after an optional
+ * test-only builder customization, so a vaulted Cookie can never be replayed to a Location target.
+ */
+internal fun failClosedMediaHttpDataSourceFactory(
+  configure: OkHttpClient.Builder.() -> Unit = {},
+): DataSource.Factory = OkHttpDataSource.Factory(failClosedMediaHttpClient(configure))
+
+internal fun failClosedMediaHttpClient(
+  configure: OkHttpClient.Builder.() -> Unit = {},
+): OkHttpClient = OkHttpClient.Builder()
+    .apply(configure)
+    .followRedirects(false)
+    .followSslRedirects(false)
+    .build()
 
 @UnstableApi
-internal class LoggeRythmSecureDataSourceFactory(context: Context) : DataSource.Factory {
-  private val upstreamFactory = DefaultDataSource.Factory(context.applicationContext)
+internal class LoggeRythmSecureDataSourceFactory internal constructor(
+  private val upstreamFactory: DataSource.Factory,
+  private val cookieFor: (String) -> String?,
+) : DataSource.Factory {
+  constructor(context: Context) : this(
+    DefaultDataSource.Factory(
+      context.applicationContext,
+      failClosedMediaHttpDataSourceFactory(),
+    ),
+    LoggeRythmPlayerRuntime::cookieFor,
+  )
 
-  override fun createDataSource(): DataSource = SecureDataSource(upstreamFactory.createDataSource())
+  override fun createDataSource(): DataSource = SecureDataSource(
+    upstreamFactory.createDataSource(),
+    cookieFor,
+  )
 
-  private class SecureDataSource(private val upstream: DataSource) : DataSource {
+  private class SecureDataSource(
+    private val upstream: DataSource,
+    private val cookieFor: (String) -> String?,
+  ) : DataSource {
     private var openedUri: Uri? = null
 
     override fun addTransferListener(transferListener: TransferListener) {
@@ -24,7 +57,7 @@ internal class LoggeRythmSecureDataSourceFactory(context: Context) : DataSource.
     }
 
     override fun open(dataSpec: DataSpec): Long {
-      val cookie = LoggeRythmPlayerRuntime.cookieFor(dataSpec.uri.toString())
+      val cookie = cookieFor(dataSpec.uri.toString())
       val allowedHeaders = if (cookie == null) emptyMap() else mapOf("Cookie" to cookie)
       openedUri = dataSpec.uri
       return try {

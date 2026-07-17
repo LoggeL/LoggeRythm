@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   createPlaylistWithTrack,
   invalidatePlaylistCaches,
@@ -75,7 +75,7 @@ export default function TrackActionsHost() {
   const scope =
     user === null
       ? 'signed-out'
-      : musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+      : musicCacheScope(getCurrentApiBase(), user.id);
   const accountScope = user === null ? null : scope;
   const previousAccountScope = useRef<string | null>(accountScope);
   const [mode, setMode] = useState<Mode>('actions');

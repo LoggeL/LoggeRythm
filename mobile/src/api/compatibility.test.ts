@@ -64,8 +64,13 @@ describe('ApiCompatibilityGate', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledWith(`${origin}/api/version`, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+      },
       credentials: 'omit',
+      redirect: 'error',
       signal: expect.any(AbortSignal),
     });
   });

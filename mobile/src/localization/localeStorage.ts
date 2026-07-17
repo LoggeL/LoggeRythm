@@ -5,6 +5,7 @@ import {
 } from './index';
 
 export const APP_LOCALE_STORAGE_KEY = 'lr.app-locale.v1';
+export const LOCALE_HYDRATION_TIMEOUT_MS = 2_000;
 
 export interface LocaleStorage {
   getItem(key: string): Promise<string | null>;
@@ -37,6 +38,37 @@ export async function readPersistedLocale(
     // startup or make untrusted storage content an active locale.
   }
   return DEFAULT_APP_LOCALE;
+}
+
+/**
+ * Bound the only read that blocks locale-dependent application children.
+ * AsyncStorage normally settles immediately, but a wedged native bridge must
+ * not turn the locale gate into an indefinite blank startup.
+ */
+export function readBootstrapLocale(
+  storage: LocaleStorage,
+  timeoutMs = LOCALE_HYDRATION_TIMEOUT_MS,
+): Promise<AppLocale> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    return Promise.reject(new TypeError('Locale hydration timeout is invalid'));
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const finish = (locale: AppLocale): void => {
+      if (settled) return;
+      settled = true;
+      if (timeout !== null) clearTimeout(timeout);
+      resolve(locale);
+    };
+
+    timeout = setTimeout(() => finish(DEFAULT_APP_LOCALE), timeoutMs);
+    void readPersistedLocale(storage).then(
+      finish,
+      () => finish(DEFAULT_APP_LOCALE),
+    );
+  });
 }
 
 export async function persistLocale(

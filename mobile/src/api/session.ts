@@ -1,3 +1,5 @@
+import { normalizeSignInApiBase } from '../config';
+
 export interface StoredSession {
   version: 1;
   token: string;
@@ -45,8 +47,8 @@ export function decodeStoredSession(raw: string): StoredSession {
     throw new Error('Stored session origin is missing');
   }
   try {
-    if (new URL(candidate.origin).origin !== candidate.origin) {
-      throw new Error('origin must not include a path, query string, or fragment');
+    if (normalizeSignInApiBase(candidate.origin) !== candidate.origin) {
+      throw new Error('origin must be a canonical HTTPS origin');
     }
   } catch (error) {
     throw new Error(`Stored session origin is invalid: ${(error as Error).message}`);

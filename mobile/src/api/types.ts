@@ -154,43 +154,6 @@ export interface HomeShelf {
   tracks: Track[];
 }
 
-export interface StatEntry {
-  key: string;
-  label: string;
-  sublabel: string;
-  cover: string;
-  count: number;
-}
-
-/**
- * Exact item emitted by `/api/me/stats.recent`.
- *
- * It intentionally is not a Track: the backend does not return preview_url,
- * rank, or release_date for persisted play-history rows.
- */
-export interface RecentPlay {
-  id: DeezerId;
-  title: string;
-  artist: string;
-  artist_id: string;
-  artists: ArtistRef[];
-  album: string;
-  album_id: string;
-  cover: string;
-  duration_sec: number;
-}
-
-/** Exact additive all-time + rolling-30-day stats response. */
-export interface UserStats {
-  total_plays: number;
-  top_tracks: StatEntry[];
-  top_artists: StatEntry[];
-  recent: RecentPlay[];
-  total_plays_month: number;
-  top_tracks_month: StatEntry[];
-  top_artists_month: StatEntry[];
-}
-
 export interface PublicProfile {
   id: number;
   display_name: string | null;

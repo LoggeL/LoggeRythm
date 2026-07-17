@@ -9,11 +9,12 @@ import {
   View,
 } from 'react-native';
 import type { MeUpdateRequest } from '../../api/endpoints';
-import type { StatEntry, User, UserStats } from '../../api/types';
+import type { User } from '../../api/types';
 import {
   resolveRemoteVisualState,
   type RemoteFetchStatus,
 } from '../../data/remoteState';
+import type { StatEntry, UserStats } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import { ensurePlayer, isPlayerReady } from '../../player/setup';
 import { colors, metrics } from '../../theme';
@@ -43,7 +44,7 @@ import {
 interface ProfileIdentityCardProps {
   user: User;
   avatarUri: string | null;
-  serverHost: string;
+  serverOrigin: string;
 }
 
 function AvatarImage({ uri, fallback }: { uri: string; fallback: string }) {
@@ -62,7 +63,7 @@ function AvatarImage({ uri, fallback }: { uri: string; fallback: string }) {
   );
 }
 
-export function ProfileIdentityCard({ user, avatarUri, serverHost }: ProfileIdentityCardProps) {
+export function ProfileIdentityCard({ user, avatarUri, serverOrigin }: ProfileIdentityCardProps) {
   const name = user.display_name?.trim() || user.email;
   return (
     <View testID="profile-identity" style={styles.card}>
@@ -101,7 +102,7 @@ export function ProfileIdentityCard({ user, avatarUri, serverHost }: ProfileIden
         </View>
       </View>
       <Text testID="profile-server-origin" style={styles.helperText}>
-        {strings.profile.serverOrigin(serverHost)}
+        {strings.profile.serverOrigin(serverOrigin)}
       </Text>
       <Text testID="profile-avatar-deferred" style={styles.helperText}>{strings.profile.avatarDeferred}</Text>
     </View>

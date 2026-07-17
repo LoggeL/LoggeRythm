@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   },
   getApiBase: vi.fn(),
   ensureApiCompatibility: vi.fn(),
+  resetApiCompatibilityCheck: vi.fn(),
   fetch: vi.fn(),
 }));
 
@@ -19,8 +20,14 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   default: mocks.asyncStorage,
 }));
 vi.mock('expo-secure-store', () => mocks.secureStore);
-vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
-vi.mock('./compatibility', () => ({ ensureApiCompatibility: mocks.ensureApiCompatibility }));
+vi.mock('../config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../config')>(),
+  getApiBase: mocks.getApiBase,
+}));
+vi.mock('./compatibility', () => ({
+  ensureApiCompatibility: mocks.ensureApiCompatibility,
+  resetApiCompatibilityCheck: mocks.resetApiCompatibilityCheck,
+}));
 
 describe('API compatibility request boundary', () => {
   beforeEach(() => {
@@ -43,7 +50,7 @@ describe('API compatibility request boundary', () => {
     vi.stubGlobal('fetch', mocks.fetch);
   });
 
-  it('rejects before reading, migrating, or invalidating session state', async () => {
+  it('reads only the local origin authority before rejecting compatibility', async () => {
     mocks.ensureApiCompatibility.mockRejectedValue(
       new Error('Dieser Server wird von dieser Android-Version nicht unterstützt.'),
     );
@@ -54,16 +61,16 @@ describe('API compatibility request boundary', () => {
     await expect(apiRequest('/api/auth/me')).rejects.toThrow('Android-Version');
 
     expect(mocks.ensureApiCompatibility).toHaveBeenCalledWith('https://music.example');
-    expect(mocks.secureStore.getItemAsync).not.toHaveBeenCalled();
+    expect(mocks.secureStore.getItemAsync).toHaveBeenCalledExactlyOnceWith('lr.session.v1');
     expect(mocks.secureStore.setItemAsync).not.toHaveBeenCalled();
     expect(mocks.secureStore.deleteItemAsync).not.toHaveBeenCalled();
-    expect(mocks.asyncStorage.getItem).not.toHaveBeenCalled();
+    expect(mocks.asyncStorage.getItem).toHaveBeenCalledExactlyOnceWith('lr.session');
     expect(mocks.asyncStorage.removeItem).not.toHaveBeenCalled();
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(invalidated).not.toHaveBeenCalled();
   });
 
-  it('runs the preflight before loading session state and sending the request', async () => {
+  it('loads the session-bound origin before preflight and sends only after it passes', async () => {
     const order: string[] = [];
     mocks.ensureApiCompatibility.mockImplementation(async () => {
       order.push('compatibility');
@@ -84,7 +91,7 @@ describe('API compatibility request boundary', () => {
     const { apiRequest } = await import('./client');
 
     await expect(apiRequest('/api/ping')).resolves.toEqual({ ok: true });
-    expect(order).toEqual(['compatibility', 'session', 'request']);
+    expect(order).toEqual(['session', 'compatibility', 'request']);
   });
 
   it('rejects an undocumented 2xx status before decoding the generated response', async () => {
@@ -121,7 +128,7 @@ describe('API compatibility request boundary', () => {
 
     expect(mocks.ensureApiCompatibility).toHaveBeenNthCalledWith(1, 'https://music.example');
     expect(mocks.ensureApiCompatibility).toHaveBeenNthCalledWith(2, 'https://music.example');
-    expect(mocks.secureStore.getItemAsync).not.toHaveBeenCalled();
-    expect(mocks.asyncStorage.getItem).not.toHaveBeenCalled();
+    expect(mocks.secureStore.getItemAsync).toHaveBeenCalledOnce();
+    expect(mocks.asyncStorage.getItem).toHaveBeenCalledOnce();
   });
 });

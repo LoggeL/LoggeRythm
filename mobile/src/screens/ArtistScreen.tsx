@@ -25,7 +25,7 @@ import {
 } from '../components/catalog/CatalogStates';
 import { showTrackActions } from '../components/trackActions';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   createArtistFollowMutationOptions,
   musicCacheScope,
@@ -73,7 +73,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   if (user === null) throw new Error('ArtistScreen requires an authenticated user');
 
   const queryClient = useQueryClient();
-  const scope = musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+  const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const artist = useQuery(musicQueries.artist(artistId));
   const artistName = artist.data?.name.trim() ?? '';
   const aboutEnabled = artistName.length > 0;

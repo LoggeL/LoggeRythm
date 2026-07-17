@@ -17,7 +17,7 @@ import {
 } from './index';
 import {
   persistLocale,
-  readPersistedLocale,
+  readBootstrapLocale,
   type LocaleStorage,
 } from './localeStorage';
 
@@ -46,7 +46,7 @@ export function LocaleProvider({
 
   useEffect(() => {
     let mounted = true;
-    void readPersistedLocale(storage).then((persisted) => {
+    void readBootstrapLocale(storage).then((persisted) => {
       if (!mounted || userSelectionStarted.current) return;
       localeRef.current = activateLocale(persisted);
       setLocale(persisted);

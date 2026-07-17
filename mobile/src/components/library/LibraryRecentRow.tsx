@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { RecentPlay } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import type { TrackOccurrenceIdentity } from '../../player/trackPresentation';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';

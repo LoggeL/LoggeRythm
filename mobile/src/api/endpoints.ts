@@ -34,8 +34,8 @@ import {
   decodeTrackList,
   decodeTrackPlayCounts,
   decodeUser,
-  decodeUserStats,
 } from './decoders';
+import { decodeListeningStatsWire } from '../data/mappers/listeningStats';
 import type {
   AddedTracksResult,
   AdminInvite,
@@ -69,7 +69,6 @@ import type {
   TrackPlayCounts,
   TrackPlayQuery,
   User,
-  UserStats,
 } from './types';
 
 function pathSegment(value: string | number): string {
@@ -104,22 +103,24 @@ export interface PartyPlaybackUpdate {
 }
 
 // --- Auth ---
-export function login(email: string, password: string): Promise<User> {
+export function login(email: string, password: string, apiBase?: string): Promise<User> {
   return apiRequest<User>('/api/auth/login', {
     method: 'POST',
     body: { email, password },
     captureSession: true,
     noAuth: true,
+    ...(apiBase === undefined ? {} : { apiBase }),
     decode: decodeUser,
   });
 }
 
-export function register(request: RegisterRequest): Promise<User> {
+export function register(request: RegisterRequest, apiBase?: string): Promise<User> {
   return apiRequest<User>('/api/auth/register', {
     method: 'POST',
     body: request,
     captureSession: true,
     noAuth: true,
+    ...(apiBase === undefined ? {} : { apiBase }),
     decode: decodeUser,
   });
 }
@@ -128,11 +129,12 @@ export function me(): Promise<User> {
   return apiRequest<User>('/api/auth/me', { decode: decodeUser });
 }
 
-export function logout(): Promise<{ ok: boolean }> {
+export function logout(apiBase?: string): Promise<{ ok: boolean }> {
   return apiRequest<{ ok: boolean }>('/api/auth/logout', {
     method: 'POST',
     decode: decodeOk,
     noAuth: true,
+    ...(apiBase === undefined ? {} : { apiBase }),
     timeoutMs: 2_000,
   });
 }
@@ -521,8 +523,14 @@ export function getPublicProfile(userId: number, signal?: AbortSignal): Promise<
   });
 }
 
-export function getStats(signal?: AbortSignal): Promise<UserStats> {
-  return apiRequest<UserStats>('/api/me/stats', { signal, decode: decodeUserStats });
+export function getStats(
+  signal?: AbortSignal,
+): Promise<GeneratedApiResponse<'get_stats_api_me_stats_get'>> {
+  return requestGeneratedOperation('get_stats_api_me_stats_get', {
+    request: {},
+    signal,
+    decode: decodeListeningStatsWire,
+  });
 }
 
 /** Record a play (drives personal stats), optionally replay-safe by native event UUID. */

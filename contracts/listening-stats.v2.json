@@ -1,0 +1,415 @@
+{
+  "$id": "loggerythm.listening-stats.v2",
+  "version": 2,
+  "limits": {
+    "recent_artists": 100,
+    "safe_integer": 9007199254740991
+  },
+  "valid": [
+    {
+      "id": "empty-history",
+      "wire": {
+        "total_plays": 0,
+        "top_tracks": [],
+        "top_artists": [],
+        "recent": [],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "domain": {
+        "total_plays": 0,
+        "top_tracks": [],
+        "top_artists": [],
+        "recent": [],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      }
+    },
+    {
+      "id": "legacy-ids-and-missing-optional-media",
+      "wire": {
+        "total_plays": 5,
+        "top_tracks": [
+          {
+            "key": 3135556,
+            "label": "  Harder Better Faster Stronger  ",
+            "count": 3
+          },
+          {
+            "key": "3135557",
+            "label": "Digital Love",
+            "sublabel": "Daft Punk",
+            "cover": " https://images.example.test/discovery.jpg ",
+            "count": 2
+          }
+        ],
+        "top_artists": [
+          {
+            "key": 27,
+            "label": "Daft Punk",
+            "count": 5
+          }
+        ],
+        "recent": [
+          {
+            "id": 3135556,
+            "title": "  Harder Better Faster Stronger  ",
+            "artist": " Daft Punk ",
+            "artist_id": 27,
+            "artists": [
+              {
+                "id": 27,
+                "name": " Daft Punk "
+              }
+            ],
+            "album": " Discovery ",
+            "album_id": 302127,
+            "duration_sec": 224
+          },
+          {
+            "id": "3135557",
+            "title": "Digital Love",
+            "artists": [],
+            "cover": ""
+          }
+        ],
+        "total_plays_month": 2,
+        "top_tracks_month": [
+          {
+            "key": "3135557",
+            "label": "Digital Love",
+            "count": 2
+          }
+        ],
+        "top_artists_month": [
+          {
+            "key": "27",
+            "label": "Daft Punk",
+            "count": 2
+          }
+        ]
+      },
+      "domain": {
+        "total_plays": 5,
+        "top_tracks": [
+          {
+            "key": "3135556",
+            "label": "Harder Better Faster Stronger",
+            "sublabel": "",
+            "cover": "",
+            "count": 3
+          },
+          {
+            "key": "3135557",
+            "label": "Digital Love",
+            "sublabel": "Daft Punk",
+            "cover": "https://images.example.test/discovery.jpg",
+            "count": 2
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "27",
+            "label": "Daft Punk",
+            "sublabel": "",
+            "cover": "",
+            "count": 5
+          }
+        ],
+        "recent": [
+          {
+            "id": "3135556",
+            "title": "Harder Better Faster Stronger",
+            "artist": "Daft Punk",
+            "artist_id": "27",
+            "artists": [
+              {
+                "id": "27",
+                "name": "Daft Punk"
+              }
+            ],
+            "album": "Discovery",
+            "album_id": "302127",
+            "cover": "",
+            "duration_sec": 224
+          },
+          {
+            "id": "3135557",
+            "title": "Digital Love",
+            "artist": "",
+            "artist_id": "",
+            "artists": [],
+            "album": "",
+            "album_id": "",
+            "cover": "",
+            "duration_sec": 0
+          }
+        ],
+        "total_plays_month": 2,
+        "top_tracks_month": [
+          {
+            "key": "3135557",
+            "label": "Digital Love",
+            "sublabel": "",
+            "cover": "",
+            "count": 2
+          }
+        ],
+        "top_artists_month": [
+          {
+            "key": "27",
+            "label": "Daft Punk",
+            "sublabel": "",
+            "cover": "",
+            "count": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "text-legacy-ids-and-empty-copy",
+      "wire": {
+        "total_plays": 1,
+        "top_tracks": [
+          {
+            "key": "legacy-track",
+            "label": "",
+            "count": 1
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "",
+            "label": "",
+            "count": 1
+          }
+        ],
+        "recent": [
+          {
+            "id": "legacy-track",
+            "title": "",
+            "artist": "",
+            "artist_id": "",
+            "artists": [
+              {
+                "id": "",
+                "name": ""
+              }
+            ],
+            "duration_sec": 0
+          }
+        ],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "domain": {
+        "total_plays": 1,
+        "top_tracks": [
+          {
+            "key": "legacy-track",
+            "label": "",
+            "sublabel": "",
+            "cover": "",
+            "count": 1
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "",
+            "label": "",
+            "sublabel": "",
+            "cover": "",
+            "count": 1
+          }
+        ],
+        "recent": [
+          {
+            "id": "legacy-track",
+            "title": "",
+            "artist": "",
+            "artist_id": "",
+            "artists": [
+              {
+                "id": "",
+                "name": ""
+              }
+            ],
+            "album": "",
+            "album_id": "",
+            "cover": "",
+            "duration_sec": 0
+          }
+        ],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "id": "month-exceeds-all-time",
+      "wire": {
+        "total_plays": 0,
+        "top_tracks": [],
+        "top_artists": [],
+        "recent": [],
+        "total_plays_month": 1,
+        "top_tracks_month": [
+          {
+            "key": "1",
+            "label": "Track",
+            "count": 1
+          }
+        ],
+        "top_artists_month": [
+          {
+            "key": "2",
+            "label": "Artist",
+            "count": 1
+          }
+        ]
+      },
+      "error": "total_plays_month"
+    },
+    {
+      "id": "malformed-recent-identity",
+      "wire": {
+        "total_plays": 1,
+        "top_tracks": [
+          {
+            "key": "track",
+            "label": "Track",
+            "count": 1
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "artist",
+            "label": "Artist",
+            "count": 1
+          }
+        ],
+        "recent": [
+          {
+            "id": {
+              "malformed": true
+            },
+            "title": "Track"
+          }
+        ],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "error": "recent[0].id"
+    },
+    {
+      "id": "unsafe-numeric-recent-identity",
+      "wire": {
+        "total_plays": 1,
+        "top_tracks": [
+          {
+            "key": "track",
+            "label": "Track",
+            "count": 1
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "artist",
+            "label": "Artist",
+            "count": 1
+          }
+        ],
+        "recent": [
+          {
+            "id": 9007199254740992,
+            "title": "Track"
+          }
+        ],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "error": "recent[0].id"
+    },
+    {
+      "id": "unsafe-numeric-stat-count",
+      "wire": {
+        "total_plays": 1,
+        "top_tracks": [
+          {
+            "key": "track",
+            "label": "Track",
+            "count": 9007199254740992
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "artist",
+            "label": "Artist",
+            "count": 1
+          }
+        ],
+        "recent": [
+          {
+            "id": "track",
+            "title": "Track"
+          }
+        ],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "error": "top_tracks[0].count"
+    },
+    {
+      "id": "unsafe-numeric-duration",
+      "wire": {
+        "total_plays": 1,
+        "top_tracks": [
+          {
+            "key": "track",
+            "label": "Track",
+            "count": 1
+          }
+        ],
+        "top_artists": [
+          {
+            "key": "artist",
+            "label": "Artist",
+            "count": 1
+          }
+        ],
+        "recent": [
+          {
+            "id": "track",
+            "title": "Track",
+            "duration_sec": 9007199254740992
+          }
+        ],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "error": "recent[0].duration_sec"
+    },
+    {
+      "id": "inconsistent-positive-total",
+      "wire": {
+        "total_plays": 1,
+        "top_tracks": [],
+        "top_artists": [],
+        "recent": [],
+        "total_plays_month": 0,
+        "top_tracks_month": [],
+        "top_artists_month": []
+      },
+      "error": "all-time collections"
+    }
+  ]
+}

@@ -1,7 +1,8 @@
 # Android Media3 QA evidence — 2026-07-17
 
-This is the canonical evidence and exception ledger for the first-party Media3
-Android `1.0.3`/`10014` milestone. It records a debug-signed QA prerelease, not
+This is the canonical evidence and exception ledger for the published
+first-party Media3 Android `1.0.3`/`10014` milestone and the exact local
+`1.0.3`/`10015` RC.2 candidate. Both are debug-signed QA artifacts, not
 production signing, Play delivery, or full web-parity acceptance. The prior
 `1.0.2`/`10013` record remains unchanged in
 [`ANDROID_MEDIA3_QA_2026-07-16.md`](./ANDROID_MEDIA3_QA_2026-07-16.md).
@@ -160,3 +161,131 @@ production credential was entered or sent.
 
 These exceptions are authoritative: absence from a failure log is not evidence
 that an unexecuted matrix passed.
+
+## Local RC.2 candidate — pending commit, CI, tag, and publication
+
+This section records the newer Stats/Locale/Auth/Custom-Server parity candidate without
+rewriting the published RC.1 evidence above. Until the exact source commit,
+dispatched workflows, tag, GitHub release, and uploaded asset digests exist,
+this is local evidence only.
+
+### APK identity
+
+- Package/version: `top.logge.loggerythm`, `1.0.3` (`versionCode 10015`)
+- File: local `mobile/android/app/build/outputs/apk/release/app-release.apk`
+- Size: `27,661,624` bytes
+- SHA-256:
+  `5f3f06de497b046a8682fce0e35f40edd1f7c2188d17bd0b141d6f765c055c17`
+- Minimum/target SDK: 24 / 36
+- ABI: `arm64-v8a` only
+- Build: nondebuggable release variant, embedded Hermes, R8/minification and
+  resource shrinking
+- Alignment: `zipalign -c -P 16 4` passed
+- Signing: APK Signature Scheme v2, one Android debug signer
+- Signer certificate SHA-256:
+  `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`
+- Embedded signed-out default: `https://loggerythm.logge.top`; Login/Register
+  support an explicit canonical HTTPS-root origin
+- First-party artifact gate: 454 source/generated files and 1,095 APK entries,
+  zero findings
+
+This APK was rebuilt after the final Search-history and Stats-contract P1
+corrections. Earlier local b10015 hashes are obsolete and must not be uploaded.
+
+### Contract and regression evidence
+
+- OpenAPI v2: 58 component schemas, 73 paths, 82 operations; FastAPI export and
+  generated Android TypeScript artifact are drift-clean.
+- Listening Stats has an explicit `UserStats` response, generated Android wire
+  types, a repository-owned Android domain mapper, and one shared web/Android
+  fixture covering empty history, numeric/text legacy IDs, missing media,
+  empty legacy copy, malformed shapes, period invariants, and bounded credits.
+- Legacy negative stored duration is normalized to zero and artist credits are
+  bounded to 100 at the response boundary, preventing a historical row from
+  turning the complete stats response into a validation failure.
+- Locale-dependent providers stay behind persisted-locale hydration or a
+  bounded two-second German fallback. Search history hydration is keyed by
+  account plus locale, so a language switch cannot overwrite history while its
+  reload is in flight.
+- Mobile: TypeScript, repository-wide ESLint, dependency/branding gates, 155
+  Vitest files / 1,090 passing tests plus one explicit todo (1,091 total).
+- API: 58 passing tests.
+- Web: 13 passing tests, TypeScript, ESLint, and a 15-page Next.js production
+  build.
+- Native debug and release JVM: 116/116 in each variant; release lint, app
+  tests, Hermes/R8/resource shrinking, and ARM64 assembly passed with 589
+  actionable Gradle tasks (446 executed, 143 up-to-date).
+
+### Exact-APK emulator evidence
+
+The exact APK above was clean-installed on Android Studio's API 36 ARM64
+`emulator-5554` with fingerprint
+`google/sdk_gphone64_arm64/emu64a:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys`.
+The package was nondebuggable, rendered its embedded Hermes bundle without
+Metro, and passed app-scoped crash/ANR/native/ReactNativeJS log audits.
+
+#### Production-default startup
+
+Cold and warm startup remained in PID `31441`. The Login server field exposed
+the exact production default `https://loggerythm.logge.top`; the run remained
+signed out and deliberately sent no credentials because anonymous
+`GET /api/version` still returns HTTP 404. Evidence is retained under
+`mobile/android/app/build/qa/rc2-final-exact/prod-startup`.
+
+#### Disposable custom-server sign-in
+
+The same APK selected the disposable HTTPS origin
+`https://chan-resulted-towers-hawaii.trycloudflare.com` and passed cold/warm
+startup plus login under PID `31723`. The harness verified:
+
+- the selected origin remained visible and compatibility completed before the
+  credential-bearing request;
+- authentication mounted all five tabs and Profile;
+- first-party Media3 setup reached commands/listeners ready; and
+- the Android Auto browse library became ready.
+
+The disposable account was isolated from production. Evidence is retained
+under `mobile/android/app/build/qa/rc2-final-exact/custom-login`.
+
+Manual continuation on the same exact installed APK then proved the persisted
+origin lifecycle:
+
+- force-stop/restart restored the custom session through
+  `GET /api/auth/me` HTTP 200;
+- Profile displayed the complete custom HTTPS origin;
+- `POST /api/auth/logout` returned HTTP 200;
+- Login reset to `https://loggerythm.logge.top`; and
+- another restart remained on the production default.
+
+#### Redirect-negative boundary
+
+A disposable redirecting compatibility server produced the expected harness
+failure and visible compatibility network error. Server-side observation found
+only `GET /api/version` HTTP 302: the redirect target received no request and
+the selected server received no login/register POST. This proves the exact APK
+stopped before credentials at the tested redirect boundary.
+
+#### Evidence identities
+
+| Evidence | Summary SHA-256 | Screenshot SHA-256 | UI XML SHA-256 | Log SHA-256 |
+|---|---|---|---|---|
+| Production startup | `028f3b27bcc1f93edd12012cfa8bb441b959b35455078b159448164a12149966` | `4ed67538de9b0577f68ec0de8654355401ef74c82e020c1075d66142cc83c56e` | `e39028af9738308dcb65db9f19c68ebc7b891cf07081e8966a9aa49693bbb663` | `5c700c99a7634dbb9d269533f8c8f5bfd729812794d74837210e9a18ce14f15f` |
+| Custom login | `10b834c220553c85517ac2b9a346c69dc4f2733fae48fccd8ccfcddd63625393` | `5418891a15bd7941099e80ed073871c0b1f3bf1395cbc1fb28e25f1f62a2b40a` | `44d0613fd8790b0442b2723919fd863ed7591c5e72070540663a9470cd189188` | `8820254586c8e3710b371eb3f996db5275382f972b6723dd40b11406bf9d481b` |
+
+### RC.2 exceptions
+
+- Production still returns anonymous HTTP 404 from `/api/version`; no real
+  production credential was sent, and production-authenticated API/media
+  behavior remains untested.
+- Disposable custom-server login, force-stop `/me` restoration, full-origin
+  Profile disclosure, logout reset, Media3 setup, and Android Auto browse-tree
+  readiness are proven on the exact APK. Custom registration/invite,
+  pending-approval UI, authoritative 401/403, Forget, account replacement, and
+  production/app-link intent delivery remain open.
+- No real track playback, playback-event journal delivery, full account-switch
+  or filesystem/cache/notification cleanup, Android Auto DHU/Assistant, or full
+  accessibility/device matrix is claimed.
+- English restart/native Auto/notification-channel switching remains open.
+- The APK is debug-certificate signed and is suitable only for a GitHub
+  prerelease. It must not be marked latest or represented as production
+  signing/AAB/Play delivery.

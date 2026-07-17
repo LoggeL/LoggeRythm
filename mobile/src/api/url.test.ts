@@ -14,10 +14,12 @@ describe('resolveServerUrl', () => {
     );
   });
 
-  it('rejects non-HTTP media URLs', () => {
+  it('rejects non-HTTPS media URLs', () => {
     expect(() => resolveServerUrl('file:///secret', 'https://music.example')).toThrow(
-      'must use http:// or https://',
+      'must use https://',
     );
+    expect(() => resolveServerUrl('http://cdn.example/cover.jpg', 'https://music.example'))
+      .toThrow('must use https://');
   });
 });
 

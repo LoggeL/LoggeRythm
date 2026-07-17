@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import Mock, patch
+import xml.etree.ElementTree as ET
+from unittest.mock import Mock, call, patch
 
 from android_smoke import (
     AndroidSmoke,
     PROFILE_ACCESS_SUFFIXES,
-    PRODUCTION_ORIGIN_MARKER,
     SmokeFailure,
     TAB_DESTINATIONS,
     app_runtime_failure,
@@ -15,8 +15,7 @@ from android_smoke import (
     metro_reverse_present,
     metro_runtime_failure,
     missing_resource_suffixes,
-    production_origin_marker_present,
-    runtime_api_origins,
+    selected_server_origin,
 )
 
 
@@ -113,32 +112,273 @@ class CredentialInputTests(unittest.TestCase):
         self.assertNotIn(secret, script)
         self.assertEqual(script.count("input text "), len(secret))
 
+    def test_submit_discovery_requires_the_exact_enabled_visible_test_id(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        valid = resource_node("login-submit")
+        valid.update({"displayed": "true", "bounds": "[10,20][110,70]"})
+
+        self.assertIs(smoke.find_submit([valid]), valid)
+        self.assertIsNone(
+            smoke.find_submit(
+                [
+                    dict(valid, **{"resource-id": "foreign.app:id/login-submit"}),
+                    dict(valid, **{"resource-id": "login-submit", "enabled": "false"}),
+                    dict(valid, **{"resource-id": "login-submit", "displayed": "false"}),
+                    dict(valid, **{"resource-id": "", "text": "Sign in"}),
+                ],
+            ),
+        )
+
+    def test_dismisses_keyboard_then_relocates_the_fresh_enabled_submit(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        smoke.adb = Mock()
+        smoke.assert_alive = Mock()
+        disabled = resource_node("login-submit", enabled=False)
+        disabled.update({"displayed": "true", "bounds": "[10,20][110,70]"})
+        enabled = dict(disabled, enabled="true")
+        smoke.dump_ui = Mock(
+            side_effect=[
+                (ET.Element("hierarchy", {}), ""),
+                (ET.Element("hierarchy", {}), ""),
+            ],
+        )
+        smoke.nodes = Mock(side_effect=[[disabled], [enabled]])
+
+        with patch("android_smoke.time.sleep"):
+            result = smoke.dismiss_ime_and_wait_for_submit()
+
+        self.assertEqual(result, enabled)
+        smoke.adb.assert_called_once_with(
+            ["shell", "input", "keyevent", "KEYCODE_BACK"],
+        )
+        smoke.assert_alive.assert_has_calls(
+            [
+                call("enabled login submit wait 1"),
+                call("enabled login submit wait 2"),
+            ],
+        )
+        self.assertEqual(smoke.dump_ui.call_count, 2)
+
+    def test_submit_wait_failure_reports_only_safe_control_state(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        smoke.adb = Mock()
+        smoke.assert_alive = Mock()
+        disabled = resource_node("login-submit", enabled=False)
+        disabled.update(
+            {
+                "class": "android.widget.Button",
+                "package": "top.logge.loggerythm",
+                "displayed": "true",
+                "focused": "false",
+                "bounds": "[10,20][110,70]",
+                "text": "credential-value-must-not-leak",
+            },
+        )
+        smoke.dump_ui = Mock(
+            return_value=(ET.Element("hierarchy", {}), ""),
+        )
+        smoke.nodes = Mock(return_value=[disabled])
+
+        with patch("android_smoke.time.sleep"), self.assertRaisesRegex(
+            SmokeFailure,
+            "login-submit candidates=1.*enabled='false'.*bounds='\\[10,20\\]\\[110,70\\]'",
+        ) as raised:
+            smoke.dismiss_ime_and_wait_for_submit()
+
+        self.assertNotIn("credential-value-must-not-leak", str(raised.exception))
+        self.assertEqual(smoke.dump_ui.call_count, 8)
+
 
 class ProductionOriginEvidenceTests(unittest.TestCase):
-    def test_requires_the_runtime_selected_origin_marker(self) -> None:
-        self.assertTrue(production_origin_marker_present(f"I/ReactNativeJS: {PRODUCTION_ORIGIN_MARKER}"))
-        self.assertFalse(
-            production_origin_marker_present(
-                "Hermes bundle contains https://loggerythm.logge.top as a fallback constant",
+    def test_requires_one_visible_server_input_with_the_selected_origin(self) -> None:
+        node = resource_node("login-server", clickable=True)
+        node.update(
+            {
+                "class": "android.widget.EditText",
+                "text": "https://loggerythm.logge.top",
+            },
+        )
+        self.assertEqual(
+            selected_server_origin([node]),
+            "https://loggerythm.logge.top",
+        )
+
+    def test_rejects_missing_duplicate_or_non_input_server_nodes(self) -> None:
+        first = resource_node("login-server")
+        first.update(
+            {
+                "class": "android.widget.EditText",
+                "text": "https://one.example.test",
+            },
+        )
+        second = dict(first, text="https://two.example.test")
+        self.assertIsNone(selected_server_origin([]))
+        self.assertIsNone(selected_server_origin([first, second]))
+        self.assertIsNone(
+            selected_server_origin(
+                [dict(first, **{"class": "android.widget.TextView"})],
             ),
         )
 
-    def test_rejects_a_conflicting_or_failed_runtime_origin(self) -> None:
-        conflicting = (
-            f"I/ReactNativeJS: {PRODUCTION_ORIGIN_MARKER}\n"
-            "I/ReactNativeJS: [LoggeRythm] API origin: https://staging.example.test"
+    def test_server_input_discovery_uses_only_the_exact_stable_test_id(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        valid = resource_node("login-server")
+        valid.update(
+            {
+                "class": "android.widget.EditText",
+                "password": "false",
+                "text": "https://one.example.test",
+            },
         )
-        self.assertEqual(
-            runtime_api_origins(conflicting),
-            ["https://loggerythm.logge.top", "https://staging.example.test"],
-        )
-        self.assertFalse(production_origin_marker_present(conflicting))
-        self.assertFalse(
-            production_origin_marker_present(
-                f"{PRODUCTION_ORIGIN_MARKER}\n"
-                "[LoggeRythm] API origin configuration failed",
+
+        self.assertIs(smoke.find_server_input([valid]), valid)
+        self.assertIsNone(
+            smoke.find_server_input(
+                [dict(valid, **{"resource-id": "foreign.app:id/login-server"})],
             ),
         )
+        self.assertIsNone(smoke.find_server_input([valid, dict(valid)]))
+        self.assertIsNone(
+            smoke.find_server_input(
+                [dict(valid, **{"resource-id": "", "content-desc": "Server URL"})],
+            ),
+        )
+
+    def test_server_entry_separates_focus_clear_type_and_exact_verification(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        smoke.expected_origin = "https://custom.example.test"
+        current = resource_node("login-server")
+        current.update(
+            {
+                "class": "android.widget.EditText",
+                "password": "false",
+                "focused": "false",
+                "text": "https://loggerythm.logge.top",
+                "bounds": "[10,20][110,70]",
+            },
+        )
+        focused = dict(current, focused="true")
+        cleared = dict(focused, text="")
+        typed = dict(focused, text=smoke.expected_origin)
+        smoke.dump_ui = Mock(return_value=(ET.Element("hierarchy", {}), ""))
+        smoke.nodes = Mock(return_value=[current])
+        smoke.adb = Mock()
+        smoke.adb_shell_stdin = Mock()
+        smoke.wait_for_focused_server_input = Mock(return_value=focused)
+        smoke.wait_for_server_value = Mock(side_effect=[cleared, typed])
+
+        smoke.configure_server_origin()
+
+        smoke.adb.assert_called_once_with(
+            ["shell", "input", "tap", "60", "45"],
+        )
+        self.assertEqual(smoke.adb_shell_stdin.call_count, 2)
+        clear_script = smoke.adb_shell_stdin.call_args_list[0].args[0]
+        type_script = smoke.adb_shell_stdin.call_args_list[1].args[0]
+        self.assertIn("input keyevent KEYCODE_MOVE_END", clear_script)
+        self.assertEqual(
+            clear_script.count("input keyevent KEYCODE_DEL"),
+            len(current["text"]),
+        )
+        self.assertNotIn(smoke.expected_origin, clear_script)
+        self.assertEqual(type_script, smoke.input_text_script(smoke.expected_origin))
+        self.assertEqual(
+            smoke.wait_for_server_value.call_args_list,
+            [
+                call("", "clear", 1),
+                call(smoke.expected_origin, "type", 1),
+            ],
+        )
+
+    def test_clear_phase_treats_ui_automator_hint_text_as_empty_without_literal(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        localized_hint = "localized-placeholder.example"
+        hinted_empty = resource_node("login-server")
+        hinted_empty.update(
+            {
+                "class": "android.widget.EditText",
+                "password": "false",
+                "text": localized_hint,
+                "hint": localized_hint,
+            },
+        )
+        smoke.dump_ui = Mock(return_value=(ET.Element("hierarchy", {}), ""))
+        smoke.nodes = Mock(return_value=[hinted_empty])
+
+        result = smoke.wait_for_server_value("", "clear", 1)
+
+        self.assertIs(result, hinted_empty)
+        smoke.dump_ui.reset_mock()
+        with patch("android_smoke.time.sleep"):
+            self.assertIsNone(smoke.wait_for_server_value("", "type", 1))
+        self.assertEqual(smoke.dump_ui.call_count, 6)
+
+    def test_server_entry_retries_a_non_exact_typed_value_without_logging_it(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        smoke.expected_origin = "https://custom.example.test"
+        actual_wrong_value = "ttps://custom.example.test"
+        current = resource_node("login-server")
+        current.update(
+            {
+                "class": "android.widget.EditText",
+                "password": "false",
+                "focused": "true",
+                "text": actual_wrong_value,
+                "bounds": "[10,20][110,70]",
+            },
+        )
+        cleared = dict(current, text="")
+        typed = dict(current, text=smoke.expected_origin)
+        smoke.dump_ui = Mock(return_value=(ET.Element("hierarchy", {}), ""))
+        smoke.nodes = Mock(return_value=[current])
+        smoke.adb = Mock()
+        smoke.adb_shell_stdin = Mock()
+        smoke.wait_for_focused_server_input = Mock(return_value=current)
+        smoke.wait_for_server_value = Mock(
+            side_effect=[cleared, None, cleared, typed],
+        )
+
+        smoke.configure_server_origin()
+
+        self.assertEqual(smoke.adb.call_count, 2)
+        self.assertEqual(smoke.adb_shell_stdin.call_count, 4)
+        self.assertEqual(
+            smoke.wait_for_server_value.call_args_list[-1],
+            call(smoke.expected_origin, "type", 2),
+        )
+
+    def test_server_entry_bounded_failure_does_not_disclose_form_values(self) -> None:
+        smoke = AndroidSmoke.__new__(AndroidSmoke)
+        smoke.expected_origin = "https://expected.example.test"
+        actual_wrong_value = "https://wrong.example.test"
+        current = resource_node("login-server")
+        current.update(
+            {
+                "class": "android.widget.EditText",
+                "password": "false",
+                "focused": "true",
+                "text": actual_wrong_value,
+                "bounds": "[10,20][110,70]",
+            },
+        )
+        cleared = dict(current, text="")
+        smoke.dump_ui = Mock(return_value=(ET.Element("hierarchy", {}), ""))
+        smoke.nodes = Mock(return_value=[current])
+        smoke.adb = Mock()
+        smoke.adb_shell_stdin = Mock()
+        smoke.wait_for_focused_server_input = Mock(return_value=current)
+        smoke.wait_for_server_value = Mock(
+            side_effect=[cleared, None, cleared, None, cleared, None],
+        )
+
+        with self.assertRaisesRegex(SmokeFailure, "three bounded attempts") as raised:
+            smoke.configure_server_origin()
+
+        message = str(raised.exception)
+        self.assertNotIn(smoke.expected_origin, message)
+        self.assertNotIn(actual_wrong_value, message)
+        self.assertEqual(smoke.adb.call_count, 3)
+        self.assertEqual(smoke.adb_shell_stdin.call_count, 6)
 
 
 class StandalonePackageEvidenceTests(unittest.TestCase):

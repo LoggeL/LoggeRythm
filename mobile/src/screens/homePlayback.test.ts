@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { RecentPlay, Track } from '../api/types';
+import type { Track } from '../api/types';
+import type { RecentPlay } from '../domain/listeningStats';
 import { startRecentlyHeardPlayback } from './homePlayback';
 
 function recent(id: string, title = `History ${id}`): RecentPlay {

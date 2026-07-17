@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { HomeShelf, RecentPlay } from '../api/types';
+import type { HomeShelf } from '../api/types';
+import type { RecentPlay } from '../domain/listeningStats';
 import {
   assertHomeRouteCallbacks,
   findHomeMix,

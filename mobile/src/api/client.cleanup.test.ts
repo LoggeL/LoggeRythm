@@ -16,8 +16,14 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   default: mocks.asyncStorage,
 }));
 vi.mock('expo-secure-store', () => mocks.secureStore);
-vi.mock('../config', () => ({ getApiBase: vi.fn() }));
-vi.mock('./compatibility', () => ({ ensureApiCompatibility: vi.fn() }));
+vi.mock('../config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../config')>(),
+  getApiBase: vi.fn(),
+}));
+vi.mock('./compatibility', () => ({
+  ensureApiCompatibility: vi.fn(),
+  resetApiCompatibilityCheck: vi.fn(),
+}));
 
 describe('local session cleanup', () => {
   beforeEach(() => {

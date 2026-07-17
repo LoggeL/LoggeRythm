@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_API_BASE,
+  activateApiBase,
+  getCurrentApiBase,
   getApiBase,
   normalizeApiBase,
+  normalizeSignInApiBase,
   PRODUCTION_API_BASE,
+  resetApiBase,
   selectApiBase,
 } from './config';
 
@@ -52,6 +56,36 @@ describe('mobile server configuration', () => {
     );
     expect(() => normalizeApiBase('https://example.com/#debug')).toThrow(
       'query strings and fragments are not allowed',
+    );
+  });
+
+  it('accepts a canonical custom HTTPS origin and drives the runtime base', async () => {
+    expect(normalizeSignInApiBase(' HTTPS://Music.Example.Test:8443/ ')).toBe(
+      'https://music.example.test:8443',
+    );
+    expect(activateApiBase('https://music.example.test:8443')).toBe(
+      'https://music.example.test:8443',
+    );
+    expect(getCurrentApiBase()).toBe('https://music.example.test:8443');
+    await expect(getApiBase()).resolves.toBe('https://music.example.test:8443');
+    expect(resetApiBase()).toBe(PRODUCTION_API_BASE);
+  });
+
+  it.each([
+    'http://music.example.test',
+    'http://10.0.2.2:8000',
+    'https:music.example.test',
+    'https:///music.example.test',
+    'https://music.example.test/path',
+    'https://music.example.test?query=1',
+    'https://music.example.test/#fragment',
+    'https://user:pass@music.example.test',
+    'https://music.example.test:0',
+    'https://music.example.test\\@evil.test',
+    `https://${'a'.repeat(513)}.test`,
+  ])('rejects an unsafe sign-in destination: %s', (value) => {
+    expect(() => normalizeSignInApiBase(value)).toThrow(
+      'canonical HTTPS origin required',
     );
   });
 });

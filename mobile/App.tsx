@@ -11,9 +11,9 @@ import BrandLockup from './src/components/BrandLockup';
 import SessionRestoreError from './src/components/SessionRestoreError';
 import TrackActionsHost from './src/components/TrackActionsHost';
 import ConnectivityBanner from './src/components/ConnectivityBanner';
-import { getApiBase } from './src/config';
 import { strings } from './src/localization';
 import { LocaleProvider, useLocaleRevision } from './src/localization/LocaleProvider';
+import LocaleHydrationGate from './src/localization/LocaleHydrationGate';
 import { musicQueryClient } from './src/data';
 import { startSharedTextIntake } from './src/share/sharedTextIntent';
 import { spotifySharedTextCoordinator } from './src/share/sharedTextRuntime';
@@ -73,33 +73,35 @@ function Gate() {
   );
 }
 
-export default function App() {
-  useEffect(() => {
-    let active = true;
-    void getApiBase()
-      .then((origin) => {
-        if (active) console.info(`[LoggeRythm] API origin: ${origin}`);
-      })
-      .catch(() => {
-        if (active) console.error('[LoggeRythm] API origin configuration failed');
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+function LocaleBootstrapStatus() {
+  return (
+    <View
+      testID="locale-bootstrap-status"
+      accessibilityRole="progressbar"
+      accessibilityLabel="LoggeRythm"
+      style={styles.splash}
+    >
+      <BrandLockup compact />
+      <ActivityIndicator color={colors.accent} size="large" />
+    </View>
+  );
+}
 
+export default function App() {
   return (
     <LocaleProvider>
-      <QueryClientProvider client={musicQueryClient}>
-        <SafeAreaProvider>
-          <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-          <AuthProvider>
-            <SharedTextIntakeHost />
-            <Gate />
-            <TrackActionsHost />
-          </AuthProvider>
-        </SafeAreaProvider>
-      </QueryClientProvider>
+      <SafeAreaProvider>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <LocaleHydrationGate fallback={<LocaleBootstrapStatus />}>
+          <QueryClientProvider client={musicQueryClient}>
+            <AuthProvider>
+              <SharedTextIntakeHost />
+              <Gate />
+              <TrackActionsHost />
+            </AuthProvider>
+          </QueryClientProvider>
+        </LocaleHydrationGate>
+      </SafeAreaProvider>
     </LocaleProvider>
   );
 }

@@ -8,9 +8,9 @@ import {
 import type {
   ArtistSummary,
   PlaylistSummary,
-  RecentPlay,
   Track,
 } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import { libraryStrings } from '../../screens/libraryStrings';
 import { colors } from '../../theme';
 import {

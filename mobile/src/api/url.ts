@@ -5,8 +5,8 @@ export function resolveServerUrl(value: string, apiBase: string): string {
   } catch (error) {
     throw new Error(`Invalid server media URL "${value}": ${(error as Error).message}`);
   }
-  if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
-    throw new Error(`Server media URL "${value}" must use http:// or https://`);
+  if (resolved.protocol !== 'https:') {
+    throw new Error(`Server media URL "${value}" must use https://`);
   }
   return resolved.toString();
 }

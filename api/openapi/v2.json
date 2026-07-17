@@ -1310,6 +1310,92 @@
         "title": "PublicProfile",
         "type": "object"
       },
+      "RecentPlay": {
+        "description": "Exact persisted-history projection returned by ``GET /api/me/stats``.",
+        "properties": {
+          "album": {
+            "default": "",
+            "title": "Album",
+            "type": "string"
+          },
+          "album_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "default": "",
+            "title": "Album Id"
+          },
+          "artist": {
+            "default": "",
+            "title": "Artist",
+            "type": "string"
+          },
+          "artist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "default": "",
+            "title": "Artist Id"
+          },
+          "artists": {
+            "items": {
+              "$ref": "#/components/schemas/StatsArtistRef"
+            },
+            "maxItems": 100,
+            "title": "Artists",
+            "type": "array"
+          },
+          "cover": {
+            "default": "",
+            "title": "Cover",
+            "type": "string"
+          },
+          "duration_sec": {
+            "default": 0,
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Duration Sec",
+            "type": "integer"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "RecentPlay",
+        "type": "object"
+      },
       "RegisterRequest": {
         "properties": {
           "display_name": {
@@ -1440,6 +1526,75 @@
           "tracks"
         ],
         "title": "Shelf",
+        "type": "object"
+      },
+      "StatEntry": {
+        "properties": {
+          "count": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "cover": {
+            "default": "",
+            "title": "Cover",
+            "type": "string"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "sublabel": {
+            "default": "",
+            "title": "Sublabel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "count"
+        ],
+        "title": "StatEntry",
+        "type": "object"
+      },
+      "StatsArtistRef": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "default": "",
+            "title": "Id"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "StatsArtistRef",
         "type": "object"
       },
       "StatusInfo": {
@@ -1780,6 +1935,73 @@
           "email"
         ],
         "title": "UserOut",
+        "type": "object"
+      },
+      "UserStats": {
+        "properties": {
+          "recent": {
+            "items": {
+              "$ref": "#/components/schemas/RecentPlay"
+            },
+            "maxItems": 20,
+            "title": "Recent",
+            "type": "array"
+          },
+          "top_artists": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 10,
+            "title": "Top Artists",
+            "type": "array"
+          },
+          "top_artists_month": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 10,
+            "title": "Top Artists Month",
+            "type": "array"
+          },
+          "top_tracks": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 10,
+            "title": "Top Tracks",
+            "type": "array"
+          },
+          "top_tracks_month": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 10,
+            "title": "Top Tracks Month",
+            "type": "array"
+          },
+          "total_plays": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Total Plays",
+            "type": "integer"
+          },
+          "total_plays_month": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Total Plays Month",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_plays",
+          "top_tracks",
+          "top_artists",
+          "recent",
+          "total_plays_month",
+          "top_tracks_month",
+          "top_artists_month"
+        ],
+        "title": "UserStats",
         "type": "object"
       },
       "UsersStatus": {
@@ -3945,9 +4167,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Stats Api Me Stats Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/UserStats"
                 }
               }
             },

@@ -33,10 +33,11 @@ import type {
   TrackPlayCounts,
   TrackPlayQuery,
   User,
-  UserStats,
 } from '../api/types';
 import type { AlbumCard } from '../domain/catalog';
+import type { UserStats } from '../domain/listeningStats';
 import { mapAlbumSearchWire } from './mappers/albumSearch';
+import { mapListeningStatsWire } from './mappers/listeningStats';
 import type {
   MeUpdateRequest,
   PartyCreateRequest,
@@ -233,7 +234,7 @@ export const musicRepository: MusicRepository = {
   followArtist: api.followArtist,
   unfollowArtist: api.unfollowArtist,
   getPublicProfile: api.getPublicProfile,
-  getStats: api.getStats,
+  getStats: async (signal) => mapListeningStatsWire(await api.getStats(signal)),
   updateMe: api.updateMe,
   deleteMe: api.deleteMe,
   getPlaybackSettings: api.getPlaybackSettings,

@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { AlbumSummary, Genre, HomeShelf, RecentPlay, Track } from '../../api/types';
+import type { AlbumSummary, Genre, HomeShelf, Track } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { colors, metrics } from '../../theme';

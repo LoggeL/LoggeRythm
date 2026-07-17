@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type React from 'react';
-import type { HomeShelf, RecentPlay, Track } from '../../api/types';
+import type { HomeShelf, Track } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import { HomeRecentCard, HomeShelfCard, HomeTrackCard } from './HomeCards';
 

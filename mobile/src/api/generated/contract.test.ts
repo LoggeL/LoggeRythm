@@ -9,6 +9,7 @@ import {
   type LoginRequestWire,
   type PlaylistEntryReorderWire,
   type UserOutWire,
+  type UserStatsWire,
 } from './contract';
 
 describe('generated OpenAPI contract', () => {
@@ -35,6 +36,13 @@ describe('generated OpenAPI contract', () => {
       path: '/api/playlists/{playlist_id}/tracks/entries/{entry_id}',
       auth: 'required',
     });
+    expect(GENERATED_API_OPERATIONS.get_stats_api_me_stats_get).toEqual({
+      method: 'GET',
+      path: '/api/me/stats',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
   });
 
   it('provides exact request and success-response stubs', () => {
@@ -50,6 +58,8 @@ describe('generated OpenAPI contract', () => {
       };
     }>();
     expectTypeOf<GeneratedApiResponse<'delete_me_api_me_delete'>>().toEqualTypeOf<undefined>();
+    expectTypeOf<GeneratedApiResponse<'get_stats_api_me_stats_get'>>()
+      .toEqualTypeOf<UserStatsWire>();
     expectTypeOf<GeneratedApiRequest<
       'reorder_playlist_entries_api_playlists__playlist_id__tracks_entries_order_patch'
     >>().toEqualTypeOf<{

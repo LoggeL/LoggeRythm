@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { RecentPlay, Track } from '../api/types';
+import type { Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import { LibraryRecentRow } from '../components/library/LibraryRecentRow';
@@ -19,6 +19,7 @@ import {
   type LibraryListItem,
   type LibrarySectionPresentations,
 } from '../components/library/LibraryVirtualizedList';
+import type { RecentPlay } from '../domain/listeningStats';
 import {
   LIBRARY_POLICY_SECTION_STATE,
   libraryQuerySectionState,
@@ -27,7 +28,7 @@ import {
 import StandardTrackRow from '../components/track/StandardTrackRow';
 import AppIcon from '../components/AppIcon';
 import { showTrackActions } from '../components/trackActions';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   musicCacheScope,
   musicMutations,
@@ -226,7 +227,7 @@ export default function LibraryScreen(props: LibraryScreenProps) {
   const { user } = useAuth();
   if (user === null) throw new Error('LibraryScreen requires an authenticated user');
 
-  const apiBase = normalizeApiBase(DEFAULT_API_BASE);
+  const apiBase = getCurrentApiBase();
   const scope = musicCacheScope(apiBase, user.id);
   const offlineSnapshot = useOfflineDownloads();
   const offlineAvailability = accountOfflineAvailability(offlineSnapshot, scope);

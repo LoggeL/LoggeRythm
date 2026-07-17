@@ -1,6 +1,7 @@
 import { registerRootComponent } from 'expo';
 import { AppRegistry } from 'react-native';
 import Player from './src/player/player';
+import { hydrateApiBaseFromStoredSession } from './src/api/client';
 
 import App from './App';
 import {
@@ -15,6 +16,7 @@ AppRegistry.registerHeadlessTask(
   PLAYBACK_EVENT_HEADLESS_TASK,
   () => async () => {
     try {
+      await hydrateApiBaseFromStoredSession();
       await drainDurablePlaybackEvents();
     } catch {
       // Native owns the encrypted event, lease, and an already committed WorkManager successor.
@@ -26,7 +28,12 @@ AppRegistry.registerHeadlessTask(
 
 // Android: register before the app. Transport controls remain native,
 // while progress/error compatibility events retain recovery behavior.
-Player.registerBackgroundEventHandler(() => handleBackgroundPlaybackEvent);
+Player.registerBackgroundEventHandler(
+  () => async (event) => {
+    await hydrateApiBaseFromStoredSession();
+    await handleBackgroundPlaybackEvent(event);
+  },
+);
 
 // registerRootComponent calls AppRegistry.registerComponent('main', () => App);
 // It also ensures that whether you load the app in Expo Go or in a native build,

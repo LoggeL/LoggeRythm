@@ -3,6 +3,7 @@ import type { LinkingOptions } from '@react-navigation/native';
 import { mixKeyFromRouteValue, playlistIdFromRouteValue } from './navigationLinks';
 import { sanitizeNavigationState } from './navigationPersistence';
 import { TRANSIENT_ROOT_ROUTE_NAMES } from './navigationPolicy';
+import { getCurrentApiBase, PRODUCTION_API_BASE } from './config';
 import type { RootStackParams } from './navigation';
 
 export const appLinkingConfig: NonNullable<LinkingOptions<RootStackParams>['config']> = {
@@ -133,9 +134,25 @@ export function getAppStateFromPath(path: string) {
   return validateAppLinkedState(parsed);
 }
 
+/**
+ * Production HTTPS/app-scheme links must never be rebound to a custom account
+ * origin. Custom-server navigation remains in-app and origin-scoped.
+ */
+export function isAppLinkAllowedForActiveServer(url: string): boolean {
+  if (getCurrentApiBase() !== PRODUCTION_API_BASE) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'loggerythm:'
+      || parsed.origin === PRODUCTION_API_BASE;
+  } catch {
+    return false;
+  }
+}
+
 export const appLinking: LinkingOptions<RootStackParams> = {
   prefixes: ['https://loggerythm.logge.top', 'loggerythm://'],
   config: appLinkingConfig,
+  filter: isAppLinkAllowedForActiveServer,
   getStateFromPath: (path, options) => {
     const parsed = getReactNavigationStateFromPath<RootStackParams>(path, options);
     return validateAppLinkedState(parsed);

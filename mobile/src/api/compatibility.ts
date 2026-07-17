@@ -116,6 +116,10 @@ export class ApiCompatibilityGate {
     this.checks.clear();
   }
 
+  forget(apiBase: string): void {
+    this.checks.delete(new URL(apiBase).origin);
+  }
+
   private async performCheck(origin: string): Promise<ApiCompatibilityWire> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -124,8 +128,13 @@ export class ApiCompatibilityGate {
       const request = this.fetchImpl ?? globalThis.fetch;
       response = await request(`${origin}${API_COMPATIBILITY_OPERATION.path}`, {
         method: API_COMPATIBILITY_OPERATION.method,
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-store',
+          Pragma: 'no-cache',
+        },
         credentials: 'omit',
+        redirect: 'error',
         signal: controller.signal,
       });
     } catch {
@@ -165,4 +174,9 @@ const compatibilityGate = new ApiCompatibilityGate();
 
 export function ensureApiCompatibility(apiBase: string): Promise<ApiCompatibilityWire> {
   return compatibilityGate.ensureCompatible(apiBase);
+}
+
+/** A fresh signed-out submit may retry a server that was upgraded in-process. */
+export function resetApiCompatibilityCheck(apiBase: string): void {
+  compatibilityGate.forget(apiBase);
 }

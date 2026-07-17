@@ -1,7 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
-import { getApiBase } from '../config';
-import { ensureApiCompatibility } from './compatibility';
+import {
+  activateApiBase,
+  getApiBase,
+  normalizeSignInApiBase,
+  PRODUCTION_API_BASE,
+  resetApiBase,
+} from '../config';
+import {
+  ensureApiCompatibility,
+  resetApiCompatibilityCheck,
+} from './compatibility';
 import type { DeezerId } from './types';
 import {
   decodeStoredSession,
@@ -145,6 +154,7 @@ async function loadSession(): Promise<void> {
   const raw = await SecureStore.getItemAsync(SESSION_KEY);
   if (raw !== null) {
     session = decodeStoredSession(raw);
+    activateApiBase(session.origin);
     const legacyToken = await AsyncStorage.getItem(LEGACY_SESSION_KEY);
     if (legacyToken !== null) {
       await AsyncStorage.removeItem(LEGACY_SESSION_KEY);
@@ -160,11 +170,12 @@ async function loadSession(): Promise<void> {
     if (legacyToken.length === 0) {
       throw new Error(`Legacy session ${LEGACY_SESSION_KEY} is empty`);
     }
-    const base = await getApiBase();
     const migrated: StoredSession = {
       version: 1,
       token: legacyToken,
-      origin: new URL(base).origin,
+      // A legacy token has no trustworthy server identity. Bind it only to the
+      // canonical production origin, never to a form-entered custom server.
+      origin: PRODUCTION_API_BASE,
       secure: false,
     };
     await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(migrated));
@@ -197,6 +208,7 @@ async function storeSession(
     if (expectedAuthority !== currentSessionAuthority) return false;
     await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
     session = next;
+    activateApiBase(next.origin);
     loaded = true;
     rotateSessionAuthority();
     return true;
@@ -249,6 +261,7 @@ async function removeSession(
       deletionError = error;
     }
     session = null;
+    resetApiBase();
     loaded = true;
     rotateSessionAuthority();
     const invalidationAuthority = reserveInvalidationCleanup
@@ -381,6 +394,8 @@ interface RequestOptions<T> {
   body?: unknown;
   /** Capture and persist the Set-Cookie session after the response body parses successfully. */
   captureSession?: boolean;
+  /** Explicit signed-out authentication origin; forbidden for ordinary requests. */
+  apiBase?: string;
   /** Do not attach the manually managed session cookie. */
   noAuth?: boolean;
   signal?: AbortSignal;
@@ -407,9 +422,23 @@ function errorDetail(text: string, statusText: string): string {
 }
 
 export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}): Promise<T> {
-  const base = await getApiBase();
-  await ensureApiCompatibility(base);
   await ensureLoaded();
+  if (
+    opts.apiBase !== undefined
+    && (
+      !opts.noAuth
+      || (!opts.captureSession && path !== '/api/auth/logout')
+    )
+  ) {
+    throw new Error('An explicit API base is allowed only for authentication lifecycle requests');
+  }
+  const base = opts.apiBase === undefined
+    ? await getApiBase()
+    : normalizeSignInApiBase(opts.apiBase);
+  if (opts.apiBase !== undefined && opts.captureSession) {
+    resetApiCompatibilityCheck(base);
+  }
+  await ensureApiCompatibility(base);
   const url = `${base}${path}`;
   const method = opts.method ?? 'GET';
 
@@ -446,6 +475,9 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
       // The JWT is managed explicitly so React Native's native cookie jar cannot
       // retain or resurrect a second, competing login.
       credentials: 'omit',
+      // Never forward credentials or account identifiers through an HTTP
+      // redirect chosen by a server.
+      redirect: 'error',
     });
   } catch (error) {
     if (timedOut) {
@@ -538,9 +570,9 @@ export async function streamSource(deezerId: DeezerId): Promise<{
   uri: string;
   headers: Record<string, string>;
 }> {
+  await ensureLoaded();
   const base = await getApiBase();
   await ensureApiCompatibility(base);
-  await ensureLoaded();
   const uri = `${base}/api/tracks/${deezerId}/stream`;
   if (session === null) throw new Error(`Cannot stream track ${deezerId}: no authenticated session`);
   return { uri, headers: { Cookie: sessionCookieHeader(session, uri) } };
@@ -559,4 +591,13 @@ export async function authenticatedHeadersFor(
     throw new Error(`Cannot authenticate ${url}: no local session`);
   }
   return { Cookie: sessionCookieHeader(exactAuthority.storedSession, url) };
+}
+
+/**
+ * Cold Headless JS must restore the session-bound origin before any controller
+ * path reads the synchronous runtime base.
+ */
+export async function hydrateApiBaseFromStoredSession(): Promise<string> {
+  await ensureLoaded();
+  return getApiBase();
 }

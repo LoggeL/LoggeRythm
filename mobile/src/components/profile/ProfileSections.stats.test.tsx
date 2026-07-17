@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { UserStats } from '../../api/types';
+import type { UserStats } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import { ListeningStatsPanel } from './ProfileSections';
 

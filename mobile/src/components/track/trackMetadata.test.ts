@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { RecentPlay, Track } from '../../api/types';
+import type { Track } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import {
   buildTrackMetadata,
   formatTrackDuration,

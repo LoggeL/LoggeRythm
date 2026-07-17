@@ -10,6 +10,7 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import { presentError } from '../auth/presentationError';
 import BrandLockup from '../components/BrandLockup';
+import { getCurrentApiBase } from '../config';
 import { strings } from '../localization';
 import { colors, metrics } from '../theme';
 
@@ -57,6 +58,9 @@ export default function PendingApprovalScreen() {
       <Text accessibilityRole="header" style={styles.title}>{strings.auth.approvalTitle}</Text>
       <Text style={styles.body}>
         {strings.auth.approvalBody(user?.email ?? strings.auth.accountFallback)}
+      </Text>
+      <Text testID="approval-server-origin" style={styles.status}>
+        {strings.profile.serverOrigin(getCurrentApiBase())}
       </Text>
       {error && <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="assertive">{error}</Text>}
       {status ? (

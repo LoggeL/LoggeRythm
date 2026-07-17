@@ -14,6 +14,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from ..auth import get_current_user
 from ..db.models import Play, User
 from ..db.session import get_db
+from ..schemas.stats import MAX_SAFE_WIRE_INTEGER, RecentPlay, StatEntry, UserStats
 from ..schemas.track import Track, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
@@ -47,7 +48,7 @@ PlayIdempotencyKey = Annotated[
 ]
 
 
-def _top_tracks(db: Session, where: ColumnElement[bool]) -> list[dict]:
+def _top_tracks(db: Session, where: ColumnElement[bool]) -> list[StatEntry]:
     count = func.count().label("count")
     rows = db.execute(
         select(
@@ -63,18 +64,18 @@ def _top_tracks(db: Session, where: ColumnElement[bool]) -> list[dict]:
         .limit(10)
     ).all()
     return [
-        {
-            "key": r.deezer_id,
-            "label": r.title or "",
-            "sublabel": r.artist or "",
-            "cover": r.cover_url or "",
-            "count": r.count,
-        }
+        StatEntry(
+            key=r.deezer_id,
+            label=r.title or "",
+            sublabel=r.artist or "",
+            cover=r.cover_url or "",
+            count=r.count,
+        )
         for r in rows
     ]
 
 
-def _top_artists(db: Session, where: ColumnElement[bool]) -> list[dict]:
+def _top_artists(db: Session, where: ColumnElement[bool]) -> list[StatEntry]:
     count = func.count().label("count")
     rows = db.execute(
         select(
@@ -88,13 +89,11 @@ def _top_artists(db: Session, where: ColumnElement[bool]) -> list[dict]:
         .limit(10)
     ).all()
     return [
-        {
-            "key": r.artist_id or "",
-            "label": r.artist or "",
-            "sublabel": "",
-            "cover": "",
-            "count": r.count,
-        }
+        StatEntry(
+            key=r.artist_id or "",
+            label=r.artist or "",
+            count=r.count,
+        )
         for r in rows
     ]
 
@@ -153,11 +152,11 @@ def record_play(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/stats")
+@router.get("/stats", response_model=UserStats)
 def get_stats(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> UserStats:
     total_plays = db.scalar(
         select(func.count()).select_from(Play).where(Play.user_id == user.id)
     ) or 0
@@ -182,29 +181,36 @@ def get_stats(
         .limit(20)
     ).all()
     recent = [
-        {
-            "id": p.deezer_id,
-            "title": p.title,
-            "artist": p.artist,
-            "artist_id": p.artist_id,
-            "artists": [
+        RecentPlay(
+            id=p.deezer_id,
+            title=p.title,
+            artist=p.artist,
+            artist_id=p.artist_id,
+            artists=[
                 a.model_dump()
                 for a in load_artists(p.artists_json, p.artist, p.artist_id)
-            ],
-            "album": p.album,
-            "album_id": p.album_id,
-            "cover": p.cover_url or "",
-            "duration_sec": p.duration_sec,
-        }
+            ][:100],
+            album=p.album,
+            album_id=p.album_id,
+            cover=p.cover_url or "",
+            # Stored rows predate the strict response contract. Preserve the
+            # history item without letting a legacy negative or JavaScript-
+            # unsafe duration turn the complete stats endpoint into a
+            # response-validation 500.
+            duration_sec=min(
+                max(p.duration_sec or 0, 0),
+                MAX_SAFE_WIRE_INTEGER,
+            ),
+        )
         for p in recent_rows
     ]
 
-    return {
-        "total_plays": total_plays,
-        "top_tracks": top_tracks,
-        "top_artists": top_artists,
-        "recent": recent,
-        "total_plays_month": total_plays_month,
-        "top_tracks_month": top_tracks_month,
-        "top_artists_month": top_artists_month,
-    }
+    return UserStats(
+        total_plays=total_plays,
+        top_tracks=top_tracks,
+        top_artists=top_artists,
+        recent=recent,
+        total_plays_month=total_plays_month,
+        top_tracks_month=top_tracks_month,
+        top_artists_month=top_artists_month,
+    )

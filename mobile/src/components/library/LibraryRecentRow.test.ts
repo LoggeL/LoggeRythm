@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type React from 'react';
-import type { RecentPlay } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import type { TrackPresentationState } from '../../player/trackPresentation';
 import { libraryStrings } from '../../screens/libraryStrings';
 import { metrics } from '../../theme';

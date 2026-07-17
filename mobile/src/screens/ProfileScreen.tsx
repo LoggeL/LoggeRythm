@@ -20,12 +20,11 @@ import {
   SleepTimerPanel,
 } from '../components/profile/ProfileSections';
 import LanguageSelector from '../components/profile/LanguageSelector';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, musicRepository, queryKeys } from '../data';
 import { strings } from '../localization';
 import { colors, metrics } from '../theme';
 import { profileDeleteFailureMessage } from './profileFeedback';
-import { profileServerHost } from './profileModel';
 import { persistProfileUpdate } from './profileUpdate';
 
 function errorOf(value: unknown): Error | null {
@@ -47,7 +46,7 @@ export default function ProfileScreen() {
   if (user === null) throw new Error('ProfileScreen requires an authenticated user');
 
   const queryClient = useQueryClient();
-  const apiBase = normalizeApiBase(DEFAULT_API_BASE);
+  const apiBase = getCurrentApiBase();
   const scope = musicCacheScope(apiBase, user.id);
   const stats = useQuery(musicQueries.stats(scope));
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -106,7 +105,7 @@ export default function ProfileScreen() {
         <ProfileIdentityCard
           user={user}
           avatarUri={safeAvatarUri(user.avatar_url, apiBase)}
-          serverHost={profileServerHost(apiBase)}
+          serverOrigin={apiBase}
         />
         <LanguageSelector />
         <ProfileEditForm

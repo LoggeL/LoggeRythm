@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   appLinkingConfig,
   getAppStateFromPath,
+  isAppLinkAllowedForActiveServer,
   validateAppLinkedState,
 } from './navigationLinking';
+import { activateApiBase, resetApiBase } from './config';
 
 interface RouteLike {
   name?: string;
@@ -72,5 +74,20 @@ describe('cold app-link state construction', () => {
         { name: 'Profile' },
       ],
     })).toBeUndefined();
+  });
+
+  it('does not bind production or originless app links to a custom session', () => {
+    resetApiBase();
+    expect(isAppLinkAllowedForActiveServer(
+      'https://loggerythm.logge.top/playlist/7',
+    )).toBe(true);
+    expect(isAppLinkAllowedForActiveServer('loggerythm://playlist/7')).toBe(true);
+
+    activateApiBase('https://music.example.test');
+    expect(isAppLinkAllowedForActiveServer(
+      'https://loggerythm.logge.top/playlist/7',
+    )).toBe(false);
+    expect(isAppLinkAllowedForActiveServer('loggerythm://playlist/7')).toBe(false);
+    resetApiBase();
   });
 });

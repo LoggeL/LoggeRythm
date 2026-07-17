@@ -16,7 +16,7 @@ import {
 } from '../components/catalog/CatalogStates';
 import { showTrackActions } from '../components/trackActions';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   markReleaseRadarTracksSeen,
   musicCacheScope,
@@ -45,7 +45,7 @@ export default function RadarScreen(props: RadarScreenProps) {
   const { user } = useAuth();
   if (user === null) throw new Error('RadarScreen requires an authenticated user');
 
-  const scope = musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+  const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const radar = useQuery(musicQueries.releaseRadar(scope));
   const tracks = radar.data ?? EMPTY_TRACKS;
   const trackIds = useMemo(() => releaseRadarTrackIds(tracks), [tracks]);

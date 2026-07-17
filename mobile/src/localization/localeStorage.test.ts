@@ -6,7 +6,9 @@ import {
 } from './index';
 import {
   APP_LOCALE_STORAGE_KEY,
+  LOCALE_HYDRATION_TIMEOUT_MS,
   persistLocale,
+  readBootstrapLocale,
   readPersistedLocale,
   type LocaleStorage,
 } from './localeStorage';
@@ -24,6 +26,7 @@ function storageWith(value: string | null): LocaleStorage & {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   activateLocale('de');
 });
 
@@ -63,6 +66,42 @@ describe('device locale persistence', () => {
 
     storage.setItem.mockRejectedValueOnce(new Error('disk full'));
     await expect(persistLocale(storage, 'en')).rejects.toThrow('disk full');
+  });
+
+  it('hydrates persisted English before a restarted localized shell is released', async () => {
+    let release!: (value: string | null) => void;
+    const storage = storageWith(null);
+    storage.getItem.mockImplementationOnce(() => new Promise((resolve) => {
+      release = resolve;
+    }));
+    activateLocale('de');
+
+    const hydration = readBootstrapLocale(storage);
+    expect(getActiveLocale()).toBe('de');
+
+    release('en');
+    activateLocale(await hydration);
+
+    expect(getActiveLocale()).toBe('en');
+    expect(strings.navigation.profile).toBe('Profile');
+  });
+
+  it('falls back to German within the bounded startup window when storage never settles', async () => {
+    vi.useFakeTimers();
+    const storage = storageWith(null);
+    storage.getItem.mockImplementationOnce(() => new Promise(() => undefined));
+    let settled = false;
+
+    const hydration = readBootstrapLocale(storage).then((locale) => {
+      settled = true;
+      return locale;
+    });
+    await vi.advanceTimersByTimeAsync(LOCALE_HYDRATION_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(hydration).resolves.toBe('de');
+    expect(settled).toBe(true);
   });
 });
 

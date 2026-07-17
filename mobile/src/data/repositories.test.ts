@@ -83,10 +83,45 @@ describe('music repository wiring', () => {
 
   it('preserves identity wiring for every non-migrated endpoint', () => {
     for (const name of Object.keys(endpoints).filter(
-      (candidate) => candidate !== 'searchAlbums',
+      (candidate) => candidate !== 'searchAlbums' && candidate !== 'getStats',
     ) as (keyof typeof endpoints)[]) {
       expect(musicRepository[name]).toBe(endpoints[name]);
     }
+  });
+
+  it('maps generated stats wire data at the repository boundary and forwards cancellation', async () => {
+    endpoints.getStats.mockResolvedValue({
+      total_plays: 1,
+      top_tracks: [{ key: 7, label: 'Track', count: 1 }],
+      top_artists: [{ key: 8, label: 'Artist', count: 1 }],
+      recent: [{ id: 7, title: 'Track' }],
+      total_plays_month: 0,
+      top_tracks_month: [],
+      top_artists_month: [],
+    });
+    const signal = new AbortController().signal;
+
+    await expect(musicRepository.getStats(signal)).resolves.toStrictEqual({
+      total_plays: 1,
+      top_tracks: [{ key: '7', label: 'Track', sublabel: '', cover: '', count: 1 }],
+      top_artists: [{ key: '8', label: 'Artist', sublabel: '', cover: '', count: 1 }],
+      recent: [{
+        id: '7',
+        title: 'Track',
+        artist: '',
+        artist_id: '',
+        artists: [],
+        album: '',
+        album_id: '',
+        cover: '',
+        duration_sec: 0,
+      }],
+      total_plays_month: 0,
+      top_tracks_month: [],
+      top_artists_month: [],
+    });
+    expect(musicRepository.getStats).not.toBe(endpoints.getStats);
+    expect(endpoints.getStats).toHaveBeenCalledExactlyOnceWith(signal);
   });
 
   it('maps album search wire rows while forwarding query and AbortSignal exactly', async () => {

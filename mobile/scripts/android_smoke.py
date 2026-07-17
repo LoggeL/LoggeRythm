@@ -17,16 +17,13 @@ import sys
 import tempfile
 import time
 from typing import NoReturn
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote, quote_plus, urlparse
 import xml.etree.ElementTree as ET
 
 
 PACKAGE = "top.logge.loggerythm"
 ACTIVITY = f"{PACKAGE}/.MainActivity"
 PRODUCTION_ORIGIN = "https://loggerythm.logge.top"
-PRODUCTION_ORIGIN_MARKER = f"[LoggeRythm] API origin: {PRODUCTION_ORIGIN}"
-API_ORIGIN_MARKER_PREFIX = "[LoggeRythm] API origin:"
-API_ORIGIN_FAILURE_MARKER = "[LoggeRythm] API origin configuration failed"
 METRO_PORTS = (8081, 19000, 19001, 19002)
 METRO_FAILURE_PATTERNS = (
     "could not connect to development server",
@@ -82,22 +79,18 @@ def authenticated_shell_visible(nodes: list[dict[str, str]]) -> bool:
     )
 
 
-def runtime_api_origins(logcat: str) -> list[str]:
-    """Extract origins emitted after runtime configuration has resolved."""
-    return re.findall(
-        rf"{re.escape(API_ORIGIN_MARKER_PREFIX)}\s*(\S+)",
-        logcat,
-    )
-
-
-def production_origin_marker_present(logcat: str) -> bool:
-    """Require exactly the production runtime origin, with no conflicting marker."""
-    origins = runtime_api_origins(logcat)
-    return (
-        bool(origins)
-        and set(origins) == {PRODUCTION_ORIGIN}
-        and API_ORIGIN_FAILURE_MARKER not in logcat
-    )
+def selected_server_origin(nodes: list[dict[str, str]]) -> str | None:
+    """Read the visible sign-in origin without adding it to runtime logs."""
+    matches = [
+        node
+        for node in nodes
+        if node_has_resource_suffix(node, "login-server")
+        and node.get("class") == "android.widget.EditText"
+    ]
+    if len(matches) != 1:
+        return None
+    value = matches[0].get("text", "").strip()
+    return value or None
 
 
 def installed_package_metadata(package_dump: str) -> dict[str, object]:
@@ -220,6 +213,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--adb", type=Path, help="path to adb (otherwise use ANDROID_* or PATH)")
     parser.add_argument("--output-dir", type=Path, help="directory for logcat/UI evidence")
     parser.add_argument(
+        "--server",
+        default=PRODUCTION_ORIGIN,
+        help="HTTPS root origin to select and verify on the sign-in form",
+    )
+    parser.add_argument(
         "--startup-only",
         action="store_true",
         help="explicitly stop after verifying the login screen; do not attempt authentication",
@@ -294,6 +292,19 @@ class AndroidSmoke:
         if not self.apk.is_file() or self.apk.stat().st_size == 0:
             raise SmokeFailure(f"APK is missing or empty: {self.apk}")
         self.adb_path = resolve_adb(args.adb)
+        parsed_server = urlparse(args.server.strip())
+        if (
+            parsed_server.scheme != "https"
+            or not parsed_server.netloc
+            or parsed_server.username is not None
+            or parsed_server.password is not None
+            or parsed_server.path not in ("", "/")
+            or parsed_server.params
+            or parsed_server.query
+            or parsed_server.fragment
+        ):
+            raise SmokeFailure("--server must be an HTTPS root origin without credentials")
+        self.expected_origin = f"https://{parsed_server.netloc.lower()}"
         timestamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
         self.output_dir = (
             args.output_dir.expanduser().resolve()
@@ -322,6 +333,8 @@ class AndroidSmoke:
             "apk_bytes": self.apk.stat().st_size,
             "apk_sha256": hashlib.sha256(self.apk.read_bytes()).hexdigest(),
             "startup_verified": False,
+            "expected_api_origin": self.expected_origin,
+            "selected_origin_verified": False,
             "production_origin_verified": False,
             "effective_api_origin": None,
             "installed_package": None,
@@ -630,11 +643,84 @@ class AndroidSmoke:
         )
 
     def find_submit(self, nodes: list[dict[str, str]]) -> dict[str, str] | None:
-        common = {"clickable": True, "enabled": True}
-        return (
-            self.find_node(nodes, resource_suffix="login-submit", **common)
-            or self.find_node(nodes, description="Sign in", **common)
-            or self.find_node(nodes, text="Sign in", **common)
+        """Find only the stable, tappable login control.
+
+        Copy is localized and an IME can expose its own action labels, so text
+        matches are not trustworthy here. Accept the raw Fabric testID or this
+        app's fully-qualified resource id, and require the rendered control to
+        be enabled, clickable, and visible.
+        """
+        return next(
+            (
+                node
+                for node in nodes
+                if node_has_resource_suffix(node, "login-submit")
+                and node.get("clickable") == "true"
+                and node.get("enabled") == "true"
+                and node.get("displayed", "true") == "true"
+            ),
+            None,
+        )
+
+    @staticmethod
+    def login_submit_diagnostic(nodes: list[dict[str, str]]) -> str:
+        """Describe submit control state without exposing form values."""
+        matches = [
+            node
+            for node in nodes
+            if node_has_resource_suffix(node, "login-submit")
+        ]
+        if not matches:
+            login_test_ids = sorted(
+                {
+                    resource_id
+                    for node in nodes
+                    if "login-" in (resource_id := node.get("resource-id", ""))
+                },
+            )
+            return f"login-submit testID absent; rendered login testIDs={login_test_ids}"
+
+        safe_attributes = (
+            "class",
+            "package",
+            "clickable",
+            "enabled",
+            "displayed",
+            "focused",
+            "bounds",
+        )
+        states = [
+            ", ".join(
+                f"{attribute}={node.get(attribute, '<missing>')!r}"
+                for attribute in safe_attributes
+            )
+            for node in matches
+        ]
+        return f"login-submit candidates={len(matches)}; states={states}"
+
+    def dismiss_ime_and_wait_for_submit(self) -> dict[str, str]:
+        """Close the soft keyboard, then relocate the enabled submit control."""
+        self.adb(["shell", "input", "keyevent", "KEYCODE_BACK"])
+        # Wait out the IME/inset animation before trusting view bounds. The
+        # previous harness could tap a button whose lower half was still under
+        # the keyboard even though UIAutomator reported it as clickable.
+        time.sleep(0.5)
+        last_nodes: list[dict[str, str]] = []
+        for attempt in range(1, 9):
+            if attempt > 1:
+                time.sleep(0.25)
+            self.assert_alive(f"enabled login submit wait {attempt}")
+            root, _ = self.dump_ui(
+                f"enabled-login-submit-wait-{attempt:02d}",
+                persist=False,
+            )
+            last_nodes = self.nodes(root)
+            submit = self.find_submit(last_nodes)
+            if submit is not None:
+                return submit
+        raise SmokeFailure(
+            "Could not locate the exact enabled login-submit control after dismissing "
+            f"the Android keyboard; {self.login_submit_diagnostic(last_nodes)}",
         )
 
     def find_rendered_login_submit(
@@ -711,25 +797,137 @@ class AndroidSmoke:
             f"last labels={sorted(self.redact(label) for label in last_labels)}",
         )
 
-    def verify_production_origin(self) -> None:
-        for attempt in range(1, 9):
-            logcat = self.read_logcat()
-            origins = runtime_api_origins(logcat)
-            if API_ORIGIN_FAILURE_MARKER in logcat:
-                raise SmokeFailure("The app rejected its runtime API origin configuration")
-            unexpected = sorted(set(origins) - {PRODUCTION_ORIGIN})
-            if unexpected:
-                raise SmokeFailure(
-                    "Runtime logcat reports a non-production effective API origin",
+    @staticmethod
+    def find_server_input(nodes: list[dict[str, str]]) -> dict[str, str] | None:
+        """Find the single editable server field using only its stable testID."""
+        matches = [
+            node
+            for node in nodes
+            if node_has_resource_suffix(node, "login-server")
+            and node.get("class") == "android.widget.EditText"
+            and node.get("clickable") == "true"
+            and node.get("enabled") == "true"
+            and node.get("password") == "false"
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    def wait_for_focused_server_input(
+        self,
+        entry_attempt: int,
+    ) -> dict[str, str] | None:
+        """Wait for the field and keyboard/inset focus transition to settle."""
+        time.sleep(0.5)
+        for state_attempt in range(1, 7):
+            if state_attempt > 1:
+                time.sleep(0.2)
+            root, _ = self.dump_ui(
+                f"server-focus-{entry_attempt}-{state_attempt:02d}",
+                persist=False,
+            )
+            server_input = self.find_server_input(self.nodes(root))
+            if server_input is not None and server_input.get("focused") == "true":
+                return server_input
+        return None
+
+    def wait_for_server_value(
+        self,
+        expected: str,
+        phase: str,
+        entry_attempt: int,
+    ) -> dict[str, str] | None:
+        """Return only after the exact server field value is rendered."""
+        for state_attempt in range(1, 7):
+            if state_attempt > 1:
+                time.sleep(0.2)
+            root, _ = self.dump_ui(
+                f"server-{phase}-{entry_attempt}-{state_attempt:02d}",
+                persist=False,
+            )
+            server_input = self.find_server_input(self.nodes(root))
+            if server_input is not None:
+                rendered_text = server_input.get("text", "")
+                hint_text = server_input.get("hint", "")
+                if rendered_text == expected or (
+                    phase == "clear"
+                    and expected == ""
+                    and bool(hint_text)
+                    and rendered_text == hint_text
+                ):
+                    return server_input
+        return None
+
+    def configure_server_origin(self) -> None:
+        # A fresh focus can swallow the first `input text` command while Android
+        # opens the IME. Keep focus, clear, and type as separately verified phases
+        # and retry the entire transaction a bounded number of times.
+        for entry_attempt in range(1, 4):
+            root, _ = self.dump_ui(
+                f"before-server-selection-{entry_attempt:02d}",
+                persist=False,
+            )
+            nodes = self.nodes(root)
+            if selected_server_origin(nodes) == self.expected_origin:
+                return
+
+            server_input = self.find_server_input(nodes)
+            if server_input is None:
+                if entry_attempt < 3:
+                    time.sleep(0.25)
+                continue
+            x, y = self.center(server_input, "server input")
+            self.adb(["shell", "input", "tap", str(x), str(y)])
+
+            focused_input = self.wait_for_focused_server_input(entry_attempt)
+            if focused_input is None:
+                continue
+
+            clear_commands = ["set -eu", "input keyevent KEYCODE_MOVE_END"]
+            clear_commands.extend(
+                "input keyevent KEYCODE_DEL"
+                for _ in range(len(focused_input.get("text", "")))
+            )
+            self.adb_shell_stdin("\n".join(clear_commands) + "\n")
+            if self.wait_for_server_value("", "clear", entry_attempt) is None:
+                continue
+
+            self.adb_shell_stdin(self.input_text_script(self.expected_origin))
+            if (
+                self.wait_for_server_value(
+                    self.expected_origin,
+                    "type",
+                    entry_attempt,
                 )
-            if production_origin_marker_present(logcat):
-                self.summary["production_origin_verified"] = True
-                self.summary["effective_api_origin"] = PRODUCTION_ORIGIN
+                is not None
+            ):
+                return
+
+        raise SmokeFailure(
+            "Could not set the exact sign-in server value after three bounded attempts",
+        )
+
+    def verify_selected_origin(self) -> None:
+        for attempt in range(1, 9):
+            root, raw_xml = self.dump_ui("production-origin", persist=False)
+            origin = selected_server_origin(self.nodes(root))
+            if origin is not None and origin != self.expected_origin:
+                raise SmokeFailure(
+                    "The visible sign-in server is not the expected origin",
+                )
+            if origin == self.expected_origin:
+                self.write_private_text(
+                    self.output_dir / "window-selected-origin.xml",
+                    self.redact(raw_xml),
+                )
+                self.summary["selected_origin_verified"] = True
+                self.summary["production_origin_verified"] = (
+                    self.expected_origin == PRODUCTION_ORIGIN
+                )
+                self.summary["effective_api_origin"] = self.expected_origin
                 return
             if attempt < 8:
                 time.sleep(0.25)
         raise SmokeFailure(
-            "Runtime logcat did not prove that the effective API origin is production",
+            "The visible sign-in server did not prove the expected origin",
         )
 
     def verify_warm_launch(self) -> tuple[dict[str, str], dict[str, str]]:
@@ -807,11 +1005,7 @@ class AndroidSmoke:
                         "The email input did not receive the credential exactly; "
                         "check Android input-method character support",
                     )
-        time.sleep(2.5)
-        filled, _ = self.dump_ui("credentials-entered", persist=False)
-        submit = self.find_submit(self.nodes(filled))
-        if submit is None:
-            raise SmokeFailure("Could not locate the enabled Sign in button after entering credentials")
+        submit = self.dismiss_ime_and_wait_for_submit()
         x, y = self.center(submit, "Sign in button")
         self.adb(["shell", "input", "tap", str(x), str(y)])
         self.summary["login_tested"] = True
@@ -1064,13 +1258,15 @@ class AndroidSmoke:
         self.select_device()
         self.clean_install_and_launch()
         email_node, password_node = self.verify_login_screen("cold")
-        self.verify_production_origin()
+        self.configure_server_origin()
+        self.verify_selected_origin()
         self.assert_runtime_log_clean("cold-launch")
         try:
             self.capture_startup_screenshot()
         except Exception as cause:  # noqa: BLE001 - collected and reported after the smoke flow
             self.artifact_failures.append(f"startup screenshot: {cause}")
         email_node, password_node = self.verify_warm_launch()
+        self.verify_selected_origin()
         self.assert_runtime_log_clean("warm-launch")
         standalone = self.summary["standalone_runtime"]
         launches = self.summary["launches"]
@@ -1079,7 +1275,7 @@ class AndroidSmoke:
         assert isinstance(launches, dict)
         assert isinstance(audit, dict)
         self.summary["standalone_release_verified"] = bool(
-            self.summary["production_origin_verified"]
+            self.summary["selected_origin_verified"]
             and launches["cold"]["status"] == "passed"
             and launches["warm"]["status"] == "passed"
             and all(standalone.values())
@@ -1142,7 +1338,7 @@ def main() -> None:
             smoke.summary[key]
             for key in (
                 "startup_verified",
-                "production_origin_verified",
+                "selected_origin_verified",
                 "standalone_release_verified",
                 "login_tested",
                 "authenticated_navigation_verified",

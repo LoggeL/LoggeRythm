@@ -1,4 +1,5 @@
 import type { DeezerId, DeezerPlaylistTrack, Track } from '../api/types';
+import type { AppLocale } from '../localization';
 export { recentSearchStorageKey } from '../data/accountStorage';
 
 export const SEARCH_TABS = ['all', 'track', 'album', 'artist', 'playlist'] as const;
@@ -61,12 +62,16 @@ export function wantedSearchEntities(tab: SearchTab): Readonly<Record<SearchEnti
   };
 }
 
-export function sortSearchTracks(tracks: readonly Track[], sort: SearchSort): Track[] {
+export function sortSearchTracks(
+  tracks: readonly Track[],
+  sort: SearchSort,
+  locale: AppLocale,
+): Track[] {
   if (sort === 'relevance') return [...tracks];
   const sorted = [...tracks];
   if (sort === 'title') {
     sorted.sort((left, right) =>
-      left.title.localeCompare(right.title, 'de', { sensitivity: 'base' }),
+      left.title.localeCompare(right.title, locale, { sensitivity: 'base' }),
     );
   } else if (sort === 'dur-asc') {
     sorted.sort((left, right) => left.duration_sec - right.duration_sec);
@@ -91,19 +96,48 @@ export function orderedPlaylistTrackIds(
   });
 }
 
-export function addRecentSearch(current: readonly string[], query: string): string[] {
+function localeFold(value: string, locale: AppLocale): string {
+  return normalizeSearchInput(value).toLocaleLowerCase(locale);
+}
+
+export function recentSearchIdentity(value: string, locale: AppLocale): string {
+  return `${locale}:${localeFold(value, locale)}`;
+}
+
+/**
+ * A locale change re-decodes the same persisted JSON with different folding
+ * rules. Treat it as a distinct hydration generation so an active query
+ * cannot persist over history while that read is still in flight.
+ */
+export function recentSearchHydrationIdentity(
+  historyKey: string,
+  locale: AppLocale,
+): string {
+  return `${locale}:${historyKey}`;
+}
+
+export function addRecentSearch(
+  current: readonly string[],
+  query: string,
+  locale: AppLocale,
+): string[] {
   const normalized = normalizeSearchInput(query);
   if (!isSearchableQuery(normalized)) return [...current];
+  const identity = localeFold(normalized, locale);
   return [
     normalized,
-    ...current.filter((candidate) => candidate.toLocaleLowerCase('de') !== normalized.toLocaleLowerCase('de')),
+    ...current.filter((candidate) => localeFold(candidate, locale) !== identity),
   ].slice(0, RECENT_SEARCH_LIMIT);
 }
 
-export function removeRecentSearch(current: readonly string[], query: string): string[] {
-  const normalized = normalizeSearchInput(query).toLocaleLowerCase('de');
+export function removeRecentSearch(
+  current: readonly string[],
+  query: string,
+  locale: AppLocale,
+): string[] {
+  const identity = localeFold(query, locale);
   return current.filter(
-    (candidate) => normalizeSearchInput(candidate).toLocaleLowerCase('de') !== normalized,
+    (candidate) => localeFold(candidate, locale) !== identity,
   );
 }
 
@@ -133,7 +167,7 @@ export function searchTrackCredit(track: Pick<Track, 'artist' | 'album'>): strin
   return [artist, album].filter((value) => value.length > 0).join(' · ');
 }
 
-export function decodeRecentSearches(raw: string | null): string[] {
+export function decodeRecentSearches(raw: string | null, locale: AppLocale): string[] {
   if (raw === null) return [];
   let value: unknown;
   try {
@@ -149,7 +183,7 @@ export function decodeRecentSearches(raw: string | null): string[] {
     const normalized = normalizeSearchInput(entry);
     if (
       isSearchableQuery(normalized) &&
-      !recent.some((candidate) => candidate.toLocaleLowerCase('de') === normalized.toLocaleLowerCase('de'))
+      !recent.some((candidate) => localeFold(candidate, locale) === localeFold(normalized, locale))
     ) {
       recent.push(normalized);
     }

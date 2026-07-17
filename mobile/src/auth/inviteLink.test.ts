@@ -24,6 +24,14 @@ describe('registrationInviteFromUrl', () => {
   it('recognizes an ordinary registration link without inventing an invite', () => {
     expect(registrationLinkFromUrl('https://loggerythm.logge.top/register')).toEqual({
       invite: null,
+      source: 'production-https',
+    });
+  });
+
+  it('marks the originless app scheme so the visible server choice is preserved', () => {
+    expect(registrationLinkFromUrl('loggerythm://register?invite=abc')).toEqual({
+      invite: 'abc',
+      source: 'app-scheme',
     });
   });
 });

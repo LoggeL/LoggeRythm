@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   persistOfflineIdentity: vi.fn(async () => undefined),
   readOfflineIdentity: vi.fn(async (): Promise<User | null> => null),
   getApiBase: vi.fn(async () => 'https://loggerythm.logge.top'),
+  getCurrentApiBase: vi.fn(() => 'https://loggerythm.logge.top'),
   useEffect: vi.fn(),
 }));
 
@@ -57,7 +58,10 @@ vi.mock('../api/client', () => ({
   retryInvalidatedSessionCleanup: mocks.retryInvalidatedSessionCleanup,
   runWithSessionInvalidationAuthority: mocks.runWithSessionInvalidationAuthority,
 }));
-vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
+vi.mock('../config', () => ({
+  getApiBase: mocks.getApiBase,
+  getCurrentApiBase: mocks.getCurrentApiBase,
+}));
 vi.mock('../data', () => ({
   clearAccountQueryState: mocks.clearAccountQueryState,
   clearAccountQueryStateBoundary: mocks.clearAccountQueryStateBoundary,
@@ -91,9 +95,10 @@ const registration: RegisterRequest = {
 };
 
 interface AuthValue {
-  login(email: string, password: string): Promise<void>;
-  register(request: RegisterRequest): Promise<void>;
+  login(email: string, password: string, apiBase: string): Promise<void>;
+  register(request: RegisterRequest, apiBase: string): Promise<void>;
   logout(): Promise<void>;
+  forgetSession(): Promise<void>;
   deleteAccount(): Promise<void>;
   refreshUser(): Promise<User>;
   retryBootstrap(): Promise<void>;
@@ -127,6 +132,7 @@ describe('AuthProvider repository injection', () => {
     vi.clearAllMocks();
     mocks.hasSession.mockResolvedValue(true);
     mocks.getApiBase.mockResolvedValue('https://loggerythm.logge.top');
+    mocks.getCurrentApiBase.mockReturnValue('https://loggerythm.logge.top');
     mocks.readOfflineIdentity.mockResolvedValue(null);
     mocks.pendingInvalidationAuthority.mockReturnValue(null);
   });
@@ -137,15 +143,26 @@ describe('AuthProvider repository injection', () => {
 
   it('routes login and registration through the injected repository', async () => {
     const loginRepository = injectedRepository();
-    await renderProvider(loginRepository).login('person@example.test', 'password123');
+    await renderProvider(loginRepository).login(
+      'person@example.test',
+      'password123',
+      'https://music.example.test',
+    );
     expect(loginRepository.login).toHaveBeenCalledExactlyOnceWith(
       'person@example.test',
       'password123',
+      'https://music.example.test',
     );
 
     const registerRepository = injectedRepository();
-    await renderProvider(registerRepository).register(registration);
-    expect(registerRepository.register).toHaveBeenCalledExactlyOnceWith(registration);
+    await renderProvider(registerRepository).register(
+      registration,
+      'https://music.example.test',
+    );
+    expect(registerRepository.register).toHaveBeenCalledExactlyOnceWith(
+      registration,
+      'https://music.example.test',
+    );
   });
 
   it('joins a pending authoritative cleanup before replacement login', async () => {
@@ -153,7 +170,11 @@ describe('AuthProvider repository injection', () => {
     mocks.pendingInvalidationAuthority.mockReturnValueOnce(authority);
     const repository = injectedRepository();
 
-    await renderProvider(repository).login('person@example.test', 'password123');
+    await renderProvider(repository).login(
+      'person@example.test',
+      'password123',
+      'https://music.example.test',
+    );
 
     expect(mocks.runWithSessionInvalidationAuthority)
       .toHaveBeenCalledWith(authority, expect.any(Function));
@@ -194,10 +215,16 @@ describe('AuthProvider repository injection', () => {
   it('routes logout and remote account deletion through distinct repository methods', async () => {
     const logoutRepository = injectedRepository();
     await renderProvider(logoutRepository).logout();
-    expect(logoutRepository.logout).toHaveBeenCalledOnce();
+    expect(logoutRepository.logout).toHaveBeenCalledExactlyOnceWith(
+      'https://loggerythm.logge.top',
+    );
     expect(logoutRepository.deleteMe).not.toHaveBeenCalled();
     expect(mocks.clearOfflineIdentity).toHaveBeenCalledOnce();
     expect(mocks.clearOfflineDownloads).toHaveBeenCalledOnce();
+
+    const forgottenRepository = injectedRepository();
+    await renderProvider(forgottenRepository).forgetSession();
+    expect(forgottenRepository.logout).not.toHaveBeenCalled();
 
     const deletionRepository = injectedRepository();
     await renderProvider(deletionRepository).deleteAccount();
@@ -247,11 +274,16 @@ describe('AuthProvider repository injection', () => {
     await expect(auth.logout()).rejects.toThrow('mutation boundary still active');
     expect(repository.login).not.toHaveBeenCalled();
 
-    await expect(auth.login('person@example.test', 'password123')).resolves.toBeUndefined();
+    await expect(auth.login(
+      'person@example.test',
+      'password123',
+      'https://music.example.test',
+    )).resolves.toBeUndefined();
     expect(mocks.clearAccountQueryStateBoundary).toHaveBeenCalledTimes(2);
     expect(repository.login).toHaveBeenCalledExactlyOnceWith(
       'person@example.test',
       'password123',
+      'https://music.example.test',
     );
   });
 });

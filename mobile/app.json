@@ -62,6 +62,7 @@
       ],
       "expo-system-ui",
       "@react-native-vector-icons/material-design-icons",
+      "./plugins/withNoHttpRedirects",
       "./plugins/withFirstPartyPlayer",
       "./plugins/withMusicVolumeControl",
       "./plugins/withOfflineDownloads",

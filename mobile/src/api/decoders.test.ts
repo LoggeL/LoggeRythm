@@ -22,7 +22,6 @@ import {
   decodeTrack,
   decodeTrackPlayCounts,
   decodeUser,
-  decodeUserStats,
 } from './decoders';
 
 const track = {
@@ -228,36 +227,6 @@ describe('API response decoders', () => {
         albums: [],
       }),
     ).toThrow(/related/);
-  });
-
-  it('models recent plays as their exact incomplete history wire shape', () => {
-    const recent = {
-      id: track.id,
-      title: track.title,
-      artist: track.artist,
-      artist_id: '42',
-      artists: track.artists,
-      album: track.album,
-      album_id: '12',
-      cover: track.cover,
-      duration_sec: track.duration_sec,
-    };
-    const entry = { key: track.id, label: track.title, sublabel: track.artist, cover: '', count: 2 };
-    const stats = decodeUserStats({
-      total_plays: 2,
-      top_tracks: [entry],
-      top_artists: [entry],
-      recent: [recent],
-      total_plays_month: 1,
-      top_tracks_month: [entry],
-      top_artists_month: [entry],
-    });
-
-    expect(stats.recent).toEqual([recent]);
-    expect('preview_url' in stats.recent[0]).toBe(false);
-    expect(() => decodeUserStats({ ...stats, total_plays_month: undefined })).toThrow(
-      /total_plays_month/,
-    );
   });
 
   it('decodes nullable public profile fields and strict playback settings', () => {

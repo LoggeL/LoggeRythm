@@ -14,7 +14,7 @@ import {
 } from '../components/catalog/CatalogStates';
 import { showTrackActions } from '../components/trackActions';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
 import { strings } from '../localization';
 import { playTracks } from '../player/controller';
@@ -38,7 +38,7 @@ export default function MixScreen(props: MixScreenProps) {
 
   const mixKey = typeof routeMixKey === 'string' ? routeMixKey.trim() : '';
   const validRoute = mixKey.length > 0;
-  const scope = musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+  const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const mixes = useQuery({
     ...musicQueries.homeMixes(scope),
     enabled: validRoute,

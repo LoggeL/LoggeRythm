@@ -22,7 +22,7 @@ import {
   UnsupportedServerError,
 } from '../api/compatibility';
 import type { User } from '../api/types';
-import { getApiBase } from '../config';
+import { getApiBase, getCurrentApiBase } from '../config';
 import {
   clearAccountQueryState,
   clearAccountQueryStateBoundary,
@@ -56,8 +56,8 @@ interface AuthState {
   offlineMode: boolean;
   bootstrapping: boolean;
   bootstrapError: UserFacingError | null;
-  login: (email: string, password: string) => Promise<void>;
-  register: (request: RegisterRequest) => Promise<void>;
+  login: (email: string, password: string, apiBase: string) => Promise<void>;
+  register: (request: RegisterRequest, apiBase: string) => Promise<void>;
   logout: () => Promise<void>;
   forgetSession: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -332,13 +332,13 @@ export function AuthProvider({
     [enterSignedOutState],
   );
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (email: string, password: string, apiBase: string) => {
     let identityRevision = authCommitBarrier.capture();
     try {
       const authenticated = await authenticateReplacingAccount(
         () => {
           identityRevision = authCommitBarrier.capture();
-          return repository.login(email, password);
+          return repository.login(email, password, apiBase);
         },
       );
       setBootstrapError(null);
@@ -351,12 +351,12 @@ export function AuthProvider({
     }
   }, [authCommitBarrier, authenticateReplacingAccount, enterAuthenticatedState, persistValidatedIdentity, repository]);
 
-  const register = useCallback(async (request: RegisterRequest) => {
+  const register = useCallback(async (request: RegisterRequest, apiBase: string) => {
     let identityRevision = authCommitBarrier.capture();
     try {
       const authenticated = await authenticateReplacingAccount(() => {
         identityRevision = authCommitBarrier.capture();
-        return repository.register(request);
+        return repository.register(request, apiBase);
       });
       setBootstrapError(null);
       // Gate derives pending/authenticated directly from this returned User.
@@ -369,9 +369,10 @@ export function AuthProvider({
     }
   }, [authCommitBarrier, authenticateReplacingAccount, enterAuthenticatedState, persistValidatedIdentity, repository]);
 
-  const logout = useCallback(async () => {
+  const leaveSession = useCallback(async (revokeServerSession: boolean) => {
     authCommitBarrier.invalidate();
     const departingScope = cacheScope.current ?? cleanupBarrier.accountScope;
+    const departingApiBase = getCurrentApiBase();
     setUser(null);
     setOfflineMode(false);
     setBootstrapError(null);
@@ -383,7 +384,9 @@ export function AuthProvider({
     let failure: Error | null = null;
     try {
       await performLogout({
-        revokeServerSession: () => repository.logout(),
+        revokeServerSession: revokeServerSession
+          ? () => repository.logout(departingApiBase)
+          : async () => undefined,
         clearPlayerSession,
         clearAccountStorage: () => clearAccountStorageBoundary(departingScope),
         clearLocalSession: clearSession,
@@ -394,7 +397,12 @@ export function AuthProvider({
     }
     cacheScope.current = null;
     if (failure !== null) {
-      setBootstrapError(presentError(failure, strings.auth.logoutFailedMessage));
+      setBootstrapError(presentError(
+        failure,
+        revokeServerSession
+          ? strings.auth.logoutFailedMessage
+          : strings.auth.forgetSessionFailed,
+      ));
       setBootstrapping(false);
       throw failure;
     }
@@ -402,6 +410,16 @@ export function AuthProvider({
     setBootstrapError(null);
     setBootstrapping(false);
   }, [authCommitBarrier, cleanupBarrier, clearAccountStorageBoundary, queryClient, repository]);
+
+  const logout = useCallback(
+    () => leaveSession(true),
+    [leaveSession],
+  );
+
+  const forgetSession = useCallback(
+    () => leaveSession(false),
+    [leaveSession],
+  );
 
   const deleteAccount = useCallback(async () => {
     const departingScope = cacheScope.current ?? cleanupBarrier.accountScope;
@@ -456,12 +474,12 @@ export function AuthProvider({
       login,
       register,
       logout,
-      forgetSession: logout,
+      forgetSession,
       deleteAccount,
       refreshUser,
       retryBootstrap: bootstrap,
     }),
-    [user, offlineMode, bootstrapping, bootstrapError, login, register, logout, deleteAccount, refreshUser, bootstrap],
+    [user, offlineMode, bootstrapping, bootstrapError, login, register, logout, forgetSession, deleteAccount, refreshUser, bootstrap],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

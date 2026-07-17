@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   ArtistSummary,
   PlaylistSummary,
-  RecentPlay,
   Track,
 } from '../../api/types';
+import type { RecentPlay } from '../../domain/listeningStats';
 import { libraryStrings } from '../../screens/libraryStrings';
 import {
   LIBRARY_POLICY_SECTION_STATE,

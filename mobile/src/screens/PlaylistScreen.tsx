@@ -26,7 +26,7 @@ import OfflinePlaylistControl, {
 } from '../components/offline/OfflinePlaylistControl';
 import StandardTrackRow from '../components/track/StandardTrackRow';
 import { showTrackActions } from '../components/trackActions';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   invalidatePlaylistCaches,
   musicCacheScope,
@@ -231,7 +231,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
   const { user } = useAuth();
   if (user === null) throw new Error('PlaylistScreen requires an authenticated user');
 
-  const apiBase = normalizeApiBase(DEFAULT_API_BASE);
+  const apiBase = getCurrentApiBase();
   const scope = musicCacheScope(apiBase, user.id);
   const offlineSnapshot = useOfflineDownloads();
   const queryClient = useQueryClient();

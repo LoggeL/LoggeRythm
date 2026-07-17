@@ -15,7 +15,7 @@ import {
 } from '../components/home/HomeCards';
 import { HomeSection, HorizontalShelf } from '../components/home/HorizontalShelf';
 import { showTrackActions } from '../components/trackActions';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   countUnseenReleaseRadarTracks,
   musicCacheScope,
@@ -89,7 +89,7 @@ export default function HomeScreen(props: HomeScreenProps) {
   const activeMood = HOME_MOODS.find((mood) => mood.key === moodKey);
   if (activeMood === undefined) throw new Error(`Unsupported home mood ${moodKey}`);
   const topSelected = activeMood.tag === null;
-  const apiBase = normalizeApiBase(DEFAULT_API_BASE);
+  const apiBase = getCurrentApiBase();
   const scope = musicCacheScope(apiBase, user.id);
   const radarSeenKey = releaseRadarSeenStorageKey(scope);
   const queryClient = useQueryClient();

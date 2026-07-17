@@ -1,5 +1,6 @@
 import type { RegisterRequest } from '../api/endpoints';
 import { strings } from '../localization';
+import { isValidEmail, normalizeEmail } from './email';
 
 export interface RegistrationFields {
   displayName: string;
@@ -19,13 +20,13 @@ export class RegistrationValidationError extends Error {
 
 export function buildRegisterRequest(fields: RegistrationFields): RegisterRequest {
   const displayName = fields.displayName.trim();
-  const email = fields.email.trim();
+  const email = normalizeEmail(fields.email);
   if (!displayName) throw new RegistrationValidationError(strings.auth.displayNameRequired);
   if (Array.from(displayName).length > 120) {
     throw new RegistrationValidationError(strings.auth.displayNameTooLong);
   }
   if (!email) throw new RegistrationValidationError(strings.auth.emailRequired);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email)) {
+  if (!isValidEmail(email)) {
     throw new RegistrationValidationError(strings.auth.emailInvalid);
   }
   if (!fields.password) throw new RegistrationValidationError(strings.auth.passwordRequired);

@@ -27,16 +27,13 @@ import type {
   PlaylistSearchResult,
   PlaylistSummary,
   PublicProfile,
-  RecentPlay,
   ResolveKind,
   ResolveResult,
-  StatEntry,
   StorageCleanupResult,
   Track,
   TrackPlayCount,
   TrackPlayCounts,
   User,
-  UserStats,
 } from './types';
 
 type JsonObject = Record<string, unknown>;
@@ -350,49 +347,6 @@ function decodeHomeShelfItem(value: unknown, path: string): HomeShelf {
 
 export function decodeHomeShelves(value: unknown): HomeShelf[] {
   return array(value, 'HomeShelf[]', decodeHomeShelfItem);
-}
-
-function decodeStatEntry(value: unknown, path: string): StatEntry {
-  const source = object(value, path);
-  return {
-    key: string(source.key, `${path}.key`),
-    label: string(source.label, `${path}.label`),
-    sublabel: string(source.sublabel, `${path}.sublabel`),
-    cover: string(source.cover, `${path}.cover`),
-    count: nonNegativeInteger(source.count, `${path}.count`),
-  };
-}
-
-function decodeRecentPlay(value: unknown, path: string): RecentPlay {
-  const source = object(value, path);
-  return {
-    id: deezerStringId(source.id, `${path}.id`),
-    title: string(source.title, `${path}.title`),
-    artist: string(source.artist, `${path}.artist`),
-    artist_id: string(source.artist_id, `${path}.artist_id`),
-    artists: array(source.artists, `${path}.artists`, decodeArtist),
-    album: string(source.album, `${path}.album`),
-    album_id: string(source.album_id, `${path}.album_id`),
-    cover: string(source.cover, `${path}.cover`),
-    duration_sec: nonNegativeInteger(source.duration_sec, `${path}.duration_sec`),
-  };
-}
-
-export function decodeUserStats(value: unknown): UserStats {
-  const source = object(value, 'UserStats');
-  return {
-    total_plays: nonNegativeInteger(source.total_plays, 'UserStats.total_plays'),
-    top_tracks: array(source.top_tracks, 'UserStats.top_tracks', decodeStatEntry),
-    top_artists: array(source.top_artists, 'UserStats.top_artists', decodeStatEntry),
-    recent: array(source.recent, 'UserStats.recent', decodeRecentPlay),
-    total_plays_month: nonNegativeInteger(source.total_plays_month, 'UserStats.total_plays_month'),
-    top_tracks_month: array(source.top_tracks_month, 'UserStats.top_tracks_month', decodeStatEntry),
-    top_artists_month: array(
-      source.top_artists_month,
-      'UserStats.top_artists_month',
-      decodeStatEntry,
-    ),
-  };
 }
 
 export function decodePublicProfile(value: unknown): PublicProfile {

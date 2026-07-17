@@ -13,7 +13,7 @@ import {
 import { CatalogRuntimeError, CatalogSection } from '../components/catalog/CatalogStates';
 import { showTrackActions } from '../components/trackActions';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
 import { playTracks } from '../player/controller';
 import { colors } from '../theme';
@@ -41,8 +41,8 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
   const { user } = useAuth();
   if (user === null) throw new Error('DiscoverScreen requires an authenticated user');
 
-  const scope = musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
-  const apiBase = normalizeApiBase(DEFAULT_API_BASE);
+  const apiBase = getCurrentApiBase();
+  const scope = musicCacheScope(apiBase, user.id);
   const charts = useQuery(musicQueries.charts());
   const genres = useQuery(musicQueries.genres());
   const releases = useQuery(musicQueries.newReleases());

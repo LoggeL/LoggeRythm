@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "c8a410eaee1be4ec43e4ccfbf3ead0f31b5c43d6ebe3f1353227503d9a3f2cf3" as const;
+export const GENERATED_OPENAPI_SHA256 = "3bac63823afb9069e6eeb275f5acde991198f07ef115b57979f84c3523206c86" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -241,6 +241,17 @@ export interface PublicProfileWire {
   playlists: PlaylistSummaryWire[];
   top_artists: ArtistSummaryWire[];
 }
+export interface RecentPlayWire {
+  album?: string;
+  album_id?: string | number;
+  artist?: string;
+  artist_id?: string | number;
+  artists?: StatsArtistRefWire[];
+  cover?: string;
+  duration_sec?: number;
+  id: string | number;
+  title: string;
+}
 export interface RegisterRequestWire {
   display_name?: string | null;
   email: string;
@@ -263,6 +274,17 @@ export interface ShelfWire {
   subtitle?: string;
   title: string;
   tracks: TrackWire[];
+}
+export interface StatEntryWire {
+  count: number;
+  cover?: string;
+  key: string | number;
+  label: string;
+  sublabel?: string;
+}
+export interface StatsArtistRefWire {
+  id?: string | number;
+  name?: string;
 }
 export interface StatusInfoWire {
   content: ContentStatusWire;
@@ -328,6 +350,15 @@ export interface UserOutWire {
   is_admin?: boolean;
   is_approved?: boolean;
 }
+export interface UserStatsWire {
+  recent: RecentPlayWire[];
+  top_artists: StatEntryWire[];
+  top_artists_month: StatEntryWire[];
+  top_tracks: StatEntryWire[];
+  top_tracks_month: StatEntryWire[];
+  total_plays: number;
+  total_plays_month: number;
+}
 export interface UsersStatusWire {
   admins: number;
   approved: number;
@@ -384,9 +415,12 @@ export interface GeneratedApiSchemas {
   "PlaylistUpdate": PlaylistUpdateWire;
   "PlaysRequest": PlaysRequestWire;
   "PublicProfile": PublicProfileWire;
+  "RecentPlay": RecentPlayWire;
   "RegisterRequest": RegisterRequestWire;
   "ResolveResult": ResolveResultWire;
   "Shelf": ShelfWire;
+  "StatEntry": StatEntryWire;
+  "StatsArtistRef": StatsArtistRefWire;
   "StatusInfo": StatusInfoWire;
   "StorageInfo": StorageInfoWire;
   "StorageItem": StorageItemWire;
@@ -395,6 +429,7 @@ export interface GeneratedApiSchemas {
   "Track": TrackWire;
   "UnmatchedTrack": UnmatchedTrackWire;
   "UserOut": UserOutWire;
+  "UserStats": UserStatsWire;
   "UsersStatus": UsersStatusWire;
   "ValidationError": ValidationErrorWire;
   "_VisibilityUpdate": _VisibilityUpdateWire;
@@ -762,11 +797,11 @@ export interface GeneratedApiOperations {
   "get_stats_api_me_stats_get": {
     request: Record<never, never>;
     responses: {
-      "200": Record<string, unknown>;
+      "200": UserStatsWire;
       "401": AuthErrorWire;
       "403": AuthErrorWire;
     };
-    response: Record<string, unknown>;
+    response: UserStatsWire;
   };
   "health_deezer_api_health_deezer_get": {
     request: Record<never, never>;

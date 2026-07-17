@@ -1,6 +1,6 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { strings } from '../../localization';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { activateLocale, strings } from '../../localization';
 import { RadioQueryStation, RadioSection, RadioStationCard } from './RadioCards';
 
 vi.mock('react-native', () => ({
@@ -61,6 +61,10 @@ function mood(
   });
 }
 
+afterEach(() => {
+  activateLocale('de');
+});
+
 describe('Radio query-state presentation', () => {
   it('keeps station cards limited to the playback action and trusted subtitle copy', () => {
     const onPress = vi.fn();
@@ -78,9 +82,28 @@ describe('Radio query-state presentation', () => {
 
     expect(card?.props.accessibilityLabel).toBe(strings.radio.startStation('Seed track'));
     expect(card?.props.disabled).toBe(false);
+    expect(elements(tree).some((element) => element.props.children === strings.radio.badge))
+      .toBe(true);
     expect(elements(tree).some((element) => element.props.children === 'Seed artist')).toBe(true);
     (card?.props.onPress as () => void)();
     expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it.each(['de', 'en'] as const)('resolves the visible radio badge from the %s catalog', (locale) => {
+    activateLocale(locale);
+    const tree = RadioStationCard({
+      testID: `radio-${locale}`,
+      title: 'Seed track',
+      subtitle: 'Seed artist',
+      cover: '',
+      variant: 'personal',
+      busy: false,
+      blocked: false,
+      onPress: vi.fn(),
+    });
+
+    expect(elements(tree).some((element) => element.props.children === strings.radio.badge))
+      .toBe(true);
   });
 
   it('renders a labeled live section loading body exclusively', () => {

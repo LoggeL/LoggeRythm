@@ -1,4 +1,5 @@
-import type { DeezerId, RecentPlay, Track } from '../api/types';
+import type { DeezerId, Track } from '../api/types';
+import type { RecentPlay } from '../domain/listeningStats';
 import type { PlayTracksOptions } from '../player/controller';
 
 export interface RecentlyHeardPlaybackRequest {

@@ -42,16 +42,32 @@ export interface PublicProfile {
 export interface StatEntry {
   key: string;
   label: string;
-  sublabel?: string;
-  cover?: string;
+  sublabel: string;
+  cover: string;
   count: number;
+}
+
+/** Persisted play-history projection; intentionally narrower than Track. */
+export interface RecentPlay {
+  id: string;
+  title: string;
+  artist: string;
+  artist_id: string;
+  artists: ArtistRef[];
+  album: string;
+  album_id: string;
+  cover: string;
+  duration_sec: number;
 }
 
 export interface UserStats {
   total_plays: number;
   top_tracks: StatEntry[];
   top_artists: StatEntry[];
-  recent: Track[];
+  recent: RecentPlay[];
+  total_plays_month: number;
+  top_tracks_month: StatEntry[];
+  top_artists_month: StatEntry[];
 }
 
 export interface PlaybackSettings {

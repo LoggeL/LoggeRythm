@@ -5,9 +5,9 @@ import {
   type PlaylistEntryId,
   type PlaylistCreateRequest,
   type PlaylistUpdateRequest,
-  type RecentPlay,
   type Track,
 } from '../api/types';
+import type { RecentPlay } from '../domain/listeningStats';
 import type { TrackOccurrenceIdentity } from '../player/trackPresentation';
 
 export interface OwnedPlaylistRouteParams {

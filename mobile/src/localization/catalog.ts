@@ -40,6 +40,11 @@ export interface StringCatalog {
     inviteLinkFailed: string;
     signInSubtitle: string;
     createAccountSubtitle: string;
+    server: string;
+    serverPlaceholder: string;
+    serverCredentialNotice: string;
+    serverInvalid: string;
+    productionLinkServerChanged: string;
     displayName: string;
     email: string;
     password: string;
@@ -158,6 +163,7 @@ export interface StringCatalog {
     playFailed: string;
   };
   radio: {
+    badge: string;
     title: string;
     subtitle: string;
     personalTitle: string;
@@ -199,7 +205,7 @@ export interface StringCatalog {
     administrator: string;
     approved: string;
     pendingApproval: string;
-    serverOrigin: (host: string) => string;
+    serverOrigin: (origin: string) => string;
     avatarDeferred: string;
     languageTitle: string;
     languageSubtitle: string;
@@ -601,6 +607,13 @@ export const de: StringCatalog = {
       'Der Einladungslink konnte nicht geöffnet werden. Gib den Einladungscode bei Bedarf manuell ein.',
     signInSubtitle: 'Melde dich bei deiner Mediathek an',
     createAccountSubtitle: 'Erstelle dein Konto',
+    server: 'Server-URL',
+    serverPlaceholder: 'https://dein-server.example',
+    serverCredentialNotice:
+      'Nutze nur einen vertrauenswürdigen Server. Dessen Betreiber erhält E-Mail, Passwort und ggf. Einladungscode.',
+    serverInvalid: 'Gib eine gültige HTTPS-Server-URL ohne Pfad ein.',
+    productionLinkServerChanged:
+      'Der Link gehört zum LoggeRythm-Produktionsserver. Zum Schutz deiner Anmeldedaten wurde das Formular vor dem Serverwechsel geleert.',
     displayName: 'Anzeigename',
     email: 'E-Mail-Adresse',
     password: 'Passwort',
@@ -719,6 +732,7 @@ export const de: StringCatalog = {
     playFailed: 'Wiedergabe der Startseite fehlgeschlagen',
   },
   radio: {
+    badge: 'RADIO',
     title: 'Radio',
     subtitle: 'Endlose Musik, abgestimmt auf deinen Geschmack.',
     personalTitle: 'Für dich gemacht',
@@ -760,7 +774,7 @@ export const de: StringCatalog = {
     administrator: 'Administrator',
     approved: 'Freigegeben',
     pendingApproval: 'Freigabe ausstehend',
-    serverOrigin: (host) => `Server: ${host}`,
+    serverOrigin: (origin) => `Server: ${origin}`,
     avatarDeferred: 'Das Profilbild kann derzeit nur im Web geändert werden.',
     languageTitle: 'Sprache',
     languageSubtitle: 'Gilt für die LoggeRythm-App auf diesem Gerät.',
@@ -1173,7 +1187,15 @@ export const en: StringCatalog = {
     restoringSession: 'Restoring session…',
     inviteLinkFailed: 'The invite link could not be opened. Enter the invite code manually if needed.',
     signInSubtitle: 'Sign in to your library',
-    createAccountSubtitle: 'Create your account', displayName: 'Display name',
+    createAccountSubtitle: 'Create your account',
+    server: 'Server URL',
+    serverPlaceholder: 'https://your-server.example',
+    serverCredentialNotice:
+      'Use only a server you trust. Its operator receives your email, password, and any invite code.',
+    serverInvalid: 'Enter a valid HTTPS server URL without a path.',
+    productionLinkServerChanged:
+      'This link belongs to the LoggeRythm production server. To protect your sign-in details, the form was cleared before switching servers.',
+    displayName: 'Display name',
     email: 'Email address', password: 'Password', confirmPassword: 'Confirm password',
     inviteOptional: 'Invite code (optional)', signIn: 'Sign in', createAccount: 'Create account',
     signingIn: 'Signing in…', creatingAccount: 'Creating account…',
@@ -1245,6 +1267,7 @@ export const en: StringCatalog = {
     playFailed: 'Home playback failed',
   },
   radio: {
+    badge: 'RADIO',
     title: 'Radio', subtitle: 'Endless music tuned to your taste.',
     personalTitle: 'Made for you', personalSubtitle: 'Stations based on your recent listening.',
     personalLoading: 'Preparing your personal stations…',
@@ -1274,7 +1297,7 @@ export const en: StringCatalog = {
     title: 'Profile', subtitle: 'Manage your account, listening history, and playback timer.',
     accountTitle: 'Your account', member: 'Member', administrator: 'Administrator',
     approved: 'Approved', pendingApproval: 'Approval pending',
-    serverOrigin: (host) => `Server: ${host}`,
+    serverOrigin: (origin) => `Server: ${origin}`,
     avatarDeferred: 'Your profile picture can currently be changed on the web only.',
     languageTitle: 'Language',
     languageSubtitle: 'Applies to the LoggeRythm app on this device.',

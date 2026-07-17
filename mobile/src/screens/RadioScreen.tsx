@@ -15,7 +15,7 @@ import {
   RadioStationCard,
 } from '../components/radio/RadioCards';
 import AppIcon from '../components/AppIcon';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
 import type { RemoteFetchStatus } from '../data/remoteState';
 import { useAuth } from '../auth/AuthContext';
@@ -42,7 +42,7 @@ export default function RadioScreen() {
   if (user === null) throw new Error('RadioScreen requires an authenticated user');
 
   const queryClient = useQueryClient();
-  const scope = musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+  const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const [startingKey, setStartingKey] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
 

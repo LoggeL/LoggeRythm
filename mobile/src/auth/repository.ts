@@ -13,17 +13,24 @@ export type { RegisterRequest } from '../api/endpoints';
  */
 export interface AuthRepository {
   me(): Promise<User>;
-  login(email: string, password: string): Promise<User>;
-  register(request: RegisterRequest): Promise<User>;
-  logout(): Promise<{ ok: boolean }>;
+  login(email: string, password: string, apiBase?: string): Promise<User>;
+  register(request: RegisterRequest, apiBase?: string): Promise<User>;
+  logout(apiBase?: string): Promise<{ ok: boolean }>;
   deleteMe(): Promise<void>;
 }
 
 /** Production adapter backed by the decoded, session-aware API endpoints. */
 export const defaultAuthRepository: AuthRepository = Object.freeze({
   me: () => endpoints.me(),
-  login: (email: string, password: string) => endpoints.login(email, password),
-  register: (request: RegisterRequest) => endpoints.register(request),
-  logout: () => endpoints.logout(),
+  login: (email: string, password: string, apiBase?: string) =>
+    apiBase === undefined
+      ? endpoints.login(email, password)
+      : endpoints.login(email, password, apiBase),
+  register: (request: RegisterRequest, apiBase?: string) =>
+    apiBase === undefined
+      ? endpoints.register(request)
+      : endpoints.register(request, apiBase),
+  logout: (apiBase?: string) =>
+    apiBase === undefined ? endpoints.logout() : endpoints.logout(apiBase),
   deleteMe: () => endpoints.deleteMe(),
 });

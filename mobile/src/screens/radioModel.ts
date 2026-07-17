@@ -1,4 +1,5 @@
-import type { RecentPlay, Track } from '../api/types';
+import type { Track } from '../api/types';
+import type { RecentPlay } from '../domain/listeningStats';
 import {
   resolveRemoteVisualState,
   type RemoteVisualState,

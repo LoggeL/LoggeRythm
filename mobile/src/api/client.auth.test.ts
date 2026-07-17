@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   },
   getApiBase: vi.fn(),
   ensureApiCompatibility: vi.fn(),
+  resetApiCompatibilityCheck: vi.fn(),
   fetch: vi.fn(),
 }));
 
@@ -19,8 +20,14 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   default: mocks.asyncStorage,
 }));
 vi.mock('expo-secure-store', () => mocks.secureStore);
-vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
-vi.mock('./compatibility', () => ({ ensureApiCompatibility: mocks.ensureApiCompatibility }));
+vi.mock('../config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../config')>(),
+  getApiBase: mocks.getApiBase,
+}));
+vi.mock('./compatibility', () => ({
+  ensureApiCompatibility: mocks.ensureApiCompatibility,
+  resetApiCompatibilityCheck: mocks.resetApiCompatibilityCheck,
+}));
 
 const storedSession = JSON.stringify({
   version: 1,
@@ -76,6 +83,81 @@ describe('authenticated client lifecycle', () => {
       expect(request[1]?.headers).toMatchObject({ Cookie: 'sf_session=stored-session-token' });
     }
     expect(mocks.secureStore.deleteItemAsync).not.toHaveBeenCalled();
+  });
+
+  it('preflights and persists an explicit custom HTTPS login origin', async () => {
+    mocks.secureStore.getItemAsync.mockResolvedValueOnce(null);
+    mocks.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ id: 7 }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': 'sf_session=custom-session; HttpOnly; Secure; Path=/; SameSite=lax',
+      },
+    }));
+    const client = await import('./client');
+
+    await expect(client.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: { email: 'person@example.test', password: 'password123' },
+      captureSession: true,
+      noAuth: true,
+      apiBase: 'https://MUSIC.example.test:8443/',
+    })).resolves.toEqual({ id: 7 });
+
+    expect(mocks.resetApiCompatibilityCheck)
+      .toHaveBeenCalledExactlyOnceWith('https://music.example.test:8443');
+    expect(mocks.ensureApiCompatibility)
+      .toHaveBeenCalledWith('https://music.example.test:8443');
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      'https://music.example.test:8443/api/auth/login',
+      expect.objectContaining({
+        credentials: 'omit',
+        redirect: 'error',
+      }),
+    );
+    expect(mocks.secureStore.setItemAsync).toHaveBeenCalledWith(
+      'lr.session.v1',
+      JSON.stringify({
+        version: 1,
+        token: 'custom-session',
+        origin: 'https://music.example.test:8443',
+        secure: true,
+      }),
+    );
+  });
+
+  it('rejects unsafe custom origins before compatibility or credentials', async () => {
+    mocks.secureStore.getItemAsync.mockResolvedValueOnce(null);
+    const client = await import('./client');
+
+    await expect(client.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: { email: 'person@example.test', password: 'password123' },
+      captureSession: true,
+      noAuth: true,
+      apiBase: 'http://music.example.test',
+    })).rejects.toThrow('canonical HTTPS origin required');
+
+    expect(mocks.ensureApiCompatibility).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.secureStore.setItemAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not send credentials when the selected server fails preflight', async () => {
+    mocks.secureStore.getItemAsync.mockResolvedValueOnce(null);
+    mocks.ensureApiCompatibility.mockRejectedValueOnce(new Error('unsupported server'));
+    const client = await import('./client');
+
+    await expect(client.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: { email: 'person@example.test', password: 'password123' },
+      captureSession: true,
+      noAuth: true,
+      apiBase: 'https://unsupported.example.test',
+    })).rejects.toThrow('unsupported server');
+
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.secureStore.setItemAsync).not.toHaveBeenCalled();
   });
 
   it('sends a replay-safe mutation key without weakening the authenticated cookie', async () => {

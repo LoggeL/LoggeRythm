@@ -28,7 +28,7 @@ import type { Track } from './api/types';
 import { useAuth } from './auth/AuthContext';
 import { presentError, type UserFacingError } from './auth/presentationError';
 import { tryResolveServerUrl } from './api/url';
-import { DEFAULT_API_BASE, normalizeApiBase } from './config';
+import { getCurrentApiBase } from './config';
 import { musicCacheScope } from './data';
 import { ensurePlayer } from './player/setup';
 import { initializeOfflineDownloads } from './offline/runtime';
@@ -169,7 +169,7 @@ function useApprovedAccountScope(): string {
   if (user === null || !user.is_approved) {
     throw new Error('Authenticated navigation requires an approved account');
   }
-  return musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+  return musicCacheScope(getCurrentApiBase(), user.id);
 }
 
 function HomeRoute({ navigation }: SectionProps<'Home'>) {
@@ -355,7 +355,7 @@ function ProfileButton() {
   const avatarValue = user?.avatar_url ?? null;
   const avatar =
     avatarValue && failedAvatar !== avatarValue
-      ? tryResolveServerUrl(avatarValue, normalizeApiBase(DEFAULT_API_BASE))
+      ? tryResolveServerUrl(avatarValue, getCurrentApiBase())
       : null;
   const initial = (user?.display_name?.trim() || user?.email || '?').slice(0, 1).toUpperCase();
 

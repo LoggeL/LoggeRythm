@@ -47,8 +47,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ user: { id: 7 } }) }));
 vi.mock('../config', () => ({
-  DEFAULT_API_BASE: 'https://music.example.test',
-  normalizeApiBase: (value: string) => value,
+  getCurrentApiBase: () => 'https://music.example.test',
 }));
 vi.mock('../data', () => ({
   createTrackLikeMutationOptions: hooks.createOptions,

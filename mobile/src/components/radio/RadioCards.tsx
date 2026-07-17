@@ -189,7 +189,7 @@ export function RadioStationCard({
         </View>
       )}
       <View style={styles.cardMeta}>
-        <Text style={styles.radioLabel}>RADIO</Text>
+        <Text style={styles.radioLabel}>{strings.radio.badge}</Text>
         <Text style={styles.cardTitle} numberOfLines={2}>{title}</Text>
         <Text style={styles.cardSubtitle} numberOfLines={2}>{subtitle}</Text>
         <View style={styles.actionRow}>

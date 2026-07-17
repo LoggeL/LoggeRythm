@@ -17,7 +17,7 @@ import {
 } from '@tanstack/react-query';
 import type { Track } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import {
   createTrackLikeMutationOptions,
   musicCacheScope,
@@ -49,7 +49,7 @@ export default function TrackLikeButton({ track, testID, style }: TrackLikeButto
   const scope =
     user === null
       ? 'signed-out'
-      : musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+      : musicCacheScope(getCurrentApiBase(), user.id);
   const likes = useQuery({
     ...musicQueries.likes(scope),
     enabled: user !== null,

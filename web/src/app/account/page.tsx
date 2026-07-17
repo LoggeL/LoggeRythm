@@ -12,6 +12,7 @@ import { currentTrack, usePlayerStore } from "@/store/player";
 import { useBassGlow } from "@/hooks/useBassGlow";
 import { useCoverColors } from "@/hooks/useCoverColors";
 import { api, ApiError } from "@/lib/api";
+import { decodeListeningStats } from "@/lib/listeningStats";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
@@ -24,14 +25,13 @@ import {
   UserIcon,
   VisualizerIcon,
 } from "@/components/icons";
-import ListeningStats, {
-  type UserStatsWithMonth,
-} from "@/components/profile/ListeningStats";
+import ListeningStats from "@/components/profile/ListeningStats";
 import type {
   AdminUser,
   StorageInfo,
   InviteInfo,
   PlaybackSettings,
+  UserStats,
 } from "@/types";
 import styles from "./account.module.css";
 
@@ -684,9 +684,9 @@ export default function AccountPage() {
 
   // Same cache entry ListeningStats uses — the hero shows a few headline
   // numbers, the stats tab the full breakdown.
-  const { data: stats } = useQuery<UserStatsWithMonth>({
+  const { data: stats } = useQuery<UserStats>({
     queryKey: ["stats"],
-    queryFn: api.stats,
+    queryFn: async () => decodeListeningStats(await api.stats()),
     enabled: !!me,
   });
   const signalTrack = liveTrack ?? stats?.recent[0] ?? null;

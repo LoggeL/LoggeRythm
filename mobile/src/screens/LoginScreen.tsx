@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -14,10 +14,17 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
+import { isValidEmail, normalizeEmail } from '../auth/email';
 import { presentError } from '../auth/presentationError';
 import { buildRegisterRequest, RegistrationValidationError } from '../auth/registration';
 import { registrationLinkFromUrl } from '../auth/inviteLink';
 import BrandLockup from '../components/BrandLockup';
+import {
+  getCurrentApiBase,
+  MAX_API_ORIGIN_LENGTH,
+  normalizeSignInApiBase,
+  PRODUCTION_API_BASE,
+} from '../config';
 import { strings } from '../localization';
 import { colors, metrics } from '../theme';
 
@@ -29,6 +36,9 @@ export default function LoginScreen() {
   const { login, register } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>('sign-in');
+  const [serverUrl, setServerUrl] = useState(getCurrentApiBase());
+  const serverUrlRef = useRef(serverUrl);
+  const authRequestInFlightRef = useRef(false);
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,6 +46,7 @@ export default function LoginScreen() {
   const [invite, setInvite] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serverSwitchNotice, setServerSwitchNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -43,6 +54,40 @@ export default function LoginScreen() {
       if (!active || url === null) return;
       const registrationLink = registrationLinkFromUrl(url);
       if (registrationLink === null) return;
+      // Never repaint or clear the form for a link while an authentication
+      // request is already bound to the currently visible origin. Otherwise a
+      // production link could make an in-flight custom-server login appear to
+      // have switched destinations even though its response will persist the
+      // original custom origin. The link can be opened again after a failure.
+      if (authRequestInFlightRef.current) return;
+      // A production registration link must not silently send its invite or
+      // credentials to a previously selected custom server. The originless app
+      // scheme intentionally remains relative to the visible form selection.
+      if (registrationLink.source === 'production-https') {
+        let switchingServer = true;
+        try {
+          switchingServer =
+            normalizeSignInApiBase(serverUrlRef.current) !== PRODUCTION_API_BASE;
+        } catch {
+          // An invalid draft is still a different destination and must not keep
+          // credentials when a production link replaces it.
+        }
+        if (switchingServer) {
+          setDisplayName('');
+          setEmail('');
+          setPassword('');
+          setConfirmPassword('');
+          setInvite('');
+        }
+        serverUrlRef.current = PRODUCTION_API_BASE;
+        setServerUrl(PRODUCTION_API_BASE);
+        if (switchingServer) {
+          setServerSwitchNotice(strings.auth.productionLinkServerChanged);
+          AccessibilityInfo.announceForAccessibility(
+            strings.auth.productionLinkServerChanged,
+          );
+        }
+      }
       if (registrationLink.invite !== null) setInvite(registrationLink.invite);
       setMode('create-account');
       setError(null);
@@ -59,14 +104,27 @@ export default function LoginScreen() {
 
   const onSubmit = async () => {
     setError(null);
+    let normalizedServer: string;
+    try {
+      normalizedServer = normalizeSignInApiBase(serverUrlRef.current);
+    } catch {
+      setError(strings.auth.serverInvalid);
+      return;
+    }
+    serverUrlRef.current = normalizedServer;
+    setServerUrl(normalizedServer);
     let action: () => Promise<void>;
     if (mode === 'sign-in') {
-      const normalizedEmail = email.trim();
+      const normalizedEmail = normalizeEmail(email);
       if (!normalizedEmail || !password) {
         setError(strings.auth.credentialsRequired);
         return;
       }
-      action = () => login(normalizedEmail, password);
+      if (!isValidEmail(normalizedEmail)) {
+        setError(strings.auth.emailInvalid);
+        return;
+      }
+      action = () => login(normalizedEmail, password, normalizedServer);
     } else {
       try {
         const request = buildRegisterRequest({
@@ -76,7 +134,7 @@ export default function LoginScreen() {
           confirmPassword,
           invite,
         });
-        action = () => register(request);
+        action = () => register(request, normalizedServer);
       } catch (cause) {
         setError(
           cause instanceof RegistrationValidationError
@@ -87,9 +145,12 @@ export default function LoginScreen() {
       }
     }
 
+    let authenticationCommitted = false;
+    authRequestInFlightRef.current = true;
     setBusy(true);
     try {
       await action();
+      authenticationCommitted = true;
       AccessibilityInfo.announceForAccessibility(
         creatingAccount ? strings.auth.accountCreated : strings.auth.signedIn,
       );
@@ -101,6 +162,7 @@ export default function LoginScreen() {
         ).message,
       );
     } finally {
+      if (!authenticationCommitted) authRequestInFlightRef.current = false;
       setBusy(false);
     }
   };
@@ -108,9 +170,17 @@ export default function LoginScreen() {
   const changeMode = () => {
     setMode((current) => (current === 'sign-in' ? 'create-account' : 'sign-in'));
     setError(null);
+    setServerSwitchNotice(null);
+  };
+
+  const changeServerUrl = (value: string) => {
+    serverUrlRef.current = value;
+    setServerUrl(value);
+    setServerSwitchNotice(null);
   };
 
   const requiredMissing =
+    !serverUrl.trim() ||
     !email.trim() ||
     !password ||
     (mode === 'create-account' && (!displayName.trim() || !confirmPassword));
@@ -145,6 +215,30 @@ export default function LoginScreen() {
             {creatingAccount ? strings.auth.createAccountSubtitle : strings.auth.signInSubtitle}
           </Text>
 
+          <TextInput
+            testID="login-server"
+            accessibilityLabel={strings.auth.server}
+            style={styles.input}
+            placeholder={strings.auth.serverPlaceholder}
+            placeholderTextColor={colors.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            value={serverUrl}
+            onChangeText={changeServerUrl}
+            maxLength={MAX_API_ORIGIN_LENGTH + 1}
+            returnKeyType="next"
+            editable={!busy}
+          />
+          <Text testID="login-server-hint" style={styles.serverHint}>
+            {strings.auth.serverCredentialNotice}
+          </Text>
+          {serverSwitchNotice ? (
+            <Text testID="login-server-switch-notice" style={styles.serverSwitchNotice}>
+              {serverSwitchNotice}
+            </Text>
+          ) : null}
+
           {creatingAccount && (
             <TextInput
               testID="register-display-name"
@@ -157,6 +251,7 @@ export default function LoginScreen() {
               autoComplete="name"
               maxLength={120}
               returnKeyType="next"
+              editable={!busy}
             />
           )}
           <TextInput
@@ -171,6 +266,7 @@ export default function LoginScreen() {
             onChangeText={setEmail}
             autoComplete="email"
             returnKeyType="next"
+            editable={!busy}
           />
           <TextInput
             testID="login-password"
@@ -184,6 +280,7 @@ export default function LoginScreen() {
             autoComplete={creatingAccount ? 'new-password' : 'current-password'}
             returnKeyType={creatingAccount ? 'next' : 'done'}
             onSubmitEditing={creatingAccount ? undefined : () => void onSubmit()}
+            editable={!busy}
           />
           {creatingAccount && (
             <>
@@ -198,6 +295,7 @@ export default function LoginScreen() {
                 onChangeText={setConfirmPassword}
                 autoComplete="new-password"
                 returnKeyType="next"
+                editable={!busy}
               />
               <TextInput
                 testID="register-invite"
@@ -211,6 +309,7 @@ export default function LoginScreen() {
                 onChangeText={setInvite}
                 returnKeyType="done"
                 onSubmitEditing={() => void onSubmit()}
+                editable={!busy}
               />
             </>
           )}
@@ -270,6 +369,8 @@ const styles = StyleSheet.create({
   card: { gap: 12, width: '100%', maxWidth: 520 },
   logo: { marginBottom: 4 },
   subtitle: { color: colors.textSecondary, fontSize: 15, textAlign: 'center', marginBottom: 12 },
+  serverHint: { color: colors.textSecondary, fontSize: 12, marginTop: -6, marginBottom: 2 },
+  serverSwitchNotice: { color: colors.warning, fontSize: 13, lineHeight: 19 },
   input: {
     backgroundColor: colors.surface,
     color: colors.textPrimary,

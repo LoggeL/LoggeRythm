@@ -1,5 +1,4 @@
 import React, {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -39,11 +38,12 @@ import {
   SearchRemoteBoundary,
 } from '../components/search/SearchRemoteStates';
 import { showTrackActions } from '../components/trackActions';
-import { DEFAULT_API_BASE, normalizeApiBase } from '../config';
+import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, persistRecentSearches, queryKeys } from '../data';
 import { resolveRemoteVisualState } from '../data/remoteState';
 import { useAuth } from '../auth/AuthContext';
 import { strings } from '../localization';
+import { useLocaleRevision } from '../localization/LocaleProvider';
 import { playTrackRow, playTracks } from '../player/controller';
 import {
   dismissSpotifyImportRequest,
@@ -62,7 +62,9 @@ import {
   isSearchableQuery,
   normalizeSearchInput,
   orderedPlaylistTrackIds,
+  recentSearchHydrationIdentity,
   recentSearchStorageKey,
+  recentSearchIdentity,
   removeRecentSearch,
   resultLimit,
   scheduleSearchDebounce,
@@ -96,13 +98,14 @@ function SearchResultSection({ id, title, children }: { id: string; title: strin
 
 export default function SearchScreen(props: Partial<SearchScreenProps>) {
   assertSearchRouteCallbacks(props);
+  const locale = useLocaleRevision();
   const { onOpenAlbum, onOpenArtist, onOpenGenre } = props;
   const { user } = useAuth();
   if (user === null) throw new Error('SearchScreen requires an authenticated user');
 
   const queryClient = useQueryClient();
   const activeProgress = useProgress(1);
-  const accountScope = musicCacheScope(normalizeApiBase(DEFAULT_API_BASE), user.id);
+  const accountScope = musicCacheScope(getCurrentApiBase(), user.id);
   const historyKey = recentSearchStorageKey(accountScope);
   const [input, setInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -114,10 +117,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null);
   const [manualImporting, setManualImporting] = useState(false);
   const recentRef = useRef<string[]>([]);
-  const getScopedImportRequest = useCallback(
-    () => getSpotifyImportRequestForScope(accountScope),
-    [accountScope],
-  );
+  const getScopedImportRequest = () => getSpotifyImportRequestForScope(accountScope);
   const sharedImportRequest = useSyncExternalStore(
     subscribeSpotifyImportRequests,
     getScopedImportRequest,
@@ -130,7 +130,8 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const ready = isCurrentSearchQuery(normalizedInput, debouncedQuery);
   const browsing = normalizedInput.length === 0;
   const wanted = wantedSearchEntities(tab);
-  const historyLoaded = loadedHistoryKey === historyKey;
+  const historyHydrationIdentity = recentSearchHydrationIdentity(historyKey, locale);
+  const historyLoaded = loadedHistoryKey === historyHydrationIdentity;
   const scopedRecent = historyLoaded ? recent : [];
 
   useEffect(() => {
@@ -150,31 +151,31 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     void AsyncStorage.getItem(historyKey)
       .then((raw) => {
         if (!active) return;
-        const decoded = decodeRecentSearches(raw);
+        const decoded = decodeRecentSearches(raw, locale);
         recentRef.current = decoded;
         setRecent(decoded);
-        setLoadedHistoryKey(historyKey);
+        setLoadedHistoryKey(historyHydrationIdentity);
       })
       .catch((error) => {
         if (!active) return;
         recentRef.current = [];
         setRecent([]);
         setActionError(strings.search.historyFailed);
-        setLoadedHistoryKey(historyKey);
+        setLoadedHistoryKey(historyHydrationIdentity);
       });
     return () => { active = false; };
-  }, [historyKey]);
+  }, [historyHydrationIdentity, historyKey, locale]);
 
   useEffect(() => {
     if (!ready || !historyLoaded) return;
-    const next = addRecentSearch(recentRef.current, debouncedQuery);
+    const next = addRecentSearch(recentRef.current, debouncedQuery, locale);
     if (JSON.stringify(next) === JSON.stringify(recentRef.current)) return;
     recentRef.current = next;
     setRecent(next);
     void persistRecentSearches(AsyncStorage, accountScope, next).catch(() =>
       setActionError(strings.search.historyFailed),
     );
-  }, [accountScope, debouncedQuery, historyLoaded, ready]);
+  }, [accountScope, debouncedQuery, historyLoaded, locale, ready]);
 
   const tracksQuery = useQuery({
     ...musicQueries.searchTracks(debouncedQuery),
@@ -195,8 +196,8 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const genresQuery = useQuery({ ...musicQueries.genres(), enabled: browsing });
 
   const tracks = useMemo(
-    () => sortSearchTracks(tracksQuery.data ?? [], sort),
-    [sort, tracksQuery.data],
+    () => sortSearchTracks(tracksQuery.data ?? [], sort, locale),
+    [locale, sort, tracksQuery.data],
   );
   const albums = albumsQuery.data ?? [];
   const shownTracks = useMemo(
@@ -367,7 +368,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   };
 
   const removeHistoryEntry = (entry: string) => {
-    const next = removeRecentSearch(recentRef.current, entry);
+    const next = removeRecentSearch(recentRef.current, entry, locale);
     recentRef.current = next;
     setRecent(next);
     void persistRecentSearches(AsyncStorage, accountScope, next).catch(() =>
@@ -605,7 +606,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
                 </View>
                 <View style={styles.recentChips}>
                   {scopedRecent.map((entry, index) => (
-                    <View key={entry.toLocaleLowerCase('de')} style={styles.recentChip}>
+                    <View key={recentSearchIdentity(entry, locale)} style={styles.recentChip}>
                       <Pressable
                         testID={`search-recent-${index}`}
                         accessibilityRole="button"

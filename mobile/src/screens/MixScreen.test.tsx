@@ -34,8 +34,7 @@ vi.mock('../components/catalog/CatalogStates', () => ({
 }));
 vi.mock('../components/trackActions', () => ({ showTrackActions: vi.fn() }));
 vi.mock('../config', () => ({
-  DEFAULT_API_BASE: 'https://music.example.test',
-  normalizeApiBase: (value: string) => value,
+  getCurrentApiBase: () => 'https://music.example.test',
 }));
 vi.mock('../data', () => ({
   musicCacheScope: () => 'https://music.example.test::user:7',

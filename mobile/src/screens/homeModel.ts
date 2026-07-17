@@ -4,8 +4,8 @@ import type {
   Genre,
   HomeShelf,
   PlaylistSummary,
-  RecentPlay,
 } from '../api/types';
+import type { RecentPlay } from '../domain/listeningStats';
 import { deezerReferenceIdFromRouteValue } from '../navigationLinks';
 import type { QueueContext } from '../player/queueContract';
 

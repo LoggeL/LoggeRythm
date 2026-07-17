@@ -25,15 +25,15 @@ describe('session cookie handling', () => {
     );
   });
 
-  it('refuses to downgrade a Secure cookie to HTTP', () => {
+  it('rejects a persisted public-HTTP session before any cookie can be restored', () => {
     const raw = JSON.stringify({
       version: 1,
       token: 'token',
       origin: 'http://music.example.test',
       secure: true,
     });
-    expect(() => sessionCookieHeader(decodeStoredSession(raw), 'http://music.example.test/api')).toThrow(
-      /Secure session/,
+    expect(() => decodeStoredSession(raw)).toThrow(
+      /canonical HTTPS origin required/,
     );
   });
 
@@ -42,5 +42,11 @@ describe('session cookie handling', () => {
     expect(() => decodeStoredSession('{"version":1,"token":"","origin":"x","secure":false}')).toThrow(
       /token is missing/,
     );
+    expect(() => decodeStoredSession(JSON.stringify({
+      version: 1,
+      token: 'token',
+      origin: 'https://music.example.test:0',
+      secure: true,
+    }))).toThrow(/Stored session origin is invalid/);
   });
 });

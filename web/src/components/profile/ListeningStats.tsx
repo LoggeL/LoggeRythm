@@ -4,22 +4,11 @@ import type { CSSProperties, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { api } from "@/lib/api";
-import type { StatEntry, Track, UserStats } from "@/types";
+import { decodeListeningStats } from "@/lib/listeningStats";
+import type { RecentPlay, StatEntry, UserStats } from "@/types";
 import styles from "./ListeningStats.module.css";
 
-// The backend /me/stats response also carries an additive last-30-days view.
-// Keep the extension local until those additive fields become part of UserStats.
-export interface UserStatsWithMonth extends UserStats {
-  total_plays_month?: number;
-  top_tracks_month?: StatEntry[];
-  top_artists_month?: StatEntry[];
-}
-
-type ListeningStatsData = UserStats & {
-  total_plays_month: number;
-  top_tracks_month: StatEntry[];
-  top_artists_month: StatEntry[];
-};
+type ListeningStatsData = UserStats;
 
 type VisualStyle = CSSProperties & {
   "--delay"?: string;
@@ -47,160 +36,8 @@ function traceStyle(value: number, max: number, index: number): VisualStyle {
   };
 }
 
-function statsContractError(field: string, expectation: string): never {
-  throw new Error(
-    `Ungültige Antwort von /me/stats: „${field}“ muss ${expectation} sein.`,
-  );
-}
-
-function assertWholeCount(
-  value: unknown,
-  field: string,
-  positive = false,
-): asserts value is number {
-  if (
-    typeof value !== "number" ||
-    !Number.isSafeInteger(value) ||
-    value < (positive ? 1 : 0)
-  ) {
-    statsContractError(
-      field,
-      positive
-        ? "eine positive ganze Zahl"
-        : "eine nicht-negative ganze Zahl",
-    );
-  }
-}
-
-function assertStatEntries(value: unknown, field: string): asserts value is StatEntry[] {
-  if (!Array.isArray(value)) {
-    statsContractError(field, "eine Liste");
-  }
-
-  value.forEach((entry: unknown, index: number) => {
-    if (typeof entry !== "object" || entry === null) {
-      statsContractError(`${field}[${index}]`, "ein Statistik-Eintrag");
-    }
-
-    const candidate = entry as Record<string, unknown>;
-    if (typeof candidate.key !== "string") {
-      statsContractError(`${field}[${index}].key`, "Text");
-    }
-    if (typeof candidate.label !== "string") {
-      statsContractError(`${field}[${index}].label`, "Text");
-    }
-    assertWholeCount(candidate.count, `${field}[${index}].count`, true);
-
-    if (
-      candidate.sublabel !== undefined &&
-      typeof candidate.sublabel !== "string"
-    ) {
-      statsContractError(`${field}[${index}].sublabel`, "Text");
-    }
-    if (candidate.cover !== undefined && typeof candidate.cover !== "string") {
-      statsContractError(`${field}[${index}].cover`, "Text");
-    }
-  });
-}
-
-function assertRecentTracks(value: unknown): asserts value is Track[] {
-  if (!Array.isArray(value)) {
-    statsContractError("recent", "eine Liste");
-  }
-
-  value.forEach((entry: unknown, index: number) => {
-    if (typeof entry !== "object" || entry === null) {
-      statsContractError(`recent[${index}]`, "ein Titel-Eintrag");
-    }
-
-    const candidate = entry as Record<string, unknown>;
-    for (const field of ["id", "title", "artist", "album", "cover"] as const) {
-      if (typeof candidate[field] !== "string") {
-        statsContractError(`recent[${index}].${field}`, "Text");
-      }
-    }
-    assertWholeCount(candidate.duration_sec, `recent[${index}].duration_sec`);
-  });
-}
-
-function assertListeningStats(
-  value: unknown,
-): asserts value is ListeningStatsData {
-  if (typeof value !== "object" || value === null) {
-    statsContractError("Antwort", "ein Objekt");
-  }
-
-  const candidate = value as Partial<UserStatsWithMonth>;
-  assertWholeCount(candidate.total_plays, "total_plays");
-  assertWholeCount(candidate.total_plays_month, "total_plays_month");
-  assertStatEntries(candidate.top_tracks, "top_tracks");
-  assertStatEntries(candidate.top_artists, "top_artists");
-  assertStatEntries(candidate.top_tracks_month, "top_tracks_month");
-  assertStatEntries(candidate.top_artists_month, "top_artists_month");
-  assertRecentTracks(candidate.recent);
-
-  if (candidate.total_plays_month > candidate.total_plays) {
-    statsContractError(
-      "total_plays_month",
-      "kleiner oder gleich „total_plays“",
-    );
-  }
-
-  const allTimeCollections = [
-    candidate.top_tracks.length,
-    candidate.top_artists.length,
-    candidate.recent.length,
-  ];
-  const monthCollections = [
-    candidate.top_tracks_month.length,
-    candidate.top_artists_month.length,
-  ];
-
-  if (
-    candidate.total_plays === 0 &&
-    allTimeCollections.some((length) => length > 0)
-  ) {
-    statsContractError(
-      "total_plays",
-      "mit den nicht-leeren Verlauf-Listen übereinstimmen",
-    );
-  }
-  if (
-    candidate.total_plays > 0 &&
-    allTimeCollections.some((length) => length === 0)
-  ) {
-    statsContractError(
-      "top_tracks, top_artists und recent",
-      "bei vorhandenem Hörverlauf nicht leer",
-    );
-  }
-  if (
-    candidate.total_plays_month === 0 &&
-    monthCollections.some((length) => length > 0)
-  ) {
-    statsContractError(
-      "total_plays_month",
-      "mit den nicht-leeren 30-Tage-Listen übereinstimmen",
-    );
-  }
-  if (
-    candidate.total_plays_month > 0 &&
-    monthCollections.some((length) => length === 0)
-  ) {
-    statsContractError(
-      "top_tracks_month und top_artists_month",
-      "bei Wiedergaben im 30-Tage-Fenster nicht leer",
-    );
-  }
-}
-
-function requireListeningStats(value: unknown): ListeningStatsData {
-  assertListeningStats(value);
-  return value;
-}
-
 async function fetchListeningStats(): Promise<ListeningStatsData> {
-  return requireListeningStats(await api.stats());
+  return decodeListeningStats(await api.stats());
 }
 
 function Artwork({
@@ -300,7 +137,7 @@ function PulseCard({ data }: { data: ListeningStatsData }) {
   );
 }
 
-function RecentCard({ tracks }: { tracks: Track[] }) {
+function RecentCard({ tracks }: { tracks: RecentPlay[] }) {
   const visibleTracks = tracks.slice(0, 5);
   const visibleCovers = tracks.slice(0, 4);
 
@@ -559,7 +396,7 @@ export default function ListeningStats() {
     // This query key is shared with the account hero. Validate selected cache
     // data as well, so a response fetched by that observer cannot bypass the
     // strict contract above.
-    select: requireListeningStats,
+    select: decodeListeningStats,
   });
 
   const hasHistory =
@@ -603,9 +440,7 @@ export default function ListeningStats() {
       {error && (
         <div className={styles.errorCard} role="alert">
           <span>Signal unterbrochen</span>
-          <p>
-            {error.message}
-          </p>
+          <p>Deine Hörstatistik konnte nicht geladen werden. Bitte versuche es erneut.</p>
         </div>
       )}
 

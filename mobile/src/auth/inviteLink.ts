@@ -5,6 +5,7 @@ const INVITE_LIMIT = 512;
 
 export interface RegistrationLink {
   invite: string | null;
+  source: 'app-scheme' | 'production-https';
 }
 
 export function registrationLinkFromUrl(url: string): RegistrationLink | null {
@@ -26,7 +27,10 @@ export function registrationLinkFromUrl(url: string): RegistrationLink | null {
 
   if (!isProductionRegistration && !isAppRegistration) return null;
   const invite = parsed.searchParams.get('invite')?.trim() ?? '';
-  return { invite: invite.length > 0 && invite.length <= INVITE_LIMIT ? invite : null };
+  return {
+    invite: invite.length > 0 && invite.length <= INVITE_LIMIT ? invite : null,
+    source: isProductionRegistration ? 'production-https' : 'app-scheme',
+  };
 }
 
 export function registrationInviteFromUrl(url: string): string | null {

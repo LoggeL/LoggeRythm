@@ -41,8 +41,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
 vi.mock('../api/url', () => ({ resolveServerUrl: (value: string) => value }));
 vi.mock('../config', () => ({
-  DEFAULT_API_BASE: 'https://music.example.test',
-  normalizeApiBase: (value: string) => value,
+  getCurrentApiBase: () => 'https://music.example.test',
 }));
 vi.mock('../data', () => ({
   musicCacheScope: () => 'https://music.example.test::user:7',
