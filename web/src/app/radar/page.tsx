@@ -4,23 +4,26 @@ import { useEffect } from "react";
 import { useMe } from "@/hooks/useAuth";
 import {
   RADAR_TITLE,
+  useRefreshReleaseRadar,
   useReleaseRadar,
   useReleaseRadarSeen,
 } from "@/hooks/useReleaseRadar";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
 import { RowListSkeleton } from "@/components/Skeleton";
-import { PlayIcon } from "@/components/icons";
+import { PlayIcon, RefreshIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 
 export default function RadarPage() {
   const { data: me } = useMe();
   const playQueue = usePlayerStore((s) => s.playQueue);
   const radar = useReleaseRadar(me);
+  const refreshRadar = useRefreshReleaseRadar(me);
 
   const tracks = radar.data ?? [];
   const cover = tracks.find((t) => t.cover)?.cover;
   const { markVisibleTracksSeen } = useReleaseRadarSeen(me?.id, tracks);
+  const radarError = refreshRadar.error ?? radar.error;
 
   useEffect(() => {
     markVisibleTracksSeen();
@@ -59,10 +62,29 @@ export default function RadarPage() {
             Neues von Künstler:innen, die du hörst und folgst
           </p>
           <p className="text-sm text-muted mt-1">{tracks.length} Titel</p>
+          <button
+            type="button"
+            onClick={() => refreshRadar.mutate()}
+            disabled={!me || refreshRadar.isPending}
+            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-foreground transition hover:border-accent/60 hover:bg-accent/15 disabled:cursor-wait disabled:opacity-60"
+          >
+            <RefreshIcon
+              aria-hidden="true"
+              className={refreshRadar.isPending ? "animate-spin" : undefined}
+            />
+            {refreshRadar.isPending
+              ? "Release Radar wird aktualisiert…"
+              : "Release Radar aktualisieren"}
+          </button>
+          {refreshRadar.isSuccess && (
+            <p role="status" className="mt-2 text-sm text-accent-soft">
+              Release Radar wurde aktualisiert.
+            </p>
+          )}
         </div>
       </header>
 
-      {radar.isError && (
+      {radarError && (
         <div
           role="alert"
           className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
@@ -70,7 +92,7 @@ export default function RadarPage() {
           Release Radar konnte nicht aktualisiert werden.
           {tracks.length > 0 &&
             " Die zuletzt geladenen Songs bleiben sichtbar."}{" "}
-          {radar.error.message}
+          {radarError.message}
         </div>
       )}
 

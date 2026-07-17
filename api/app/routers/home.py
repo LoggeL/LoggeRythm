@@ -8,7 +8,6 @@ blocking DB session with blocking network calls.
 """
 from __future__ import annotations
 
-import logging
 import random
 import threading
 import time
@@ -26,8 +25,6 @@ from ..db.session import get_db
 from ..schemas.track import Track
 from ..services import deezer_client as dc
 from ..services import recommend
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/home", tags=["home"])
 
@@ -163,12 +160,17 @@ def _radar_artist_ids(db: Session, user: User, limit: int = 60) -> list[str]:
 _RADAR_TRACKS_PER_ARTIST = 2
 
 
-def _artist_new_tracks(artist_id: str, cutoff: str) -> list[dict]:
+def _artist_new_tracks(
+    artist_id: str,
+    cutoff: str,
+    *,
+    refresh: bool = False,
+) -> list[dict]:
     """Up to `_RADAR_TRACKS_PER_ARTIST` newest tracks from an artist's recent
     releases (release_date >= cutoff), newest release first. Each track is
     tagged with `release_date` so callers can sort the merged radar globally.
     """
-    albums = dc.artist_albums(artist_id)
+    albums = dc.artist_albums(artist_id, refresh=refresh)
     recent = sorted(
         (a for a in albums if a.get("release_date", "") >= cutoff),
         key=lambda a: a.get("release_date", ""),
@@ -188,15 +190,17 @@ def _artist_new_tracks(artist_id: str, cutoff: str) -> list[dict]:
 
 @router.get("/release-radar", response_model=list[Track])
 def release_radar(
+    refresh: bool = False,
     user: User | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ) -> list[dict]:
     """Recent songs (last 90 days), at most two per followed/top artist.
 
     Fans out per artist over the 24h-cached album lists, then pulls the newest
-    release's tracks; per-artist failures are logged loudly but don't blank the
-    whole radar. Signed-out or no artist history → empty list, frontend hides
-    the section.
+    release's tracks. Any per-artist failure aborts the response after all
+    lookups finish so clients never accept a partial radar as a successful
+    refresh. Signed-out or no artist history → empty list, frontend hides the
+    section.
     """
     if user is None:
         return []
@@ -206,19 +210,26 @@ def release_radar(
 
     cutoff = (date.today() - timedelta(days=90)).isoformat()
     tracks: list[dict] = []
+    failures: list[tuple[str, dc.DeezerClientError]] = []
     with ThreadPoolExecutor(max_workers=8) as ex:
         futures = {
-            ex.submit(_artist_new_tracks, aid, cutoff): aid for aid in artist_ids
+            ex.submit(_artist_new_tracks, aid, cutoff, refresh=refresh): aid
+            for aid in artist_ids
         }
         for fut in as_completed(futures):
             try:
                 tracks.extend(fut.result())
             except dc.DeezerClientError as e:
-                logger.warning(
-                    "release-radar: fetching tracks for artist %s failed: %s",
-                    futures[fut],
-                    e,
-                )
+                failures.append((futures[fut], e))
+
+    if failures:
+        details = "; ".join(
+            f"artist {artist_id}: {error}" for artist_id, error in failures
+        )
+        raise dc.DeezerClientError(
+            f"Release Radar failed for {len(failures)} of "
+            f"{len(artist_ids)} artists: {details}"
+        ) from failures[0][1]
 
     tracks.sort(key=lambda t: t.get("release_date", ""), reverse=True)
     seen: set[str] = set()

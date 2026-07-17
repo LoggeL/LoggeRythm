@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "3bac63823afb9069e6eeb275f5acde991198f07ef115b57979f84c3523206c86" as const;
+export const GENERATED_OPENAPI_SHA256 = "b41348fb20005d4ffa7ea7499e4d3306a1e5cdaf1e1ddae7bddaf41765536c08" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -1065,6 +1065,9 @@ export interface GeneratedApiOperations {
   };
   "release_radar_api_home_release_radar_get": {
     request: {
+      query?: {
+        refresh?: boolean;
+      };
       cookie?: {
         sf_session?: string | null;
       };

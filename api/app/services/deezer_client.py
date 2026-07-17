@@ -347,12 +347,20 @@ _artist_albums_cache: dict[str, tuple[float, list[dict]]] = {}
 _artist_albums_lock = threading.Lock()
 
 
-def artist_albums(artist_id: str) -> list[dict]:
-    """An artist's releases as AlbumSummary dicts, cached for 24h."""
+def artist_albums(artist_id: str, *, refresh: bool = False) -> list[dict]:
+    """An artist's releases as AlbumSummary dicts, cached for 24h.
+
+    ``refresh=True`` bypasses a cached value and replaces it with a fresh
+    response. Release Radar uses this only for an explicit user refresh.
+    """
     now = time.monotonic()
     with _artist_albums_lock:
         hit = _artist_albums_cache.get(artist_id)
-        if hit is not None and now - hit[0] < _ARTIST_ALBUMS_TTL_SEC:
+        if (
+            not refresh
+            and hit is not None
+            and now - hit[0] < _ARTIST_ALBUMS_TTL_SEC
+        ):
             return hit[1]
     data = _public_get(f"/artist/{artist_id}/albums?limit=50")
     albums = [normalize_album_summary(a) for a in (data.get("data") or [])]

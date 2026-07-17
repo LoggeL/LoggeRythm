@@ -5,7 +5,7 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import {
   countUnseenRadarTracks,
@@ -94,6 +94,29 @@ export function useReleaseRadar(user: User | null | undefined) {
     enabled: user !== null && user !== undefined,
     staleTime: RADAR_STALE_TIME,
     refetchOnWindowFocus: true,
+  });
+}
+
+export function useRefreshReleaseRadar(user: User | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation<Track[], Error>({
+    mutationFn: () => {
+      if (user === null || user === undefined) {
+        throw new Error(
+          "Release Radar kann nur mit einem angemeldeten Konto aktualisiert werden.",
+        );
+      }
+      return api.releaseRadar(true);
+    },
+    onSuccess: (tracks) => {
+      if (user === null || user === undefined) {
+        throw new Error(
+          "Release Radar wurde ohne angemeldetes Konto aktualisiert.",
+        );
+      }
+      queryClient.setQueryData(releaseRadarQueryKey(user.id), tracks);
+    },
   });
 }
 

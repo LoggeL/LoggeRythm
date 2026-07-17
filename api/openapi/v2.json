@@ -3183,9 +3183,19 @@
     },
     "/api/home/release-radar": {
       "get": {
-        "description": "Recent songs (last 90 days), at most two per followed/top artist.\n\nFans out per artist over the 24h-cached album lists, then pulls the newest\nrelease's tracks; per-artist failures are logged loudly but don't blank the\nwhole radar. Signed-out or no artist history → empty list, frontend hides\nthe section.",
+        "description": "Recent songs (last 90 days), at most two per followed/top artist.\n\nFans out per artist over the 24h-cached album lists, then pulls the newest\nrelease's tracks. Any per-artist failure aborts the response after all\nlookups finish so clients never accept a partial radar as a successful\nrefresh. Signed-out or no artist history → empty list, frontend hides the\nsection.",
         "operationId": "release_radar_api_home_release_radar_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          },
           {
             "in": "cookie",
             "name": "sf_session",

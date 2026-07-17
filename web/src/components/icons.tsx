@@ -10,6 +10,25 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
+export function RefreshIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={18}
+      height={18}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M20 11a8 8 0 1 0-2.35 5.65" />
+      <path d="M20 5v6h-6" />
+    </svg>
+  );
+}
+
 export function PauseIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" width={18} height={18} {...props}>

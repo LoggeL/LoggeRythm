@@ -104,7 +104,11 @@ export const api = {
   homeMixes: () => req<HomeShelf[]>(`/home/mixes`),
   becauseYouListened: () => req<HomeShelf[]>(`/home/because-you-listened`),
   homeChartsCollections: () => req<HomeShelf[]>(`/home/charts-collections`),
-  releaseRadar: () => req<Track[]>(`/home/release-radar`),
+  releaseRadar: (refresh = false) =>
+    req<Track[]>(
+      `/home/release-radar${refresh ? "?refresh=true" : ""}`,
+      refresh ? { cache: "no-store" } : undefined,
+    ),
   homeMood: (tag: string) =>
     req<Track[]>(`/home/mood/${encodeURIComponent(tag)}`),
   genres: () => req<Genre[]>(`/genres`),
