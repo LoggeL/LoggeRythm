@@ -202,9 +202,18 @@ internal object LoggeRythmControllerPolicy {
         )
     )
 
-  fun commandProfile(self: Boolean, mediaNotification: Boolean): RemoteControllerProfile = when {
-    mediaNotification -> RemoteControllerProfile.NOTIFICATION
+  fun commandProfile(
+    self: Boolean,
+    mediaNotification: Boolean,
+    automotive: Boolean = false,
+    autoCompanion: Boolean = false,
+  ): RemoteControllerProfile = when {
     self -> RemoteControllerProfile.INTERNAL
+    // Android Auto may also identify as Media3's media-notification controller. Treat the
+    // automotive identity first or it receives the notification-only command set (no library
+    // root/children commands), so Auto can display neither the restored queue metadata nor browse.
+    automotive || autoCompanion -> RemoteControllerProfile.TRUSTED_BROWSER
+    mediaNotification -> RemoteControllerProfile.NOTIFICATION
     else -> RemoteControllerProfile.TRUSTED_BROWSER
   }
 
@@ -413,6 +422,8 @@ class LoggeRythmMediaLibraryService :
       packageName,
     ),
     mediaNotification = session.isMediaNotificationController(controller),
+    automotive = session.isAutomotiveController(controller),
+    autoCompanion = session.isAutoCompanionController(controller),
   )
 
   private fun refreshConnectedControllerCommands() {
