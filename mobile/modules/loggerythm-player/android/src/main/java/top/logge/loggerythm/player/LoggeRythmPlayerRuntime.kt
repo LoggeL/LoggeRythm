@@ -139,6 +139,48 @@ internal object LoggeRythmPlayerRuntime {
     return installed
   }
 
+  /**
+   * Publishes already protocol-validated radio items to the private sidecars before Media3 sees
+   * them. Cookies are vaulted in the same synchronized mutation and the native queue generation
+   * advances exactly once. The coordinator persists the resulting queue and event removal before
+   * resolving the JavaScript completion promise.
+   */
+  fun appendQueue(items: List<PlayerItemSpec>): List<MediaItem> {
+    if (items.isEmpty()) return emptyList()
+    val (appended, revision) = synchronized(lock) {
+      val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
+      val existingIds = queueSources.mapTo(mutableSetOf(), PlayerItemSpec::id)
+      items.forEach { item ->
+        requireCookieMatchesBinding(item, binding)
+        if (!existingIds.add(item.id)) throw PlayerProtocolException("queue-item-id-duplicate")
+      }
+      val mediaItems = items.map { item ->
+        mediaItem(
+          id = item.id,
+          url = item.url,
+          title = item.title,
+          artist = item.artist,
+          album = item.album,
+          subtitle = null,
+          artworkUrl = item.artworkUrl,
+          durationMs = item.durationMs,
+          browsable = false,
+          playable = true,
+        )
+      }
+      val nextSources = queueSources + items
+      // Validate every old/new URL conflict before publishing any new sidecar.
+      cookieVault.replaceQueue(
+        nextSources.filter { it.url.startsWith("https://") }.map { it.url to it.cookie },
+      )
+      queueSources = nextSources
+      queueExtras = nextSources.associate { it.id to it.extrasJson }
+      mediaItems to queueGeneration.incrementAndGet()
+    }
+    LoggeRythmCacheServiceBridge.queueChanged(revision)
+    return appended
+  }
+
   fun clearQueueHeaders() {
     val revision = synchronized(lock) {
       cookieVault.clearQueue()

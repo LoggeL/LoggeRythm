@@ -31,6 +31,17 @@ internal data class PlayerSetupSpec(
   val sessionBinding: LoggeRythmPersistedSessionBinding,
 )
 
+/** Strict v1 payload used for the native append-and-ack radio transaction. */
+internal data class LoggeRythmRadioPlaybackCompletionSpec(
+  val expectedQueueGeneration: Long,
+  val expectedActiveMediaId: String,
+  val items: List<PlayerItemSpec>,
+) {
+  override fun toString(): String =
+    "LoggeRythmRadioPlaybackCompletionSpec(expectedQueueGeneration=$expectedQueueGeneration, " +
+      "expectedActiveMediaId=<redacted>, items=<redacted:${items.size}>)"
+}
+
 enum class RemotePlayerCapability(val wireValue: String) {
   SEEK("seek"),
   PLAY_PAUSE("playPause"),
@@ -152,6 +163,29 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       "refreshSnapshot" -> emptyPayload(payload, PlayerCommand.RefreshSnapshot)
       else -> fail("command-name-unsupported")
     }
+  }
+
+  fun parseRadioPlaybackCompletion(payloadJson: String): LoggeRythmRadioPlaybackCompletionSpec {
+    val payload = parseObject(payloadJson)
+    requireExactKeys(payload, RADIO_COMPLETION_KEYS, RADIO_COMPLETION_KEYS)
+    if (requiredLong(payload, "schemaVersion") != RADIO_COMPLETION_SCHEMA_VERSION) {
+      fail("radio-completion-version-unsupported")
+    }
+    val generation = requiredLong(payload, "expectedQueueGeneration")
+    if (generation > MAX_JS_SAFE_INTEGER) fail("radio-completion-generation-invalid")
+    val values = requiredArray(payload, "items")
+    if (values.length() > MAX_RADIO_COMPLETION_ITEMS) fail("radio-completion-items-too-large")
+    val ids = mutableSetOf<String>()
+    val items = List(values.length()) { index ->
+      parseQueueItem(requiredObject(values, index)).also { item ->
+        if (!ids.add(item.id)) fail("queue-item-id-duplicate")
+      }
+    }
+    return LoggeRythmRadioPlaybackCompletionSpec(
+      expectedQueueGeneration = generation,
+      expectedActiveMediaId = requiredId(payload, "expectedActiveMediaId"),
+      items = items,
+    )
   }
 
   private fun parseQueuePersistenceState(payload: JSONObject): PlayerCommand.SetQueuePersistenceState {
@@ -523,6 +557,9 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     private const val MAX_STABLE_ID_LENGTH = 512
     private const val MAX_SLEEP_DURATION_MS = 365L * 24L * 60L * 60L * 1_000L
     private const val MAX_SLEEP_FADE_MS = 24L * 60L * 60L * 1_000L
+    private const val MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L
+    private const val MAX_RADIO_COMPLETION_ITEMS = 5
+    private const val RADIO_COMPLETION_SCHEMA_VERSION = 1L
     private val ID_PATTERN = Regex("[A-Za-z0-9._:-]{1,$MAX_ID_LENGTH}")
     private val EXTRA_KEY_PATTERN = Regex("[A-Za-z0-9._:-]{1,64}")
     private val REPEAT_MODES = setOf("off", "one", "all")
@@ -533,6 +570,12 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     )
     private val SLEEP_TIME_KEYS = setOf("seconds", "fadeOutSeconds")
     private val REMOTE_COMMAND_KEYS = setOf("capabilities", "handling")
+    private val RADIO_COMPLETION_KEYS = setOf(
+      "schemaVersion",
+      "expectedQueueGeneration",
+      "expectedActiveMediaId",
+      "items",
+    )
     private val QUEUE_ITEM_KEYS = setOf(
       "id",
       "url",

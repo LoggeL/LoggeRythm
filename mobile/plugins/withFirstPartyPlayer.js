@@ -12,6 +12,8 @@ const ATTRIBUTION_ICON_META_NAME = 'androidx.car.app.TintableAttributionIcon';
 const WEB_LINK_HOST = 'loggerythm.logge.top';
 const UNSUPPORTED_SEARCH_ACTION = 'android.media.action.MEDIA_PLAY_FROM_SEARCH';
 const PLAYER_SERVICE_NAME = 'top.logge.loggerythm.player.LoggeRythmMediaLibraryService';
+const PLAYBACK_EVENT_HEADLESS_SERVICE_NAME =
+  'top.logge.loggerythm.player.LoggeRythmPlaybackEventHeadlessService';
 const MEDIA3_LIBRARY_SERVICE_ACTION = 'androidx.media3.session.MediaLibraryService';
 const MEDIA_BROWSER_SERVICE_ACTION = 'android.media.browse.MediaBrowserService';
 const HOSTILE_CONTROLLER_TEST_PROJECT = ':loggerythm_player-hostile-controller';
@@ -74,6 +76,24 @@ function upsertPlayerService(application) {
   }
 }
 
+function upsertPlaybackEventHeadlessService(application) {
+  application.service = application.service || [];
+  let service = application.service.find(
+    (candidate) => candidate.$?.['android:name'] === PLAYBACK_EVENT_HEADLESS_SERVICE_NAME,
+  );
+  if (!service) {
+    service = { $: {} };
+    application.service.push(service);
+  }
+  service.$ = {
+    'android:name': PLAYBACK_EVENT_HEADLESS_SERVICE_NAME,
+    'android:exported': 'false',
+  };
+  for (const key of Object.keys(service)) {
+    if (key !== '$') delete service[key];
+  }
+}
+
 function configureWebLinks(application, enableVerifiedAppLinks) {
   const activity = application.activity?.find(
     (candidate) => candidate.$?.['android:name'] === '.MainActivity',
@@ -115,6 +135,7 @@ function configureManifestObject(
   upsertMetadata(application, AUTOMOTIVE_META_NAME, '@xml/automotive_app_desc');
   upsertMetadata(application, ATTRIBUTION_ICON_META_NAME, '@drawable/ic_stat_music');
   upsertPlayerService(application);
+  upsertPlaybackEventHeadlessService(application);
   configureWebLinks(application, enableVerifiedAppLinks);
   return manifest;
 }
@@ -197,6 +218,7 @@ module.exports = function withFirstPartyPlayer(config, options = {}) {
 
 module.exports.AUTOMOTIVE_DESC = AUTOMOTIVE_DESC;
 module.exports.WEB_LINK_HOST = WEB_LINK_HOST;
+module.exports.PLAYBACK_EVENT_HEADLESS_SERVICE_NAME = PLAYBACK_EVENT_HEADLESS_SERVICE_NAME;
 module.exports.configureManifestObject = configureManifestObject;
 module.exports.configureAutoLint = configureAutoLint;
 module.exports.transformAutoLint = transformAutoLint;

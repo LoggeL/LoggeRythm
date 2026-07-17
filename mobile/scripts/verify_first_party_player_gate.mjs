@@ -96,6 +96,58 @@ export function scanSourceTree(mobileRoot) {
     findings.push('package.json: postinstall must be absent after patch removal');
   }
 
+  const appConfig = JSON.parse(fs.readFileSync(path.join(exactRoot, 'app.json'), 'utf8'));
+  const packageLock = JSON.parse(
+    fs.readFileSync(path.join(exactRoot, 'package-lock.json'), 'utf8'),
+  );
+  const expectedVersion = appConfig.expo?.version;
+  const versionEntries = [
+    ['app.json expo.version', expectedVersion],
+    ['package.json version', manifest.version],
+    ['package-lock.json version', packageLock.version],
+    ['package-lock.json root package version', packageLock.packages?.['']?.version],
+  ];
+  if (
+    typeof expectedVersion !== 'string'
+    || versionEntries.some(([, value]) => value !== expectedVersion)
+  ) {
+    findings.push(
+      `mobile version mismatch: ${versionEntries
+        .map(([label, value]) => `${label}=${String(value)}`)
+        .join(', ')}`,
+    );
+  }
+
+  const generatedBuildGradle = path.join(exactRoot, 'android', 'app', 'build.gradle');
+  if (
+    fs.existsSync(generatedBuildGradle)
+    && !fs.readFileSync(generatedBuildGradle, 'utf8').includes(
+      `versionName "${expectedVersion}"`,
+    )
+  ) {
+    findings.push('generated app/build.gradle: versionName does not match app.json');
+  }
+
+  const generatedManifest = path.join(
+    exactRoot,
+    'android',
+    'app',
+    'src',
+    'main',
+    'AndroidManifest.xml',
+  );
+  if (fs.existsSync(generatedManifest)) {
+    const generated = fs.readFileSync(generatedManifest, 'utf8');
+    const headlessService =
+      '<service android:name="top.logge.loggerythm.player.' +
+      'LoggeRythmPlaybackEventHeadlessService" android:exported="false"/>';
+    if (generated.split(headlessService).length - 1 !== 1) {
+      findings.push(
+        'generated AndroidManifest.xml: expected exactly one private data-free Headless service',
+      );
+    }
+  }
+
   return { filesScanned: new Set(files).size, findings };
 }
 
@@ -105,6 +157,11 @@ export function scanExtractedApk(extractedRoot) {
   const files = walkFiles(exactRoot);
   let hasOwnedService = false;
   let hasMedia3ServiceAction = false;
+  let hasPrivateHeadlessService = false;
+  let hasPlaybackJournalWorker = false;
+  let hasWorkManagerSystemJobService = false;
+  let hasBootPermission = false;
+  let hasHeadlessTaskKey = false;
 
   for (const file of files) {
     const relative = normalizedRelative(exactRoot, file);
@@ -119,10 +176,42 @@ export function scanExtractedApk(extractedRoot) {
       'top.logge.loggerythm.player.LoggeRythmMediaLibraryService',
     );
     hasMedia3ServiceAction ||= bufferContains(buffer, 'androidx.media3.session.MediaLibraryService');
+    hasPrivateHeadlessService ||= bufferContains(
+      buffer,
+      'top.logge.loggerythm.player.LoggeRythmPlaybackEventHeadlessService',
+    );
+    hasPlaybackJournalWorker ||= bufferContains(
+      buffer,
+      'top.logge.loggerythm.player.LoggeRythmPlaybackJournalWorker',
+    ) || bufferContains(
+      buffer,
+      'Ltop/logge/loggerythm/player/LoggeRythmPlaybackJournalWorker;',
+    );
+    hasWorkManagerSystemJobService ||= bufferContains(
+      buffer,
+      'androidx.work.impl.background.systemjob.SystemJobService',
+    );
+    hasBootPermission ||= bufferContains(buffer, 'android.permission.RECEIVE_BOOT_COMPLETED');
+    hasHeadlessTaskKey ||= bufferContains(buffer, 'LoggeRythmPlaybackEventDrain');
   }
 
   if (!hasOwnedService) findings.push('APK: first-party MediaLibraryService marker is missing');
   if (!hasMedia3ServiceAction) findings.push('APK: Media3 service action marker is missing');
+  if (!hasPrivateHeadlessService) {
+    findings.push('APK: private playback-event Headless service marker is missing');
+  }
+  if (!hasPlaybackJournalWorker) {
+    findings.push('APK: persisted playback-journal Worker marker is missing');
+  }
+  if (!hasWorkManagerSystemJobService) {
+    findings.push('APK: WorkManager SystemJobService marker is missing');
+  }
+  if (!hasBootPermission) {
+    findings.push('APK: reboot rescheduling permission marker is missing');
+  }
+  if (!hasHeadlessTaskKey) {
+    findings.push('APK: playback-event Headless task key is missing');
+  }
   return { filesScanned: files.length, findings };
 }
 

@@ -581,6 +581,9 @@ class LoggeRythmMediaLibraryService :
       return afterServiceOnlyRestore {
         if (playerCache.isClearing()) throw IllegalStateException("player-cache-clearing")
         if (!persistedCoordinator.isReady()) throw IllegalStateException("player-session-not-ready")
+        if (persistedCoordinator.isQueueMutationBlocked()) {
+          throw IllegalStateException("playback-event-queue-commit-active")
+        }
         if (LoggeRythmControllerPolicy.isSelf(
             controller,
             applicationInfo.uid,
@@ -606,6 +609,9 @@ class LoggeRythmMediaLibraryService :
       return afterServiceOnlyRestore {
         if (playerCache.isClearing()) throw IllegalStateException("player-cache-clearing")
         if (!persistedCoordinator.isReady()) throw IllegalStateException("player-session-not-ready")
+        if (persistedCoordinator.isQueueMutationBlocked()) {
+          throw IllegalStateException("playback-event-queue-commit-active")
+        }
 
         val profile = controllerProfile(mediaSession, controller)
         if (

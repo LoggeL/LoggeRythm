@@ -8,6 +8,8 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import java.net.URI
+import java.util.ArrayDeque
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -39,6 +41,68 @@ internal fun applyServiceOwnedGlobalShuffleCommand(
   if (command !== PlayerCommand.DisableGlobalShuffle) return false
   player.shuffleModeEnabled = false
   return true
+}
+
+/**
+ * One process-local guard for Media3's queue-install callback after encrypted restore.
+ *
+ * A persisted media ID alone is not provenance: the same stable item can later be selected or
+ * replayed legitimately. The guard is therefore armed only while applying a restored timeline,
+ * is bound to that exact queue generation, and is consumed by the first matching
+ * PLAYLIST_CHANGED callback.
+ */
+internal class LoggeRythmRestoredPlayEchoGuard {
+  private var mediaId: String? = null
+  private var queueGeneration = -1L
+
+  fun arm(
+    persistedLastPlayMediaId: String?,
+    restoredActiveMediaId: String?,
+    restoredQueueGeneration: Long,
+  ) {
+    if (
+      persistedLastPlayMediaId != null &&
+      persistedLastPlayMediaId == restoredActiveMediaId
+    ) {
+      mediaId = restoredActiveMediaId
+      queueGeneration = restoredQueueGeneration
+    } else {
+      clear()
+    }
+  }
+
+  fun shouldEnqueue(
+    reason: Int,
+    activeMediaId: String,
+    activeQueueGeneration: Long,
+  ): Boolean {
+    val exactRestoreEcho =
+      reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED &&
+        mediaId == activeMediaId &&
+        queueGeneration == activeQueueGeneration
+    if (
+      reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED ||
+      (mediaId != null && queueGeneration != activeQueueGeneration)
+    ) {
+      clear()
+    }
+    return !exactRestoreEcho
+  }
+
+  fun clear() {
+    mediaId = null
+    queueGeneration = -1L
+  }
+}
+
+internal fun retainedRadioTransition(
+  mutation: LoggeRythmPlaybackEventJournalMutation,
+  context: LoggeRythmPlaybackEventRadioContext,
+): Boolean {
+  val event = mutation.event as? LoggeRythmRadioPlaybackEvent ?: return false
+  return mutation.eventAccepted &&
+    event.activeMediaId == context.activeMediaId &&
+    event.queueGeneration == context.queueGeneration
 }
 
 internal fun LoggeRythmPersistedSleepState?.toPublicSnapshot(
@@ -174,6 +238,63 @@ internal class LoggeRythmRemotePolicyDurability {
     if (value == Long.MAX_VALUE) 1L else value + 1L
 }
 
+private data class LoggeRythmPlaybackJournalOperation(
+  val start: (Long) -> Unit,
+  val cancel: (Throwable) -> Unit,
+)
+
+internal data class LoggeRythmDeferredNormalSave(
+  val ticket: Long,
+  val completion: ((Result<Unit>) -> Unit)?,
+  val failClosedOnTimelineNotReady: Boolean,
+)
+
+/**
+ * Main-thread linearization gate for every two-phase journal write. Normal saves are retained
+ * until the journal candidate has committed, so no later FIFO write can make an aborted candidate
+ * durable. Every candidate is a complete encrypted player snapshot, so structural queue/cache
+ * mutations are blocked across its fsync/rename. Natural playback position/index changes remain
+ * live and are coalesced into the fresh save after commit. RADIO publication uses the same gate
+ * while encrypted state intentionally leads the live Media3 timeline.
+ */
+internal class LoggeRythmJournalQueueCommitGate {
+  private var active = false
+  private var queueMutationBlocked = false
+  private val deferred = ArrayDeque<LoggeRythmDeferredNormalSave>()
+
+  fun isActive(): Boolean = active
+  fun isQueueMutationBlocked(): Boolean = active && queueMutationBlocked
+
+  fun begin(blockQueueMutations: Boolean) {
+    check(!active) { "journal-commit-active" }
+    active = true
+    queueMutationBlocked = blockQueueMutations
+  }
+
+  fun deferIfActive(request: LoggeRythmDeferredNormalSave): Boolean {
+    if (!active) return false
+    deferred.addLast(request)
+    return true
+  }
+
+  fun finishCommitted(): List<LoggeRythmDeferredNormalSave> {
+    check(active) { "journal-commit-inactive" }
+    active = false
+    queueMutationBlocked = false
+    return drain()
+  }
+
+  fun cancel(): List<LoggeRythmDeferredNormalSave> {
+    active = false
+    queueMutationBlocked = false
+    return drain()
+  }
+
+  private fun drain(): List<LoggeRythmDeferredNormalSave> = buildList {
+    while (deferred.isNotEmpty()) add(deferred.removeFirst())
+  }
+}
+
 /**
  * Serializes the two entry points that can establish the persisted account boundary.
  *
@@ -297,6 +418,7 @@ internal interface LoggeRythmPersistedServiceControl {
   )
 
   fun isReady(): Boolean
+  fun isQueueMutationBlocked(): Boolean = false
   fun applyAuxiliaryCommand(command: PlayerCommand): Boolean
   fun onCommandApplied(command: PlayerCommand)
   fun onLiveQueueCleared()
@@ -305,6 +427,37 @@ internal interface LoggeRythmPersistedServiceControl {
     capabilities: Set<RemotePlayerCapability>,
     callback: (Result<Unit>) -> Unit,
   )
+  fun claimPlaybackEvents(
+    maxEvents: Int,
+    leaseMs: Long,
+    callback: (Result<String>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
+  fun ackPlaybackEvent(leaseId: String, eventId: String, callback: (Result<Unit>) -> Unit) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
+  fun retryPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    notBeforeEpochMs: Long,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
+  fun completeRadioPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    completion: LoggeRythmRadioPlaybackCompletionSpec,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
+  fun preparePlaybackJournalWake(
+    callback: (Result<LoggeRythmPlaybackJournalWakeDecision>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
   fun publicState(): LoggeRythmPersistedPublicState
   fun clearPersistedState(callback: (Result<LoggeRythmCacheClearResult>) -> Unit)
 }
@@ -339,6 +492,9 @@ internal object LoggeRythmPersistedServiceBridge {
 
   fun isReady(): Boolean = synchronized(lock) { control }?.isReady() == true
 
+  fun isQueueMutationBlocked(): Boolean =
+    synchronized(lock) { control }?.isQueueMutationBlocked() == true
+
   fun applyAuxiliaryCommand(command: PlayerCommand): Boolean {
     val active = synchronized(lock) { control }
       ?: throw LoggeRythmPersistedPlayerException("player-persistence-unavailable")
@@ -361,6 +517,71 @@ internal object LoggeRythmPersistedServiceBridge {
       callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
     } else {
       active.onBrowseTreeInstalled(callback)
+    }
+  }
+
+  fun claimPlaybackEvents(
+    maxEvents: Int,
+    leaseMs: Long,
+    callback: (Result<String>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.claimPlaybackEvents(maxEvents, leaseMs, callback)
+    }
+  }
+
+  fun ackPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.ackPlaybackEvent(leaseId, eventId, callback)
+    }
+  }
+
+  fun retryPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    notBeforeEpochMs: Long,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.retryPlaybackEvent(leaseId, eventId, notBeforeEpochMs, callback)
+    }
+  }
+
+  fun completeRadioPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    completion: LoggeRythmRadioPlaybackCompletionSpec,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.completeRadioPlaybackEvent(leaseId, eventId, completion, callback)
+    }
+  }
+
+  fun preparePlaybackJournalWake(
+    callback: (Result<LoggeRythmPlaybackJournalWakeDecision>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.preparePlaybackJournalWake(callback)
     }
   }
 
@@ -404,6 +625,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   private val codec = LoggeRythmPersistedStateCodec(protocol)
   private val generation = LoggeRythmPersistedGeneration()
   private val boundaryGate = LoggeRythmPersistedBoundaryGate()
+  private val playbackJournalScheduler = LoggeRythmPlaybackJournalScheduler(appContext)
 
   private var persistence: LoggeRythmEncryptedPersistence? = null
   private var binding: LoggeRythmPersistedSessionBinding? = null
@@ -413,6 +635,23 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   private var contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
   private var sleep: LoggeRythmPersistedSleepState? = null
   private val remotePolicyDurability = LoggeRythmRemotePolicyDurability()
+  private val playbackEventJournal = LoggeRythmPlaybackEventJournal()
+  private var playbackEventsForPersistence: List<LoggeRythmPlaybackEvent> = emptyList()
+  private var lastPlayMediaId: String? = null
+  private val restoredPlayEchoGuard = LoggeRythmRestoredPlayEchoGuard()
+  private var radioDedupeGeneration = -1L
+  private val radioDedupeMediaIds = linkedSetOf<String>()
+  private val playbackJournalOperations = ArrayDeque<LoggeRythmPlaybackJournalOperation>()
+  private val playbackJournalOperationGeneration = LoggeRythmPersistedGeneration()
+  private var playbackJournalOperationActive = false
+  private val journalQueueCommitGate = LoggeRythmJournalQueueCommitGate()
+  /**
+   * True while an externally admitted journal candidate can still win the FIFO encrypted write
+   * even though its main-thread commit callback has not run. `close()` must clear in that window,
+   * otherwise a caller rejected as closed could observe its candidate after process restart.
+   */
+  private var playbackJournalUnsafeDurableWrite = false
+  private var activePlaybackJournalCancellation: ((Throwable) -> Unit)? = null
   private var lastKnownIndex = C.INDEX_UNSET
   private var fadeBaseVolume: Float? = null
   private val pendingClear = LoggeRythmPendingResult<LoggeRythmCacheClearResult>()
@@ -428,11 +667,15 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
   }
   private val sleepRunnable = Runnable { handleTimeSleepTick() }
+  private val playbackJournalWakeRunnable = Runnable { handlePlaybackJournalWake() }
 
   private val listener = object : Player.Listener {
     override fun onEvents(player: Player, events: Player.Events) {
       if (!ready || boundaryActive || closed) return
-      if (events.contains(Player.EVENT_TIMELINE_CHANGED)) normalizeAuxiliaryForTimeline()
+      if (events.contains(Player.EVENT_TIMELINE_CHANGED)) {
+        if (!reconcileRuntimeTimeline()) return
+        normalizeAuxiliaryForTimeline()
+      }
       if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) handleMediaItemSleepAtEnd()
 
       val persistRelevant =
@@ -455,7 +698,12 @@ internal class LoggeRythmPersistedPlayerCoordinator(
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
       if (!ready || boundaryActive || closed) return
+      // Individual transition callbacks can precede the aggregate EVENT_TIMELINE_CHANGED event.
+      // Reconcile synchronously so an Auto/service-only mutation can never receive an old queue
+      // generation in its durable RADIO event.
+      if (!reconcileRuntimeTimeline()) return
       handleMediaItemTransition(reason)
+      enqueuePlaybackEventsForTransition(mediaItem, reason)
       lastKnownIndex = player.currentMediaItemIndex
     }
   }
@@ -645,6 +893,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
 
   override fun isReady(): Boolean = ready && !boundaryActive && !closed
 
+  override fun isQueueMutationBlocked(): Boolean =
+    journalQueueCommitGate.isQueueMutationBlocked()
+
   override fun applyAuxiliaryCommand(command: PlayerCommand): Boolean {
     requireReady()
     if (applyServiceOwnedGlobalShuffleCommand(player, command)) return true
@@ -756,6 +1007,321 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     )
   }
 
+  override fun claimPlaybackEvents(
+    maxEvents: Int,
+    leaseMs: Long,
+    callback: (Result<String>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        prunePlaybackJournal(operationTicket) { pruned ->
+          val result = if (pruned.isFailure) {
+            Result.failure(checkNotNull(pruned.exceptionOrNull()))
+          } else {
+            runCatching {
+              val activeBinding = binding ?: operationFailure("player-session-unbound")
+              playbackEventJournal.claim(activeBinding, maxEvents, leaseMs, nowEpochMs())
+            }
+          }
+          settle(result)
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  override fun ackPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val mutation = try {
+          playbackEventJournal.previewAck(leaseId, eventId, nowEpochMs())
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        persistPlaybackJournalMutation(operationTicket, mutation, lastPlayMediaId) { result ->
+          settle(result)
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  override fun retryPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    notBeforeEpochMs: Long,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val now = nowEpochMs()
+        if (
+          notBeforeEpochMs < now ||
+          notBeforeEpochMs > now + PLAYBACK_EVENT_MAX_RETRY_DELAY_MS
+        ) {
+          settle(failure("retry-time-invalid"))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        val mutation = try {
+          playbackEventJournal.previewRetry(
+            leaseId,
+            eventId,
+            notBeforeEpochMs,
+            now,
+          )
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        persistPlaybackJournalMutation(operationTicket, mutation, lastPlayMediaId) { result ->
+          settle(result)
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  /**
+   * WorkManager entry point. No binding or event data is accepted from the worker: this first
+   * restores the exact account boundary from authenticated ciphertext, durably prunes the native
+   * journal, and only then reports whether the empty-payload Headless drain may run.
+   */
+  override fun preparePlaybackJournalWake(
+    callback: (Result<LoggeRythmPlaybackJournalWakeDecision>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    restoreServiceOnly { restored ->
+      restored.fold(
+        onSuccess = { hasAuthenticatedState ->
+          if (!hasAuthenticatedState) {
+            playbackJournalScheduler.cancel()
+            settle(Result.success(LoggeRythmPlaybackJournalWakeDecision.EMPTY))
+            return@fold
+          }
+          enqueuePlaybackJournalOperation(
+            start = { operationTicket ->
+              prunePlaybackJournal(operationTicket) { pruned ->
+                val decision = if (pruned.isFailure) {
+                  Result.failure(checkNotNull(pruned.exceptionOrNull()))
+                } else {
+                  runCatching {
+                    val now = nowEpochMs()
+                    when (val wakeAt = playbackEventJournal.nextWakeAtMs(now)) {
+                      null -> LoggeRythmPlaybackJournalWakeDecision.EMPTY
+                      else -> if (wakeAt <= now) {
+                        LoggeRythmPlaybackJournalWakeDecision.DISPATCH
+                      } else {
+                        LoggeRythmPlaybackJournalWakeDecision.WAITING
+                      }
+                    }
+                  }
+                }
+                schedulePlaybackJournalWake()
+                settle(decision)
+                finishPlaybackJournalOperation(operationTicket)
+              }
+            },
+            cancel = { error -> settle(Result.failure(error)) },
+          )
+        },
+        onFailure = { error -> settle(Result.failure(error)) },
+      )
+    }
+  }
+
+  override fun completeRadioPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    completion: LoggeRythmRadioPlaybackCompletionSpec,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val mutation = try {
+          playbackEventJournal.previewAck(leaseId, eventId, nowEpochMs())
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        if (!mutation.changed) {
+          settle(Result.success(Unit))
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        val event = mutation.event as? LoggeRythmRadioPlaybackEvent
+        if (
+          event == null ||
+          completion.expectedQueueGeneration != event.queueGeneration ||
+          completion.expectedActiveMediaId != event.activeMediaId
+        ) {
+          playbackEventJournal.abort(mutation)
+          settle(failure("radio-completion-event-mismatch"))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+
+        val activeIndex = player.currentMediaItemIndex
+        val currentMediaId = player.currentMediaItem?.mediaId
+        val currentSource = LoggeRythmPlayerRuntime.queueSources()
+          .firstOrNull { it.id == currentMediaId }
+        val currentSourceIsRadio = try {
+          currentSource != null &&
+            LoggeRythmPlaybackEventJournal.isRadioExtras(currentSource.extrasJson)
+        } catch (_: Exception) {
+          false
+        }
+        val liveEventStillCurrent =
+          LoggeRythmPlayerRuntime.currentQueueGeneration() == event.queueGeneration &&
+            currentMediaId == event.activeMediaId &&
+            activeIndex in 0 until player.mediaItemCount &&
+            currentSourceIsRadio &&
+            player.mediaItemCount - activeIndex <= 2
+        val shouldAppend = liveEventStillCurrent && completion.items.isNotEmpty()
+        if (!shouldAppend) {
+          persistPlaybackJournalMutation(operationTicket, mutation, lastPlayMediaId) { result ->
+            settle(result)
+            schedulePlaybackJournalWake(immediateEligible = false)
+            finishPlaybackJournalOperation(operationTicket)
+          }
+          return@enqueuePlaybackJournalOperation
+        }
+
+        val lifecycleTicket = generation.current()
+        val expectedQueueGeneration = event.queueGeneration
+        val nextQueueGeneration = if (
+          expectedQueueGeneration in 0 until PLAYBACK_EVENT_MAX_SAFE_INTEGER
+        ) {
+          expectedQueueGeneration + 1L
+        } else {
+          playbackEventJournal.abort(mutation)
+          settle(failure("queue-generation-invalid"))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        val candidateState = try {
+          val currentState = captureState()
+          if (currentState.playbackJournalQueueGeneration != expectedQueueGeneration) {
+            operationFailure("radio-completion-generation-mismatch")
+          }
+          currentState.copy(
+            queue = currentState.queue + completion.items.map(PlayerItemSpec::toPersistedQueueItem),
+            playbackEventJournal = mutation.candidateEvents.toList(),
+            lastPlayMediaId = lastPlayMediaId,
+            playbackJournalQueueGeneration = nextQueueGeneration,
+          ).also { candidate ->
+            // Validate origins, cookies, IDs, size budgets, and the complete state schema before
+            // the commit gate is raised or any encrypted byte is replaced.
+            codec.encode(candidate).fill(0)
+          }
+        } catch (_: Exception) {
+          playbackEventJournal.abort(mutation)
+          settle(failure("radio-completion-candidate-invalid"))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+
+        val persistCandidate = {
+          playbackEventsForPersistence = mutation.candidateEvents.toList()
+          playbackJournalUnsafeDurableWrite = true
+          journalQueueCommitGate.begin(blockQueueMutations = true)
+          mainHandler.removeCallbacks(saveRunnable)
+          saveCapturedState(lifecycleTicket, candidateState) { result ->
+            if (result.isFailure) {
+              runCatching { playbackEventJournal.abort(mutation) }
+              if (
+                playbackJournalOperationGeneration.isCurrent(operationTicket) &&
+                isReady()
+              ) {
+                playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+              }
+              settle(
+                Result.failure(
+                  result.exceptionOrNull() ?: operationError("player-persistence-save-failed"),
+                ),
+              )
+              finishPlaybackJournalOperation(operationTicket)
+              return@saveCapturedState
+            }
+
+            try {
+              // The transaction linearizes at the validated pre-save active item. A natural or
+              // requested active-item move during encrypted I/O does not structurally change the
+              // queue, so the accepted tail extension remains valid and a forced fresh save below
+              // preserves the new live index/position without rewinding playback.
+              if (LoggeRythmPlayerRuntime.currentQueueGeneration() != expectedQueueGeneration) {
+                operationFailure("radio-completion-generation-mismatch")
+              }
+              val appended = LoggeRythmPlayerRuntime.appendQueue(completion.items)
+              if (LoggeRythmPlayerRuntime.currentQueueGeneration() != nextQueueGeneration) {
+                operationFailure("radio-completion-generation-mismatch")
+              }
+              player.addMediaItems(appended)
+              if (player.mediaItemCount != candidateState.queue.size) {
+                operationFailure("radio-completion-timeline-mismatch")
+              }
+              playbackEventJournal.commit(mutation)
+              playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+              playbackJournalUnsafeDurableWrite = false
+              flushDeferredNormalSavesAfterJournalCommit(forceSave = true)
+              settle(Result.success(Unit))
+              schedulePlaybackJournalWake(immediateEligible = false)
+              finishPlaybackJournalOperation(operationTicket)
+            } catch (_: Exception) {
+              failClosedAfterDurableJournalPublish(
+                lifecycleTicket,
+                operationError("radio-completion-publish-failed"),
+              )
+              settle(failure("radio-completion-publish-failed"))
+              finishPlaybackJournalOperation(operationTicket)
+            }
+          }
+        }
+        LoggeRythmPlaybackJournalDurableAdmission.admit(
+          candidateNonempty = mutation.candidateEvents.isNotEmpty(),
+          prearm = playbackJournalScheduler::prearm,
+          persist = {
+            if (
+              !playbackJournalOperationGeneration.isCurrent(operationTicket) ||
+              !isReady()
+            ) {
+              runCatching { playbackEventJournal.abort(mutation) }
+              settle(failure("playback-journal-work-commit-stale"))
+              finishPlaybackJournalOperation(operationTicket)
+              return@admit
+            }
+            persistCandidate()
+          },
+          reject = { error ->
+            runCatching { playbackEventJournal.abort(mutation) }
+            settle(Result.failure(error))
+            finishPlaybackJournalOperation(operationTicket)
+          },
+        )
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
   /**
    * Cancels a not-yet-acknowledged command policy and queues the last committed policy behind its
    * already-admitted write on the same FIFO executor. The live policy stays fail-closed until that
@@ -824,6 +1390,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
 
   fun close() {
     if (closed) return
+    val requiresUnsafeDurableClear =
+      remotePolicyDurability.requiresClearOnClose() || playbackJournalUnsafeDurableWrite
+    if (requiresUnsafeDurableClear) playbackJournalScheduler.cancel()
     closed = true
     generation.advance()
     ready = false
@@ -834,9 +1403,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     LoggeRythmPlayerRuntime.clearSessionAndAllData()
     boundaryGate.close()
     pendingClear.close(operationError("player-persistence-closed"))
+    resetPlaybackJournalState(operationError("player-persistence-closed"))
     // Admit the clear behind all earlier saves, then wait before onDestroy can expose a new service
     // instance. Thus a policy rejected with `player-persistence-closed` cannot win a cold restore.
-    val unsafePolicyClear = if (remotePolicyDurability.requiresClearOnClose()) {
+    val unsafePolicyClear = if (requiresUnsafeDurableClear) {
       CountDownLatch(1).also { completed ->
         val completion: (Result<Unit>) -> Unit = { firstAttempt ->
           if (firstAttempt.isFailure) clearRawEncryptedArtifactsSynchronously()
@@ -863,6 +1433,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     ready = false
     boundaryActive = true
     remotePolicyDurability.beginDestructiveBoundary()
+    playbackJournalScheduler.cancel()
     cancelScheduledWork()
     clearLivePlayer(clearSession = false)
     LoggeRythmPlayerRuntime.bindSession(nextBinding)
@@ -928,6 +1499,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         result.fold(
           onSuccess = {
             remotePolicyDurability.markDurableState(null)
+            playbackJournalUnsafeDurableWrite = false
             markReady(ticket, callback)
           },
           onFailure = { failSetup(ticket, it, callback) },
@@ -988,6 +1560,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     lastKnownIndex = player.currentMediaItemIndex
     scheduleSleep()
     updateHeartbeat()
+    schedulePlaybackJournalWake()
     callback(Result.success(Unit))
   }
 
@@ -1011,12 +1584,43 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     sleep = state.sleep
     state.browseTree?.let(LoggeRythmPlayerRuntime::installBrowseTree)
     remotePolicyDurability.markDurableState(state.remoteCapabilities)
+    val normalizedJournal = LoggeRythmPlaybackEventJournal.normalize(
+      state.playbackEventJournal,
+      nowEpochMs(),
+    )
+    val restoredQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration()
+    val restoredActiveMediaId = state.activeIndex?.let { index -> state.queue[index].id }
+    val rebasedJournal = LoggeRythmPlaybackEventJournal.rebaseRestoredRadioEvents(
+      events = normalizedJournal,
+      persistedQueueGeneration = state.playbackJournalQueueGeneration,
+      restoredQueueGeneration = restoredQueueGeneration,
+      restoredActiveMediaId = restoredActiveMediaId,
+      nowMs = nowEpochMs(),
+    )
+    playbackEventJournal.replace(
+      rebasedJournal,
+      nowEpochMs(),
+      invalidateLeases = true,
+    )
+    playbackJournalUnsafeDurableWrite = false
+    playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+    lastPlayMediaId = state.lastPlayMediaId
+    restoredPlayEchoGuard.arm(
+      persistedLastPlayMediaId = state.lastPlayMediaId,
+      restoredActiveMediaId = restoredActiveMediaId,
+      restoredQueueGeneration = restoredQueueGeneration,
+    )
+    radioDedupeGeneration = restoredQueueGeneration
+    radioDedupeMediaIds.clear()
+    rebasedJournal.filterIsInstance<LoggeRythmRadioPlaybackEvent>()
+      .filter { it.queueGeneration == restoredQueueGeneration }
+      .forEach { radioDedupeMediaIds += it.activeMediaId }
     val normalizedExpiredSleep = sleep is LoggeRythmPersistedSleepState.Time &&
       (sleep as LoggeRythmPersistedSleepState.Time).triggerAtEpochMs <= nowEpochMs()
     if (normalizedExpiredSleep) {
       sleep = null
     }
-    return normalizedExpiredSleep
+    return normalizedExpiredSleep || rebasedJournal != state.playbackEventJournal
   }
 
   private fun validateCandidate(
@@ -1045,6 +1649,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         sleep = sleep,
         browseTree = LoggeRythmPlayerRuntime.persistedBrowseTree(),
         remoteCapabilities = remotePolicyDurability.capabilitiesForPersistence(),
+        playbackEventJournal = playbackEventsForPersistence.toList(),
+        lastPlayMediaId = lastPlayMediaId,
+        playbackJournalQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration(),
       )
     }
     val activeIndex = player.currentMediaItemIndex
@@ -1059,6 +1666,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       sleep = sleep,
       browseTree = LoggeRythmPlayerRuntime.persistedBrowseTree(),
       remoteCapabilities = remotePolicyDurability.capabilitiesForPersistence(),
+      playbackEventJournal = playbackEventsForPersistence.toList(),
+      lastPlayMediaId = lastPlayMediaId,
+      playbackJournalQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration(),
     )
   }
 
@@ -1073,6 +1683,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       sleep = null,
       browseTree = null,
       remoteCapabilities = null,
+      playbackEventJournal = emptyList(),
+      lastPlayMediaId = null,
+      playbackJournalQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration(),
     )
 
   private fun requestSave(immediate: Boolean) {
@@ -1095,6 +1708,16 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       completion?.invoke(failure("player-persistence-stale"))
       return
     }
+    if (
+      journalQueueCommitGate.deferIfActive(
+        LoggeRythmDeferredNormalSave(ticket, completion, failClosedOnTimelineNotReady),
+      )
+    ) {
+      // The durable candidate contains a future queue generation while Media3 intentionally still
+      // exposes the old queue. Capturing here would enqueue a later ciphertext rollback. Coalesce
+      // every listener/heartbeat/policy save until publish has made the candidate live.
+      return
+    }
     val state = try {
       captureState()
     } catch (error: LoggeRythmPersistedPlayerException) {
@@ -1109,6 +1732,22 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     } catch (_: Exception) {
       failClosedAfterSave(ticket)
       completion?.invoke(failure("player-persistence-save-failed"))
+      return
+    }
+    saveCapturedState(ticket, state, completion)
+  }
+
+  /**
+   * Writes an already validated main-thread snapshot. Radio completion uses this entry point to
+   * persist its candidate queue before publishing that queue to the runtime sidecars or Media3.
+   */
+  private fun saveCapturedState(
+    ticket: Long,
+    state: LoggeRythmPersistedPlayerState,
+    completion: ((Result<Unit>) -> Unit)?,
+  ) {
+    if (!generation.isCurrent(ticket) || !isReady()) {
+      completion?.invoke(failure("player-persistence-stale"))
       return
     }
     val active = persistence ?: run {
@@ -1137,6 +1776,38 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
   }
 
+  /**
+   * Runs only after a saved journal candidate has committed. Deferred callers share one fresh
+   * capture; RADIO additionally forces it to record index/position changes during candidate I/O.
+   */
+  private fun flushDeferredNormalSavesAfterJournalCommit(forceSave: Boolean) {
+    val requests = journalQueueCommitGate.finishCommitted()
+    if (!forceSave && requests.isEmpty()) return
+    val failClosedOnTimelineNotReady =
+      requests.any(LoggeRythmDeferredNormalSave::failClosedOnTimelineNotReady)
+    saveCurrentState(
+      ticket = generation.current(),
+      completion = { result ->
+        requests.forEach { request ->
+          if (generation.isCurrent(request.ticket) || result.isFailure) {
+            request.completion?.invoke(result)
+          } else {
+            request.completion?.invoke(failure("player-persistence-stale"))
+          }
+        }
+      },
+      failClosedOnTimelineNotReady = failClosedOnTimelineNotReady,
+    )
+  }
+
+  private fun cancelDeferredNormalSaves(cause: Throwable) {
+    journalQueueCommitGate.cancel().forEach { request ->
+      request.completion?.let { completion ->
+        runCatching { completion(Result.failure(cause)) }
+      }
+    }
+  }
+
   private fun failClosedAfterSave(ticket: Long) {
     if (!generation.isCurrent(ticket) || closed) return
     generation.advance()
@@ -1154,6 +1825,32 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
   }
 
+  /**
+   * The encrypted radio-completion candidate is already the source of truth at this point. If
+   * publishing its sidecars or Media3 timeline fails, preserve that ciphertext and force an exact
+   * rebind/restore instead of clearing the committed queue or exposing a split live state.
+   */
+  private fun failClosedAfterDurableJournalPublish(ticket: Long, cause: Throwable) {
+    if (!generation.isCurrent(ticket) || closed) return
+    generation.advance()
+    ready = false
+    boundaryActive = false
+    remotePolicyDurability.beginDestructiveBoundary()
+    cancelScheduledWork()
+    restoreFadeVolume()
+    player.pause()
+    player.stop()
+    player.clearMediaItems()
+    LoggeRythmPlayerRuntime.clearSessionAndAllData()
+    contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
+    sleep = null
+    lastKnownIndex = C.INDEX_UNSET
+    resetPlaybackJournalState(cause)
+    // The candidate itself is durable and accepted; a same-account restore will publish it as one
+    // coherent queue. This flag only represents writes whose callback can still be rejected.
+    playbackJournalUnsafeDurableWrite = false
+  }
+
   private fun failSetup(
     ticket: Long,
     cause: Throwable,
@@ -1163,6 +1860,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     val failure = when (cause) {
       is LoggeRythmPersistedPlayerException -> cause
       is LoggeRythmPersistedStateException -> operationError(cause.code)
+      is LoggeRythmPlaybackEventJournalException -> operationError(cause.code)
       else -> operationError("player-persistence-setup-failed")
     }
     val cleanupTicket = generation.advance()
@@ -1201,7 +1899,11 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         combinedFailure != null -> callback(Result.failure(combinedFailure))
         cleared == null || !cleared.verified ->
           callback(failure("player-cache-clear-unverified"))
-        else -> callback(Result.success(cleared))
+        else -> {
+          playbackJournalUnsafeDurableWrite = false
+          playbackJournalScheduler.cancel()
+          callback(Result.success(cleared))
+        }
       }
     }
 
@@ -1272,6 +1974,246 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
     sleep = null
     lastKnownIndex = C.INDEX_UNSET
+    resetPlaybackJournalState()
+  }
+
+  private fun reconcileRuntimeTimeline(): Boolean = try {
+    val timeline = List(player.mediaItemCount, player::getMediaItemAt)
+    LoggeRythmPlayerRuntime.captureQueue(timeline)
+    true
+  } catch (_: Exception) {
+    failClosedAfterSave(generation.current())
+    false
+  }
+
+  private fun enqueuePlaybackJournalOperation(
+    start: (Long) -> Unit,
+    cancel: (Throwable) -> Unit,
+  ) {
+    if (!isReady()) {
+      cancel(operationError("player-session-not-ready"))
+      return
+    }
+    playbackJournalOperations.addLast(LoggeRythmPlaybackJournalOperation(start, cancel))
+    startNextPlaybackJournalOperation()
+  }
+
+  private fun startNextPlaybackJournalOperation() {
+    if (playbackJournalOperationActive || !isReady()) return
+    val operation = playbackJournalOperations.pollFirst() ?: return
+    val operationTicket = playbackJournalOperationGeneration.advance()
+    playbackJournalOperationActive = true
+    activePlaybackJournalCancellation = operation.cancel
+    try {
+      operation.start(operationTicket)
+    } catch (error: Exception) {
+      operation.cancel(error)
+      finishPlaybackJournalOperation(operationTicket)
+    }
+  }
+
+  private fun finishPlaybackJournalOperation(operationTicket: Long) {
+    if (!playbackJournalOperationGeneration.isCurrent(operationTicket)) return
+    playbackJournalOperationActive = false
+    activePlaybackJournalCancellation = null
+    startNextPlaybackJournalOperation()
+  }
+
+  private fun cancelPlaybackJournalOperations(cause: Throwable) {
+    playbackJournalOperationGeneration.advance()
+    val activeCancellation = activePlaybackJournalCancellation
+    activePlaybackJournalCancellation = null
+    playbackJournalOperationActive = false
+    activeCancellation?.invoke(cause)
+    while (playbackJournalOperations.isNotEmpty()) {
+      playbackJournalOperations.removeFirst().cancel(cause)
+    }
+  }
+
+  private fun <T> oncePlaybackJournalResult(
+    callback: (Result<T>) -> Unit,
+  ): (Result<T>) -> Unit {
+    var settled = false
+    return { result ->
+      if (!settled) {
+        settled = true
+        runCatching { callback(result) }
+      }
+    }
+  }
+
+  private fun persistPlaybackJournalMutation(
+    operationTicket: Long,
+    mutation: LoggeRythmPlaybackEventJournalMutation,
+    candidateLastPlayMediaId: String?,
+    wakePrearmed: Boolean = false,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    if (!playbackJournalOperationGeneration.isCurrent(operationTicket) || !isReady()) {
+      if (mutation.changed) runCatching { playbackEventJournal.abort(mutation) }
+      callback(failure("player-persistence-stale"))
+      return
+    }
+    val previousLastPlayMediaId = lastPlayMediaId
+    val stateChanged = mutation.changed || candidateLastPlayMediaId != previousLastPlayMediaId
+    if (!stateChanged) {
+      callback(Result.success(Unit))
+      return
+    }
+    if (!wakePrearmed && mutation.candidateEvents.isNotEmpty()) {
+      LoggeRythmPlaybackJournalDurableAdmission.admit(
+        candidateNonempty = true,
+        prearm = playbackJournalScheduler::prearm,
+        persist = {
+          if (
+            !playbackJournalOperationGeneration.isCurrent(operationTicket) ||
+            !isReady()
+          ) {
+            if (mutation.changed) runCatching { playbackEventJournal.abort(mutation) }
+            callback(failure("playback-journal-work-commit-stale"))
+            return@admit
+          }
+          persistPlaybackJournalMutation(
+            operationTicket = operationTicket,
+            mutation = mutation,
+            candidateLastPlayMediaId = candidateLastPlayMediaId,
+            wakePrearmed = true,
+            callback = callback,
+          )
+        },
+        reject = { error ->
+          if (mutation.changed) runCatching { playbackEventJournal.abort(mutation) }
+          callback(Result.failure(error))
+        },
+      )
+      return
+    }
+    playbackEventsForPersistence = mutation.candidateEvents.toList()
+    lastPlayMediaId = candidateLastPlayMediaId
+    val lifecycleTicket = generation.current()
+    val candidateState = try {
+      captureState().also { candidate -> codec.encode(candidate).fill(0) }
+    } catch (_: Exception) {
+      if (mutation.changed) runCatching { playbackEventJournal.abort(mutation) }
+      playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+      lastPlayMediaId = previousLastPlayMediaId
+      callback(failure("playback-event-candidate-invalid"))
+      return
+    }
+    playbackJournalUnsafeDurableWrite = true
+    // The candidate is a complete encrypted player snapshot. Structural queue commands must not
+    // race its fsync/rename or a crash could resurrect the candidate's older queue/headers.
+    journalQueueCommitGate.begin(blockQueueMutations = true)
+    mainHandler.removeCallbacks(saveRunnable)
+    saveCapturedState(
+      ticket = lifecycleTicket,
+      state = candidateState,
+      completion = { result ->
+        if (result.isFailure) {
+          if (mutation.changed) runCatching { playbackEventJournal.abort(mutation) }
+          if (playbackJournalOperationGeneration.isCurrent(operationTicket) && isReady()) {
+            playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+            lastPlayMediaId = previousLastPlayMediaId
+            playbackJournalUnsafeDurableWrite = false
+          }
+          if (journalQueueCommitGate.isActive()) {
+            cancelDeferredNormalSaves(
+              result.exceptionOrNull() ?: operationError("player-persistence-save-failed"),
+            )
+          }
+          callback(Result.failure(result.exceptionOrNull() ?: operationError("player-persistence-save-failed")))
+          return@saveCapturedState
+        }
+        try {
+          if (mutation.changed) playbackEventJournal.commit(mutation)
+          playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+          playbackJournalUnsafeDurableWrite = false
+          flushDeferredNormalSavesAfterJournalCommit(forceSave = false)
+          callback(Result.success(Unit))
+        } catch (_: Exception) {
+          failClosedAfterSave(generation.current())
+          callback(failure("playback-event-commit-failed"))
+        }
+      },
+    )
+  }
+
+  private fun prunePlaybackJournal(
+    operationTicket: Long,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val mutation = try {
+      playbackEventJournal.previewPrune(nowEpochMs())
+    } catch (error: Exception) {
+      callback(Result.failure(error))
+      return
+    }
+    persistPlaybackJournalMutation(
+      operationTicket,
+      mutation,
+      lastPlayMediaId,
+      callback = callback,
+    )
+  }
+
+  private fun schedulePlaybackJournalWake(immediateEligible: Boolean = true) {
+    mainHandler.removeCallbacks(playbackJournalWakeRunnable)
+    if (!isReady()) return
+    val now = nowEpochMs()
+    val wakeAt = try {
+      playbackEventJournal.nextWakeAtMs(now)
+    } catch (_: Exception) {
+      return
+    } ?: run {
+      playbackJournalScheduler.cancel()
+      return
+    }
+    val target = if (wakeAt <= now && !immediateEligible) {
+      now + PLAYBACK_EVENT_DISPATCH_RETRY_MS
+    } else {
+      wakeAt
+    }
+    val localDelay = (target - now).coerceAtLeast(0L)
+    val workerRunning = playbackJournalScheduler.isWorkerRunning()
+    val persistentDelay = if (workerRunning && localDelay == 0L) {
+      PLAYBACK_EVENT_DISPATCH_RETRY_MS
+    } else {
+      localDelay
+    }
+    runCatching { playbackJournalScheduler.schedule(persistentDelay) }
+    if (workerRunning) return
+    mainHandler.postDelayed(playbackJournalWakeRunnable, localDelay)
+  }
+
+  private fun handlePlaybackJournalWake() {
+    if (!isReady()) return
+    val now = nowEpochMs()
+    val wakeAt = try {
+      playbackEventJournal.nextWakeAtMs(now)
+    } catch (_: Exception) {
+      return
+    } ?: return
+    if (wakeAt > now) {
+      mainHandler.postDelayed(playbackJournalWakeRunnable, wakeAt - now)
+      return
+    }
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        prunePlaybackJournal(operationTicket) { result ->
+          if (result.isSuccess) {
+            val afterPrune = playbackEventJournal.nextWakeAtMs(nowEpochMs())
+            if (afterPrune != null && afterPrune <= nowEpochMs()) {
+              // Dispatch is never an acknowledgement. A denied background-service start leaves
+              // ciphertext untouched and receives a real Handler retry.
+              LoggeRythmPlaybackEventHeadlessService.tryStart(appContext)
+            }
+          }
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = {},
+    )
   }
 
   private fun normalizeAuxiliaryForTimeline() {
@@ -1354,6 +2296,126 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
   }
 
+  private fun enqueuePlaybackEventsForTransition(mediaItem: MediaItem?, reason: Int) {
+    val activeMediaId = mediaItem?.mediaId ?: return
+    val activeIndex = player.currentMediaItemIndex
+    if (activeIndex !in 0 until player.mediaItemCount) return
+    val source = LoggeRythmPlayerRuntime.queueSources().firstOrNull { it.id == activeMediaId }
+      ?: return
+    val track = playbackEventTrackMetadata(source) ?: return
+    val queueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration()
+    if (radioDedupeGeneration != queueGeneration) {
+      radioDedupeGeneration = queueGeneration
+      radioDedupeMediaIds.clear()
+    }
+    val radioNearTail = try {
+      LoggeRythmPlaybackEventJournal.isRadioExtras(source.extrasJson) &&
+        player.mediaItemCount - activeIndex <= 2 &&
+        activeMediaId !in radioDedupeMediaIds
+    } catch (_: Exception) {
+      false
+    }
+
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        // A delayed PLAYLIST_CHANGED callback can be an echo of the exact item restored from
+        // ciphertext. Every other Media3 transition is a distinct playback occurrence, including
+        // repeat-one and a seek/replay of the same media ID, and receives its own durable UUID.
+        val includePlay = restoredPlayEchoGuard.shouldEnqueue(
+          reason,
+          activeMediaId,
+          queueGeneration,
+        )
+        val radioContext = if (
+          radioNearTail &&
+          LoggeRythmPlayerRuntime.currentQueueGeneration() == queueGeneration &&
+          player.currentMediaItem?.mediaId == activeMediaId
+        ) {
+          LoggeRythmPlaybackEventRadioContext(activeMediaId, queueGeneration)
+        } else {
+          null
+        }
+        val transitionMutation = try {
+          playbackEventJournal.previewEnqueueTransition(
+            track = track,
+            includePlay = includePlay,
+            radioContext = radioContext,
+            nowMs = nowEpochMs(),
+          )
+        } catch (_: Exception) {
+          schedulePlaybackJournalWake()
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        val candidateLastPlayMediaId = if (includePlay) activeMediaId else lastPlayMediaId
+        persistPlaybackJournalMutation(
+          operationTicket,
+          transitionMutation,
+          candidateLastPlayMediaId,
+        ) { result ->
+          if (
+            result.isSuccess &&
+            radioContext != null &&
+            retainedRadioTransition(transitionMutation, radioContext)
+          ) {
+            radioDedupeMediaIds += activeMediaId
+          }
+          // A background dispatch is admitted only after the one encrypted transaction contains
+          // PLAY, RADIO, and the restore-echo guard together.
+          schedulePlaybackJournalWake()
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = {},
+    )
+  }
+
+  /**
+   * Queue commands retain the full first-party Track in extras. Service-only browse selections
+   * deliberately do not, so their safe projection derives only the numeric backend ID and public
+   * display fields. Neither path can place a URL, Cookie, header, error, or diagnostic in journal
+   * metadata.
+   */
+  private fun playbackEventTrackMetadata(
+    source: PlayerItemSpec,
+  ): LoggeRythmPlaybackEventTrackMetadata? {
+    try {
+      return LoggeRythmPlaybackEventJournal.trackMetadataFromExtras(source.extrasJson)
+    } catch (_: LoggeRythmPlaybackEventJournalException) {
+      // Continue with the explicit service-only public projection below.
+    }
+    val trackId = playbackTrackIdFromSource(source) ?: return null
+    val artist = source.artist.orEmpty()
+    return LoggeRythmPlaybackEventTrackMetadata(
+      id = trackId,
+      title = source.title.orEmpty(),
+      artist = artist,
+      artistId = "",
+      artists = if (artist.isEmpty()) {
+        emptyList()
+      } else {
+        listOf(LoggeRythmPlaybackEventArtist(id = "", name = artist))
+      },
+      album = source.album.orEmpty(),
+      albumId = "",
+      durationSec = (source.durationMs ?: 0L) / 1_000L,
+      rank = 0L,
+      releaseDate = "",
+    )
+  }
+
+  private fun playbackTrackIdFromSource(source: PlayerItemSpec): String? {
+    val mediaIdCandidate = source.id.substringAfterLast(':')
+    if (PLAYBACK_TRACK_ID.matches(mediaIdCandidate)) return mediaIdCandidate
+    val path = try {
+      URI(source.url).path
+    } catch (_: Exception) {
+      null
+    } ?: return null
+    val match = PLAYBACK_TRACK_STREAM_PATH.matchEntire(path) ?: return null
+    return match.groupValues[1]
+  }
+
   private fun handleMediaItemSleepAtEnd() {
     val active = sleep as? LoggeRythmPersistedSleepState.MediaItem ?: return
     if (player.playbackState == Player.STATE_ENDED && player.currentMediaItemIndex == active.targetIndex) {
@@ -1374,7 +2436,22 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     mainHandler.removeCallbacks(saveRunnable)
     mainHandler.removeCallbacks(heartbeatRunnable)
     mainHandler.removeCallbacks(sleepRunnable)
+    mainHandler.removeCallbacks(playbackJournalWakeRunnable)
     restoreFadeVolume()
+  }
+
+  private fun resetPlaybackJournalState(
+    cause: Throwable = operationError("playback-event-journal-reset"),
+  ) {
+    cancelPlaybackJournalOperations(cause)
+    cancelDeferredNormalSaves(cause)
+    playbackEventJournal.clear()
+    playbackEventsForPersistence = emptyList()
+    lastPlayMediaId = null
+    restoredPlayEchoGuard.clear()
+    radioDedupeGeneration = -1L
+    radioDedupeMediaIds.clear()
+    mainHandler.removeCallbacks(playbackJournalWakeRunnable)
   }
 
   private fun createPersistence(
@@ -1426,5 +2503,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     private const val SAVE_DEBOUNCE_MS = 300L
     private const val POSITION_HEARTBEAT_MS = 15_000L
     private const val SLEEP_FADE_TICK_MS = 250L
+    private const val PLAYBACK_EVENT_DISPATCH_RETRY_MS = 5_000L
+    private const val PLAYBACK_EVENT_MAX_RETRY_DELAY_MS = 5L * 60L * 1_000L
+    private const val PLAYBACK_EVENT_MAX_SAFE_INTEGER = 9_007_199_254_740_991L
+    private val PLAYBACK_TRACK_ID = Regex("[0-9]{1,32}")
+    private val PLAYBACK_TRACK_STREAM_PATH = Regex("/api/tracks/([0-9]{1,32})/stream")
   }
 }

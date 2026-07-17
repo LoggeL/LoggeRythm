@@ -64,6 +64,9 @@ class LoggeRythmPersistedStateTest {
       .apply {
         remove("browseTree")
         remove("remoteCapabilities")
+        remove("playbackEventJournal")
+        remove("lastPlayMediaId")
+        remove("playbackJournalQueueGeneration")
       }
       .toString()
       .toByteArray(StandardCharsets.UTF_8)
@@ -71,6 +74,26 @@ class LoggeRythmPersistedStateTest {
 
     assertEquals(expected, codec.decode(legacy, binding))
     assertEquals(expected, codec.decodeAuthenticatedSelfBound(legacy))
+  }
+
+  @Test
+  fun migratesSchemaV2WithoutInventingPlaybackEventsOrLastTrack() {
+    val state = sampleState()
+    val previous = JSONObject(String(codec.encode(state), StandardCharsets.UTF_8))
+      .put("version", 2)
+      .apply {
+        remove("playbackEventJournal")
+        remove("lastPlayMediaId")
+        remove("playbackJournalQueueGeneration")
+      }
+      .toString()
+      .toByteArray(StandardCharsets.UTF_8)
+
+    val restored = codec.decode(previous, binding)
+
+    assertEquals(emptyList<LoggeRythmPlaybackEvent>(), restored.playbackEventJournal)
+    assertEquals(null, restored.lastPlayMediaId)
+    assertEquals(state.copy(playbackEventJournal = emptyList(), lastPlayMediaId = null), restored)
   }
 
   @Test
@@ -258,6 +281,30 @@ class LoggeRythmPersistedStateTest {
       contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
     )
     assertEquals("https://cdn.example/one", codec.decode(codec.encode(unauthenticatedCdn), binding).queue.single().url)
+  }
+
+  @Test
+  fun roundTripAllowsSharedQueueUrlOnlyWhenCookieVaultValueIsIdentical() {
+    val first = sampleItem("one", 0)
+    val sameUrlAndCookie = sampleItem("two", 1).copy(
+      url = first.url,
+      cookie = first.cookie,
+    )
+    val shared = sampleState().copy(
+      queue = listOf(first, sameUrlAndCookie),
+      activeIndex = 0,
+      contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
+    )
+
+    assertEquals(shared, codec.decode(codec.encode(shared), binding))
+
+    val conflicting = shared.copy(
+      queue = listOf(first, sameUrlAndCookie.copy(cookie = "sf_session=other")),
+    )
+    assertCode("queue-header-url-conflict") { codec.encode(conflicting) }
+    assertCode("queue-header-url-conflict") {
+      codec.encode(conflicting.copy(queue = listOf(first, sameUrlAndCookie.copy(cookie = null))))
+    }
   }
 
   @Test

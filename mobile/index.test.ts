@@ -30,6 +30,11 @@ describe('mobile entry point', () => {
     const provider = mocks.registerHeadlessTask.mock.calls[0]?.[1] as () => () => Promise<void>;
     await provider()();
     expect(mocks.drainDurablePlaybackEvents).toHaveBeenCalledOnce();
+    mocks.drainDurablePlaybackEvents.mockRejectedValueOnce(
+      new Error('private headless diagnostic'),
+    );
+    await expect(provider()()).resolves.toBeUndefined();
+    expect(mocks.drainDurablePlaybackEvents).toHaveBeenCalledTimes(2);
     expect(mocks.registerBackgroundEventHandler).toHaveBeenCalledOnce();
     expect(mocks.registerRootComponent).toHaveBeenCalledOnce();
     expect(mocks.registerHeadlessTask.mock.invocationCallOrder[0]).toBeLessThan(

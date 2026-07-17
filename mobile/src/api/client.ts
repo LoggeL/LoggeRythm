@@ -19,7 +19,118 @@ let loaded = false;
 let sessionLoad: Promise<void> | null = null;
 let sessionRevision = 0;
 let sessionMutation: Promise<void> = Promise.resolve();
-const invalidationListeners = new Set<() => void>();
+
+declare const authenticatedRequestAuthorityBrand: unique symbol;
+declare const sessionInvalidationAuthorityBrand: unique symbol;
+
+/**
+ * Process-local proof that a request is still using the exact authenticated
+ * session captured by its caller. It deliberately has no enumerable state and
+ * cannot be persisted or reconstructed outside this module.
+ */
+export interface AuthenticatedRequestAuthority {
+  readonly [authenticatedRequestAuthorityBrand]: true;
+}
+
+/**
+ * Process-local proof that one exact session generation was authoritatively
+ * invalidated. UI and Headless JS receive the same object and therefore share
+ * one cleanup boundary without exposing a token, cookie, or numeric revision.
+ */
+export interface SessionInvalidationAuthority {
+  readonly [sessionInvalidationAuthorityBrand]: true;
+}
+
+interface SessionAuthorityRecord {
+  readonly revision: number;
+  readonly storedSession: StoredSession | null;
+}
+
+interface SessionInvalidationRecord {
+  readonly authority: SessionInvalidationAuthority;
+  readonly cleanupComplete: Promise<void>;
+  resolveCleanup(): void;
+  cleanupInFlight: Promise<void> | null;
+}
+
+let currentSessionAuthority: SessionAuthorityRecord | null = null;
+let pendingSessionInvalidation: SessionInvalidationRecord | null = null;
+const authenticatedRequestAuthorities =
+  new WeakMap<object, Readonly<SessionAuthorityRecord>>();
+const sessionInvalidationAuthorities =
+  new WeakMap<object, SessionInvalidationRecord>();
+const apiErrorInvalidationAuthorities =
+  new WeakMap<ApiError, SessionInvalidationAuthority>();
+const invalidationListeners =
+  new Set<(authority: SessionInvalidationAuthority) => void>();
+
+export class AuthenticatedRequestAuthorityError extends Error {
+  constructor() {
+    super('Authenticated request authority is no longer current');
+    this.name = 'AuthenticatedRequestAuthorityError';
+  }
+}
+
+function rotateSessionAuthority(): Readonly<SessionAuthorityRecord> {
+  sessionRevision += 1;
+  const authority = Object.freeze({
+    revision: sessionRevision,
+    storedSession: session,
+  });
+  currentSessionAuthority = authority;
+  return authority;
+}
+
+function requireCurrentSessionAuthority(): Readonly<SessionAuthorityRecord> {
+  if (currentSessionAuthority === null) {
+    throw new Error('Session authority is unavailable before initial load');
+  }
+  return currentSessionAuthority;
+}
+
+function createAuthenticatedRequestAuthority(
+  authority: Readonly<SessionAuthorityRecord>,
+): AuthenticatedRequestAuthority {
+  const guard = Object.freeze({}) as AuthenticatedRequestAuthority;
+  authenticatedRequestAuthorities.set(guard, authority);
+  return guard;
+}
+
+function resolveAuthenticatedRequestAuthority(
+  guard: AuthenticatedRequestAuthority,
+): Readonly<SessionAuthorityRecord> {
+  const authority = authenticatedRequestAuthorities.get(guard);
+  if (
+    authority === undefined
+    || authority !== currentSessionAuthority
+    || authority.storedSession === null
+  ) {
+    throw new AuthenticatedRequestAuthorityError();
+  }
+  return authority;
+}
+
+function newSessionInvalidationAuthority(): SessionInvalidationRecord {
+  let resolveCleanup!: () => void;
+  const cleanupComplete = new Promise<void>((resolve) => {
+    resolveCleanup = resolve;
+  });
+  const authority = Object.freeze({}) as SessionInvalidationAuthority;
+  const record: SessionInvalidationRecord = {
+    authority,
+    cleanupComplete,
+    resolveCleanup,
+    cleanupInFlight: null,
+  };
+  sessionInvalidationAuthorities.set(authority, record);
+  pendingSessionInvalidation = record;
+  return record;
+}
+
+async function waitForPendingSessionInvalidation(): Promise<void> {
+  const pending = pendingSessionInvalidation;
+  if (pending !== null) await pending.cleanupComplete;
+}
 
 function mutateSession<T>(operation: () => Promise<T>): Promise<T> {
   const result = sessionMutation.then(operation, operation);
@@ -39,7 +150,7 @@ async function loadSession(): Promise<void> {
       await AsyncStorage.removeItem(LEGACY_SESSION_KEY);
     }
     loaded = true;
-    sessionRevision += 1;
+    rotateSessionAuthority();
     return;
   }
 
@@ -61,7 +172,7 @@ async function loadSession(): Promise<void> {
     session = migrated;
   }
   loaded = true;
-  sessionRevision += 1;
+  rotateSessionAuthority();
 }
 
 async function ensureLoaded(): Promise<void> {
@@ -76,14 +187,18 @@ async function ensureLoaded(): Promise<void> {
 
 async function storeSession(
   next: StoredSession,
-  expectedRevision: number,
+  expectedAuthority: Readonly<SessionAuthorityRecord>,
 ): Promise<boolean> {
+  // An authoritative invalidation reserves the account boundary before its
+  // listeners run. A replacement credential cannot commit until player,
+  // offline identity, and on-disk session cleanup have all succeeded.
+  await waitForPendingSessionInvalidation();
   return mutateSession(async () => {
-    if (expectedRevision !== sessionRevision) return false;
+    if (expectedAuthority !== currentSessionAuthority) return false;
     await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
     session = next;
     loaded = true;
-    sessionRevision += 1;
+    rotateSessionAuthority();
     return true;
   });
 }
@@ -110,9 +225,23 @@ export async function hasSession(): Promise<boolean> {
   return session !== null;
 }
 
-async function removeSession(expectedRevision?: number): Promise<boolean> {
+interface SessionRemovalResult {
+  readonly removed: boolean;
+  readonly deletionError?: unknown;
+  readonly invalidationAuthority?: SessionInvalidationAuthority;
+}
+
+async function removeSession(
+  expectedAuthority?: Readonly<SessionAuthorityRecord>,
+  reserveInvalidationCleanup = false,
+): Promise<SessionRemovalResult> {
   return mutateSession(async () => {
-    if (expectedRevision !== undefined && expectedRevision !== sessionRevision) return false;
+    if (
+      expectedAuthority !== undefined
+      && expectedAuthority !== currentSessionAuthority
+    ) {
+      return { removed: false };
+    }
     let deletionError: unknown;
     try {
       await deleteStoredSession();
@@ -121,14 +250,21 @@ async function removeSession(expectedRevision?: number): Promise<boolean> {
     }
     session = null;
     loaded = true;
-    sessionRevision += 1;
-    if (deletionError !== undefined) throw deletionError;
-    return true;
+    rotateSessionAuthority();
+    const invalidationAuthority = reserveInvalidationCleanup
+      ? newSessionInvalidationAuthority().authority
+      : undefined;
+    return {
+      removed: true,
+      ...(deletionError === undefined ? {} : { deletionError }),
+      ...(invalidationAuthority === undefined ? {} : { invalidationAuthority }),
+    };
   });
 }
 
 export async function clearSession(): Promise<void> {
-  await removeSession();
+  const result = await removeSession();
+  if (result.deletionError !== undefined) throw result.deletionError;
 }
 
 /**
@@ -142,24 +278,29 @@ export async function retryInvalidatedSessionCleanup(): Promise<void> {
   });
 }
 
-export function onSessionInvalidated(listener: () => void): () => void {
+export function onSessionInvalidated(
+  listener: (authority: SessionInvalidationAuthority) => void,
+): () => void {
   invalidationListeners.add(listener);
   return () => invalidationListeners.delete(listener);
 }
 
-async function invalidateSession(expectedRevision: number): Promise<void> {
-  let invalidated = false;
-  let removalError: unknown;
-  try {
-    invalidated = await removeSession(expectedRevision);
-  } catch (error) {
-    invalidated = true;
-    removalError = error;
+async function invalidateSession(
+  expectedAuthority: Readonly<SessionAuthorityRecord>,
+): Promise<SessionInvalidationAuthority | null> {
+  const result = await removeSession(expectedAuthority, true);
+  const authority = result.invalidationAuthority ?? null;
+  if (result.removed && authority !== null) {
+    for (const listener of invalidationListeners) {
+      try {
+        listener(authority);
+      } catch {
+        // One mounted consumer must not prevent Headless JS or another listener
+        // from receiving the same opaque cleanup authority.
+      }
+    }
   }
-  if (invalidated) {
-    for (const listener of invalidationListeners) listener();
-  }
-  if (removalError) throw removalError;
+  return authority;
 }
 
 export class ApiError extends Error {
@@ -174,6 +315,67 @@ export class ApiError extends Error {
   }
 }
 
+export function authoritativeSessionInvalidationFor(
+  error: unknown,
+): SessionInvalidationAuthority | null {
+  return error instanceof ApiError
+    ? apiErrorInvalidationAuthorities.get(error) ?? null
+    : null;
+}
+
+export function isAuthenticatedRequestAuthorityError(
+  error: unknown,
+): error is AuthenticatedRequestAuthorityError {
+  return error instanceof AuthenticatedRequestAuthorityError;
+}
+
+export async function captureAuthenticatedRequestAuthority():
+Promise<AuthenticatedRequestAuthority> {
+  await ensureLoaded();
+  const authority = requireCurrentSessionAuthority();
+  if (authority.storedSession === null) {
+    throw new AuthenticatedRequestAuthorityError();
+  }
+  return createAuthenticatedRequestAuthority(authority);
+}
+
+export function pendingInvalidationAuthority(): SessionInvalidationAuthority | null {
+  return pendingSessionInvalidation?.authority ?? null;
+}
+
+/**
+ * Execute an authority cleanup only while its exact invalidation is pending.
+ * Successful completion releases waiting session commits; failures retain the
+ * opaque authority so the same boundary can be retried without admitting a new
+ * credential over partially erased account state.
+ */
+export function runWithSessionInvalidationAuthority(
+  authority: SessionInvalidationAuthority,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const record = sessionInvalidationAuthorities.get(authority);
+  if (record === undefined || record !== pendingSessionInvalidation) {
+    return Promise.resolve();
+  }
+  if (record.cleanupInFlight !== null) return record.cleanupInFlight;
+  const attempt = operation();
+  record.cleanupInFlight = attempt;
+  const releaseAttempt = (): void => {
+    if (record.cleanupInFlight === attempt) record.cleanupInFlight = null;
+  };
+  void attempt.then(
+    () => {
+      releaseAttempt();
+      if (pendingSessionInvalidation === record) {
+        pendingSessionInvalidation = null;
+        record.resolveCleanup();
+      }
+    },
+    releaseAttempt,
+  );
+  return attempt;
+}
+
 interface RequestOptions<T> {
   method?: 'DELETE' | 'GET' | 'HEAD' | 'OPTIONS' | 'PATCH' | 'POST' | 'PUT' | 'TRACE';
   body?: unknown;
@@ -186,6 +388,8 @@ interface RequestOptions<T> {
   successStatuses?: readonly number[];
   /** Canonical UUID used by replay-safe mutation endpoints. */
   idempotencyKey?: string;
+  /** Bind this request to one exact process-local authenticated session. */
+  authenticatedRequestAuthority?: AuthenticatedRequestAuthority;
   timeoutMs?: number;
   decode?: (value: unknown) => T;
 }
@@ -214,8 +418,10 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
   if (opts.idempotencyKey !== undefined) {
     headers['Idempotency-Key'] = opts.idempotencyKey;
   }
-  const requestSession = session;
-  const requestSessionRevision = sessionRevision;
+  const requestAuthority = opts.authenticatedRequestAuthority === undefined
+    ? requireCurrentSessionAuthority()
+    : resolveAuthenticatedRequestAuthority(opts.authenticatedRequestAuthority);
+  const requestSession = requestAuthority.storedSession;
   if (!opts.noAuth && requestSession !== null) {
     headers.Cookie = sessionCookieHeader(requestSession, url);
   }
@@ -256,12 +462,19 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
 
   const text = await res.text();
   if (!res.ok) {
-    if (res.status === 401 && !opts.noAuth) await invalidateSession(requestSessionRevision);
-    throw new ApiError(
+    let invalidationAuthority: SessionInvalidationAuthority | null = null;
+    if (res.status === 401 && !opts.noAuth && requestSession !== null) {
+      invalidationAuthority = await invalidateSession(requestAuthority);
+    }
+    const error = new ApiError(
       res.status,
       text,
       `${method} ${path} returned ${res.status}: ${errorDetail(text, res.statusText)}`,
     );
+    if (invalidationAuthority !== null) {
+      apiErrorInvalidationAuthorities.set(error, invalidationAuthority);
+    }
+    throw error;
   }
 
   if (opts.successStatuses !== undefined && !opts.successStatuses.includes(res.status)) {
@@ -313,7 +526,7 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
     } catch (error) {
       throw new ApiError(res.status, text, (error as Error).message);
     }
-    if (!(await storeSession(next, requestSessionRevision))) {
+    if (!(await storeSession(next, requestAuthority))) {
       throw new Error('Authentication response was invalidated by a newer session transition');
     }
   }
@@ -333,9 +546,17 @@ export async function streamSource(deezerId: DeezerId): Promise<{
   return { uri, headers: { Cookie: sessionCookieHeader(session, uri) } };
 }
 
-export async function authenticatedHeadersFor(url: string): Promise<Record<string, string>> {
+export async function authenticatedHeadersFor(
+  url: string,
+  authority?: AuthenticatedRequestAuthority,
+): Promise<Record<string, string>> {
   await ensureApiCompatibility(new URL(url).origin);
   await ensureLoaded();
-  if (session === null) throw new Error(`Cannot authenticate ${url}: no local session`);
-  return { Cookie: sessionCookieHeader(session, url) };
+  const exactAuthority = authority === undefined
+    ? requireCurrentSessionAuthority()
+    : resolveAuthenticatedRequestAuthority(authority);
+  if (exactAuthority.storedSession === null) {
+    throw new Error(`Cannot authenticate ${url}: no local session`);
+  }
+  return { Cookie: sessionCookieHeader(exactAuthority.storedSession, url) };
 }

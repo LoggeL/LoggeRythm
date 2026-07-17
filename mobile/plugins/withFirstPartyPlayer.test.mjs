@@ -93,6 +93,32 @@ describe('withFirstPartyPlayer app integration', () => {
     ]));
   });
 
+  it('declares the playback-event Headless JS service nonexported and idempotently', () => {
+    const manifest = createManifest();
+    manifest.application[0].service.push({
+      $: {
+        'android:name': plugin.PLAYBACK_EVENT_HEADLESS_SERVICE_NAME,
+        'android:exported': 'true',
+        'android:permission': 'example.stale.PERMISSION',
+      },
+      'intent-filter': [{ action: [{ $: { 'android:name': 'example.stale.ACTION' } }] }],
+    });
+    plugin.configureManifestObject(manifest);
+    const once = JSON.stringify(manifest);
+    plugin.configureManifestObject(manifest);
+    expect(JSON.stringify(manifest)).toBe(once);
+
+    const services = manifest.application[0].service.filter((service) =>
+      service.$['android:name'] === plugin.PLAYBACK_EVENT_HEADLESS_SERVICE_NAME);
+    expect(services).toEqual([{
+      $: {
+        'android:name':
+          'top.logge.loggerythm.player.LoggeRythmPlaybackEventHeadlessService',
+        'android:exported': 'false',
+      },
+    }]);
+  });
+
   it('keeps the deliberate Android Auto voice-search lint policy idempotent', () => {
     const once = plugin.transformAutoLint('android { }\n');
     expect(plugin.transformAutoLint(once)).toBe(once);
@@ -140,6 +166,7 @@ describe('withFirstPartyPlayer app integration', () => {
 
 describe('loggerythm-player Android library contract', () => {
   const buildGradle = readModuleFile('android', 'build.gradle');
+  const consumerRules = readModuleFile('android', 'consumer-rules.pro');
   const manifest = readModuleFile('android', 'src', 'main', 'AndroidManifest.xml');
   const javaRoot = path.join(
     moduleRoot,
@@ -169,12 +196,88 @@ describe('loggerythm-player Android library contract', () => {
     expect(plugin.transformAutoLint('android { }')).not.toContain('androidx.media3:');
   });
 
+  it('uses one opaque reboot-persistent WorkManager signal for the native journal', () => {
+    const scheduler = fs.readFileSync(
+      path.join(javaRoot, 'LoggeRythmPlaybackJournalWork.kt'),
+      'utf8',
+    );
+    const coordinator = fs.readFileSync(
+      path.join(javaRoot, 'LoggeRythmPersistedPlayerCoordinator.kt'),
+      'utf8',
+    );
+    expect(buildGradle).toContain('def workManagerVersion = "2.11.2"');
+    expect(buildGradle).toContain(
+      'androidx.work:work-runtime:$workManagerVersion',
+    );
+    expect(manifest).toContain(
+      'android.permission.RECEIVE_BOOT_COMPLETED',
+    );
+    expect(manifest).toMatch(
+      /android:name="androidx\.work\.impl\.diagnostics\.DiagnosticsReceiver"\s+tools:node="remove"/,
+    );
+    expect(scheduler).toContain('enqueueUniqueWork(');
+    expect(scheduler).toContain('ExistingWorkPolicy.REPLACE');
+    expect(scheduler).toContain('PLAYBACK_JOURNAL_MAY_BE_NONEMPTY_A');
+    expect(scheduler).toContain('PLAYBACK_JOURNAL_MAY_BE_NONEMPTY_B');
+    expect(scheduler).toContain('val result = operation.result');
+    expect(scheduler).toContain('LoggeRythmPlaybackJournalDurableAdmission');
+    expect(scheduler).toContain('private const val TASK_RUNNER_TIMEOUT_MS = 55_000L');
+    expect(scheduler).toContain('Context.BIND_AUTO_CREATE');
+    expect(scheduler).toContain('preparePlaybackJournalWake');
+    expect(scheduler).not.toContain('setInputData(');
+    expect(scheduler).not.toContain('Data.Builder');
+    expect(scheduler).not.toContain('startService(');
+    expect(scheduler).not.toContain('startForegroundService(');
+    expect(scheduler).toMatch(
+      /LoggeRythmPlaybackJournalWakeDecision\.EMPTY\s*->\s*Result\.success\(\)/,
+    );
+    expect(scheduler).not.toMatch(
+      /LoggeRythmPlaybackJournalWakeDecision\.EMPTY[\s\S]{0,160}scheduler\.cancel\(\)/,
+    );
+    expect(coordinator).toMatch(
+      /workerRunning && localDelay == 0L[\s\S]{0,120}PLAYBACK_EVENT_DISPATCH_RETRY_MS/,
+    );
+    expect(coordinator).toMatch(
+      /LoggeRythmPlaybackJournalDurableAdmission\.admit\([\s\S]{0,240}playbackJournalScheduler::prearm/,
+    );
+    expect(manifest).not.toContain('LoggeRythmPlaybackJournalWorker');
+    expect(consumerRules).toMatch(
+      /-keep class top\.logge\.loggerythm\.player\.LoggeRythmPlaybackJournalWorker \{\s*public <init>\(android\.content\.Context, androidx\.work\.WorkerParameters\);\s*\}/,
+    );
+  });
+
   it('owns the exported service declaration and both browser actions', () => {
     expect(manifest).toContain('android:name=".LoggeRythmMediaLibraryService"');
     expect(manifest).toContain('android:exported="true"');
     expect(manifest).toContain('android:foregroundServiceType="mediaPlayback"');
     expect(manifest).toContain('androidx.media3.session.MediaLibraryService');
     expect(manifest).toContain('android.media.browse.MediaBrowserService');
+  });
+
+  it('keeps the Headless JS drain shell private, data-free, and task-key aligned', () => {
+    const service = fs.readFileSync(
+      path.join(javaRoot, 'LoggeRythmPlaybackEventHeadlessService.kt'),
+      'utf8',
+    );
+    const journal = fs.readFileSync(
+      path.join(here, '..', 'src', 'player', 'playbackEventJournal.ts'),
+      'utf8',
+    );
+    expect(manifest).toContain(
+      'android:name=".LoggeRythmPlaybackEventHeadlessService"',
+    );
+    expect(manifest).toMatch(
+      /android:name="\.LoggeRythmPlaybackEventHeadlessService"\s+android:exported="false"/,
+    );
+    expect(service).toContain('internal const val TASK_KEY = "LoggeRythmPlaybackEventDrain"');
+    expect(journal).toContain(
+      "PLAYBACK_EVENT_HEADLESS_TASK = 'LoggeRythmPlaybackEventDrain'",
+    );
+    expect(service).toContain('Arguments.createMap()');
+    expect(service).toMatch(/TASK_TIMEOUT_MS,\s+true,/);
+    expect(service).not.toContain('Arguments.fromBundle');
+    expect(service).not.toContain('intent?.extras');
+    expect(service).not.toContain('putString(');
   });
 
   it('exposes an async JSON bridge with no synchronous React methods or header events', () => {
@@ -192,6 +295,13 @@ describe('loggerythm-player Android library contract', () => {
     expect(source).not.toContain('putMap("headers"');
     expect(source).not.toContain('putString("Cookie"');
     expect(source).not.toContain('Log.');
+  });
+
+  it('rejects a destructive cache clear while a durable radio queue commit is active', () => {
+    const source = playerModule();
+    expect(source).toMatch(
+      /fun clearCache\(promise: Promise\)[\s\S]*?isQueueMutationBlocked\(\)[\s\S]*?playback-event-queue-commit-active[\s\S]*?cleanupInProgress\.compareAndSet/,
+    );
   });
 
   it('freezes the v1 authoritative snapshot field names', () => {

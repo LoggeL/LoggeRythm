@@ -143,12 +143,21 @@ internal data class LoggeRythmPersistedPlayerState(
   val browseTree: BrowseTreeSpec? = null,
   /** `null` means the service command policy had not been configured yet. */
   val remoteCapabilities: Set<RemotePlayerCapability>? = null,
+  /** URL-, credential-, and diagnostic-free bookkeeping events inside encrypted state only. */
+  val playbackEventJournal: List<LoggeRythmPlaybackEvent> = emptyList(),
+  /** Restore-echo guard only; distinct repeat/seek occurrences may reuse this safe media ID. */
+  val lastPlayMediaId: String? = null,
+  /** Monotonic native timeline identity used by durable RADIO compare-and-append. */
+  val playbackJournalQueueGeneration: Long = 0L,
 ) {
   override fun toString(): String =
     "LoggeRythmPersistedPlayerState(sessionBinding=<redacted>, queue=<redacted:${queue.size}>, " +
       "activeIndex=$activeIndex, positionMs=$positionMs, repeatMode=$repeatMode, " +
       "contextShuffle=$contextShuffle, sleep=$sleep, browseTree=<redacted>, " +
-      "remoteCapabilities=<public:${remoteCapabilities?.size ?: 0}>)"
+      "remoteCapabilities=<public:${remoteCapabilities?.size ?: 0}>, " +
+      "playbackEventJournal=<redacted:${playbackEventJournal.size}>, " +
+      "lastPlayMediaId=<redacted>, " +
+      "playbackJournalQueueGeneration=$playbackJournalQueueGeneration)"
 }
 
 /**
@@ -177,6 +186,12 @@ internal class LoggeRythmPersistedStateCodec(
       .put("sleep", sleepJson(normalized.sleep))
       .put("browseTree", browseTreeJson(normalized.browseTree))
       .put("remoteCapabilities", remoteCapabilitiesJson(normalized.remoteCapabilities))
+      .put(
+        "playbackEventJournal",
+        LoggeRythmPlaybackEventJournal.encodePersistedEvents(normalized.playbackEventJournal),
+      )
+      .put("lastPlayMediaId", normalized.lastPlayMediaId ?: JSONObject.NULL)
+      .put("playbackJournalQueueGeneration", normalized.playbackJournalQueueGeneration)
     val encoded = root.toString().toByteArray(StandardCharsets.UTF_8)
     if (encoded.size > MAX_STATE_JSON_BYTES) fail("state-size-invalid")
     return encoded
@@ -203,6 +218,7 @@ internal class LoggeRythmPersistedStateCodec(
     val root = parseExactObject(encoded)
     when (requiredInt(root, "version")) {
       LEGACY_SCHEMA_VERSION -> requireExactKeys(root, LEGACY_ROOT_KEYS)
+      PREVIOUS_SCHEMA_VERSION -> requireExactKeys(root, PREVIOUS_ROOT_KEYS)
       SCHEMA_VERSION -> requireExactKeys(root, ROOT_KEYS)
       else -> fail("state-version-unsupported")
     }
@@ -233,6 +249,19 @@ internal class LoggeRythmPersistedStateCodec(
       sleep = parseSleep(root),
       browseTree = if (schemaVersion >= 2) parseBrowseTree(root) else null,
       remoteCapabilities = if (schemaVersion >= 2) parseRemoteCapabilities(root) else null,
+      playbackEventJournal = if (schemaVersion >= 3) {
+        LoggeRythmPlaybackEventJournal.decodePersistedEvents(
+          requiredArray(root, "playbackEventJournal"),
+        )
+      } else {
+        emptyList()
+      },
+      lastPlayMediaId = if (schemaVersion >= 3) parseLastPlayMediaId(root) else null,
+      playbackJournalQueueGeneration = if (schemaVersion >= 3) {
+        requiredLong(root, "playbackJournalQueueGeneration")
+      } else {
+        0L
+      },
     )
     return validateAndNormalize(state)
   }
@@ -244,6 +273,9 @@ internal class LoggeRythmPersistedStateCodec(
     validateEncodeBudget(state)
     if (state.positionMs < 0L || state.positionMs > MAX_POSITION_MS) fail("position-invalid")
     if (state.repeatMode !in REPEAT_MODES) fail("repeat-mode-invalid")
+    if (state.playbackJournalQueueGeneration !in 0L..MAX_SAFE_INTEGER) {
+      fail("queue-generation-invalid")
+    }
     if (state.queue.isEmpty()) {
       if (state.activeIndex != null || state.positionMs != 0L) fail("empty-queue-state-invalid")
     } else if (state.activeIndex == null || state.activeIndex !in state.queue.indices) {
@@ -263,10 +295,12 @@ internal class LoggeRythmPersistedStateCodec(
     }
 
     validateCookieOrigins(parsedQueue, state.sessionBinding.origin)
+    validateQueueCookieVault(parsedQueue)
     val parsedBrowseTree = normalizeBrowseTree(state.browseTree)
     validateBrowseCookieOrigins(parsedBrowseTree, state.sessionBinding.origin)
     validateContextShuffle(parsedQueue, state.contextShuffle)
     validateSleep(parsedQueue, state.activeIndex, state.sleep)
+    state.lastPlayMediaId?.let(::validatePlaybackMediaId)
     return state.copy(queue = parsedQueue, browseTree = parsedBrowseTree)
   }
 
@@ -532,6 +566,10 @@ internal class LoggeRythmPersistedStateCodec(
     }
     state.contextShuffle.restoreOrder.forEach { add(jsonStringBytes(it)) }
     state.remoteCapabilities?.forEach { add(jsonStringBytes(it.wireValue)) }
+    state.lastPlayMediaId?.let { add(jsonStringBytes(it)) }
+    add(
+      LoggeRythmPlaybackEventJournal.persistedUtf8Bytes(state.playbackEventJournal).toLong(),
+    )
     state.browseTree?.let { tree ->
       val pending = ArrayDeque<Pair<BrowseNodeSpec, Int>>()
       pending.add(tree.root to 0)
@@ -609,6 +647,17 @@ internal class LoggeRythmPersistedStateCodec(
         fail("cookie-origin-invalid")
       }
       if (origin != boundOrigin) fail("cookie-origin-mismatch")
+    }
+  }
+
+  /** Keep every durable queue installable by the exact process-local URL-to-Cookie vault. */
+  private fun validateQueueCookieVault(queue: List<LoggeRythmPersistedQueueItem>) {
+    try {
+      LoggeRythmCookieVault().replaceQueue(
+        queue.filter { it.url.startsWith("https://") }.map { it.url to it.cookie },
+      )
+    } catch (error: PlayerProtocolException) {
+      fail("queue-${error.code}")
     }
   }
 
@@ -728,6 +777,23 @@ internal class LoggeRythmPersistedStateCodec(
     value?.let { capabilities ->
       JSONArray(capabilities.map(RemotePlayerCapability::wireValue).sorted())
     } ?: JSONObject.NULL
+
+  private fun parseLastPlayMediaId(root: JSONObject): String? {
+    if (root.isNull("lastPlayMediaId")) return null
+    return requiredString(root, "lastPlayMediaId", MAX_STABLE_ID_LENGTH).also(
+      ::validatePlaybackMediaId,
+    )
+  }
+
+  private fun validatePlaybackMediaId(value: String) {
+    if (
+      value.isBlank() ||
+      value.length > MAX_STABLE_ID_LENGTH ||
+      value.any(Char::isISOControl)
+    ) {
+      fail("playback-media-id-invalid")
+    }
+  }
 
   private fun parseExactObject(encoded: ByteArray): JSONObject {
     if (encoded.isEmpty() || encoded.size > MAX_STATE_JSON_BYTES) fail("json-size-invalid")
@@ -857,7 +923,8 @@ internal class LoggeRythmPersistedStateCodec(
   private fun fail(code: String): Nothing = throw LoggeRythmPersistedStateException(code)
 
   companion object {
-    internal const val SCHEMA_VERSION = 2
+    internal const val SCHEMA_VERSION = 3
+    private const val PREVIOUS_SCHEMA_VERSION = 2
     private const val LEGACY_SCHEMA_VERSION = 1
     internal const val MAX_STATE_JSON_BYTES = 2_000_000
     internal const val MAX_QUEUE_ITEMS = 2_000
@@ -882,14 +949,26 @@ internal class LoggeRythmPersistedStateCodec(
       "sleep",
       "browseTree",
       "remoteCapabilities",
+      "playbackEventJournal",
+      "lastPlayMediaId",
+      "playbackJournalQueueGeneration",
     )
-    private val LEGACY_ROOT_KEYS = ROOT_KEYS - setOf("browseTree", "remoteCapabilities")
+    private val PREVIOUS_ROOT_KEYS = ROOT_KEYS - setOf(
+      "playbackEventJournal",
+      "lastPlayMediaId",
+      "playbackJournalQueueGeneration",
+    )
+    private val LEGACY_ROOT_KEYS = PREVIOUS_ROOT_KEYS - setOf(
+      "browseTree",
+      "remoteCapabilities",
+    )
     private val SESSION_BINDING_KEYS = setOf("accountScope", "origin")
     private val CONTEXT_SHUFFLE_KEYS = setOf("enabled", "restoreOrder")
     private val TIME_SLEEP_KEYS = setOf("type", "triggerAtEpochMs", "fadeOutMs")
     private val MEDIA_ITEM_SLEEP_KEYS = setOf("type", "targetIndex", "followsCurrentItem")
     private const val MAX_ACCOUNT_SCOPE_LENGTH = 128
     private const val MAX_ORIGIN_LENGTH = 512
+    private const val MAX_SAFE_INTEGER = 9_007_199_254_740_991L
     private val QUEUE_ORIGINS = setOf("manual", "context")
     private val CONTEXT_TYPES = setOf(
       "album",

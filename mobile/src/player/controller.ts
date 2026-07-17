@@ -10,7 +10,13 @@ import Player, {
   type PlaybackProgressUpdatedEvent,
 } from './player';
 import type { Track } from '../api/types';
-import { authenticatedHeadersFor } from '../api/client';
+import {
+  authenticatedHeadersFor,
+  authoritativeSessionInvalidationFor,
+  captureAuthenticatedRequestAuthority,
+  isAuthenticatedRequestAuthorityError,
+  type AuthenticatedRequestAuthority,
+} from '../api/client';
 import { getApiBase } from '../config';
 import { invalidateListeningStats, musicCacheScope } from '../data/queryClient';
 import { musicRepository } from '../data/repositories';
@@ -115,9 +121,15 @@ function playbackEventDrainer(): PlaybackEventDrainPort {
           .getPlaybackEventJournalNativePort()
           .completeRadioPlaybackEvent(leaseId, eventId, payloadJson),
     },
+    captureAuthenticatedRequestAuthority,
     authorizeBinding: authorizePlaybackEventBinding,
-    recordPlay: (track, timeoutMs, eventId) =>
-      musicRepository.recordPlay(track, timeoutMs, eventId),
+    authoritativeSessionInvalidation: authoritativeSessionInvalidationFor,
+    isAuthenticatedRequestAuthorityError,
+    clearAuthoritativeSessionAuthority: async (authority) =>
+      (await import('../auth/authoritativeSessionCleanup'))
+        .clearAuthoritativeSessionAuthority(authority),
+    recordPlay: (track, timeoutMs, eventId, authority) =>
+      musicRepository.recordPlay(track, timeoutMs, eventId, authority),
     prepareRadioItems: prepareRadioPlaybackCompletionItems,
     onPlayRecorded: () => invalidateListeningStats(),
   });
@@ -324,9 +336,13 @@ async function verifyManualInsertion(mediaId: string): Promise<void> {
   });
 }
 
-async function mediaContext(): Promise<{ base: string; headers: Record<string, string> }> {
+async function mediaContext(
+  authority?: AuthenticatedRequestAuthority,
+): Promise<{ base: string; headers: Record<string, string> }> {
   const base = await getApiBase();
-  const headers = await authenticatedHeadersFor(base);
+  const headers = authority === undefined
+    ? await authenticatedHeadersFor(base)
+    : await authenticatedHeadersFor(base, authority);
   return { base, headers };
 }
 
@@ -335,13 +351,16 @@ async function mediaContext(): Promise<{ base: string; headers: Record<string, s
  * queue shares one authenticated remote context, while a wholly local queue
  * stays synchronous with respect to the network boundary.
  */
-async function mediaSources(tracks: readonly Track[]): Promise<MediaSource[]> {
+async function mediaSources(
+  tracks: readonly Track[],
+  authority?: AuthenticatedRequestAuthority,
+): Promise<MediaSource[]> {
   const explicitUris = tracks.map((track) => offlineUriForTrack(track.id));
   if (explicitUris.every((uri): uri is string => uri !== null)) {
     return explicitUris.map((uri) => ({ kind: 'explicit-download', uri }));
   }
 
-  const context = await mediaContext();
+  const context = await mediaContext(authority);
   return tracks.map((track) => {
     // Re-read after the async auth boundary so a concurrent remove never leaves
     // a newly assembled queue pointing at a registry entry that is no longer verified.
@@ -1242,6 +1261,7 @@ export function installPlaybackListeners(): void {
 export async function prepareRadioPlaybackCompletionItems(
   event: Readonly<RadioPlaybackEvent>,
   requestTimeoutMs: number,
+  requestAuthority?: AuthenticatedRequestAuthority,
 ): Promise<readonly NativeQueueWireItem[]> {
   const initial = getQueueSnapshot();
   if (initial.activeIndex === null) return [];
@@ -1257,7 +1277,14 @@ export async function prepareRadioPlaybackCompletionItems(
   }
 
   const seed = trackFromPlaybackEventMetadata(event.track);
-  const similar = await musicRepository.getRadio(seed.id, undefined, requestTimeoutMs);
+  const similar = requestAuthority === undefined
+    ? await musicRepository.getRadio(seed.id, undefined, requestTimeoutMs)
+    : await musicRepository.getRadio(
+        seed.id,
+        undefined,
+        requestTimeoutMs,
+        requestAuthority,
+      );
 
   // Re-read after HTTP so Android Auto replacement and foreground queue changes
   // become an empty stale completion. Native repeats this check transactionally.
@@ -1280,7 +1307,7 @@ export async function prepareRadioPlaybackCompletionItems(
   );
   const fresh = uniqueTracksNotInQueue(similar, existing, 5);
   if (fresh.length === 0) return [];
-  const sources = await mediaSources(fresh);
+  const sources = await mediaSources(fresh, requestAuthority);
   const context = queueContextOf(currentActive) ?? {
     type: 'radio' as const,
     id: seed.id,

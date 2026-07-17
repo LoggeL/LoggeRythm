@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Event, RepeatMode, type MediaItem } from './player';
 import type { Track } from '../api/types';
+import type { AuthenticatedRequestAuthority } from '../api/client';
 import {
   addToQueue,
   cycleRepeat,
@@ -94,7 +95,12 @@ vi.mock('./player', async () => {
   };
 });
 vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
-vi.mock('../api/client', () => ({ authenticatedHeadersFor: mocks.authenticatedHeadersFor }));
+vi.mock('../api/client', () => ({
+  authenticatedHeadersFor: mocks.authenticatedHeadersFor,
+  authoritativeSessionInvalidationFor: vi.fn(() => null),
+  captureAuthenticatedRequestAuthority: vi.fn(),
+  isAuthenticatedRequestAuthorityError: vi.fn(() => false),
+}));
 vi.mock('../offline/registry', () => ({ offlineUriForTrack: mocks.offlineUriForTrack }));
 vi.mock('../data/queryClient', () => ({
   invalidateListeningStats: mocks.invalidateListeningStats,
@@ -618,6 +624,28 @@ describe('controller Phase-0 queue contract', () => {
       'context',
     ]);
     expect(mocks.addMediaItems).not.toHaveBeenCalled();
+  });
+
+  it('binds RADIO discovery and stream headers to the claim request authority', async () => {
+    const authority = Object.freeze({}) as AuthenticatedRequestAuthority;
+    mocks.queue = [media('seed', 'context', true)];
+    mocks.activeIndex = 0;
+    mocks.getRadio.mockResolvedValueOnce([track('new-1')]);
+
+    await prepareRadioPlaybackCompletionItems(
+      radioJournalEvent(mocks.queue[0]),
+      4_000,
+      authority,
+    );
+
+    expect(mocks.getRadio).toHaveBeenCalledExactlyOnceWith(
+      'seed',
+      undefined,
+      4_000,
+      authority,
+    );
+    expect(mocks.authenticatedHeadersFor)
+      .toHaveBeenCalledExactlyOnceWith('https://music.test', authority);
   });
 
   it('routes transition bookkeeping only through the durable coalesced drain', async () => {

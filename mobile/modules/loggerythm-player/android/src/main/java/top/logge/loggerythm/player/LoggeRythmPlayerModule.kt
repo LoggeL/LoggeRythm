@@ -147,6 +147,13 @@ class LoggeRythmPlayerModule(
           }
           return@withController
         }
+        if (
+          (parsed is PlayerCommand.SetQueue || parsed == PlayerCommand.ClearQueue) &&
+          LoggeRythmPersistedServiceBridge.isQueueMutationBlocked()
+        ) {
+          reject(promise, PlayerProtocolException("playback-event-queue-commit-active"))
+          return@withController
+        }
         settleOnMain(promise) {
           if (!LoggeRythmPersistedServiceBridge.isReady()) {
             throw LoggeRythmPersistedPlayerException("player-session-not-ready")
@@ -222,6 +229,10 @@ class LoggeRythmPlayerModule(
   @ReactMethod
   fun clearCache(promise: Promise) {
     withController(promise) { active ->
+      if (LoggeRythmPersistedServiceBridge.isQueueMutationBlocked()) {
+        reject(promise, PlayerProtocolException("playback-event-queue-commit-active"))
+        return@withController
+      }
       if (!cleanupInProgress.compareAndSet(false, true)) {
         reject(promise, PlayerProtocolException("player-cleanup-active"))
         return@withController
@@ -252,6 +263,82 @@ class LoggeRythmPlayerModule(
       } catch (error: Exception) {
         cleanupInProgress.set(false)
         reject(promise, error)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun claimPlaybackEvents(maxEvents: Double, leaseMs: Double, promise: Promise) {
+    val parsedMax = journalNumber(maxEvents, 1L, 8L, promise) ?: return
+    val parsedLease = journalNumber(leaseMs, 1L, 120_000L, promise) ?: return
+    withPlaybackEventCoordinator(promise) {
+      LoggeRythmPersistedServiceBridge.claimPlaybackEvents(
+        parsedMax.toInt(),
+        parsedLease,
+      ) { result ->
+        result.fold(promise::resolve) { error -> reject(promise, error) }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun ackPlaybackEvent(leaseId: String, eventId: String, promise: Promise) {
+    withPlaybackEventCoordinator(promise) {
+      LoggeRythmPersistedServiceBridge.ackPlaybackEvent(leaseId, eventId) { result ->
+        result.fold(
+          onSuccess = { promise.resolve(null) },
+          onFailure = { error -> reject(promise, error) },
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun retryPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    notBeforeEpochMs: Double,
+    promise: Promise,
+  ) {
+    val parsedNotBefore = journalNumber(
+      notBeforeEpochMs,
+      1L,
+      MAX_JS_SAFE_INTEGER,
+      promise,
+    ) ?: return
+    withPlaybackEventCoordinator(promise) {
+      LoggeRythmPersistedServiceBridge.retryPlaybackEvent(
+        leaseId,
+        eventId,
+        parsedNotBefore,
+      ) { result ->
+        result.fold(
+          onSuccess = { promise.resolve(null) },
+          onFailure = { error -> reject(promise, error) },
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun completeRadioPlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    payloadJson: String,
+    promise: Promise,
+  ) {
+    parseOnWorker(promise, { protocol.parseRadioPlaybackCompletion(payloadJson) }) { completion ->
+      withPlaybackEventCoordinator(promise) {
+        LoggeRythmPersistedServiceBridge.completeRadioPlaybackEvent(
+          leaseId,
+          eventId,
+          completion,
+        ) { result ->
+          result.fold(
+            onSuccess = { promise.resolve(null) },
+            onFailure = { error -> reject(promise, error) },
+          )
+        }
       }
     }
   }
@@ -369,6 +456,42 @@ class LoggeRythmPlayerModule(
         MoreExecutors.directExecutor(),
       )
     }
+  }
+
+  private fun withPlaybackEventCoordinator(promise: Promise, action: () -> Unit) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      if (cleanupInProgress.get()) {
+        reject(promise, PlayerProtocolException("player-cleanup-active"))
+        return@post
+      }
+      try {
+        action()
+      } catch (error: Exception) {
+        reject(promise, error)
+      }
+    }
+  }
+
+  private fun journalNumber(
+    value: Double,
+    minimum: Long,
+    maximum: Long,
+    promise: Promise,
+  ): Long? {
+    if (!value.isFinite() || value < minimum.toDouble() || value > maximum.toDouble()) {
+      reject(promise, PlayerProtocolException("playback-event-argument-invalid"))
+      return null
+    }
+    val parsed = value.toLong()
+    if (parsed.toDouble() != value) {
+      reject(promise, PlayerProtocolException("playback-event-argument-invalid"))
+      return null
+    }
+    return parsed
   }
 
   private fun <T> parseOnWorker(
@@ -528,6 +651,7 @@ class LoggeRythmPlayerModule(
       is LoggeRythmCacheException -> error.code.takeIf(SAFE_CODE::matches)
       is LoggeRythmPersistedPlayerException -> error.code.takeIf(SAFE_CODE::matches)
       is LoggeRythmPersistedStateException -> error.code.takeIf(SAFE_CODE::matches)
+      is LoggeRythmPlaybackEventJournalException -> error.code.takeIf(SAFE_CODE::matches)
       else -> null
     } ?: "player-operation-failed"
     promise.reject(code, "Player operation failed: $code")
@@ -563,6 +687,7 @@ class LoggeRythmPlayerModule(
     const val PLAYER_EVENT = "LoggeRythmPlayerEvent"
     const val PROGRESS_EVENT = "LoggeRythmPlayerProgress"
     private const val SNAPSHOT_SCHEMA_VERSION = 1
+    private const val MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L
     private val SAFE_CODE = Regex("[a-z][a-z0-9-]{1,63}")
   }
 }

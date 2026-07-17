@@ -246,6 +246,46 @@ class LoggeRythmPlayerProtocolTest {
     }
   }
 
+  @Test
+  fun parsesOnlyStrictBoundedRadioCompletionQueueItems() {
+    val completion = protocol.parseRadioPlaybackCompletion(
+      """{
+        "schemaVersion":1,
+        "expectedQueueGeneration":33,
+        "expectedActiveMediaId":"radio:9:84",
+        "items":[{
+          "id":"radio:completion:101",
+          "url":"https://loggerythm.logge.top/api/tracks/101/stream",
+          "headers":{"Cookie":"sf_session=opaque"},
+          "extras":{"track":{"id":"101"},"radio":true}
+        }]
+      }""".trimIndent(),
+    )
+
+    assertEquals(33L, completion.expectedQueueGeneration)
+    assertEquals("radio:9:84", completion.expectedActiveMediaId)
+    assertEquals("radio:completion:101", completion.items.single().id)
+    assertTrue(completion.toString().contains("items=<redacted:1>"))
+    assertTrue(!completion.toString().contains("sf_session"))
+
+    assertCode("unexpected-key") {
+      protocol.parseRadioPlaybackCompletion(
+        """{"schemaVersion":1,"expectedQueueGeneration":33,"expectedActiveMediaId":"x","items":[],"error":"secret"}""",
+      )
+    }
+    assertCode("radio-completion-version-unsupported") {
+      protocol.parseRadioPlaybackCompletion(
+        """{"schemaVersion":2,"expectedQueueGeneration":33,"expectedActiveMediaId":"x","items":[]}""",
+      )
+    }
+    assertCode("radio-completion-items-too-large") {
+      val item = """{"id":"x","url":"https://example.test/x"}"""
+      protocol.parseRadioPlaybackCompletion(
+        """{"schemaVersion":1,"expectedQueueGeneration":33,"expectedActiveMediaId":"x","items":[${List(6) { item }.joinToString()}]}""",
+      )
+    }
+  }
+
   private fun assertCode(code: String, action: () -> Unit) {
     val error = assertThrows(PlayerProtocolException::class.java, action)
     assertEquals(code, error.code)

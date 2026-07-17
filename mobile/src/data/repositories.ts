@@ -43,6 +43,7 @@ import type {
   PartyPlaybackUpdate,
   PlaybackSettingsUpdate,
 } from '../api/endpoints';
+import type { AuthenticatedRequestAuthority } from '../api/client';
 
 export interface SearchRepository {
   searchTracks(query: string, signal?: AbortSignal): Promise<Track[]>;
@@ -154,8 +155,18 @@ export interface AdminRepository {
 }
 
 export interface PlayerRepository {
-  getRadio(seedId: DeezerId, signal?: AbortSignal, timeoutMs?: number): Promise<Track[]>;
-  recordPlay(track: Track, timeoutMs?: number, eventId?: string): Promise<void>;
+  getRadio(
+    seedId: DeezerId,
+    signal?: AbortSignal,
+    timeoutMs?: number,
+    authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
+  ): Promise<Track[]>;
+  recordPlay(
+    track: Track,
+    timeoutMs?: number,
+    eventId?: string,
+    authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
+  ): Promise<void>;
 }
 
 /** Complete compatibility adapter composed from feature-sized capabilities. */

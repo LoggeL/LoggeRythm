@@ -1,6 +1,7 @@
 package top.logge.loggerythm.player
 
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.Player
 import java.lang.reflect.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -12,6 +13,201 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LoggeRythmPersistedPlayerCoordinatorTest {
+  @Test
+  fun playOccurrenceGuardSuppressesAnExactRestoreEchoOnlyOnce() {
+    val guard = LoggeRythmRestoredPlayEchoGuard()
+    guard.arm(
+      persistedLastPlayMediaId = "radio:7:31337",
+      restoredActiveMediaId = "radio:7:31337",
+      restoredQueueGeneration = 41L,
+    )
+
+    assertFalse(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
+        "radio:7:31337",
+        41L,
+      ),
+    )
+    assertTrue(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
+        "radio:7:31337",
+        41L,
+      ),
+    )
+    assertTrue(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
+        "radio:8:31337",
+        41L,
+      ),
+    )
+    assertTrue(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT,
+        "radio:7:31337",
+        41L,
+      ),
+    )
+    assertTrue(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_SEEK,
+        "radio:7:31337",
+        41L,
+      ),
+    )
+  }
+
+  @Test
+  fun restoreEchoGuardCannotSuppressTheSameMediaIdInANewQueueGeneration() {
+    val guard = LoggeRythmRestoredPlayEchoGuard()
+    guard.arm(
+      persistedLastPlayMediaId = "album:7:31337",
+      restoredActiveMediaId = "album:7:31337",
+      restoredQueueGeneration = 41L,
+    )
+
+    assertTrue(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
+        "album:7:31337",
+        42L,
+      ),
+    )
+    assertTrue(
+      guard.shouldEnqueue(
+        Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED,
+        "album:7:31337",
+        41L,
+      ),
+    )
+  }
+
+  @Test
+  fun genericFullStateJournalCommitBlocksQueueAndDefersNormalSaves() {
+    val gate = LoggeRythmJournalQueueCommitGate()
+    gate.begin(blockQueueMutations = true)
+
+    assertTrue(gate.isActive())
+    assertTrue(gate.isQueueMutationBlocked())
+    listOf(11L, 12L, 13L).forEach { ticket ->
+      assertTrue(
+        gate.deferIfActive(
+          LoggeRythmDeferredNormalSave(
+            ticket = ticket,
+            completion = null,
+            failClosedOnTimelineNotReady = ticket == 13L,
+          ),
+        ),
+      )
+    }
+
+    val deferred = gate.finishCommitted()
+
+    assertEquals(listOf(11L, 12L, 13L), deferred.map { it.ticket })
+    assertFalse(gate.isActive())
+    assertFalse(gate.isQueueMutationBlocked())
+  }
+
+  @Test
+  fun radioDedupeAdvancesOnlyWhenTheExactRadioEventWasRetained() {
+    val track = LoggeRythmPlaybackEventTrackMetadata(
+      id = "31337",
+      title = "Title",
+      artist = "Artist",
+      artistId = "7",
+      artists = emptyList(),
+      album = "Album",
+      albumId = "8",
+      durationSec = 180L,
+      rank = 1L,
+      releaseDate = "",
+    )
+    val context = LoggeRythmPlaybackEventRadioContext(
+      activeMediaId = "radio:7:31337",
+      queueGeneration = 41L,
+    )
+    val event = LoggeRythmRadioPlaybackEvent(
+      eventId = "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      createdAtMs = 1_700_000_000_000L,
+      track = track,
+      activeMediaId = context.activeMediaId,
+      queueGeneration = context.queueGeneration,
+    )
+
+    assertTrue(
+      retainedRadioTransition(
+        LoggeRythmPlaybackEventJournalMutation(
+          token = 1L,
+          candidateEvents = listOf(event),
+          changed = true,
+          event = event,
+          eventAccepted = true,
+        ),
+        context,
+      ),
+    )
+    assertFalse(
+      retainedRadioTransition(
+        LoggeRythmPlaybackEventJournalMutation(
+          token = 2L,
+          candidateEvents = emptyList(),
+          changed = true,
+          event = event,
+          eventAccepted = false,
+        ),
+        context,
+      ),
+    )
+  }
+
+  @Test
+  fun durableRadioGateBlocksQueueAndCancelDrainsEveryDeferredSaveInOrder() {
+    val gate = LoggeRythmJournalQueueCommitGate()
+    gate.begin(blockQueueMutations = true)
+    assertTrue(gate.isQueueMutationBlocked())
+    assertTrue(
+      gate.deferIfActive(LoggeRythmDeferredNormalSave(21L, null, false)),
+    )
+    assertTrue(
+      gate.deferIfActive(LoggeRythmDeferredNormalSave(22L, null, true)),
+    )
+
+    val cancelled = gate.cancel()
+
+    assertEquals(listOf(21L, 22L), cancelled.map { it.ticket })
+    assertFalse(gate.isActive())
+    assertFalse(gate.isQueueMutationBlocked())
+  }
+
+  @Test
+  fun journalGateNeverLetsAStaleNormalCaptureOverwriteTheCandidateWrite() {
+    val gate = LoggeRythmJournalQueueCommitGate()
+    val writes = mutableListOf<String>()
+    gate.begin(blockQueueMutations = true)
+    writes += "candidate:queue+radio-ack:generation+1"
+
+    listOf("listener-stale", "heartbeat-stale", "policy-stale").forEachIndexed { index, stale ->
+      val deferred = gate.deferIfActive(
+        LoggeRythmDeferredNormalSave(30L + index, null, index == 2),
+      )
+      if (!deferred) writes += stale
+    }
+
+    val deferred = gate.finishCommitted()
+    writes += "fresh:queue+radio-ack:generation+1"
+
+    assertEquals(3, deferred.size)
+    assertEquals(
+      listOf(
+        "candidate:queue+radio-ack:generation+1",
+        "fresh:queue+radio-ack:generation+1",
+      ),
+      writes,
+    )
+  }
+
   @Test
   fun compatibilityShuffleDisableMutatesOnlyTheServiceOwnedPlayer() {
     var shuffleEnabled: Boolean? = null

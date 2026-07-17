@@ -14,7 +14,8 @@ import {
   clearSession,
   hasSession,
   onSessionInvalidated,
-  retryInvalidatedSessionCleanup,
+  pendingInvalidationAuthority,
+  type SessionInvalidationAuthority,
 } from '../api/client';
 import {
   ServerCompatibilityCheckError,
@@ -32,6 +33,7 @@ import { clearPlayerSession } from '../player/setup';
 import { clearOfflineDownloads } from '../offline/runtime';
 import { performAccountSwitch } from './accountSwitch';
 import { AccountCleanupBarrier, AuthCommitBarrier } from './cleanupBarrier';
+import { clearAuthoritativeSessionAuthority } from './authoritativeSessionCleanup';
 import { performLogout } from './logout';
 import { DeletedAccountCleanupError, performAccountDeletion } from './deleteAccount';
 import { refreshAuthenticatedUser, restoreSession } from './lifecycle';
@@ -83,7 +85,10 @@ export function AuthProvider({
   const cleanupBarrier = useRef(new AccountCleanupBarrier()).current;
   const authCommitBarrier = useRef(new AuthCommitBarrier()).current;
 
-  const clearAccountStorageBoundary = useCallback(async (scope: string | null) => {
+  const clearAccountStorageBoundary = useCallback(async (
+    scope: string | null,
+    includeOfflineIdentity = true,
+  ) => {
     const failures: string[] = [];
     const failedBoundaries: string[] = [];
     try {
@@ -92,11 +97,13 @@ export function AuthProvider({
       failedBoundaries.push('offline-audio');
       failures.push(`offline audio: ${(error as Error).message}`);
     }
-    try {
-      await clearOfflineIdentity();
-    } catch (error) {
-      failedBoundaries.push('offline-identity');
-      failures.push(`offline identity: ${(error as Error).message}`);
+    if (includeOfflineIdentity) {
+      try {
+        await clearOfflineIdentity();
+      } catch (error) {
+        failedBoundaries.push('offline-identity');
+        failures.push(`offline identity: ${(error as Error).message}`);
+      }
     }
     try {
       await clearAccountScopedStorage(AsyncStorage, scope);
@@ -124,7 +131,9 @@ export function AuthProvider({
     return authenticated;
   }, [authCommitBarrier]);
 
-  const enterSignedOutState = useCallback(async (): Promise<void> => {
+  const enterSignedOutState = useCallback(async (
+    invalidationAuthority?: SessionInvalidationAuthority,
+  ): Promise<void> => {
     authCommitBarrier.invalidate();
     const cleanupScope = cacheScope.current ?? cleanupBarrier.accountScope;
     cleanupBarrier.require(cleanupScope);
@@ -135,17 +144,13 @@ export function AuthProvider({
     setOfflineMode(false);
     const failures: string[] = [];
     try {
-      await clearPlayerSession();
+      await clearAuthoritativeSessionAuthority(invalidationAuthority);
     } catch (error) {
       failures.push((error as Error).message);
     }
     try {
-      await clearAccountStorageBoundary(cleanupScope);
-    } catch (error) {
-      failures.push((error as Error).message);
-    }
-    try {
-      await retryInvalidatedSessionCleanup();
+      // The shared authority boundary already erased the offline identity.
+      await clearAccountStorageBoundary(cleanupScope, false);
     } catch (error) {
       failures.push((error as Error).message);
     }
@@ -206,6 +211,13 @@ export function AuthProvider({
 
   const authenticateReplacingAccount = useCallback(
     async (authenticate: () => Promise<User>): Promise<User> => {
+      const pendingInvalidation = pendingInvalidationAuthority();
+      if (pendingInvalidation !== null) {
+        // A failed or still-running authoritative cleanup owns the session
+        // commit gate. Retry/join that exact opaque boundary before a login
+        // response can reach SecureStore.
+        await clearAuthoritativeSessionAuthority(pendingInvalidation);
+      }
       const departingScope = cacheScope.current ?? cleanupBarrier.accountScope;
       if (cacheScope.current === null && !cleanupBarrier.needsCleanup) return authenticate();
 
@@ -301,12 +313,12 @@ export function AuthProvider({
 
   useEffect(
     () =>
-      onSessionInvalidated(() => {
+      onSessionInvalidated((invalidationAuthority) => {
         // Keep the login/register gate closed until the authoritative-401
         // cleanup finishes. A fast replacement credential must not race a
         // still-running player, storage, mutation, or session boundary.
         setBootstrapping(true);
-        void enterSignedOutState().then(
+        void enterSignedOutState(invalidationAuthority).then(
           () => {
             setBootstrapError(null);
             setBootstrapping(false);

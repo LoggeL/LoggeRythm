@@ -14,7 +14,13 @@ import { PLAYBACK_EVENT_HEADLESS_TASK } from './src/player/playbackEventJournal'
 AppRegistry.registerHeadlessTask(
   PLAYBACK_EVENT_HEADLESS_TASK,
   () => async () => {
-    await drainDurablePlaybackEvents();
+    try {
+      await drainDurablePlaybackEvents();
+    } catch {
+      // Native owns the encrypted event, lease, and an already committed WorkManager successor.
+      // Finishing this attempt immediately avoids React Native holding the worker/service until
+      // its task timeout; the event remains unacknowledged and is retried by native scheduling.
+    }
   },
 );
 

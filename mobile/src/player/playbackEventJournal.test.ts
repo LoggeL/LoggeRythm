@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
 import type {
+  AuthenticatedRequestAuthority,
+  SessionInvalidationAuthority,
+} from '../api/client';
+import type {
   NativeQueueWireItem,
   PlaybackEventJournalNativePort,
 } from './nativePlayerPort';
@@ -30,6 +34,10 @@ const BINDING = {
   accountScope: 'user:7',
   origin: 'https://loggerythm.logge.top',
 } as const;
+const REQUEST_AUTHORITY =
+  Object.freeze({}) as AuthenticatedRequestAuthority;
+const INVALIDATION_AUTHORITY =
+  Object.freeze({}) as SessionInvalidationAuthority;
 
 function metadata(id = '42') {
   return {
@@ -101,7 +109,11 @@ function dependencies(
 ): PlaybackEventDrainerDependencies {
   return {
     native,
+    captureAuthenticatedRequestAuthority: vi.fn(async () => REQUEST_AUTHORITY),
     authorizeBinding: vi.fn(async () => BINDING),
+    authoritativeSessionInvalidation: vi.fn(() => null),
+    isAuthenticatedRequestAuthorityError: vi.fn(() => false),
+    clearAuthoritativeSessionAuthority: vi.fn(async () => undefined),
     recordPlay: vi.fn(async () => undefined),
     prepareRadioItems: vi.fn(async () => []),
     onPlayRecorded: vi.fn(async () => undefined),
@@ -241,6 +253,7 @@ describe('durable playback-event drainer', () => {
       expect.objectContaining({ id: '42', cover: '', preview_url: null }),
       PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
       PLAY_ID,
+      REQUEST_AUTHORITY,
     );
     expect(native.ackPlaybackEvent).toHaveBeenCalledWith(LEASE_ID, PLAY_ID);
     expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
@@ -278,6 +291,62 @@ describe('durable playback-event drainer', () => {
     expect(native.ackPlaybackEvent).not.toHaveBeenCalled();
   });
 
+  it('clears all local authority and stops without native retry after PLAY returns 401', async () => {
+    const unauthorized = { status: 401, privateBody: 'never forward this value' };
+    const native = nativePort(claim([playEvent(), radioEvent()]));
+    const clearAuthoritativeSessionAuthority = vi.fn(async () => undefined);
+    const prepareRadioItems = vi.fn(async () => [queueItem('101')]);
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      recordPlay: vi.fn(async () => {
+        throw unauthorized;
+      }),
+      authoritativeSessionInvalidation: (error) =>
+        error === unauthorized ? INVALIDATION_AUTHORITY : null,
+      clearAuthoritativeSessionAuthority,
+      prepareRadioItems,
+    }));
+
+    await expect(drainer.drain()).rejects.toEqual(
+      expect.objectContaining<Partial<PlaybackEventDrainError>>({
+        code: 'session-invalidated',
+      }),
+    );
+    expect(clearAuthoritativeSessionAuthority)
+      .toHaveBeenCalledExactlyOnceWith(INVALIDATION_AUTHORITY);
+    expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
+    expect(native.ackPlaybackEvent).not.toHaveBeenCalled();
+    expect(native.completeRadioPlaybackEvent).not.toHaveBeenCalled();
+    expect(prepareRadioItems).not.toHaveBeenCalled();
+  });
+
+  it('stops without native retry when RADIO returns 401 and authority cleanup fails', async () => {
+    const unauthorized = { status: 401 };
+    const native = nativePort(claim([radioEvent()]));
+    const clearAuthoritativeSessionAuthority = vi.fn(async () => {
+      throw new Error('private cleanup diagnostic');
+    });
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      prepareRadioItems: vi.fn(async () => {
+        throw unauthorized;
+      }),
+      authoritativeSessionInvalidation: (error) =>
+        error === unauthorized ? INVALIDATION_AUTHORITY : null,
+      clearAuthoritativeSessionAuthority,
+    }));
+
+    await expect(drainer.drain()).rejects.toEqual(
+      expect.objectContaining<Partial<PlaybackEventDrainError>>({
+        code: 'session-cleanup-failed',
+        message: 'Playback event drain failed: session-cleanup-failed',
+      }),
+    );
+    expect(clearAuthoritativeSessionAuthority)
+      .toHaveBeenCalledExactlyOnceWith(INVALIDATION_AUTHORITY);
+    expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
+    expect(native.ackPlaybackEvent).not.toHaveBeenCalled();
+    expect(native.completeRadioPlaybackEvent).not.toHaveBeenCalled();
+  });
+
   it('fails closed before processing when approved identity and claim binding differ', async () => {
     const native = nativePort(claim([playEvent()]));
     const recordPlay = vi.fn(async () => undefined);
@@ -307,6 +376,7 @@ describe('durable playback-event drainer', () => {
     expect(prepareRadioItems).toHaveBeenCalledWith(
       expect.objectContaining({ eventId: RADIO_ID, activeMediaId: 'radio:9:84' }),
       PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
+      REQUEST_AUTHORITY,
     );
     expect(native.completeRadioPlaybackEvent).toHaveBeenCalledWith(
       LEASE_ID,
@@ -355,5 +425,56 @@ describe('durable playback-event drainer', () => {
       RADIO_ID,
       NOW + PLAYBACK_EVENT_RETRY_BASE_MS * 2,
     );
+  });
+
+  it('never starts PLAY with session B after the claim captured authority A', async () => {
+    const authorityChanged = new Error('opaque authority changed');
+    const native = nativePort(claim([playEvent()]));
+    const recordPlay = vi.fn(async (
+      _track,
+      _timeout,
+      _eventId,
+      authority,
+    ) => {
+      expect(authority).toBe(REQUEST_AUTHORITY);
+      throw authorityChanged;
+    });
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      recordPlay,
+      isAuthenticatedRequestAuthorityError: (error) =>
+        error === authorityChanged,
+    }));
+
+    await expect(drainer.drain()).rejects.toMatchObject({
+      code: 'session-authority-changed',
+    });
+    expect(recordPlay).toHaveBeenCalledOnce();
+    expect(native.ackPlaybackEvent).not.toHaveBeenCalled();
+    expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
+  });
+
+  it('never starts RADIO with session B after the claim captured authority A', async () => {
+    const authorityChanged = new Error('opaque authority changed');
+    const native = nativePort(claim([radioEvent()]));
+    const prepareRadioItems = vi.fn(async (
+      _event,
+      _timeout,
+      authority,
+    ) => {
+      expect(authority).toBe(REQUEST_AUTHORITY);
+      throw authorityChanged;
+    });
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      prepareRadioItems,
+      isAuthenticatedRequestAuthorityError: (error) =>
+        error === authorityChanged,
+    }));
+
+    await expect(drainer.drain()).rejects.toMatchObject({
+      code: 'session-authority-changed',
+    });
+    expect(prepareRadioItems).toHaveBeenCalledOnce();
+    expect(native.completeRadioPlaybackEvent).not.toHaveBeenCalled();
+    expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
   });
 });

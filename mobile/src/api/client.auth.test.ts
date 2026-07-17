@@ -36,6 +36,14 @@ function ok(body: unknown = { ok: true }): Response {
   });
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe('authenticated client lifecycle', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -102,12 +110,78 @@ describe('authenticated client lifecycle', () => {
     const invalidated = vi.fn();
     client.onSessionInvalidated(invalidated);
 
-    await expect(client.apiRequest('/api/auth/me')).rejects.toMatchObject({ status: 401 });
+    const request = client.apiRequest('/api/auth/me');
+    const error = await request.catch((cause: unknown) => cause);
 
+    expect(error).toMatchObject({ status: 401 });
     expect(invalidated).toHaveBeenCalledOnce();
+    expect(client.authoritativeSessionInvalidationFor(error))
+      .toBe(invalidated.mock.calls[0][0]);
     expect(mocks.secureStore.deleteItemAsync).toHaveBeenCalledExactlyOnceWith('lr.session.v1');
     expect(mocks.asyncStorage.removeItem).toHaveBeenCalledExactlyOnceWith('lr.session');
     await expect(client.hasSession()).resolves.toBe(false);
+  });
+
+  it('preserves authoritative 401 when initial credential deletion fails', async () => {
+    mocks.fetch.mockResolvedValueOnce(new Response(
+      JSON.stringify({ detail: 'Not authenticated' }),
+      { status: 401 },
+    ));
+    mocks.secureStore.deleteItemAsync.mockRejectedValueOnce(
+      new Error('private keystore diagnostic'),
+    );
+    const client = await import('./client');
+    const invalidated = vi.fn();
+    client.onSessionInvalidated(invalidated);
+
+    await expect(client.apiRequest('/api/auth/me')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 401,
+    });
+
+    expect(invalidated).toHaveBeenCalledOnce();
+    await expect(client.hasSession()).resolves.toBe(false);
+  });
+
+  it('holds a replacement session commit behind its exact invalidation cleanup', async () => {
+    mocks.fetch
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ detail: 'Not authenticated' }),
+        { status: 401 },
+      ))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 8 }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Set-Cookie': 'sf_session=replacement; HttpOnly; Secure; Path=/; SameSite=lax',
+        },
+      }));
+    const client = await import('./client');
+    const invalidationError = await client.apiRequest('/api/auth/me')
+      .catch((cause: unknown) => cause);
+    const authority =
+      client.authoritativeSessionInvalidationFor(invalidationError);
+    expect(authority).not.toBeNull();
+    if (authority === null) throw new Error('Expected invalidation authority');
+
+    const cleanup = deferred<void>();
+    const cleanupAttempt = client.runWithSessionInvalidationAuthority(
+      authority,
+      () => cleanup.promise,
+    );
+    const replacement = client.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: { email: 'new@example.test', password: 'password123' },
+      captureSession: true,
+      noAuth: true,
+    });
+    await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(2));
+    expect(mocks.secureStore.setItemAsync).not.toHaveBeenCalled();
+
+    cleanup.resolve();
+    await cleanupAttempt;
+    await expect(replacement).resolves.toEqual({ id: 8 });
+    expect(mocks.secureStore.setItemAsync).toHaveBeenCalledOnce();
   });
 
   it('keeps a valid stored session after 403 and reuses it on the next request', async () => {
@@ -161,5 +235,74 @@ describe('authenticated client lifecycle', () => {
     );
     expect(mocks.secureStore.setItemAsync).not.toHaveBeenCalled();
     await expect(client.hasSession()).resolves.toBe(false);
+  });
+
+  it('does not authorize a stale 401 to invalidate a newer login revision', async () => {
+    const oldResponse = deferred<Response>();
+    mocks.fetch
+      .mockImplementationOnce(() => oldResponse.promise)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: 8 }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Set-Cookie': 'sf_session=new-session; HttpOnly; Secure; Path=/; SameSite=lax',
+        },
+      }));
+    const client = await import('./client');
+    const invalidated = vi.fn();
+    client.onSessionInvalidated(invalidated);
+
+    const oldRequest = client.apiRequest('/api/me/plays', {
+      method: 'POST',
+      body: { id: '42' },
+    });
+    await vi.waitFor(() => expect(mocks.fetch).toHaveBeenCalledOnce());
+    await expect(client.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: { email: 'new@example.test', password: 'password123' },
+      captureSession: true,
+      noAuth: true,
+    })).resolves.toEqual({ id: 8 });
+
+    oldResponse.resolve(new Response(
+      JSON.stringify({ detail: 'Old session expired' }),
+      { status: 401 },
+    ));
+    const staleError = await oldRequest.catch((cause: unknown) => cause);
+
+    expect(staleError).toMatchObject({ name: 'ApiError', status: 401 });
+    expect(client.authoritativeSessionInvalidationFor(staleError)).toBeNull();
+    expect(invalidated).not.toHaveBeenCalled();
+    await expect(client.hasSession()).resolves.toBe(true);
+    await expect(
+      client.authenticatedHeadersFor('https://music.example.test/api/me'),
+    ).resolves.toEqual({ Cookie: 'sf_session=new-session' });
+  });
+
+  it('rejects authority A before fetch after session B has committed', async () => {
+    const client = await import('./client');
+    const authorityA = await client.captureAuthenticatedRequestAuthority();
+    await client.clearSession();
+    mocks.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ id: 8 }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': 'sf_session=session-b; HttpOnly; Secure; Path=/; SameSite=lax',
+      },
+    }));
+    await client.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: { email: 'new@example.test', password: 'password123' },
+      captureSession: true,
+      noAuth: true,
+    });
+    expect(mocks.fetch).toHaveBeenCalledOnce();
+
+    await expect(client.apiRequest('/api/me/plays', {
+      method: 'POST',
+      body: { id: '42' },
+      authenticatedRequestAuthority: authorityA,
+    })).rejects.toBeInstanceOf(client.AuthenticatedRequestAuthorityError);
+    expect(mocks.fetch).toHaveBeenCalledOnce();
   });
 });

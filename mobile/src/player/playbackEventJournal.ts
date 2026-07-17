@@ -1,4 +1,8 @@
 import type { Track } from '../api/types';
+import type {
+  AuthenticatedRequestAuthority,
+  SessionInvalidationAuthority,
+} from '../api/client';
 import {
   requirePlayerSessionBinding,
   type PlayerSessionBinding,
@@ -79,12 +83,28 @@ export interface PlaybackEventDrainResult {
 
 export interface PlaybackEventDrainerDependencies {
   native: PlaybackEventJournalNativePort;
+  /** Capture a process-local guard for the exact authenticated session used by this claim. */
+  captureAuthenticatedRequestAuthority(): Promise<AuthenticatedRequestAuthority>;
   /** Resolve a recent approved offline identity and ensure this exact player account is bound. */
   authorizeBinding(): Promise<Readonly<PlayerSessionBinding>>;
-  recordPlay(track: Track, timeoutMs: number, eventId: string): Promise<void>;
+  authoritativeSessionInvalidation(
+    error: unknown,
+  ): SessionInvalidationAuthority | null;
+  isAuthenticatedRequestAuthorityError(error: unknown): boolean;
+  /** Clear native playback authority and local identity even when no UI is mounted. */
+  clearAuthoritativeSessionAuthority(
+    authority: SessionInvalidationAuthority,
+  ): Promise<void>;
+  recordPlay(
+    track: Track,
+    timeoutMs: number,
+    eventId: string,
+    authority: AuthenticatedRequestAuthority,
+  ): Promise<void>;
   prepareRadioItems(
     event: Readonly<RadioPlaybackEvent>,
     timeoutMs: number,
+    authority: AuthenticatedRequestAuthority,
   ): Promise<readonly NativeQueueWireItem[]>;
   onPlayRecorded?(): Promise<void>;
   now?: () => number;
@@ -446,6 +466,14 @@ export class PlaybackEventDrainer {
       return Object.freeze({ claimed: 0, completed: 0, retried: 0 });
     }
 
+    let requestAuthority: AuthenticatedRequestAuthority;
+    try {
+      requestAuthority =
+        await this.dependencies.captureAuthenticatedRequestAuthority();
+    } catch {
+      throw new PlaybackEventDrainError('authenticated-authority-unavailable');
+    }
+
     let authorizedBinding: Readonly<PlayerSessionBinding>;
     try {
       authorizedBinding = requirePlayerSessionBinding(
@@ -467,6 +495,7 @@ export class PlaybackEventDrainer {
             trackFromPlaybackEventMetadata(event.track),
             PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
             event.eventId,
+            requestAuthority,
           );
           await this.dependencies.native.ackPlaybackEvent(claim.leaseId, event.eventId);
           completed += 1;
@@ -481,6 +510,7 @@ export class PlaybackEventDrainer {
           const items = await this.dependencies.prepareRadioItems(
             event,
             PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
+            requestAuthority,
           );
           if (!Array.isArray(items) || items.length > RADIO_COMPLETION_MAX_ITEMS) {
             throw new PlaybackEventDrainError('radio-items-invalid');
@@ -498,7 +528,22 @@ export class PlaybackEventDrainer {
           );
           completed += 1;
         }
-      } catch {
+      } catch (error) {
+        const invalidationAuthority =
+          this.dependencies.authoritativeSessionInvalidation(error);
+        if (invalidationAuthority !== null) {
+          try {
+            await this.dependencies.clearAuthoritativeSessionAuthority(
+              invalidationAuthority,
+            );
+          } catch {
+            throw new PlaybackEventDrainError('session-cleanup-failed');
+          }
+          throw new PlaybackEventDrainError('session-invalidated');
+        }
+        if (this.dependencies.isAuthenticatedRequestAuthorityError(error)) {
+          throw new PlaybackEventDrainError('session-authority-changed');
+        }
         const notBeforeEpochMs = retryNotBefore(
           safeInteger(this.now(), 'Playback event retry time', 1),
           event.attempt,

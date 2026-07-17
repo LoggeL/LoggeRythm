@@ -9,7 +9,11 @@ const mocks = vi.hoisted(() => ({
   clearSession: vi.fn(async () => undefined),
   hasSession: vi.fn(async () => true),
   onSessionInvalidated: vi.fn(() => () => undefined),
+  pendingInvalidationAuthority: vi.fn((): object | null => null),
   retryInvalidatedSessionCleanup: vi.fn(async () => undefined),
+  runWithSessionInvalidationAuthority: vi.fn(
+    async (_authority: unknown, operation: () => Promise<void>) => operation(),
+  ),
   clearAccountQueryState: vi.fn(),
   clearAccountQueryStateBoundary: vi.fn(async () => undefined),
   clearAccountScopedStorage: vi.fn(async () => undefined),
@@ -49,7 +53,9 @@ vi.mock('../api/client', () => ({
   clearSession: mocks.clearSession,
   hasSession: mocks.hasSession,
   onSessionInvalidated: mocks.onSessionInvalidated,
+  pendingInvalidationAuthority: mocks.pendingInvalidationAuthority,
   retryInvalidatedSessionCleanup: mocks.retryInvalidatedSessionCleanup,
+  runWithSessionInvalidationAuthority: mocks.runWithSessionInvalidationAuthority,
 }));
 vi.mock('../config', () => ({ getApiBase: mocks.getApiBase }));
 vi.mock('../data', () => ({
@@ -122,6 +128,7 @@ describe('AuthProvider repository injection', () => {
     mocks.hasSession.mockResolvedValue(true);
     mocks.getApiBase.mockResolvedValue('https://loggerythm.logge.top');
     mocks.readOfflineIdentity.mockResolvedValue(null);
+    mocks.pendingInvalidationAuthority.mockReturnValue(null);
   });
 
   it('preserves the public no-repository provider usage', () => {
@@ -139,6 +146,21 @@ describe('AuthProvider repository injection', () => {
     const registerRepository = injectedRepository();
     await renderProvider(registerRepository).register(registration);
     expect(registerRepository.register).toHaveBeenCalledExactlyOnceWith(registration);
+  });
+
+  it('joins a pending authoritative cleanup before replacement login', async () => {
+    const authority = Object.freeze({});
+    mocks.pendingInvalidationAuthority.mockReturnValueOnce(authority);
+    const repository = injectedRepository();
+
+    await renderProvider(repository).login('person@example.test', 'password123');
+
+    expect(mocks.runWithSessionInvalidationAuthority)
+      .toHaveBeenCalledWith(authority, expect.any(Function));
+    expect(mocks.clearPlayerSession).toHaveBeenCalledOnce();
+    expect(mocks.clearOfflineIdentity).toHaveBeenCalledOnce();
+    expect(mocks.retryInvalidatedSessionCleanup).toHaveBeenCalledOnce();
+    expect(repository.login).toHaveBeenCalledOnce();
   });
 
   it('uses injected me for both bootstrap retry and approval refresh', async () => {

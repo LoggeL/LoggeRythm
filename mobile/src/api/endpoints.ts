@@ -1,4 +1,4 @@
-import { apiRequest } from './client';
+import { apiRequest, type AuthenticatedRequestAuthority } from './client';
 import { requestGeneratedOperation } from './generatedOperationClient';
 import type { GeneratedApiResponse } from './generated/contract';
 import {
@@ -255,10 +255,14 @@ export function getRadio(
   deezerId: DeezerId,
   signal?: AbortSignal,
   timeoutMs?: number,
+  authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
 ): Promise<Track[]> {
   return apiRequest<Track[]>(`/api/radio/${pathSegment(deezerId)}`, {
     signal,
     timeoutMs,
+    ...(authenticatedRequestAuthority === undefined
+      ? {}
+      : { authenticatedRequestAuthority }),
     decode: decodeTrackList,
   });
 }
@@ -526,11 +530,15 @@ export function recordPlay(
   track: Track,
   timeoutMs?: number,
   eventId?: string,
+  authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
 ): Promise<void> {
   return apiRequest<void>('/api/me/plays', {
     method: 'POST',
     body: track,
     timeoutMs,
+    ...(authenticatedRequestAuthority === undefined
+      ? {}
+      : { authenticatedRequestAuthority }),
     ...(eventId === undefined ? {} : { idempotencyKey: eventId }),
   });
 }

@@ -119,6 +119,8 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon \
             :loggerythm_player-native:testReleaseUnitTest \
+            :loggerythm_player-native:lintRelease \
+            :loggerythm_player-hostile-controller:lintDebug \
             :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease \
             -PreactNativeArchitectures=arm64-v8a \
             -PhermesEnabled=true \
@@ -173,6 +175,133 @@ jobs:
           require_file app/build/outputs/mapping/release/resources.txt 'R8 resource mapping is missing or empty'
           require_file app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip 'native debug symbols are missing or empty'
           require_file app/build/generated/sourcemaps/react/release/index.android.bundle.map 'Hermes source map is missing or empty'
+          require_fixed \
+            'top.logge.loggerythm.player.LoggeRythmPlaybackJournalWorker -> top.logge.loggerythm.player.LoggeRythmPlaybackJournalWorker:' \
+            app/build/outputs/mapping/release/mapping.txt \
+            'R8 mapping does not preserve the WorkManager Worker class name'
+          merged_manifest=app/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
+          require_file "$merged_manifest" 'merged release manifest is missing'
+          python3 - "$merged_manifest" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          ANDROID = '{http://schemas.android.com/apk/res/android}'
+          root = ET.parse(sys.argv[1]).getroot()
+          application = root.find('application')
+          if application is None:
+              raise SystemExit('APK verification failed: merged manifest has no application')
+
+          permissions = {
+              item.get(f'{ANDROID}name')
+              for item in root.findall('uses-permission')
+          }
+          if 'android.permission.RECEIVE_BOOT_COMPLETED' not in permissions:
+              raise SystemExit('APK verification failed: reboot permission is missing')
+
+          def components(tag, name):
+              return [
+                  item for item in application.findall(tag)
+                  if item.get(f'{ANDROID}name') == name
+              ]
+
+          def exactly_one(tag, name):
+              matches = components(tag, name)
+              if len(matches) != 1:
+                  raise SystemExit(
+                      f'APK verification failed: expected one {tag} {name}; found {len(matches)}'
+                  )
+              return matches[0]
+
+          headless = exactly_one(
+              'service',
+              'top.logge.loggerythm.player.LoggeRythmPlaybackEventHeadlessService',
+          )
+          if (
+              headless.get(f'{ANDROID}exported') != 'false'
+              or headless.get(f'{ANDROID}permission') is not None
+              or headless.findall('intent-filter')
+          ):
+              raise SystemExit(
+                  'APK verification failed: playback-event Headless service is not private'
+              )
+
+          startup = exactly_one('provider', 'androidx.startup.InitializationProvider')
+          if startup.get(f'{ANDROID}exported') != 'false':
+              raise SystemExit(
+                  'APK verification failed: AndroidX Startup provider is exported'
+              )
+          startup_metadata = {
+              item.get(f'{ANDROID}name'): item.get(f'{ANDROID}value')
+              for item in startup.findall('meta-data')
+          }
+          if startup_metadata.get('androidx.work.WorkManagerInitializer') != 'androidx.startup':
+              raise SystemExit(
+                  'APK verification failed: WorkManager initializer is missing'
+              )
+
+          system_job = exactly_one(
+              'service',
+              'androidx.work.impl.background.systemjob.SystemJobService',
+          )
+          if (
+              system_job.get(f'{ANDROID}exported') != 'true'
+              or system_job.get(f'{ANDROID}permission')
+              != 'android.permission.BIND_JOB_SERVICE'
+          ):
+              raise SystemExit(
+                  'APK verification failed: WorkManager SystemJobService trust boundary is invalid'
+              )
+
+          system_foreground = exactly_one(
+              'service',
+              'androidx.work.impl.foreground.SystemForegroundService',
+          )
+          if system_foreground.get(f'{ANDROID}exported') != 'false':
+              raise SystemExit(
+                  'APK verification failed: WorkManager SystemForegroundService is exported'
+              )
+
+          force_stop = exactly_one(
+              'receiver',
+              'androidx.work.impl.utils.ForceStopRunnable$BroadcastReceiver',
+          )
+          reschedule = exactly_one(
+              'receiver',
+              'androidx.work.impl.background.systemalarm.RescheduleReceiver',
+          )
+          if (
+              force_stop.get(f'{ANDROID}exported') != 'false'
+              or reschedule.get(f'{ANDROID}exported') != 'false'
+          ):
+              raise SystemExit(
+                  'APK verification failed: WorkManager receiver is exported'
+              )
+          reschedule_actions = {
+              action.get(f'{ANDROID}name')
+              for intent in reschedule.findall('intent-filter')
+              for action in intent.findall('action')
+          }
+          if 'android.intent.action.BOOT_COMPLETED' not in reschedule_actions:
+              raise SystemExit(
+                  'APK verification failed: WorkManager reboot receiver has no BOOT_COMPLETED action'
+              )
+
+          if components('receiver', 'androidx.work.impl.diagnostics.DiagnosticsReceiver'):
+              raise SystemExit(
+                  'APK verification failed: WorkManager diagnostics receiver is packaged'
+              )
+          worker_name = (
+              'top.logge.loggerythm.player.LoggeRythmPlaybackJournalWorker'
+          )
+          if any(
+              item.get(f'{ANDROID}name') == worker_name
+              for tag in ('activity', 'provider', 'receiver', 'service')
+              for item in application.findall(tag)
+          ):
+              raise SystemExit(
+                  'APK verification failed: Worker must not be an Android manifest component'
+              )
+          PY
           build_tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
           aapt="$build_tools/aapt"
           "$build_tools/apksigner" verify --verbose "$apk" || fail 'APK signature verification failed'
@@ -180,15 +309,31 @@ jobs:
           "$aapt" dump badging "$apk" > /tmp/badging.txt
           "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
           "$aapt" dump resources "$apk" > /tmp/resources.txt
+          expected_version_name=$(node -p "require('../app.json').expo.version")
+          expected_version_code=$((10000 + GITHUB_RUN_NUMBER))
+          require_fixed \
+            "package: name='top.logge.loggerythm' versionCode='${expected_version_code}' versionName='${expected_version_name}'" \
+            /tmp/badging.txt \
+            'package, versionCode, or versionName does not match the release candidate'
+          require_fixed "sdkVersion:'24'" /tmp/badging.txt 'APK minSdk is not 24'
+          require_fixed "targetSdkVersion:'36'" /tmp/badging.txt 'APK targetSdk is not 36'
           require_fixed "application-label:'LoggeRythm'" /tmp/badging.txt 'application label is not LoggeRythm'
           require_regex "application-icon-[0-9]+:'res/[^']+'" /tmp/badging.txt 'badging reports no packaged application icon'
           launcher_icon=$(awk -F"'" '/^application-icon-[0-9]+:/{print $2; exit}' /tmp/badging.txt)
           test -n "$launcher_icon" || fail 'could not resolve the packaged launcher icon path'
           "$aapt" dump xmltree "$apk" "$launcher_icon" > /tmp/launcher-icon.txt
           require_fixed 'top.logge.loggerythm.player.LoggeRythmMediaLibraryService' /tmp/manifest.txt 'First-party playback service is missing from the manifest'
+          require_fixed 'top.logge.loggerythm.player.LoggeRythmPlaybackEventHeadlessService' /tmp/manifest.txt 'private playback-event Headless service is missing from the manifest'
           require_fixed 'android:foregroundServiceType' /tmp/manifest.txt 'playback foreground service type is missing from the manifest'
           require_fixed 'androidx.media3.session.MediaLibraryService' /tmp/manifest.txt 'Media3 library-service action is missing from the manifest'
           require_fixed 'android.media.browse.MediaBrowserService' /tmp/manifest.txt 'platform media-browser action is missing from the manifest'
+          require_fixed 'android.permission.RECEIVE_BOOT_COMPLETED' /tmp/manifest.txt 'WorkManager reboot rescheduling permission is missing from the manifest'
+          require_fixed 'android.permission.BIND_JOB_SERVICE' /tmp/manifest.txt 'WorkManager JobService is not platform-permission protected'
+          require_fixed 'androidx.work.impl.background.systemjob.SystemJobService' /tmp/manifest.txt 'WorkManager SystemJobService is missing from the manifest'
+          require_fixed 'androidx.work.WorkManagerInitializer' /tmp/manifest.txt 'WorkManager AndroidX Startup initializer is missing from the manifest'
+          if grep -Fq 'androidx.work.impl.diagnostics.DiagnosticsReceiver' /tmp/manifest.txt; then
+            fail 'WorkManager diagnostics receiver must not ship in the product manifest'
+          fi
           require_fixed 'com.google.android.gms.car.application' /tmp/manifest.txt 'Android Auto metadata is missing from the manifest'
           require_fixed 'androidx.car.app.TintableAttributionIcon' /tmp/manifest.txt 'Android Auto attribution icon metadata is missing from the manifest'
           require_fixed 'android.intent.category.LAUNCHER' /tmp/manifest.txt 'launcher activity is missing from the manifest'
@@ -286,8 +431,13 @@ jobs:
           cp app/build/outputs/mapping/release/resources.txt release-evidence/r8/resources-arm64-v8a.txt
           cp app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip release-evidence/native/native-debug-symbols-arm64-v8a.zip
           cp app/build/generated/sourcemaps/react/release/index.android.bundle.map release-evidence/hermes/index.android.bundle.map
-          sha256sum LoggeRythm-native-arm64-v8a.apk
-          sha256sum release-evidence/r8/* release-evidence/native/* release-evidence/hermes/*
+          sha256sum \
+            LoggeRythm-native-arm64-v8a.apk \
+            release-evidence/r8/* \
+            release-evidence/native/* \
+            release-evidence/hermes/* \
+            > release-evidence/SHA256SUMS
+          cat release-evidence/SHA256SUMS
 
       - name: Enable KVM for native instrumentation
         run: |

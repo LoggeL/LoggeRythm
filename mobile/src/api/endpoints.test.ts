@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from './types';
+import type { AuthenticatedRequestAuthority } from './client';
 import {
   addToPlaylist,
   addTracksBulk,
@@ -100,6 +101,28 @@ describe('API endpoint URL construction', () => {
       body: track,
       timeoutMs: 4_000,
       idempotencyKey: eventId,
+    });
+  });
+
+  it('threads one opaque journal authority through PLAY and RADIO requests', () => {
+    const authority = Object.freeze({}) as AuthenticatedRequestAuthority;
+    const track = { id: '42' } as Track;
+
+    recordPlay(track, 4_000, '123e4567-e89b-42d3-a456-426614174000', authority);
+    getRadio('42', undefined, 4_000, authority);
+
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(1, '/api/me/plays', {
+      method: 'POST',
+      body: track,
+      timeoutMs: 4_000,
+      authenticatedRequestAuthority: authority,
+      idempotencyKey: '123e4567-e89b-42d3-a456-426614174000',
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(2, '/api/radio/42', {
+      signal: undefined,
+      timeoutMs: 4_000,
+      authenticatedRequestAuthority: authority,
+      decode: expect.any(Function),
     });
   });
 });
