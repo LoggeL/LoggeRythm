@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ArtistRef, Track } from '../../api/types';
+import { trackArtistCredits } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import { trackAlbumRoute, trackArtistRoute } from '../../navigationLinks';
 import { colors, metrics } from '../../theme';
@@ -24,9 +25,7 @@ export default function NowPlayingMetadata({
   compact = false,
 }: NowPlayingMetadataProps) {
   const albumNavigable = trackAlbumRoute(track) !== null;
-  const artists: readonly ArtistRef[] = track.artists.length > 0
-    ? track.artists
-    : [{ id: track.artist_id, name: track.artist }];
+  const artists = trackArtistCredits(track);
 
   return (
     <View testID="now-playing-metadata" style={styles.container}>

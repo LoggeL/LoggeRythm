@@ -158,5 +158,14 @@ describe('search model', () => {
     expect(searchPopularityPercent(750_000)).toBe(75);
     expect(searchPopularityPercent(0)).toBeNull();
     expect(searchTrackCredit({ artist: 'Artist', album: 'Album' })).toBe('Artist · Album');
+    expect(searchTrackCredit({
+      artist: 'Primary',
+      artist_id: '1',
+      artists: [
+        { id: '1', name: 'Primary' },
+        { id: '2', name: 'Guest' },
+      ],
+      album: 'Album',
+    })).toBe('Primary, Guest · Album');
   });
 });

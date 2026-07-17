@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PlaylistSummary, ResolveResult } from '../../api/types';
+import { trackArtistLabel } from '../../api/trackArtists';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { showTrackActions } from '../trackActions';
 import {
@@ -439,7 +440,7 @@ function ResolvedSpotifyImport({
       case 'unmatched-track':
         return (
           <Text style={styles.status} numberOfLines={1}>
-            {item.track.title} — {item.track.artist}
+            {item.track.title} — {trackArtistLabel(item.track)}
           </Text>
         );
     }

@@ -14,6 +14,7 @@ import Player, { Event, useProgress } from '../player/player';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Track } from '../api/types';
+import { trackArtistLabel } from '../api/trackArtists';
 import AppIcon from '../components/AppIcon';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
 import TrackStateIndicator from '../components/TrackStateIndicator';
@@ -607,7 +608,7 @@ export function QueueSurface({
                   accessibilityRole="button"
                   accessibilityLabel={strings.queue.skipLabel(
                     row.track.title,
-                    row.track.artist,
+                    trackArtistLabel(row.track),
                     active,
                   )}
                   accessibilityHint={active ? undefined : strings.queue.skipHint}

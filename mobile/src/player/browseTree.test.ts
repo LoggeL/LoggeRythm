@@ -55,7 +55,10 @@ const track: Track = {
   title: 'Example',
   artist: 'Artist',
   artist_id: '42',
-  artists: [{ id: '42', name: 'Artist' }],
+  artists: [
+    { id: '42', name: 'Artist' },
+    { id: '43', name: 'Guest' },
+  ],
   album: 'Album',
   album_id: '302127',
   cover: '',
@@ -368,7 +371,7 @@ describe('Android Auto browse-tree publication', () => {
         {
           mediaId: `liked:0:${track.id}`,
           title: track.title,
-          artist: track.artist,
+          artist: 'Artist, Guest',
           extras: { radio: false, track },
         },
       ],
@@ -383,7 +386,7 @@ describe('Android Auto browse-tree publication', () => {
             {
               mediaId: `playlist:7:0:${track.id}`,
               title: track.title,
-              artist: track.artist,
+              artist: 'Artist, Guest',
               extras: { radio: false, track },
             },
           ],

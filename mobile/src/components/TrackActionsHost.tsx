@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
+import { trackArtistLabel } from '../api/trackArtists';
 import { getCurrentApiBase } from '../config';
 import {
   createPlaylistWithTrack,
@@ -325,7 +326,9 @@ export default function TrackActionsHost() {
                   : strings.trackActions.addToPlaylistTitle}
               </Text>
               <Text style={styles.subtitle} numberOfLines={1}>
-                {mode === 'actions' ? request?.track.artist : request?.track.title}
+                {mode === 'actions' && request !== null
+                  ? trackArtistLabel(request.track)
+                  : request?.track.title}
               </Text>
             </View>
             <Pressable

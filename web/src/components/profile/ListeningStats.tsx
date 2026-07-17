@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { api } from "@/lib/api";
 import { decodeListeningStats } from "@/lib/listeningStats";
+import { trackArtistLabel } from "@/lib/trackArtists";
 import type { RecentPlay, StatEntry, UserStats } from "@/types";
 import styles from "./ListeningStats.module.css";
 
@@ -173,7 +174,7 @@ function RecentCard({ tracks }: { tracks: RecentPlay[] }) {
                 </span>
                 <div>
                   <strong>{track.title}</strong>
-                  <span>{track.artist}</span>
+                  <span>{trackArtistLabel(track)}</span>
                 </div>
               </li>
             ))}

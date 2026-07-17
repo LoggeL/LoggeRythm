@@ -1,4 +1,5 @@
 import type { DeezerId, DeezerPlaylistTrack, Track } from '../api/types';
+import { trackArtistLabel } from '../api/trackArtists';
 import type { AppLocale } from '../localization';
 export { recentSearchStorageKey } from '../data/accountStorage';
 
@@ -161,8 +162,11 @@ export function searchPopularityPercent(rank: number): number | null {
   return Math.max(2, Math.min(100, Math.round((rank / 1_000_000) * 100)));
 }
 
-export function searchTrackCredit(track: Pick<Track, 'artist' | 'album'>): string {
-  const artist = track.artist.trim();
+export function searchTrackCredit(
+  track: Pick<Track, 'artist' | 'album'>
+    & Partial<Pick<Track, 'artist_id' | 'artists'>>,
+): string {
+  const artist = trackArtistLabel(track).trim();
   const album = track.album.trim();
   return [artist, album].filter((value) => value.length > 0).join(' · ');
 }

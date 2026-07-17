@@ -1,6 +1,7 @@
 import React, { type ReactNode } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track, TrackPlayCount } from '../../api/types';
+import { trackArtistLabel } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import type { TrackOccurrenceIdentity } from '../../player/trackPresentation';
@@ -83,7 +84,7 @@ export default function StandardTrackRow({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={strings.common.trackBy(track.title, track.artist)}
+          accessibilityLabel={strings.common.trackBy(track.title, trackArtistLabel(track))}
           accessibilityHint={
             onActions === undefined ? undefined : strings.trackActions.moreActionsHint
           }

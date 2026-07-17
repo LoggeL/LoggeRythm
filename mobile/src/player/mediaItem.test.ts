@@ -12,7 +12,10 @@ const track: Track = {
   title: 'Native boundary',
   artist: 'Bridge Artist',
   artist_id: '456',
-  artists: [{ id: '456', name: 'Bridge Artist' }],
+  artists: [
+    { id: '456', name: 'Bridge Artist' },
+    { id: '789', name: 'Guest Artist' },
+  ],
   album: 'Bridge Album',
   album_id: '789',
   cover: 'https://images.test/cover.jpg',
@@ -26,6 +29,7 @@ describe('mediaItemToTrack', () => {
   it('round-trips ordinary JavaScript Track metadata', () => {
     const item = trackToMediaItem(track, 'https://api.test', { Cookie: 'session=test' });
 
+    expect(item.artist).toBe('Bridge Artist, Guest Artist');
     expect(mediaItemToTrack(item)).toEqual(track);
     expect(mediaItemUsesExplicitDownload(item)).toBe(false);
   });

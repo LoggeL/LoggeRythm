@@ -1,6 +1,7 @@
 import Player, { type BrowseCategory, type BrowseItem } from './player';
 import { authenticatedHeadersFor } from '../api/client';
 import type { Playlist, Track } from '../api/types';
+import { trackArtistLabel } from '../api/trackArtists';
 import { getApiBase } from '../config';
 import { getConnectivitySnapshot } from '../connectivity/store';
 import { musicRepository } from '../data/repositories';
@@ -109,7 +110,7 @@ export function buildOfflineDownloadsBrowseCategory(
         return [{
           mediaId: `download:${summary.id}:${position}:${track.id}`,
           title: track.title,
-          artist: track.artist,
+          artist: trackArtistLabel(track),
           artworkUrl: track.cover || undefined,
           url: { uri },
           duration: track.duration_sec,
@@ -196,7 +197,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
     const toItem = (track: Track, mediaId: string): BrowseItem => ({
       mediaId,
       title: track.title,
-      artist: track.artist,
+      artist: trackArtistLabel(track),
       artworkUrl: track.cover || undefined,
       url: {
         uri: `${base}/api/tracks/${encodeURIComponent(track.id)}/stream`,

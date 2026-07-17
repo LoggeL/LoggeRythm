@@ -8,6 +8,7 @@ import { api, streamUrl } from "@/lib/api";
 import { ensureAnalyser, applyVolume, perceptualVolume } from "@/lib/audioAnalyser";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
+import { trackArtistLabel } from "@/lib/trackArtists";
 import LikeButton from "@/components/LikeButton";
 import NowPlaying from "@/components/now-playing/NowPlaying";
 import TrackContext from "@/components/TrackContext";
@@ -264,7 +265,9 @@ export default function PlayerBar() {
   // Reflect the current song in the browser tab title.
   useEffect(() => {
     const base = "LoggeRythm";
-    document.title = track ? `${track.title} • ${track.artist}` : base;
+    document.title = track
+      ? `${track.title} • ${trackArtistLabel(track)}`
+      : base;
     return () => {
       document.title = base;
     };
@@ -477,7 +480,7 @@ export default function PlayerBar() {
     }
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
-      artist: track.artist,
+      artist: trackArtistLabel(track),
       album: track.album,
       artwork: track.cover
         ? [

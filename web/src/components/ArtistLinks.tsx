@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
+import { trackArtistCredits } from "@/lib/trackArtists";
 
 interface ArtistLinksProps {
   track: Track;
@@ -23,10 +24,7 @@ export default function ArtistLinks({
   linkClassName = "hover:underline hover:text-foreground",
   onNavigate,
 }: ArtistLinksProps) {
-  const artists =
-    track.artists && track.artists.length > 0
-      ? track.artists
-      : [{ id: track.artist_id ?? "", name: track.artist }];
+  const artists = trackArtistCredits(track);
 
   return (
     <span className={className}>

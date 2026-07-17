@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track } from '../../api/types';
+import { trackArtistLabel } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { useTrackPresentation } from '../player/TrackPresentationProvider';
@@ -48,7 +49,7 @@ export default function TrackShelfCard({
       <Pressable
         testID={testID}
         accessibilityRole="button"
-        accessibilityLabel={strings.common.trackBy(track.title, track.artist)}
+        accessibilityLabel={strings.common.trackBy(track.title, trackArtistLabel(track))}
         accessibilityState={{ selected: presentation.active, busy: buffering }}
         onPress={onPlay}
         style={({ pressed }) => [styles.artworkButton, pressed && styles.pressed]}

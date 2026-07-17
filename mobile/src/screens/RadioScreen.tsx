@@ -19,6 +19,7 @@ import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
 import type { RemoteFetchStatus } from '../data/remoteState';
 import { useAuth } from '../auth/AuthContext';
+import { trackArtistLabel } from '../api/trackArtists';
 import { strings } from '../localization';
 import { playTracks, startRadio } from '../player/controller';
 import { colors, metrics } from '../theme';
@@ -202,7 +203,7 @@ export default function RadioScreen() {
                   key={id}
                   testID={`radio-personal-${id}`}
                   title={track.title}
-                  subtitle={track.artist}
+                  subtitle={trackArtistLabel(track)}
                   cover={track.cover}
                   variant="personal"
                   busy={startingKey === key}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { startTrackRadio, startTrackListRadio } from "@/lib/radio";
+import { trackArtistLabel } from "@/lib/trackArtists";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { toast } from "@/store/toast";
 import { CardGridSkeleton } from "@/components/Skeleton";
@@ -121,7 +122,9 @@ export default function RadioPage() {
                   Radio
                 </div>
                 <div className="truncate font-semibold">{track.title}</div>
-                <div className="truncate text-sm text-muted">{track.artist}</div>
+                <div className="truncate text-sm text-muted">
+                  {trackArtistLabel(track)}
+                </div>
               </button>
             ))}
           </div>

@@ -14,6 +14,7 @@ import { mediaItemToTrack } from '../player/mediaItem';
 import { next, togglePlay } from '../player/controller';
 import { reportPlayerError } from '../player/errors';
 import type { RootStackParams } from '../navigation';
+import { trackArtistLabel } from '../api/trackArtists';
 import { strings } from '../localization';
 import { colors, metrics } from '../theme';
 import TrackLikeButton from './TrackLikeButton';
@@ -33,6 +34,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
   const track = mediaItemToTrack(item);
 
   if (!track) return null;
+  const artistLabel = trackArtistLabel(track);
   const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
   const buffering = playbackState === PlaybackState.Buffering;
   const run = (label: string, action: () => void) => {
@@ -55,7 +57,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
         <Pressable
           testID="mini-player-open"
           accessibilityRole="button"
-          accessibilityLabel={strings.player.openNowPlaying(track.title, track.artist)}
+          accessibilityLabel={strings.player.openNowPlaying(track.title, artistLabel)}
           style={styles.trackButton}
           onPress={() => navigation.navigate('NowPlaying')}
         >
@@ -66,7 +68,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
           )}
           <View style={styles.meta}>
             <Text style={styles.title} numberOfLines={1}>{track.title}</Text>
-            <Text style={styles.artist} numberOfLines={1}>{track.artist}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{artistLabel}</Text>
           </View>
         </Pressable>
         <TrackLikeButton track={track} testID="mini-player-like" />

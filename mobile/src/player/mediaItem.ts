@@ -1,5 +1,6 @@
 import type { MediaItem } from './player';
 import type { Track } from '../api/types';
+import { trackArtistLabel } from '../api/trackArtists';
 
 function isArtistRef(value: unknown): value is Track['artists'][number] {
   if (typeof value !== 'object' || value === null) return false;
@@ -37,7 +38,7 @@ export function trackToMediaItem(
       ? { uri: `${apiBase}/api/tracks/${track.id}/stream`, headers: streamHeaders }
       : { uri: explicitDownloadUri },
     title: track.title,
-    artist: track.artist,
+    artist: trackArtistLabel(track),
     albumTitle: track.album,
     artworkUrl: track.cover || undefined,
     duration: track.duration_sec,

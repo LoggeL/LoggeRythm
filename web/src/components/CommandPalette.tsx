@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { trackArtistLabel } from "@/lib/trackArtists";
 import { usePlayerStore } from "@/store/player";
 import { SearchIcon, PlayIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
@@ -189,7 +190,7 @@ export default function CommandPalette() {
                         {row.track.title}
                       </div>
                       <div className="truncate text-xs text-muted">
-                        {row.track.artist}
+                        {trackArtistLabel(row.track)}
                       </div>
                     </div>
                     {active && (

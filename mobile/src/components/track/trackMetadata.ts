@@ -1,4 +1,5 @@
 import type { ArtistRef, TrackPlayCount } from '../../api/types';
+import { trackArtistCredits } from '../../api/trackArtists';
 import { trackAlbumRoute, trackArtistRoute } from '../../navigationLinks';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 
@@ -107,13 +108,6 @@ function popularityMetadata(
     : { kind: 'rank', rank: descriptor.rank as number, percent };
 }
 
-function artistCredits(descriptor: TrackMetadataDescriptor): readonly ArtistRef[] {
-  if (descriptor.artists !== undefined && descriptor.artists.length > 0) {
-    return descriptor.artists;
-  }
-  return [{ id: descriptor.artist_id ?? '', name: descriptor.artist }];
-}
-
 /**
  * Build one route-safe presentation model. Invalid legacy references remain
  * visible through their labels, but cannot become catalog actions.
@@ -126,7 +120,7 @@ export function buildTrackMetadata(
     album_id: descriptor.album_id ?? '',
     album: descriptor.album,
   });
-  const artists = artistCredits(descriptor).map((artist, index) => ({
+  const artists = trackArtistCredits(descriptor).map((artist, index) => ({
     key: `artist-credit-${index}`,
     index,
     id: artist.id,
