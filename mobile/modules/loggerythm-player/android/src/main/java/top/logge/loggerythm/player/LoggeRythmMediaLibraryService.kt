@@ -1,6 +1,7 @@
 package top.logge.loggerythm.player
 
 import android.content.Intent
+import android.os.Bundle
 import android.os.IBinder
 import android.os.Process
 import androidx.media3.common.AudioAttributes
@@ -11,6 +12,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
@@ -20,7 +22,9 @@ import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.FutureCallback
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.MoreExecutors
 import com.google.common.util.concurrent.SettableFuture
 
 internal data class ControllerTrustSignals(
@@ -248,6 +252,7 @@ class LoggeRythmMediaLibraryService :
   private lateinit var persistedCoordinator: LoggeRythmPersistedPlayerCoordinator
   private lateinit var remoteCommandInstaller: LoggeRythmDurableRemoteCommandInstaller
   private val remoteCommandPolicy = LoggeRythmRemoteCommandPolicy()
+  private val notificationFavorite = LoggeRythmNotificationFavoriteCoordinator()
   private var remotePolicyExplicitlyReset = false
   private var serviceOnlyRestoreState = ServiceOnlyRestoreState.IDLE
   private val serviceOnlyRestoreWaiters = mutableListOf<() -> Unit>()
@@ -280,6 +285,12 @@ class LoggeRythmMediaLibraryService :
         events.contains(Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)
       ) {
         scheduleNextPreload()
+      }
+      if (
+        events.contains(Player.EVENT_TIMELINE_CHANGED) ||
+        events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
+      ) {
+        refreshNotificationFavoriteButtons()
       }
     }
   }
@@ -392,6 +403,17 @@ class LoggeRythmMediaLibraryService :
     // the coordinator's committed-policy rollback behind that already-admitted write.
     persistedCoordinator.cancelPendingRemoteCommandUpdate()
     remoteCommandInstaller.reset()
+    notificationFavorite.publish(null, null)
+    refreshNotificationFavoriteButtons()
+  }
+
+  override fun publishNotificationFavorite(
+    mediaId: String?,
+    liked: Boolean?,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    notificationFavorite.publish(mediaId, liked)
+    refreshNotificationFavoriteButtons(callback)
   }
 
   private fun notifyBrowseTreeChanged(change: RuntimeBrowseTreeChange) {
@@ -434,7 +456,59 @@ class LoggeRythmMediaLibraryService :
         remoteCommandPolicy.sessionCommands(profile),
         remoteCommandPolicy.playerCommands(profile),
       )
+      librarySession.setMediaButtonPreferences(
+        controller,
+        notificationFavoriteButtons(profile),
+      )
     }
+  }
+
+  private fun notificationFavoriteButtons(profile: RemoteControllerProfile): List<CommandButton> =
+    if (profile == RemoteControllerProfile.NOTIFICATION) {
+      notificationFavorite.buttonFor(player.currentMediaItem?.mediaId)
+    } else {
+      emptyList()
+    }
+
+  private fun refreshNotificationFavoriteButtons(
+    callback: ((Result<Unit>) -> Unit)? = null,
+  ) {
+    val futures = librarySession.connectedControllers.mapNotNull { controller ->
+      val profile = controllerProfile(librarySession, controller)
+      if (profile != RemoteControllerProfile.NOTIFICATION) return@mapNotNull null
+      librarySession.setMediaButtonPreferences(
+        controller,
+        notificationFavoriteButtons(profile),
+      )
+    }
+    if (futures.isEmpty()) {
+      callback?.invoke(Result.success(Unit))
+      return
+    }
+    Futures.addCallback(
+      Futures.allAsList(futures),
+      object : FutureCallback<List<SessionResult>> {
+        override fun onSuccess(results: List<SessionResult>) {
+          val failure = results.firstOrNull { it.resultCode != SessionResult.RESULT_SUCCESS }
+          if (failure == null) {
+            callback?.invoke(Result.success(Unit))
+          } else {
+            val error = IllegalStateException(
+              "notification-favorite-layout-rejected:${failure.resultCode}",
+            )
+            if (callback == null) throw error else callback.invoke(Result.failure(error))
+          }
+        }
+
+        override fun onFailure(error: Throwable) {
+          if (callback == null) throw IllegalStateException(
+            "notification-favorite-layout-failed",
+            error,
+          ) else callback.invoke(Result.failure(error))
+        }
+      },
+      MoreExecutors.directExecutor(),
+    )
   }
 
   private fun ensureServiceOnlyRestore() {
@@ -513,7 +587,31 @@ class LoggeRythmMediaLibraryService :
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(remoteCommandPolicy.sessionCommands(profile))
         .setAvailablePlayerCommands(remoteCommandPolicy.playerCommands(profile))
+        .setMediaButtonPreferences(notificationFavoriteButtons(profile))
         .build()
+    }
+
+    override fun onCustomCommand(
+      session: MediaSession,
+      controller: MediaSession.ControllerInfo,
+      customCommand: androidx.media3.session.SessionCommand,
+      args: Bundle,
+    ): ListenableFuture<SessionResult> {
+      if (
+        controllerProfile(session, controller) != RemoteControllerProfile.NOTIFICATION ||
+        customCommand.customAction != LoggeRythmNotificationFavoriteContract.ACTION
+      ) {
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+      }
+      val result = notificationFavorite.requestToggle(
+        player.currentMediaItem?.mediaId,
+        LoggeRythmNotificationFavoriteEventBridge::emit,
+      )
+      if (result != LoggeRythmNotificationFavoriteRequestResult.DELIVERED) {
+        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE))
+      }
+      refreshNotificationFavoriteButtons()
+      return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")

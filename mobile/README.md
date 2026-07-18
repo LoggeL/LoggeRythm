@@ -40,7 +40,7 @@ Metro is not needed at runtime):
 
 ```bash
 cd android
-NODE_ENV=production ALLOW_DEBUG_RELEASE_SIGNING=true ANDROID_VERSION_CODE=10002 \
+NODE_ENV=production ALLOW_DEBUG_RELEASE_SIGNING=true ANDROID_VERSION_CODE=10018 \
   ./gradlew assembleRelease \
   -PreactNativeArchitectures=arm64-v8a \
   -PhermesEnabled=true \

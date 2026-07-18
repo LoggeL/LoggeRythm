@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -59,8 +60,14 @@ import {
   nowPlayingArtistDestination,
 } from './nowPlayingNavigation';
 import { resolveNowPlayingBody } from './nowPlayingModel';
+import {
+  shouldCaptureFullscreenMinimize,
+  shouldMinimizeFullscreenPlayer,
+} from '../player/playerGestures';
 
 type Props = NativeStackScreenProps<RootStackParams, 'NowPlaying'>;
+
+const FULLSCREEN_MINIMIZE_CAPTURE_HEIGHT = 180;
 
 function repeatModeLabel(mode: RepeatMode): string {
   if (mode === RepeatMode.One) return strings.player.repeatOne;
@@ -84,6 +91,17 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const [shuffle, setShuffle] = useState(isContextShuffleEnabled);
   const [shufflePending, setShufflePending] = useState(false);
   const [tab, setTab] = useState<NowPlayingTab>(DEFAULT_NOW_PLAYING_TAB);
+  const minimizeResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    // Limit capture to the fixed header/tabs region so nested vertical panels retain scrolling.
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+      gesture.y0 <= insets.top + FULLSCREEN_MINIMIZE_CAPTURE_HEIGHT
+      && shouldCaptureFullscreenMinimize(gesture),
+    onPanResponderRelease: (_event, gesture) => {
+      if (shouldMinimizeFullscreenPlayer(gesture)) navigation.goBack();
+    },
+    onPanResponderTerminationRequest: () => true,
+  }), [insets.top, navigation]);
 
   useEffect(() => {
     const syncShuffleState = () => setShuffle(isContextShuffleEnabled());
@@ -204,6 +222,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
         styles.container,
         { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
       ]}
+      {...minimizeResponder.panHandlers}
     >
       <NowPlayingBackdrop coverUri={track.cover} />
       {topBar}

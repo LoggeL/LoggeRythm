@@ -11,6 +11,7 @@ import BrandLockup from './src/components/BrandLockup';
 import SessionRestoreError from './src/components/SessionRestoreError';
 import TrackActionsHost from './src/components/TrackActionsHost';
 import ConnectivityBanner from './src/components/ConnectivityBanner';
+import NotificationFavoriteHost from './src/components/NotificationFavoriteHost';
 import { strings } from './src/localization';
 import { LocaleProvider, useLocaleRevision } from './src/localization/LocaleProvider';
 import LocaleHydrationGate from './src/localization/LocaleHydrationGate';
@@ -96,6 +97,7 @@ export default function App() {
           <QueryClientProvider client={musicQueryClient}>
             <AuthProvider>
               <SharedTextIntakeHost />
+              <NotificationFavoriteHost />
               <Gate />
               <TrackActionsHost />
             </AuthProvider>

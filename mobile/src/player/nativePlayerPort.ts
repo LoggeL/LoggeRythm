@@ -122,6 +122,7 @@ export interface LoggeRythmPlayerNativeModule {
     eventId: string,
     payloadJson: string,
   ): Promise<unknown>;
+  setNotificationFavoriteState(mediaId: string | null, liked: boolean | null): Promise<unknown>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }
@@ -225,10 +226,11 @@ export interface NativeBrowseTreeV1 {
 
 interface NativePlayerEventV1 {
   schemaVersion: 1;
-  type: 'error' | 'media-item-transition';
+  type: 'error' | 'media-item-transition' | 'notification-favorite-request';
   code?: 'player-error';
   itemId?: string | null;
   reason?: 'auto' | 'seek' | 'repeat' | 'playlist-changed' | 'unknown';
+  requestedLiked?: boolean;
 }
 
 class ReconciliationConflictError extends Error {}
@@ -950,6 +952,25 @@ export class NativeBackedPlayerPort implements PlayerPort {
     );
   }
 
+  async setNotificationFavoriteState(
+    mediaId: string | null,
+    liked: boolean | null,
+  ): Promise<void> {
+    this.assertUsable();
+    if ((mediaId === null) !== (liked === null)) {
+      throw new TypeError('Notification favorite mediaId and liked state must both be null or set');
+    }
+    if (mediaId !== null) requireMediaId(mediaId, 'notification favorite mediaId');
+    try {
+      await this.dependencies.nativeModule.setNotificationFavoriteState(mediaId, liked);
+    } catch {
+      throw new PlayerNativeCommandError(
+        'setNotificationFavoriteState',
+        'native-rejected',
+      );
+    }
+  }
+
   setRepeatMode(mode: RepeatMode): void {
     if (!Object.values(RepeatMode).includes(mode)) throw new TypeError('Repeat mode is invalid');
     this.enqueue('setRepeatMode', (snapshot) => nextSnapshot(snapshot, { repeatMode: mode }), {
@@ -1551,6 +1572,17 @@ export class NativeBackedPlayerPort implements PlayerPort {
         };
         backgroundEvent = { type: Event.MediaItemTransition, ...safe };
         dispatchForeground = () => this.dispatch(Event.MediaItemTransition, safe);
+      } else if (event.type === 'notification-favorite-request') {
+        const requestedLiked = event.requestedLiked;
+        if (typeof requestedLiked !== 'boolean') {
+          throw new TypeError('Native notification favorite event state is invalid');
+        }
+        const safe = {
+          mediaId: requireMediaId(event.itemId, 'notification favorite event mediaId'),
+          requestedLiked,
+        };
+        backgroundEvent = { type: Event.RemoteToggleFavorite, ...safe };
+        dispatchForeground = () => this.dispatch(Event.RemoteToggleFavorite, safe);
       } else {
         throw new TypeError('Native player event type is invalid');
       }

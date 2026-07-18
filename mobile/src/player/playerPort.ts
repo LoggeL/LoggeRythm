@@ -75,6 +75,7 @@ export enum Event {
   RemoteSeek = 'remote-seek',
   RemoteSkipForward = 'remote-skip-forward',
   RemoteSkipBackward = 'remote-skip-backward',
+  RemoteToggleFavorite = 'remote-toggle-favorite',
   SleepTimerTriggered = 'sleep-timer-triggered',
   CommandRejected = 'command-rejected',
 }
@@ -304,6 +305,7 @@ export interface EventPayloadByEvent {
   [Event.RemoteSeek]: { position: number };
   [Event.RemoteSkipForward]: { interval: number };
   [Event.RemoteSkipBackward]: { interval: number };
+  [Event.RemoteToggleFavorite]: { mediaId: string; requestedLiked: boolean };
   [Event.SleepTimerTriggered]: { type: 'time' | 'mediaItem' };
   [Event.CommandRejected]: CommandRejectedEvent;
 }
@@ -348,6 +350,7 @@ export type PlayerPortCommandName =
 
 export type PlayerOperationName =
   | PlayerPortCommandName
+  | 'setNotificationFavoriteState'
   | 'setupPlayer'
   | 'setBrowseTree'
   | 'clearPersistedQueue'
@@ -399,6 +402,8 @@ export interface PlayerPort {
   setQueuePersistenceState(state: QueuePersistenceState): void;
   /** Resolve only after MediaSession has installed this exact remote-command policy. */
   setCommands(commands: RemoteControlConfig): Promise<void>;
+  /** Publish exact current-item favorite state to Android notification controls. */
+  setNotificationFavoriteState(mediaId: string | null, liked: boolean | null): Promise<void>;
   setRepeatMode(mode: RepeatMode): void;
   setShuffleEnabled(enabled: boolean): void;
   setBrowseTree(categories: readonly BrowseCategory[]): void;

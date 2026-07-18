@@ -59,6 +59,7 @@ function nativeModule(overrides: Partial<LoggeRythmPlayerNativeModule> = {}) {
     ackPlaybackEvent: vi.fn(async () => undefined),
     retryPlaybackEvent: vi.fn(async () => undefined),
     completeRadioPlaybackEvent: vi.fn(async () => undefined),
+    setNotificationFavoriteState: vi.fn(async () => undefined),
     addListener: vi.fn(),
     removeListeners: vi.fn(),
     ...overrides,
@@ -173,6 +174,7 @@ describe('NativeBackedPlayerPort', () => {
       'setCommands',
       'setMediaItem',
       'setMediaItems',
+      'setNotificationFavoriteState',
       'setQueuePersistenceState',
       'setRepeatMode',
       'setShuffleEnabled',
@@ -184,7 +186,7 @@ describe('NativeBackedPlayerPort', () => {
       'sleepAfterTime',
     ] as const;
 
-    expect(currentCalls).toHaveLength(38);
+    expect(currentCalls).toHaveLength(39);
     currentCalls.forEach((name) => expect(typeof port[name], name).toBe('function'));
     expect(Object.keys(NATIVE_COMMAND_TRANSLATION)).toHaveLength(24);
     port.dispose();
@@ -390,6 +392,30 @@ describe('NativeBackedPlayerPort', () => {
     expect(errors).toContainEqual({ code: 'unknown', message: 'Playback failed' });
     expect(JSON.stringify({ errors, snapshot: port.getSnapshot() })).not.toContain('never-public');
     expect(JSON.stringify({ errors, snapshot: port.getSnapshot() })).not.toContain('Cookie');
+    port.dispose();
+  });
+
+  it('publishes exact notification favorite state and decodes remote toggle requests', async () => {
+    const module = nativeModule();
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    const requests: unknown[] = [];
+    port.addEventListener(Event.RemoteToggleFavorite, (event) => requests.push(event));
+
+    await port.setNotificationFavoriteState('queue:track:42', false);
+    expect(module.setNotificationFavoriteState).toHaveBeenCalledWith('queue:track:42', false);
+    emitter.emit(NATIVE_PLAYER_EVENT, {
+      eventJson: JSON.stringify({
+        schemaVersion: 1,
+        type: 'notification-favorite-request',
+        itemId: 'queue:track:42',
+        requestedLiked: true,
+      }),
+    });
+
+    expect(requests).toEqual([{ mediaId: 'queue:track:42', requestedLiked: true }]);
+    await expect(port.setNotificationFavoriteState('queue:track:42', null)).rejects.toThrow(
+      'must both be null or set',
+    );
     port.dispose();
   });
 

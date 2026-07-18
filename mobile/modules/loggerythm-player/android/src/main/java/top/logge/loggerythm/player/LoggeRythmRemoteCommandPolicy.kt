@@ -113,7 +113,9 @@ internal class LoggeRythmRemoteCommandPolicy {
   fun sessionCommands(profile: RemoteControllerProfile): SessionCommands = when (profile) {
     RemoteControllerProfile.INTERNAL ->
       MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-    RemoteControllerProfile.NOTIFICATION -> SessionCommands.EMPTY
+    RemoteControllerProfile.NOTIFICATION -> SessionCommands.Builder()
+      .add(LoggeRythmNotificationFavoriteContract.command)
+      .build()
     RemoteControllerProfile.TRUSTED_BROWSER -> SessionCommands.Builder().apply {
       sessionCommandCodes(profile).forEach(::add)
     }.build()
@@ -239,6 +241,11 @@ internal interface LoggeRythmMediaSessionServiceControl {
     callback: (Result<Unit>) -> Unit,
   )
   fun resetRemoteCommands()
+  fun publishNotificationFavorite(
+    mediaId: String?,
+    liked: Boolean?,
+    callback: (Result<Unit>) -> Unit,
+  )
 }
 
 /** In-process command-policy bridge. It deliberately carries no identity, source, or credential. */
@@ -273,5 +280,20 @@ internal object LoggeRythmMediaSessionServiceBridge {
 
   fun resetRemoteCommands() {
     synchronized(lock) { control }?.resetRemoteCommands()
+  }
+
+  fun publishNotificationFavorite(
+    mediaId: String?,
+    liked: Boolean?,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(
+        LoggeRythmPersistedPlayerException("player-session-control-unavailable"),
+      ))
+    } else {
+      active.publishNotificationFavorite(mediaId, liked, callback)
+    }
   }
 }

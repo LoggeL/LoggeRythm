@@ -47,6 +47,7 @@ function nativeModule(): LoggeRythmPlayerNativeModule {
     ackPlaybackEvent: vi.fn(async () => undefined),
     retryPlaybackEvent: vi.fn(async () => undefined),
     completeRadioPlaybackEvent: vi.fn(async () => undefined),
+    setNotificationFavoriteState: vi.fn(async () => undefined),
     addListener: vi.fn(),
     removeListeners: vi.fn(),
   };

@@ -1,5 +1,13 @@
-import React from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import {
+  ActivityIndicator,
+  Image,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -11,8 +19,12 @@ import {
   useProgress,
 } from '../player/player';
 import { mediaItemToTrack } from '../player/mediaItem';
-import { next, togglePlay } from '../player/controller';
+import { next, prev, togglePlay } from '../player/controller';
 import { reportPlayerError } from '../player/errors';
+import {
+  resolveMiniPlayerSwipe,
+  shouldCaptureMiniPlayerSwipe,
+} from '../player/playerGestures';
 import type { RootStackParams } from '../navigation';
 import { trackArtistLabel } from '../api/trackArtists';
 import { strings } from '../localization';
@@ -33,10 +45,10 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
   const { position, duration } = useProgress(1);
   const track = mediaItemToTrack(item);
 
-  if (!track) return null;
-  const artistLabel = trackArtistLabel(track);
-  const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
-  const buffering = playbackState === PlaybackState.Buffering;
+  const openNowPlaying = useCallback(
+    () => navigation.navigate('NowPlaying'),
+    [navigation],
+  );
   const run = (label: string, action: () => void) => {
     try {
       action();
@@ -44,6 +56,23 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
       reportPlayerError(label, error);
     }
   };
+  const swipeResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+      shouldCaptureMiniPlayerSwipe(gesture),
+    onPanResponderRelease: (_event, gesture) => {
+      const action = resolveMiniPlayerSwipe(gesture);
+      if (action === 'next') run(strings.player.nextFailed, next);
+      else if (action === 'previous') run(strings.player.previousFailed, prev);
+      else if (action === 'expand') openNowPlaying();
+    },
+    onPanResponderTerminationRequest: () => true,
+  }), [openNowPlaying]);
+
+  if (!track) return null;
+  const artistLabel = trackArtistLabel(track);
+  const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
+  const buffering = playbackState === PlaybackState.Buffering;
 
   return (
     <>
@@ -53,13 +82,14 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
       <View
         testID="mini-player"
         style={[styles.bar, { bottom: (hasTabBar ? TAB_BAR_HEIGHT : 0) + insets.bottom }]}
+        {...swipeResponder.panHandlers}
       >
         <Pressable
           testID="mini-player-open"
           accessibilityRole="button"
           accessibilityLabel={strings.player.openNowPlaying(track.title, artistLabel)}
           style={styles.trackButton}
-          onPress={() => navigation.navigate('NowPlaying')}
+          onPress={openNowPlaying}
         >
           {track.cover ? (
             <Image accessible={false} source={{ uri: track.cover }} style={styles.cover} />

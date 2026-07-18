@@ -65,6 +65,12 @@ class LoggeRythmPlayerModule(
   private var controller: MediaController? = null
   private var playerListenerAttached = false
   private var progressTickerScheduled = false
+  private val notificationFavoriteReceiver: (String, Boolean) -> Boolean =
+    ::emitNotificationFavoriteRequest
+
+  init {
+    LoggeRythmNotificationFavoriteEventBridge.attach(notificationFavoriteReceiver)
+  }
 
   private val progressTicker = object : Runnable {
     override fun run() {
@@ -194,6 +200,29 @@ class LoggeRythmPlayerModule(
           )
         }
         null
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setNotificationFavoriteState(mediaId: String?, liked: Boolean?, promise: Promise) {
+    if ((mediaId == null) != (liked == null) || (mediaId != null && mediaId.isBlank())) {
+      reject(promise, PlayerProtocolException("notification-favorite-state-invalid"))
+      return
+    }
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      LoggeRythmMediaSessionServiceBridge.publishNotificationFavorite(
+        mediaId,
+        liked,
+      ) { result ->
+        result.fold(
+          onSuccess = { promise.resolve(null) },
+          onFailure = { reject(promise, it) },
+        )
       }
     }
   }
@@ -360,6 +389,7 @@ class LoggeRythmPlayerModule(
 
   override fun invalidate() {
     if (!invalidated.compareAndSet(false, true)) return
+    LoggeRythmNotificationFavoriteEventBridge.detach(notificationFavoriteReceiver)
     mainHandler.post {
       stopProgressTicker()
       controller?.let { active ->
@@ -603,6 +633,26 @@ class LoggeRythmPlayerModule(
     reactApplicationContext
       .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
       .emit(PLAYER_EVENT, payload)
+  }
+
+  private fun emitNotificationFavoriteRequest(
+    mediaId: String,
+    requestedLiked: Boolean,
+  ): Boolean {
+    if (
+      listenerCount.get() <= 0 ||
+      invalidated.get() ||
+      !reactApplicationContext.hasActiveReactInstance()
+    ) {
+      return false
+    }
+    emitPlayerEvent(JSONObject().apply {
+      put("schemaVersion", SNAPSHOT_SCHEMA_VERSION)
+      put("type", "notification-favorite-request")
+      put("itemId", mediaId)
+      put("requestedLiked", requestedLiked)
+    })
+    return true
   }
 
   private fun emitProgress(player: Player) {
