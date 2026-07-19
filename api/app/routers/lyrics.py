@@ -109,7 +109,7 @@ def _cached_lyrics_need_word_refresh(row: StoredLyrics) -> bool:
     return (
         groq.configured()
         and row.ai_generated
-        and row.source == groq.LEGACY_LYRICS_SOURCE
+        and row.source in groq.LEGACY_LYRICS_SOURCES
     )
 
 

@@ -110,6 +110,49 @@ class WordLineTests(unittest.TestCase):
     def test_accepts_valid_empty_word_list(self) -> None:
         self.assertEqual(_word_lines({"words": []}), [])
 
+    def test_uses_capitalization_plus_real_pause_as_missing_sentence_boundary(self) -> None:
+        lines = _word_lines(
+            {
+                "words": [
+                    word("ziemlich", 53.0, 53.44),
+                    word("satt", 53.44, 53.78),
+                    word("heute", 53.78, 53.80),
+                    word("Meine", 53.84, 54.04),
+                    word("Kinder", 54.04, 54.38),
+                    word("gehen", 54.38, 54.76),
+                    word("mir", 54.76, 54.92),
+                    word("auf", 54.92, 55.16),
+                    word("den", 55.16, 55.36),
+                    word("Sack", 55.36, 55.62),
+                    word("Geh", 55.66, 55.78),
+                    word("alleine", 55.78, 56.02),
+                ]
+            }
+        )
+
+        self.assertEqual(
+            lines,
+            [
+                {"t": 53.0, "text": "ziemlich satt heute"},
+                {"t": 53.84, "text": "Meine Kinder gehen mir auf den Sack"},
+                {"t": 55.66, "text": "Geh alleine"},
+            ],
+        )
+
+    def test_does_not_split_continuous_capitalized_german_nouns(self) -> None:
+        lines = _word_lines(
+            {
+                "words": [
+                    word("mit", 56.02, 56.22),
+                    word("dem", 56.22, 56.36),
+                    word("Lego", 56.36, 56.60),
+                    word("spielen", 56.60, 57.16),
+                ]
+            }
+        )
+
+        self.assertEqual(lines, [{"t": 56.02, "text": "mit dem Lego spielen"}])
+
     def test_sorts_valid_out_of_order_words_from_overlapping_vocals(self) -> None:
         lines = _word_lines(
             {
@@ -120,7 +163,13 @@ class WordLineTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(lines, [{"t": 1.0, "text": "earlier later"}])
+        self.assertEqual(
+            lines,
+            [
+                {"t": 1.0, "text": "earlier"},
+                {"t": 2.0, "text": "later"},
+            ],
+        )
 
     def test_rejects_missing_or_invalid_word_timestamps(self) -> None:
         cases = [
@@ -161,11 +210,13 @@ class TranscriptionRequestTests(unittest.TestCase):
 class CacheVersionTests(unittest.TestCase):
     def test_refreshes_only_legacy_groq_cache_when_configured(self) -> None:
         legacy = SimpleNamespace(ai_generated=True, source="groq")
+        previous_word_builder = SimpleNamespace(ai_generated=True, source="groq-word-v1")
         current = SimpleNamespace(ai_generated=True, source=groq.LYRICS_SOURCE)
         lrclib = SimpleNamespace(ai_generated=False, source="lrclib")
 
         with patch("app.routers.lyrics.groq.configured", return_value=True):
             self.assertTrue(_cached_lyrics_need_word_refresh(legacy))
+            self.assertTrue(_cached_lyrics_need_word_refresh(previous_word_builder))
             self.assertFalse(_cached_lyrics_need_word_refresh(current))
             self.assertFalse(_cached_lyrics_need_word_refresh(lrclib))
         with patch("app.routers.lyrics.groq.configured", return_value=False):

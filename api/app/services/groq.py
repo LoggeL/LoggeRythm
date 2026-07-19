@@ -16,10 +16,15 @@ _MAX_AUDIO_BYTES = 24 * 1024 * 1024
 
 # Bump this value whenever the persisted line-building format changes. The
 # lyrics router uses it to replace legacy, segment-timed Groq cache entries.
-LYRICS_SOURCE = "groq-word-v1"
-LEGACY_LYRICS_SOURCE = "groq"
+LYRICS_SOURCE = "groq-word-v2"
+LEGACY_LYRICS_SOURCES = frozenset({"groq", "groq-word-v1"})
 
 _BREAK_PAUSE_SECONDS = 0.75
+# Whisper frequently omits punctuation in music while retaining sentence-case.
+# A tiny real pause plus an uppercase next token is a useful boundary signal;
+# requiring both avoids splitting ordinary German nouns inside a continuous phrase.
+_CAPITALIZED_BREAK_PAUSE_SECONDS = 0.015
+_CAPITALIZED_BREAK_MIN_WORDS = 3
 _MAX_LINE_CHARS = 56
 _MAX_LINE_WORDS = 10
 _MAX_LINE_SECONDS = 6.0
@@ -169,7 +174,16 @@ def _word_lines(payload: dict[str, Any]) -> list[dict]:
         current.clear()
 
     for index, word in enumerate(words):
-        if current and word.start - current[-1].end >= _BREAK_PAUSE_SECONDS:
+        pause = word.start - current[-1].end if current else 0.0
+        capitalized_phrase_start = (
+            current
+            and len(current) >= _CAPITALIZED_BREAK_MIN_WORDS
+            and pause >= _CAPITALIZED_BREAK_PAUSE_SECONDS
+            and word.text[:1].isupper()
+        )
+        if current and (
+            pause >= _BREAK_PAUSE_SECONDS or capitalized_phrase_start
+        ):
             flush()
 
         candidate = [*current, word]
