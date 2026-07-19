@@ -212,14 +212,17 @@ internal object LoggeRythmControllerPolicy {
     automotive: Boolean = false,
     autoCompanion: Boolean = false,
   ): RemoteControllerProfile = when {
-    self -> RemoteControllerProfile.INTERNAL
-    // Android Auto may also identify as Media3's media-notification controller. Treat the
-    // automotive identity first or it receives the notification-only command set (no library
-    // root/children commands), so Auto can display neither the restored queue metadata nor browse.
+    // Android Auto may also identify as Media3's media-notification controller or with the app's
+    // own UID via legacy browser bridging. Treat the automotive identity first or Auto receives an
+    // internal/notification command shape without library browse/selection support.
     automotive || autoCompanion -> RemoteControllerProfile.TRUSTED_BROWSER
     mediaNotification -> RemoteControllerProfile.NOTIFICATION
+    self -> RemoteControllerProfile.INTERNAL
     else -> RemoteControllerProfile.TRUSTED_BROWSER
   }
+
+  fun requiresServiceOnlyRestore(profile: RemoteControllerProfile): Boolean =
+    profile != RemoteControllerProfile.INTERNAL
 
   fun isAllowed(
     session: MediaSession,
@@ -363,9 +366,8 @@ class LoggeRythmMediaLibraryService :
     )
     LoggeRythmPlatformProbeObservationHook.recordLookup(controllerInfo, allowed)
     if (!allowed) return null
-    if (controllerProfile(librarySession, controllerInfo) == RemoteControllerProfile.TRUSTED_BROWSER) {
-      ensureServiceOnlyRestore()
-    }
+    val profile = controllerProfile(librarySession, controllerInfo)
+    if (LoggeRythmControllerPolicy.requiresServiceOnlyRestore(profile)) ensureServiceOnlyRestore()
     return librarySession
   }
 
@@ -583,7 +585,7 @@ class LoggeRythmMediaLibraryService :
         return MediaSession.ConnectionResult.reject()
       }
       val profile = controllerProfile(session, controller)
-      if (profile == RemoteControllerProfile.TRUSTED_BROWSER) ensureServiceOnlyRestore()
+      if (LoggeRythmControllerPolicy.requiresServiceOnlyRestore(profile)) ensureServiceOnlyRestore()
       return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
         .setAvailableSessionCommands(remoteCommandPolicy.sessionCommands(profile))
         .setAvailablePlayerCommands(remoteCommandPolicy.playerCommands(profile))
@@ -601,14 +603,14 @@ class LoggeRythmMediaLibraryService :
         controllerProfile(session, controller) != RemoteControllerProfile.NOTIFICATION ||
         customCommand.customAction != LoggeRythmNotificationFavoriteContract.ACTION
       ) {
-        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
       }
       val result = notificationFavorite.requestToggle(
         player.currentMediaItem?.mediaId,
         LoggeRythmNotificationFavoriteEventBridge::emit,
       )
       if (result != LoggeRythmNotificationFavoriteRequestResult.DELIVERED) {
-        return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_INVALID_STATE))
+        return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
       }
       refreshNotificationFavoriteButtons()
       return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))

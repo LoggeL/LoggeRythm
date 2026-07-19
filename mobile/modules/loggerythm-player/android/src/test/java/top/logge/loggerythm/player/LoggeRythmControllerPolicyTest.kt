@@ -21,6 +21,24 @@ class LoggeRythmControllerPolicyTest {
   }
 
   @Test
+  fun automotiveProfileWinsOverNotificationAndSelfIdentity() {
+    assertTrue(
+      LoggeRythmControllerPolicy.commandProfile(
+        self = true,
+        mediaNotification = true,
+        automotive = true,
+      ) == RemoteControllerProfile.TRUSTED_BROWSER,
+    )
+    assertTrue(
+      LoggeRythmControllerPolicy.commandProfile(
+        self = false,
+        mediaNotification = true,
+        autoCompanion = true,
+      ) == RemoteControllerProfile.TRUSTED_BROWSER,
+    )
+  }
+
+  @Test
   fun notificationProfileWinsEvenWhenControllerSharesTheAppIdentity() {
     assertTrue(
       LoggeRythmControllerPolicy.commandProfile(self = true, mediaNotification = true) ==
@@ -33,6 +51,21 @@ class LoggeRythmControllerPolicyTest {
     assertTrue(
       LoggeRythmControllerPolicy.commandProfile(self = false, mediaNotification = false) ==
         RemoteControllerProfile.TRUSTED_BROWSER,
+    )
+  }
+
+  @Test
+  fun coldServiceRestoreRunsForEveryExternalMediaHostButNotAppInternalControllers() {
+    assertFalse(
+      LoggeRythmControllerPolicy.requiresServiceOnlyRestore(RemoteControllerProfile.INTERNAL),
+    )
+    assertTrue(
+      LoggeRythmControllerPolicy.requiresServiceOnlyRestore(RemoteControllerProfile.NOTIFICATION),
+    )
+    assertTrue(
+      LoggeRythmControllerPolicy.requiresServiceOnlyRestore(
+        RemoteControllerProfile.TRUSTED_BROWSER,
+      ),
     )
   }
 

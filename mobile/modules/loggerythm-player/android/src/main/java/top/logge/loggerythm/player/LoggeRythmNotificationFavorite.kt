@@ -1,12 +1,13 @@
 package top.logge.loggerythm.player
 
 import android.os.Bundle
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
 import androidx.media3.session.SessionCommand
 
 internal object LoggeRythmNotificationFavoriteContract {
   const val ACTION = "top.logge.loggerythm.action.TOGGLE_FAVORITE"
-  val command = SessionCommand(ACTION, Bundle.EMPTY)
+  val command = SessionCommand(ACTION, Bundle())
 }
 
 internal data class LoggeRythmNotificationFavoriteState(
@@ -52,6 +53,7 @@ internal class LoggeRythmNotificationFavoriteCoordinator {
     return LoggeRythmNotificationFavoriteRequestResult.DELIVERED
   }
 
+  @UnstableApi
   fun buttonFor(activeMediaId: String?): List<CommandButton> {
     val current = stateFor(activeMediaId) ?: return emptyList()
     return listOf(
