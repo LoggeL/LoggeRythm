@@ -1,12 +1,23 @@
+import { NativeModules } from 'react-native';
 import { describe, expect, it, vi } from 'vitest';
 import {
   checkForAndroidUpdate,
   parseLatestRelease,
+  subscribeAndroidUpdateDownloadProgress,
   type AndroidUpdaterPort,
 } from './githubReleaseUpdater';
 
+const nativeListeners = new Map<string, (value: unknown) => void>();
+const nativeSubscriptionRemove = vi.fn();
+
 vi.mock('react-native', () => ({
   NativeModules: {},
+  NativeEventEmitter: class {
+    addListener(eventName: string, listener: (value: unknown) => void) {
+      nativeListeners.set(eventName, listener);
+      return { remove: nativeSubscriptionRemove };
+    }
+  },
   Platform: { OS: 'android' },
 }));
 
@@ -73,6 +84,32 @@ describe('GitHub release updater', () => {
     })],
   ])('rejects %s release metadata', (_name, candidate) => {
     expect(() => parseLatestRelease(candidate, '1.1.0')).toThrow();
+  });
+
+  it('subscribes to native APK download progress and drops invalid stale payloads', () => {
+    (NativeModules as Record<string, unknown>).LoggeRythmUpdater = {
+      getInstallationInfo: vi.fn(),
+      openInstallPermissionSettings: vi.fn(),
+      downloadAndInstall: vi.fn(),
+    };
+    const listener = vi.fn();
+    const invalid = vi.fn();
+
+    const unsubscribe = subscribeAndroidUpdateDownloadProgress(listener, invalid);
+    nativeListeners.get('LoggeRythmUpdaterDownloadProgress')?.({
+      downloadedBytes: 2048,
+      totalBytes: 4096,
+    });
+    nativeListeners.get('LoggeRythmUpdaterDownloadProgress')?.({
+      downloadedBytes: 8192,
+      totalBytes: 4096,
+    });
+    unsubscribe();
+
+    expect(listener).toHaveBeenCalledWith({ downloadedBytes: 2048, totalBytes: 4096 });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(invalid).toHaveBeenCalledOnce();
+    expect(nativeSubscriptionRemove).toHaveBeenCalledOnce();
   });
 
   it('reads installed version first and fails loudly on GitHub HTTP errors', async () => {

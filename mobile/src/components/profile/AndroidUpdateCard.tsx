@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -7,19 +7,26 @@ import {
   Text,
   View,
 } from 'react-native';
-import { strings } from '../../localization';
+import { getActiveLocale, strings } from '../../localization';
 import { colors, metrics } from '../../theme';
 import {
   androidUpdater,
   checkForAndroidUpdate,
+  subscribeAndroidUpdateDownloadProgress,
   type AndroidUpdateCheck,
+  type AndroidUpdateDownloadProgress,
 } from '../../update/githubReleaseUpdater';
+import { presentAndroidUpdateDownloadProgress } from '../../update/downloadProgress';
 
 type UpdateCardState =
   | { kind: 'checking' }
   | { kind: 'ready'; result: AndroidUpdateCheck }
   | { kind: 'permission'; result: Extract<AndroidUpdateCheck, { kind: 'available' }> }
-  | { kind: 'installing'; result: Extract<AndroidUpdateCheck, { kind: 'available' }> }
+  | {
+    kind: 'installing';
+    result: Extract<AndroidUpdateCheck, { kind: 'available' }>;
+    progress: AndroidUpdateDownloadProgress | null;
+  }
   | { kind: 'submitted'; versionName: string }
   | { kind: 'error'; message: string };
 
@@ -28,47 +35,122 @@ function errorMessage(value: unknown): string {
   return `${strings.profile.update.failed}: ${detail}`;
 }
 
+function AndroidUpdateProgress({
+  progress,
+}: {
+  progress: AndroidUpdateDownloadProgress | null;
+}) {
+  const presentation = presentAndroidUpdateDownloadProgress(progress, getActiveLocale());
+  return (
+    <View
+      testID="android-update-progress"
+      accessibilityRole="progressbar"
+      accessibilityLabel={presentation.accessibilityText}
+      accessibilityLiveRegion="polite"
+      accessibilityState={{ busy: true }}
+      accessibilityValue={presentation.percent === null || presentation.total === null
+        ? { text: presentation.accessibilityText }
+        : {
+          min: 0,
+          max: 100,
+          now: presentation.percent,
+          text: presentation.accessibilityText,
+        }}
+      style={styles.progressBox}
+    >
+      {presentation.percent === null ? (
+        <View style={styles.statusRow}>
+          <ActivityIndicator color={colors.accent} />
+          <Text testID="android-update-progress-text" style={styles.body}>
+            {presentation.visibleText}
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.progressTrack}>
+            <View
+              testID="android-update-progress-fill"
+              style={[styles.progressFill, { width: `${presentation.percent}%` }]}
+            />
+          </View>
+          <Text testID="android-update-progress-text" style={styles.progressText}>
+            {presentation.visibleText}
+          </Text>
+        </>
+      )}
+    </View>
+  );
+}
+
 export default function AndroidUpdateCard() {
   const [state, setState] = useState<UpdateCardState>({ kind: 'checking' });
+  const checkAttemptRef = useRef(0);
+  const installAttemptRef = useRef(0);
+  const installingRef = useRef(false);
 
   const check = useCallback(async () => {
+    const attempt = checkAttemptRef.current + 1;
+    checkAttemptRef.current = attempt;
+    installAttemptRef.current += 1;
+    installingRef.current = false;
     setState({ kind: 'checking' });
     try {
-      setState({ kind: 'ready', result: await checkForAndroidUpdate() });
+      const result = await checkForAndroidUpdate();
+      if (checkAttemptRef.current === attempt) setState({ kind: 'ready', result });
     } catch (error) {
-      setState({ kind: 'error', message: errorMessage(error) });
+      if (checkAttemptRef.current === attempt) {
+        setState({ kind: 'error', message: errorMessage(error) });
+      }
     }
   }, []);
 
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
-    let active = true;
-    void checkForAndroidUpdate().then(
-      (result) => {
-        if (active) setState({ kind: 'ready', result });
-      },
-      (error: unknown) => {
-        if (active) setState({ kind: 'error', message: errorMessage(error) });
-      },
-    );
+    if (Platform.OS !== 'android') return undefined;
+    void Promise.resolve().then(check);
     return () => {
-      active = false;
+      checkAttemptRef.current += 1;
+      installAttemptRef.current += 1;
+      installingRef.current = false;
     };
-  }, []);
+  }, [check]);
 
   if (Platform.OS !== 'android') return null;
 
   const install = async (
     result: Extract<AndroidUpdateCheck, { kind: 'available' }>,
   ) => {
+    if (installingRef.current) return;
+    installingRef.current = true;
+    const attempt = installAttemptRef.current + 1;
+    installAttemptRef.current = attempt;
+    let unsubscribe: (() => void) | null = null;
     try {
       const installation = await androidUpdater.getInstallationInfo();
+      if (installAttemptRef.current !== attempt) return;
       if (!installation.canRequestPackageInstalls) {
         await androidUpdater.openInstallPermissionSettings();
-        setState({ kind: 'permission', result });
+        if (installAttemptRef.current === attempt) setState({ kind: 'permission', result });
         return;
       }
-      setState({ kind: 'installing', result });
+      setState({ kind: 'installing', result, progress: null });
+      unsubscribe = subscribeAndroidUpdateDownloadProgress(
+        (progress) => {
+          if (installAttemptRef.current !== attempt) return;
+          setState((current) => (
+            current.kind === 'installing'
+              ? { ...current, progress }
+              : current
+          ));
+        },
+        () => {
+          if (installAttemptRef.current === attempt) {
+            setState({
+              kind: 'error',
+              message: errorMessage(new Error('Android update progress event was invalid')),
+            });
+          }
+        },
+      );
       const submitted = await androidUpdater.downloadAndInstall(
         result.release.apkUrl,
         result.release.apkDigest,
@@ -77,9 +159,16 @@ export default function AndroidUpdateCard() {
       if (submitted.status !== 'awaiting-user-confirmation') {
         throw new Error(`Unexpected Android installer state: ${submitted.status}`);
       }
-      setState({ kind: 'submitted', versionName: submitted.versionName });
+      if (installAttemptRef.current === attempt) {
+        setState({ kind: 'submitted', versionName: submitted.versionName });
+      }
     } catch (error) {
-      setState({ kind: 'error', message: errorMessage(error) });
+      if (installAttemptRef.current === attempt) {
+        setState({ kind: 'error', message: errorMessage(error) });
+      }
+    } finally {
+      unsubscribe?.();
+      if (installAttemptRef.current === attempt) installingRef.current = false;
     }
   };
 
@@ -121,9 +210,17 @@ export default function AndroidUpdateCard() {
               {strings.profile.update.permission}
             </Text>
           ) : null}
+          {state.kind === 'installing' ? (
+            <AndroidUpdateProgress progress={state.progress} />
+          ) : null}
           <Pressable
             testID="android-update-install"
             accessibilityRole="button"
+            accessibilityLabel={state.kind === 'installing'
+              ? strings.profile.update.downloading
+              : state.kind === 'permission'
+                ? strings.profile.update.retryInstall
+                : strings.profile.update.install}
             accessibilityState={{
               disabled: state.kind === 'installing',
               busy: state.kind === 'installing',
@@ -195,6 +292,19 @@ const styles = StyleSheet.create({
   title: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
   body: { flex: 1, color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  progressBox: { gap: 8 },
+  progressTrack: {
+    height: 10,
+    overflow: 'hidden',
+    borderRadius: 999,
+    backgroundColor: colors.border,
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: colors.accent,
+  },
+  progressText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
   permission: { color: colors.warning, fontSize: 13, lineHeight: 19 },
   success: { color: colors.success, fontSize: 14, lineHeight: 20 },
   error: { color: colors.danger, fontSize: 13, lineHeight: 19 },

@@ -12,6 +12,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.modules.core.DeviceEventManagerModule
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -85,6 +86,12 @@ class LoggeRythmUpdaterModule(
   }
 
   @ReactMethod
+  fun addListener(@Suppress("UNUSED_PARAMETER") eventName: String) = Unit
+
+  @ReactMethod
+  fun removeListeners(@Suppress("UNUSED_PARAMETER") count: Double) = Unit
+
+  @ReactMethod
   fun downloadAndInstall(
     url: String,
     digest: String,
@@ -140,6 +147,18 @@ class LoggeRythmUpdaterModule(
       updaterError?.message ?: "Android update operation failed",
       error,
     )
+  }
+
+  private fun emitDownloadProgress(downloadedBytes: Long, totalBytes: Long) {
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit(
+        DOWNLOAD_PROGRESS_EVENT,
+        Arguments.createMap().apply {
+          putDouble("downloadedBytes", downloadedBytes.toDouble())
+          if (totalBytes >= 0L) putDouble("totalBytes", totalBytes.toDouble()) else putNull("totalBytes")
+        },
+      )
   }
 
   private fun canRequestPackageInstalls(): Boolean =
@@ -221,6 +240,7 @@ class LoggeRythmUpdaterModule(
         }
         val hash = MessageDigest.getInstance("SHA-256")
         var total = 0L
+        emitDownloadProgress(total, declaredLength)
         try {
           connection.inputStream.buffered().use { input ->
             temporary.outputStream().buffered().use { output ->
@@ -238,6 +258,7 @@ class LoggeRythmUpdaterModule(
                 }
                 output.write(buffer, 0, count)
                 hash.update(buffer, 0, count)
+                emitDownloadProgress(total, declaredLength)
               }
             }
           }
@@ -488,6 +509,7 @@ class LoggeRythmUpdaterModule(
 
   companion object {
     const val NAME = "LoggeRythmUpdater"
+    private const val DOWNLOAD_PROGRESS_EVENT = "LoggeRythmUpdaterDownloadProgress"
     private const val GITHUB_HOST = "github.com"
     private const val GITHUB_CONTENT_SUFFIX = ".githubusercontent.com"
     private const val RELEASE_PATH_PREFIX = "/LoggeL/LoggeRythm/releases/download/"

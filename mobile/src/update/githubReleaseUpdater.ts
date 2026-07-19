@@ -1,4 +1,8 @@
-import { NativeModules, Platform } from 'react-native';
+import { NativeEventEmitter, NativeModules, Platform, type EmitterSubscription } from 'react-native';
+import {
+  decodeAndroidUpdateDownloadProgress,
+  type AndroidUpdateDownloadProgress,
+} from './downloadProgress';
 
 const LATEST_RELEASE_URL =
   'https://api.github.com/repos/LoggeL/LoggeRythm/releases/latest';
@@ -7,6 +11,7 @@ const RELEASE_DOWNLOAD_PREFIX =
 const MAX_APK_BYTES = 300 * 1024 * 1024;
 const STABLE_VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/;
 const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/;
+const DOWNLOAD_PROGRESS_EVENT = 'LoggeRythmUpdaterDownloadProgress';
 
 export interface AndroidInstallationInfo {
   versionName: string;
@@ -51,6 +56,8 @@ export interface AndroidUpdaterPort {
     versionCode: number;
   }>;
 }
+
+export type { AndroidUpdateDownloadProgress };
 
 type FetchLike = (
   input: string,
@@ -237,6 +244,29 @@ export const androidUpdater: AndroidUpdaterPort = {
   downloadAndInstall: (url, digest, versionName) =>
     linkedAndroidUpdater().downloadAndInstall(url, digest, versionName),
 };
+
+export function subscribeAndroidUpdateDownloadProgress(
+  listener: (progress: AndroidUpdateDownloadProgress) => void,
+  onInvalid: () => void,
+): () => void {
+  const module = linkedAndroidUpdater() as AndroidUpdaterPort & { addListener?: unknown };
+  let subscription: EmitterSubscription;
+  try {
+    subscription = new NativeEventEmitter(module as never).addListener(
+      DOWNLOAD_PROGRESS_EVENT,
+      (value) => {
+        try {
+          listener(decodeAndroidUpdateDownloadProgress(value));
+        } catch {
+          onInvalid();
+        }
+      },
+    );
+  } catch (error) {
+    throw new Error('LoggeRythm updater progress events are unavailable', { cause: error });
+  }
+  return () => subscription.remove();
+}
 
 export async function checkForAndroidUpdate(
   fetcher: FetchLike = fetch,
