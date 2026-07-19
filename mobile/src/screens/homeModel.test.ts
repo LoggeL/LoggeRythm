@@ -57,6 +57,7 @@ describe('home model', () => {
         onOpenPlaylist: () => undefined,
         onOpenMix: () => undefined,
         onOpenRadar: () => undefined,
+        onOpenSearch: () => undefined,
       }),
     ).not.toThrow();
   });

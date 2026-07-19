@@ -1,8 +1,6 @@
 import type { DeezerId, DeezerPlaylistTrack, Track } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
 import type { AppLocale } from '../localization';
-export { recentSearchStorageKey } from '../data/accountStorage';
-
 export const SEARCH_TABS = ['all', 'track', 'album', 'artist', 'playlist'] as const;
 export type SearchTab = (typeof SEARCH_TABS)[number];
 
@@ -20,7 +18,6 @@ export interface SearchRouteCallbacks {
   onOpenGenre: (params: SearchGenreRouteParams) => void;
 }
 
-const RECENT_SEARCH_LIMIT = 8;
 export const SEARCH_DEBOUNCE_MS = 280;
 
 export function normalizeSearchInput(value: string): string {
@@ -97,51 +94,6 @@ export function orderedPlaylistTrackIds(
   });
 }
 
-function localeFold(value: string, locale: AppLocale): string {
-  return normalizeSearchInput(value).toLocaleLowerCase(locale);
-}
-
-export function recentSearchIdentity(value: string, locale: AppLocale): string {
-  return `${locale}:${localeFold(value, locale)}`;
-}
-
-/**
- * A locale change re-decodes the same persisted JSON with different folding
- * rules. Treat it as a distinct hydration generation so an active query
- * cannot persist over history while that read is still in flight.
- */
-export function recentSearchHydrationIdentity(
-  historyKey: string,
-  locale: AppLocale,
-): string {
-  return `${locale}:${historyKey}`;
-}
-
-export function addRecentSearch(
-  current: readonly string[],
-  query: string,
-  locale: AppLocale,
-): string[] {
-  const normalized = normalizeSearchInput(query);
-  if (!isSearchableQuery(normalized)) return [...current];
-  const identity = localeFold(normalized, locale);
-  return [
-    normalized,
-    ...current.filter((candidate) => localeFold(candidate, locale) !== identity),
-  ].slice(0, RECENT_SEARCH_LIMIT);
-}
-
-export function removeRecentSearch(
-  current: readonly string[],
-  query: string,
-  locale: AppLocale,
-): string[] {
-  const identity = localeFold(query, locale);
-  return current.filter(
-    (candidate) => localeFold(candidate, locale) !== identity,
-  );
-}
-
 /** Format an API/player duration without implying that a zero value is known. */
 export function formatSearchDuration(seconds: number): string | null {
   if (!Number.isFinite(seconds) || seconds < 0) {
@@ -171,29 +123,6 @@ export function searchTrackCredit(
   return [artist, album].filter((value) => value.length > 0).join(' · ');
 }
 
-export function decodeRecentSearches(raw: string | null, locale: AppLocale): string[] {
-  if (raw === null) return [];
-  let value: unknown;
-  try {
-    value = JSON.parse(raw) as unknown;
-  } catch (error) {
-    throw new Error(`Recent search history is invalid JSON: ${(error as Error).message}`);
-  }
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
-    throw new Error('Recent search history must be an array of strings');
-  }
-  const recent: string[] = [];
-  for (const entry of value) {
-    const normalized = normalizeSearchInput(entry);
-    if (
-      isSearchableQuery(normalized) &&
-      !recent.some((candidate) => localeFold(candidate, locale) === localeFold(normalized, locale))
-    ) {
-      recent.push(normalized);
-    }
-  }
-  return recent.slice(0, RECENT_SEARCH_LIMIT);
-}
 
 export function assertSearchRouteCallbacks(value: unknown): asserts value is SearchRouteCallbacks {
   const candidate = value as Partial<SearchRouteCallbacks> | null;

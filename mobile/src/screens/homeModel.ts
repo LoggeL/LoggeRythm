@@ -53,6 +53,7 @@ export interface HomeRouteCallbacks {
   onOpenPlaylist: (params: HomePlaylistRouteParams) => void;
   onOpenMix: (params: HomeMixRouteParams) => void;
   onOpenRadar: () => void;
+  onOpenSearch: () => void;
 }
 
 export interface RadarRelativeDateCopy {
@@ -301,10 +302,11 @@ export function assertHomeRouteCallbacks(value: unknown): asserts value is HomeR
     typeof (value as Partial<HomeRouteCallbacks>).onOpenGenre !== 'function' ||
     typeof (value as Partial<HomeRouteCallbacks>).onOpenPlaylist !== 'function' ||
     typeof (value as Partial<HomeRouteCallbacks>).onOpenMix !== 'function' ||
-    typeof (value as Partial<HomeRouteCallbacks>).onOpenRadar !== 'function'
+    typeof (value as Partial<HomeRouteCallbacks>).onOpenRadar !== 'function' ||
+    typeof (value as Partial<HomeRouteCallbacks>).onOpenSearch !== 'function'
   ) {
     throw new Error(
-      'HomeScreen requires onOpenAlbum, onOpenArtist, onOpenGenre, onOpenPlaylist, onOpenMix, and onOpenRadar route callbacks',
+      'HomeScreen requires onOpenAlbum, onOpenArtist, onOpenGenre, onOpenPlaylist, onOpenMix, onOpenRadar, and onOpenSearch route callbacks',
     );
   }
 }

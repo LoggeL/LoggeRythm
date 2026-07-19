@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { HomeShelf, Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import { CatalogPlaylistCard } from '../components/catalog/CatalogCards';
+import AppIcon from '../components/AppIcon';
 import {
   HomeAlbumCard,
   HomeGenreCard,
@@ -75,6 +76,7 @@ export default function HomeScreen(props: HomeScreenProps) {
     onOpenPlaylist,
     onOpenMix,
     onOpenRadar,
+    onOpenSearch,
   } = props;
   const { user } = useAuth();
   if (user === null) throw new Error('HomeScreen requires an authenticated user');
@@ -210,7 +212,18 @@ export default function HomeScreen(props: HomeScreenProps) {
         contentContainerStyle={styles.content}
       >
         <View style={styles.hero}>
-          <Text testID="home-greeting" accessibilityRole="header" style={styles.greeting}>{greeting}</Text>
+          <View style={styles.heroHeader}>
+            <Text testID="home-greeting" accessibilityRole="header" style={styles.greeting}>{greeting}</Text>
+            <Pressable
+              testID="home-search-action"
+              accessibilityRole="button"
+              accessibilityLabel={strings.navigation.search}
+              onPress={onOpenSearch}
+              style={({ pressed }) => [styles.searchAction, pressed && styles.pressed]}
+            >
+              <AppIcon name="magnify" color={colors.accentSoft} size={22} />
+            </Pressable>
+          </View>
           <Text style={styles.heroSubtitle}>{strings.home.subtitle}</Text>
         </View>
 
@@ -587,7 +600,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   hero: { gap: 5, paddingHorizontal: 16 },
-  greeting: { color: colors.textPrimary, fontSize: 30, lineHeight: 36, fontWeight: '900' },
+  heroHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  greeting: { flex: 1, color: colors.textPrimary, fontSize: 30, lineHeight: 36, fontWeight: '900' },
+  searchAction: {
+    width: metrics.minimumTouchTarget,
+    height: metrics.minimumTouchTarget,
+    borderRadius: metrics.minimumTouchTarget / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+  },
   heroSubtitle: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
   chips: { gap: 8, paddingHorizontal: 16 },
   chip: {

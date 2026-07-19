@@ -2,18 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
 import {
   assertSearchRouteCallbacks,
-  addRecentSearch,
-  decodeRecentSearches,
   formatSearchDuration,
   isCurrentSearchQuery,
   isSearchableQuery,
   normalizeSearchInput,
   orderedPlaylistTrackIds,
   resultLimit,
-  recentSearchHydrationIdentity,
-  recentSearchStorageKey,
-  recentSearchIdentity,
-  removeRecentSearch,
   searchPopularityPercent,
   searchTrackCredit,
   scheduleSearchDebounce,
@@ -102,54 +96,18 @@ describe('search model', () => {
     expect(() => assertSearchRouteCallbacks({})).toThrow('SearchScreen requires');
   });
 
-  it('keeps a canonical, account-scoped recent history', () => {
-    expect(addRecentSearch(['Daft Punk', 'Bowie'], '  daft   punk ', 'de'))
-      .toEqual(['daft punk', 'Bowie']);
-    expect(addRecentSearch(
-      Array.from({ length: 8 }, (_, index) => `query ${index}`),
-      'new query',
-      'de',
-    )).toHaveLength(8);
-    expect(decodeRecentSearches('["one","two"]', 'de')).toEqual(['one', 'two']);
-    expect(() => decodeRecentSearches('{"query":"x"}', 'de')).toThrow('array of strings');
-    expect(recentSearchStorageKey('https://music.test::user:7')).toContain('user%3A7');
-  });
-
-  it('removes exactly one canonical recent-search value without mutating its input', () => {
-    const recent = ['Daft Punk', 'Bowie', 'Kraftwerk'];
-    expect(removeRecentSearch(recent, '  daft   punk ', 'de')).toEqual(['Bowie', 'Kraftwerk']);
-    expect(removeRecentSearch(recent, 'unknown', 'de')).toEqual(recent);
-    expect(recent).toEqual(['Daft Punk', 'Bowie', 'Kraftwerk']);
-  });
-
   it.each(['de', 'en'] as const)(
-    'threads the active %s locale through title sorting, history folding, and keys',
+    'threads the active %s locale through title sorting',
     (locale) => {
       const compare = vi.spyOn(String.prototype, 'localeCompare');
-      const lower = vi.spyOn(String.prototype, 'toLocaleLowerCase');
 
       sortSearchTracks([track('1', 'Zulu', 20), track('2', 'Alpha', 10)], 'title', locale);
-      addRecentSearch(['Existing'], 'New value', locale);
 
       expect(compare).toHaveBeenCalledWith('Zulu', locale, { sensitivity: 'base' });
-      expect(lower).toHaveBeenCalledWith(locale);
-      expect(recentSearchIdentity('  Mixed CASE ', locale)).toBe(`${locale}:mixed case`);
 
       compare.mockRestore();
-      lower.mockRestore();
     },
   );
-
-  it('invalidates the loaded-history generation when only the locale changes', () => {
-    const historyKey = recentSearchStorageKey('https://music.test::user:7');
-
-    expect(recentSearchHydrationIdentity(historyKey, 'de')).not.toBe(
-      recentSearchHydrationIdentity(historyKey, 'en'),
-    );
-    expect(recentSearchHydrationIdentity(historyKey, 'de')).toBe(
-      recentSearchHydrationIdentity(historyKey, 'de'),
-    );
-  });
 
   it('formats only evidence-backed search metadata values', () => {
     expect(formatSearchDuration(185.9)).toBe('3:05');

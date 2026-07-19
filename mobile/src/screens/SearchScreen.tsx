@@ -1,7 +1,6 @@
 import React, {
   useEffect,
   useMemo,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -15,8 +14,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Genre } from '../api/types';
 import { useProgress } from '../player/player';
 import AppIcon from '../components/AppIcon';
 import {
@@ -39,8 +38,8 @@ import {
 } from '../components/search/SearchRemoteStates';
 import { showTrackActions } from '../components/trackActions';
 import { getCurrentApiBase } from '../config';
-import { musicCacheScope, musicQueries, persistRecentSearches, queryKeys } from '../data';
-import { resolveRemoteVisualState } from '../data/remoteState';
+import { musicCacheScope, musicQueries, queryKeys } from '../data';
+import { resolveRemoteVisualState, type RemoteVisualState } from '../data/remoteState';
 import { useAuth } from '../auth/AuthContext';
 import { strings } from '../localization';
 import { useLocaleRevision } from '../localization/LocaleProvider';
@@ -55,17 +54,11 @@ import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import {
   SEARCH_SORTS,
   SEARCH_TABS,
-  addRecentSearch,
   assertSearchRouteCallbacks,
-  decodeRecentSearches,
   isCurrentSearchQuery,
   isSearchableQuery,
   normalizeSearchInput,
   orderedPlaylistTrackIds,
-  recentSearchHydrationIdentity,
-  recentSearchStorageKey,
-  recentSearchIdentity,
-  removeRecentSearch,
   resultLimit,
   scheduleSearchDebounce,
   sortSearchTracks,
@@ -96,6 +89,59 @@ function SearchResultSection({ id, title, children }: { id: string; title: strin
   );
 }
 
+interface SearchBrowseContentProps {
+  genres: readonly Genre[];
+  genresState: RemoteVisualState;
+  retryBusy: boolean;
+  onRetry: () => void;
+  onOpenGenre: (params: { genreId: Genre['id']; name: string }) => void;
+}
+
+export function SearchBrowseContent({
+  genres,
+  genresState,
+  retryBusy,
+  onRetry,
+  onOpenGenre,
+}: SearchBrowseContentProps) {
+  return (
+    <View testID="search-genre-browse" style={styles.browse}>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>{strings.search.browseTitle}</Text>
+      <SearchRemoteBoundary
+        id="search-genres"
+        state={genresState}
+        loadingLabel={strings.search.browseLoading}
+        emptyLabel={strings.search.browsePrompt}
+        offlineLabel={strings.search.remoteOffline(strings.search.browseTitle)}
+        errorLabel={strings.search.remoteLoadFailed(strings.search.browseTitle)}
+        cachedOfflineLabel={strings.search.remoteCachedOffline(strings.search.browseTitle)}
+        cachedErrorLabel={strings.search.remoteCachedRefreshFailed(strings.search.browseTitle)}
+        refreshingLabel={strings.search.remoteRefreshing(strings.search.browseTitle)}
+        staleLabel={strings.search.remoteStale(strings.search.browseTitle)}
+        retryLabel={strings.search.retrySection(strings.search.browseTitle)}
+        retryBusy={retryBusy}
+        onRetry={onRetry}
+      >
+        <SearchResultRail
+          id="genres"
+          data={genres}
+          keyExtractor={(genre, index) => `${genre.id}:${index}`}
+          renderItem={(genre) => (
+            <SearchEntityCard
+              testID={`search-genre-${genre.id}`}
+              accessibilityLabel={strings.search.openGenre(genre.name)}
+              title={genre.name}
+              subtitle={strings.search.browseTitle}
+              imageUri={genre.picture}
+              onPress={() => onOpenGenre({ genreId: genre.id, name: genre.name })}
+            />
+          )}
+        />
+      </SearchRemoteBoundary>
+    </View>
+  );
+}
+
 export default function SearchScreen(props: Partial<SearchScreenProps>) {
   assertSearchRouteCallbacks(props);
   const locale = useLocaleRevision();
@@ -106,17 +152,13 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const queryClient = useQueryClient();
   const activeProgress = useProgress(1);
   const accountScope = musicCacheScope(getCurrentApiBase(), user.id);
-  const historyKey = recentSearchStorageKey(accountScope);
   const [input, setInput] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [tab, setTab] = useState<SearchTab>('all');
   const [sort, setSort] = useState<SearchSort>('relevance');
   const [actionError, setActionError] = useState<string | null>(null);
   const [startingPlaylist, setStartingPlaylist] = useState<string | null>(null);
-  const [recent, setRecent] = useState<string[]>([]);
-  const [loadedHistoryKey, setLoadedHistoryKey] = useState<string | null>(null);
   const [manualImporting, setManualImporting] = useState(false);
-  const recentRef = useRef<string[]>([]);
   const getScopedImportRequest = () => getSpotifyImportRequestForScope(accountScope);
   const sharedImportRequest = useSyncExternalStore(
     subscribeSpotifyImportRequests,
@@ -130,9 +172,6 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const ready = isCurrentSearchQuery(normalizedInput, debouncedQuery);
   const browsing = normalizedInput.length === 0;
   const wanted = wantedSearchEntities(tab);
-  const historyHydrationIdentity = recentSearchHydrationIdentity(historyKey, locale);
-  const historyLoaded = loadedHistoryKey === historyHydrationIdentity;
-  const scopedRecent = historyLoaded ? recent : [];
 
   useEffect(() => {
     return scheduleSearchDebounce(normalizedInput, setDebouncedQuery);
@@ -145,37 +184,6 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     [queryClient],
   );
 
-  useEffect(() => {
-    let active = true;
-    recentRef.current = [];
-    void AsyncStorage.getItem(historyKey)
-      .then((raw) => {
-        if (!active) return;
-        const decoded = decodeRecentSearches(raw, locale);
-        recentRef.current = decoded;
-        setRecent(decoded);
-        setLoadedHistoryKey(historyHydrationIdentity);
-      })
-      .catch((error) => {
-        if (!active) return;
-        recentRef.current = [];
-        setRecent([]);
-        setActionError(strings.search.historyFailed);
-        setLoadedHistoryKey(historyHydrationIdentity);
-      });
-    return () => { active = false; };
-  }, [historyHydrationIdentity, historyKey, locale]);
-
-  useEffect(() => {
-    if (!ready || !historyLoaded) return;
-    const next = addRecentSearch(recentRef.current, debouncedQuery, locale);
-    if (JSON.stringify(next) === JSON.stringify(recentRef.current)) return;
-    recentRef.current = next;
-    setRecent(next);
-    void persistRecentSearches(AsyncStorage, accountScope, next).catch(() =>
-      setActionError(strings.search.historyFailed),
-    );
-  }, [accountScope, debouncedQuery, historyLoaded, locale, ready]);
 
   const tracksQuery = useQuery({
     ...musicQueries.searchTracks(debouncedQuery),
@@ -359,22 +367,6 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     }
   };
 
-  const clearHistory = () => {
-    recentRef.current = [];
-    setRecent([]);
-    void persistRecentSearches(AsyncStorage, accountScope, []).catch(() =>
-      setActionError(strings.search.historyFailed),
-    );
-  };
-
-  const removeHistoryEntry = (entry: string) => {
-    const next = removeRecentSearch(recentRef.current, entry, locale);
-    recentRef.current = next;
-    setRecent(next);
-    void persistRecentSearches(AsyncStorage, accountScope, next).catch(() =>
-      setActionError(strings.search.historyFailed),
-    );
-  };
 
   const sortLabels: Record<SearchSort, string> = {
     relevance: strings.search.sorts.relevance,
@@ -587,86 +579,13 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   );
 
   const searchBody = browsing ? (
-          <View testID="search-genre-browse" style={styles.browse}>
-            {!historyLoaded ? (
-              <SearchPoliteStatus
-                testID="search-history-loading"
-                message={strings.search.historyLoading}
-              />
-            ) : null}
-            {scopedRecent.length > 0 ? (
-              <View testID="search-recent" style={styles.recentBlock}>
-                <View style={styles.recentHeader}>
-                  <Text accessibilityRole="header" style={styles.sectionTitle}>{strings.search.recentTitle}</Text>
-                  <Pressable
-                    testID="search-recent-clear"
-                    accessibilityRole="button"
-                    accessibilityLabel={strings.search.clearHistory}
-                    onPress={clearHistory}
-                    style={styles.historyClear}
-                  >
-                    <Text style={styles.historyClearText}>{strings.search.clearHistory}</Text>
-                  </Pressable>
-                </View>
-                <View style={styles.recentChips}>
-                  {scopedRecent.map((entry, index) => (
-                    <View key={recentSearchIdentity(entry, locale)} style={styles.recentChip}>
-                      <Pressable
-                        testID={`search-recent-${index}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={entry}
-                        onPress={() => updateInput(entry)}
-                        style={styles.recentChoice}
-                      >
-                        <Text style={styles.recentChipText}>{entry}</Text>
-                      </Pressable>
-                      <Pressable
-                        testID={`search-recent-remove-${index}`}
-                        accessibilityRole="button"
-                        accessibilityLabel={strings.search.removeRecent(entry)}
-                        onPress={() => removeHistoryEntry(entry)}
-                        style={({ pressed }) => [styles.recentRemove, pressed && styles.pressed]}
-                      >
-                        <AppIcon name="close" color={colors.textSecondary} size={16} />
-                      </Pressable>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-            <Text accessibilityRole="header" style={styles.sectionTitle}>{strings.search.browseTitle}</Text>
-            <SearchRemoteBoundary
-              id="search-genres"
-              state={genresState}
-              loadingLabel={strings.search.browseLoading}
-              emptyLabel={strings.search.browsePrompt}
-              offlineLabel={strings.search.remoteOffline(strings.search.browseTitle)}
-              errorLabel={strings.search.remoteLoadFailed(strings.search.browseTitle)}
-              cachedOfflineLabel={strings.search.remoteCachedOffline(strings.search.browseTitle)}
-              cachedErrorLabel={strings.search.remoteCachedRefreshFailed(strings.search.browseTitle)}
-              refreshingLabel={strings.search.remoteRefreshing(strings.search.browseTitle)}
-              staleLabel={strings.search.remoteStale(strings.search.browseTitle)}
-              retryLabel={strings.search.retrySection(strings.search.browseTitle)}
-              retryBusy={genresQuery.fetchStatus === 'fetching'}
-              onRetry={() => { void genresQuery.refetch(); }}
-            >
-              <SearchResultRail
-                id="genres"
-                data={genresQuery.data ?? []}
-                keyExtractor={(genre, index) => `${genre.id}:${index}`}
-                renderItem={(genre) => (
-                  <SearchEntityCard
-                    testID={`search-genre-${genre.id}`}
-                    accessibilityLabel={strings.search.openGenre(genre.name)}
-                    title={genre.name}
-                    subtitle={strings.search.browseTitle}
-                    imageUri={genre.picture}
-                    onPress={() => onOpenGenre({ genreId: genre.id, name: genre.name })}
-                  />
-                )}
-              />
-            </SearchRemoteBoundary>
-          </View>
+          <SearchBrowseContent
+            genres={genresQuery.data ?? []}
+            genresState={genresState}
+            retryBusy={genresQuery.fetchStatus === 'fetching'}
+            onRetry={() => { void genresQuery.refetch(); }}
+            onOpenGenre={onOpenGenre}
+          />
         ) : !inputIsSearchable ? (
           <Text testID="search-minimum-hint" style={styles.hint}>{strings.search.minimumQueryHint}</Text>
         ) : !ready ? (
@@ -882,16 +801,6 @@ const styles = StyleSheet.create({
   sortText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
   sortTextSelected: { color: colors.accentSoft },
   browse: { gap: 14, paddingTop: 6 },
-  recentBlock: { gap: 10, marginBottom: 12 },
-  recentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: 12 },
-  historyClear: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center', paddingHorizontal: 8 },
-  historyClearText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  recentChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16 },
-  recentChip: { flexDirection: 'row', alignItems: 'center', borderRadius: 24, overflow: 'hidden', backgroundColor: colors.surfaceElevated },
-  recentChoice: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center', paddingLeft: 15, paddingRight: 6 },
-  recentChipText: { color: colors.textPrimary, fontSize: 13, fontWeight: '600' },
-  recentRemove: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  recentRemoveGlyph: { color: colors.textSecondary, fontSize: 20, lineHeight: 22 },
   pressed: { opacity: 0.7 },
   section: { gap: 10, paddingTop: 28 },
   trackSectionHeader: { paddingTop: 28, paddingBottom: 10 },

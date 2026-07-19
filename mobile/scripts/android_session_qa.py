@@ -48,8 +48,8 @@ RADIO_SECTION_SUFFIXES = (
     "radio-section-genres",
 )
 
-# These controls either change account/library data, playback state, or locally
-# persisted history. The QA allowlist below never needs them.
+# These controls either change account/library data or playback state. The QA
+# allowlist below never needs them.
 FORBIDDEN_INTERACTION_PATTERNS: tuple[Pattern[str], ...] = tuple(
     re.compile(pattern)
     for pattern in (
@@ -60,7 +60,6 @@ FORBIDDEN_INTERACTION_PATTERNS: tuple[Pattern[str], ...] = tuple(
         r"^playlist-track-.+-(?:up|down|remove)$",
         r"^now-playing-(?:like|play-pause|next|previous|shuffle|repeat)$",
         r"^mini-player(?:-|$)",
-        r"^search-recent-clear$",
         r"^search-track-.+$",
         r"^home-track-.+$",
         r"^discover-chart-.+$",

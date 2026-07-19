@@ -184,6 +184,7 @@ function HomeRoute({ navigation }: SectionProps<'Home'>) {
       }
       onOpenMix={(params) => navigation.push('Mix', params)}
       onOpenRadar={() => navigation.push('Radar')}
+      onOpenSearch={() => navigation.navigate('Search')}
     />
   );
 }
@@ -630,16 +631,6 @@ function Tabs() {
           }}
         />
         <Tab.Screen
-          name="SearchTab"
-          component={SearchNavigator}
-          options={{
-            title: strings.navigation.search,
-            tabBarButtonTestID: 'tab-search',
-            tabBarAccessibilityLabel: strings.navigation.search,
-            tabBarIcon: ({ color }) => <TabIcon color={color} name="magnify" />,
-          }}
-        />
-        <Tab.Screen
           name="DiscoverTab"
           component={DiscoverNavigator}
           options={{
@@ -647,6 +638,16 @@ function Tabs() {
             tabBarButtonTestID: 'tab-discover',
             tabBarAccessibilityLabel: strings.navigation.discover,
             tabBarIcon: ({ color }) => <TabIcon color={color} name="compass-outline" />,
+          }}
+        />
+        <Tab.Screen
+          name="SearchTab"
+          component={SearchNavigator}
+          options={{
+            title: strings.navigation.search,
+            tabBarButtonTestID: 'tab-search',
+            tabBarAccessibilityLabel: strings.navigation.search,
+            tabBarIcon: ({ color }) => <TabIcon color={color} name="magnify" />,
           }}
         />
         <Tab.Screen

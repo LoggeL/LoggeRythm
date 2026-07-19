@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   accountScopedStorageKeys,
   clearAccountScopedStorage,
-  persistRecentSearches,
   recentSearchStorageKey,
 } from './accountStorage';
 import { markReleaseRadarTracksSeen, releaseRadarSeenStorageKey } from './releaseRadar';
@@ -26,27 +25,6 @@ describe('account-scoped persisted storage', () => {
   it('rejects an unscoped key instead of creating shared persisted state', () => {
     expect(() => recentSearchStorageKey('   ')).toThrow(
       'Account storage scope must not be empty',
-    );
-  });
-
-  it('persists removals only in the selected origin-and-account scope', async () => {
-    const setItem = vi.fn(async () => undefined);
-    const removeItem = vi.fn(async () => undefined);
-    const storage = { setItem, removeItem };
-
-    await persistRecentSearches(storage, 'https://music.test::user:7', [
-      'Bowie',
-      'Kraftwerk',
-    ]);
-    expect(setItem).toHaveBeenCalledExactlyOnceWith(
-      recentSearchStorageKey('https://music.test::user:7'),
-      '["Bowie","Kraftwerk"]',
-    );
-    expect(removeItem).not.toHaveBeenCalled();
-
-    await persistRecentSearches(storage, 'https://other.test::user:7', []);
-    expect(removeItem).toHaveBeenCalledExactlyOnceWith(
-      recentSearchStorageKey('https://other.test::user:7'),
     );
   });
 
@@ -103,45 +81,4 @@ describe('account-scoped persisted storage', () => {
     expect(order).toEqual(['write-start', 'write-end', 'remove', 'remove', 'remove']);
   });
 
-  it('serializes recent-search updates and drains the newest write before logout removal', async () => {
-    const scope = 'origin::user:recent-race';
-    const key = recentSearchStorageKey(scope);
-    const values = new Map<string, string>();
-    let releaseFirstWrite!: () => void;
-    const firstWriteGate = new Promise<void>((resolve) => { releaseFirstWrite = resolve; });
-    const order: string[] = [];
-    const storage = {
-      getAllKeys: vi.fn(async () => [...values.keys()]),
-      setItem: vi.fn(async (storageKey: string, value: string) => {
-        order.push(`write:${value}:start`);
-        if (value === '["older"]') await firstWriteGate;
-        values.set(storageKey, value);
-        order.push(`write:${value}:end`);
-      }),
-      removeItem: vi.fn(async (storageKey: string) => {
-        order.push(`remove:${storageKey}`);
-        values.delete(storageKey);
-      }),
-    };
-
-    const older = persistRecentSearches(storage, scope, ['older']);
-    await vi.waitFor(() => expect(storage.setItem).toHaveBeenCalledOnce());
-    const newer = persistRecentSearches(storage, scope, ['newer']);
-    const cleanup = clearAccountScopedStorage(storage, scope);
-    await Promise.resolve();
-    expect(storage.removeItem).not.toHaveBeenCalled();
-
-    releaseFirstWrite();
-    await Promise.all([older, newer, cleanup]);
-    expect(values.has(key)).toBe(false);
-    expect(order).toEqual([
-      'write:["older"]:start',
-      'write:["older"]:end',
-      'write:["newer"]:start',
-      'write:["newer"]:end',
-      `remove:${key}`,
-      `remove:${releaseRadarSeenStorageKey(scope)}`,
-      `remove:${navigationStateStorageKey(scope)}`,
-    ]);
-  });
 });

@@ -148,7 +148,6 @@ class InteractionSafetyTests(unittest.TestCase):
             "playlist-visibility",
             "playlist-track-12-0-remove",
             "radio-mood-focus",
-            "search-recent-clear",
             "discover-chart-12-0",
             "unknown-control",
         ):

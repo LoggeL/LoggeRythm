@@ -416,7 +416,6 @@ export interface StringCatalog {
     remoteRefreshing: (section: string) => string;
     remoteStale: (section: string) => string;
     retrySection: (section: string) => string;
-    historyLoading: string;
     metadataTitle: string;
     tabs: {
       all: string;
@@ -435,10 +434,6 @@ export interface StringCatalog {
     browseTitle: string;
     browsePrompt: string;
     browseLoading: string;
-    recentTitle: string;
-    clearHistory: string;
-    removeRecent: (query: string) => string;
-    historyFailed: string;
     trackDuration: (duration: string) => string;
     trackPlayCount: (plays: number, listeners: number) => string;
     trackPopularity: (percent: number) => string;
@@ -1016,7 +1011,6 @@ export const de: StringCatalog = {
     remoteRefreshing: (section) => `${section} wird aktualisiert…`,
     remoteStale: (section) => `${section}: Gespeicherte Daten werden angezeigt.`,
     retrySection: (section) => `${section} erneut laden`,
-    historyLoading: 'Suchverlauf wird geladen…',
     metadataTitle: 'Zusätzliche Titeldetails',
     tabs: { all: 'Alle', track: 'Titel', album: 'Alben', artist: 'Künstler', playlist: 'Playlists' },
     sortLabel: 'Sortierung',
@@ -1029,10 +1023,6 @@ export const de: StringCatalog = {
     browseTitle: 'Zum Stöbern',
     browsePrompt: 'Wonach suchst du?',
     browseLoading: 'Genres werden geladen…',
-    recentTitle: 'Zuletzt gesucht',
-    clearHistory: 'Verlauf löschen',
-    removeRecent: (query) => `„${query}“ aus dem Suchverlauf entfernen`,
-    historyFailed: 'Suchverlauf konnte nicht aktualisiert werden',
     trackDuration: (duration) => `Dauer ${duration}`,
     trackPlayCount: (plays, listeners) =>
       `${plays.toLocaleString('de-DE')} Wiedergaben · ${listeners.toLocaleString('de-DE')} Hörer:innen (Last.fm)`,
@@ -1513,7 +1503,6 @@ export const en: StringCatalog = {
     remoteRefreshing: (section) => `Refreshing ${section}…`,
     remoteStale: (section) => `${section}: Showing saved data.`,
     retrySection: (section) => `Reload ${section}`,
-    historyLoading: 'Loading search history…',
     metadataTitle: 'Additional track details',
     tabs: { all: 'All', track: 'Tracks', album: 'Albums', artist: 'Artists', playlist: 'Playlists' },
     sortLabel: 'Sort',
@@ -1523,9 +1512,6 @@ export const en: StringCatalog = {
     },
     browseTitle: 'Browse', browsePrompt: 'What are you looking for?',
     browseLoading: 'Loading genres…',
-    recentTitle: 'Recent searches', clearHistory: 'Clear history',
-    removeRecent: (query) => `Remove ${query} from recent searches`,
-    historyFailed: 'Search history could not be updated',
     trackDuration: (duration) => `Duration ${duration}`,
     trackPlayCount: (plays, listeners) =>
       `${plays.toLocaleString('en-US')} plays · ${listeners.toLocaleString('en-US')} listeners (Last.fm)`,
