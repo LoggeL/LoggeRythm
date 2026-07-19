@@ -88,7 +88,6 @@ def _timed_words(payload: dict[str, Any]) -> list[_TimedWord]:
         raise GroqTranscriptionError("Groq response field 'words' must be a list.")
 
     words: list[_TimedWord] = []
-    previous_start = -1.0
     for index, raw_word in enumerate(raw_words):
         if not isinstance(raw_word, dict):
             raise GroqTranscriptionError(f"Groq word {index} must be an object.")
@@ -101,13 +100,13 @@ def _timed_words(payload: dict[str, Any]) -> list[_TimedWord]:
             raise GroqTranscriptionError(
                 f"Groq word {index} ends before it starts ({start} > {end})."
             )
-        if start < previous_start:
-            raise GroqTranscriptionError(
-                f"Groq word {index} starts before the preceding word."
-            )
         words.append(_TimedWord(text=raw_text.strip(), start=start, end=end))
-        previous_start = start
-    return words
+
+    # Whisper can return overlapping vocal tokens slightly out of timestamp order,
+    # especially for music with backing vocals. The timestamps are still valid;
+    # rejecting the entire transcription turns a usable lyrics fallback into a 502.
+    # Python's stable sort preserves provider order when words share a start time.
+    return sorted(words, key=lambda word: word.start)
 
 
 def _join_words(words: list[_TimedWord]) -> str:

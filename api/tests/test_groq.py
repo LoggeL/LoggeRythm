@@ -110,20 +110,23 @@ class WordLineTests(unittest.TestCase):
     def test_accepts_valid_empty_word_list(self) -> None:
         self.assertEqual(_word_lines({"words": []}), [])
 
+    def test_sorts_valid_out_of_order_words_from_overlapping_vocals(self) -> None:
+        lines = _word_lines(
+            {
+                "words": [
+                    word("later", 2.0, 2.2),
+                    word("earlier", 1.0, 1.2),
+                ]
+            }
+        )
+
+        self.assertEqual(lines, [{"t": 1.0, "text": "earlier later"}])
+
     def test_rejects_missing_or_invalid_word_timestamps(self) -> None:
         cases = [
             ({}, "missing word timestamps"),
             ({"words": [word("bad", float("nan"), 1.0)]}, "invalid start"),
             ({"words": [word("backwards", 2.0, 1.0)]}, "ends before"),
-            (
-                {
-                    "words": [
-                        word("later", 2.0, 2.2),
-                        word("earlier", 1.0, 1.2),
-                    ]
-                },
-                "starts before",
-            ),
         ]
         for payload, message in cases:
             with self.subTest(message=message):
