@@ -41,7 +41,7 @@ def _resolve_queries(queries: list[str], limit: int) -> list[dict]:
 
     def _resolve(q: str) -> dict | None:
         try:
-            hits = dc.search_tracks_public(q)
+            hits = dc.search_tracks_public(q, limit=1)
         except dc.DeezerClientError:
             return None
         return hits[0] if hits else None

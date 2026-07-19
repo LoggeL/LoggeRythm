@@ -65,7 +65,7 @@ def _lastfm_similar(artist: str, title: str) -> list[dict]:
 
     def _resolve(q: str) -> dict | None:
         try:
-            hits = dc.search_tracks_public(q)
+            hits = dc.search_tracks_public(q, limit=1)
         except dc.DeezerClientError:
             return None
         return hits[0] if hits else None
@@ -90,7 +90,7 @@ def _deezer_mix(deezer_id: str, artist_id) -> list[dict]:
             tid = str(t.get("id", ""))
             if tid and tid not in seen:
                 seen.add(tid)
-                pool.append(dc.normalize_public_track(t))
+                pool.append(t)
 
     if artist_id:
         try:
@@ -108,7 +108,7 @@ def _deezer_mix(deezer_id: str, artist_id) -> list[dict]:
                     add(dc._public_get(f"/artist/{rid}/top?limit=5").get("data"))
                 except dc.DeezerClientError:
                     pass
-    return pool
+    return dc.normalize_public_tracks(pool)
 
 
 def _radio(deezer_id: str) -> list[dict]:

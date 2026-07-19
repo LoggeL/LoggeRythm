@@ -68,7 +68,7 @@ def _chart_tracks(genre_id: int) -> list[dict]:
     except dc.DeezerClientError:
         return []
     tracks = (data.get("tracks") or {}).get("data") or []
-    return [dc.normalize_public_track(t) for t in tracks]
+    return dc.normalize_public_tracks(tracks)
 
 
 def _dedupe(tracks: list[dict]) -> list[dict]:
@@ -167,12 +167,20 @@ def _artist_new_tracks(
     refresh: bool = False,
 ) -> list[dict]:
     """Up to `_RADAR_TRACKS_PER_ARTIST` newest tracks from an artist's recent
-    releases (release_date >= cutoff), newest release first. Each track is
-    tagged with `release_date` so callers can sort the merged radar globally.
+    releases (cutoff <= release_date <= today), newest release first. Future
+    pre-release albums must not enter the radar: Deezer exposes their available
+    singles under the future-dated album as well as under their already
+    released single entries. Each track is tagged with `release_date` so
+    callers can sort the merged radar globally.
     """
     albums = dc.artist_albums(artist_id, refresh=refresh)
+    today = date.today().isoformat()
     recent = sorted(
-        (a for a in albums if a.get("release_date", "") >= cutoff),
+        (
+            a
+            for a in albums
+            if cutoff <= a.get("release_date", "") <= today
+        ),
         key=lambda a: a.get("release_date", ""),
         reverse=True,
     )

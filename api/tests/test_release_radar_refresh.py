@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date, timedelta
 from unittest.mock import ANY, patch
 
 from app.routers import home
@@ -50,6 +51,51 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
         self.assertEqual(tracks, [])
         artist_albums.assert_called_once_with("42", refresh=True)
         album_detail.assert_not_called()
+
+    def test_artist_track_lookup_excludes_future_prerelease_album(self) -> None:
+        today = date.today()
+        current_release = today - timedelta(days=7)
+        future_release = today + timedelta(days=30)
+        albums = [
+            {
+                "id": "future-album",
+                "title": "Massendefekt",
+                "release_date": future_release.isoformat(),
+            },
+            {
+                "id": "released-single",
+                "title": "Voll daneben, halb OK!",
+                "release_date": current_release.isoformat(),
+            },
+        ]
+
+        with (
+            patch.object(dc, "artist_albums", return_value=albums),
+            patch.object(
+                dc,
+                "album_detail",
+                return_value={
+                    "release_date": current_release.isoformat(),
+                    "tracks": [{"id": "released-track"}],
+                },
+            ) as album_detail,
+        ):
+            tracks = home._artist_new_tracks(
+                "135023",
+                (today - timedelta(days=90)).isoformat(),
+                refresh=True,
+            )
+
+        self.assertEqual(
+            tracks,
+            [
+                {
+                    "id": "released-track",
+                    "release_date": current_release.isoformat(),
+                }
+            ],
+        )
+        album_detail.assert_called_once_with("released-single")
 
     def test_radar_forwards_manual_refresh_to_every_artist_lookup(self) -> None:
         with (

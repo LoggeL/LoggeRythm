@@ -92,7 +92,7 @@ async def track_metadata(deezer_id: str) -> dict:
     if not deezer_id.isdigit():
         raise HTTPException(status_code=400, detail="deezer_id must be numeric")
     try:
-        return await run_in_threadpool(dc.track_metadata, deezer_id)
+        return await run_in_threadpool(dc.track_public, deezer_id)
     except dc.DeezerClientError as e:
         raise to_http(e)
 

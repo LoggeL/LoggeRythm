@@ -8,6 +8,7 @@ import { usePartyStore } from "@/store/party";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import { formatTime } from "@/lib/format";
+import { trackArtistLabel } from "@/lib/trackArtists";
 import { PlayIcon } from "@/components/icons";
 import Avatar from "@/components/Avatar";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
@@ -299,7 +300,9 @@ export default function PartyPage({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{t.title}</div>
-                  <div className="truncate text-xs text-muted">{t.artist}</div>
+                  <div className="truncate text-xs text-muted">
+                    {trackArtistLabel(t)}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -366,7 +369,7 @@ export default function PartyPage({
                         {t.title}
                       </div>
                       <div className="truncate text-xs text-muted">
-                        {t.artist} · von {t.added_by}
+                        {trackArtistLabel(t)} · von {t.added_by}
                       </div>
                     </div>
                   </button>

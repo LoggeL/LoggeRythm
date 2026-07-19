@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
 
 import requests
@@ -222,7 +223,7 @@ def track_public(deezer_id: str) -> dict:
     Returns the normalized Track shape including ``artist_id``, ``album_id`` and
     the full ``artists`` credit list. Raises on any failure (no silent fallback).
     """
-    return normalize_public_track(_public_get(f"/track/{deezer_id}"))
+    return normalize_public_tracks([_public_get(f"/track/{deezer_id}")])[0]
 
 
 # --- public Deezer API browse (no auth) -----------------------------------
@@ -252,11 +253,111 @@ def _public_get(path: str, _retries: int = 3) -> dict:
     return data
 
 
-def search_tracks_public(query: str) -> list[dict]:
-    """Track search via the public Deezer API (richer: artist_id + duration)."""
-    data = _public_get(f"/search?q={quote_plus(query)}&limit=40")
+_TRACK_ARTISTS_TTL_SEC = 24 * 3600
+_TRACK_ARTISTS_CACHE_MAX = 4096
+_track_artists_cache: dict[str, tuple[float, list[dict]]] = {}
+_track_artists_lock = threading.Lock()
+
+
+def _full_public_artist_refs(track_id: str) -> list[dict]:
+    """Load and cache the authoritative performer credits for one track.
+
+    Deezer's collection endpoints (including ``/search``) omit
+    ``contributors`` even for collaborations. Only ``/track/{id}`` reliably
+    contains the complete ordered credit list, so accepting the collection
+    item's primary artist here would silently lose data.
+    """
+    now = time.monotonic()
+    with _track_artists_lock:
+        hit = _track_artists_cache.get(track_id)
+        if hit is not None and now - hit[0] < _TRACK_ARTISTS_TTL_SEC:
+            return hit[1]
+
+    try:
+        detail = _public_get(f"/track/{track_id}")
+    except DeezerClientError as e:
+        raise type(e)(
+            f"Could not load complete artist credits for track {track_id}: {e}"
+        ) from e
+
+    returned_id = str(detail.get("id", "") or "")
+    if returned_id != track_id:
+        raise DeezerClientError(
+            "Could not load complete artist credits for track "
+            f"{track_id}: Deezer returned track {returned_id or '<missing>'}"
+        )
+    refs = _artist_refs(detail, {})
+    if not refs:
+        raise DeezerClientError(
+            f"Deezer track {track_id} has no contributor list; "
+            "complete artist credits cannot be determined"
+        )
+
+    with _track_artists_lock:
+        if len(_track_artists_cache) >= _TRACK_ARTISTS_CACHE_MAX:
+            oldest_id = min(
+                _track_artists_cache,
+                key=lambda cached_id: _track_artists_cache[cached_id][0],
+            )
+            del _track_artists_cache[oldest_id]
+        _track_artists_cache[track_id] = (now, refs)
+    return refs
+
+
+def normalize_public_tracks(items: list[dict]) -> list[dict]:
+    """Normalize track summaries without losing secondary performers.
+
+    Inline ``contributors`` are used when an endpoint supplies them. Missing
+    lists are enriched concurrently from the authoritative per-track endpoint;
+    errors name the affected track and abort the response instead of returning
+    a plausible-looking, incomplete single-artist result.
+    """
+    if not items:
+        return []
+
+    inline_refs: dict[str, list[dict]] = {}
+    missing_ids: list[str] = []
+    seen_missing: set[str] = set()
+    for item in items:
+        track_id = str(item.get("id", "") or "")
+        if not track_id:
+            raise DeezerClientError(
+                "Cannot normalize public track list: an item has no track id"
+            )
+        refs = _artist_refs(item, {})
+        if refs:
+            inline_refs[track_id] = refs
+        elif track_id not in seen_missing:
+            seen_missing.add(track_id)
+            missing_ids.append(track_id)
+
+    fetched_refs: dict[str, list[dict]] = {}
+    if missing_ids:
+        worker_count = min(8, len(missing_ids))
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            for track_id, refs in zip(
+                missing_ids,
+                pool.map(_full_public_artist_refs, missing_ids),
+                strict=True,
+            ):
+                fetched_refs[track_id] = refs
+
+    normalized: list[dict] = []
+    for item in items:
+        track_id = str(item["id"])
+        enriched = dict(item)
+        enriched["contributors"] = inline_refs.get(track_id) or fetched_refs[track_id]
+        normalized.append(normalize_public_track(enriched))
+    return normalized
+
+
+def search_tracks_public(query: str, limit: int = 40) -> list[dict]:
+    """Track search with complete ordered performer credits."""
+    if limit < 1 or limit > 100:
+        raise ValueError(f"search track limit must be between 1 and 100, got {limit}")
+    data = _public_get(f"/search?q={quote_plus(query)}&limit={limit}")
     items = data.get("data") or []
-    return [normalize_public_track(t) for t in items]
+    return normalize_public_tracks(items)
 
 
 def search_artists(query: str) -> list[dict]:
@@ -287,7 +388,7 @@ def search_playlists(query: str) -> list[dict]:
 def charts() -> list[dict]:
     data = _public_get("/chart")
     tracks = (data.get("tracks") or {}).get("data") or []
-    return [normalize_public_track(t) for t in tracks]
+    return normalize_public_tracks(tracks)
 
 
 def genres() -> list[dict]:
@@ -333,7 +434,7 @@ def genre_detail(genre_id: str) -> dict:
         or info.get("picture_big")
         or info.get("picture", "")
         or "",
-        "tracks": [normalize_public_track(t) for t in tracks],
+        "tracks": normalize_public_tracks(tracks),
         "albums": [normalize_album_summary(a) for a in albums],
         "artists": [normalize_artist_summary(a) for a in artists],
     }
@@ -385,7 +486,7 @@ def track_by_isrc(isrc: str) -> dict | None:
         return None
     if not data or not data.get("id"):
         return None
-    return normalize_public_track(data)
+    return normalize_public_tracks([data])[0]
 
 
 def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
@@ -400,7 +501,7 @@ def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
     if not query:
         return None
     try:
-        results = search_tracks_public(query)
+        results = search_tracks_public(query, limit=1)
     except DeezerClientError:
         return None
     return results[0] if results else None
@@ -417,7 +518,8 @@ def album_detail(album_id: str) -> dict:
         t["album"].setdefault("id", data.get("id"))
         t["album"].setdefault("title", data.get("title"))
         t["album"].setdefault("cover_medium", data.get("cover_medium"))
-        norm_tracks.append(normalize_public_track(t))
+        norm_tracks.append(t)
+    norm_tracks = normalize_public_tracks(norm_tracks)
     return {
         "id": str(data.get("id", album_id)),
         "title": data.get("title", "") or "",
@@ -440,7 +542,7 @@ def playlist_detail(playlist_id: str) -> dict:
         or data.get("picture_big")
         or data.get("picture", "")
         or "",
-        "tracks": [normalize_public_track(t) for t in tracks],
+        "tracks": normalize_public_tracks(tracks),
     }
 
 
@@ -466,7 +568,7 @@ def artist_detail(artist_id: str) -> dict:
         or "",
         "fans": data.get("nb_fan", 0) or 0,
         "albums_count": data.get("nb_album", 0) or 0,
-        "top": [normalize_public_track(t) for t in tracks],
+        "top": normalize_public_tracks(tracks),
         "albums": albums,
         "related": related,
     }
