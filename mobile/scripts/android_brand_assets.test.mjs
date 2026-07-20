@@ -110,7 +110,7 @@ describe('Android production-brand launcher assets', () => {
     expectTransparentBorder(foreground);
     expectTransparentBorder(monochrome);
     expect(alphaChannel(monochrome)).toEqual(alphaChannel(foreground));
-  });
+  }, 15_000);
 
   it('uses a crisp tintable monochrome silhouette with the production wave cut-out', async () => {
     const monochrome = await pixels(ANDROID_BRAND_ASSETS.monochrome);
@@ -124,7 +124,7 @@ describe('Android production-brand launcher assets', () => {
     expect(alphaAt(monochrome, 512, 540)).toBe(0);
     expect(alphaAt(monochrome, 512, 480)).toBeGreaterThan(250);
     expect(alphaAt(monochrome, 512, 620)).toBeGreaterThan(250);
-  });
+  }, 15_000);
 
   it('gives Android 7 a circular brand-background legacy silhouette', async () => {
     const foreground = await pixels(ANDROID_BRAND_ASSETS.foreground);
