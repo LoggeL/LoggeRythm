@@ -738,6 +738,28 @@ class AndroidSmoke:
             clickable=True,
         )
 
+    def dismiss_session_restore_error(self, nodes: list[dict[str, str]]) -> bool:
+        """Dismiss the session restore error screen if present.
+
+        On a clean emulator the backend may be unreachable, causing the app to
+        show its session-restore-error screen instead of the login form. Tap
+        "forget session" to discard the failed restore and return to login.
+        """
+        if not self.has_resource_suffix(nodes, "session-restore-error"):
+            return False
+        forget_button = self.find_node(
+            nodes,
+            resource_suffix="session-forget",
+            clickable=True,
+            enabled=True,
+        )
+        if forget_button is None:
+            return False
+        x, y = self.center(forget_button, "session-forget button")
+        self.adb(["shell", "input", "tap", str(x), str(y)])
+        time.sleep(1.0)
+        return True
+
     def verify_login_screen(
         self,
         phase: str = "cold",
@@ -752,6 +774,8 @@ class AndroidSmoke:
                 persist=False,
             )
             nodes = self.nodes(root)
+            if self.dismiss_session_restore_error(nodes):
+                continue
             last_labels = {
                 value
                 for node in nodes
