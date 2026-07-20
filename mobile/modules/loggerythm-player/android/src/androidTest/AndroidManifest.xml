@@ -6,4 +6,15 @@
     <queries>
         <package android:name="top.logge.loggerythm.player.hostilecontroller" />
     </queries>
+
+    <application>
+        <activity
+            android:name=".LoggeRythmPlayerTestActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>
