@@ -5,6 +5,7 @@ export const SWIPE_COMMIT_VELOCITY = 0.55;
 export const SWIPE_AXIS_DOMINANCE = 1.35;
 
 export type MiniPlayerSwipeAction = 'previous' | 'next' | 'expand';
+export type FullscreenTabSwipeAction = 'previous' | 'next';
 
 interface SwipeMotion {
   dx: number;
@@ -42,6 +43,18 @@ export function resolveMiniPlayerSwipe(motion: SwipeMotion): MiniPlayerSwipeActi
   }
   if (verticalDominates(motion) && motion.dy < 0 && committed(motion.dy, motion.vy)) {
     return 'expand';
+  }
+  return null;
+}
+
+export function shouldCaptureFullscreenTabSwipe(motion: SwipeMotion): boolean {
+  return horizontalDominates(motion) && Math.abs(motion.dx) >= SWIPE_CAPTURE_DISTANCE;
+}
+
+/** Match mini-player track swipes: content moves left to advance and right to go back. */
+export function resolveFullscreenTabSwipe(motion: SwipeMotion): FullscreenTabSwipeAction | null {
+  if (horizontalDominates(motion) && committed(motion.dx, motion.vx)) {
+    return motion.dx < 0 ? 'next' : 'previous';
   }
   return null;
 }

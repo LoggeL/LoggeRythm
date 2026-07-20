@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  resolveFullscreenTabSwipe,
   resolveMiniPlayerSwipe,
   shouldCaptureFullscreenMinimize,
+  shouldCaptureFullscreenTabSwipe,
   shouldCaptureMiniPlayerSwipe,
   shouldMinimizeFullscreenPlayer,
 } from './playerGestures';
@@ -23,6 +25,15 @@ describe('mobile player swipe gestures', () => {
     expect(shouldCaptureMiniPlayerSwipe({ dx: 5, dy: 3 })).toBe(false);
     expect(shouldCaptureMiniPlayerSwipe({ dx: 20, dy: 18 })).toBe(false);
     expect(resolveMiniPlayerSwipe({ dx: 40, dy: 34, vx: 1 })).toBeNull();
+  });
+
+  it('navigates fullscreen tabs on committed horizontal swipes', () => {
+    expect(shouldCaptureFullscreenTabSwipe({ dx: -18, dy: 3 })).toBe(true);
+    expect(resolveFullscreenTabSwipe({ dx: -72, dy: 8 })).toBe('next');
+    expect(resolveFullscreenTabSwipe({ dx: 72, dy: -8 })).toBe('previous');
+    expect(resolveFullscreenTabSwipe({ dx: -25, dy: 2, vx: -0.7 })).toBe('next');
+    expect(resolveFullscreenTabSwipe({ dx: -25, dy: 2, vx: -0.2 })).toBeNull();
+    expect(resolveFullscreenTabSwipe({ dx: 40, dy: 34, vx: 1 })).toBeNull();
   });
 
   it('minimizes fullscreen only for a dominant committed downward pull', () => {

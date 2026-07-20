@@ -3,6 +3,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -59,9 +60,11 @@ import {
   nowPlayingAlbumDestination,
   nowPlayingArtistDestination,
 } from './nowPlayingNavigation';
-import { resolveNowPlayingBody } from './nowPlayingModel';
+import { adjacentNowPlayingTab, resolveNowPlayingBody } from './nowPlayingModel';
 import {
+  resolveFullscreenTabSwipe,
   shouldCaptureFullscreenMinimize,
+  shouldCaptureFullscreenTabSwipe,
   shouldMinimizeFullscreenPlayer,
 } from '../player/playerGestures';
 
@@ -91,14 +94,26 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const [shuffle, setShuffle] = useState(isContextShuffleEnabled);
   const [shufflePending, setShufflePending] = useState(false);
   const [tab, setTab] = useState<NowPlayingTab>(DEFAULT_NOW_PLAYING_TAB);
-  const minimizeResponder = useMemo(() => PanResponder.create({
+  const fullscreenResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => false,
-    // Limit capture to the fixed header/tabs region so nested vertical panels retain scrolling.
-    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
+    // Limit vertical capture to the fixed header/tabs region so nested panels retain scrolling.
+    // Horizontal tab navigation is Android-only and dominant-axis gated to avoid claiming scrolls.
+    onMoveShouldSetPanResponderCapture: (_event, gesture) => (
+      Platform.OS === 'android' && shouldCaptureFullscreenTabSwipe(gesture)
+    ) || (
       gesture.y0 <= insets.top + FULLSCREEN_MINIMIZE_CAPTURE_HEIGHT
-      && shouldCaptureFullscreenMinimize(gesture),
+      && shouldCaptureFullscreenMinimize(gesture)
+    ),
     onPanResponderRelease: (_event, gesture) => {
-      if (shouldMinimizeFullscreenPlayer(gesture)) navigation.goBack();
+      if (shouldMinimizeFullscreenPlayer(gesture)) {
+        navigation.goBack();
+        return;
+      }
+      if (Platform.OS !== 'android') return;
+      const tabDirection = resolveFullscreenTabSwipe(gesture);
+      if (tabDirection !== null) {
+        setTab((current) => adjacentNowPlayingTab(current, tabDirection));
+      }
     },
     onPanResponderTerminationRequest: () => true,
   }), [insets.top, navigation]);
@@ -222,7 +237,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
         styles.container,
         { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
       ]}
-      {...minimizeResponder.panHandlers}
+      {...fullscreenResponder.panHandlers}
     >
       <NowPlayingBackdrop coverUri={track.cover} />
       {topBar}
