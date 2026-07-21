@@ -20,6 +20,12 @@ export interface Track {
   rank?: number;
   /** Release date (YYYY-MM-DD); set by the release radar, empty elsewhere. */
   release_date?: string;
+  /** ReplayGain/R128 track gain adjustment in dB when upstream metadata provides it. */
+  loudness_gain_db?: number | null;
+  /** Integrated track loudness in LUFS/LKFS when measured or supplied by the backend. */
+  loudness_lufs?: number | null;
+  /** True/sample peak as a linear full-scale ratio when known. */
+  loudness_peak?: number | null;
 }
 
 export interface User {

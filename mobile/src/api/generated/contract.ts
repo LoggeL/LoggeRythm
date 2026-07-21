@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "b41348fb20005d4ffa7ea7499e4d3306a1e5cdaf1e1ddae7bddaf41765536c08" as const;
+export const GENERATED_OPENAPI_SHA256 = "e15907b694d4ebc387e111e00ed2dd081ec88422e74d21f3237ab72a8fe09a92" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -221,6 +221,9 @@ export interface PlaylistTrackEntryWire {
   cover?: string;
   duration_sec?: number;
   id: string;
+  loudness_gain_db?: number | null;
+  loudness_lufs?: number | null;
+  loudness_peak?: number | null;
   playlist_entry_id: number;
   preview_url?: string | null;
   rank?: number;
@@ -333,6 +336,9 @@ export interface TrackWire {
   cover?: string;
   duration_sec?: number;
   id: string;
+  loudness_gain_db?: number | null;
+  loudness_lufs?: number | null;
+  loudness_peak?: number | null;
   preview_url?: string | null;
   rank?: number;
   release_date?: string;

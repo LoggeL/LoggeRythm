@@ -158,12 +158,21 @@ class OpenApiContractTests(unittest.TestCase):
 
         legacy_schemas = legacy["components"]["schemas"]
         current_schemas = current["components"]["schemas"]
-        self.assertEqual(current_schemas["Track"], legacy_schemas["Track"])
+        legacy_track = legacy_schemas["Track"]
+        current_track = current_schemas["Track"]
+        self.assertLessEqual(
+            set(legacy_track["properties"]),
+            set(current_track["properties"]),
+        )
+        for field, schema in legacy_track["properties"].items():
+            with self.subTest(track_field=field):
+                self.assertEqual(current_track["properties"][field], schema)
+        self.assertEqual(current_track.get("required"), legacy_track.get("required"))
         self.assertEqual(
             current_schemas["PlaylistReorder"],
             legacy_schemas["PlaylistReorder"],
         )
-        self.assertEqual(
+        self.assertLessEqual(
             set(legacy_schemas["Track"]["properties"]),
             set(current_schemas["PlaylistTrackEntry"]["properties"])
             - {"playlist_entry_id"},

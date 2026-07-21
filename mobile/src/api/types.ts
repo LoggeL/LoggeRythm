@@ -20,6 +20,12 @@ export interface Track {
   preview_url: string | null;
   rank: number;
   release_date: string;
+  /** ReplayGain/R128 track gain adjustment in dB when upstream metadata provides it. */
+  loudness_gain_db?: number | null;
+  /** Integrated track loudness in LUFS/LKFS when measured or supplied by the backend. */
+  loudness_lufs?: number | null;
+  /** True/sample peak as a linear full-scale ratio when known. */
+  loudness_peak?: number | null;
   /** Stable database identity of this exact occurrence in a playlist detail. */
   playlist_entry_id?: PlaylistEntryId;
 }
@@ -49,6 +55,9 @@ export interface TrackInput {
   preview_url?: string | null;
   rank?: number;
   release_date?: string;
+  loudness_gain_db?: number | null;
+  loudness_lufs?: number | null;
+  loudness_peak?: number | null;
 }
 
 /** Response of `POST /api/auth/login` and `GET /api/auth/me` (`UserOut`). */

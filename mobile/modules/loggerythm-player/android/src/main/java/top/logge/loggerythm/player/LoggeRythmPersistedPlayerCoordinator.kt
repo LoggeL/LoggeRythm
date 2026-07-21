@@ -675,6 +675,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       if (events.contains(Player.EVENT_TIMELINE_CHANGED)) {
         if (!reconcileRuntimeTimeline()) return
         normalizeAuxiliaryForTimeline()
+        applyCurrentLoudnessGain()
       }
       if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) handleMediaItemSleepAtEnd()
 
@@ -702,6 +703,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       // Reconcile synchronously so an Auto/service-only mutation can never receive an old queue
       // generation in its durable RADIO event.
       if (!reconcileRuntimeTimeline()) return
+      applyCurrentLoudnessGain()
       handleMediaItemTransition(reason)
       enqueuePlaybackEventsForTransition(mediaItem, reason)
       lastKnownIndex = player.currentMediaItemIndex
@@ -941,6 +943,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       is PlayerCommand.SetQueue -> {
         contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
         normalizeAuxiliaryForTimeline()
+        applyCurrentLoudnessGain()
         requestSave(immediate = false)
       }
       PlayerCommand.ClearQueue -> {
@@ -2273,8 +2276,14 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   }
 
   private fun restoreFadeVolume() {
-    fadeBaseVolume?.let { player.volume = it }
     fadeBaseVolume = null
+    applyCurrentLoudnessGain()
+  }
+
+  private fun applyCurrentLoudnessGain() {
+    if (!isReady() || fadeBaseVolume != null) return
+    val gain = LoggeRythmPlayerRuntime.loudnessGainFor(player.currentMediaItem?.mediaId)
+    if (player.volume != gain) player.volume = gain
   }
 
   private fun handleMediaItemTransition(reason: Int) {

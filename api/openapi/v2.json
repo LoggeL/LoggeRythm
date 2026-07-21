@@ -1178,6 +1178,39 @@
             "title": "Id",
             "type": "string"
           },
+          "loudness_gain_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Gain Db"
+          },
+          "loudness_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Lufs"
+          },
+          "loudness_peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Peak"
+          },
           "playlist_entry_id": {
             "exclusiveMinimum": 0.0,
             "title": "Playlist Entry Id",
@@ -1837,6 +1870,39 @@
           "id": {
             "title": "Id",
             "type": "string"
+          },
+          "loudness_gain_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Gain Db"
+          },
+          "loudness_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Lufs"
+          },
+          "loudness_peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Peak"
           },
           "preview_url": {
             "anyOf": [

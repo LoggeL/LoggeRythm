@@ -298,6 +298,11 @@ internal object LoggeRythmPlayerRuntime {
     queueExtras[mediaId] ?: "{}"
   }
 
+  fun loudnessGainFor(mediaId: String?): Float = synchronized(lock) {
+    if (mediaId == null) return@synchronized 1f
+    LoggeRythmLoudnessNormalization.gainLinearFromExtras(queueExtras[mediaId] ?: "{}")
+  }
+
   /**
    * Reconciles the Media3 timeline back to its private source sidecars. Unknown or URI-mismatched
    * items fail closed so a controller cannot smuggle an unvalidated source into durable state.

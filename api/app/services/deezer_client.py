@@ -70,6 +70,45 @@ def _cover_from_picture(picture_id: str | None, size: str = "500x500") -> str:
     return f"https://e-cdns-images.dzcdn.net/images/cover/{picture_id}/{size}.jpg"
 
 
+def _optional_float(*values: object) -> float | None:
+    for value in values:
+        if value in (None, ""):
+            continue
+        try:
+            parsed = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        if parsed == parsed and parsed not in (float("inf"), float("-inf")):
+            return parsed
+    return None
+
+
+def _loudness_fields(item: dict) -> dict:
+    """Extract ReplayGain/R128-style fields when an upstream payload has them.
+
+    Deezer's public track summaries usually omit these. Some private/catalog
+    payloads expose a gain-like field; preserve it without inventing values so
+    clients can normalize consistently when metadata is available.
+    """
+    return {
+        "loudness_gain_db": _optional_float(
+            item.get("loudness_gain_db"),
+            item.get("replaygain_track_gain_db"),
+            item.get("REPLAYGAIN_TRACK_GAIN"),
+            item.get("GAIN"),
+        ),
+        "loudness_lufs": _optional_float(
+            item.get("loudness_lufs"),
+            item.get("integrated_loudness_lufs"),
+        ),
+        "loudness_peak": _optional_float(
+            item.get("loudness_peak"),
+            item.get("replaygain_track_peak"),
+            item.get("REPLAYGAIN_TRACK_PEAK"),
+        ),
+    }
+
+
 def normalize_search_item(item: dict) -> dict:
     """Map a legacy ``deezer_search`` item (img_url/...) to the Track shape."""
     return {
@@ -82,6 +121,7 @@ def normalize_search_item(item: dict) -> dict:
         "cover": item.get("img_url", "") or "",
         "duration_sec": int(item.get("duration", 0) or 0),
         "preview_url": item.get("preview_url") or None,
+        **_loudness_fields(item),
     }
 
 
@@ -125,6 +165,7 @@ def normalize_public_track(t: dict) -> dict:
         "duration_sec": int(t.get("duration", 0) or 0),
         "preview_url": t.get("preview") or None,
         "rank": int(t.get("rank", 0) or 0),
+        **_loudness_fields(t),
     }
 
 
@@ -214,6 +255,7 @@ def track_metadata(deezer_id: str) -> dict:
         "cover": _cover_from_picture(song.get("ALB_PICTURE")),
         "duration_sec": int(song.get("DURATION", 0) or 0),
         "preview_url": None,
+        **_loudness_fields(song),
     }
 
 

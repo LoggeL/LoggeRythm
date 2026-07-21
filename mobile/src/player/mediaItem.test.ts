@@ -34,6 +34,20 @@ describe('mediaItemToTrack', () => {
     expect(mediaItemUsesExplicitDownload(item)).toBe(false);
   });
 
+  it('publishes a bounded loudness-normalization gain for native playback', () => {
+    const item = trackToMediaItem(
+      { ...track, loudness_lufs: -8, loudness_peak: 0.95 },
+      'https://api.test',
+      { Cookie: 'session=test' },
+    );
+
+    expect(item.extras?.loudnessNormalization).toMatchObject({
+      targetLufs: -14,
+      gainDb: -6,
+      source: 'metadata',
+    });
+  });
+
   it('builds a header-free local source only from an explicit file URI', () => {
     const item = trackToMediaItem(track, 'https://api.test', { Cookie: 'session=test' }, {
       explicitDownloadUri: 'file:///data/user/0/top.logge.loggerythm/no_backup/123.mp3',

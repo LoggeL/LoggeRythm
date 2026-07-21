@@ -28,6 +28,11 @@ class Track(BaseModel):
     rank: int = 0
     # Release date (YYYY-MM-DD) — populated by the release radar; "" elsewhere.
     release_date: str = ""
+    # ReplayGain/R128-compatible loudness metadata, optional because most catalog
+    # responses do not include it. Clients apply a bounded attenuation-only gain.
+    loudness_gain_db: float | None = None
+    loudness_lufs: float | None = None
+    loudness_peak: float | None = None
 
 
 # --- performer-list persistence helpers -----------------------------------

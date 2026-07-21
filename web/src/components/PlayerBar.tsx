@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { api, streamUrl } from "@/lib/api";
 import { ensureAnalyser, applyVolume, perceptualVolume } from "@/lib/audioAnalyser";
+import { calculateLoudnessGain, loudnessMetadataFromTrack } from "@/lib/loudness";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import { trackArtistLabel } from "@/lib/trackArtists";
@@ -175,6 +176,9 @@ export default function PlayerBar() {
   const _setError = usePlayerStore((s) => s._setError);
 
   const trackId = track?.id ?? null;
+  const trackLoudnessGain = calculateLoudnessGain(
+    track ? loudnessMetadataFromTrack(track) : null,
+  ).gainLinear;
 
   const { data: me } = useMe();
   const recordedRef = useRef<string | null>(null);
@@ -307,7 +311,7 @@ export default function PlayerBar() {
         el.dataset.trackId = id;
         el.currentTime = 0;
         const s = usePlayerStore.getState();
-        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume));
+        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume) * trackLoudnessGain);
       } else {
         el.pause();
         el.removeAttribute("src");
@@ -323,7 +327,7 @@ export default function PlayerBar() {
     }
     // A normal (non-crossfade) track change cancels any pending crossfade.
     crossfadeToId.current = null;
-  }, [activeIdx, trackId]);
+  }, [activeIdx, trackId, trackLoudnessGain]);
 
   // Reflect play/pause on the active deck.
   useEffect(() => {
@@ -344,18 +348,18 @@ export default function PlayerBar() {
         if (idle) idle.pause();
         crossfadeToId.current = null;
         const s = usePlayerStore.getState();
-        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume));
+        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume) * trackLoudnessGain);
       }
     }
-  }, [isPlaying, trackId, activeIdx]);
+  }, [isPlaying, trackId, activeIdx, trackLoudnessGain]);
 
   // Sync volume + mute onto the active deck (the crossfade owns volumes while
   // it runs).
   useEffect(() => {
     const el = (activeIdx === 0 ? deckA : deckB).current;
     if (el && !crossfadeTimer.current)
-      applyVolume(el, muted ? 0 : perceptualVolume(volume));
-  }, [volume, muted, activeIdx]);
+      applyVolume(el, muted ? 0 : perceptualVolume(volume) * trackLoudnessGain);
+  }, [volume, muted, activeIdx, trackLoudnessGain]);
 
   // Crossfade: near the end of the active deck, fade the next track in on the
   // idle deck, then swap which deck is active — no reload, no seek, no restart.
@@ -379,6 +383,9 @@ export default function PlayerBar() {
     if (crossfadeToId.current === String(nextTrack.id)) return;
 
     const incomingIdx = activeIdx ^ 1;
+    const incomingLoudnessGain = calculateLoudnessGain(
+      loudnessMetadataFromTrack(nextTrack),
+    ).gainLinear;
     crossfadeToId.current = String(nextTrack.id);
     ensureAnalyser(incoming);
     incoming.src = streamUrl(String(nextTrack.id));
@@ -394,15 +401,15 @@ export default function PlayerBar() {
           const elapsed = (performance.now() - startedAt) / 1000;
           const pct = Math.min(1, elapsed / seconds);
           const targetVolume = muted ? 0 : perceptualVolume(volume);
-          applyVolume(outgoing, targetVolume * (1 - pct), 1 - pct);
-          applyVolume(incoming, targetVolume * pct, pct);
+          applyVolume(outgoing, targetVolume * trackLoudnessGain * (1 - pct), 1 - pct);
+          applyVolume(incoming, targetVolume * incomingLoudnessGain * pct, pct);
 
           if (pct >= 1) {
             if (crossfadeTimer.current) {
               window.clearInterval(crossfadeTimer.current);
               crossfadeTimer.current = null;
             }
-            applyVolume(incoming, targetVolume, 1);
+            applyVolume(incoming, targetVolume * incomingLoudnessGain, 1);
             // The incoming deck simply keeps playing — promote it to active and
             // advance the queue index without touching currentTime.
             outgoing.pause();
@@ -437,6 +444,7 @@ export default function PlayerBar() {
     settings?.crossfade_duration_sec,
     settings?.crossfade_enabled,
     track,
+    trackLoudnessGain,
     volume,
     activeIdx,
     _crossfadeAdvance,

@@ -1,6 +1,7 @@
 import type { MediaItem } from './player';
 import type { Track } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
+import { calculateLoudnessGain, loudnessMetadataFromTrack } from './loudness';
 
 function isArtistRef(value: unknown): value is Track['artists'][number] {
   if (typeof value !== 'object' || value === null) return false;
@@ -32,6 +33,7 @@ export function trackToMediaItem(
   if (explicitDownloadUri !== undefined && !explicitDownloadUri.startsWith('file://')) {
     throw new Error(`Explicit download for track ${track.id} must use an app-private file URI`);
   }
+  const loudnessNormalization = calculateLoudnessGain(loudnessMetadataFromTrack(track));
   return {
     mediaId: options.mediaId ?? `track:${track.id}`,
     url: explicitDownloadUri === undefined
@@ -46,6 +48,7 @@ export function trackToMediaItem(
       track: track as unknown as Record<string, unknown>,
       radio: options.radio === true,
       explicitDownload: explicitDownloadUri !== undefined,
+      loudnessNormalization,
     },
   };
 }
