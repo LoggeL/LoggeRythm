@@ -95,6 +95,30 @@ describe('API response decoders', () => {
     },
   );
 
+  it('accepts optional nullable loudness fields from the current Track wire format', () => {
+    expect(
+      decodeTrack({
+        ...track,
+        loudness_gain_db: -3,
+        loudness_lufs: null,
+        loudness_peak: 0.95,
+      }),
+    ).toMatchObject({
+      loudness_gain_db: -3,
+      loudness_lufs: null,
+      loudness_peak: 0.95,
+    });
+  });
+
+  it.each(['null', 'quiet', Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects invalid loudness field %s before it reaches likes',
+    (value) => {
+      expect(() => decodeTrack({ ...track, loudness_gain_db: value })).toThrow(
+        /Track.loudness_gain_db/,
+      );
+    },
+  );
+
   it('accepts safe numeric and digit-only string artist/album ids without coercion', () => {
     expect(
       decodeTrack({

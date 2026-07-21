@@ -1,7 +1,7 @@
 """Normalized Track shape used across the whole API (in and out)."""
 import json
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ArtistRef(BaseModel):
@@ -11,6 +11,20 @@ class ArtistRef(BaseModel):
 
 
 class Track(BaseModel):
+    @field_validator("loudness_gain_db", "loudness_lufs", "loudness_peak", mode="before")
+    @classmethod
+    def nullable_loudness_sentinel(cls, value: object) -> object:
+        """Tolerate Android bridge JSON null sentinels for optional loudness fields.
+
+        Some restored native media-item snapshots can feed the existing full-Track
+        like request with the string form of a JSON null. The like endpoint does
+        not persist these optional fields, so normalize only the exact sentinel
+        instead of rejecting the whole track mutation.
+        """
+        if isinstance(value, str) and value.strip().lower() == "null":
+            return None
+        return value
+
     id: str
     title: str = ""
     # ``artist``/``artist_id`` stay the canonical *primary* performer (used for

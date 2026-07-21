@@ -17,6 +17,14 @@ function normalizeArtists(value: unknown): Track['artists'] | null {
   return null;
 }
 
+function normalizeOptionalNumber(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim().toLowerCase() === 'null') return null;
+  return undefined;
+}
+
 /**
  * Convert a backend Track into a first-party player MediaItem. The stream endpoint supports
  * HTTP Range requests and receives the account cookie through native URL headers.
@@ -70,7 +78,13 @@ export function mediaItemToTrack(item: MediaItem | null | undefined): Track | nu
   ) {
     throw new Error(`Media item ${String(item.mediaId)} contains invalid Track metadata`);
   }
-  return { ...candidate, artists } as Track;
+  const normalized = { ...candidate, artists } as Track;
+  for (const key of ['loudness_gain_db', 'loudness_lufs', 'loudness_peak'] as const) {
+    const value = normalizeOptionalNumber(candidate[key]);
+    if (value === undefined) delete normalized[key];
+    else normalized[key] = value;
+  }
+  return normalized;
 }
 
 export function mediaItemIsRadio(item: MediaItem | null | undefined): boolean {

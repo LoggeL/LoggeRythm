@@ -34,6 +34,27 @@ describe('mediaItemToTrack', () => {
     expect(mediaItemUsesExplicitDownload(item)).toBe(false);
   });
 
+  it('normalizes Android JSON null sentinels before recovered tracks reach likes', () => {
+    const item = {
+      mediaId: 'queue:1:123',
+      url: 'https://api.test/api/tracks/123/stream',
+      extras: {
+        track: {
+          ...track,
+          loudness_gain_db: 'null',
+          loudness_lufs: 'null',
+          loudness_peak: 'null',
+        },
+      },
+    } as unknown as MediaItem;
+
+    expect(mediaItemToTrack(item)).toMatchObject({
+      loudness_gain_db: null,
+      loudness_lufs: null,
+      loudness_peak: null,
+    });
+  });
+
   it('publishes a bounded loudness-normalization gain for native playback', () => {
     const item = trackToMediaItem(
       { ...track, loudness_lufs: -8, loudness_peak: 0.95 },

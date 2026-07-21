@@ -110,6 +110,15 @@ function nullableString(value: unknown, path: string): string | null {
   return value === null ? null : string(value, path);
 }
 
+function optionalNullableNumber(
+  source: JsonObject,
+  key: string,
+  path: string,
+): number | null | undefined {
+  if (!(key in source)) return undefined;
+  return nullable(source[key], `${path}.${key}`, number);
+}
+
 function deezerStringId(value: unknown, path: string): string {
   if (typeof value !== 'string') {
     throw new Error(`${path} must be a string containing only digits`);
@@ -161,6 +170,10 @@ export function decodeTrack(value: unknown, path = 'Track'): Track {
     rank: number(source.rank, `${path}.rank`),
     release_date: string(source.release_date, `${path}.release_date`),
   };
+  for (const key of ['loudness_gain_db', 'loudness_lufs', 'loudness_peak'] as const) {
+    const decoded = optionalNullableNumber(source, key, path);
+    if (decoded !== undefined) track[key] = decoded;
+  }
   if ('playlist_entry_id' in source) {
     const entryId = nonNegativeInteger(
       source.playlist_entry_id,
