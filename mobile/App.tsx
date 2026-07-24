@@ -19,6 +19,7 @@ import { musicQueryClient } from './src/data';
 import { startSharedTextIntake } from './src/share/sharedTextIntent';
 import { spotifySharedTextCoordinator } from './src/share/sharedTextRuntime';
 import { colors } from './src/theme';
+import AndroidUpdateToastHost from './src/update/AndroidUpdateToastHost';
 
 function SharedTextIntakeHost() {
   useEffect(() => {
@@ -96,6 +97,7 @@ export default function App() {
         <LocaleHydrationGate fallback={<LocaleBootstrapStatus />}>
           <QueryClientProvider client={musicQueryClient}>
             <AuthProvider>
+              <AndroidUpdateToastHost />
               <SharedTextIntakeHost />
               <NotificationFavoriteHost />
               <Gate />

@@ -266,6 +266,8 @@ export interface StringCatalog {
       checking: string;
       current: (version: string) => string;
       available: (version: string, megabytes: number) => string;
+      toastAvailable: (version: string) => string;
+      startupCheckFailed: string;
       install: string;
       downloading: string;
       retryInstall: string;
@@ -850,6 +852,9 @@ export const de: StringCatalog = {
       current: (version) => `Version ${version} ist aktuell.`,
       available: (version, megabytes) =>
         `Version ${version} ist verfügbar (${megabytes} MB).`,
+      toastAvailable: (version) =>
+        `Neue Version ${version} verfügbar – Update im Profil laden.`,
+      startupCheckFailed: 'Update-Prüfung beim App-Start fehlgeschlagen',
       install: 'Update laden',
       downloading: 'Update wird geprüft und geladen…',
       retryInstall: 'Berechtigung prüfen und fortfahren',
@@ -1375,6 +1380,9 @@ export const en: StringCatalog = {
       current: (version) => `Version ${version} is up to date.`,
       available: (version, megabytes) =>
         `Version ${version} is available (${megabytes} MB).`,
+      toastAvailable: (version) =>
+        `New version ${version} is available — download it from your profile.`,
+      startupCheckFailed: 'Update check at app launch failed',
       install: 'Download update',
       downloading: 'Verifying and downloading update…',
       retryInstall: 'Check permission and continue',
