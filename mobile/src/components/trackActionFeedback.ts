@@ -6,6 +6,8 @@ export type TrackActionFailureKind =
   | 'start-radio'
   | 'add-to-playlist'
   | 'create-playlist'
+  | 'download'
+  | 'remove-download'
   | 'remove'
   | 'generic';
 
@@ -25,6 +27,10 @@ export function trackActionFailureMessage(
       return strings.trackActions.addToPlaylistFailed;
     case 'create-playlist':
       return strings.trackActions.createPlaylistFailed;
+    case 'download':
+      return strings.trackActions.downloadFailed;
+    case 'remove-download':
+      return strings.trackActions.removeDownloadFailed;
     case 'remove':
       return strings.trackActions.removeFailed;
     case 'generic':

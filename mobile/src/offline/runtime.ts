@@ -3,6 +3,7 @@ import type { Playlist, Track } from '../api/types';
 import { getApiBase } from '../config';
 import {
   attachDownloadedTrack,
+  attachIndividualDownloadedTrack,
   beginPlaylistDownload,
   createEmptyOfflineManifest,
   decodeOfflineManifest,
@@ -10,6 +11,7 @@ import {
   offlineTrackFileName,
   offlineTrackId,
   reconcileOfflineManifest,
+  removeIndividualDownload,
   removePlaylistDownload,
   settlePlaylistDownload,
   type OfflineManifest,
@@ -46,6 +48,7 @@ interface OfflineRuntimeContext {
 interface ActiveDownload {
   scope: string;
   playlistId: string;
+  publishPlaylistProgress: boolean;
   epoch: number;
 }
 
@@ -164,6 +167,7 @@ function ensureProgressSubscription(): void {
         || active.epoch !== runtimeEpoch
         || active.scope !== current.scope
         || active.playlistId !== progress.playlistId
+        || !active.publishPlaylistProgress
       ) return;
       publishContext(current, {
         progress: {
@@ -434,7 +438,12 @@ export function downloadPlaylistForOffline(scope: string, playlist: Playlist): P
         url: `${origin}/api/tracks/${trackId}/stream`,
         headers,
       }));
-      activeDownload = { scope, playlistId, epoch: value.epoch };
+      activeDownload = {
+        scope,
+        playlistId,
+        publishPlaylistProgress: true,
+        epoch: value.epoch,
+      };
       const result = await startNativePlaylistDownload({
         scope,
         generation: value.generation,
@@ -487,6 +496,138 @@ export function downloadPlaylistForOffline(scope: string, playlist: Playlist): P
         && activeDownload.scope === value.scope
         && activeDownload.playlistId === playlistId
       ) activeDownload = null;
+    }
+  });
+}
+
+/** Download one track with ownership independent from every offline playlist. */
+export function downloadTrackForOffline(scope: string, track: Track): Promise<void> {
+  const requestedEpoch = runtimeEpoch;
+  return serialized(async () => {
+    const value = await requireContext(scope, requestedEpoch);
+    const trackId = offlineTrackId(track.id);
+    const existing = value.manifest.tracks[trackId];
+    if (existing?.individualDownload === true) return;
+    if (existing !== undefined) {
+      const attached = attachIndividualDownloadedTrack(
+        value.manifest,
+        track,
+        existing.sizeBytes,
+        now(),
+      );
+      await persistManifest(value, attached);
+      value.manifest = attached;
+      publishContext(value);
+      return;
+    }
+
+    try {
+      const origin = scopeOrigin(scope);
+      const configuredOrigin = new URL(await getApiBase()).origin;
+      if (origin !== configuredOrigin) {
+        throw new Error('Offline download scope does not match the configured server');
+      }
+      const url = `${origin}/api/tracks/${trackId}/stream`;
+      const headers = authenticatedCookie(await authenticatedHeadersFor(url));
+      assertCurrent(value);
+      const request: NativeOfflineTrackRequest = {
+        trackId,
+        fileName: offlineTrackFileName(trackId),
+        url,
+        headers,
+      };
+      activeDownload = {
+        scope,
+        playlistId: trackId,
+        publishPlaylistProgress: false,
+        epoch: value.epoch,
+      };
+      const result = await startNativePlaylistDownload({
+        scope,
+        generation: value.generation,
+        playlistId: trackId,
+        tracks: [request],
+        directoryUri: value.directoryUri,
+      });
+      assertCurrent(value);
+      validateNativeOutcomes(
+        new Set([trackId]),
+        result.successes,
+        result.failures,
+      );
+      const success = result.successes[0];
+      if (
+        success === undefined
+        || success.trackId !== trackId
+        || result.successes.length !== 1
+        || result.failures.length !== 0
+      ) {
+        throw new Error('Native individual track download did not complete');
+      }
+      const completed = attachIndividualDownloadedTrack(
+        value.manifest,
+        track,
+        success.sizeBytes,
+        now(),
+      );
+      await persistManifest(value, completed);
+      value.manifest = completed;
+      value.trackUris = { ...value.trackUris, [trackId]: success.uri };
+      value.availableDiskBytes = result.availableDiskBytes;
+      publishContext(value);
+    } catch (error) {
+      if (value.epoch === runtimeEpoch && context === value) {
+        publishContext(value, { error: 'download-failed' });
+      }
+      throw error;
+    } finally {
+      if (
+        activeDownload?.epoch === value.epoch
+        && activeDownload.scope === value.scope
+        && activeDownload.playlistId === trackId
+        && !activeDownload.publishPlaylistProgress
+      ) activeDownload = null;
+    }
+  });
+}
+
+/** Remove only the track's individual owner; playlist references remain intact. */
+export function removeOfflineTrack(scope: string, trackIdValue: unknown): Promise<void> {
+  const requestedEpoch = runtimeEpoch;
+  return serialized(async () => {
+    const value = await requireContext(scope, requestedEpoch);
+    const trackId = offlineTrackId(trackIdValue);
+    const removal = removeIndividualDownload(value.manifest, trackId);
+    if (removal.manifest === value.manifest && value.pendingOrphanedFiles.size === 0) return;
+
+    if (removal.manifest !== value.manifest) {
+      await persistManifest(value, removal.manifest);
+      value.manifest = removal.manifest;
+      value.trackUris = Object.fromEntries(
+        Object.entries(value.trackUris).filter(([id]) =>
+          value.manifest.tracks[id] !== undefined),
+      );
+      removal.orphanedFiles.forEach((fileName) => value.pendingOrphanedFiles.add(fileName));
+    }
+    publishContext(value);
+
+    try {
+      if (value.pendingOrphanedFiles.size > 0) {
+        const pendingFiles = [...value.pendingOrphanedFiles].sort();
+        value.availableDiskBytes = await removeNativeOfflineFiles(
+          value.scope,
+          value.generation,
+          pendingFiles,
+        );
+        assertCurrent(value);
+        pendingFiles.forEach((fileName) => value.pendingOrphanedFiles.delete(fileName));
+      }
+      publishContext(value);
+    } catch (error) {
+      if (value.epoch === runtimeEpoch && context === value) {
+        publishContext(value, { error: 'remove-failed' });
+      }
+      throw error;
     }
   });
 }

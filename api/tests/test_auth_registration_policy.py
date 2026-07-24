@@ -1,14 +1,14 @@
 import unittest
 from unittest.mock import patch
 
-from fastapi import Response
+from fastapi import HTTPException, Response
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import InviteCode, User
 from app.db.session import Base
 from app.routers import auth as auth_router
-from app.schemas.auth import RegisterRequest
+from app.schemas.auth import LoginRequest, RegisterRequest
 
 
 class AuthRegistrationPolicyTests(unittest.TestCase):
@@ -82,6 +82,32 @@ class AuthRegistrationPolicyTests(unittest.TestCase):
         self.assertIsNotNone(consumed)
         self.assertEqual(consumed.used_by, registered.id)
         self.assertIsNotNone(consumed.used_at)
+
+    def test_email_identity_is_case_insensitive_for_registration_and_login(self) -> None:
+        registered = self.register("Mixed.Case@Example.COM")
+
+        self.assertEqual(registered.email, "mixed.case@example.com")
+        with self.assertRaises(HTTPException) as duplicate:
+            self.register("MIXED.CASE@example.com")
+        self.assertEqual(duplicate.exception.status_code, 409)
+
+        response = Response()
+        with (
+            patch.object(auth_router, "verify_password", return_value=True) as verify,
+            patch.object(auth_router, "create_token", return_value="login-token"),
+        ):
+            logged_in = auth_router.login(
+                body=LoginRequest(
+                    email="MIXED.CASE@EXAMPLE.COM",
+                    password="valid-password",
+                ),
+                response=response,
+                db=self.db,
+            )
+
+        self.assertEqual(logged_in.id, registered.id)
+        verify.assert_called_once_with("valid-password", "deterministic-hash")
+        self.assertIn("sf_session=login-token", response.headers["set-cookie"])
 
 
 if __name__ == "__main__":

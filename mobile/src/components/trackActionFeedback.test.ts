@@ -11,6 +11,8 @@ describe('track action failure copy', () => {
       'start-radio': strings.trackActions.startRadioFailed,
       'add-to-playlist': strings.trackActions.addToPlaylistFailed,
       'create-playlist': strings.trackActions.createPlaylistFailed,
+      download: strings.trackActions.downloadFailed,
+      'remove-download': strings.trackActions.removeDownloadFailed,
       remove: strings.trackActions.removeFailed,
       generic: strings.trackActions.actionFailed,
     };

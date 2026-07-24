@@ -497,6 +497,12 @@ export interface StringCatalog {
     addToQueue: string;
     startRadio: string;
     addToPlaylist: string;
+    download: string;
+    removeDownload: string;
+    downloadFailed: string;
+    removeDownloadFailed: string;
+    downloadSucceeded: (title: string) => string;
+    removeDownloadSucceeded: (title: string) => string;
     openAlbum: (title: string) => string;
     openArtist: (name: string) => string;
     remove: string;
@@ -1085,6 +1091,12 @@ export const de: StringCatalog = {
     addToQueue: 'Zur Warteschlange hinzufügen',
     startRadio: 'Titelradio starten',
     addToPlaylist: 'Zu Playlist hinzufügen…',
+    download: 'Song herunterladen',
+    removeDownload: 'Song-Download entfernen',
+    downloadFailed: 'Song konnte nicht heruntergeladen werden',
+    removeDownloadFailed: 'Song-Download konnte nicht entfernt werden',
+    downloadSucceeded: (title) => `„${title}“ wurde heruntergeladen.`,
+    removeDownloadSucceeded: (title) => `Der Download von „${title}“ wurde entfernt.`,
     openAlbum: (title) => `Album „${title}“ öffnen`,
     openArtist: (name) => `Künstlerprofil von ${name} öffnen`,
     remove: 'Aus dieser Playlist entfernen',
@@ -1561,6 +1573,12 @@ export const en: StringCatalog = {
     moreActionsHint: 'Long press for more track actions', moreActionsLabel: 'Open more track actions',
     playNext: 'Play next', addToQueue: 'Add to queue', startRadio: 'Start radio',
     addToPlaylist: 'Add to playlist…',
+    download: 'Download track',
+    removeDownload: 'Remove track download',
+    downloadFailed: 'Track could not be downloaded',
+    removeDownloadFailed: 'Track download could not be removed',
+    downloadSucceeded: (title) => `${title} was downloaded.`,
+    removeDownloadSucceeded: (title) => `${title}'s download was removed.`,
     openAlbum: (title) => `Open album ${title}`,
     openArtist: (name) => `Open artist ${name}`,
     remove: 'Remove from this playlist',

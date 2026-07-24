@@ -33,7 +33,12 @@ import {
   type TrackDetailNavigationResult,
 } from '../navigation';
 import { trackAlbumRoute, trackArtistRoute } from '../navigationLinks';
-import { refreshBrowseTree } from '../player/browseTree';
+import { useOfflineDownloads } from '../offline/hooks';
+import {
+  downloadTrackForOffline,
+  removeOfflineTrack,
+} from '../offline/runtime';
+import { refreshBrowseTree, refreshOfflineBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
 import { colors, metrics } from '../theme';
 import AppIcon from './AppIcon';
@@ -51,7 +56,11 @@ import {
 } from './trackActions';
 
 type Mode = 'actions' | 'playlists' | 'create';
-type PendingSheetAction = TrackQueueAction | 'remove';
+type PendingSheetAction =
+  | TrackQueueAction
+  | 'download'
+  | 'remove-download'
+  | 'remove';
 
 function autoRefreshNotice(): void {
   reportPlayerNotice(
@@ -72,6 +81,7 @@ export default function TrackActionsHost() {
   );
   const requestId = request?.requestId ?? null;
   const { user } = useAuth();
+  const offlineSnapshot = useOfflineDownloads();
   const queryClient = useQueryClient();
   const scope =
     user === null
@@ -112,6 +122,8 @@ export default function TrackActionsHost() {
 
   const refreshAutoBrowse = () =>
     refreshLibraryAutoBrowse(refreshBrowseTree, autoRefreshNotice);
+  const refreshOfflineAutoBrowse = () =>
+    refreshLibraryAutoBrowse(refreshOfflineBrowseTree, autoRefreshNotice);
 
   const addMutation = useMutation({
     ...musicMutations.addToPlaylist(scope),
@@ -239,6 +251,37 @@ export default function TrackActionsHost() {
       });
   };
 
+  const runOfflineTrackAction = (action: 'download' | 'remove-download') => {
+    if (request === null || pending || accountScope === null) return;
+    const actionRequest = request;
+    setRuntimeError(null);
+    setPendingAction({ requestId: actionRequest.requestId, action });
+    const operation = action === 'download'
+      ? downloadTrackForOffline(accountScope, actionRequest.track)
+      : removeOfflineTrack(accountScope, actionRequest.track.id);
+    void operation
+      .then(async () => {
+        await refreshOfflineAutoBrowse();
+        if (getTrackActionRequest()?.requestId !== actionRequest.requestId) return;
+        AccessibilityInfo.announceForAccessibility(
+          action === 'download'
+            ? strings.trackActions.downloadSucceeded(actionRequest.track.title)
+            : strings.trackActions.removeDownloadSucceeded(actionRequest.track.title),
+        );
+        dismissTrackActions(actionRequest.requestId);
+      })
+      .catch((error) => {
+        if (getTrackActionRequest()?.requestId === actionRequest.requestId) {
+          setRuntimeError(trackActionFailureMessage(action, error));
+        }
+      })
+      .finally(() => {
+        setPendingAction((current) =>
+          current?.requestId === actionRequest.requestId ? null : current,
+        );
+      });
+  };
+
   const openPlaylists = () => {
     if (pending) return;
     setRuntimeError(null);
@@ -256,6 +299,12 @@ export default function TrackActionsHost() {
 
   const albumRoute = request === null ? null : trackAlbumRoute(request.track);
   const artistRoute = request === null ? null : trackArtistRoute(request.track);
+  const individuallyDownloaded =
+    request !== null
+    && accountScope !== null
+    && offlineSnapshot.hydrated
+    && offlineSnapshot.scope === accountScope
+    && offlineSnapshot.manifest?.tracks[request.track.id]?.individualDownload === true;
   const actionButtons: Record<TrackActionId, React.ComponentProps<typeof ActionButton>> = {
     'play-next': {
       testID: 'track-action-play-next',
@@ -283,6 +332,22 @@ export default function TrackActionsHost() {
       label: strings.trackActions.addToPlaylist,
       disabled: pending,
       onPress: openPlaylists,
+    },
+    download: {
+      testID: 'track-action-download',
+      label: strings.trackActions.download,
+      icon: 'download',
+      disabled: pending || accountScope === null,
+      busy: activePendingAction === 'download',
+      onPress: () => runOfflineTrackAction('download'),
+    },
+    'remove-download': {
+      testID: 'track-action-remove-download',
+      label: strings.trackActions.removeDownload,
+      icon: 'delete',
+      disabled: pending || accountScope === null,
+      busy: activePendingAction === 'remove-download',
+      onPress: () => runOfflineTrackAction('remove-download'),
     },
     'open-album': {
       testID: 'track-action-open-album',
@@ -361,7 +426,11 @@ export default function TrackActionsHost() {
               style={styles.actionScroll}
               contentContainerStyle={styles.actionList}
             >
-              {trackActionIdsForRequest(request, accountScope).map((action) => (
+              {trackActionIdsForRequest(
+                request,
+                accountScope,
+                individuallyDownloaded,
+              ).map((action) => (
                 <ActionButton key={action} {...actionButtons[action]} />
               ))}
             </ScrollView>

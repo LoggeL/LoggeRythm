@@ -245,6 +245,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     enabled: props.kind === 'playlist',
   });
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [playlistActionsVisible, setPlaylistActionsVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -394,6 +395,9 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
   const firstLocalPlaybackIndex = localFallback && offlineDetail !== null
     ? firstDownloadedOccurrenceIndex(offlineDetail)
     : 0;
+  const offlineActionBusy =
+    offlineControlState?.kind === 'downloading'
+    || offlineControlState?.kind === 'removing';
 
   const resetMutationErrors = () => {
     updateMutation.reset();
@@ -592,9 +596,25 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           <View style={styles.header}>
             <PlaylistArtwork uri={coverUrl} />
             <View style={styles.headerCopy}>
-              <Text testID="playlist-title" accessibilityRole="header" style={styles.title}>
-                {title}
-              </Text>
+              <View style={styles.titleRow}>
+                <Text testID="playlist-title" accessibilityRole="header" style={styles.title}>
+                  {title}
+                </Text>
+                {props.kind === 'playlist' && detail !== undefined ? (
+                  <Pressable
+                    testID="playlist-actions"
+                    accessibilityRole="button"
+                    accessibilityLabel={libraryStrings.playlist.openMenu}
+                    onPress={() => setPlaylistActionsVisible(true)}
+                    style={({ pressed }) => [
+                      styles.playlistActionsButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <AppIcon name="dots-vertical" color={colors.textSecondary} size={26} />
+                  </Pressable>
+                ) : null}
+              </View>
               {description !== null ? <Text style={styles.description}>{description}</Text> : null}
               {detail?.owner_name ? (
                 <Text style={styles.status}>{libraryStrings.playlist.byOwner(detail.owner_name)}</Text>
@@ -659,22 +679,6 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
                 onRetry={() => void refetch()}
               />
             )}
-
-            {props.kind === 'playlist' && detail !== undefined && offlineControlState !== null ? (
-              <OfflinePlaylistControl
-                testID="playlist-offline-control"
-                state={offlineControlState}
-                copy={offlineControlCopy(offlineActionFailure)}
-                disabled={tracks.length === 0}
-                onDownload={startOfflineDownload}
-                onRetry={offlineRetryAction(
-                  offlineActionFailure,
-                  startOfflineDownload,
-                  removeOfflineDownload,
-                )}
-                onRemove={removeOfflineDownload}
-              />
-            ) : null}
 
             {tracks.length > 0 && (!localFallback || firstLocalPlaybackIndex >= 0) ? (
               <Pressable
@@ -797,6 +801,57 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
       />
 
       <Modal
+        visible={playlistActionsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!offlineActionBusy) setPlaylistActionsVisible(false);
+        }}
+      >
+        <View testID="playlist-actions-modal" style={styles.modalBackdrop}>
+          <View accessibilityViewIsModal style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text accessibilityRole="header" style={styles.modalTitle}>
+                {libraryStrings.playlist.menuTitle}
+              </Text>
+              <Pressable
+                testID="playlist-actions-close"
+                accessibilityRole="button"
+                accessibilityLabel={libraryStrings.playlist.closeMenu}
+                accessibilityState={{ disabled: offlineActionBusy }}
+                disabled={offlineActionBusy}
+                onPress={() => setPlaylistActionsVisible(false)}
+                style={({ pressed }) => [
+                  styles.playlistActionsButton,
+                  offlineActionBusy && styles.disabled,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <AppIcon name="close" color={colors.textSecondary} size={22} />
+              </Pressable>
+            </View>
+            {props.kind === 'playlist'
+              && detail !== undefined
+              && offlineControlState !== null ? (
+                <OfflinePlaylistControl
+                  testID="playlist-offline-menu-control"
+                  state={offlineControlState}
+                  copy={offlineControlCopy(offlineActionFailure)}
+                  disabled={tracks.length === 0}
+                  onDownload={startOfflineDownload}
+                  onRetry={offlineRetryAction(
+                    offlineActionFailure,
+                    startOfflineDownload,
+                    removeOfflineDownload,
+                  )}
+                  onRemove={removeOfflineDownload}
+                />
+              ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
         visible={editVisible}
         transparent
         animationType="fade"
@@ -903,7 +958,27 @@ const styles = StyleSheet.create({
   },
   heroGlyph: { color: colors.accentSoft, fontSize: 48 },
   headerCopy: { gap: 5, alignItems: 'center' },
-  title: { color: colors.textPrimary, fontSize: 30, lineHeight: 36, fontWeight: '900', textAlign: 'center' },
+  titleRow: {
+    width: '100%',
+    minHeight: metrics.minimumTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    flexShrink: 1,
+    color: colors.textPrimary,
+    fontSize: 30,
+    lineHeight: 36,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  playlistActionsButton: {
+    width: metrics.minimumTouchTarget,
+    height: metrics.minimumTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   description: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
   status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   runtimeError: {
@@ -993,6 +1068,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: colors.backgroundElevated,
   },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   modalTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900' },
   input: {
     minHeight: metrics.minimumTouchTarget,

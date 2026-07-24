@@ -13,6 +13,7 @@ from ..auth import (
 )
 from ..db.models import InviteCode, User
 from ..db.session import get_db
+from ..email_identity import find_user_by_email, normalize_email
 from datetime import datetime, timezone
 from ..schemas.auth import LoginRequest, RegisterRequest, UserOut
 
@@ -36,7 +37,8 @@ def register(
     response: Response,
     db: Session = Depends(get_db),
 ) -> UserOut:
-    existing = db.scalar(select(User).where(User.email == body.email))
+    email = normalize_email(str(body.email))
+    existing = find_user_by_email(db, email)
     if existing is not None:
         raise HTTPException(status_code=409, detail="Email already registered")
     # The first user to register becomes the admin and is auto-approved.
@@ -52,7 +54,7 @@ def register(
         )
     is_approved = is_first or invite is not None
     user = User(
-        email=body.email,
+        email=email,
         password_hash=hash_password(body.password),
         display_name=body.display_name,
         is_admin=is_first,
@@ -75,7 +77,7 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> UserOut:
-    user = db.scalar(select(User).where(User.email == body.email))
+    user = find_user_by_email(db, str(body.email))
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"

@@ -3,6 +3,7 @@ import type { Playlist, Track } from '../api/types';
 import {
   OFFLINE_MANIFEST_VERSION,
   attachDownloadedTrack,
+  attachIndividualDownloadedTrack,
   beginPlaylistDownload,
   createEmptyOfflineManifest,
   decodeOfflineManifest,
@@ -11,6 +12,7 @@ import {
   offlineStorageBytes,
   offlineTrackFileName,
   reconcileOfflineManifest,
+  removeIndividualDownload,
   removePlaylistDownload,
   settlePlaylistDownload,
 } from './model';
@@ -166,6 +168,45 @@ describe('offline download manifest', () => {
     const removedSecond = removePlaylistDownload(removedFirst.manifest, 2);
     expect(removedSecond.orphanedFiles).toEqual(['42.mp3']);
     expect(removedSecond.manifest.tracks).toEqual({});
+  });
+
+  it('keeps individual track ownership independent from playlist references', () => {
+    const shared = track('42');
+    const source = playlist(1, 'First', [shared]);
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, shared, 1_000, firstTime);
+    manifest = settlePlaylistDownload(manifest, source, firstTime);
+    manifest = attachIndividualDownloadedTrack(manifest, shared, 1_000, secondTime);
+
+    expect(manifest.tracks['42']).toEqual(expect.objectContaining({
+      ownerPlaylistIds: ['1'],
+      individualDownload: true,
+    }));
+
+    const playlistRemoved = removePlaylistDownload(manifest, source.id);
+    expect(playlistRemoved.orphanedFiles).toEqual([]);
+    expect(playlistRemoved.manifest.tracks['42']).toEqual(expect.objectContaining({
+      ownerPlaylistIds: [],
+      individualDownload: true,
+    }));
+
+    const individualRemoved = removeIndividualDownload(playlistRemoved.manifest, shared.id);
+    expect(individualRemoved.orphanedFiles).toEqual(['42.mp3']);
+    expect(individualRemoved.manifest.tracks).toEqual({});
+  });
+
+  it('upgrades legacy playlist-owned entries with explicit individual ownership disabled', () => {
+    const source = playlist(1, 'Legacy', [track('42')]);
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, source.tracks[0], 1_000, firstTime);
+    manifest = settlePlaylistDownload(manifest, source, firstTime);
+    const legacy = JSON.parse(JSON.stringify(manifest)) as {
+      tracks: Record<string, { individualDownload?: boolean }>;
+    };
+    delete legacy.tracks['42'].individualDownload;
+
+    expect(decodeOfflineManifest(JSON.stringify(legacy), scope).tracks['42'])
+      .toEqual(expect.objectContaining({ individualDownload: false }));
   });
 
   it('treats exact ordered source IDs, including duplicate count, as the immutable version', () => {

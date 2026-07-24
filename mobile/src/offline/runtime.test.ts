@@ -3,8 +3,10 @@ import type { Playlist, Track } from '../api/types';
 import { getOfflineSnapshot } from './registry';
 import {
   clearOfflineDownloads,
+  downloadTrackForOffline,
   downloadPlaylistForOffline,
   initializeOfflineDownloads,
+  removeOfflineTrack,
   removeOfflinePlaylist,
   resetOfflineRuntimeStateForTests,
 } from './runtime';
@@ -222,6 +224,60 @@ describe('offline runtime', () => {
       '9',
       '10',
     ]);
+  });
+
+  it('downloads and removes one independently owned track without a playlist snapshot', async () => {
+    mocks.start.mockResolvedValue({
+      scope,
+      generation: 1,
+      playlistId: '42',
+      successes: [success('42')],
+      failures: [],
+      availableDiskBytes: 9_000,
+    });
+
+    await initializeOfflineDownloads(scope);
+    await downloadTrackForOffline(scope, track('42'));
+
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
+      playlistId: '42',
+      tracks: [expect.objectContaining({ trackId: '42' })],
+    }));
+    expect(getOfflineSnapshot().playlists).toEqual([]);
+    expect(getOfflineSnapshot().manifest?.tracks['42']).toEqual(expect.objectContaining({
+      individualDownload: true,
+      ownerPlaylistIds: [],
+    }));
+    expect(getOfflineSnapshot().downloadedTrackIds.has('42')).toBe(true);
+
+    await removeOfflineTrack(scope, '42');
+
+    expect(mocks.remove).toHaveBeenCalledExactlyOnceWith(scope, 1, ['42.mp3']);
+    expect(getOfflineSnapshot().downloadedTrackIds.has('42')).toBe(false);
+  });
+
+  it('adds individual ownership to a playlist file without downloading it twice', async () => {
+    mocks.start.mockResolvedValue({
+      scope,
+      generation: 1,
+      playlistId: '9',
+      successes: [success('42')],
+      failures: [],
+      availableDiskBytes: 9_000,
+    });
+
+    await initializeOfflineDownloads(scope);
+    await downloadPlaylistForOffline(scope, playlist(9, [track('42')]));
+    await downloadTrackForOffline(scope, track('42'));
+    await removeOfflineTrack(scope, '42');
+
+    expect(mocks.start).toHaveBeenCalledOnce();
+    expect(mocks.remove).not.toHaveBeenCalled();
+    expect(getOfflineSnapshot().manifest?.tracks['42']).toEqual(expect.objectContaining({
+      individualDownload: false,
+      ownerPlaylistIds: ['9'],
+    }));
+    expect(getOfflineSnapshot().downloadedTrackIds.has('42')).toBe(true);
   });
 
   it('removes a shared file only after its final playlist owner is removed', async () => {

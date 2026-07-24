@@ -131,6 +131,7 @@ describe('track action sheet contract', () => {
       'add-to-queue',
       'start-radio',
       'add-to-playlist',
+      'download',
       'open-album',
       'open-artist',
     ]);
@@ -145,10 +146,17 @@ describe('track action sheet contract', () => {
       'add-to-queue',
       'start-radio',
       'add-to-playlist',
+      'download',
       'open-album',
       'open-artist',
       'remove',
     ]);
+    expect(trackActionIdsForRequest(request, 'account-7', true)).toContain(
+      'remove-download',
+    );
+    expect(trackActionIdsForRequest(request, 'account-7', true)).not.toContain(
+      'download',
+    );
   });
 
   it('removes, announces, and closes for the exact active account scope', async () => {

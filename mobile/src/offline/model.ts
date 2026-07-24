@@ -31,6 +31,8 @@ export interface OfflineTrackEntry {
   fileName: string;
   sizeBytes: number;
   ownerPlaylistIds: string[];
+  /** Keeps the file independently of every downloaded playlist reference. */
+  individualDownload: boolean;
   downloadedAt: string;
 }
 
@@ -251,9 +253,12 @@ function decodeFailureInput(value: unknown, label: string): OfflineTrackFailureI
 
 function decodeTrackEntry(key: string, value: unknown): OfflineTrackEntry {
   const record = object(value, `Offline track ${key}`);
+  const legacyKeys = ['track', 'fileName', 'sizeBytes', 'ownerPlaylistIds', 'downloadedAt'];
   exactKeys(
     record,
-    ['track', 'fileName', 'sizeBytes', 'ownerPlaylistIds', 'downloadedAt'],
+    'individualDownload' in record
+      ? [...legacyKeys, 'individualDownload']
+      : legacyKeys,
     `Offline track ${key}`,
   );
   const track = decodeStrictTrack(record.track, `Offline track ${key} metadata`);
@@ -270,14 +275,18 @@ function decodeTrackEntry(key: string, value: unknown): OfflineTrackEntry {
     record.ownerPlaylistIds.map((owner) => offlinePlaylistId(owner)),
     `Offline track ${key} owners`,
   );
-  if (ownerPlaylistIds.length === 0) {
-    throw new Error(`Offline track ${key} must have at least one playlist owner`);
+  const individualDownload = 'individualDownload' in record
+    ? boolean(record.individualDownload, `Offline track ${key} individual ownership`)
+    : false;
+  if (ownerPlaylistIds.length === 0 && !individualDownload) {
+    throw new Error(`Offline track ${key} must have an individual or playlist owner`);
   }
   return {
     track,
     fileName,
     sizeBytes: positiveSize(record.sizeBytes, `Offline track ${key} size`),
     ownerPlaylistIds,
+    individualDownload,
     downloadedAt: isoTimestamp(record.downloadedAt, `Offline track ${key} timestamp`),
   };
 }
@@ -520,11 +529,44 @@ export function attachDownloadedTrack(
           fileName: offlineTrackFileName(trackId),
           sizeBytes: size,
           ownerPlaylistIds,
+          individualDownload: false,
           downloadedAt: timestamp,
         }
         : { ...current, ownerPlaylistIds },
     },
     playlists: { ...manifest.playlists, [playlistId]: nextPlaylist },
+  };
+}
+
+export function attachIndividualDownloadedTrack(
+  manifest: OfflineManifest,
+  trackValue: Track,
+  sizeBytes: number,
+  downloadedAt: string,
+): OfflineManifest {
+  const track = decodeStrictTrack(trackValue, 'Individually downloaded track');
+  const trackId = offlineTrackId(track.id);
+  const size = positiveSize(sizeBytes, 'Individually downloaded track size');
+  const timestamp = isoTimestamp(downloadedAt, 'Individually downloaded track timestamp');
+  const current = manifest.tracks[trackId];
+  if (current !== undefined && current.sizeBytes !== size) {
+    throw new Error('Individual download size conflicts with the deduplicated offline file');
+  }
+  return {
+    ...manifest,
+    tracks: {
+      ...manifest.tracks,
+      [trackId]: current === undefined
+        ? {
+          track,
+          fileName: offlineTrackFileName(trackId),
+          sizeBytes: size,
+          ownerPlaylistIds: [],
+          individualDownload: true,
+          downloadedAt: timestamp,
+        }
+        : { ...current, individualDownload: true },
+    },
   };
 }
 
@@ -621,13 +663,36 @@ export function removePlaylistDownload(
   const orphanedFiles: string[] = [];
   for (const [trackId, entry] of Object.entries(manifest.tracks)) {
     const ownerPlaylistIds = entry.ownerPlaylistIds.filter((owner) => owner !== playlistId);
-    if (ownerPlaylistIds.length === 0) orphanedFiles.push(entry.fileName);
+    if (ownerPlaylistIds.length === 0 && !entry.individualDownload) {
+      orphanedFiles.push(entry.fileName);
+    }
     else tracks[trackId] = { ...entry, ownerPlaylistIds };
   }
   return {
     manifest: { ...manifest, tracks, playlists },
     orphanedFiles,
   };
+}
+
+export function removeIndividualDownload(
+  manifest: OfflineManifest,
+  trackIdValue: unknown,
+): { manifest: OfflineManifest; orphanedFiles: string[] } {
+  const trackId = offlineTrackId(trackIdValue);
+  const current = manifest.tracks[trackId];
+  if (current === undefined || !current.individualDownload) {
+    return { manifest, orphanedFiles: [] };
+  }
+  const tracks = { ...manifest.tracks };
+  if (current.ownerPlaylistIds.length === 0) {
+    delete tracks[trackId];
+    return {
+      manifest: { ...manifest, tracks },
+      orphanedFiles: [current.fileName],
+    };
+  }
+  tracks[trackId] = { ...current, individualDownload: false };
+  return { manifest: { ...manifest, tracks }, orphanedFiles: [] };
 }
 
 function failuresEqual(

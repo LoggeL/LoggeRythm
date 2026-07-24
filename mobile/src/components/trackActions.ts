@@ -10,11 +10,14 @@ export const TRACK_ACTION_ORDER = [
   'add-to-queue',
   'start-radio',
   'add-to-playlist',
+  'download',
   'open-album',
   'open-artist',
-  'remove',
 ] as const;
-export type TrackActionId = (typeof TRACK_ACTION_ORDER)[number];
+export type TrackActionId =
+  | (typeof TRACK_ACTION_ORDER)[number]
+  | 'remove-download'
+  | 'remove';
 
 export interface AuthorizedTrackRemoval {
   /** Exact account-scoped query namespace that granted the remove capability. */
@@ -60,11 +63,15 @@ export function getTrackActionRequest(): TrackActionRequest | null {
 export function trackActionIdsForRequest(
   request: TrackActionRequest | null,
   currentAccountScope: string | null,
+  individuallyDownloaded = false,
 ): TrackActionId[] {
   const canRemove =
     request?.authorizedRemove !== undefined &&
     request.authorizedRemove.accountScope === currentAccountScope;
-  return canRemove ? [...TRACK_ACTION_ORDER] : TRACK_ACTION_ORDER.slice(0, -1);
+  const downloadAction: TrackActionId = individuallyDownloaded ? 'remove-download' : 'download';
+  const actions: TrackActionId[] = TRACK_ACTION_ORDER.map((action) =>
+    action === 'download' ? downloadAction : action);
+  return canRemove ? [...actions, 'remove'] : actions;
 }
 
 export function showTrackActions(

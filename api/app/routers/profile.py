@@ -21,6 +21,7 @@ from ..db.models import (
     User,
 )
 from ..db.session import get_db
+from ..email_identity import find_user_by_email, normalize_email
 from ..schemas.auth import UserOut
 from ..schemas.playlist import PlaylistSummary
 from ..schemas.track import ArtistSummary
@@ -115,13 +116,16 @@ def update_me(
 ) -> UserOut:
     if body.display_name is not None:
         user.display_name = body.display_name.strip() or user.display_name
-    if body.email is not None and body.email != user.email:
-        taken = db.scalar(
-            select(User).where(User.email == body.email, User.id != user.id)
+    if body.email is not None:
+        normalized_email = normalize_email(str(body.email))
+        taken = find_user_by_email(
+            db,
+            normalized_email,
+            exclude_user_id=user.id,
         )
         if taken is not None:
             raise HTTPException(status_code=409, detail="E-Mail ist bereits vergeben.")
-        user.email = body.email
+        user.email = normalized_email
     if body.password:
         user.password_hash = hash_password(body.password)
     db.commit()
