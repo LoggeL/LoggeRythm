@@ -23,7 +23,8 @@ class LoggeRythmUpdateInstallReceiver : BroadcastReceiver() {
         context.startActivity(confirmation)
       }
       PackageInstaller.STATUS_SUCCESS -> {
-        Log.i(TAG, "Verified LoggeRythm update installed")
+        Log.i(TAG, "Verified LoggeRythm update installed; relaunching app")
+        relaunchApp(context)
       }
       else -> {
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
@@ -35,6 +36,26 @@ class LoggeRythmUpdateInstallReceiver : BroadcastReceiver() {
           Toast.LENGTH_LONG,
         ).show()
       }
+    }
+  }
+
+  private fun relaunchApp(context: Context) {
+    val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+    if (launchIntent == null) {
+      Log.e(TAG, "Updated LoggeRythm has no launch activity")
+      return
+    }
+    launchIntent.addFlags(
+      Intent.FLAG_ACTIVITY_NEW_TASK or
+        Intent.FLAG_ACTIVITY_CLEAR_TASK,
+    )
+    try {
+      context.startActivity(launchIntent)
+    } catch (error: RuntimeException) {
+      // Some Android vendors forbid background activity launches even after
+      // their package installer has just completed. The update remains valid;
+      // the user can still open the newly installed version normally.
+      Log.e(TAG, "Updated LoggeRythm could not be relaunched automatically", error)
     }
   }
 

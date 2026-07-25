@@ -144,6 +144,9 @@ describe('shared track compositions', () => {
     expect(elements(rendered).some((element) =>
       element.type === 'TrackLikeButton' && element.props.testID === 'card-42-like')).toBe(true);
     expect(byTestID(rendered, 'card-42-actions').props.accessibilityRole).toBe('button');
+    expect(byTestID(rendered, 'card-42').props.onLongPress).toBe(
+      byTestID(rendered, 'card-42-actions').props.onPress,
+    );
     assertNoNestedPressables(rendered);
     expect(metrics.minimumTouchTarget).toBeGreaterThanOrEqual(48);
   });

@@ -50,8 +50,20 @@ export default function TrackShelfCard({
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={strings.common.trackBy(track.title, trackArtistLabel(track))}
+        accessibilityHint={
+          onActions === undefined ? undefined : strings.trackActions.moreActionsHint
+        }
+        accessibilityActions={
+          onActions === undefined
+            ? undefined
+            : [{ name: 'longpress', label: strings.trackActions.moreActionsLabel }]
+        }
         accessibilityState={{ selected: presentation.active, busy: buffering }}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'longpress') onActions?.();
+        }}
         onPress={onPlay}
+        onLongPress={onActions}
         style={({ pressed }) => [styles.artworkButton, pressed && styles.pressed]}
       >
         {track.cover ? (
