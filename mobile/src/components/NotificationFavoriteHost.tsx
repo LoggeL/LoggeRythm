@@ -73,7 +73,9 @@ function ActiveFavoriteHost({ mediaId, scope, track }: ActiveFavoriteHostProps) 
   useEffect(() => {
     const subscription = Player.addEventListener(Event.RemoteToggleFavorite, (event) => {
       if (event.mediaId !== mediaId) {
-        reportPlayerError(strings.player.likeFailed, new Error('Notification favorite item changed'));
+        // Android can deliver a queued notification command from the previous
+        // media item while React is restoring the active item on app startup.
+        // It is stale input, not a failed like mutation, so ignore it silently.
         return;
       }
       mutation.mutate(event.requestedLiked);
