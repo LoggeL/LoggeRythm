@@ -55,8 +55,15 @@ export function countUnseenReleaseRadarTracks(
   currentTrackIds: readonly string[],
   seenTrackIds: readonly string[],
 ): number {
+  return unseenReleaseRadarTrackIds(currentTrackIds, seenTrackIds).size;
+}
+
+export function unseenReleaseRadarTrackIds(
+  currentTrackIds: readonly string[],
+  seenTrackIds: readonly string[],
+): Set<string> {
   const seen = new Set(seenTrackIds);
-  return new Set(currentTrackIds.filter((id) => !seen.has(id))).size;
+  return new Set(currentTrackIds.filter((id) => !seen.has(id)));
 }
 
 /** Keep a cumulative set so temporary removals or reorderings never become "new" again. */

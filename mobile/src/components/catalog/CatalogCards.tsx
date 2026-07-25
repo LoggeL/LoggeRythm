@@ -217,6 +217,7 @@ export function CatalogTrackRow({
   onLongPress,
   onOpenAlbum,
   onOpenArtist,
+  highlighted = false,
 }: {
   track: Track;
   index: number;
@@ -230,6 +231,7 @@ export function CatalogTrackRow({
   onLongPress?: () => void;
   onOpenAlbum: (params: AlbumRouteParams) => void;
   onOpenArtist: (params: ArtistRouteParams) => void;
+  highlighted?: boolean;
 }) {
   return (
     <View>
@@ -244,6 +246,7 @@ export function CatalogTrackRow({
         onActions={onLongPress}
         onOpenAlbum={onOpenAlbum}
         onOpenArtist={onOpenArtist}
+        highlighted={highlighted}
       />
       {metadata === undefined ? null : (
         <Text

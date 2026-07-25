@@ -37,6 +37,7 @@ export interface StandardTrackRowProps {
   onOpenAlbum: (params: AlbumRouteParams) => void;
   onOpenArtist: (params: ArtistRouteParams) => void;
   trailingControls?: ReactNode;
+  highlighted?: boolean;
 }
 
 /**
@@ -59,6 +60,7 @@ export default function StandardTrackRow({
   onOpenAlbum,
   onOpenArtist,
   trailingControls,
+  highlighted = false,
 }: StandardTrackRowProps) {
   const presentation = useTrackPresentation(
     { trackId: track.id, ...occurrence },
@@ -73,7 +75,11 @@ export default function StandardTrackRow({
   return (
     <View
       testID={`${testID}-container`}
-      style={[styles.container, presentation.active && styles.activeContainer]}
+      style={[
+        styles.container,
+        ...(highlighted ? [styles.highlightedContainer] : []),
+        ...(presentation.active ? [styles.activeContainer] : []),
+      ]}
     >
       <View style={styles.row}>
         {position !== undefined ? (
@@ -167,6 +173,11 @@ const styles = StyleSheet.create({
   },
   activeContainer: {
     backgroundColor: colors.surface,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.accent,
+  },
+  highlightedContainer: {
+    backgroundColor: colors.surfaceElevated,
     borderLeftWidth: 3,
     borderLeftColor: colors.accent,
   },

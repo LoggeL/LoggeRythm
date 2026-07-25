@@ -128,6 +128,7 @@ export interface StringCatalog {
     radarTypeLabel: string;
     radarEmpty: string;
     radarNewCount: (count: number) => string;
+    radarNewTrack: string;
     radarSeenStateFailed: string;
     radarRelativeDate: {
       today: string;
@@ -713,6 +714,7 @@ export const de: StringCatalog = {
     radarEmpty:
       'Noch keine frischen Releases von deinen Künstler:innen. Folge Artists oder höre mehr, dann füllt sich dein Radar.',
     radarNewCount: (count) => `${count} neu`,
+    radarNewTrack: 'Neu',
     radarSeenStateFailed: 'Der Gesehen-Status des Release Radars konnte nicht geladen werden.',
     radarRelativeDate: {
       today: 'heute',
@@ -1279,6 +1281,7 @@ export const en: StringCatalog = {
     radarSubtitle: 'New from artists you listen to and follow', radarTypeLabel: 'Playlist',
     radarEmpty: 'No fresh releases from your artists yet. Follow artists or listen more to fill your radar.',
     radarNewCount: (count) => `${count} new`,
+    radarNewTrack: 'New',
     radarSeenStateFailed: 'The Release Radar seen state could not be loaded.',
     radarRelativeDate: {
       today: 'today', yesterday: 'yesterday', daysAgo: (days) => `${days} days ago`,

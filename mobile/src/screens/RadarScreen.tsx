@@ -21,7 +21,9 @@ import {
   markReleaseRadarTracksSeen,
   musicCacheScope,
   musicQueries,
+  readReleaseRadarSeenTrackIds,
   releaseRadarTrackIds,
+  unseenReleaseRadarTrackIds,
 } from '../data';
 import { strings } from '../localization';
 import { playTracks } from '../player/controller';
@@ -51,11 +53,17 @@ export default function RadarScreen(props: RadarScreenProps) {
   const trackIds = useMemo(() => releaseRadarTrackIds(tracks), [tracks]);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [seenStateError, setSeenStateError] = useState<string | null>(null);
+  const [newTrackIds, setNewTrackIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let active = true;
     if (trackIds.length === 0) return () => { active = false; };
-    void markReleaseRadarTracksSeen(AsyncStorage, scope, trackIds)
+    void readReleaseRadarSeenTrackIds(AsyncStorage, scope)
+      .then((seenIds) => {
+        if (!active) return [];
+        setNewTrackIds(unseenReleaseRadarTrackIds(trackIds, seenIds));
+        return markReleaseRadarTracksSeen(AsyncStorage, scope, trackIds);
+      })
       .then(() => {
         if (active) setSeenStateError(null);
       })
@@ -120,7 +128,11 @@ export default function RadarScreen(props: RadarScreenProps) {
                 {strings.home.releaseRadar}
               </Text>
               <Text style={styles.subtitle}>{strings.home.radarSubtitle}</Text>
-              <Text style={styles.meta}>{strings.common.trackCount(tracks.length)}</Text>
+              <Text style={styles.meta}>
+                {newTrackIds.size > 0
+                  ? `${strings.common.trackCount(tracks.length)} · ${strings.home.radarNewCount(newTrackIds.size)}`
+                  : strings.common.trackCount(tracks.length)}
+              </Text>
               <CatalogActionButton
                 testID="release-radar-play-all"
                 label={catalogStrings.common.playAll}
@@ -158,6 +170,7 @@ export default function RadarScreen(props: RadarScreenProps) {
             now,
             strings.home.radarRelativeDate,
           );
+          const isNew = newTrackIds.has(String(track.id));
           return (
             <CatalogTrackRow
               track={track}
@@ -167,7 +180,10 @@ export default function RadarScreen(props: RadarScreenProps) {
                 queueContext: { type: 'home', id: 'release-radar' },
                 originalContextOrder: index,
               }}
-              metadata={date || undefined}
+              metadata={isNew
+                ? `${strings.home.radarNewTrack}${date ? ` · ${date}` : ''}`
+                : date || undefined}
+              highlighted={isNew}
               onPress={() => play(index)}
               onLongPress={() => showTrackActions(track, setPlaybackError)}
               onOpenAlbum={props.onOpenAlbum}

@@ -7,6 +7,7 @@ import {
   readReleaseRadarSeenTrackIds,
   releaseRadarSeenStorageKey,
   releaseRadarTrackIds,
+  unseenReleaseRadarTrackIds,
 } from './releaseRadar';
 
 describe('Release Radar seen state', () => {
@@ -26,6 +27,10 @@ describe('Release Radar seen state', () => {
       '13',
     ]);
     expect(() => releaseRadarTrackIds([{ id: '' }])).toThrow('without an ID');
+  });
+
+  it('returns exact unseen IDs for durable row highlighting', () => {
+    expect([...unseenReleaseRadarTrackIds(['1', '2', '2', '3'], ['1', '3'])]).toEqual(['2']);
   });
 
   it('counts only newly added unique IDs and ignores ordering or removals', () => {
