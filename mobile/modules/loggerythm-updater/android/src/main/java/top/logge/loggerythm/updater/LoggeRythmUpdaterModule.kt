@@ -20,6 +20,7 @@ import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
 
 private class UpdaterException(
@@ -44,13 +45,21 @@ class LoggeRythmUpdaterModule(
   private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
   private val worker = Executors.newSingleThreadExecutor()
+  private val invalidated = AtomicBoolean(false)
+  private val installing = AtomicBoolean(false)
 
   override fun getName(): String = NAME
 
   @ReactMethod
   fun getInstallationInfo(promise: Promise) {
-    worker.execute {
+    execute(promise) {
       settle(promise) {
+        if (invalidated.get()) {
+          throw UpdaterException(
+            "updater-module-invalidated",
+            "The updater was torn down before the request ran",
+          )
+        }
         val installed = installedPackage()
         Arguments.createMap().apply {
           putString("versionName", installed.versionName)
@@ -98,9 +107,25 @@ class LoggeRythmUpdaterModule(
     versionName: String,
     promise: Promise,
   ) {
-    worker.execute {
+    // One install at a time: a second attempt while a download/session is in
+    // flight would queue behind it and could pop a second installer dialog
+    // after the UI already reported the first attempt's outcome.
+    if (!installing.compareAndSet(false, true)) {
+      promise.reject(
+        "updater-install-busy",
+        "An update download is already in progress",
+      )
+      return
+    }
+    execute(promise, onRejectedExecution = { installing.set(false) }) {
       var downloaded: File? = null
       try {
+        if (invalidated.get()) {
+          throw UpdaterException(
+            "updater-module-invalidated",
+            "The updater was torn down before the download started",
+          )
+        }
         if (!canRequestPackageInstalls()) {
           throw UpdaterException(
             "updater-install-permission-required",
@@ -123,13 +148,40 @@ class LoggeRythmUpdaterModule(
         reject(promise, error)
       } finally {
         downloaded?.delete()
+        installing.set(false)
       }
     }
   }
 
   override fun invalidate() {
-    worker.shutdownNow()
+    invalidated.set(true)
+    // Graceful shutdown: queued tasks still run and settle their React
+    // Promises (rejecting fast via the `invalidated` flag). shutdownNow()
+    // would discard them, leaving JS promises hanging forever.
+    worker.shutdown()
     super.invalidate()
+  }
+
+  private fun execute(
+    promise: Promise,
+    onRejectedExecution: () -> Unit = {},
+    task: () -> Unit,
+  ) {
+    try {
+      worker.execute(task)
+    } catch (error: java.util.concurrent.RejectedExecutionException) {
+      // The worker is shut down (module invalidated) — settle instead of
+      // leaving the JS promise hanging.
+      onRejectedExecution()
+      reject(
+        promise,
+        UpdaterException(
+          "updater-module-invalidated",
+          "The updater was torn down before the request ran",
+          error,
+        ),
+      )
+    }
   }
 
   private fun settle(promise: Promise, action: () -> Any?) {

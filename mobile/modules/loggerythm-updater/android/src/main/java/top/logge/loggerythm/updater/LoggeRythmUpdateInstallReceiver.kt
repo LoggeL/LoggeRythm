@@ -1,5 +1,9 @@
 package top.logge.loggerythm.updater
 
+import android.app.ActivityManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -20,10 +24,21 @@ class LoggeRythmUpdateInstallReceiver : BroadcastReceiver() {
         val confirmation = confirmationIntent(intent)
           ?: throw IllegalStateException("updater-install-confirmation-missing")
         confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(confirmation)
+        // Android 10+ silently drops startActivity from a background app, so
+        // the installer confirmation must ride a notification in that case.
+        if (appInForeground()) {
+          context.startActivity(confirmation)
+        } else {
+          postNotification(
+            context,
+            "LoggeRythm update ready",
+            "Tap to confirm the installation.",
+            activityPendingIntent(context, confirmation),
+          )
+        }
       }
       PackageInstaller.STATUS_SUCCESS -> {
-        Log.i(TAG, "Verified LoggeRythm update installed; relaunching app")
+        Log.i(TAG, "Verified LoggeRythm update installed")
         relaunchApp(context)
       }
       else -> {
@@ -49,14 +64,69 @@ class LoggeRythmUpdateInstallReceiver : BroadcastReceiver() {
       Intent.FLAG_ACTIVITY_NEW_TASK or
         Intent.FLAG_ACTIVITY_CLEAR_TASK,
     )
-    try {
-      context.startActivity(launchIntent)
-    } catch (error: RuntimeException) {
-      // Some Android vendors forbid background activity launches even after
-      // their package installer has just completed. The update remains valid;
-      // the user can still open the newly installed version normally.
-      Log.e(TAG, "Updated LoggeRythm could not be relaunched automatically", error)
+    // The old process died with the self-update, so this receiver runs in a
+    // fresh background process: startActivity would be silently dropped on
+    // Android 10+. Offer the relaunch through a notification instead.
+    if (appInForeground()) {
+      try {
+        context.startActivity(launchIntent)
+        return
+      } catch (error: RuntimeException) {
+        Log.e(TAG, "Updated LoggeRythm could not be relaunched directly", error)
+      }
     }
+    postNotification(
+      context,
+      "LoggeRythm updated",
+      "Tap to open the new version.",
+      activityPendingIntent(context, launchIntent),
+    )
+  }
+
+  private fun appInForeground(): Boolean {
+    val state = ActivityManager.RunningAppProcessInfo()
+    ActivityManager.getMyMemoryState(state)
+    return state.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+  }
+
+  private fun activityPendingIntent(context: Context, intent: Intent): PendingIntent =
+    PendingIntent.getActivity(
+      context,
+      NOTIFICATION_REQUEST_CODE,
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+  private fun postNotification(
+    context: Context,
+    title: String,
+    text: String,
+    contentIntent: PendingIntent,
+  ) {
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      manager.createNotificationChannel(
+        NotificationChannel(
+          CHANNEL_ID,
+          "App updates",
+          NotificationManager.IMPORTANCE_HIGH,
+        ),
+      )
+    }
+    val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      Notification.Builder(context, CHANNEL_ID)
+    } else {
+      @Suppress("DEPRECATION")
+      Notification.Builder(context).setPriority(Notification.PRIORITY_HIGH)
+    }
+    val notification = builder
+      .setContentTitle(title)
+      .setContentText(text)
+      .setSmallIcon(android.R.drawable.stat_sys_download_done)
+      .setContentIntent(contentIntent)
+      .setAutoCancel(true)
+      .build()
+    manager.notify(NOTIFICATION_ID, notification)
   }
 
   @Suppress("DEPRECATION")
@@ -70,6 +140,9 @@ class LoggeRythmUpdateInstallReceiver : BroadcastReceiver() {
   companion object {
     private const val TAG = "LoggeRythmUpdater"
     private const val REQUEST_CODE = 0x5550
+    private const val NOTIFICATION_REQUEST_CODE = 0x5551
+    private const val NOTIFICATION_ID = 0x5552
+    private const val CHANNEL_ID = "loggerythm-updates"
 
     fun statusIntent(context: Context): PendingIntent {
       val intent = Intent(context, LoggeRythmUpdateInstallReceiver::class.java)

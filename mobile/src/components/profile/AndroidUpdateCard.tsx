@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  PermissionsAndroid,
   Platform,
   Pressable,
   StyleSheet,
@@ -131,6 +132,16 @@ export default function AndroidUpdateCard() {
         await androidUpdater.openInstallPermissionSettings();
         if (installAttemptRef.current === attempt) setState({ kind: 'permission', result });
         return;
+      }
+      // Best effort: when the app is backgrounded during the download, the
+      // installer confirmation arrives via a notification — which needs the
+      // runtime permission on Android 13+. A denial is a valid user choice;
+      // the foreground flow keeps working without it.
+      if (typeof Platform.Version === 'number' && Platform.Version >= 33) {
+        await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        );
+        if (installAttemptRef.current !== attempt) return;
       }
       setState({ kind: 'installing', result, progress: null });
       unsubscribe = subscribeAndroidUpdateDownloadProgress(

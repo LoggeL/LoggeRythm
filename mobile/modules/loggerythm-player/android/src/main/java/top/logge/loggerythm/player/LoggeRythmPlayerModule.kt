@@ -78,7 +78,6 @@ class LoggeRythmPlayerModule(
       val active = controller ?: return
       if (!shouldRunProgressTicker(active)) return
       emitSnapshot(active)
-      emitProgress(active)
       updateProgressTicker(active)
     }
   }
@@ -400,7 +399,10 @@ class LoggeRythmPlayerModule(
       controllerFuture?.let { future -> MediaController.releaseFuture(future) }
       controllerFuture = null
     }
-    worker.shutdownNow()
+    // Graceful shutdown: queued parse tasks still run and settle their React
+    // Promises (each checks `invalidated` and rejects fast). shutdownNow()
+    // would discard them, leaving JS promises hanging forever.
+    worker.shutdown()
     super.invalidate()
   }
 
@@ -535,6 +537,10 @@ class LoggeRythmPlayerModule(
     }
     try {
       worker.execute {
+        if (invalidated.get()) {
+          mainHandler.post { reject(promise, PlayerProtocolException("player-module-invalidated")) }
+          return@execute
+        }
         runCatching(parse).fold(
           onSuccess = { value -> mainHandler.post { action(value) } },
           onFailure = { error -> mainHandler.post { reject(promise, error) } },
@@ -653,16 +659,6 @@ class LoggeRythmPlayerModule(
       put("requestedLiked", requestedLiked)
     })
     return true
-  }
-
-  private fun emitProgress(player: Player) {
-    if (listenerCount.get() <= 0 || !reactApplicationContext.hasActiveReactInstance()) return
-    val payload = Arguments.createMap().apply {
-      putString("snapshotJson", snapshotJson(player).toString())
-    }
-    reactApplicationContext
-      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
-      .emit(PROGRESS_EVENT, payload)
   }
 
   private fun shouldRunProgressTicker(player: Player): Boolean =
