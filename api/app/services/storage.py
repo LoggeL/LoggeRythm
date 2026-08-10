@@ -12,6 +12,7 @@ Correctness guarantees:
 import json
 import os
 import threading
+import traceback
 from datetime import datetime, timedelta, timezone
 
 from ..config import STORAGE_RETENTION_DAYS
@@ -58,8 +59,12 @@ def _upsert_record(deezer_id: str, song: dict, final: str) -> None:
                 row.size_bytes = size
                 row.last_accessed = _now()
             db.commit()
-    except Exception:  # noqa: BLE001 — storage bookkeeping must never break playback
-        pass
+    except Exception:  # noqa: BLE001 — bookkeeping must not break playback, but fail loud
+        print(
+            f"ERROR: could not record StoredTrack row for {deezer_id} — "
+            "retention tracking is broken for this track:"
+        )
+        traceback.print_exc()
 
 
 def _row_from_disk(deezer_id: str, when: datetime) -> StoredTrack | None:
@@ -94,8 +99,12 @@ def touch(deezer_id: str) -> None:
                 if new is not None:
                     db.add(new)
             db.commit()
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception:  # noqa: BLE001 — bookkeeping must not break playback, but fail loud
+        print(
+            f"ERROR: could not touch StoredTrack {deezer_id} — "
+            "its retention clock was not reset:"
+        )
+        traceback.print_exc()
 
 
 def reconcile() -> int:
@@ -104,26 +113,23 @@ def reconcile() -> int:
     One-time backfill for files materialized before DB tracking existed.
     """
     created = 0
-    try:
-        d = _storage_dir()
-        with SessionLocal() as db:
-            existing = {r.deezer_id for r in db.query(StoredTrack.deezer_id).all()}
-            for fname in os.listdir(d):
-                if not fname.endswith(".mp3"):
-                    continue
-                did = fname[:-4]
-                if did in existing:
-                    continue
-                mtime = datetime.fromtimestamp(
-                    os.path.getmtime(os.path.join(d, fname)), tz=timezone.utc
-                )
-                new = _row_from_disk(did, mtime)
-                if new is not None:
-                    db.add(new)
-                    created += 1
-            db.commit()
-    except Exception:  # noqa: BLE001
-        pass
+    d = _storage_dir()
+    with SessionLocal() as db:
+        existing = {r.deezer_id for r in db.query(StoredTrack.deezer_id).all()}
+        for fname in os.listdir(d):
+            if not fname.endswith(".mp3"):
+                continue
+            did = fname[:-4]
+            if did in existing:
+                continue
+            mtime = datetime.fromtimestamp(
+                os.path.getmtime(os.path.join(d, fname)), tz=timezone.utc
+            )
+            new = _row_from_disk(did, mtime)
+            if new is not None:
+                db.add(new)
+                created += 1
+        db.commit()
     return created
 
 
@@ -157,14 +163,11 @@ def is_ready(deezer_id: str) -> bool:
 def cached_ids() -> list[str]:
     """All track ids currently stored on the server (ready to stream without
     re-fetching from Deezer)."""
-    try:
-        with SessionLocal() as db:
-            rows = db.query(StoredTrack.deezer_id).filter(
-                StoredTrack.status == "ready"
-            ).all()
-            return [r[0] for r in rows]
-    except Exception:  # noqa: BLE001 — a marker lookup must never break the page
-        return []
+    with SessionLocal() as db:
+        rows = db.query(StoredTrack.deezer_id).filter(
+            StoredTrack.status == "ready"
+        ).all()
+        return [r[0] for r in rows]
 
 
 def get_meta(deezer_id: str) -> dict | None:
@@ -245,18 +248,15 @@ def cleanup_old(days: int | None = None) -> dict:
     cutoff = _now() - timedelta(days=retention)
     removed = 0
     freed = 0
-    try:
-        with SessionLocal() as db:
-            stale = (
-                db.query(StoredTrack)
-                .filter(StoredTrack.last_accessed < cutoff)
-                .all()
-            )
-            for row in stale:
-                freed += _remove_files(row.deezer_id)
-                db.delete(row)
-                removed += 1
-            db.commit()
-    except Exception:  # noqa: BLE001
-        pass
+    with SessionLocal() as db:
+        stale = (
+            db.query(StoredTrack)
+            .filter(StoredTrack.last_accessed < cutoff)
+            .all()
+        )
+        for row in stale:
+            freed += _remove_files(row.deezer_id)
+            db.delete(row)
+            removed += 1
+        db.commit()
     return {"removed": removed, "freed_bytes": freed}

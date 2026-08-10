@@ -464,6 +464,9 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
   }, timeoutMs);
   const abortFromCaller = () => controller.abort();
   opts.signal?.addEventListener('abort', abortFromCaller, { once: true });
+  // The caller's signal may have aborted while ensureLoaded/compatibility
+  // preflights were awaited above — a listener added then never fires.
+  if (opts.signal?.aborted) controller.abort();
 
   let res: Response;
   try {

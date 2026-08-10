@@ -102,7 +102,15 @@ export default function QueueSidebar() {
         onDrop={(e) => {
           e.preventDefault();
           if (dragIndex !== null && dragIndex !== i) {
-            reorderQueue(dragIndex, i);
+            // The manual (primary) and context (secondary) sections are
+            // separate lists — a cross-section drop is not a valid reorder.
+            if (origins[dragIndex] !== origins[i]) {
+              toast.error(
+                "Titel können nicht zwischen Warteschlange und Playlist-Reihenfolge verschoben werden.",
+              );
+            } else {
+              reorderQueue(dragIndex, i);
+            }
           }
           setDragIndex(null);
           setOverIndex(null);

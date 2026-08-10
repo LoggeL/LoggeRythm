@@ -1,4 +1,4 @@
-"""Synchronized (time-stamped) song lyrics via public providers (no auth).
+"""Synchronized (time-stamped) song lyrics via public providers.
 
 Returns parsed LRC lines [{t, text}] so the client can show a karaoke-style
 3-line view that follows playback. Source: lrclib.net (has synced lyrics).
@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from ..db.models import StoredLyrics
+from ..auth import get_current_user
+from ..db.models import StoredLyrics, User
 from ..db.session import get_db
 from ..services import groq, storage
 
@@ -122,8 +123,11 @@ async def lyrics(
     artist: str = Query(..., min_length=1),
     title: str = Query(..., min_length=1),
     deezer_id: str | None = Query(default=None),
+    _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    if deezer_id is not None and not deezer_id.isdigit():
+        raise HTTPException(status_code=400, detail="deezer_id must be numeric")
     # Served from permanent storage if we've fetched this track before.
     if deezer_id:
         row = db.get(StoredLyrics, deezer_id)

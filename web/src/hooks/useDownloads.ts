@@ -9,7 +9,16 @@ import type { Track } from "@/types";
 
 const AUDIO_CACHE = "sf-audio";
 const IMG_CACHE = "sf-img";
-const EMPTY: Record<string, { name: string; total: number }> = {};
+
+interface DownloadEntry {
+  name: string;
+  total: number;
+  // Cached track ids, so removal can keep tracks shared with other downloaded
+  // playlists. Entries from before this field existed may lack it.
+  trackIds?: string[];
+}
+
+const EMPTY: Record<string, DownloadEntry> = {};
 
 export interface DownloadProgress {
   id: string;
@@ -23,11 +32,10 @@ export interface DownloadProgress {
  * ids are remembered in localStorage.
  */
 export function useDownloads() {
-  const [downloads, setDownloads] =
-    useLocalJson<Record<string, { name: string; total: number }>>(
-      "sf_downloads",
-      EMPTY,
-    );
+  const [downloads, setDownloads] = useLocalJson<Record<string, DownloadEntry>>(
+    "sf_downloads",
+    EMPTY,
+  );
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
 
   const supported = typeof caches !== "undefined";
@@ -66,7 +74,16 @@ export function useDownloads() {
       setProgress({ id, done, total: tracks.length });
     }
     if (failed.length === 0) {
-      setDownloads({ ...downloads, [id]: { name, total: tracks.length } });
+      // Functional update: the download ran for minutes — merge into the
+      // *current* stored value, not the snapshot from when it started.
+      setDownloads((current) => ({
+        ...current,
+        [id]: {
+          name,
+          total: tracks.length,
+          trackIds: tracks.map((t) => String(t.id)),
+        },
+      }));
       toast.success(`„${name}“ ist jetzt offline verfügbar.`);
     } else {
       toast.error(
@@ -80,8 +97,15 @@ export function useDownloads() {
 
   async function removeDownload(id: string, tracks: Track[]) {
     if (supported) {
+      // Keep audio that another downloaded playlist still references.
+      const keep = new Set<string>();
+      for (const [otherId, entry] of Object.entries(downloads)) {
+        if (otherId === id) continue;
+        for (const tid of entry.trackIds ?? []) keep.add(tid);
+      }
       const audio = await caches.open(AUDIO_CACHE);
       for (const t of tracks) {
+        if (keep.has(String(t.id))) continue;
         try {
           await audio.delete(streamUrl(String(t.id)));
         } catch {
@@ -89,9 +113,11 @@ export function useDownloads() {
         }
       }
     }
-    const next = { ...downloads };
-    delete next[id];
-    setDownloads(next);
+    setDownloads((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
     void refreshDownloadedTracks();
   }
 

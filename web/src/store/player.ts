@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { Track } from "@/types";
 import {
   clearUpcomingItems,
+  demoteOvertakenManualItems,
   insertManualItem,
   moveQueueItem,
   removeQueueItem,
@@ -176,13 +177,21 @@ export const usePlayerStore = create<PlayerState>()(
       setPartyQueue: (tracks, index) => {
         const queue = tracks.map((track) => ({ ...track }));
         const origins = fillOrigins(queue.length, "context");
-        set({
-          queue,
-          origins,
-          originalQueue: [...queue],
-          originalOrigins: [...origins],
-          index,
-          duration: queue[index]?.duration_sec || 0,
+        set((s) => {
+          // Party frames arrive on every member/queue event; only reset the
+          // duration when the playing track actually changed, otherwise the
+          // audio element's accurate duration would be overwritten mid-song.
+          const sameTrack =
+            s.index === index &&
+            String(s.queue[s.index]?.id ?? "") === String(queue[index]?.id ?? "");
+          return {
+            queue,
+            origins,
+            originalQueue: [...queue],
+            originalOrigins: [...origins],
+            index,
+            ...(sameTrack ? {} : { duration: queue[index]?.duration_sec || 0 }),
+          };
         });
       },
       followHostPlayback: (isPlaying, seekTo) =>
@@ -331,10 +340,16 @@ export const usePlayerStore = create<PlayerState>()(
           bridge.setCurrent(i);
           return;
         }
-        const { queue } = get();
+        const state = get();
+        const { queue } = state;
         if (i < 0 || i >= queue.length) return;
         pushRecent(queue[i]);
+        // A backward jump can leave passed-over manual items behind upcoming
+        // context items; re-normalize origins so the queue invariant holds.
+        const origins =
+          i < state.index ? demoteOvertakenManualItems(state, i) : {};
         set({
+          ...origins,
           index: i,
           currentTime: 0,
           isPlaying: true,
@@ -359,7 +374,8 @@ export const usePlayerStore = create<PlayerState>()(
       next: () => {
         const bridge = get().partyBridge;
         if (bridge) {
-          bridge.setCurrent(get().index + 1);
+          const { index, queue } = get();
+          if (index + 1 < queue.length) bridge.setCurrent(index + 1);
           return;
         }
         const { index, queue, repeat } = get();
@@ -376,7 +392,7 @@ export const usePlayerStore = create<PlayerState>()(
       prev: () => {
         const bridge = get().partyBridge;
         if (bridge) {
-          bridge.setCurrent(get().index - 1);
+          if (get().index > 0) bridge.setCurrent(get().index - 1);
           return;
         }
         const { index, currentTime } = get();

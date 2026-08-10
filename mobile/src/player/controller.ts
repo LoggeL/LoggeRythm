@@ -334,6 +334,9 @@ async function verifyManualInsertion(mediaId: string): Promise<void> {
     const matches = Player.getQueue().filter((item) => item.mediaId === mediaId);
     return matches.length === 1;
   });
+  // Every insertion reaches native as a SetQueue, which resets the persisted
+  // context-shuffle sidecar — re-persist so a relaunch restores shuffle.
+  persistContextShuffleState();
 }
 
 async function mediaContext(
@@ -735,6 +738,8 @@ export async function skipToQueueItem(
       queueStableIdOf(snapshot.items[index]) === stableId
     );
   });
+  // Native SetQueue resets the persisted context-shuffle sidecar — re-persist.
+  persistContextShuffleState();
 }
 
 /** Remove a non-active item from the native queue and verify that it disappeared. */
@@ -763,6 +768,8 @@ export async function removeQueueItem(
         (activeItem !== null && queueStableIdOf(activeItem) === activeStableId))
     );
   });
+  // Native SetQueue resets the persisted context-shuffle sidecar — re-persist.
+  persistContextShuffleState();
 }
 
 /** Remove every future item while preserving history and the active item. */
@@ -833,6 +840,8 @@ export async function moveQueueItem(
         (activeItem !== null && queueStableIdOf(activeItem) === activeStableId))
     );
   });
+  // Native SetQueue resets the persisted context-shuffle sidecar — re-persist.
+  persistContextShuffleState();
 }
 
 /** Cycle Off → All → One → Off, returning the new mode. */
@@ -1177,6 +1186,8 @@ async function performPlaybackRecovery(
         currentIndex,
         refreshedRecoveryItem(currentItem, target, base, headers),
       );
+      // Native SetQueue resets the persisted context-shuffle sidecar.
+      persistContextShuffleState();
       Player.seekTo(target.position);
       Player.play();
       return;
@@ -1248,6 +1259,14 @@ export function installPlaybackListeners(): void {
       error,
       FOREGROUND_RECOVERY_REQUEST_TIMEOUT_MS,
       FOREGROUND_RECOVERY_BUDGET_MS,
+    );
+  });
+  // A natively rejected command reverts the optimistic queue state; without
+  // this listener that revert is silent and the UI claims the edit succeeded.
+  Player.addEventListener(Event.CommandRejected, (event) => {
+    reportPlayerError(
+      strings.player.commandRejectedTitle,
+      new UserFacingPlayerError(`${event.command}: ${event.code}`),
     );
   });
   listenersInstalled = true;

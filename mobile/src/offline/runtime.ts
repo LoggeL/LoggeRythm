@@ -475,6 +475,9 @@ export function downloadPlaylistForOffline(scope: string, playlist: Playlist): P
           completedAt,
         );
         nextTrackUris[success.trackId] = success.uri;
+        // A re-download owns its file again — a stale pending orphan entry
+        // from an earlier failed removal must not delete it later.
+        value.pendingOrphanedFiles.delete(offlineTrackFileName(success.trackId));
       }
       completed = settlePlaylistDownload(
         completed,
@@ -574,6 +577,8 @@ export function downloadTrackForOffline(scope: string, track: Track): Promise<vo
       value.manifest = completed;
       value.trackUris = { ...value.trackUris, [trackId]: success.uri };
       value.availableDiskBytes = result.availableDiskBytes;
+      // A re-download owns its file again — drop any stale pending orphan.
+      value.pendingOrphanedFiles.delete(offlineTrackFileName(trackId));
       publishContext(value);
     } catch (error) {
       if (value.epoch === runtimeEpoch && context === value) {

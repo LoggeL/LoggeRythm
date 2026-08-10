@@ -126,6 +126,14 @@ async function rangeFrom(req, cached) {
   if (Number.isNaN(start)) start = 0;
   if (Number.isNaN(end)) end = size - 1;
   end = Math.min(end, size - 1);
+  if (start >= size || start > end) {
+    return new Response(null, {
+      status: 416,
+      headers: {
+        "Content-Range": `bytes */${size}`,
+      },
+    });
+  }
   const chunk = buf.slice(start, end + 1);
   return new Response(chunk, {
     status: 206,

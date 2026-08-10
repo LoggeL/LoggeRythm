@@ -112,6 +112,16 @@ export default function PlayerBar() {
   // The next-track id we've already begun crossfading into (prevents the
   // crossfade effect from re-triggering every frame near the end).
   const crossfadeToId = useRef<string | null>(null);
+  // Removes a deferred seek's loadedmetadata listener when a newer seek
+  // supersedes it (so stacked listeners can't seek a later track).
+  const pendingSeekCancel = useRef<(() => void) | null>(null);
+  // An in-flight crossfade interval must not survive unmount.
+  useEffect(
+    () => () => {
+      if (crossfadeTimer.current) window.clearInterval(crossfadeTimer.current);
+    },
+    [],
+  );
   // Auto-skip a failed track after a short grace period so a single dead
   // source doesn't stall the whole queue.
   const errorSkipTimer = useRef<number | null>(null);
@@ -292,7 +302,13 @@ export default function PlayerBar() {
         const fresh = more.filter((t) => !have.has(String(t.id))).slice(0, 5);
         if (fresh.length) appendToQueue(fresh);
       })
-      .catch(() => {})
+      .catch((e) => {
+        // Stop the radio visibly instead of silently starving the queue.
+        usePlayerStore.getState().setRadioActive(false);
+        toast.error(
+          `Song-Radio konnte nicht erweitert werden: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      })
       .finally(() => {
         radioFetching.current = false;
       });
@@ -337,7 +353,20 @@ export default function PlayerBar() {
       // Lazily wire the analyser on play (a user gesture, so the AudioContext
       // may start) — powers the visualizers.
       ensureAnalyser(el);
-      el.play().catch(() => {});
+      el.play().catch((err) => {
+        // AbortError from a quick track change is fine; but if this deck is
+        // still the active one and stayed paused (e.g. autoplay policy), sync
+        // the store so the UI doesn't show a frozen "playing" state.
+        const s = usePlayerStore.getState();
+        if (
+          el.paused &&
+          el.dataset.trackId === String(trackId ?? "") &&
+          s.isPlaying
+        ) {
+          console.warn(`[player] play() rejected: ${err}`);
+          s.pause();
+        }
+      });
     } else {
       el.pause();
       // Pausing aborts any in-flight crossfade so both decks stop together.
@@ -432,6 +461,9 @@ export default function PlayerBar() {
         crossfadeToId.current = null;
         incoming.removeAttribute("src");
         incoming.dataset.trackId = "";
+        // If the outgoing track already ended while play() was pending, the
+        // ended handler deferred to this crossfade — advance normally now.
+        if (outgoing.ended) _onEnded();
       });
   }, [
     currentTime,
@@ -450,15 +482,20 @@ export default function PlayerBar() {
     _crossfadeAdvance,
     _setCurrentTime,
     _setDuration,
+    _onEnded,
   ]);
 
   // Consume seek requests from the store on the active deck. Defer until
   // metadata is ready when the deck is still loading.
   useEffect(() => {
     if (seekTo == null) return;
+    // A newer seek supersedes any still-pending deferred one.
+    pendingSeekCancel.current?.();
+    pendingSeekCancel.current = null;
     const el = (activeIdx === 0 ? deckA : deckB).current;
     if (el) {
       const target = seekTo;
+      const expectedId = el.dataset.trackId ?? "";
       const apply = () => {
         try {
           el.currentTime = target;
@@ -471,9 +508,14 @@ export default function PlayerBar() {
       } else {
         const onReady = () => {
           el.removeEventListener("loadedmetadata", onReady);
-          apply();
+          pendingSeekCancel.current = null;
+          // The deck may have been reloaded with a different track since the
+          // seek was requested — never seek the new track to the old target.
+          if (el.dataset.trackId === expectedId) apply();
         };
         el.addEventListener("loadedmetadata", onReady);
+        pendingSeekCancel.current = () =>
+          el.removeEventListener("loadedmetadata", onReady);
       }
     }
     _clearSeek();
@@ -651,7 +693,10 @@ export default function PlayerBar() {
   const handleEnded = (idx: 0 | 1, e: SyntheticEvent<HTMLAudioElement>) => {
     if (activeIdxRef.current !== idx) return;
     // A crossfade already owns the transition into the next track.
-    if (crossfadeTimer.current) return;
+    // crossfadeToId is set synchronously when the fade is initiated, so this
+    // also covers the window before the incoming deck's play() resolves
+    // (otherwise both paths would advance the queue — skipping a track).
+    if (crossfadeTimer.current || crossfadeToId.current) return;
     if (repeat === "one") {
       e.currentTarget.currentTime = 0;
       _setCurrentTime(0);
@@ -729,7 +774,7 @@ export default function PlayerBar() {
     errorSkipTimer.current = window.setTimeout(() => {
       errorSkipTimer.current = null;
       const cur = currentTrack(usePlayerStore.getState());
-      if (activeIdxRef.current === idx && cur?.id === id && el.error) {
+      if (activeIdxRef.current === idx && String(cur?.id ?? "") === id && el.error) {
         toast.info("Titel übersprungen.");
         next();
       }

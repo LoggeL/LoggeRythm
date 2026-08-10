@@ -3365,6 +3365,26 @@
             },
             "description": "Successful Response"
           },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
           "422": {
             "content": {
               "application/json": {
@@ -3376,6 +3396,11 @@
             "description": "Validation Error"
           }
         },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
         "summary": "Lyrics",
         "tags": [
           "lyrics"
@@ -5352,6 +5377,22 @@
             "schema": {
               "title": "Playlist Id",
               "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "sf_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sf Session"
             }
           }
         ],

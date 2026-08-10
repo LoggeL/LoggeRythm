@@ -25,6 +25,7 @@ from ..db.models import (
 )
 from ..db.session import engine, get_db
 from ..services import deezer_client, storage
+from .profile import purge_user_account
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -177,8 +178,7 @@ def delete_user(
         raise HTTPException(
             status_code=400, detail="Du kannst keinen anderen Admin löschen"
         )
-    db.delete(user)
-    db.commit()
+    purge_user_account(db, user)
 
 
 @router.get("/storage", response_model=StorageInfo)

@@ -1,6 +1,6 @@
 """Auth endpoints: register, login, logout, me."""
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..auth import (
@@ -52,6 +52,10 @@ def register(
                 InviteCode.code == body.invite, InviteCode.used_by.is_(None)
             )
         )
+        if invite is None:
+            raise HTTPException(
+                status_code=400, detail="Invalid or already used invite code"
+            )
     is_approved = is_first or invite is not None
     user = User(
         email=email,
@@ -61,12 +65,22 @@ def register(
         is_approved=is_approved,
     )
     db.add(user)
+    db.flush()
+    if invite is not None:
+        # Conditional UPDATE so two concurrent registrations cannot both
+        # consume the same code.
+        claimed = db.execute(
+            update(InviteCode)
+            .where(InviteCode.code == invite.code, InviteCode.used_by.is_(None))
+            .values(used_by=user.id, used_at=datetime.now(timezone.utc))
+        )
+        if claimed.rowcount != 1:
+            db.rollback()
+            raise HTTPException(
+                status_code=400, detail="Invalid or already used invite code"
+            )
     db.commit()
     db.refresh(user)
-    if invite is not None:
-        invite.used_by = user.id
-        invite.used_at = datetime.now(timezone.utc)
-        db.commit()
     set_session_cookie(response, create_token(user.id))
     return _user_out(user)
 

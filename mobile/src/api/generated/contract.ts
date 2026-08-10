@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "e15907b694d4ebc387e111e00ed2dd081ec88422e74d21f3237ab72a8fe09a92" as const;
+export const GENERATED_OPENAPI_SHA256 = "3454e4966a458f984f84721d5204394e5374be631fa54a9df949b2a73c7e30c3" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -755,6 +755,9 @@ export interface GeneratedApiOperations {
       path: {
         playlist_id: number;
       };
+      cookie?: {
+        sf_session?: string | null;
+      };
     };
     responses: {
       "200": unknown;
@@ -937,6 +940,8 @@ export interface GeneratedApiOperations {
     };
     responses: {
       "200": Record<string, unknown>;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
       "422": HTTPValidationErrorWire;
     };
     response: Record<string, unknown>;
@@ -1643,7 +1648,7 @@ export const GENERATED_API_OPERATIONS = {
   "get_cover_api_playlists__playlist_id__cover_get": {
     method: "GET",
     path: "/api/playlists/{playlist_id}/cover",
-    auth: "none",
+    auth: "optional",
     requestMediaTypes: [],
     successStatuses: [200],
   },
@@ -1762,7 +1767,7 @@ export const GENERATED_API_OPERATIONS = {
   "lyrics_api_lyrics_get": {
     method: "GET",
     path: "/api/lyrics",
-    auth: "none",
+    auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
   },

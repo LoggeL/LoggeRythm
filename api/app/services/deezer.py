@@ -44,8 +44,10 @@ def get_user_data() -> tuple[str, str]:
         web_sound_quality = options["web_sound_quality"]
         return license_token, web_sound_quality
     except (requests.exceptions.RequestException, KeyError) as e:
-        print(f"ERROR: Could not get license token: {e}")
-        return "", {}
+        raise RuntimeError(
+            "Could not get Deezer license token — the ARL cookie is likely "
+            f"expired or invalid: {e}"
+        ) from e
 
 
 # quality_config comes from config file
@@ -266,6 +268,13 @@ def decryptfile(fh, key, fo):
     return written
 
 
+def _int_or_zero(raw) -> int:
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
 def writeid3v1_1(fo, song):
 
     # Bugfix changed song["SNG_TITLE... to song.get("SNG_TITLE... to avoid 'key-error' in case the key does not exist
@@ -276,9 +285,8 @@ def writeid3v1_1(fo, song):
             return b""
 
     def album_get(key):
-        global album_Data
         try:
-            return album_Data.get(key).encode("utf-8")
+            return ((song.get("_ALBUM_DATA") or song).get(key) or "").encode("utf-8")
         except:
             return b""
 
@@ -294,7 +302,7 @@ def writeid3v1_1(fo, song):
         album_get("PHYSICAL_RELEASE_DATE"),  # year
         album_get("LABEL_NAME"),
         0,  # comment
-        int(song_get(song, "TRACK_NUMBER")),  # tracknum
+        _int_or_zero(song_get(song, "TRACK_NUMBER")),  # tracknum
         255,  # genre
     )
 
@@ -326,9 +334,8 @@ def writeid3v2(fo, song):
         return struct.pack(">4sLH", tag.encode("ascii"), len(content), 0) + content
 
     def album_get(key):
-        global album_Data
         try:
-            return album_Data.get(key)
+            return (song.get("_ALBUM_DATA") or song).get(key) or ""
         except:
             # raise
             return ""
@@ -402,6 +409,7 @@ def writeid3v2(fo, song):
     except:
         FileSize = 0
 
+    track = ""
     try:
         track = "%02s" % song["TRACK_NUMBER"]
         track += "/%02s" % album_get("TRACKS")
@@ -641,17 +649,20 @@ def get_song_infos_from_deezer_website(search_type, id):
         regex = re.search(r'{"DATA":.*', script)
         if regex:
             DZR_APP_STATE = json.loads(regex.group())
-            global album_Data
-            album_Data = DZR_APP_STATE.get("DATA")
+            # Album/page data rides along on each song dict so concurrent
+            # downloads can't tag one track with another track's album info.
+            album_data = DZR_APP_STATE.get("DATA")
             if (
                 DZR_APP_STATE["DATA"]["__TYPE__"] == "playlist"
                 or DZR_APP_STATE["DATA"]["__TYPE__"] == "album"
             ):
                 # songs if you searched for album/playlist
                 for song in DZR_APP_STATE["SONGS"]["data"]:
+                    song["_ALBUM_DATA"] = album_data
                     songs.append(song)
             elif DZR_APP_STATE["DATA"]["__TYPE__"] == "song":
-                # just one song on that page
+                # just one song on that page; the song dict *is* the page DATA,
+                # so the tag writers fall back to it directly (no self-reference)
                 songs.append(DZR_APP_STATE["DATA"])
     return songs[0] if search_type == TYPE_TRACK else songs
 

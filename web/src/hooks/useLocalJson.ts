@@ -33,7 +33,7 @@ function eventName(key: string) {
 export function useLocalJson<T>(
   key: string,
   fallback: T,
-): [T, (next: T) => void] {
+): [T, (next: T | ((current: T) => T)) => void] {
   const subscribe = useCallback(
     (cb: () => void) => {
       const handler = () => cb();
@@ -54,15 +54,21 @@ export function useLocalJson<T>(
   );
 
   const setValue = useCallback(
-    (next: T) => {
+    (next: T | ((current: T) => T)) => {
+      // Functional updates read the *current* stored value, so long-running
+      // async flows can't clobber writes made since they captured `value`.
+      const resolved =
+        typeof next === "function"
+          ? (next as (current: T) => T)(readSnapshot(key, fallback))
+          : next;
       try {
-        window.localStorage.setItem(key, JSON.stringify(next));
+        window.localStorage.setItem(key, JSON.stringify(resolved));
       } catch {
         // ignore quota/availability errors
       }
       window.dispatchEvent(new Event(eventName(key)));
     },
-    [key],
+    [key, fallback],
   );
 
   return [value, setValue];

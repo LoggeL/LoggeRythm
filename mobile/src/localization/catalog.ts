@@ -302,6 +302,7 @@ export interface StringCatalog {
     autoDownloadedProgress: (downloaded: number, total: number) => string;
     bookkeepingFailedTitle: string;
     bookkeepingFailedMessage: string;
+    commandRejectedTitle: string;
     recovery: {
       stoppedTitle: string;
       skippedTitle: string;
@@ -896,6 +897,8 @@ export const de: StringCatalog = {
     bookkeepingFailedTitle: 'Wiedergabedaten konnten nicht aktualisiert werden',
     bookkeepingFailedMessage:
       'Wiedergabe und Warteschlange bleiben verfügbar. Hörverlauf oder Radio konnten nicht aktualisiert werden.',
+    commandRejectedTitle:
+      'Die Änderung an der Warteschlange konnte nicht angewendet werden',
     recovery: {
       stoppedTitle: 'Wiedergabe angehalten',
       skippedTitle: 'Titel übersprungen',
@@ -1417,6 +1420,7 @@ export const en: StringCatalog = {
     bookkeepingFailedTitle: 'Playback data could not be updated',
     bookkeepingFailedMessage:
       'Playback and the queue remain available. Listening history or radio could not be updated.',
+    commandRejectedTitle: 'The queue change could not be applied',
     recovery: {
       stoppedTitle: 'Playback stopped',
       skippedTitle: 'Track skipped',

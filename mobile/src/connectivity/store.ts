@@ -42,6 +42,10 @@ function receiveConnectivityEvidence(
   if (raw !== 'unknown') lastDefinitive = raw;
   if (status === 'unknown') return;
 
+  // A duplicate event for the unchanged status (NetInfo re-emits on detail
+  // changes) must not dismiss a running recovery notice early.
+  if (status === snapshot.status) return;
+
   const recovered = snapshot.status === 'offline' && status === 'online';
   clearRecoveryTimer();
   publish({ status, showRecovery: recovered });

@@ -155,6 +155,16 @@ def delete_me(
                 detail="Der letzte Admin kann sein Konto nicht löschen.",
             )
 
+    purge_user_account(db, user)
+    clear_session_cookie(response)
+
+
+def purge_user_account(db: Session, user: User) -> None:
+    """Delete a user plus all rows and files that don't cascade via the ORM.
+
+    Shared by self-service deletion (`DELETE /me`) and the admin user-delete
+    route so both paths clean up identically.
+    """
     user_id = user.id
     playlist_ids = list(
         db.scalars(select(Playlist.id).where(Playlist.user_id == user_id))
@@ -179,7 +189,6 @@ def delete_me(
     for pid in playlist_ids:
         _remove_playlist_cover_files(pid)
     _remove_avatar_files(user_id)
-    clear_session_cookie(response)
 
 
 def _remove_playlist_cover_files(playlist_id: int) -> None:

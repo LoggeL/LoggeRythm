@@ -22,7 +22,9 @@ export function parseSessionCookie(setCookie: string | null, requestUrl: string)
     version: 1,
     token,
     origin: new URL(requestUrl).origin,
-    secure: /(?:^|;)\s*Secure\s*(?:;|$)/i.test(setCookie),
+    // RN concatenates multiple Set-Cookie headers with commas, so a comma is
+    // as valid a terminator/prefix for the attribute as a semicolon.
+    secure: /(?:^|[;,])\s*Secure\s*(?:[;,]|$)/i.test(setCookie),
   };
 }
 

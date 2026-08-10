@@ -291,7 +291,16 @@ def set_cover(
 
 
 @router.get("/{playlist_id}/cover")
-def get_cover(playlist_id: int) -> FileResponse:
+def get_cover(
+    playlist_id: int,
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    pl = db.get(Playlist, playlist_id)
+    is_owner = pl is not None and user is not None and pl.user_id == user.id
+    # Same visibility rule as get_playlist: yours or public, otherwise hidden.
+    if pl is None or (not is_owner and not pl.is_public):
+        raise HTTPException(status_code=404, detail="Playlist not found")
     for f in glob.glob(os.path.join(_COVERS_DIR, f"{playlist_id}.*")):
         if os.path.isfile(f):
             return FileResponse(f)

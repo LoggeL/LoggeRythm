@@ -61,7 +61,15 @@ export default function RadarScreen(props: RadarScreenProps) {
     void readReleaseRadarSeenTrackIds(AsyncStorage, scope)
       .then((seenIds) => {
         if (!active) return [];
-        setNewTrackIds(unseenReleaseRadarTrackIds(trackIds, seenIds));
+        // Merge instead of replace: a refresh already marked earlier rows as
+        // seen, so replacing would wipe their highlights mid-visit.
+        setNewTrackIds((prev) => {
+          const merged = new Set(prev);
+          for (const id of unseenReleaseRadarTrackIds(trackIds, seenIds)) {
+            merged.add(id);
+          }
+          return merged;
+        });
         return markReleaseRadarTracksSeen(AsyncStorage, scope, trackIds);
       })
       .then(() => {

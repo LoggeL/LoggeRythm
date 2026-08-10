@@ -68,6 +68,55 @@ export function assertManualQueuePriority<T>(
   }
 }
 
+function demotedAfterFirstContext(
+  origins: readonly QueueOrigin[],
+  activeIndex: number,
+): { origins: QueueOrigin[]; demoted: Set<number> } {
+  const next = [...origins];
+  const demoted = new Set<number>();
+  let seenContext = false;
+  for (let index = activeIndex + 1; index < next.length; index += 1) {
+    if (next[index] === "context") {
+      seenContext = true;
+    } else if (seenContext) {
+      next[index] = "context";
+      demoted.add(index);
+    }
+  }
+  return { origins: next, demoted };
+}
+
+/**
+ * Re-normalize origins after the active index moved backwards (prev, repeat-all
+ * wrap, or a history jump). Passed-over manual items may then sit behind
+ * upcoming context items; they were already played, so demote them to context
+ * instead of violating the manual-before-context invariant.
+ */
+export function demoteOvertakenManualItems<T>(
+  state: ProductQueueState<T>,
+  targetIndex: number,
+): { origins: QueueOrigin[]; originalOrigins: QueueOrigin[] } {
+  assertParallel(state.queue, state.origins, "Queue");
+  assertParallel(state.originalQueue, state.originalOrigins, "Original queue");
+  requireIndex(state.queue, targetIndex, "Jump");
+  const live = demotedAfterFirstContext(state.origins, targetIndex);
+
+  const originalOrigins = [...state.originalOrigins];
+  // Mirror live demotions by identity so shuffle-restore still finds every
+  // upcoming live context item as a context item in the canonical queue.
+  live.demoted.forEach((queueIndex) => {
+    const originalIndex = state.originalQueue.indexOf(state.queue[queueIndex]);
+    if (originalIndex >= 0) originalOrigins[originalIndex] = "context";
+  });
+  const activeItem = state.queue[targetIndex];
+  const originalActiveIndex = state.originalQueue.indexOf(activeItem);
+  if (originalActiveIndex < 0) {
+    throw new Error("Original queue does not contain the active queue item");
+  }
+  const original = demotedAfterFirstContext(originalOrigins, originalActiveIndex);
+  return { origins: live.origins, originalOrigins: original.origins };
+}
+
 function manualTailIndex<T>(
   queue: readonly T[],
   origins: readonly QueueOrigin[],

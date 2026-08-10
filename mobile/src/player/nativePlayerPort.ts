@@ -1349,7 +1349,12 @@ export class NativeBackedPlayerPort implements PlayerPort {
     queueForFlush = true,
   ): PlayerNativeCommandError {
     const failure = new PlayerNativeCommandError(operation, code);
-    if (queueForFlush) this.failures.push(failure);
+    if (queueForFlush) {
+      this.failures.push(failure);
+      // Bound the flush queue: without a regular flush() consumer a long
+      // session with intermittent rejections would leak Error objects forever.
+      if (this.failures.length > 32) this.failures.shift();
+    }
     this.dispatch(Event.CommandRejected, {
       command: operation,
       code,
@@ -1561,12 +1566,18 @@ export class NativeBackedPlayerPort implements PlayerPort {
         if (!['auto', 'seek', 'repeat', 'playlist-changed', 'unknown'].includes(reason ?? '')) {
           throw new TypeError('Native transition reason is invalid');
         }
+        // Resolve against the authoritative (native-confirmed) queue: the
+        // transition callback can arrive before the snapshot that carries a
+        // natively-replaced queue (Android Auto, service restore), and the
+        // optimistic visible queue may not contain the item yet. An unknown
+        // item is reported as a null transition — the follow-up snapshot
+        // reconciles it — instead of being escalated to a fake PlaybackError.
+        const queue = this.authoritative.queue;
         const index = itemId === null
           ? -1
-          : this.visible.queue.findIndex((item) => item.mediaId === itemId);
-        if (itemId !== null && index < 0) throw new Error('Native transition item is not in queue');
+          : queue.findIndex((item) => item.mediaId === itemId);
         const safe: MediaItemTransitionEvent = {
-          item: index < 0 ? null : this.visible.queue[index],
+          item: index < 0 ? null : queue[index],
           index,
           reason,
         };
