@@ -99,7 +99,7 @@ export function lyricsSourceKind(source: string | null): LyricsSourceKind {
   const normalized = source?.trim().toLowerCase();
   if (!normalized) return null;
   if (normalized === 'lrclib') return 'lrclib';
-  if (normalized === 'groq' || normalized === 'groq-word-v1') {
+  if (normalized === 'groq' || normalized.startsWith('groq-word-')) {
     return 'loggerythm-ai';
   }
   return 'external';

@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
 import { MusicNoteIcon } from "@/components/icons";
+import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import type { Track } from "@/types";
 
 /**
@@ -17,12 +18,8 @@ export default function LyricsPanel({ track }: { track: Track }) {
   const hasPositionedRef = useRef(false);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const seek = usePlayerStore((s) => s.seek);
-  const { lines, active, hasTimedLines, isLoading, isAiGenerated } = useLyrics(
-    track.artist,
-    track.title,
-    track.id,
-    currentTime,
-  );
+  const lyrics = useLyrics(track.artist, track.title, track.id, currentTime);
+  const { lines, active, hasTimedLines, isLoading } = lyrics;
 
   useLayoutEffect(() => {
     const el = activeRef.current;
@@ -57,11 +54,7 @@ export default function LyricsPanel({ track }: { track: Track }) {
         <span className="text-xs font-semibold uppercase tracking-widest">
           Lyrics
         </span>
-        {isAiGenerated && (
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
-            ✦ AI
-          </span>
-        )}
+        <LyricsVariantToggle lyrics={lyrics} />
       </span>
       {lines.length > 0 ? (
         <div

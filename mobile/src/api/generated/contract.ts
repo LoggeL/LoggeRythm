@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "3454e4966a458f984f84721d5204394e5374be631fa54a9df949b2a73c7e30c3" as const;
+export const GENERATED_OPENAPI_SHA256 = "1d832ca2bb900f29537b36ebbced942c3ccdd1ed1c3e86cb71d65d4246eb2d7c" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -936,6 +936,7 @@ export interface GeneratedApiOperations {
         artist: string;
         deezer_id?: string | null;
         title: string;
+        variant?: string;
       };
     };
     responses: {

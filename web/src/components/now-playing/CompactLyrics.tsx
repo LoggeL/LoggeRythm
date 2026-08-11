@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
+import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import { useBassGlow } from "@/hooks/useBassGlow";
 import type { CoverPalette } from "@/hooks/useCoverColors";
 import { formatTime } from "@/lib/format";
@@ -57,12 +58,8 @@ export default function CompactLyrics({
     tintBorder: false,
     color: palette?.rgb,
   });
-  const { lines, active, hasTimedLines, isLoading, isAiGenerated } = useLyrics(
-    track.artist,
-    track.title,
-    track.id,
-    currentTime,
-  );
+  const lyrics = useLyrics(track.artist, track.title, track.id, currentTime);
+  const { lines, active, hasTimedLines, isLoading } = lyrics;
 
   useLayoutEffect(() => {
     const el = activeRef.current;
@@ -130,11 +127,7 @@ export default function CompactLyrics({
         <span className="text-[11px] font-semibold uppercase tracking-widest">
           Lyrics
         </span>
-        {isAiGenerated && (
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
-            ✦ AI
-          </span>
-        )}
+        <LyricsVariantToggle lyrics={lyrics} />
       </div>
 
       {/* Lyrics */}

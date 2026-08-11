@@ -127,6 +127,7 @@ describe('lyrics query presentation model', () => {
   it('maps provider identifiers without exposing arbitrary backend text', () => {
     expect(lyricsSourceKind(' lrclib ')).toBe('lrclib');
     expect(lyricsSourceKind('groq-word-v1')).toBe('loggerythm-ai');
+    expect(lyricsSourceKind('groq-word-v2')).toBe('loggerythm-ai');
     expect(lyricsSourceKind('groq')).toBe('loggerythm-ai');
     expect(lyricsSourceKind('provider stack trace secret')).toBe('external');
     expect(lyricsSourceKind(null)).toBeNull();

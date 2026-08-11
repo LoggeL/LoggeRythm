@@ -118,16 +118,102 @@ def _should_persist_lyrics(result: dict) -> bool:
     return bool(result.get("lines")) or result.get("source") == groq.LYRICS_SOURCE
 
 
+async def _transcribe_or_502(deezer_id: str) -> list[dict]:
+    try:
+        return await run_in_threadpool(_groq_transcription, deezer_id)
+    except Exception as exc:  # noqa: BLE001 - preserve materialize/Groq context
+        print(
+            f"Groq lyrics transcription failed for deezer_id={deezer_id}: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="Groq lyrics transcription failed. Check the server logs.",
+        ) from exc
+
+
+async def _ai_variant(deezer_id: str, db: Session) -> dict:
+    """Force the Whisper transcription, even when provider lyrics exist.
+
+    Cached next to the primary result (``whisper_*`` columns) unless the
+    primary is itself AI-generated, in which case the primary row is reused.
+    """
+    row = db.get(StoredLyrics, deezer_id)
+    if row is not None:
+        if row.ai_generated and not _cached_lyrics_need_word_refresh(row):
+            return {
+                "lines": json.loads(row.lines_json),
+                "synced": row.synced,
+                "source": row.source,
+                "ai_generated": True,
+                "cached": True,
+            }
+        if not row.ai_generated and row.whisper_lines_json is not None:
+            return {
+                "lines": json.loads(row.whisper_lines_json),
+                "synced": False,
+                "source": row.whisper_source,
+                "ai_generated": True,
+                "cached": True,
+            }
+
+    if not groq.configured():
+        raise HTTPException(
+            status_code=503,
+            detail="AI lyrics unavailable: Groq transcription is not configured "
+            "(GROQ_API_KEY missing).",
+        )
+
+    lines = await _transcribe_or_502(deezer_id)
+    lines_json = json.dumps(lines, ensure_ascii=False)
+    if row is None or row.ai_generated:
+        # No provider lyrics stored (or a legacy AI row needing refresh): the
+        # transcription IS the primary result, same as the fallback path below.
+        db.merge(
+            StoredLyrics(
+                deezer_id=deezer_id,
+                lines_json=lines_json,
+                synced=False,
+                source=groq.LYRICS_SOURCE,
+                ai_generated=True,
+            )
+        )
+    else:
+        row.whisper_lines_json = lines_json
+        row.whisper_source = groq.LYRICS_SOURCE
+    db.commit()
+    return {
+        "lines": lines,
+        "synced": False,
+        "source": groq.LYRICS_SOURCE,
+        "ai_generated": True,
+    }
+
+
 @router.get("/lyrics")
 async def lyrics(
     artist: str = Query(..., min_length=1),
     title: str = Query(..., min_length=1),
     deezer_id: str | None = Query(default=None),
+    variant: str = Query(default="default", pattern="^(default|ai)$"),
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     if deezer_id is not None and not deezer_id.isdigit():
         raise HTTPException(status_code=400, detail="deezer_id must be numeric")
+
+    # variant=ai: the client explicitly wants the Whisper transcription (e.g.
+    # because the provider lyrics look wrong). Requires the audio, so deezer_id
+    # is mandatory there.
+    if variant == "ai":
+        if not deezer_id:
+            raise HTTPException(
+                status_code=400,
+                detail="variant=ai requires deezer_id.",
+            )
+        return await _ai_variant(deezer_id, db)
+
+
     # Served from permanent storage if we've fetched this track before.
     if deezer_id:
         row = db.get(StoredLyrics, deezer_id)
@@ -143,17 +229,7 @@ async def lyrics(
     result = await run_in_threadpool(_fetch, artist, title)
 
     if deezer_id and not result.get("lines") and groq.configured():
-        try:
-            lines = await run_in_threadpool(_groq_transcription, deezer_id)
-        except Exception as exc:  # noqa: BLE001 - preserve materialize/Groq context
-            print(
-                f"Groq lyrics transcription failed for deezer_id={deezer_id}: "
-                f"{type(exc).__name__}: {exc}"
-            )
-            raise HTTPException(
-                status_code=502,
-                detail="Groq lyrics transcription failed. Check the server logs.",
-            ) from exc
+        lines = await _transcribe_or_502(deezer_id)
         result = {
             "lines": lines,
             "synced": False,

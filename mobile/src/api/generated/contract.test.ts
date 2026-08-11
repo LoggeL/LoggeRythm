@@ -55,6 +55,7 @@ describe('generated OpenAPI contract', () => {
         artist: string;
         deezer_id?: string | null;
         title: string;
+        variant?: string;
       };
     }>();
     expectTypeOf<GeneratedApiResponse<'delete_me_api_me_delete'>>().toEqualTypeOf<undefined>();

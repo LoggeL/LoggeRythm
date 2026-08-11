@@ -239,6 +239,11 @@ class StoredLyrics(Base):
     synced: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     source: Mapped[str] = mapped_column(String(40), nullable=False, default="lrclib")
     ai_generated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Whisper transcription stored alongside a non-AI primary result so clients
+    # can toggle between provider lyrics and the AI transcription. NULL until a
+    # client requests variant=ai; unused when the primary is already AI.
+    whisper_lines_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whisper_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
