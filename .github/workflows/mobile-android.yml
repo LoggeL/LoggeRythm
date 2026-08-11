@@ -65,7 +65,10 @@ jobs:
 
       - name: Audit production dependency paths
         working-directory: mobile
-        run: npm audit --omit=dev --audit-level=moderate
+        # Wrapper around `npm audit --omit=dev`: fails on every moderate+
+        # advisory except reviewed ones that have no patched release anywhere
+        # (raw npm audit would block all builds forever on those).
+        run: node scripts/verify_npm_audit.mjs
 
       - name: Validate API and generated Android contracts
         working-directory: api
