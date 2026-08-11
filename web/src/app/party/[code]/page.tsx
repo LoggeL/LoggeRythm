@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import { QRCodeSVG } from "qrcode.react";
 import { useParty } from "@/hooks/useParty";
 import { usePlayerStore } from "@/store/player";
 import { usePartyStore } from "@/store/party";
@@ -114,10 +115,17 @@ export default function PartyPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
-  const shareUrl =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/party/${code}`
-      : `/party/${code}`;
+  const isClient = useSyncExternalStore(
+    subscribeToClientState,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
+  const shareUrl = isClient
+    ? new URL(
+        `/party/${encodeURIComponent(code)}`,
+        window.location.origin,
+      ).toString()
+    : "";
 
   const copyLink = async () => {
     try {
@@ -214,16 +222,43 @@ export default function PartyPage({
         <p className="text-xs uppercase tracking-wide text-muted mb-2">
           Teilen
         </p>
+        <div className="mb-4 flex flex-col items-center rounded-lg bg-panel-hover p-4 text-center">
+          {shareUrl ? (
+            <div className="rounded-xl bg-white p-2">
+              <QRCodeSVG
+                value={shareUrl}
+                size={176}
+                level="M"
+                marginSize={2}
+                title={`QR-Code für die Party ${party.code}`}
+                className="h-auto w-full max-w-44"
+              />
+            </div>
+          ) : (
+            <div
+              className="aspect-square w-44 animate-pulse rounded-xl bg-white/10"
+              aria-label="QR-Code wird erstellt"
+            />
+          )}
+          <p className="mt-3 text-sm font-medium text-foreground">
+            Scannen, um der Party beizutreten
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            Kamera öffnen, QR-Code scannen und direkt mitmachen.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <input
             readOnly
             value={shareUrl}
+            aria-label="Einladungslink"
             className="flex-1 min-w-0 bg-panel-hover rounded px-3 py-2 text-sm text-foreground"
           />
           <button
             type="button"
             onClick={copyLink}
-            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover press"
+            disabled={!shareUrl}
+            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:cursor-wait disabled:opacity-50 press"
           >
             {copied ? "Kopiert!" : "Kopieren"}
           </button>
@@ -424,6 +459,18 @@ export default function PartyPage({
       </div>
     </div>
   );
+}
+
+function subscribeToClientState() {
+  return () => {};
+}
+
+function getClientSnapshot() {
+  return true;
+}
+
+function getServerSnapshot() {
+  return false;
 }
 
 // Move the id at `from` to position `to`, returning the new id ordering.
