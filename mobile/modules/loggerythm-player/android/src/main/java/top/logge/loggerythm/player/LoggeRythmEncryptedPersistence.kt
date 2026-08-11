@@ -359,7 +359,24 @@ internal class LoggeRythmEncryptedAndroidBlobFile(context: Context) :
       syncPath(noBackupRoot)
     }
     if (!candidate.isDirectory) throw IllegalStateException("storage-directory-invalid")
+    clearStaleTemporaryFiles(candidate)
     return candidate
+  }
+
+  /**
+   * A process death between temp-file creation and rename in [replace] leaves a
+   * ciphertext-only temp file behind, and nothing else ever removes it. Sweep
+   * them on first directory access so interrupted writes stay self-healing.
+   */
+  private fun clearStaleTemporaryFiles(directory: File) {
+    val stale = directory.listFiles { file ->
+      file.name.startsWith(TEMP_PREFIX) && file.name.endsWith(TEMP_SUFFIX)
+    } ?: throw IllegalStateException("storage-list-failed")
+    for (file in stale) {
+      if (!file.delete() && file.exists()) {
+        throw IllegalStateException("storage-temp-cleanup-failed")
+      }
+    }
   }
 
   private fun syncPath(path: File) {
