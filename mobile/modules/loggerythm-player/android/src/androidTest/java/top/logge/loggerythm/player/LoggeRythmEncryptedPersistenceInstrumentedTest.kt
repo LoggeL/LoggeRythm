@@ -133,6 +133,39 @@ class LoggeRythmEncryptedPersistenceInstrumentedTest {
   }
 
   @Test
+  fun independentBlobFileInstancesSerializeInitializationAndReplacement() {
+    val workerCount = 8
+    val start = CountDownLatch(1)
+    val executor = Executors.newFixedThreadPool(workerCount)
+    val futures = (0 until workerCount).map { worker ->
+      executor.submit<Unit> {
+        check(start.await(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+          "instrumentation-start-timeout"
+        }
+        LoggeRythmEncryptedAndroidBlobFile(context).replace(
+          ByteArray(64) { (worker + 1).toByte() },
+        )
+      }
+    }
+    try {
+      start.countDown()
+      futures.forEach { future ->
+        future.get(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+      }
+    } finally {
+      executor.shutdownNow()
+      executor.awaitTermination(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+    }
+
+    val directory = persistenceDirectory()
+    assertTrue(persistenceTarget().isFile)
+    assertEquals(
+      listOf(PERSISTENCE_FILE_NAME),
+      directory.listFiles().orEmpty().map { it.name }.sorted(),
+    )
+  }
+
+  @Test
   fun concurrentClearWaitsForAdmittedSaveThenRemovesCiphertextAndKey() {
     val blockingFile = BlockingReplaceBlobFile(blobFile)
     val store = store(
