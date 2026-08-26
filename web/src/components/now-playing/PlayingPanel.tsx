@@ -13,7 +13,7 @@ import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
 /**
- * The "Jetzt läuft" centerpiece: bass-reactive album art with a gradient frame,
+ * The "Jetzt läuft" centerpiece: album art with an audio-reactive spectrum,
  * track meta and the full transport stack, over a cover-tinted ambient panel.
  *
  * Responsive behaviour: on md+ it renders as a glass panel with its own
@@ -47,12 +47,11 @@ export default function PlayingPanel({
       <span className="sr-only lg:not-sr-only lg:mb-4 lg:flex-shrink-0 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-widest lg:text-muted">
         Jetzt läuft
       </span>
-      {/* No overflow-hidden on the panel itself so the album's bass glow + scale
-          can spill past the edges; the backdrop + visualizer are clipped by
-          their own rounded wrappers instead. */}
+      {/* The visualizer is clipped by its own rounded wrapper while the panel
+          keeps the album's static aura visible beyond its bounds. */}
       <div
         ref={panelRef}
-        className="like-celebration-surface relative min-h-0 flex-1 will-change-[box-shadow] md:rounded-[2.25rem] md:border md:border-white/10 md:bg-white/[0.04] md:backdrop-blur-2xl"
+        className="like-celebration-surface relative min-h-0 flex-1 md:rounded-[2.25rem] md:border md:border-white/10 md:bg-white/[0.04] md:backdrop-blur-2xl"
       >
         {/* Panel-local backdrop, desktop only — the shell's ambient backdrop
             already covers the full-bleed mobile layout. */}
@@ -73,8 +72,7 @@ export default function PlayingPanel({
           </div>
         )}
 
-        {/* One full-panel stage drives the cover pulse, orbiting spectrum,
-            beat shockwaves, sparks, bloom, and the mirrored floor bars. */}
+        {/* A single capped canvas spectrum supplies restrained audio motion. */}
         <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden md:rounded-[2.25rem]">
           <FullscreenVisualizer
             isPlaying={isPlaying}
@@ -86,7 +84,7 @@ export default function PlayingPanel({
             rgb={palette?.rgb}
           />
         </div>
-        {/* Keep timestamps and transport controls crisp over the floor bars. */}
+        {/* Keep timestamps and transport controls crisp over the visualizer. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-36 bg-gradient-to-t from-background/80 via-background/25 to-transparent md:h-44 md:rounded-b-[2.25rem]"
@@ -96,7 +94,7 @@ export default function PlayingPanel({
           data-np-scroll
           className="relative z-10 flex h-full min-h-0 flex-col items-center gap-3 overflow-y-auto overscroll-contain no-scrollbar p-2 pb-16 md:gap-5 md:p-7 md:pb-24 md:[@media(min-height:600px)]:overflow-visible"
         >
-          {/* Album centerpiece with a bass-reactive aura + gradient frame */}
+          {/* Album centerpiece with a static cover-derived aura + gradient frame */}
           <div className="relative grid w-full min-h-28 flex-1 place-items-center">
             <div
               aria-hidden
@@ -105,7 +103,7 @@ export default function PlayingPanel({
             />
             <div
               ref={albumRef}
-              className="relative aspect-square h-full max-h-[min(46vh,20rem)] max-w-full rounded-[1.75rem] will-change-transform md:max-h-[min(42vh,15.5rem)]"
+              className="relative aspect-square h-full max-h-[min(46vh,20rem)] max-w-full rounded-[1.75rem] md:max-h-[min(42vh,15.5rem)]"
             >
               <div
                 aria-hidden

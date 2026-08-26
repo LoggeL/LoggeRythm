@@ -35,6 +35,7 @@ const decks = new Map<
     analysisGain: GainNode;
   }
 >();
+const pendingRelease = new Map<HTMLAudioElement, number>();
 
 function getCtor(): typeof AudioContext | null {
   if (typeof window === "undefined") return null;
@@ -51,6 +52,13 @@ function getCtor(): typeof AudioContext | null {
 export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null {
   const Ctor = getCtor();
   if (!Ctor) return analyser;
+  if (el) {
+    const releaseTimer = pendingRelease.get(el);
+    if (releaseTimer !== undefined) {
+      window.clearTimeout(releaseTimer);
+      pendingRelease.delete(el);
+    }
+  }
 
   if (!ctx) {
     try {
@@ -124,6 +132,37 @@ export function applyVolume(
   } else {
     el.volume = v;
   }
+}
+
+/**
+ * Disconnect a deck that is being permanently removed from the document.
+ * MediaElementAudioSourceNode retains its media element, so leaving the graph
+ * connected here would leak every PlayerBar mount. The deferred release lets a
+ * React Strict Mode effect re-setup retain the same one-shot media source.
+ */
+export function releaseAnalyser(el: HTMLAudioElement | null): void {
+  if (!el || !decks.has(el) || pendingRelease.has(el)) return;
+  const timer = window.setTimeout(() => {
+    pendingRelease.delete(el);
+    const deck = decks.get(el);
+    if (!deck) return;
+
+    deck.source.disconnect();
+    deck.outputGain.disconnect();
+    deck.analysisGain.disconnect();
+    decks.delete(el);
+
+    if (decks.size === 0 && ctx) {
+      analyser?.disconnect();
+      analyser = null;
+      const closing = ctx;
+      ctx = null;
+      closing.close().catch((error) => {
+        console.error("[player] failed to close AudioContext", error);
+      });
+    }
+  }, 0);
+  pendingRelease.set(el, timer);
 }
 
 // Human loudness perception is roughly logarithmic, so a linear slider feels

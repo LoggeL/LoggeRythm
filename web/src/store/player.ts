@@ -60,6 +60,18 @@ function fillOrigins(n: number, origin: QueueOrigin): QueueOrigin[] {
   return new Array(Math.max(0, n)).fill(origin);
 }
 
+function startTrack(queue: Track[], index: number, isPlaying = true) {
+  return {
+    index,
+    isPlaying,
+    currentTime: 0,
+    duration: queue[index]?.duration_sec || 0,
+    seekTo: null,
+    error: null,
+    isBuffering: false,
+  };
+}
+
 interface PlayerState {
   queue: Track[];
   origins: QueueOrigin[]; // parallel to queue: "manual" (primary) | "context" (secondary)
@@ -80,6 +92,9 @@ interface PlayerState {
   queueOpen: boolean;
   lyricsOpen: boolean;
   radioActive: boolean; // endless "song radio" — auto-extends the queue
+  // Changes on every explicit radio-mode transition, even when the boolean
+  // value is unchanged, so async station work can identify its owning session.
+  radioSession: number;
 
   // Sleep timer: pause playback at `sleepAt` (epoch ms), or after the current
   // track finishes when `sleepAfterTrack` is set. Both cleared once they fire.
@@ -127,9 +142,14 @@ interface PlayerState {
   _setCurrentTime: (t: number) => void;
   _setDuration: (d: number) => void;
   _onEnded: () => void;
-  // Advance to the next track during a crossfade WITHOUT resetting currentTime
-  // (the incoming deck is already playing, so its time is the source of truth).
-  _crossfadeAdvance: () => void;
+  // Atomically promote a crossfaded deck only if the queue still has the
+  // expected outgoing/incoming pair. Returns false for stale handoffs.
+  _crossfadeAdvance: (
+    outgoingId: string,
+    incomingId: string,
+    currentTime: number,
+    duration: number,
+  ) => boolean;
   _setBuffering: (b: boolean) => void;
   _setError: (msg: string | null) => void;
 
@@ -163,6 +183,7 @@ export const usePlayerStore = create<PlayerState>()(
       partyBridge: null,
 
       radioActive: false,
+      radioSession: 0,
 
       sleepAt: null,
       sleepAfterTrack: false,
@@ -178,10 +199,11 @@ export const usePlayerStore = create<PlayerState>()(
         const queue = tracks.map((track) => ({ ...track }));
         const origins = fillOrigins(queue.length, "context");
         set((s) => {
-          // Party frames arrive on every member/queue event; only reset the
-          // duration when the playing track actually changed, otherwise the
-          // audio element's accurate duration would be overwritten mid-song.
+          // Party frames arrive on every member/queue event. Preserve the
+          // active deck's clock only while the playing track is unchanged.
           const sameTrack =
+            index >= 0 &&
+            index < queue.length &&
             s.index === index &&
             String(s.queue[s.index]?.id ?? "") === String(queue[index]?.id ?? "");
           return {
@@ -189,8 +211,13 @@ export const usePlayerStore = create<PlayerState>()(
             origins,
             originalQueue: [...queue],
             originalOrigins: [...origins],
-            index,
-            ...(sameTrack ? {} : { duration: queue[index]?.duration_sec || 0 }),
+            ...(sameTrack
+              ? {}
+              : startTrack(
+                  queue,
+                  index,
+                  index >= 0 && index < queue.length && s.isPlaying,
+                )),
           };
         });
       },
@@ -204,7 +231,11 @@ export const usePlayerStore = create<PlayerState>()(
           }
           return patch;
         }),
-      setRadioActive: (v) => set({ radioActive: v }),
+      setRadioActive: (v) =>
+        set((s) => ({
+          radioActive: v,
+          radioSession: s.radioSession + 1,
+        })),
       appendToQueue: (tracks) => {
         if (!tracks.length) return;
         const { queue, origins, originalQueue, originalOrigins } = get();
@@ -232,11 +263,7 @@ export const usePlayerStore = create<PlayerState>()(
           originalQueue: [queueTrack],
           originalOrigins: ["context"],
           queueContext: null,
-          index: 0,
-          isPlaying: true,
-          currentTime: 0,
-          duration: track.duration_sec || 0,
-          error: null,
+          ...startTrack([queueTrack], 0),
           radioActive: false,
         });
       },
@@ -261,10 +288,7 @@ export const usePlayerStore = create<PlayerState>()(
         set({
           ...productQueue,
           queueContext: context ?? null,
-          isPlaying: true,
-          currentTime: 0,
-          duration: productQueue.queue[productQueue.index]?.duration_sec || 0,
-          error: null,
+          ...startTrack(productQueue.queue, productQueue.index),
           radioActive: false,
         });
       },
@@ -304,7 +328,6 @@ export const usePlayerStore = create<PlayerState>()(
         if (i < 0 || i >= get().queue.length) return;
         set(removeQueueItem(get(), i));
       },
-
       clearQueue: () => {
         // Party queues are shared/host-managed — don't clear from a member view.
         if (get().partyBridge) return;
@@ -315,10 +338,10 @@ export const usePlayerStore = create<PlayerState>()(
           set({
             queue: [],
             origins: [],
-            index: -1,
             originalQueue: [],
             originalOrigins: [],
-            isPlaying: false,
+            queueContext: null,
+            ...startTrack([], -1, false),
           });
         }
       },
@@ -350,11 +373,7 @@ export const usePlayerStore = create<PlayerState>()(
           i < state.index ? demoteOvertakenManualItems(state, i) : {};
         set({
           ...origins,
-          index: i,
-          currentTime: 0,
-          isPlaying: true,
-          duration: queue[i]?.duration_sec || 0,
-          error: null,
+          ...startTrack(queue, i),
         });
       },
 
@@ -385,7 +404,7 @@ export const usePlayerStore = create<PlayerState>()(
         } else if (repeat === "all" && queue.length) {
           get().jumpTo(0);
         } else {
-          set({ isPlaying: false, currentTime: 0 });
+          set({ isPlaying: false, currentTime: 0, seekTo: 0, isBuffering: false });
         }
       },
 
@@ -409,7 +428,15 @@ export const usePlayerStore = create<PlayerState>()(
         }
       },
 
-      seek: (t) => set({ seekTo: t, currentTime: t }),
+      seek: (t) => {
+        if (!Number.isFinite(t)) {
+          throw new RangeError(`Seek position must be finite; received ${t}.`);
+        }
+        const { index, duration } = get();
+        if (index < 0) return;
+        const target = Math.max(0, duration > 0 ? Math.min(t, duration) : t);
+        set({ seekTo: target, currentTime: target });
+      },
 
       setVolume: (v) => {
         const vol = Math.max(0, Math.min(1, v));
@@ -438,24 +465,48 @@ export const usePlayerStore = create<PlayerState>()(
 
       _setCurrentTime: (t) => set({ currentTime: t }),
       _setDuration: (d) => set({ duration: d }),
-      _crossfadeAdvance: () => {
+      _crossfadeAdvance: (outgoingId, incomingId, currentTime, duration) => {
         const { index, queue } = get();
-        if (index < 0 || index >= queue.length - 1) return;
+        if (
+          index < 0 ||
+          index >= queue.length - 1 ||
+          String(queue[index]?.id ?? "") !== outgoingId ||
+          String(queue[index + 1]?.id ?? "") !== incomingId
+        ) {
+          return false;
+        }
         pushRecent(queue[index + 1]);
         set({
           index: index + 1,
           isPlaying: true,
-          duration: queue[index + 1]?.duration_sec || 0,
+          currentTime: Number.isFinite(currentTime) ? currentTime : 0,
+          duration: Number.isFinite(duration)
+            ? duration
+            : queue[index + 1]?.duration_sec || 0,
+          seekTo: null,
           error: null,
+          isBuffering: false,
         });
+        return true;
       },
       _onEnded: () => {
         if (get().sleepAfterTrack) {
-          set({ sleepAfterTrack: false, isPlaying: false, currentTime: 0 });
+          set({
+            sleepAfterTrack: false,
+            isPlaying: false,
+            currentTime: 0,
+            seekTo: null,
+            isBuffering: false,
+          });
           return;
         }
         if (get().repeat === "one") {
-          set({ seekTo: 0, currentTime: 0, isPlaying: true });
+          set({
+            seekTo: 0,
+            currentTime: 0,
+            isPlaying: true,
+            isBuffering: false,
+          });
           return;
         }
         get().next();
