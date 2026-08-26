@@ -10,15 +10,7 @@
 // or a bumped override then resolves them and the stale entry is reported.
 import { execFileSync } from 'node:child_process';
 
-const ALLOWLISTED_ADVISORIES = new Map([
-  // image-size DoS via crafted ICNS/JXL/HEIF images. No patched release
-  // exists (<= 2.0.2 i.e. every version is flagged; GitHub lists no
-  // first_patched_version). Reached only through metro's build-time asset
-  // pipeline on first-party image assets in this repo — image-size is never
-  // shipped in the APK and never parses user-supplied files at runtime.
-  ['GHSA-w3rx-r6r6-pgpr', 'image-size'],
-  ['GHSA-5p2g-fcmc-qvqq', 'image-size'],
-]);
+const ALLOWLISTED_ADVISORIES = new Map();
 
 const FAIL_SEVERITIES = new Set(['moderate', 'high', 'critical']);
 
@@ -77,7 +69,11 @@ if (offending.size > 0) {
   process.exit(1);
 }
 
-console.log(
-  `npm audit clean apart from ${seenAllowlisted.size} reviewed unfixable advisories ` +
-    `(${[...seenAllowlisted].join(', ')})`,
-);
+if (seenAllowlisted.size === 0) {
+  console.log('npm audit found no moderate+ advisories in production dependency paths');
+} else {
+  console.log(
+    `npm audit clean apart from ${seenAllowlisted.size} reviewed unfixable advisories ` +
+      `(${[...seenAllowlisted].join(', ')})`,
+  );
+}
