@@ -1,6 +1,6 @@
 {
   "name": "mobile",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "main": "index.ts",
   "dependencies": {
     "@loggerythm/player-native": "file:modules/loggerythm-player",
