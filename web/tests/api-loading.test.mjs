@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { api, ApiError } from "../src/lib/api.ts";
+
+test("JSON endpoints reject HTML and malformed success responses", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response("<html>Bad gateway</html>", { headers: { "content-type": "text/html" } }));
+  await assert.rejects(api.me(), /JSON erwartet/);
+  globalThis.fetch.mock.mockImplementation(async () => new Response("{", { headers: { "content-type": "application/json" } }));
+  await assert.rejects(api.me(), /ungültige oder leere JSON/);
+});
+
+test("HTTP failures retain status and server detail", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ detail: "Session expired" }, { status: 401 }));
+  await assert.rejects(api.me(), (error) => error instanceof ApiError && error.status === 401 && error.message.includes("Session expired"));
+});
+
+test("successful JSON and bodyless mutations still work", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ id: "1" }));
+  assert.deepEqual(await api.me(), { id: "1" });
+  globalThis.fetch.mock.mockImplementation(async () => new Response(null, { status: 204 }));
+  assert.equal(await api.logout(), undefined);
+});
+
+test("stalled connections time out and abort the network request", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let signal;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    signal = options.signal;
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+  });
+  const request = api.me();
+  const rejection = assert.rejects(request, /Zeitüberschreitung nach 30 Sekunden/);
+  t.mock.timers.tick(30_000);
+  await rejection;
+  assert.equal(signal.aborted, true);
+});
+
+test("deadline covers a stalled response body after headers arrive", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let bodyStarted;
+  const started = new Promise((resolve) => { bodyStarted = resolve; });
+  t.mock.method(globalThis, "fetch", async (_url, { signal }) => ({
+    text: () => {
+      bodyStarted();
+      return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+    },
+  }));
+  const rejection = assert.rejects(api.me(), /Zeitüberschreitung/);
+  await started;
+  t.mock.timers.tick(30_000);
+  await rejection;
+});
+
+test("search cancellation reaches fetch and is not converted to a network failure", async (t) => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason));
+  }));
+  const rejection = assert.rejects(api.search("old query", "track", controller.signal), { name: "AbortError" });
+  controller.abort();
+  await rejection;
+});

@@ -38,67 +38,82 @@ class ApiError extends Error {
   }
 }
 
+type ApiRequestOptions = RequestInit & { timeoutMs?: number };
+
 async function req<T>(
   path: string,
-  options: RequestInit = {},
+  { timeoutMs = 30_000, ...options }: ApiRequestOptions = {},
 ): Promise<T> {
-  const isForm =
-    typeof FormData !== "undefined" && options.body instanceof FormData;
-  const res = await fetch(`${BASE}${path}`, {
-    credentials: "include",
-    headers: {
-      ...(options.body && !isForm ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
-    ...options,
-  });
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  if (options.signal?.aborted) abortFromCaller();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
-  if (!res.ok) {
-    let message = res.statusText;
-    let body: unknown;
+  try {
+    const headers = new Headers(options.headers);
+    const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
+    if (options.body && !isForm && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    const res = await fetch(`${BASE}${path}`, {
+      ...options,
+      credentials: "include",
+      headers,
+      signal: controller.signal,
+    });
+    // Keep the deadline active until the body has arrived, not just the headers.
+    const text = await res.text();
+    if (!res.ok) {
+      let body: unknown = text;
+      let message = text || res.statusText || `HTTP ${res.status}`;
+      if (res.headers.get("content-type")?.includes("application/json")) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          throw new ApiError(res.status, `API ${path}: HTTP ${res.status} mit ungültiger JSON-Fehlerantwort`, text);
+        }
+        if (body && typeof body === "object") {
+          if ("detail" in body && typeof body.detail === "string") message = body.detail;
+          else if ("message" in body && typeof body.message === "string") message = body.message;
+        }
+      }
+      throw new ApiError(res.status, `API ${path}: ${message}`, body);
+    }
+    if (res.status === 204) return undefined as T;
+    if (!res.headers.get("content-type")?.includes("application/json")) {
+      throw new ApiError(res.status, `API ${path}: JSON erwartet, aber ${res.headers.get("content-type") || "kein Content-Type"} erhalten.`, text);
+    }
     try {
-      const data = await res.json();
-      body = data;
-      if (data && typeof data.detail === "string") message = data.detail;
-      else if (data && typeof data.message === "string") message = data.message;
+      return JSON.parse(text) as T;
     } catch {
-      // ignore non-json error bodies
+      throw new ApiError(res.status, `API ${path}: ungültige oder leere JSON-Antwort.`, text);
     }
-    // Surface server-side stack traces (sent in dev) to the browser console so
-    // they are not lost — the toast/UI still shows the concise message.
-    if (
-      body &&
-      typeof body === "object" &&
-      "traceback" in body &&
-      Array.isArray((body as { traceback: unknown }).traceback)
-    ) {
-      console.error(
-        `API ${res.status} ${path}\n` +
-          (body as { traceback: string[] }).traceback.join("\n"),
-      );
+  } catch (error) {
+    if (timedOut) {
+      throw new ApiError(0, `API ${path}: Zeitüberschreitung nach ${timeoutMs / 1000} Sekunden.`);
     }
-    throw new ApiError(
-      res.status,
-      message || `Request failed (${res.status})`,
-      body,
-    );
+    if (options.signal?.aborted) throw error;
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(0, `API ${path}: Netzwerkfehler (${error instanceof Error ? error.message : String(error)}).`);
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abortFromCaller);
   }
-
-  if (res.status === 204) return undefined as T;
-
-  const ct = res.headers.get("content-type") || "";
-  if (!ct.includes("application/json")) return undefined as T;
-  return (await res.json()) as T;
 }
 
 export const api = {
   // Discovery / catalog
-  search: (q: string, type: "track" | "album" = "track") =>
-    req<Track[]>(`/search?q=${encodeURIComponent(q)}&type=${type}`),
-  searchArtists: (q: string) =>
-    req<ArtistSummary[]>(`/search/artist?q=${encodeURIComponent(q)}`),
-  searchPlaylists: (q: string) =>
-    req<PlaylistSearchResult[]>(`/search/playlist?q=${encodeURIComponent(q)}`),
+  search: (q: string, type: "track" | "album" = "track", signal?: AbortSignal) =>
+    req<Track[]>(`/search?q=${encodeURIComponent(q)}&type=${type}`, { signal }),
+  searchArtists: (q: string, signal?: AbortSignal) =>
+    req<ArtistSummary[]>(`/search/artist?q=${encodeURIComponent(q)}`, { signal }),
+  searchPlaylists: (q: string, signal?: AbortSignal) =>
+    req<PlaylistSearchResult[]>(`/search/playlist?q=${encodeURIComponent(q)}`, { signal }),
   charts: () => req<Track[]>(`/charts`),
   // Home / discovery shelves
   homeMixes: () => req<HomeShelf[]>(`/home/mixes`),
@@ -251,7 +266,7 @@ export const api = {
 
   // External link resolution (Spotify -> Deezer-playable)
   resolve: (url: string) =>
-    req<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`),
+    req<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`, { timeoutMs: 180_000 }),
 
   // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached server-side)
   lyrics: (artist: string, title: string, deezerId?: string) =>
@@ -259,6 +274,7 @@ export const api = {
       `/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(
         title,
       )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}`,
+      { timeoutMs: 300_000 },
     ),
 
   // Deezer playlist (public) → playable tracks
@@ -287,6 +303,7 @@ export const api = {
   preloadTrack: (deezerId: string) =>
     req<void>(`/tracks/${encodeURIComponent(deezerId)}/preload`, {
       method: "POST",
+      timeoutMs: 180_000,
     }),
 
   // Batched Last.fm play counts → { [trackId]: { plays, listeners } }

@@ -29,9 +29,9 @@ export default function ArtistSongSearch({
     return () => clearTimeout(t);
   }, [input]);
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isError, error, refetch } = useQuery({
     queryKey: ["artist-song-search", artistId, query],
-    queryFn: () => api.search(`artist:"${artistName}" track:"${query}"`),
+    queryFn: ({ signal }) => api.search(`artist:"${artistName}" track:"${query}"`, "track", signal),
     enabled: query.length > 0,
     staleTime: 5 * 60_000,
   });
@@ -63,11 +63,17 @@ export default function ArtistSongSearch({
         />
       </div>
 
+      {query.length > 0 && isError && (
+        <div role="alert" className="mb-4 text-red-300">
+          Songs konnten nicht geladen werden: {error.message}
+          <button type="button" className="ml-3 underline" disabled={isFetching} onClick={() => void refetch()}>Erneut versuchen</button>
+        </div>
+      )}
       {query.length === 0 ? null : isFetching && results.length === 0 ? (
         <RowListSkeleton />
       ) : results.length > 0 ? (
         <PopularTrackTable tracks={results} context={artistName} />
-      ) : (
+      ) : isError ? null : (
         <p className="text-sm text-muted px-1">
           Keine Songs für &bdquo;{query}&ldquo; gefunden.
         </p>

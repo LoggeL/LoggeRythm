@@ -23,7 +23,7 @@ export default function AppShell({
 }) {
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
-  const { data: me, isPending, isError, error } = useMe();
+  const { data: me, isPending, isError, error, refetch, isFetching } = useMe();
 
   // Reset scroll position on route change.
   useEffect(() => {
@@ -54,7 +54,19 @@ export default function AppShell({
     );
   }
 
-  if (isError) throw error;
+  if (isError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 bg-background p-6 text-center">
+        <div role="alert">
+          <h1 className="text-xl font-bold mb-2">Sitzung konnte nicht geladen werden</h1>
+          <p className="text-red-300">{error.message}</p>
+        </div>
+        <button type="button" disabled={isFetching} onClick={() => void refetch()} className="rounded-full bg-accent px-5 py-2 text-white disabled:opacity-50">
+          {isFetching ? "Lädt…" : "Erneut versuchen"}
+        </button>
+      </div>
+    );
+  }
 
   // Still resolving the session.
   if (isPending && me === undefined) {

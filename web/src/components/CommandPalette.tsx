@@ -74,12 +74,12 @@ export default function CommandPalette() {
 
   const tracks = useQuery<Track[]>({
     queryKey: ["cmdk-tracks", debounced],
-    queryFn: () => api.search(debounced, "track"),
+    queryFn: ({ signal }) => api.search(debounced, "track", signal),
     enabled: open && debounced.length > 1,
   });
   const artists = useQuery<ArtistSummary[]>({
     queryKey: ["cmdk-artists", debounced],
-    queryFn: () => api.searchArtists(debounced),
+    queryFn: ({ signal }) => api.searchArtists(debounced, signal),
     enabled: open && debounced.length > 1,
   });
 
@@ -153,13 +153,22 @@ export default function CommandPalette() {
               Tippe, um zu suchen.
             </p>
           )}
-          {debounced.length > 1 && rows.length === 0 && (
+          {debounced.length > 1 && !tracks.isError && !artists.isError && rows.length === 0 && (
             <p className="px-4 py-6 text-sm text-muted text-center">
               {tracks.isLoading || artists.isLoading
                 ? "Sucht…"
                 : "Keine Treffer."}
             </p>
           )}
+          {debounced.length > 1 && [
+            { label: "Titel", result: tracks },
+            { label: "Künstler", result: artists },
+          ].filter(({ result }) => result.isError).map(({ label, result }) => (
+            <div key={label} role="alert" className="px-4 py-3 text-sm text-red-300">
+              {label} konnten nicht geladen werden: {result.error?.message}
+              <button type="button" className="ml-3 underline" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
+            </div>
+          ))}
           {rows.map((row, i) => {
             const active = i === sel;
             const key = row.kind === "track" ? `t-${row.track.id}` : `a-${row.artist.id}`;

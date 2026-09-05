@@ -89,22 +89,22 @@ export default function SearchPage() {
 
   const tracksQ = useQuery<Track[]>({
     queryKey: ["search", "track", query],
-    queryFn: () => api.search(query, "track"),
+    queryFn: ({ signal }) => api.search(query, "track", signal),
     enabled: enabled && wantTracks,
   });
   const albumsQ = useQuery<Track[]>({
     queryKey: ["search", "album", query],
-    queryFn: () => api.search(query, "album"),
+    queryFn: ({ signal }) => api.search(query, "album", signal),
     enabled: enabled && wantAlbums,
   });
   const artistsQ = useQuery<ArtistSummary[]>({
     queryKey: ["search", "artist", query],
-    queryFn: () => api.searchArtists(query),
+    queryFn: ({ signal }) => api.searchArtists(query, signal),
     enabled: enabled && wantArtists,
   });
   const playlistsQ = useQuery<PlaylistSearchResult[]>({
     queryKey: ["search", "playlist", query],
-    queryFn: () => api.searchPlaylists(query),
+    queryFn: ({ signal }) => api.searchPlaylists(query, signal),
     enabled: enabled && wantPlaylists,
   });
   // Browse-by-genre tiles shown on the empty search landing.
@@ -133,13 +133,16 @@ export default function SearchPage() {
     (wantAlbums && albumsQ.isLoading) ||
     (wantPlaylists && playlistsQ.isLoading);
 
-  const nothing =
-    enabled &&
-    !loading &&
-    tracks.length === 0 &&
-    albums.length === 0 &&
-    artists.length === 0 &&
-    playlists.length === 0;
+  const activeQueries = [
+    ...(wantTracks ? [{ label: "Titel", result: tracksQ }] : []),
+    ...(wantAlbums ? [{ label: "Alben", result: albumsQ }] : []),
+    ...(wantArtists ? [{ label: "Künstler", result: artistsQ }] : []),
+    ...(wantPlaylists ? [{ label: "Playlists", result: playlistsQ }] : []),
+  ];
+  const failedQueries = activeQueries.filter(({ result }) => result.isError);
+  const nothing = enabled && activeQueries.every(
+    ({ result }) => result.isSuccess && result.data.length === 0,
+  );
 
   return (
     <div onBlur={() => commitRecent(query)}>
@@ -284,7 +287,13 @@ export default function SearchPage() {
           <section>
             <h2 className="text-xl font-bold mb-4">Zum Stöbern</h2>
             {genresQ.isLoading && <CardGridSkeleton count={12} />}
-            {!genresQ.isLoading && (genresQ.data?.length ?? 0) === 0 && (
+            {genresQ.isError && (
+              <div role="alert" className="mb-4 text-red-300">
+                Genres konnten nicht geladen werden: {genresQ.error.message}
+                <button type="button" className="ml-3 underline" disabled={genresQ.isFetching} onClick={() => void genresQ.refetch()}>Erneut versuchen</button>
+              </div>
+            )}
+            {genresQ.isSuccess && genresQ.data.length === 0 && (
               <p className="text-muted">Wonach suchst du?</p>
             )}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -313,6 +322,12 @@ export default function SearchPage() {
         </div>
       )}
 
+      {enabled && failedQueries.map(({ label, result }) => (
+        <div key={label} role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          {label} konnten nicht geladen werden: {result.error?.message}
+          <button type="button" className="ml-3 underline" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
+        </div>
+      ))}
       {loading && <RowListSkeleton />}
       {nothing && <p className="text-muted">Keine Ergebnisse für „{query}“.</p>}
 
