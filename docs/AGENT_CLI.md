@@ -4,6 +4,10 @@ Das CLI nutzt die bestehende REST-API. Sein Schwerpunkt liegt auf Serverfunktion
 und Downloads. Es liefert JSON auf stdout und strukturierte Fehler auf stderr mit
 einem Exit-Code ungleich null. `--help` zeigt die verfügbaren Argumente.
 
+Die CLI ist auch separat testbar: `python -m pip install './cli[test]'` und
+`python -m pytest cli/tests -q`. Die API-Tests benötigen `api/requirements-test.txt`;
+die Produktionsinstallation nutzt weiterhin `api/requirements.txt`.
+
 ## Installation und Anmeldung
 
 Im Repository, mit Python 3.10 oder neuer:

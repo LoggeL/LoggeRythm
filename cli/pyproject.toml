@@ -9,6 +9,9 @@ description = "Agent-friendly command-line client for LoggeRythm"
 requires-python = ">=3.10"
 dependencies = ["requests>=2.31,<3", "keyring>=24,<27"]
 
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+
 [project.scripts]
 loggerythm = "loggerythm_cli.main:main"
 
