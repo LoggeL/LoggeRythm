@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 import unittest
 from unittest import mock
 
@@ -168,6 +169,62 @@ class LyricsVariantTests(unittest.TestCase):
         self.assertTrue(body["cached"])
         self.assertFalse(body["ai_generated"])
         self.assertEqual(body["lines"], [{"t": 1.0, "text": "hello"}])
+
+    def _assert_database_does_not_block_api(self, operation: str, variant: str) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        original = getattr(Session, operation)
+
+        def delayed(session, *args, **kwargs):
+            started.set()
+            if not release.wait(2):
+                raise AssertionError(f"Lyrics {operation} blocked the API event loop")
+            return original(session, *args, **kwargs)
+
+        @self.api.get("/ping")
+        async def ping():
+            return {"ok": True}
+
+        async def requests():
+            task = asyncio.create_task(_asgi_get(
+                self.api, "/api/lyrics", f"artist=a&title=b&deezer_id=42&variant={variant}",
+            ))
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 1))
+                self.assertFalse(task.done())
+                status, body = await asyncio.wait_for(_asgi_get(self.api, "/ping", ""), 0.5)
+                self.assertEqual(status, 200)
+                self.assertEqual(json.loads(body), {"ok": True})
+                self.assertFalse(task.done())
+            finally:
+                release.set()
+                status, _ = await task
+            self.assertEqual(status, 200)
+
+        with (
+            mock.patch.object(Session, operation, delayed),
+            mock.patch.object(groq, "configured", return_value=True),
+            mock.patch.object(lyrics_router, "_fetch", return_value={
+                "lines": [{"t": 1.0, "text": "provider"}],
+                "synced": True, "source": "lrclib", "ai_generated": False,
+            }),
+            mock.patch.object(lyrics_router, "_groq_transcription", return_value=[
+                {"t": 1.0, "text": "AI"},
+            ]),
+        ):
+            asyncio.run(requests())
+
+    def test_slow_cached_read_does_not_block_other_api_requests(self) -> None:
+        self._seed(whisper_lines_json=json.dumps([{"t": 3.0, "text": "whisper"}]))
+        for variant in ("default", "ai"):
+            with self.subTest(variant=variant):
+                self._assert_database_does_not_block_api("get", variant)
+
+    def test_slow_persistence_does_not_block_other_api_requests(self) -> None:
+        # Default writes provider lyrics, then AI writes the separate variant.
+        for variant in ("default", "ai"):
+            with self.subTest(variant=variant):
+                self._assert_database_does_not_block_api("commit", variant)
 
 
 if __name__ == "__main__":

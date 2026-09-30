@@ -462,6 +462,12 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  let rejectPending!: (error: Error) => void;
+  const aborted = new Promise<never>((_, reject) => {
+    rejectPending = reject;
+  });
+  const abortPending = () => rejectPending(new Error('Request aborted'));
+  controller.signal.addEventListener('abort', abortPending, { once: true });
   const abortFromCaller = () => controller.abort();
   opts.signal?.addEventListener('abort', abortFromCaller, { once: true });
   // The caller's signal may have aborted while ensureLoaded/compatibility
@@ -469,103 +475,111 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
   if (opts.signal?.aborted) controller.abort();
 
   let res: Response;
+  let text: string;
   try {
-    res = await fetch(url, {
-      method,
-      headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-      signal: controller.signal,
-      // The JWT is managed explicitly so React Native's native cookie jar cannot
-      // retain or resurrect a second, competing login.
-      credentials: 'omit',
-      // Never forward credentials or account identifiers through an HTTP
-      // redirect chosen by a server.
-      redirect: 'error',
-    });
-  } catch (error) {
-    if (timedOut) {
-      throw new ApiError(0, '', `${method} ${url} timed out after ${timeoutMs} ms`);
+    try {
+      res = await Promise.race([fetch(url, {
+        method,
+        headers,
+        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        signal: controller.signal,
+        // The JWT is managed explicitly so React Native's native cookie jar cannot
+        // retain or resurrect a second, competing login.
+        credentials: 'omit',
+        // Never forward credentials or account identifiers through an HTTP
+        // redirect chosen by a server.
+        redirect: 'error',
+      }), aborted]);
+      text = await Promise.race([res.text(), aborted]);
+    } catch (error) {
+      if (timedOut) {
+        throw new ApiError(0, '', `${method} ${url} timed out after ${timeoutMs} ms`);
+      }
+      if (opts.signal?.aborted) {
+        throw new ApiError(0, '', `${method} ${url} was cancelled`);
+      }
+      throw new ApiError(0, '', `Network request ${method} ${url} failed: ${(error as Error).message}`);
     }
-    if (opts.signal?.aborted) {
-      throw new ApiError(0, '', `${method} ${url} was cancelled`);
-    }
-    throw new ApiError(0, '', `Network request ${method} ${url} failed: ${(error as Error).message}`);
+
+    return await decodeResponse();
   } finally {
     clearTimeout(timeout);
+    controller.signal.removeEventListener('abort', abortPending);
     opts.signal?.removeEventListener('abort', abortFromCaller);
   }
 
-  const text = await res.text();
-  if (!res.ok) {
-    let invalidationAuthority: SessionInvalidationAuthority | null = null;
-    if (res.status === 401 && !opts.noAuth && requestSession !== null) {
-      invalidationAuthority = await invalidateSession(requestAuthority);
+  async function decodeResponse(): Promise<T> {
+    if (!res.ok) {
+      let invalidationAuthority: SessionInvalidationAuthority | null = null;
+      if (res.status === 401 && !opts.noAuth && requestSession !== null) {
+        invalidationAuthority = await invalidateSession(requestAuthority);
+      }
+      const error = new ApiError(
+        res.status,
+        text,
+        `${method} ${path} returned ${res.status}: ${errorDetail(text, res.statusText)}`,
+      );
+      if (invalidationAuthority !== null) {
+        apiErrorInvalidationAuthorities.set(error, invalidationAuthority);
+      }
+      throw error;
     }
-    const error = new ApiError(
-      res.status,
-      text,
-      `${method} ${path} returned ${res.status}: ${errorDetail(text, res.statusText)}`,
-    );
-    if (invalidationAuthority !== null) {
-      apiErrorInvalidationAuthorities.set(error, invalidationAuthority);
+
+    if (opts.successStatuses !== undefined && !opts.successStatuses.includes(res.status)) {
+      throw new ApiError(
+        res.status,
+        text,
+        `${method} ${path} returned undocumented success status ${res.status}; expected ${
+          opts.successStatuses.join(', ')
+        }`,
+      );
     }
-    throw error;
-  }
 
-  if (opts.successStatuses !== undefined && !opts.successStatuses.includes(res.status)) {
-    throw new ApiError(
-      res.status,
-      text,
-      `${method} ${path} returned undocumented success status ${res.status}; expected ${
-        opts.successStatuses.join(', ')
-      }`,
-    );
-  }
-
-  if (res.status === 204) {
-    if (text.length > 0) {
-      throw new ApiError(res.status, text, `${method} ${path} returned a body with HTTP 204`);
+    if (res.status === 204) {
+      if (text.length > 0) {
+        throw new ApiError(res.status, text, `${method} ${path} returned a body with HTTP 204`);
+      }
+      return undefined as T;
     }
-    return undefined as T;
-  }
-  if (text.length === 0) {
-    throw new ApiError(res.status, text, `${method} ${path} returned an empty success response`);
-  }
+    if (text.length === 0) {
+      throw new ApiError(res.status, text, `${method} ${path} returned an empty success response`);
+    }
 
-  let json: unknown;
-  try {
-    json = JSON.parse(text) as unknown;
-  } catch (error) {
-    throw new ApiError(
-      res.status,
-      text,
-      `${method} ${path} returned invalid JSON: ${(error as Error).message}`,
-    );
-  }
-
-  let parsed: T;
-  try {
-    parsed = opts.decode ? opts.decode(json) : (json as T);
-  } catch (error) {
-    throw new ApiError(
-      res.status,
-      text,
-      `${method} ${path} returned an invalid response shape: ${(error as Error).message}`,
-    );
-  }
-
-  if (opts.captureSession) {
-    let next: StoredSession;
+    let json: unknown;
     try {
-      next = parseSessionCookie(res.headers.get('set-cookie'), url);
+      json = JSON.parse(text) as unknown;
     } catch (error) {
-      throw new ApiError(res.status, text, (error as Error).message);
+      throw new ApiError(
+        res.status,
+        text,
+        `${method} ${path} returned invalid JSON: ${(error as Error).message}`,
+      );
     }
-    if (!(await storeSession(next, requestAuthority))) {
-      throw new Error('Authentication response was invalidated by a newer session transition');
+
+    let parsed: T;
+    try {
+      parsed = opts.decode ? opts.decode(json) : (json as T);
+    } catch (error) {
+      throw new ApiError(
+        res.status,
+        text,
+        `${method} ${path} returned an invalid response shape: ${(error as Error).message}`,
+      );
     }
+
+    if (opts.captureSession) {
+      let next: StoredSession;
+      try {
+        next = parseSessionCookie(res.headers.get('set-cookie'), url);
+      } catch (error) {
+        throw new ApiError(res.status, text, (error as Error).message);
+      }
+      if (!(await storeSession(next, requestAuthority))) {
+        throw new Error('Authentication response was invalidated by a newer session transition');
+      }
+    }
+    return parsed;
   }
-  return parsed;
 }
 
 /** An authenticated Range-capable stream source for the Media3 player. */

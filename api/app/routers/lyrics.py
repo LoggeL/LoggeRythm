@@ -9,7 +9,6 @@ import re
 import requests
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from starlette.concurrency import run_in_threadpool
 
 from ..auth import get_current_user
 from ..db.models import StoredLyrics, User
@@ -118,9 +117,9 @@ def _should_persist_lyrics(result: dict) -> bool:
     return bool(result.get("lines")) or result.get("source") == groq.LYRICS_SOURCE
 
 
-async def _transcribe_or_502(deezer_id: str) -> list[dict]:
+def _transcribe_or_502(deezer_id: str) -> list[dict]:
     try:
-        return await run_in_threadpool(_groq_transcription, deezer_id)
+        return _groq_transcription(deezer_id)
     except Exception as exc:  # noqa: BLE001 - preserve materialize/Groq context
         print(
             f"Groq lyrics transcription failed for deezer_id={deezer_id}: "
@@ -132,7 +131,7 @@ async def _transcribe_or_502(deezer_id: str) -> list[dict]:
         ) from exc
 
 
-async def _ai_variant(deezer_id: str, db: Session) -> dict:
+def _ai_variant(deezer_id: str, db: Session) -> dict:
     """Force the Whisper transcription, even when provider lyrics exist.
 
     Cached next to the primary result (``whisper_*`` columns) unless the
@@ -164,7 +163,7 @@ async def _ai_variant(deezer_id: str, db: Session) -> dict:
             "(GROQ_API_KEY missing).",
         )
 
-    lines = await _transcribe_or_502(deezer_id)
+    lines = _transcribe_or_502(deezer_id)
     lines_json = json.dumps(lines, ensure_ascii=False)
     if row is None or row.ai_generated:
         # No provider lyrics stored (or a legacy AI row needing refresh): the
@@ -191,7 +190,7 @@ async def _ai_variant(deezer_id: str, db: Session) -> dict:
 
 
 @router.get("/lyrics")
-async def lyrics(
+def lyrics(
     artist: str = Query(..., min_length=1),
     title: str = Query(..., min_length=1),
     deezer_id: str | None = Query(default=None),
@@ -199,6 +198,9 @@ async def lyrics(
     _user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
+    # Database access and providers are synchronous. FastAPI runs this entire
+    # handler in its worker pool so a slow DB read/commit cannot block other
+    # requests on the event loop.
     if deezer_id is not None and not deezer_id.isdigit():
         raise HTTPException(status_code=400, detail="deezer_id must be numeric")
 
@@ -211,7 +213,7 @@ async def lyrics(
                 status_code=400,
                 detail="variant=ai requires deezer_id.",
             )
-        return await _ai_variant(deezer_id, db)
+        return _ai_variant(deezer_id, db)
 
 
     # Served from permanent storage if we've fetched this track before.
@@ -226,10 +228,10 @@ async def lyrics(
                 "cached": True,
             }
 
-    result = await run_in_threadpool(_fetch, artist, title)
+    result = _fetch(artist, title)
 
     if deezer_id and not result.get("lines") and groq.configured():
-        lines = await _transcribe_or_502(deezer_id)
+        lines = _transcribe_or_502(deezer_id)
         result = {
             "lines": lines,
             "synced": False,

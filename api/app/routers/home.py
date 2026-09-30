@@ -11,7 +11,7 @@ from __future__ import annotations
 import random
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -25,6 +25,7 @@ from ..db.session import get_db
 from ..schemas.track import Track
 from ..services import deezer_client as dc
 from ..services import recommend
+from .errors import to_http
 
 router = APIRouter(prefix="/api/home", tags=["home"])
 
@@ -63,11 +64,20 @@ def _cover_of(tracks: list[dict]) -> str:
 
 
 def _chart_tracks(genre_id: int) -> list[dict]:
-    try:
-        data = dc._public_get(f"/chart/{genre_id}")
-    except dc.DeezerClientError:
-        return []
-    tracks = (data.get("tracks") or {}).get("data") or []
+    data = dc._public_get(f"/chart/{genre_id}")
+    if not isinstance(data, dict):
+        raise dc.DeezerClientError(f"Chart {genre_id} returned a non-object response")
+    track_section = data.get("tracks")
+    if not isinstance(track_section, dict):
+        raise dc.DeezerClientError(f"Chart {genre_id} has no valid tracks object")
+    tracks = track_section.get("data")
+    if not isinstance(tracks, list):
+        raise dc.DeezerClientError(f"Chart {genre_id} has no valid tracks.data list")
+    for index, track in enumerate(tracks):
+        if not isinstance(track, dict):
+            raise dc.DeezerClientError(
+                f"Chart {genre_id} has a non-object track at index {index}"
+            )
     return dc.normalize_public_tracks(tracks)
 
 
@@ -260,9 +270,37 @@ def release_radar(
 
 @router.get("/charts-collections", response_model=list[Shelf])
 def charts_collections() -> list[Shelf]:
+    charts = _CHART_COLLECTIONS
+    if not charts:
+        raise RuntimeError("No chart collections are configured")
+    results: dict[int, list[dict]] = {}
+    failures: dict[int, Exception] = {}
+    with ThreadPoolExecutor(max_workers=min(5, len(charts))) as pool:
+        futures = {
+            pool.submit(_chart_tracks, int(chart["id"])): index
+            for index, chart in enumerate(charts)
+        }
+        for future in as_completed(futures):
+            index = futures[future]
+            try:
+                results[index] = future.result()
+            except Exception as error:
+                failures[index] = error
+
+    if failures:
+        details = "; ".join(
+            f"chart {charts[index]['id']}: {failures[index]}"
+            for index in sorted(failures)
+        )
+        error = dc.DeezerClientError(
+            f"Chart collections failed for {len(failures)} of {len(charts)} charts: "
+            f"{details}"
+        )
+        raise to_http(error) from failures[min(failures)]
+
     shelves: list[Shelf] = []
-    for c in _CHART_COLLECTIONS:
-        tracks = _chart_tracks(int(c["id"]))
+    for index, c in enumerate(charts):
+        tracks = results[index]
         if not tracks:
             continue
         shelves.append(
@@ -322,7 +360,9 @@ def because_you_listened(
 # changes slowly — cache each user's result in-process for 1h so repeated home
 # loads (and multiple tabs) don't recompute it every time.
 _MIXES_TTL_SEC = 3600
+_MIXES_CACHE_MAX = 256
 _mixes_cache: dict[str, tuple[float, list[Shelf]]] = {}
+_mixes_inflight: dict[str, Future[list[Shelf]]] = {}
 _mixes_lock = threading.Lock()
 
 
@@ -332,16 +372,43 @@ def mixes(
     db: Session = Depends(get_db),
 ) -> list[Shelf]:
     cache_key = str(user.id) if user is not None else "anon"
-    now = time.monotonic()
     with _mixes_lock:
         hit = _mixes_cache.get(cache_key)
-        if hit is not None and now - hit[0] < _MIXES_TTL_SEC:
+        if hit is not None and time.monotonic() - hit[0] < _MIXES_TTL_SEC:
             return hit[1]
+        pending = _mixes_inflight.get(cache_key)
+        if pending is None:
+            pending = Future()
+            _mixes_inflight[cache_key] = pending
+            leader = True
+        else:
+            leader = False
 
-    shelves = _build_mixes(user, db)
+    if not leader:
+        return pending.result()
+
+    try:
+        shelves = _build_mixes(user, db)
+    except BaseException as error:
+        with _mixes_lock:
+            pending.set_exception(error)
+            del _mixes_inflight[cache_key]
+        raise
 
     with _mixes_lock:
-        _mixes_cache[cache_key] = (now, shelves)
+        completed_at = time.monotonic()
+        _mixes_cache[cache_key] = (completed_at, shelves)
+        expired = [
+            key for key, (created_at, _) in _mixes_cache.items()
+            if completed_at - created_at >= _MIXES_TTL_SEC
+        ]
+        for key in expired:
+            del _mixes_cache[key]
+        if len(_mixes_cache) > _MIXES_CACHE_MAX:
+            oldest = min(_mixes_cache, key=lambda key: _mixes_cache[key][0])
+            del _mixes_cache[oldest]
+        pending.set_result(shelves)
+        del _mixes_inflight[cache_key]
     return shelves
 
 

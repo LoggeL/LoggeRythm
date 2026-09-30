@@ -60,3 +60,16 @@ test("search cancellation reaches fetch and is not converted to a network failur
   controller.abort();
   await rejection;
 });
+
+test("AI lyrics retain both the variant query and the transcription deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let requestedUrl;
+  t.mock.method(globalThis, "fetch", async (url, { signal }) => {
+    requestedUrl = url;
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+  });
+  const rejection = assert.rejects(api.lyrics("A & B", "Song", "42", "ai"), /Zeitüberschreitung nach 300 Sekunden/);
+  assert.equal(requestedUrl, "/api/lyrics?artist=A%20%26%20B&title=Song&deezer_id=42&variant=ai");
+  t.mock.timers.tick(300_000);
+  await rejection;
+});
