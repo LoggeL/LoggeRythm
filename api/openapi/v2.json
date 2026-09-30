@@ -3350,6 +3350,17 @@
               ],
               "title": "Deezer Id"
             }
+          },
+          {
+            "in": "query",
+            "name": "variant",
+            "required": false,
+            "schema": {
+              "default": "default",
+              "pattern": "^(default|ai)$",
+              "title": "Variant",
+              "type": "string"
+            }
           }
         ],
         "responses": {

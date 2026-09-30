@@ -300,8 +300,8 @@ internal class LoggeRythmEncryptedAndroidBlobFile(context: Context) :
   private val directory: File by lazy(::initializeDirectory)
   private val target: File by lazy { File(directory, FILE_NAME) }
 
-  override fun read(): ByteArray? {
-    if (!target.exists()) return null
+  override fun read(): ByteArray? = synchronized(FILE_LOCK) {
+    if (!target.exists()) return@synchronized null
     if (!target.isFile) throw IllegalStateException("storage-file-invalid")
     val length = target.length()
     if (length <= 0L || length > LoggeRythmEncryptedEnvelopeCodec.MAX_ENVELOPE_BYTES) {
@@ -317,10 +317,10 @@ internal class LoggeRythmEncryptedAndroidBlobFile(context: Context) :
       }
       if (input.read() != -1) throw IllegalStateException("storage-read-expanded")
     }
-    return result
+    result
   }
 
-  override fun replace(blob: ByteArray) {
+  override fun replace(blob: ByteArray) = synchronized(FILE_LOCK) {
     if (blob.isEmpty() || blob.size > LoggeRythmEncryptedEnvelopeCodec.MAX_ENVELOPE_BYTES) {
       throw LoggeRythmPersistedStateException("encrypted-envelope-invalid")
     }
@@ -341,7 +341,7 @@ internal class LoggeRythmEncryptedAndroidBlobFile(context: Context) :
     }
   }
 
-  override fun clear() {
+  override fun clear() = synchronized(FILE_LOCK) {
     if (target.exists() && !target.delete()) throw IllegalStateException("storage-delete-failed")
     syncDirectory()
   }
@@ -359,7 +359,24 @@ internal class LoggeRythmEncryptedAndroidBlobFile(context: Context) :
       syncPath(noBackupRoot)
     }
     if (!candidate.isDirectory) throw IllegalStateException("storage-directory-invalid")
+    clearStaleTemporaryFiles(candidate)
     return candidate
+  }
+
+  /**
+   * A process death between temp-file creation and rename in [replace] leaves a
+   * ciphertext-only temp file behind, and nothing else ever removes it. Sweep
+   * them on first directory access so interrupted writes stay self-healing.
+   */
+  private fun clearStaleTemporaryFiles(directory: File) {
+    val stale = directory.listFiles { file ->
+      file.name.startsWith(TEMP_PREFIX) && file.name.endsWith(TEMP_SUFFIX)
+    } ?: throw IllegalStateException("storage-list-failed")
+    for (file in stale) {
+      if (!file.delete() && file.exists()) {
+        throw IllegalStateException("storage-temp-cleanup-failed")
+      }
+    }
   }
 
   private fun syncPath(path: File) {
@@ -376,6 +393,9 @@ internal class LoggeRythmEncryptedAndroidBlobFile(context: Context) :
     private const val FILE_NAME = "player-state.enc"
     private const val TEMP_PREFIX = ".player-state-"
     private const val TEMP_SUFFIX = ".tmp"
+    // Blob-file instances exist in the UI, media service, WorkManager, and tests. Their lazy
+    // stale-temp sweep must never delete another instance's in-flight replacement.
+    private val FILE_LOCK = Any()
     private const val PRIVATE_FILE_MODE = 0x180 // 0600
   }
 }

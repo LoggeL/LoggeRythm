@@ -109,6 +109,9 @@ _COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
     {"table": "party_sessions", "column": "is_playing", "ddl": "BOOLEAN NOT NULL DEFAULT 0"},
     {"table": "party_sessions", "column": "position_sec", "ddl": "FLOAT NOT NULL DEFAULT 0"},
     {"table": "party_sessions", "column": "playback_updated_at", "ddl": "DATETIME"},
+    # Whisper transcription cached next to the non-AI primary lyrics (variant=ai).
+    {"table": "stored_lyrics", "column": "whisper_lines_json", "ddl": "TEXT"},
+    {"table": "stored_lyrics", "column": "whisper_source", "ddl": "VARCHAR(40)"},
 )
 
 # New portable migrations use SQLAlchemy's dialect compiler so SQLite and

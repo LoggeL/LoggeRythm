@@ -1,11 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, type SyntheticEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type SyntheticEvent,
+} from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { api, streamUrl } from "@/lib/api";
-import { ensureAnalyser, applyVolume, perceptualVolume } from "@/lib/audioAnalyser";
+import {
+  ensureAnalyser,
+  releaseAnalyser,
+  applyVolume,
+  perceptualVolume,
+} from "@/lib/audioAnalyser";
 import { calculateLoudnessGain, loudnessMetadataFromTrack } from "@/lib/loudness";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
@@ -95,6 +106,26 @@ async function describeStreamFailure(
   return parts.join(" · ") || "Unbekannter Fehler";
 }
 
+type DeckIndex = 0 | 1;
+
+interface CrossfadeRun {
+  outgoing: HTMLAudioElement;
+  incoming: HTMLAudioElement;
+  outgoingIdx: DeckIndex;
+  incomingIdx: DeckIndex;
+  outgoingId: string;
+  incomingId: string;
+  timer: number | null;
+  cancelled: boolean;
+}
+
+function releaseMedia(el: HTMLAudioElement): void {
+  el.pause();
+  el.removeAttribute("src");
+  el.dataset.trackId = "";
+  el.load();
+}
+
 export default function PlayerBar() {
   // Two interchangeable decks: one is "active" (drives the store + UI), the
   // other prefetches the next track for a gapless crossfade. On handoff we just
@@ -102,46 +133,67 @@ export default function PlayerBar() {
   // reload, no seek and no restart.
   const deckA = useRef<HTMLAudioElement>(null);
   const deckB = useRef<HTMLAudioElement>(null);
-  const [activeIdx, setActiveIdx] = useState(0);
-  const activeIdxRef = useRef(0);
+  const [activeIdx, setActiveIdx] = useState<DeckIndex>(0);
+  const activeIdxRef = useRef<DeckIndex>(0);
   useEffect(() => {
     activeIdxRef.current = activeIdx;
   }, [activeIdx]);
-
-  const crossfadeTimer = useRef<number | null>(null);
-  // The next-track id we've already begun crossfading into (prevents the
-  // crossfade effect from re-triggering every frame near the end).
-  const crossfadeToId = useRef<string | null>(null);
-  // Removes a deferred seek's loadedmetadata listener when a newer seek
-  // supersedes it (so stacked listeners can't seek a later track).
   const pendingSeekCancel = useRef<(() => void) | null>(null);
-  // An in-flight crossfade interval must not survive unmount.
-  useEffect(
-    () => () => {
-      if (crossfadeTimer.current) window.clearInterval(crossfadeTimer.current);
-    },
-    [],
-  );
+
+  const crossfadeRun = useRef<CrossfadeRun | null>(null);
+  const cancelCrossfade = useCallback(() => {
+    const run = crossfadeRun.current;
+    if (!run) return;
+    run.cancelled = true;
+    if (run.timer !== null) window.clearInterval(run.timer);
+    releaseMedia(run.incoming);
+    const state = usePlayerStore.getState();
+    const activeTrack = currentTrack(state);
+    const gain = calculateLoudnessGain(
+      activeTrack ? loudnessMetadataFromTrack(activeTrack) : null,
+    ).gainLinear;
+    applyVolume(
+      run.outgoing,
+      state.muted ? 0 : perceptualVolume(state.volume) * gain,
+    );
+    crossfadeRun.current = null;
+  }, []);
   // Auto-skip a failed track after a short grace period so a single dead
   // source doesn't stall the whole queue.
   const errorSkipTimer = useRef<number | null>(null);
-  const clearErrorSkip = () => {
-    if (errorSkipTimer.current) {
+  const clearErrorSkip = useCallback(() => {
+    if (errorSkipTimer.current !== null) {
       clearTimeout(errorSkipTimer.current);
       errorSkipTimer.current = null;
     }
-  };
+  }, []);
   // Transient stream failures (e.g. the backend answers 500 while it is still
   // fetching the title) get silent-to-the-user retries before we alarm anyone.
   // Tracks how many reload attempts the current track has used up.
   const errorRetries = useRef<{ id: string; count: number }>({ id: "", count: 0 });
   const errorRetryTimer = useRef<number | null>(null);
-  const clearErrorRetry = () => {
-    if (errorRetryTimer.current) {
+  const clearErrorRetry = useCallback(() => {
+    if (errorRetryTimer.current !== null) {
       clearTimeout(errorRetryTimer.current);
       errorRetryTimer.current = null;
     }
-  };
+  }, []);
+  const pendingRetrySeekCancel = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      cancelCrossfade();
+      clearErrorSkip();
+      clearErrorRetry();
+      pendingSeekCancel.current?.();
+      pendingRetrySeekCancel.current?.();
+      for (const deck of [deckA.current, deckB.current]) {
+        if (!deck) continue;
+        releaseMedia(deck);
+        releaseAnalyser(deck);
+      }
+    },
+    [cancelCrossfade, clearErrorRetry, clearErrorSkip],
+  );
   const [expanded, setExpanded] = useState(false);
   // A preload begins only after the current deck is ready. That
   // avoids competing with the current track's first materialization while
@@ -190,16 +242,56 @@ export default function PlayerBar() {
     track ? loudnessMetadataFromTrack(track) : null,
   ).gainLinear;
 
+  const reportPlayFailure = useCallback(
+    (
+      el: HTMLAudioElement,
+      idx: DeckIndex,
+      expectedId: string,
+      reason: unknown,
+    ) => {
+      const state = usePlayerStore.getState();
+      if (
+        activeIdxRef.current !== idx ||
+        el.dataset.trackId !== expectedId ||
+        String(currentTrack(state)?.id ?? "") !== expectedId ||
+        !el.paused ||
+        !state.isPlaying
+      ) {
+        return;
+      }
+      const detail = reason instanceof Error ? reason.message : String(reason);
+      const message = `Wiedergabe konnte nicht gestartet werden: ${detail}`;
+      console.error(`[player] play() rejected for track ${expectedId}`, reason);
+      state.pause();
+      state._setError(message);
+      toast.error(message);
+    },
+    [],
+  );
+
+  const deckOwnsCurrentTrack = useCallback(
+    (idx: DeckIndex, el: HTMLAudioElement) => {
+      const state = usePlayerStore.getState();
+      return (
+        activeIdxRef.current === idx &&
+        el.dataset.trackId === String(currentTrack(state)?.id ?? "")
+      );
+    },
+    [],
+  );
+
   const { data: me } = useMe();
   const recordedRef = useRef<string | null>(null);
 
   const radioActive = usePlayerStore((s) => s.radioActive);
-  const appendToQueue = usePlayerStore((s) => s.appendToQueue);
+  const radioSession = usePlayerStore((s) => s.radioSession);
   const queueLen = usePlayerStore((s) => s.queue.length);
   const queue = usePlayerStore((s) => s.queue);
   const index = usePlayerStore((s) => s.index);
   const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
-  const radioFetching = useRef(false);
+  // A replacement station may start while the previous top-up is still in
+  // flight. Track the owning session instead of globally blocking all fetches.
+  const radioFetchingSession = useRef<number | null>(null);
   const { data: settings } = useQuery({
     queryKey: ["playback-settings"],
     queryFn: api.settings,
@@ -290,29 +382,45 @@ export default function PlayerBar() {
   // Endless radio: when near the end, pull the next ~5 similar songs
   // seeded by the current track (so the station keeps evolving).
   useEffect(() => {
-    if (!radioActive || !track || radioFetching.current) return;
+    if (!radioActive || !track) return;
     if (queueLen - index > 2) return; // still have a buffer
-    radioFetching.current = true;
+    if (radioFetchingSession.current === radioSession) return;
+    radioFetchingSession.current = radioSession;
+    const requestSession = radioSession;
     api
       .radio(String(track.id))
       .then((more) => {
-        const have = new Set(
-          usePlayerStore.getState().queue.map((t) => String(t.id)),
-        );
+        const state = usePlayerStore.getState();
+        if (
+          state.radioSession !== requestSession ||
+          !state.radioActive
+        ) {
+          return;
+        }
+        const have = new Set(state.queue.map((t) => String(t.id)));
         const fresh = more.filter((t) => !have.has(String(t.id))).slice(0, 5);
-        if (fresh.length) appendToQueue(fresh);
+        if (fresh.length) state.appendToQueue(fresh);
       })
       .catch((e) => {
+        const state = usePlayerStore.getState();
+        if (
+          state.radioSession !== requestSession ||
+          !state.radioActive
+        ) {
+          return;
+        }
         // Stop the radio visibly instead of silently starving the queue.
-        usePlayerStore.getState().setRadioActive(false);
+        state.setRadioActive(false);
         toast.error(
           `Song-Radio konnte nicht erweitert werden: ${e instanceof Error ? e.message : String(e)}`,
         );
       })
       .finally(() => {
-        radioFetching.current = false;
+        if (radioFetchingSession.current === requestSession) {
+          radioFetchingSession.current = null;
+        }
       });
-  }, [radioActive, index, queueLen, track, appendToQueue]);
+  }, [radioActive, radioSession, index, queueLen, track]);
 
   // Load the current track into the active deck — unless that deck is already
   // playing it, which is the case right after a crossfade handoff.
@@ -321,29 +429,37 @@ export default function PlayerBar() {
     if (!el) return;
     const id = trackId ? String(trackId) : "";
     if (el.dataset.trackId !== id) {
+      // Changing the active track invalidates every pending operation tied to
+      // the previous deck, including a crossfade whose play() has not resolved.
+      cancelCrossfade();
+      pendingSeekCancel.current?.();
+      pendingSeekCancel.current = null;
+      pendingRetrySeekCancel.current?.();
+      pendingRetrySeekCancel.current = null;
       if (id) {
         ensureAnalyser(el);
         el.src = streamUrl(id);
         el.dataset.trackId = id;
         el.currentTime = 0;
-        const s = usePlayerStore.getState();
-        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume) * trackLoudnessGain);
+        const state = usePlayerStore.getState();
+        applyVolume(
+          el,
+          state.muted ? 0 : perceptualVolume(state.volume) * trackLoudnessGain,
+        );
       } else {
-        el.pause();
-        el.removeAttribute("src");
-        el.dataset.trackId = "";
-        el.load();
+        releaseMedia(el);
       }
     }
-    // Idle the other deck (it may hold a half-faded previous/next track).
+    // No inactive deck should retain a previous download outside a handoff.
     const idle = (activeIdx === 0 ? deckB : deckA).current;
-    if (idle && !crossfadeTimer.current) {
-      idle.pause();
-      idle.dataset.trackId = "";
+    if (
+      idle &&
+      !crossfadeRun.current &&
+      (idle.dataset.trackId || idle.hasAttribute("src"))
+    ) {
+      releaseMedia(idle);
     }
-    // A normal (non-crossfade) track change cancels any pending crossfade.
-    crossfadeToId.current = null;
-  }, [activeIdx, trackId, trackLoudnessGain]);
+  }, [activeIdx, trackId, trackLoudnessGain, cancelCrossfade]);
 
   // Reflect play/pause on the active deck.
   useEffect(() => {
@@ -353,41 +469,30 @@ export default function PlayerBar() {
       // Lazily wire the analyser on play (a user gesture, so the AudioContext
       // may start) — powers the visualizers.
       ensureAnalyser(el);
-      el.play().catch((err) => {
-        // AbortError from a quick track change is fine; but if this deck is
-        // still the active one and stayed paused (e.g. autoplay policy), sync
-        // the store so the UI doesn't show a frozen "playing" state.
-        const s = usePlayerStore.getState();
-        if (
-          el.paused &&
-          el.dataset.trackId === String(trackId ?? "") &&
-          s.isPlaying
-        ) {
-          console.warn(`[player] play() rejected: ${err}`);
-          s.pause();
-        }
+      const expectedId = String(trackId ?? "");
+      el.play().catch((reason) => {
+        reportPlayFailure(el, activeIdx, expectedId, reason);
       });
     } else {
+      // Pausing invalidates pending and active handoffs so both decks stop.
+      cancelCrossfade();
       el.pause();
-      // Pausing aborts any in-flight crossfade so both decks stop together.
-      if (crossfadeTimer.current) {
-        window.clearInterval(crossfadeTimer.current);
-        crossfadeTimer.current = null;
-        const idle = (activeIdx === 0 ? deckB : deckA).current;
-        if (idle) idle.pause();
-        crossfadeToId.current = null;
-        const s = usePlayerStore.getState();
-        applyVolume(el, s.muted ? 0 : perceptualVolume(s.volume) * trackLoudnessGain);
-      }
     }
-  }, [isPlaying, trackId, activeIdx, trackLoudnessGain]);
+  }, [
+    isPlaying,
+    trackId,
+    activeIdx,
+    cancelCrossfade,
+    reportPlayFailure,
+  ]);
 
-  // Sync volume + mute onto the active deck (the crossfade owns volumes while
-  // it runs).
+  // Sync volume + mute onto the active deck (the crossfade owns both deck
+  // gains while it runs).
   useEffect(() => {
     const el = (activeIdx === 0 ? deckA : deckB).current;
-    if (el && !crossfadeTimer.current)
+    if (el && !crossfadeRun.current) {
       applyVolume(el, muted ? 0 : perceptualVolume(volume) * trackLoudnessGain);
+    }
   }, [volume, muted, activeIdx, trackLoudnessGain]);
 
   // Crossfade: near the end of the active deck, fade the next track in on the
@@ -396,73 +501,144 @@ export default function PlayerBar() {
     const seconds = settings?.crossfade_enabled
       ? settings.crossfade_duration_sec
       : 0;
-    if (!seconds || seconds <= 0) return;
-    if (!track || !isPlaying || repeat === "one") return;
-    // "Sleep at end of track": let the track finish instead of fading onward.
-    if (usePlayerStore.getState().sleepAfterTrack) return;
-    if (!duration || duration <= seconds + 1) return;
-    if (currentTime < duration - seconds) return;
-    if (index < 0 || index >= queue.length - 1) return;
-    if (crossfadeTimer.current) return;
+    const eligible =
+      seconds > 0 &&
+      !!track &&
+      isPlaying &&
+      repeat !== "one" &&
+      !usePlayerStore.getState().sleepAfterTrack &&
+      duration > seconds + 1 &&
+      currentTime >= duration - seconds &&
+      index >= 0 &&
+      index < queue.length - 1;
+    if (!eligible) {
+      cancelCrossfade();
+      return;
+    }
 
     const outgoing = (activeIdx === 0 ? deckA : deckB).current;
     const incoming = (activeIdx === 0 ? deckB : deckA).current;
     const nextTrack = queue[index + 1];
     if (!outgoing || !incoming || !nextTrack) return;
-    if (crossfadeToId.current === String(nextTrack.id)) return;
 
-    const incomingIdx = activeIdx ^ 1;
+    const outgoingId = String(track.id);
+    const incomingId = String(nextTrack.id);
+    const existingRun = crossfadeRun.current;
+    if (existingRun) {
+      if (
+        existingRun.outgoingIdx === activeIdx &&
+        existingRun.outgoingId === outgoingId &&
+        existingRun.incomingId === incomingId
+      ) {
+        return;
+      }
+      cancelCrossfade();
+    }
+    if (outgoing.dataset.trackId !== outgoingId) return;
+    const incomingIdx = (activeIdx ^ 1) as DeckIndex;
     const incomingLoudnessGain = calculateLoudnessGain(
       loudnessMetadataFromTrack(nextTrack),
     ).gainLinear;
-    crossfadeToId.current = String(nextTrack.id);
+    const run: CrossfadeRun = {
+      outgoing,
+      incoming,
+      outgoingIdx: activeIdx,
+      incomingIdx,
+      outgoingId,
+      incomingId,
+      timer: null,
+      cancelled: false,
+    };
+    crossfadeRun.current = run;
     ensureAnalyser(incoming);
-    incoming.src = streamUrl(String(nextTrack.id));
-    incoming.dataset.trackId = String(nextTrack.id);
+    incoming.src = streamUrl(incomingId);
+    incoming.dataset.trackId = incomingId;
     incoming.currentTime = 0;
     applyVolume(incoming, 0, 0);
 
-    const startedAt = performance.now();
     incoming
       .play()
       .then(() => {
-        crossfadeTimer.current = window.setInterval(() => {
+        if (run.cancelled || crossfadeRun.current !== run) return;
+        const state = usePlayerStore.getState();
+        if (
+          activeIdxRef.current !== run.outgoingIdx ||
+          String(currentTrack(state)?.id ?? "") !== outgoingId ||
+          !state.isPlaying
+        ) {
+          cancelCrossfade();
+          return;
+        }
+
+        const startedAt = performance.now();
+        run.timer = window.setInterval(() => {
+          if (run.cancelled || crossfadeRun.current !== run) return;
+          const live = usePlayerStore.getState();
+          if (
+            activeIdxRef.current !== run.outgoingIdx ||
+            String(currentTrack(live)?.id ?? "") !== outgoingId ||
+            String(live.queue[live.index + 1]?.id ?? "") !== incomingId ||
+            !live.isPlaying
+          ) {
+            cancelCrossfade();
+            return;
+          }
+
           const elapsed = (performance.now() - startedAt) / 1000;
           const pct = Math.min(1, elapsed / seconds);
-          const targetVolume = muted ? 0 : perceptualVolume(volume);
-          applyVolume(outgoing, targetVolume * trackLoudnessGain * (1 - pct), 1 - pct);
-          applyVolume(incoming, targetVolume * incomingLoudnessGain * pct, pct);
+          const targetVolume = live.muted ? 0 : perceptualVolume(live.volume);
+          applyVolume(
+            outgoing,
+            targetVolume * trackLoudnessGain * (1 - pct),
+            1 - pct,
+          );
+          applyVolume(
+            incoming,
+            targetVolume * incomingLoudnessGain * pct,
+            pct,
+          );
 
-          if (pct >= 1) {
-            if (crossfadeTimer.current) {
-              window.clearInterval(crossfadeTimer.current);
-              crossfadeTimer.current = null;
-            }
-            applyVolume(incoming, targetVolume * incomingLoudnessGain, 1);
-            // The incoming deck simply keeps playing — promote it to active and
-            // advance the queue index without touching currentTime.
-            outgoing.pause();
-            activeIdxRef.current = incomingIdx;
-            setActiveIdx(incomingIdx);
-            setReadyTrackId(String(nextTrack.id));
-            _crossfadeAdvance();
-            // Refresh the store's position + duration from the deck that just
-            // took over. Otherwise they keep the *outgoing* track's end values,
-            // and if the incoming track is shorter the crossfade check fires
-            // again immediately — skipping the song we just faded into.
-            _setCurrentTime(incoming.currentTime);
-            if (Number.isFinite(incoming.duration)) {
-              _setDuration(incoming.duration);
-            }
+          if (pct < 1) return;
+          if (run.timer !== null) {
+            window.clearInterval(run.timer);
+            run.timer = null;
           }
+          // Switch event ownership before the atomic store transition so late
+          // events from the outgoing deck cannot overwrite the incoming clock.
+          activeIdxRef.current = incomingIdx;
+          const advanced = _crossfadeAdvance(
+            outgoingId,
+            incomingId,
+            incoming.currentTime,
+            incoming.duration,
+          );
+          if (!advanced) {
+            activeIdxRef.current = run.outgoingIdx;
+            cancelCrossfade();
+            return;
+          }
+
+          crossfadeRun.current = null;
+          applyVolume(incoming, targetVolume * incomingLoudnessGain, 1);
+          releaseMedia(outgoing);
+          setActiveIdx(incomingIdx);
+          setReadyTrackId(incomingId);
         }, 50);
       })
-      .catch(() => {
-        crossfadeToId.current = null;
-        incoming.removeAttribute("src");
-        incoming.dataset.trackId = "";
-        // If the outgoing track already ended while play() was pending, the
-        // ended handler deferred to this crossfade — advance normally now.
+      .catch((reason: unknown) => {
+        if (run.cancelled || crossfadeRun.current !== run) return;
+        console.error(
+          `[player] crossfade could not start for track ${incomingId}`,
+          reason,
+        );
+        toast.error(
+          `Übergang zu „${nextTrack.title}“ konnte nicht gestartet werden: ${
+            reason instanceof Error ? reason.message : String(reason)
+          }`,
+        );
+        cancelCrossfade();
+        // If the outgoing track ended while play() was pending, its ended
+        // event was intentionally deferred to this handoff.
         if (outgoing.ended) _onEnded();
       });
   }, [
@@ -470,26 +646,24 @@ export default function PlayerBar() {
     duration,
     index,
     isPlaying,
-    muted,
     queue,
     repeat,
     settings?.crossfade_duration_sec,
     settings?.crossfade_enabled,
     track,
     trackLoudnessGain,
-    volume,
     activeIdx,
     _crossfadeAdvance,
-    _setCurrentTime,
-    _setDuration,
     _onEnded,
+    cancelCrossfade,
   ]);
 
   // Consume seek requests from the store on the active deck. Defer until
   // metadata is ready when the deck is still loading.
   useEffect(() => {
     if (seekTo == null) return;
-    // A newer seek supersedes any still-pending deferred one.
+    // Seeking during a handoff keeps one authoritative playhead.
+    cancelCrossfade();
     pendingSeekCancel.current?.();
     pendingSeekCancel.current = null;
     const el = (activeIdx === 0 ? deckA : deckB).current;
@@ -497,10 +671,21 @@ export default function PlayerBar() {
       const target = seekTo;
       const expectedId = el.dataset.trackId ?? "";
       const apply = () => {
+        if (
+          activeIdxRef.current !== activeIdx ||
+          el.dataset.trackId !== expectedId
+        ) {
+          return;
+        }
         try {
           el.currentTime = target;
-        } catch {
-          // ignore invalid seek
+        } catch (reason) {
+          const detail =
+            reason instanceof Error ? reason.message : String(reason);
+          const message = `Wiedergabeposition konnte nicht gesetzt werden: ${detail}`;
+          console.error(`[player] seek failed for track ${expectedId}`, reason);
+          usePlayerStore.getState()._setError(message);
+          toast.error(message);
         }
       };
       if (el.readyState >= 1) {
@@ -509,26 +694,27 @@ export default function PlayerBar() {
         const onReady = () => {
           el.removeEventListener("loadedmetadata", onReady);
           pendingSeekCancel.current = null;
-          // The deck may have been reloaded with a different track since the
-          // seek was requested — never seek the new track to the old target.
-          if (el.dataset.trackId === expectedId) apply();
+          apply();
         };
         el.addEventListener("loadedmetadata", onReady);
-        pendingSeekCancel.current = () =>
+        pendingSeekCancel.current = () => {
           el.removeEventListener("loadedmetadata", onReady);
+          pendingSeekCancel.current = null;
+        };
       }
     }
     _clearSeek();
-  }, [seekTo, _clearSeek, activeIdx]);
+  }, [seekTo, _clearSeek, activeIdx, cancelCrossfade]);
 
   // MediaSession: OS media keys + metadata + artwork.
   useEffect(() => {
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    const session = navigator.mediaSession;
     if (!track) {
-      navigator.mediaSession.metadata = null;
+      session.metadata = null;
       return;
     }
-    navigator.mediaSession.metadata = new MediaMetadata({
+    session.metadata = new MediaMetadata({
       title: track.title,
       artist: trackArtistLabel(track),
       album: track.album,
@@ -539,29 +725,57 @@ export default function PlayerBar() {
           ]
         : [],
     });
-    navigator.mediaSession.setActionHandler("play", () => toggle());
-    navigator.mediaSession.setActionHandler("pause", () => toggle());
-    navigator.mediaSession.setActionHandler("previoustrack", () => prev());
-    navigator.mediaSession.setActionHandler("nexttrack", () => next());
-    navigator.mediaSession.setActionHandler("seekto", (d) => {
-      if (d.seekTime != null) seek(d.seekTime);
+    session.setActionHandler("play", () => usePlayerStore.getState().play());
+    session.setActionHandler("pause", () => usePlayerStore.getState().pause());
+    session.setActionHandler("previoustrack", () =>
+      usePlayerStore.getState().prev(),
+    );
+    session.setActionHandler("nexttrack", () =>
+      usePlayerStore.getState().next(),
+    );
+    session.setActionHandler("seekto", (detail) => {
+      if (detail.seekTime != null) usePlayerStore.getState().seek(detail.seekTime);
     });
-    navigator.mediaSession.setActionHandler("seekforward", (d) => {
-      const s = usePlayerStore.getState();
-      s.seek(Math.min(s.currentTime + (d.seekOffset ?? 10), s.duration || 0));
+    session.setActionHandler("seekforward", (detail) => {
+      const state = usePlayerStore.getState();
+      state.seek(
+        Math.min(
+          state.currentTime + (detail.seekOffset ?? 10),
+          state.duration || 0,
+        ),
+      );
     });
-    navigator.mediaSession.setActionHandler("seekbackward", (d) => {
-      const s = usePlayerStore.getState();
-      s.seek(Math.max(s.currentTime - (d.seekOffset ?? 10), 0));
+    session.setActionHandler("seekbackward", (detail) => {
+      const state = usePlayerStore.getState();
+      state.seek(Math.max(state.currentTime - (detail.seekOffset ?? 10), 0));
     });
     try {
-      navigator.mediaSession.setActionHandler("stop", () => {
-        usePlayerStore.getState().pause();
-      });
+      session.setActionHandler("stop", () => usePlayerStore.getState().pause());
     } catch {
       // "stop" is not supported everywhere
     }
-  }, [track, toggle, prev, next, seek]);
+
+    return () => {
+      session.metadata = null;
+      const actions: MediaSessionAction[] = [
+        "play",
+        "pause",
+        "previoustrack",
+        "nexttrack",
+        "seekto",
+        "seekforward",
+        "seekbackward",
+        "stop",
+      ];
+      for (const action of actions) {
+        try {
+          session.setActionHandler(action, null);
+        } catch {
+          // Some browsers reject unsupported actions instead of ignoring them.
+        }
+      }
+    };
+  }, [track]);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
@@ -653,12 +867,16 @@ export default function PlayerBar() {
   useEffect(() => {
     clearErrorSkip();
     clearErrorRetry();
+    pendingRetrySeekCancel.current?.();
+    pendingRetrySeekCancel.current = null;
     errorRetries.current = { id: "", count: 0 };
     return () => {
       clearErrorSkip();
       clearErrorRetry();
+      pendingRetrySeekCancel.current?.();
+      pendingRetrySeekCancel.current = null;
     };
-  }, [trackId]);
+  }, [trackId, clearErrorRetry, clearErrorSkip]);
 
   useEffect(() => {
     document.body.dataset.nowPlayingExpanded = expanded ? "true" : "false";
@@ -675,61 +893,96 @@ export default function PlayerBar() {
   // Only the active deck drives the store. These functions are called from
   // explicit JSX media-event handlers, never while React is rendering.
   const handleTimeUpdate = (
-    idx: 0 | 1,
+    idx: DeckIndex,
     e: SyntheticEvent<HTMLAudioElement>,
   ) => {
-    if (activeIdxRef.current === idx) {
+    if (deckOwnsCurrentTrack(idx, e.currentTarget)) {
       _setCurrentTime(e.currentTarget.currentTime);
     }
   };
   const handleLoadedMetadata = (
-    idx: 0 | 1,
+    idx: DeckIndex,
     e: SyntheticEvent<HTMLAudioElement>,
   ) => {
-    if (activeIdxRef.current !== idx) return;
+    if (!deckOwnsCurrentTrack(idx, e.currentTarget)) return;
     const d = e.currentTarget.duration;
     if (Number.isFinite(d)) _setDuration(d);
   };
-  const handleEnded = (idx: 0 | 1, e: SyntheticEvent<HTMLAudioElement>) => {
-    if (activeIdxRef.current !== idx) return;
-    // A crossfade already owns the transition into the next track.
-    // crossfadeToId is set synchronously when the fade is initiated, so this
-    // also covers the window before the incoming deck's play() resolves
-    // (otherwise both paths would advance the queue — skipping a track).
-    if (crossfadeTimer.current || crossfadeToId.current) return;
-    if (repeat === "one") {
-      e.currentTarget.currentTime = 0;
-      _setCurrentTime(0);
-      e.currentTarget.play().catch(() => _onEnded());
+  const handleEnded = (idx: DeckIndex, e: SyntheticEvent<HTMLAudioElement>) => {
+    if (
+      !deckOwnsCurrentTrack(idx, e.currentTarget) ||
+      crossfadeRun.current
+    ) {
       return;
     }
+    const element = e.currentTarget;
+    const expectedId = element.dataset.trackId ?? "";
+    const state = usePlayerStore.getState();
+    const shouldRestart =
+      state.repeat === "one" && !state.sleepAfterTrack && state.index >= 0;
     _onEnded();
+    if (shouldRestart) {
+      element.currentTime = 0;
+      element.play().catch((reason) => {
+        reportPlayFailure(element, idx, expectedId, reason);
+      });
+    }
   };
-  const handleWaiting = (idx: 0 | 1) => {
-    if (activeIdxRef.current === idx) _setBuffering(true);
+  const handleWaiting = (
+    idx: DeckIndex,
+    e: SyntheticEvent<HTMLAudioElement>,
+  ) => {
+    if (deckOwnsCurrentTrack(idx, e.currentTarget)) _setBuffering(true);
   };
-  const handlePlaying = (idx: 0 | 1) => {
-    if (activeIdxRef.current !== idx) return;
+  const handlePlaying = (
+    idx: DeckIndex,
+    e: SyntheticEvent<HTMLAudioElement>,
+  ) => {
+    if (!deckOwnsCurrentTrack(idx, e.currentTarget)) return;
     clearErrorSkip(); // recovered — cancel any pending auto-skip
     clearErrorRetry();
+    pendingRetrySeekCancel.current?.();
+    pendingRetrySeekCancel.current = null;
     errorRetries.current = { id: "", count: 0 };
     _setBuffering(false);
     _setError(null);
   };
   const handleCanPlay = (
-    idx: 0 | 1,
+    idx: DeckIndex,
     e: SyntheticEvent<HTMLAudioElement>,
   ) => {
-    if (activeIdxRef.current !== idx) return;
+    if (!deckOwnsCurrentTrack(idx, e.currentTarget)) return;
     const id = e.currentTarget.dataset.trackId;
     if (id) setReadyTrackId(id);
     _setBuffering(false);
   };
-  const handleError = (idx: 0 | 1, e: SyntheticEvent<HTMLAudioElement>) => {
-    if (activeIdxRef.current !== idx) return;
+  const handleError = (idx: DeckIndex, e: SyntheticEvent<HTMLAudioElement>) => {
     const el = e.currentTarget;
+    const run = crossfadeRun.current;
+    if (activeIdxRef.current !== idx) {
+      if (
+        run &&
+        !run.cancelled &&
+        run.incomingIdx === idx &&
+        run.incoming === el
+      ) {
+        const detail =
+          el.error?.message ||
+          MEDIA_ERROR_LABELS[el.error?.code ?? 0] ||
+          "Unbekannter Fehler";
+        console.error(
+          `[player] crossfade media error for track ${run.incomingId}: ${detail}`,
+        );
+        toast.error(`Übergang zum nächsten Titel fehlgeschlagen: ${detail}`);
+        const outgoingEnded = run.outgoing.ended;
+        cancelCrossfade();
+        if (outgoingEnded) _onEnded();
+      }
+      return;
+    }
     const mediaErr = el.error;
     const id = el.dataset.trackId || "";
+    if (!deckOwnsCurrentTrack(idx, el)) return;
 
     // First failures are often transient (the backend answers 500 while it
     // is still fetching/transcoding the title). Reload a couple of times
@@ -745,23 +998,59 @@ export default function PlayerBar() {
       clearErrorRetry();
       errorRetryTimer.current = window.setTimeout(() => {
         errorRetryTimer.current = null;
-        const cur = currentTrack(usePlayerStore.getState());
+        const state = usePlayerStore.getState();
+        const cur = currentTrack(state);
         if (activeIdxRef.current !== idx || String(cur?.id ?? "") !== id) return;
         // Mid-song failures resume where they broke off instead of at 0:00.
         const resumeAt = el.currentTime;
-        el.load(); // re-request the source from scratch
+        pendingRetrySeekCancel.current?.();
+        pendingRetrySeekCancel.current = null;
         if (resumeAt > 0) {
           const onMeta = () => {
             el.removeEventListener("loadedmetadata", onMeta);
+            pendingRetrySeekCancel.current = null;
+            if (
+              activeIdxRef.current !== idx ||
+              el.dataset.trackId !== id
+            ) {
+              return;
+            }
             try {
               el.currentTime = resumeAt;
-            } catch {
-              // seeking an unseekable stream is not worth failing the retry
+            } catch (reason) {
+              const detail =
+                reason instanceof Error ? reason.message : String(reason);
+              const message = `Wiedergabeposition konnte nach dem erneuten Laden nicht wiederhergestellt werden: ${detail}`;
+              console.error(`[player] retry seek failed for track ${id}`, reason);
+              usePlayerStore.getState()._setError(message);
+              toast.error(message);
             }
           };
           el.addEventListener("loadedmetadata", onMeta);
+          pendingRetrySeekCancel.current = () => {
+            el.removeEventListener("loadedmetadata", onMeta);
+            pendingRetrySeekCancel.current = null;
+          };
         }
-        if (usePlayerStore.getState().isPlaying) el.play().catch(() => {});
+        el.load(); // re-request the source from scratch
+        if (state.isPlaying) {
+          el.play().catch((reason) => {
+            const mediaRetryRejection =
+              reason instanceof DOMException &&
+              (reason.name === "AbortError" ||
+                reason.name === "NotSupportedError");
+            if (mediaRetryRejection) {
+              // The matching media error event owns the retry counter and
+              // terminal state. Do not pause the store between attempts.
+              console.warn(
+                `[player] retry play() rejected for track ${id}; awaiting media error`,
+                reason,
+              );
+              return;
+            }
+            reportPlayFailure(el, idx, id, reason);
+          });
+        }
       }, 1500 * attempt);
       return;
     }
@@ -788,7 +1077,7 @@ export default function PlayerBar() {
         // recovered while the probe was in flight, and a scary toast over a
         // playing song is worse than no detail at all.
         if (
-          activeIdxRef.current === idx &&
+          deckOwnsCurrentTrack(idx, el) &&
           el.dataset.trackId === id &&
           el.error
         ) {
@@ -820,9 +1109,9 @@ export default function PlayerBar() {
           onTimeUpdate={(e) => handleTimeUpdate(0, e)}
           onLoadedMetadata={(e) => handleLoadedMetadata(0, e)}
           onEnded={(e) => handleEnded(0, e)}
-          onWaiting={() => handleWaiting(0)}
-          onStalled={() => handleWaiting(0)}
-          onPlaying={() => handlePlaying(0)}
+          onWaiting={(e) => handleWaiting(0, e)}
+          onStalled={(e) => handleWaiting(0, e)}
+          onPlaying={(e) => handlePlaying(0, e)}
           onCanPlay={(e) => handleCanPlay(0, e)}
           onError={(e) => handleError(0, e)}
         />
@@ -833,9 +1122,9 @@ export default function PlayerBar() {
           onTimeUpdate={(e) => handleTimeUpdate(1, e)}
           onLoadedMetadata={(e) => handleLoadedMetadata(1, e)}
           onEnded={(e) => handleEnded(1, e)}
-          onWaiting={() => handleWaiting(1)}
-          onStalled={() => handleWaiting(1)}
-          onPlaying={() => handlePlaying(1)}
+          onWaiting={(e) => handleWaiting(1, e)}
+          onStalled={(e) => handleWaiting(1, e)}
+          onPlaying={(e) => handlePlaying(1, e)}
           onCanPlay={(e) => handleCanPlay(1, e)}
           onError={(e) => handleError(1, e)}
         />

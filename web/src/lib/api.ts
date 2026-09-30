@@ -268,12 +268,15 @@ export const api = {
   resolve: (url: string) =>
     req<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`, { timeoutMs: 180_000 }),
 
-  // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached server-side)
-  lyrics: (artist: string, title: string, deezerId?: string) =>
+  // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached
+  // server-side). variant "ai" forces the Whisper transcription instead.
+  lyrics: (artist: string, title: string, deezerId?: string, variant?: "ai") =>
     req<LyricsResponse>(
       `/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(
         title,
-      )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}`,
+      )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}${
+        variant ? `&variant=${variant}` : ""
+      }`,
       { timeoutMs: 300_000 },
     ),
 

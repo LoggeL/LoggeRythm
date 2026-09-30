@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef } from "react";
 import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
-import { useBassGlow } from "@/hooks/useBassGlow";
+import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import type { CoverPalette } from "@/hooks/useCoverColors";
 import { formatTime } from "@/lib/format";
 import TrackTitle from "@/components/TrackTitle";
@@ -20,7 +20,7 @@ import {
 
 interface CompactLyricsProps {
   track: Track;
-  /** Cover-derived palette for the bass glow (falls back to brand violet). */
+  /** Cover-derived palette for the static header-cover glow. */
   palette?: CoverPalette | null;
   /** Called when a title/artist link navigates, to close the fullscreen view. */
   onNavigate?: () => void;
@@ -47,22 +47,11 @@ export default function CompactLyrics({
   const toggle = usePlayerStore((s) => s.toggle);
   const next = usePlayerStore((s) => s.next);
   const prev = usePlayerStore((s) => s.prev);
-  // Bass-reactive pulse on the header cover, tinted by the cover palette.
-  const coverRef = useBassGlow<HTMLDivElement>(isPlaying, {
-    baseSpread: 8,
-    peakSpread: 34,
-    baseAlpha: 0.25,
-    peakAlpha: 0.85,
-    maxScale: 0.07,
-    tintBorder: false,
-    color: palette?.rgb,
-  });
-  const { lines, active, hasTimedLines, isLoading, isAiGenerated } = useLyrics(
-    track.artist,
-    track.title,
-    track.id,
-    currentTime,
-  );
+  const coverGlow = palette
+    ? `0 8px 28px rgba(${palette.rgb[0]}, ${palette.rgb[1]}, ${palette.rgb[2]}, 0.28)`
+    : undefined;
+  const lyrics = useLyrics(track.artist, track.title, track.id, currentTime);
+  const { lines, active, hasTimedLines, isLoading } = lyrics;
 
   useLayoutEffect(() => {
     const el = activeRef.current;
@@ -95,8 +84,8 @@ export default function CompactLyrics({
       {/* Compact track header */}
       <div className="flex flex-shrink-0 items-center gap-3 pb-3">
         <div
-          ref={coverRef}
-          className="h-12 w-12 flex-shrink-0 rounded-lg will-change-transform"
+          className="h-12 w-12 flex-shrink-0 rounded-lg"
+          style={{ boxShadow: coverGlow }}
         >
           {track.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -130,11 +119,7 @@ export default function CompactLyrics({
         <span className="text-[11px] font-semibold uppercase tracking-widest">
           Lyrics
         </span>
-        {isAiGenerated && (
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
-            ✦ AI
-          </span>
-        )}
+        <LyricsVariantToggle lyrics={lyrics} />
       </div>
 
       {/* Lyrics */}

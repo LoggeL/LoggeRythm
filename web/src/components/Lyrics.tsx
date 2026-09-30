@@ -1,12 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
 import { usePlayerStore, currentTrack } from "@/store/player";
+import { useLyrics } from "@/hooks/useLyrics";
+import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import { MusicNoteIcon, ChevronDownIcon } from "@/components/icons";
-
-type Line = { t: number; text: string };
 
 const LINE_H = 30; // px per lyric line
 const COLLAPSED_ROWS = 3;
@@ -18,24 +16,15 @@ export default function Lyrics() {
   const currentTime = usePlayerStore((s) => s.currentTime);
   const [expanded, setExpanded] = useState(false);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["lyrics", track?.id],
-    queryFn: () => api.lyrics(track!.artist, track!.title, String(track!.id)),
-    enabled: open && !!track,
-    staleTime: 60 * 60 * 1000,
-    retry: false,
-  });
-
-  const lines: Line[] = data?.lines ?? [];
-
-  const isAiGenerated = !!data?.ai_generated;
-
-  // Active line = last line whose timestamp has passed.
-  let active = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].t <= currentTime + 0.15) active = i;
-    else break;
-  }
+  // Shares fetch, variant preference and toggle with the fullscreen views;
+  // an empty trackId keeps the query disabled while the dock is closed.
+  const lyrics = useLyrics(
+    track?.artist ?? "",
+    track?.title ?? "",
+    open && track ? track.id : "",
+    currentTime,
+  );
+  const { lines, active, isLoading } = lyrics;
   const a = active < 0 ? 0 : active;
   const hasLyrics = !!track && !isLoading && lines.length > 0;
 
@@ -66,11 +55,7 @@ export default function Lyrics() {
             <span className="text-xs font-semibold uppercase tracking-widest">
               Lyrics
             </span>
-            {isAiGenerated && (
-              <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold text-accent">
-                ✦ AI
-              </span>
-            )}
+            <LyricsVariantToggle lyrics={lyrics} />
           </div>
 
           {/* Karaoke window */}
