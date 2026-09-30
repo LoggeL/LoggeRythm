@@ -14,7 +14,14 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(82);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(83);
+    expect(GENERATED_API_OPERATIONS.get_agent_manifest_api_agent_get).toEqual({
+      method: 'GET',
+      path: '/api/agent',
+      auth: 'none',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
     expect(GENERATED_OPENAPI_CONTRACT_VERSION).toBe('v2');
     expect(API_COMPATIBILITY_OPERATION).toBe(
       GENERATED_API_OPERATIONS.get_api_compatibility_api_version_get,

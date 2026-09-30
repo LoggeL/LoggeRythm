@@ -172,7 +172,20 @@ def get_playlist(
     )
 
 
-@router.get("/{playlist_id}/export")
+@router.get(
+    "/{playlist_id}/export",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "ZIP archive containing the playlist's ordered MP3 tracks.",
+            "content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}},
+            "headers": {
+                "Content-Disposition": {"schema": {"type": "string"}},
+                "X-Playlist-Track-Count": {"schema": {"type": "string"}},
+            },
+        },
+    },
+)
 async def export_playlist(
     playlist_id: int,
     user: User = Depends(get_current_user),

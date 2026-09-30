@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "1d832ca2bb900f29537b36ebbced942c3ccdd1ed1c3e86cb71d65d4246eb2d7c" as const;
+export const GENERATED_OPENAPI_SHA256 = "bc5ea1cfc285f9e4668e70674c60867bb697afa71c42a4923aeab5b886a4c36b" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -15,6 +15,41 @@ export interface AdminUserWire {
   id: number;
   is_admin: boolean;
   is_approved: boolean;
+}
+export interface AgentAuthWire {
+  account_operation_id: string;
+  cookie_max_age_seconds: number;
+  cookie_name: string;
+  instructions: string;
+  login_operation_id: string;
+  missing_or_expired_session_status: number;
+  pending_approval_status: number;
+}
+export interface AgentCapabilityWire {
+  description: string;
+  name: string;
+  operation_ids: string[];
+}
+export interface AgentManifestWire {
+  api_version: string;
+  auth: AgentAuthWire;
+  capabilities: AgentCapabilityWire[];
+  compatible_contract_versions: string[];
+  contract_version: string;
+  docs_url: string;
+  openapi_url: string;
+  operations: AgentOperationWire[];
+}
+export interface AgentOperationWire {
+  method: string;
+  openapi_pointer: string;
+  operation_id: string;
+  path: string;
+  request_content_types: string[];
+  response_statuses: string[];
+  security: Record<string, string[]>[];
+  summary: string;
+  tags: string[];
 }
 export interface AlbumDetailWire {
   artist?: string;
@@ -382,6 +417,10 @@ export interface _VisibilityUpdateWire {
 
 export interface GeneratedApiSchemas {
   "AdminUser": AdminUserWire;
+  "AgentAuth": AgentAuthWire;
+  "AgentCapability": AgentCapabilityWire;
+  "AgentManifest": AgentManifestWire;
+  "AgentOperation": AgentOperationWire;
   "AlbumDetail": AlbumDetailWire;
   "AlbumSummary": AlbumSummaryWire;
   "ApiCompatibility": ApiCompatibilityWire;
@@ -676,12 +715,12 @@ export interface GeneratedApiOperations {
       };
     };
     responses: {
-      "200": unknown;
+      "200": Blob;
       "401": AuthErrorWire;
       "403": AuthErrorWire;
       "422": HTTPValidationErrorWire;
     };
-    response: unknown;
+    response: Blob;
   };
   "follow_artist_api_me_following_artists__artist_id__put": {
     request: {
@@ -730,6 +769,13 @@ export interface GeneratedApiOperations {
       "200": GenreWire[];
     };
     response: GenreWire[];
+  };
+  "get_agent_manifest_api_agent_get": {
+    request: Record<never, never>;
+    responses: {
+      "200": AgentManifestWire;
+    };
+    response: AgentManifestWire;
   };
   "get_api_compatibility_api_version_get": {
     request: Record<never, never>;
@@ -993,12 +1039,12 @@ export interface GeneratedApiOperations {
       };
     };
     responses: {
-      "200": unknown;
+      "200": string;
       "401": AuthErrorWire;
       "403": AuthErrorWire;
       "422": HTTPValidationErrorWire;
     };
-    response: unknown;
+    response: string;
   };
   "preload_track_api_tracks__deezer_id__preload_post": {
     request: {
@@ -1340,12 +1386,14 @@ export interface GeneratedApiOperations {
       };
     };
     responses: {
-      "200": unknown;
+      "200": Blob;
+      "206": Blob;
       "401": AuthErrorWire;
       "403": AuthErrorWire;
+      "416": Record<string, unknown>;
       "422": HTTPValidationErrorWire;
     };
-    response: unknown;
+    response: Blob;
   };
   "system_status_api_admin_status_get": {
     request: Record<never, never>;
@@ -1628,6 +1676,13 @@ export const GENERATED_API_OPERATIONS = {
   "genres_api_genres_get": {
     method: "GET",
     path: "/api/genres",
+    auth: "none",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "get_agent_manifest_api_agent_get": {
+    method: "GET",
+    path: "/api/agent",
     auth: "none",
     requestMediaTypes: [],
     successStatuses: [200],
@@ -1987,7 +2042,7 @@ export const GENERATED_API_OPERATIONS = {
     path: "/api/tracks/{deezer_id}/stream",
     auth: "required",
     requestMediaTypes: [],
-    successStatuses: [200],
+    successStatuses: [200, 206],
   },
   "system_status_api_admin_status_get": {
     method: "GET",

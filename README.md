@@ -43,6 +43,17 @@ LoggeRythm is a self-hosted, private Spotify-style music app. It pairs a FastAPI
 - **Storage management** — cached tracks are kept on disk with a configurable retention window (default 30 days) and automatically evicted.
 - **Admin** — user listing, approval, and deletion; storage inspection and manual cleanup; invite-code creation and listing.
 
+## Agenten und CLI
+
+Serverfunktionen lassen sich über das installierbare `loggerythm`-CLI bedienen:
+Suche, Playlists, Likes, Party-Zustand, Servercache und Downloads als MP3 oder
+Playlist-ZIP. Befehle liefern JSON; die Sitzung liegt im Betriebssystem-Schlüsselbund.
+Der allgemeine `request`-Befehl erreicht auch Endpunkte ohne eigenen CLI-Unterbefehl.
+
+[Installation, Befehle und Agenten-Abläufe](docs/AGENT_CLI.md).
+Die API bietet außerdem `/api/agent`, `/api/openapi.json` und `/api/docs` als
+Einstieg zur Erkundung der tatsächlich verfügbaren Operationen.
+
 ## Setup & Run
 
 ### Backend (`api/`)

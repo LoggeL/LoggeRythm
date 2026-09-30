@@ -131,7 +131,35 @@ async def preload_track(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/tracks/{deezer_id}/stream")
+@router.get(
+    "/tracks/{deezer_id}/stream",
+    response_class=Response,
+    description=(
+        "Return MP3 bytes, with a 206 response for a valid single Range request. "
+        "A cache miss materializes the track on the server before streaming."
+    ),
+    responses={
+        200: {
+            "description": "Complete MP3 audio file.",
+            "content": {"audio/mpeg": {"schema": {"type": "string", "format": "binary"}}},
+            "headers": {"Accept-Ranges": {"schema": {"type": "string"}}},
+        },
+        206: {
+            "description": "Requested MP3 byte range.",
+            "content": {"audio/mpeg": {"schema": {"type": "string", "format": "binary"}}},
+            "headers": {
+                "Accept-Ranges": {"schema": {"type": "string"}},
+                "Content-Range": {"schema": {"type": "string"}},
+                "Content-Length": {"schema": {"type": "string"}},
+            },
+        },
+        416: {
+            "description": "Invalid or unsatisfiable Range header.",
+            "content": {"application/json": {"schema": {"type": "object"}}},
+            "headers": {"Content-Range": {"schema": {"type": "string"}}},
+        },
+    },
+)
 async def stream(
     deezer_id: str,
     request: Request,

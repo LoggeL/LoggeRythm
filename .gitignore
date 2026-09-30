@@ -8,6 +8,9 @@
 __pycache__/
 *.pyc
 *.pyo
+cli/*.egg-info/
+cli/build/
+cli/dist/
 
 # Backend runtime data
 storage/

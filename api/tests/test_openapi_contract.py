@@ -218,6 +218,7 @@ class OpenApiContractTests(unittest.TestCase):
         self.assertIsNone(android_contract_diff(DEFAULT_ANDROID_CONTRACT_PATH))
         generated = rendered_android_contract()
         self.assertIn("export interface ApiCompatibilityWire", generated)
+        self.assertIn("export interface AgentManifestWire", generated)
         self.assertIn("export interface TrackWire", generated)
         self.assertIn("export interface GeneratedApiOperations", generated)
         self.assertIn("export interface GeneratedApiClient", generated)
@@ -236,9 +237,9 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 58)
-        self.assertEqual(len(schema["paths"]), 73)
-        self.assertEqual(len(operation_ids), 82)
+        self.assertEqual(len(schemas), 62)
+        self.assertEqual(len(schema["paths"]), 74)
+        self.assertEqual(len(operation_ids), 83)
         for schema_name in schemas:
             with self.subTest(schema=schema_name):
                 self.assertIn(f'  {json.dumps(schema_name)}:', generated)

@@ -63,6 +63,202 @@
         "title": "AdminUser",
         "type": "object"
       },
+      "AgentAuth": {
+        "properties": {
+          "account_operation_id": {
+            "title": "Account Operation Id",
+            "type": "string"
+          },
+          "cookie_max_age_seconds": {
+            "title": "Cookie Max Age Seconds",
+            "type": "integer"
+          },
+          "cookie_name": {
+            "title": "Cookie Name",
+            "type": "string"
+          },
+          "instructions": {
+            "title": "Instructions",
+            "type": "string"
+          },
+          "login_operation_id": {
+            "title": "Login Operation Id",
+            "type": "string"
+          },
+          "missing_or_expired_session_status": {
+            "title": "Missing Or Expired Session Status",
+            "type": "integer"
+          },
+          "pending_approval_status": {
+            "title": "Pending Approval Status",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cookie_name",
+          "cookie_max_age_seconds",
+          "login_operation_id",
+          "account_operation_id",
+          "missing_or_expired_session_status",
+          "pending_approval_status",
+          "instructions"
+        ],
+        "title": "AgentAuth",
+        "type": "object"
+      },
+      "AgentCapability": {
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "operation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Operation Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "operation_ids"
+        ],
+        "title": "AgentCapability",
+        "type": "object"
+      },
+      "AgentManifest": {
+        "properties": {
+          "api_version": {
+            "title": "Api Version",
+            "type": "string"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/AgentAuth"
+          },
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/AgentCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "compatible_contract_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Compatible Contract Versions",
+            "type": "array"
+          },
+          "contract_version": {
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "docs_url": {
+            "title": "Docs Url",
+            "type": "string"
+          },
+          "openapi_url": {
+            "title": "Openapi Url",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/AgentOperation"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api_version",
+          "contract_version",
+          "compatible_contract_versions",
+          "openapi_url",
+          "docs_url",
+          "auth",
+          "capabilities",
+          "operations"
+        ],
+        "title": "AgentManifest",
+        "type": "object"
+      },
+      "AgentOperation": {
+        "properties": {
+          "method": {
+            "title": "Method",
+            "type": "string"
+          },
+          "openapi_pointer": {
+            "title": "Openapi Pointer",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "request_content_types": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Request Content Types",
+            "type": "array"
+          },
+          "response_statuses": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Response Statuses",
+            "type": "array"
+          },
+          "security": {
+            "items": {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            "title": "Security",
+            "type": "array"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation_id",
+          "method",
+          "path",
+          "summary",
+          "tags",
+          "security",
+          "response_statuses",
+          "request_content_types",
+          "openapi_pointer"
+        ],
+        "title": "AgentOperation",
+        "type": "object"
+      },
       "AlbumDetail": {
         "properties": {
           "artist": {
@@ -2587,6 +2783,28 @@
         ]
       }
     },
+    "/api/agent": {
+      "get": {
+        "description": "Describe this deployment using its live OpenAPI contract.",
+        "operationId": "get_agent_manifest_api_agent_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentManifest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Discover API operations for agents",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
     "/api/albums/{album_id}": {
       "get": {
         "operationId": "album_api_albums__album_id__get",
@@ -4410,6 +4628,7 @@
     },
     "/api/party/{code}": {
       "get": {
+        "description": "Read party state and register or refresh the requesting user as a party member.",
         "operationId": "get_party_api_party__code__get",
         "parameters": [
           {
@@ -4563,11 +4782,25 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Server-Sent Events containing party state frames and heartbeat comments.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Accel-Buffering": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "content": {
@@ -5526,11 +5759,26 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "ZIP archive containing the playlist's ordered MP3 tracks.",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Playlist-Track-Count": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "content": {
@@ -6502,6 +6750,7 @@
     },
     "/api/tracks/{deezer_id}/stream": {
       "get": {
+        "description": "Return MP3 bytes, with a 206 response for a valid single Range request. A cache miss materializes the track on the server before streaming.",
         "operationId": "stream_api_tracks__deezer_id__stream_get",
         "parameters": [
           {
@@ -6517,11 +6766,49 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "audio/mpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "Complete MP3 audio file.",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "206": {
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Requested MP3 byte range.",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "content": {
@@ -6542,6 +6829,23 @@
               }
             },
             "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "416": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Invalid or unsatisfiable Range header.",
+            "headers": {
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "422": {
             "content": {

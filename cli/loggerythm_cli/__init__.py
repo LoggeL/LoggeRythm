@@ -1,0 +1,1 @@
+"""LoggeRythm command-line client."""

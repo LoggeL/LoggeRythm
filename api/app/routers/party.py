@@ -103,6 +103,14 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
         ).all()
     }
     updated_at = session.playback_updated_at
+    if updated_at is not None:
+        # SQLite returns naive datetimes for values written by _utcnow(). Keep
+        # the API timestamp unambiguous for clients in other time zones.
+        updated_at = (
+            updated_at.replace(tzinfo=timezone.utc)
+            if updated_at.tzinfo is None
+            else updated_at.astimezone(timezone.utc)
+        )
     state = PartyState(
         code=session.code,
         name=session.name,
@@ -184,7 +192,13 @@ def create_party(
     return _build_state(db, session, user)
 
 
-@router.get("/{code}", response_model=PartyState)
+@router.get(
+    "/{code}",
+    response_model=PartyState,
+    description=(
+        "Read party state and register or refresh the requesting user as a party member."
+    ),
+)
 def get_party(
     code: str,
     user: User = Depends(get_current_user),
@@ -326,7 +340,20 @@ def set_playback(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{code}/events")
+@router.get(
+    "/{code}/events",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Server-Sent Events containing party state frames and heartbeat comments.",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            "headers": {
+                "Cache-Control": {"schema": {"type": "string"}},
+                "X-Accel-Buffering": {"schema": {"type": "string"}},
+            },
+        },
+    },
+)
 async def party_events(
     code: str,
     user: User = Depends(get_current_user),

@@ -21,6 +21,7 @@ from .db.session import SessionLocal, engine, init_db
 from .openapi_security import install_auth_openapi
 from .routers import (
     admin,
+    agent,
     auth,
     browse,
     compatibility,
@@ -233,6 +234,7 @@ def index() -> FileResponse:
 
 
 app.include_router(browse.router)
+app.include_router(agent.router)
 app.include_router(compatibility.router)
 app.include_router(stream.router)
 app.include_router(auth.router)
