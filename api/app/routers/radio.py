@@ -11,16 +11,15 @@ artist radio degrades to "that artist's own three songs" with an empty related
 list — which used to make song radio a single-artist loop.
 """
 import random
-from concurrent.futures import ThreadPoolExecutor
-
-import requests
 
 from fastapi import APIRouter
 from starlette.concurrency import run_in_threadpool
 
-from ..config import LASTFM_API_KEY
 from ..schemas.track import Track
 from ..services import deezer_client as dc
+from ..services import recommend
+from ..services.discovery import DiscoveryError
+from ..services.lastfm_client import LastfmError
 from .errors import to_http
 
 router = APIRouter(prefix="/api", tags=["radio"])
@@ -34,11 +33,6 @@ _MIN_OTHER_ARTIST_SLOTS = 12
 _MAX_PER_ARTIST = 2
 # Only below this does the per-artist cap get relaxed to keep the queue usable.
 _MIN_MIX_SIZE = 20
-_LASTFM = "https://ws.audioscrobbler.com/2.0/"
-
-
-class _RadioSourceError(RuntimeError):
-    """A non-Deezer recommendation source failed."""
 
 
 def _seed_meta(deezer_id: str) -> dict:
@@ -51,74 +45,8 @@ def _seed_meta(deezer_id: str) -> dict:
 
 
 def _lastfm_similar(artist: str, title: str) -> list[dict]:
-    """Ask Last.fm for similar tracks; resolve each to a playable Deezer track."""
-    if not LASTFM_API_KEY:
-        return []
-    if not artist or not title:
-        raise _RadioSourceError(
-            "Cannot query Last.fm recommendations: seed track has no artist or title"
-        )
-    try:
-        resp = requests.get(
-            _LASTFM,
-            params={
-                "method": "track.getsimilar",
-                "artist": artist,
-                "track": title,
-                "api_key": LASTFM_API_KEY,
-                "format": "json",
-                "limit": 40,
-                "autocorrect": 1,
-            },
-            timeout=12,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-    except (requests.exceptions.RequestException, ValueError) as e:
-        raise _RadioSourceError(
-            f"Last.fm recommendations failed for {artist!r} - {title!r}: {e}"
-        ) from e
-    if not isinstance(payload, dict):
-        raise _RadioSourceError(
-            f"Last.fm returned an invalid recommendation payload for {artist!r} - {title!r}"
-        )
-    if payload.get("error"):
-        raise _RadioSourceError(
-            f"Last.fm recommendations failed for {artist!r} - {title!r}: "
-            f"{payload.get('message') or payload['error']}"
-        )
-    similar = payload.get("similartracks") or {}
-    if not isinstance(similar, dict):
-        raise _RadioSourceError(
-            f"Last.fm returned invalid similar tracks for {artist!r} - {title!r}"
-        )
-    sims = similar.get("track") or []
-
-    queries = [
-        f"{(s.get('artist') or {}).get('name', '')} {s.get('name', '')}".strip()
-        for s in sims
-    ]
-    queries = [q for q in queries if q][:30]
-    if not queries:
-        return []
-
-    def _resolve(q: str) -> dict | None:
-        try:
-            hits = dc.search_tracks_public(q, limit=1)
-        except dc.DeezerClientError as e:
-            raise type(e)(
-                f"Could not resolve Last.fm recommendation {q!r}: {e}"
-            ) from e
-        return hits[0] if hits else None
-
-    out: list[dict] = []
-    seen: set[str] = set()
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        for hit in pool.map(_resolve, queries):
-            if hit and hit["id"] not in seen:
-                seen.add(hit["id"])
-                out.append(hit)
-    return out
+    """Share the same validated discovery provider used by home shelves."""
+    return recommend.similar_tracks(artist, title, 40, resolve_limit=30)
 
 
 def _deezer_mix(deezer_id: str, artist_id) -> list[dict]:
@@ -267,5 +195,5 @@ def _radio(deezer_id: str) -> list[dict]:
 async def radio(deezer_id: str) -> list[dict]:
     try:
         return await run_in_threadpool(_radio, deezer_id)
-    except (dc.DeezerClientError, _RadioSourceError) as e:
+    except (dc.DeezerClientError, LastfmError, DiscoveryError) as e:
         raise to_http(e)

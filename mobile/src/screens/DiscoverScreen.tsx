@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
@@ -11,6 +11,7 @@ import {
   HorizontalCatalogRail,
 } from '../components/catalog/CatalogCards';
 import { CatalogRuntimeError, CatalogSection } from '../components/catalog/CatalogStates';
+import { FilterChip, ScreenHeader } from '../components/ui';
 import { showTrackActions } from '../components/trackActions';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
@@ -48,12 +49,28 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
   const releases = useQuery(musicQueries.newReleases());
   const playlists = useQuery(musicQueries.publicPlaylists(scope));
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const scroll = useRef<ScrollView>(null);
+  const sectionOffsets = useRef<Partial<Record<string, number>>>({});
   const queries = [charts, genres, releases, playlists];
   const refreshing = queries.some((query) => query.isFetching && !query.isPending);
 
   const refresh = () => {
     void Promise.allSettled(queries.map((query) => query.refetch()));
   };
+
+  const jumpToSection = (id: string) => {
+    const offset = sectionOffsets.current[id];
+    if (scroll.current === null || offset === undefined) {
+      throw new Error(`Discover section ${id} is not laid out yet`);
+    }
+    scroll.current.scrollTo({ y: Math.max(0, offset - 20), animated: true });
+  };
+  const shortcuts = [
+    { id: 'charts', title: catalogStrings.discover.charts },
+    { id: 'genres', title: catalogStrings.discover.genres },
+    { id: 'new-releases', title: catalogStrings.discover.newReleases },
+    { id: 'community-playlists', title: catalogStrings.discover.communityPlaylists },
+  ];
 
   const playContext = (tracks: Track[], index: number) => {
     let selected: ReturnType<typeof playbackSelection>;
@@ -74,6 +91,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
   return (
     <View testID="discover-screen" style={styles.container}>
       <ScrollView
+        ref={scroll}
         testID="discover-scroll"
         refreshControl={
           <RefreshControl
@@ -87,16 +105,33 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
         }
         contentContainerStyle={styles.content}
       >
-        <View style={styles.hero}>
-          <Text testID="discover-title" accessibilityRole="header" style={styles.title}>
-            {catalogStrings.discover.title}
-          </Text>
-          <Text style={styles.subtitle}>{catalogStrings.discover.subtitle}</Text>
-        </View>
+        <ScreenHeader
+          titleTestID="discover-title"
+          title={catalogStrings.discover.title}
+          subtitle={catalogStrings.discover.subtitle}
+          style={styles.hero}
+        />
+        <ScrollView
+          testID="discover-shortcuts"
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.shortcuts}
+        >
+          {shortcuts.map(({ id, title }) => (
+            <FilterChip
+              key={id}
+              testID={`discover-jump-${id}`}
+              label={title}
+              accessibilityLabel={catalogStrings.discover.jumpToSection(title)}
+              onPress={() => jumpToSection(id)}
+            />
+          ))}
+        </ScrollView>
         <CatalogRuntimeError id="discover" message={runtimeError} />
 
         <CatalogSection
           id="charts"
+          onLayout={({ nativeEvent }) => { sectionOffsets.current.charts = nativeEvent.layout.y; }}
           title={catalogStrings.discover.charts}
           hasData={charts.data !== undefined}
           empty={(charts.data?.length ?? 0) === 0}
@@ -133,6 +168,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
 
         <CatalogSection
           id="genres"
+          onLayout={({ nativeEvent }) => { sectionOffsets.current.genres = nativeEvent.layout.y; }}
           title={catalogStrings.discover.genres}
           hasData={genres.data !== undefined}
           empty={(genres.data?.length ?? 0) === 0}
@@ -159,6 +195,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
 
         <CatalogSection
           id="new-releases"
+          onLayout={({ nativeEvent }) => { sectionOffsets.current['new-releases'] = nativeEvent.layout.y; }}
           title={catalogStrings.discover.newReleases}
           hasData={releases.data !== undefined}
           empty={(releases.data?.length ?? 0) === 0}
@@ -185,6 +222,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
 
         <CatalogSection
           id="community-playlists"
+          onLayout={({ nativeEvent }) => { sectionOffsets.current['community-playlists'] = nativeEvent.layout.y; }}
           title={catalogStrings.discover.communityPlaylists}
           hasData={playlists.data !== undefined}
           empty={(playlists.data?.length ?? 0) === 0}
@@ -220,8 +258,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { gap: 30, paddingTop: 24, paddingBottom: 144 },
-  hero: { gap: 7, paddingHorizontal: 16 },
-  title: { color: colors.textPrimary, fontSize: 32, lineHeight: 38, fontWeight: '900' },
-  subtitle: { color: colors.textSecondary, fontSize: 15, lineHeight: 21, maxWidth: 420 },
+  content: { gap: 28, paddingTop: 24, paddingBottom: 144 },
+  hero: { paddingHorizontal: 20 },
+  shortcuts: { gap: 8, paddingHorizontal: 20 },
 });

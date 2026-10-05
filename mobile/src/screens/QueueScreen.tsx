@@ -16,6 +16,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { Track } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
 import AppIcon from '../components/AppIcon';
+import { ActionButton } from '../components/ui';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
 import TrackStateIndicator from '../components/TrackStateIndicator';
 import { useTrackPresentationResolver } from '../components/player/TrackPresentationProvider';
@@ -115,17 +116,15 @@ function testIdPart(stableId: string): string {
 
 function retryButton(testID: string, label: string, busy: boolean, onPress: () => void) {
   return (
-    <Pressable
+    <ActionButton
       testID={testID}
-      accessibilityRole="button"
+      label={strings.common.retry}
       accessibilityLabel={label}
-      accessibilityState={{ disabled: busy, busy }}
-      disabled={busy}
+      busy={busy}
       onPress={onPress}
-      style={({ pressed }) => [styles.retryButton, pressed && styles.pressed, busy && styles.disabled]}
-    >
-      <Text style={styles.retryText}>{strings.common.retry}</Text>
-    </Pressable>
+      icon="refresh"
+      style={styles.retryButton}
+    />
   );
 }
 
@@ -141,7 +140,7 @@ export function QueueSurfaceHeader({
   return (
     <View testID="queue-header" style={styles.header}>
       <View>
-        <Text accessibilityRole="header" style={styles.heading}>{strings.queue.title}</Text>
+        <Text accessibilityRole="header" style={[styles.heading, embedded && styles.embeddedHeading]}>{strings.queue.title}</Text>
         <Text accessibilityLiveRegion="polite" style={styles.count}>
           {strings.queue.upcomingCount(upcomingCount)}
         </Text>
@@ -153,7 +152,7 @@ export function QueueSurfaceHeader({
           accessibilityLabel={strings.queue.close}
           onPress={onClose}
           hitSlop={12}
-          style={styles.closeButton}
+          style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
         >
           <Text style={styles.closeText}>{strings.queue.done}</Text>
         </Pressable>
@@ -388,6 +387,7 @@ export function QueueSurface({
             })
           }
         >
+          <AppIcon name="shuffle-variant" color={shuffle ? colors.accentSoft : colors.textSecondary} size={18} />
           <Text style={[styles.toolText, shuffle && styles.toolTextActive]}>
             {shuffle ? strings.queue.restoreOrder : strings.queue.shuffle}
           </Text>
@@ -414,6 +414,7 @@ export function QueueSurface({
             })
           }
         >
+          <AppIcon name="playlist-remove" color={colors.textSecondary} size={18} />
           <Text style={styles.toolText}>{strings.queue.clearUpcoming}</Text>
         </Pressable>
       </View>
@@ -603,59 +604,69 @@ export function QueueSurface({
             );
             return (
               <View testID={rowTestId} style={[styles.row, active && styles.activeRow]}>
-                <Pressable
-                  testID={`${rowTestId}-track`}
-                  accessibilityRole="button"
-                  accessibilityLabel={strings.queue.skipLabel(
-                    row.track.title,
-                    trackArtistLabel(row.track),
-                    active,
-                  )}
-                  accessibilityHint={active ? undefined : strings.queue.skipHint}
-                  accessibilityState={{
-                    selected: active,
-                    busy: rowPresentation.playback === 'buffering',
-                    disabled: mutationPending,
-                  }}
-                  disabled={mutationPending}
-                  style={styles.trackButton}
-                  onPress={() =>
-                    void runMutation(strings.queue.skipFailed(row.track.title), async () => {
-                      await skipToQueueItem(nativeIndex, expectedStableIds);
-                      return strings.queue.skippedTo(row.track.title);
-                    })
-                  }
-                >
-                  {row.track.cover ? (
-                    <Image accessible={false} source={{ uri: row.track.cover }} style={styles.artwork} />
-                  ) : (
-                    <View style={[styles.artwork, styles.artworkPlaceholder]} />
-                  )}
-                </Pressable>
+                <View style={styles.rowMain}>
+                  <Pressable
+                    testID={`${rowTestId}-track`}
+                    accessibilityRole="button"
+                    accessibilityLabel={strings.queue.skipLabel(
+                      row.track.title,
+                      trackArtistLabel(row.track),
+                      active,
+                    )}
+                    accessibilityHint={active ? undefined : strings.queue.skipHint}
+                    accessibilityState={{
+                      selected: active,
+                      busy: rowPresentation.playback === 'buffering',
+                      disabled: mutationPending,
+                    }}
+                    disabled={mutationPending}
+                    style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
+                    onPress={() =>
+                      void runMutation(strings.queue.skipFailed(row.track.title), async () => {
+                        await skipToQueueItem(nativeIndex, expectedStableIds);
+                        return strings.queue.skippedTo(row.track.title);
+                      })
+                    }
+                  >
+                    {row.track.cover ? (
+                      <Image accessible={false} source={{ uri: row.track.cover }} style={styles.artwork} />
+                    ) : (
+                      <View style={[styles.artwork, styles.artworkPlaceholder]}>
+                        <AppIcon name="music-note" color={colors.textSecondary} size={24} />
+                      </View>
+                    )}
+                    {active && (
+                      <View accessible={false} pointerEvents="none" style={styles.artworkPlaying}>
+                        <AppIcon name="equalizer" color={colors.onAccent} size={18} />
+                      </View>
+                    )}
+                  </Pressable>
 
-                <View style={styles.metadata}>
-                  <TrackIdentityLinks
-                    metadata={buildTrackMetadata(row.track)}
-                    testID={`${rowTestId}-identity`}
-                    copy={trackIdentityCopy}
-                    onOpenAlbum={onOpenAlbum}
-                    onOpenArtist={onOpenArtist}
-                    showAlbumLabel
-                    showDuration
-                    showPopularity={false}
-                  />
-                  <TrackStateIndicator
-                    presentation={rowPresentation}
-                    copy={trackStateIndicatorCopy}
-                    testID={`${rowTestId}-state`}
-                  />
-                  {upcoming && row.origin === 'manual' && (
-                    <Text numberOfLines={1} style={styles.manualPriority}>
-                      {strings.queue.manualPriority}
-                    </Text>
-                  )}
+                  <View style={styles.metadata}>
+                    <TrackIdentityLinks
+                      metadata={buildTrackMetadata(row.track)}
+                      testID={`${rowTestId}-identity`}
+                      copy={trackIdentityCopy}
+                      onOpenAlbum={onOpenAlbum}
+                      onOpenArtist={onOpenArtist}
+                      showAlbumLabel
+                      showDuration
+                      showPopularity={false}
+                    />
+                    <View style={styles.rowState}>
+                      <TrackStateIndicator
+                        presentation={rowPresentation}
+                        copy={trackStateIndicatorCopy}
+                        testID={`${rowTestId}-state`}
+                      />
+                      {upcoming && row.origin === 'manual' && (
+                        <Text numberOfLines={1} style={styles.manualPriority}>
+                          {strings.queue.manualPriority}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
                 </View>
-
                 <View style={styles.actions}>
                   <Pressable
                     testID={`${rowTestId}-move-up`}
@@ -663,8 +674,9 @@ export function QueueSurface({
                     accessibilityLabel={strings.queue.moveUp(row.track.title)}
                     accessibilityState={{ disabled: mutationPending || !canMoveUp }}
                     disabled={mutationPending || !canMoveUp}
-                    style={[
+                    style={({ pressed }) => [
                       styles.actionButton,
+                      pressed && styles.pressed,
                       (mutationPending || !canMoveUp) && styles.disabled,
                     ]}
                     onPress={() =>
@@ -686,8 +698,9 @@ export function QueueSurface({
                     accessibilityLabel={strings.queue.moveDown(row.track.title)}
                     accessibilityState={{ disabled: mutationPending || !canMoveDown }}
                     disabled={mutationPending || !canMoveDown}
-                    style={[
+                    style={({ pressed }) => [
                       styles.actionButton,
+                      pressed && styles.pressed,
                       (mutationPending || !canMoveDown) && styles.disabled,
                     ]}
                     onPress={() =>
@@ -713,7 +726,7 @@ export function QueueSurface({
                     }
                     accessibilityState={{ disabled: mutationPending || active }}
                     disabled={mutationPending || active}
-                    style={[styles.actionButton, (mutationPending || active) && styles.disabled]}
+                    style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (mutationPending || active) && styles.disabled]}
                     onPress={() =>
                       void runMutation(strings.queue.removeFailed(row.track.title), async () => {
                         await removeQueueItem(nativeIndex, expectedStableIds);
@@ -759,37 +772,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingBottom: 14,
+    paddingTop: 16,
+    paddingBottom: 18,
   },
   tools: {
     flexDirection: 'row',
     gap: 10,
     paddingHorizontal: 20,
-    paddingBottom: 10,
+    paddingBottom: 16,
   },
   toolButton: {
     flex: 1,
     minHeight: metrics.minimumTouchTarget,
-    borderRadius: 8,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
-  toolButtonActive: { borderColor: colors.accent },
-  toolText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  toolTextActive: { color: colors.accent },
-  heading: { color: colors.textPrimary, fontSize: 28, fontWeight: '800' },
-  count: { color: colors.textSecondary, fontSize: 13, marginTop: 2 },
-  closeButton: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center', paddingLeft: 16 },
-  closeText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
+  toolButtonActive: { borderColor: colors.accentSoft, backgroundColor: colors.surfaceElevated },
+  toolText: { flexShrink: 1, color: colors.textSecondary, fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  toolTextActive: { color: colors.accentSoft },
+  heading: { color: colors.textPrimary, fontSize: 30, lineHeight: 38, fontWeight: '700', letterSpacing: -0.7 },
+  embeddedHeading: { fontSize: 23, lineHeight: 30 },
+  count: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 },
+  closeButton: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 14, backgroundColor: colors.surface },
+  closeText: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
   errorBanner: {
     marginHorizontal: 20,
     marginBottom: 10,
     padding: 10,
-    borderRadius: 8,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.danger,
     backgroundColor: colors.surfaceElevated,
@@ -804,73 +822,70 @@ const styles = StyleSheet.create({
   warningText: { color: colors.warning, fontSize: 12, lineHeight: 17 },
   inlineStatus: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20 },
   metadataStatus: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, paddingHorizontal: 20, paddingBottom: 6 },
-  retryButton: { minHeight: metrics.minimumTouchTarget, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 16, borderRadius: 24, backgroundColor: colors.accent },
-  retryText: { color: colors.onAccent, fontSize: 13, fontWeight: '800' },
+  retryButton: { alignSelf: 'flex-start' },
   pressed: { opacity: 0.72 },
-  list: { paddingHorizontal: 12, paddingBottom: 16 },
+  list: { paddingHorizontal: 16, paddingBottom: 24 },
   emptyList: { flexGrow: 1, paddingHorizontal: 20 },
   sectionHeader: {
     minHeight: 42,
-    paddingHorizontal: 8,
-    paddingTop: 14,
-    paddingBottom: 7,
+    paddingHorizontal: 4,
+    paddingTop: 20,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
     backgroundColor: colors.background,
   },
-  embeddedSectionHeader: { backgroundColor: '#0a0a14b8' },
-  sectionTitle: { flex: 1, color: colors.textPrimary, fontSize: 14, fontWeight: '800' },
-  sectionCount: { color: colors.textSecondary, fontSize: 12, marginLeft: 12 },
+  embeddedSectionHeader: { backgroundColor: 'transparent' },
+  sectionTitle: { flex: 1, color: colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  sectionCount: { color: colors.textSecondary, fontSize: 11, marginLeft: 12 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   emptyTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' },
   emptyDetail: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
   row: {
-    minHeight: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 4,
+    marginBottom: 8,
   },
   activeRow: {
-    backgroundColor: colors.surface,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
+    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.accent,
   },
+  rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   trackButton: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
+    width: 56,
+    height: 56,
     alignItems: 'center',
     justifyContent: 'center',
-    marginVertical: 8,
   },
   artwork: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    borderRadius: 5,
+    width: 56,
+    height: 56,
+    borderRadius: 10,
     backgroundColor: colors.surfaceElevated,
   },
-  artworkPlaceholder: { borderWidth: 1, borderColor: colors.border },
+  artworkPlaceholder: { borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  artworkPlaying: { position: 'absolute', right: -4, bottom: -4, width: 24, height: 24, borderRadius: 8, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
   metadata: {
     flex: 1,
     minWidth: 0,
-    marginLeft: 9,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    paddingVertical: 2,
+    gap: 6,
   },
+  rowState: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   manualPriority: {
-    maxWidth: 30,
+    flexShrink: 1,
     color: colors.textSecondary,
-    fontSize: 8,
-    fontWeight: '800',
-    marginLeft: 3,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '500',
   },
-  actions: { flexDirection: 'row', alignItems: 'center', marginLeft: 4 },
-  actionButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  actionText: { color: colors.textSecondary, fontSize: 18, fontWeight: '700' },
-  removeText: { color: colors.danger, fontSize: 23 },
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4, gap: 4 },
+  actionButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.24 },
 });

@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from app.routers import home
 from app.services import deezer_client as dc
+from app.services import singleflight_cache
 
 
 class ChartCollectionsTests(unittest.TestCase):
@@ -94,16 +95,16 @@ class CountingFuture(Future[list[home.Shelf]]):
 
 class MixesSingleFlightTests(unittest.TestCase):
     def setUp(self) -> None:
-        with home._mixes_lock:
-            home._mixes_cache.clear()
-            home._mixes_inflight.clear()
+        with home._mixes_cache.lock:
+            home._mixes_cache.cache.clear()
+            home._mixes_cache.inflight.clear()
         CountingFuture.entered = 0
         CountingFuture.all_waiting.clear()
 
     def tearDown(self) -> None:
-        with home._mixes_lock:
-            home._mixes_cache.clear()
-            home._mixes_inflight.clear()
+        with home._mixes_cache.lock:
+            home._mixes_cache.cache.clear()
+            home._mixes_cache.inflight.clear()
 
     def test_same_user_builds_once_and_uses_only_leader_db(self) -> None:
         entered = threading.Event()
@@ -118,7 +119,7 @@ class MixesSingleFlightTests(unittest.TestCase):
             return [shelf]
 
         with (
-            patch.object(home, "Future", CountingFuture),
+            patch.object(singleflight_cache, "Future", CountingFuture),
             patch.object(home, "_build_mixes", side_effect=build),
             ThreadPoolExecutor(max_workers=3) as pool,
         ):
@@ -166,7 +167,7 @@ class MixesSingleFlightTests(unittest.TestCase):
             return []
 
         with (
-            patch.object(home, "Future", CountingFuture),
+            patch.object(singleflight_cache, "Future", CountingFuture),
             patch.object(home, "_build_mixes", side_effect=build),
             ThreadPoolExecutor(max_workers=3) as pool,
         ):
@@ -194,7 +195,7 @@ class MixesSingleFlightTests(unittest.TestCase):
             return [home.Shelf(key=str(calls), title="Mix", tracks=[])]
 
         with (
-            patch.object(home, "time", SimpleNamespace(monotonic=lambda: clock[0])),
+            patch.object(home._mixes_cache, "_clock", lambda: clock[0]),
             patch.object(home, "_build_mixes", side_effect=build),
         ):
             user = SimpleNamespace(id=7)
@@ -208,18 +209,190 @@ class MixesSingleFlightTests(unittest.TestCase):
 
     def test_cache_evicts_oldest_entry_at_limit(self) -> None:
         now = time.monotonic()
-        with home._mixes_lock:
+        with home._mixes_cache.lock:
             for index in range(home._MIXES_CACHE_MAX):
-                home._mixes_cache[str(index)] = (now - 256 + index, [])
+                home._mixes_cache.cache[str(index)] = (now - 256 + index, [])
 
         with patch.object(home, "_build_mixes", return_value=[]):
             home.mixes(SimpleNamespace(id=999), object())
 
-        with home._mixes_lock:
-            self.assertEqual(len(home._mixes_cache), home._MIXES_CACHE_MAX)
-            self.assertNotIn("0", home._mixes_cache)
-            self.assertIn("1", home._mixes_cache)
-            self.assertIn("999", home._mixes_cache)
+        with home._mixes_cache.lock:
+            self.assertEqual(len(home._mixes_cache.cache), home._MIXES_CACHE_MAX)
+            self.assertNotIn("0", home._mixes_cache.cache)
+            self.assertIn("1", home._mixes_cache.cache)
+            self.assertIn("999", home._mixes_cache.cache)
+
+
+class PersonalizedDiscoveryConcurrencyTests(unittest.TestCase):
+    def test_mix_database_reads_finish_on_caller_thread_before_provider_fanout(self) -> None:
+        caller_thread = threading.get_ident()
+        user, db = SimpleNamespace(id=7), object()
+        reads: list[str] = []
+        started: list[str] = []
+        started_lock = threading.Lock()
+        all_started = threading.Barrier(7)
+        seeds = [("One", "A"), ("Two", "B"), ("Three", "C")]
+
+        def seed_tracks(actual_db: object, actual_user: object) -> list[tuple[str, str]]:
+            self.assertEqual(threading.get_ident(), caller_thread)
+            self.assertIs(actual_db, db)
+            self.assertIs(actual_user, user)
+            reads.append("tracks")
+            return seeds
+
+        def top_artists(actual_db: object, actual_user: object) -> list[str]:
+            self.assertEqual(threading.get_ident(), caller_thread)
+            self.assertIs(actual_db, db)
+            self.assertIs(actual_user, user)
+            reads.append("artists")
+            return ["A", "B"]
+
+        def provider_started(name: str) -> None:
+            self.assertNotEqual(threading.get_ident(), caller_thread)
+            self.assertEqual(reads, ["tracks", "artists"])
+            with started_lock:
+                started.append(name)
+            all_started.wait(timeout=3)
+
+        def similar_tracks(artist: str, title: str, limit: int) -> list[dict]:
+            self.assertEqual(limit, 12)
+            provider_started(f"seed-{artist}")
+            return [{"id": f"weekly-{title}"}, {"id": "weekly-shared"}]
+
+        def tags(tags: list[str], limit: int) -> list[dict]:
+            self.assertEqual(tags, home._MOODS["chill"])
+            self.assertEqual(limit, 30)
+            provider_started("chill")
+            return [{"id": "chill"}]
+
+        def similar_artists(artist: str, limit: int) -> list[str]:
+            self.assertEqual(limit, 8)
+            provider_started(f"artist-{artist}")
+            return ["Shared", f"Similar {artist}"]
+
+        with (
+            patch.object(home, "_user_seed_tracks", side_effect=seed_tracks),
+            patch.object(home, "_user_top_artists", side_effect=top_artists),
+            patch.object(home.recommend, "similar_tracks", side_effect=similar_tracks),
+            patch.object(home.recommend, "tag_top_tracks", side_effect=tags),
+            patch.object(home.recommend, "similar_artists", side_effect=similar_artists),
+            patch.object(home.recommend, "resolve_queries", return_value=[{"id": "discovery-shared"}, {"id": "discovery-shared"}, {"id": "discovery-new"}]) as resolve,
+            patch.object(home.random, "shuffle"),
+            ThreadPoolExecutor(max_workers=1) as observer,
+        ):
+            rendezvous = observer.submit(all_started.wait, 3)
+            shelves = home._build_mixes(user, db)
+            rendezvous.result(timeout=3)
+
+        self.assertCountEqual(started, ["seed-A", "seed-B", "seed-C", "chill", "artist-A", "artist-B"])
+        self.assertEqual([shelf.key for shelf in shelves], ["weekly", "chill", "discover"])
+        self.assertEqual([track.id for track in shelves[0].tracks], ["weekly-One", "weekly-shared", "weekly-Two", "weekly-Three"])
+        self.assertEqual([track.id for track in shelves[2].tracks], ["discovery-shared", "discovery-new"])
+        resolve.assert_called_once_with(["Shared", "Similar A", "Shared", "Similar B"], 24)
+
+    def test_artist_rails_load_concurrently_and_keep_source_order_after_empty_result(self) -> None:
+        artists = ["A", "B", "C"]
+        started = threading.Barrier(4)
+        releases = {artist: threading.Event() for artist in artists}
+        finished = {artist: threading.Event() for artist in artists}
+
+        def similar_artists(artist: str, limit: int) -> list[str]:
+            self.assertEqual(limit, 8)
+            started.wait(timeout=3)
+            self.assertTrue(releases[artist].wait(3))
+            finished[artist].set()
+            return [] if artist == "B" else [f"Similar {artist}"]
+
+        def resolve(names: list[str], limit: int) -> list[dict]:
+            self.assertEqual(limit, 24)
+            return [{"id": names[0]}, {"id": names[0]}]
+
+        with (
+            patch.object(home, "_user_top_artists", return_value=artists),
+            patch.object(home.recommend, "similar_artists", side_effect=similar_artists),
+            patch.object(home.recommend, "resolve_queries", side_effect=resolve),
+            ThreadPoolExecutor(max_workers=1) as caller,
+        ):
+            pending = caller.submit(home.because_you_listened, SimpleNamespace(id=7), object())
+            try:
+                started.wait(timeout=3)
+                for artist in reversed(artists):
+                    releases[artist].set()
+                    self.assertTrue(finished[artist].wait(3))
+            finally:
+                for event in releases.values():
+                    event.set()
+            shelves = pending.result(timeout=3)
+
+        self.assertEqual([shelf.key for shelf in shelves], ["byl-a", "byl-c"])
+        self.assertEqual([[track.id for track in shelf.tracks] for shelf in shelves], [["Similar A"], ["Similar C"]])
+
+    def test_artist_rails_report_every_failed_provider_and_return_no_partial_shelves(self) -> None:
+        calls: list[str] = []
+        calls_lock = threading.Lock()
+
+        def similar_artists(artist: str, _limit: int) -> list[str]:
+            with calls_lock:
+                calls.append(artist)
+            if artist in ("A", "C"):
+                raise home.LastfmError(f"{artist} Last.fm unavailable")
+            return ["Similar B"]
+
+        with (
+            patch.object(home, "_user_top_artists", return_value=["A", "B", "C"]),
+            patch.object(home.recommend, "similar_artists", side_effect=similar_artists),
+            patch.object(home.recommend, "resolve_queries", return_value=[{"id": "partial-track"}]),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                home.because_you_listened(SimpleNamespace(id=7), object())
+
+        self.assertCountEqual(calls, ["A", "B", "C"])
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertIn("2 of 3", caught.exception.detail)
+        self.assertIn("A: A Last.fm unavailable", caught.exception.detail)
+        self.assertIn("C: C Last.fm unavailable", caught.exception.detail)
+
+    def test_failed_configured_mix_is_not_cached_and_next_call_retries(self) -> None:
+        cache = singleflight_cache.SingleFlightTtlCache[str, list[home.Shelf]](
+            ttl_seconds=3600, max_entries=4, max_inflight=2,
+        )
+        success = [home.Shelf(key="weekly", title="Mix", tracks=[])]
+        with (
+            patch.object(home, "_mixes_cache", cache),
+            patch.object(home, "_build_mixes", side_effect=[home.LastfmError("Configured Last.fm failed"), success]) as build,
+        ):
+            user = SimpleNamespace(id=7)
+            with self.assertRaises(HTTPException) as caught:
+                home.mixes(user, object())
+            self.assertEqual(caught.exception.status_code, 502)
+            self.assertIn("Configured Last.fm failed", caught.exception.detail)
+            self.assertFalse(cache.cache)
+            self.assertFalse(cache.inflight)
+            self.assertEqual(home.mixes(user, object()), success)
+            self.assertEqual(home.mixes(user, object()), success)
+        self.assertEqual(build.call_count, 2)
+
+    def test_signed_out_personalization_does_not_read_database_seeds(self) -> None:
+        with (
+            patch.object(home, "_user_seed_tracks") as seeds,
+            patch.object(home, "_user_top_artists") as artists,
+            patch.object(home.recommend, "tag_top_tracks", return_value=[]),
+            patch.object(home, "_chart_tracks", return_value=[]),
+        ):
+            self.assertEqual(home.because_you_listened(None, object()), [])
+            self.assertEqual(home._build_mixes(None, object()), [])
+        seeds.assert_not_called()
+        artists.assert_not_called()
+
+    def test_no_artist_history_is_empty_without_provider_calls(self) -> None:
+        with (
+            patch.object(home, "_user_top_artists", return_value=[]),
+            patch.object(home.recommend, "similar_artists") as similar,
+            patch.object(home.recommend, "resolve_queries") as resolve,
+        ):
+            self.assertEqual(home.because_you_listened(SimpleNamespace(id=7), object()), [])
+        similar.assert_not_called()
+        resolve.assert_not_called()
 
 
 if __name__ == "__main__":

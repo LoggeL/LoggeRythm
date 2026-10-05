@@ -32,6 +32,7 @@ export interface CatalogScreenStrings {
     genres: string;
     newReleases: string;
     communityPlaylists: string;
+    jumpToSection: (title: string) => string;
     openPlaylist: (name: string, owner: string | null, count: number) => string;
     byOwner: (owner: string) => string;
   };
@@ -114,6 +115,7 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       genres: 'Genres',
       newReleases: 'Neue Veröffentlichungen',
       communityPlaylists: 'Community-Playlists',
+      jumpToSection: (title) => `Zu ${title} springen`,
       openPlaylist: (name, owner, count) =>
         `${name} öffnen${owner ? `, von ${owner}` : ''}, ${count} Titel`,
       byOwner: (owner) => `von ${owner}`,
@@ -199,6 +201,7 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       genres: 'Genres',
       newReleases: 'New releases',
       communityPlaylists: 'Community playlists',
+      jumpToSection: (title) => `Jump to ${title}`,
       openPlaylist: (name, owner, count) =>
         `Open ${name}${owner ? ` by ${owner}` : ''}, ${count} ${count === 1 ? 'track' : 'tracks'}`,
       byOwner: (owner) => `by ${owner}`,

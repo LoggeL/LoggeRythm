@@ -65,7 +65,7 @@ export interface NowPlayingArtworkProps {
 }
 
 /**
- * High-resolution square cover with a bounded violet frame and static shadow.
+ * High-resolution square cover with a quiet edge and static shadow.
  * The adjacent title/artist already describe the media, so this visual does
  * not add a duplicate TalkBack stop.
  */
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
   },
   backdropImage: {
     ...absoluteFill,
-    opacity: 0.18,
+    opacity: 0.25,
     transform: [{ scale: 1.16 }],
   },
   brandWash: {
@@ -147,50 +147,50 @@ const styles = StyleSheet.create({
     top: -120,
     left: -90,
     borderRadius: 170,
-    backgroundColor: '#7c5cff24',
+    backgroundColor: '#7c5cff14',
   },
   backdropDim: {
     ...absoluteFill,
-    backgroundColor: '#0a0a14d6',
+    backgroundColor: `${colors.background}df`,
   },
   frame: {
     width: '100%',
     maxWidth: 440,
     aspectRatio: 1,
     alignSelf: 'center',
-    padding: 3,
-    borderRadius: 29,
-    backgroundColor: colors.accent,
-    shadowColor: colors.accent,
-    shadowOpacity: 0.48,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 14,
+    padding: 1,
+    borderRadius: 24,
+    backgroundColor: colors.border,
+    shadowColor: '#000000',
+    shadowOpacity: 0.3,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
   },
   frameInner: {
     flex: 1,
     overflow: 'hidden',
-    borderRadius: 26,
+    borderRadius: 23,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#ffffff24',
     backgroundColor: colors.surfaceElevated,
   },
   compactFrame: {
-    padding: 2,
+    padding: 1,
     borderRadius: 12,
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 6,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
-  compactFrameInner: { borderRadius: 10 },
+  compactFrameInner: { borderRadius: 11 },
   artworkImage: { width: '100%', height: '100%' },
   placeholder: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: '#5b3fe8',
+    backgroundColor: colors.surfaceElevated,
   },
   placeholderGlow: {
     position: 'absolute',
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     right: '-18%',
     bottom: '-28%',
-    backgroundColor: '#ff6ec75c',
+    backgroundColor: '#7c5cff1f',
   },
   placeholderEqualizer: {
     height: '46%',
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   placeholderBar: {
     width: 14,
     borderRadius: 999,
-    backgroundColor: '#ffffff73',
+    backgroundColor: colors.accentSoft,
   },
   placeholderBarShort: { height: '54%' },
   placeholderBarTall: { height: '100%' },

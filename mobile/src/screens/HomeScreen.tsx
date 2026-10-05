@@ -30,7 +30,8 @@ import { strings } from '../localization';
 import { playTracks } from '../player/controller';
 import { reportPlayerError } from '../player/errors';
 import type { QueueContext } from '../player/queueContract';
-import { colors, metrics } from '../theme';
+import { colors, metrics, radii, spacing, typography } from '../theme';
+import { FilterChip } from '../components/ui';
 import {
   HOME_MOODS,
   assertHomeRouteCallbacks,
@@ -236,21 +237,14 @@ export default function HomeScreen(props: HomeScreenProps) {
           {chips.map((chip) => {
             const selected = chip.key === moodKey;
             return (
-              <Pressable
+              <FilterChip
                 key={chip.key}
                 testID={`home-mood-${chip.key}`}
                 accessibilityRole="tab"
-                accessibilityLabel={chip.label}
-                accessibilityState={{ selected }}
+                label={chip.label}
+                selected={selected}
                 onPress={() => setMoodKey(chip.key)}
-                style={({ pressed }) => [
-                  styles.chip,
-                  selected && styles.chipSelected,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{chip.label}</Text>
-              </Pressable>
+              />
             );
           })}
         </ScrollView>
@@ -592,39 +586,25 @@ export default function HomeScreen(props: HomeScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { gap: 28, paddingTop: 22, paddingBottom: 144 },
+  content: { gap: spacing.xxl, paddingTop: spacing.xl, paddingBottom: 144 },
   storageWarning: {
     color: colors.warning,
     fontSize: 13,
     lineHeight: 19,
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
   },
-  hero: { gap: 5, paddingHorizontal: 16 },
-  heroHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  greeting: { flex: 1, color: colors.textPrimary, fontSize: 30, lineHeight: 36, fontWeight: '900' },
+  hero: { gap: spacing.xs, paddingHorizontal: spacing.lg },
+  heroHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  greeting: { ...typography.hero, flex: 1, color: colors.textPrimary },
   searchAction: {
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,
-    borderRadius: metrics.minimumTouchTarget / 2,
+    borderRadius: radii.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
+    backgroundColor: colors.surface,
   },
-  heroSubtitle: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
-  chips: { gap: 8, paddingHorizontal: 16 },
-  chip: {
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 17,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  chipSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
-  chipText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
-  chipTextSelected: { color: colors.onAccent },
+  heroSubtitle: { ...typography.body, color: colors.textSecondary },
+  chips: { gap: spacing.xs, paddingHorizontal: spacing.lg },
   pressed: { opacity: 0.72 },
 });

@@ -14,6 +14,7 @@ import type { RemoteFetchStatus } from '../../data/remoteState';
 import { strings } from '../../localization';
 import { colors, metrics } from '../../theme';
 import AppIcon from '../AppIcon';
+import { ActionButton } from '../ui';
 import {
   activeLyricIndex,
   lyricLineKey,
@@ -69,17 +70,15 @@ function sourceLabel(response: LyricsResponse): string | null {
 
 function retryButton(busy: boolean, onRetry: () => void) {
   return (
-    <Pressable
+    <ActionButton
       testID="lyrics-retry"
-      accessibilityRole="button"
+      label={strings.common.retry}
       accessibilityLabel={strings.player.lyrics.retry}
-      accessibilityState={{ disabled: busy, busy }}
-      disabled={busy}
+      busy={busy}
       onPress={onRetry}
-      style={({ pressed }) => [styles.retry, pressed && styles.pressed, busy && styles.disabled]}
-    >
-      <Text style={styles.retryText}>{strings.common.retry}</Text>
-    </Pressable>
+      icon="refresh"
+      style={styles.retry}
+    />
   );
 }
 
@@ -329,26 +328,26 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
 }
 
 const styles = StyleSheet.create({
-  panel: { flex: 1, minHeight: 0, paddingTop: 12 },
-  header: { alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingBottom: 10 },
-  heading: { color: colors.textPrimary, fontSize: 18, fontWeight: '900' },
+  panel: { flex: 1, minHeight: 0, paddingTop: 16 },
+  header: { alignItems: 'flex-start', gap: 3, paddingHorizontal: 4, paddingBottom: 12 },
+  heading: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, fontWeight: '600' },
   badges: {
     minHeight: 24,
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     gap: 6,
     marginTop: 5,
   },
   badge: {
-    color: colors.accent,
+    color: colors.accentSoft,
     backgroundColor: colors.surfaceElevated,
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 3,
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '600',
   },
   cachedIcon: {
     width: 26,
@@ -367,19 +366,13 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: colors.danger,
-    borderRadius: 14,
+    borderRadius: 16,
     backgroundColor: colors.surfaceElevated,
   },
   errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
   retry: {
     alignSelf: 'center',
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    backgroundColor: colors.accent,
   },
-  retryText: { color: colors.onAccent, fontSize: 13, fontWeight: '800' },
   list: { flex: 1, minHeight: 0 },
   listContent: { paddingTop: 80, paddingBottom: 120 },
   line: {
@@ -389,18 +382,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 12,
   },
-  activeLine: { backgroundColor: colors.surfaceElevated },
+  activeLine: { backgroundColor: colors.accentSubtle },
   lineText: {
     color: colors.textSecondary,
-    fontSize: 19,
-    lineHeight: 27,
-    fontWeight: '700',
-    textAlign: 'center',
-    opacity: 0.55,
+    fontSize: 22,
+    lineHeight: 31,
+    fontWeight: '600',
+    textAlign: 'left',
+    opacity: 0.8,
   },
-  activeLineText: { color: colors.accent, opacity: 1 },
+  activeLineText: { color: colors.textPrimary, opacity: 1 },
   notice: { alignItems: 'center', gap: 6, paddingVertical: 6 },
   noticeText: { color: colors.warning, fontSize: 12, lineHeight: 17, textAlign: 'center' },
   pressed: { opacity: 0.72 },
-  disabled: { opacity: 0.5 },
 });

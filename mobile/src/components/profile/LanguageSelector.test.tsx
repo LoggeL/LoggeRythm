@@ -13,19 +13,6 @@ vi.mock('react-native', () => ({
 vi.mock('../../localization/LocaleProvider', () => ({
   useLocale: vi.fn(),
 }));
-vi.mock('../../theme', () => ({
-  colors: {
-    accent: '#f00',
-    border: '#333',
-    danger: '#f33',
-    surface: '#111',
-    surfaceElevated: '#222',
-    surfacePressed: '#292929',
-    textPrimary: '#fff',
-    textSecondary: '#aaa',
-  },
-  metrics: { minimumTouchTarget: 48 },
-}));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 

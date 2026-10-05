@@ -2,47 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  HomeIcon,
-  SearchIcon,
-  LibraryIcon,
-  CompassIcon,
-  RadioIcon,
-} from "@/components/icons";
+import { HomeIcon, SearchIcon, LibraryIcon, CompassIcon } from "@/components/icons";
 
-// Konto is intentionally omitted — it's reachable via the avatar in the TopBar
-// on mobile, so the slot is spent on Entdecken/Radio instead.
 const ITEMS = [
   { href: "/", label: "Start", icon: HomeIcon },
   { href: "/search", label: "Suche", icon: SearchIcon },
   { href: "/genre", label: "Entdecken", icon: CompassIcon },
-  { href: "/radio", label: "Radio", icon: RadioIcon },
   { href: "/library", label: "Bibliothek", icon: LibraryIcon },
 ];
 
 export default function MobileNav() {
   const pathname = usePathname();
   return (
-    <nav className="md:hidden flex-shrink-0 z-40 bg-background/95 backdrop-blur-xl border-t border-white/5 flex justify-around px-1 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+    <nav aria-label="Hauptnavigation" className="lg:hidden flex-shrink-0 z-40 flex justify-around border-t border-border bg-background-elevated px-2 pt-2 pb-[calc(.5rem+env(safe-area-inset-bottom))]">
       {ITEMS.map(({ href, label, icon: Icon }) => {
-        const active =
-          pathname === href ||
-          (href !== "/" && pathname.startsWith(`${href}/`));
+        const active = pathname === href || (href !== "/" && pathname.startsWith(`${href}/`)) || (href === "/genre" && pathname.startsWith("/radio"));
         return (
-          <Link
-            key={href}
-            href={href}
-            className={`flex min-w-0 flex-1 flex-col items-center gap-1 text-[10px] px-1 py-1 transition ${
-              active ? "text-accent" : "text-muted hover:text-foreground"
-            }`}
-          >
-            <span
-              className={`flex items-center justify-center rounded-full px-3 py-0.5 transition ${
-                active ? "bg-accent/15" : ""
-              }`}
-            >
-              <Icon width={22} height={22} />
-            </span>
+          <Link key={href} href={href} aria-current={active ? "page" : undefined} className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-medium transition ${active ? "text-accent-soft" : "text-muted hover:text-foreground"}`}>
+            <span className={`grid h-7 w-12 place-items-center rounded-lg ${active ? "bg-accent/15" : ""}`}><Icon width={21} height={21} /></span>
             {label}
           </Link>
         );

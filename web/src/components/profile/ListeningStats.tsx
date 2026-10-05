@@ -1,6 +1,7 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useState } from "react";
+import type { CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { api } from "@/lib/api";
@@ -9,293 +10,68 @@ import { trackArtistLabel } from "@/lib/trackArtists";
 import type { RecentPlay, StatEntry, UserStats } from "@/types";
 import styles from "./ListeningStats.module.css";
 
-type ListeningStatsData = UserStats;
-
-type VisualStyle = CSSProperties & {
-  "--delay"?: string;
-  "--strength"?: string;
-};
-
 const numberFormatter = new Intl.NumberFormat("de-DE");
+const playLabel = (value: number) => value === 1 ? "Wiedergabe" : "Wiedergaben";
 
-function formatCount(value: number): string {
-  return numberFormatter.format(value);
-}
-
-function playLabel(value: number): string {
-  return value === 1 ? "Wiedergabe" : "Wiedergaben";
-}
-
-function revealStyle(index: number): VisualStyle {
-  return { "--delay": `${index * 70}ms` };
-}
-
-function traceStyle(value: number, max: number, index: number): VisualStyle {
-  return {
-    "--delay": `${220 + index * 90}ms`,
-    "--strength": `${(value / max) * 100}%`,
-  };
-}
-
-async function fetchListeningStats(): Promise<ListeningStatsData> {
+async function fetchListeningStats(): Promise<UserStats> {
   return decodeListeningStats(await api.stats());
 }
 
-function Artwork({
-  cover,
-  className,
-}: {
-  cover?: string;
-  className: string;
-}) {
-  if (!cover) return <CoverPlaceholder className={className} />;
-
+function Artwork({ cover }: { cover?: string }) {
+  if (!cover) return <CoverPlaceholder className={styles.artwork} />;
   return (
-    // Statistics artwork is decorative because the adjacent text names it.
     // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={cover}
-      alt=""
-      width={320}
-      height={320}
-      loading="lazy"
-      decoding="async"
-      className={className}
-    />
+    <img src={cover} alt="" width={40} height={40} loading="lazy" decoding="async" className={styles.artwork} />
   );
 }
 
-function SectionLabel({ index, children }: { index: string; children: ReactNode }) {
+function Ranking({ title, entries, artwork }: { title: string; entries: StatEntry[]; artwork?: boolean }) {
+  const max = entries.length > 0 ? Math.max(...entries.map((entry) => entry.count)) : 0;
   return (
-    <div className={styles.sectionLabel}>
-      <span aria-hidden="true">{index}</span>
-      <span>{children}</span>
-    </div>
+    <section className={styles.card} aria-label={title}>
+      <h3>{title}</h3>
+      {entries.length === 0 ? (
+        <p className={styles.empty}>In diesem Zeitraum sind noch keine Wiedergaben erfasst.</p>
+      ) : (
+        <ol className={styles.ranking}>
+          {entries.map((entry, index) => (
+            <li key={`${entry.key}-${index}`}>
+              <span className={styles.rank} aria-hidden="true">{index + 1}</span>
+              {artwork && <Artwork cover={entry.cover} />}
+              <div className={styles.entryCopy}>
+                <strong>{entry.label}</strong>
+                {entry.sublabel && <span>{entry.sublabel}</span>}
+                <div className={styles.rail} aria-hidden="true" style={{ "--strength": `${(entry.count / max) * 100}%` } as CSSProperties}><span /></div>
+              </div>
+              <span className={styles.count} aria-label={`${numberFormatter.format(entry.count)} ${playLabel(entry.count)}`}>
+                {numberFormatter.format(entry.count)}<small>mal</small>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
-function PulseCard({ data }: { data: ListeningStatsData }) {
-  const monthlyPlays = data.total_plays_month;
-  const monthlyShare =
-    data.total_plays > 0
-      ? Math.round((monthlyPlays / data.total_plays) * 100)
-      : 0;
-  const topArtist = data.top_artists[0];
-
+function RecentList({ tracks }: { tracks: RecentPlay[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? tracks : tracks.slice(0, 5);
   return (
-    <article
-      className={`${styles.card} ${styles.pulseCard} ${styles.reveal}`}
-      style={revealStyle(0)}
-    >
-      <div className={styles.pulseGlow} aria-hidden="true" />
-      <div className={styles.orbit} aria-hidden="true">
-        <span className={styles.orbitHalo} />
-        <span className={styles.orbitRing} />
-        <span className={styles.orbitRingInner} />
-        <span className={styles.orbitDot} />
-        <span className={styles.orbitCore}>
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
-        </span>
-      </div>
-
-      <div className={styles.pulseContent}>
-        <SectionLabel index="01">Gesamtfrequenz</SectionLabel>
-
-        <div className={styles.totalMetric}>
-          <strong>{formatCount(data.total_plays)}</strong>
-          <span>aufgezeichnete {playLabel(data.total_plays)}</span>
-        </div>
-
-        <div className={styles.pulseFooter}>
-          <div className={styles.monthMetric}>
-            <span>Letzte 30 Tage</span>
-            <strong>{formatCount(monthlyPlays)}</strong>
-          </div>
-
-          {monthlyPlays > 0 && data.total_plays > 0 && (
-            <div className={styles.shareMetric}>
-              <span>{monthlyShare}%</span>
-              <p>deines gesamten Archivs liegen in dieser Phase.</p>
-            </div>
-          )}
-
-          {topArtist && (
-            <div className={styles.favoriteMetric}>
-              <span>Stärkstes Signal</span>
-              <strong>{topArtist.label}</strong>
-              <small>
-                {formatCount(topArtist.count)} {playLabel(topArtist.count)}
-              </small>
-            </div>
-          )}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function RecentCard({ tracks }: { tracks: RecentPlay[] }) {
-  const visibleTracks = tracks.slice(0, 5);
-  const visibleCovers = tracks.slice(0, 4);
-
-  return (
-    <article
-      className={`${styles.card} ${styles.recentCard} ${styles.reveal}`}
-      style={revealStyle(1)}
-    >
-      <div className={styles.recentHeader}>
-        <SectionLabel index="02">Letzte Signale</SectionLabel>
-        {tracks.length > 0 && (
-          <span className={styles.entryCount}>{tracks.length} Einträge</span>
+    <section className={styles.card} aria-labelledby="recent-listening-title">
+      <div className={styles.cardHeader}>
+        <h3 id="recent-listening-title">Zuletzt gehört</h3>
+        {tracks.length > 5 && (
+          <button type="button" aria-expanded={expanded} aria-controls="recent-listening-list" onClick={() => setExpanded((value) => !value)} className="action-secondary">
+            {expanded ? "Weniger anzeigen" : `Alle ${tracks.length} anzeigen`}
+          </button>
         )}
       </div>
-
-      {visibleTracks.length > 0 ? (
-        <>
-          <div className={styles.coverStack} aria-hidden="true">
-            {visibleCovers.map((track, index) => (
-              <Artwork
-                key={`${track.id}-${index}`}
-                cover={track.cover}
-                className={styles.stackCover}
-              />
-            ))}
-          </div>
-
-          <ol className={styles.recentList} aria-label="Zuletzt gehörte Titel">
-            {visibleTracks.map((track, index) => (
-              <li key={`${track.id}-${index}`}>
-                <span className={styles.recentIndex} aria-hidden="true">
-                  {String(index + 1).padStart(2, "0")}
-                </span>
-                <div>
-                  <strong>{track.title}</strong>
-                  <span>{trackArtistLabel(track)}</span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </>
-      ) : (
-        <div className={styles.miniEmpty}>
-          <span aria-hidden="true" />
-          <p>Keine jüngsten Titel im Archiv.</p>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function ArtistSignature({ artists }: { artists: StatEntry[] }) {
-  const max = Math.max(...artists.map((artist) => artist.count));
-
-  return (
-    <article
-      className={`${styles.card} ${styles.signatureCard} ${styles.reveal}`}
-      style={revealStyle(2)}
-    >
-      <header className={styles.cardHeader}>
-        <div>
-          <SectionLabel index="03">Klangsignatur</SectionLabel>
-          <h3>Die Stimmen in deinem Spektrum.</h3>
-        </div>
-        <p>Relative Intensität nach tatsächlichen Wiedergaben.</p>
-      </header>
-
-      <ol className={styles.artistSpectrum}>
-        {artists.map((artist, index) => (
-          <li
-            key={`${artist.key}-${index}`}
-            className={styles.artistSignal}
-            style={traceStyle(artist.count, max, index)}
-          >
-            <span className={styles.artistRank} aria-hidden="true">
-              {String(index + 1).padStart(2, "0")}
-            </span>
-            <div className={styles.artistIdentity}>
-              <strong>{artist.label}</strong>
-              <span>
-                {formatCount(artist.count)} {playLabel(artist.count)}
-              </span>
-            </div>
-            <div className={styles.signalRail} aria-hidden="true">
-              <span className={styles.signalFill} />
-            </div>
-          </li>
-        ))}
-      </ol>
-    </article>
-  );
-}
-
-function TrackChart({ tracks }: { tracks: StatEntry[] }) {
-  const max = Math.max(...tracks.map((track) => track.count));
-
-  return (
-    <article
-      className={`${styles.card} ${styles.tracksCard} ${styles.reveal}`}
-      style={revealStyle(3)}
-    >
-      <header className={styles.cardHeader}>
-        <div>
-          <SectionLabel index="04">Heavy Rotation</SectionLabel>
-          <h3>Die Titel, die geblieben sind.</h3>
-        </div>
-      </header>
-
-      <ol className={styles.trackChart}>
-        {tracks.map((track, index) => (
-          <li
-            key={`${track.key}-${index}`}
-            className={styles.trackItem}
-            style={traceStyle(track.count, max, index)}
-          >
-            <span className={styles.trackRank}>{index + 1}</span>
-            <Artwork cover={track.cover} className={styles.trackCover} />
-            <div className={styles.trackCopy}>
-              <strong>{track.label}</strong>
-              {track.sublabel && <span>{track.sublabel}</span>}
-              <div className={styles.trackRail} aria-hidden="true">
-                <span />
-              </div>
-            </div>
-            <span className={styles.trackCount}>
-              <strong>{formatCount(track.count)}</strong>
-              <span>{playLabel(track.count)}</span>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </article>
-  );
-}
-
-function MonthlyArtists({ artists }: { artists: StatEntry[] }) {
-  const artistMax = Math.max(...artists.map((artist) => artist.count));
-
-  return (
-    <section
-      className={styles.monthArtists}
-      aria-labelledby="month-artists-title"
-    >
-      <h4 id="month-artists-title">Künstler dieser Phase</h4>
-      <ol>
-        {artists.map((artist, index) => (
-          <li
-            key={`${artist.key}-${index}`}
-            style={traceStyle(artist.count, artistMax, index)}
-          >
-            <div>
-              <span>{artist.label}</span>
-              <strong>{formatCount(artist.count)}</strong>
-            </div>
-            <span className={styles.monthRail} aria-hidden="true">
-              <i />
-            </span>
+      <ol id="recent-listening-list" className={styles.recentList}>
+        {visible.map((track, index) => (
+          <li key={`${track.id}-${index}`}>
+            <Artwork cover={track.cover} />
+            <div className={styles.entryCopy}><strong>{track.title}</strong><span>{trackArtistLabel(track)}</span></div>
           </li>
         ))}
       </ol>
@@ -303,172 +79,48 @@ function MonthlyArtists({ artists }: { artists: StatEntry[] }) {
   );
 }
 
-function MonthlyFocus({
-  total,
-  artists,
-  tracks,
-}: {
-  total: number;
-  artists: StatEntry[];
-  tracks: StatEntry[];
-}) {
-  return (
-    <article
-      className={`${styles.card} ${styles.monthCard} ${styles.reveal}`}
-      style={revealStyle(4)}
-    >
-      <div className={styles.monthLead}>
-        <SectionLabel index="05">Aktuelle Phase</SectionLabel>
-        <div className={styles.periodStamp} aria-hidden="true">
-          <strong>30</strong>
-          <span>Tage</span>
-        </div>
-        <div className={styles.periodTotal}>
-          <strong>{formatCount(total)}</strong>
-          <span>{playLabel(total)} in diesem Zeitfenster</span>
-        </div>
-      </div>
-
-      <div className={styles.monthDetails}>
-        {artists.length > 0 && <MonthlyArtists artists={artists} />}
-
-        {tracks.length > 0 && (
-          <section
-            className={styles.monthTracks}
-            aria-labelledby="month-tracks-title"
-          >
-            <h4 id="month-tracks-title">Titel dieser Phase</h4>
-            <ol>
-              {tracks.map((track, index) => (
-                <li key={`${track.key}-${index}`}>
-                  <span aria-hidden="true">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <div>
-                    <strong>{track.label}</strong>
-                    {track.sublabel && <span>{track.sublabel}</span>}
-                  </div>
-                  <b>{formatCount(track.count)}×</b>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
-      </div>
-    </article>
-  );
-}
-
-function LoadingState() {
-  return (
-    <div className={styles.loadingState} role="status" aria-live="polite">
-      <span className={styles.visuallyHidden}>Hörprofil wird geladen…</span>
-      <div className={styles.skeletonWide} aria-hidden="true" />
-      <div className={styles.skeletonSmall} aria-hidden="true" />
-      <div className={styles.skeletonWide} aria-hidden="true" />
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className={`${styles.card} ${styles.emptyState}`} role="status">
-      <div className={styles.emptyGlyph} aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
-      <SectionLabel index="00">Noch unbeschrieben</SectionLabel>
-      <h3>Noch keine Hörspuren.</h3>
-      <p>
-        Sobald du einen Titel startest, beginnt dein persönliches Klangarchiv hier
-        sichtbar zu werden.
-      </p>
-    </div>
-  );
-}
-
 export default function ListeningStats() {
-  const { data, isLoading, error } = useQuery<ListeningStatsData>({
+  const [period, setPeriod] = useState<"all" | "month">("all");
+  const { data, isLoading, isFetching, error, refetch } = useQuery<UserStats>({
     queryKey: ["stats"],
     queryFn: fetchListeningStats,
-    // This query key is shared with the account hero. Validate selected cache
-    // data as well, so a response fetched by that observer cannot bypass the
-    // strict contract above.
+    // Validate shared cached data as well as this observer's network response.
     select: decodeListeningStats,
   });
-
-  const hasHistory =
-    !!data &&
-    (data.total_plays > 0 ||
-      data.recent.length > 0 ||
-      data.top_artists.length > 0 ||
-      data.top_tracks.length > 0);
+  const total = data && (period === "month" ? data.total_plays_month : data.total_plays);
 
   return (
-    <section
-      className={styles.root}
-      aria-labelledby="listening-dna-title"
-      aria-busy={isLoading}
-    >
-      <header className={styles.editorialHeader}>
-        <div>
-          <p className={styles.eyebrow}>
-            <span aria-hidden="true" />
-            Listening DNA · Dein Archiv
-          </p>
-          <h2 id="listening-dna-title">Dein Klang, sichtbar gemacht.</h2>
-        </div>
-        <p className={styles.headerIntro}>
-          Jeder Play hinterlässt eine Spur. Hier verdichten sich deine Sessions zu
-          einem persönlichen Hörprofil.
-        </p>
-        <div className={styles.headerSignal} aria-hidden="true">
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
-          <i />
+    <section className={styles.root} aria-labelledby="listening-stats-title" aria-busy={isFetching}>
+      <header className={styles.header}>
+        <div><h2 id="listening-stats-title">Dein Hörprofil</h2><p>Deine meistgehörten Künstler und Titel.</p></div>
+        <div className={styles.filters} role="group" aria-label="Zeitraum der Hörstatistik">
+          <button type="button" aria-pressed={period === "all"} data-active={period === "all"} onClick={() => setPeriod("all")} className="filter-chip">Gesamter Zeitraum</button>
+          <button type="button" aria-pressed={period === "month"} data-active={period === "month"} onClick={() => setPeriod("month")} className="filter-chip">Letzte 30 Tage</button>
         </div>
       </header>
 
-      {isLoading && <LoadingState />}
-
+      {isLoading && <div className="empty-panel" role="status">Hörprofil wird geladen…</div>}
       {error && (
-        <div className={styles.errorCard} role="alert">
-          <span>Signal unterbrochen</span>
-          <p>Deine Hörstatistik konnte nicht geladen werden. Bitte versuche es erneut.</p>
+        <div className="error-panel" role="alert">
+          <p>Hörstatistik konnte nicht geladen werden: {error.message}</p>
+          <button type="button" onClick={() => refetch()} disabled={isFetching} className="action-secondary">Erneut versuchen</button>
         </div>
       )}
-
-      {data && !hasHistory && <EmptyState />}
-
-      {data && hasHistory && (
-        <div className={styles.dashboard}>
-          <div className={styles.heroGrid}>
-            <PulseCard data={data} />
-            <RecentCard tracks={data.recent} />
+      {data && data.total_plays === 0 && (
+        <div className="empty-panel"><h3>Noch keine Wiedergaben</h3><p>Wenn du Musik hörst, erscheinen hier dein Verlauf und deine Favoriten.</p></div>
+      )}
+      {data && data.total_plays > 0 && (
+        <>
+          <div className={styles.periodSummary} aria-live="polite">
+            <strong>{numberFormatter.format(total!)}</strong><span>{playLabel(total!)} {period === "month" ? "in den letzten 30 Tagen" : "insgesamt"}</span>
+            {period === "month" && <small>{Math.round((data.total_plays_month / data.total_plays) * 100)} % aller Wiedergaben</small>}
           </div>
-
-          <div className={styles.analysisGrid}>
-            {data.top_artists.length > 0 && (
-              <ArtistSignature artists={data.top_artists} />
-            )}
-            {data.top_tracks.length > 0 && <TrackChart tracks={data.top_tracks} />}
+          <div className={styles.rankings}>
+            <Ranking title="Top-Künstler" entries={period === "month" ? data.top_artists_month : data.top_artists} />
+            <Ranking title="Top-Titel" entries={period === "month" ? data.top_tracks_month : data.top_tracks} artwork />
           </div>
-
-          {data.total_plays_month > 0 && (
-            <MonthlyFocus
-              total={data.total_plays_month}
-              artists={data.top_artists_month}
-              tracks={data.top_tracks_month}
-            />
-          )}
-        </div>
+          <RecentList tracks={data.recent} />
+        </>
       )}
     </section>
   );

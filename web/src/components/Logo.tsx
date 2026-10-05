@@ -30,12 +30,11 @@ export default function Logo({ size = 28, className }: LogoProps) {
  */
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span className={`flex items-center gap-1.5 ${className ?? ""}`}>
-      <span className="text-2xl font-extrabold tracking-tight text-foreground">
+    <span className={`flex items-center gap-0 ${className ?? ""}`}>
+      <span className="text-lg font-bold tracking-tight text-foreground">
         Logge
       </span>
-      <span className="h-6 w-px bg-white/35" />
-      <span className="text-2xl font-extrabold tracking-tight text-accent">
+      <span className="text-lg font-bold tracking-tight text-accent-soft">
         Rythm
       </span>
     </span>

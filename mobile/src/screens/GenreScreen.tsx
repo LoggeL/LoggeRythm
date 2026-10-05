@@ -10,6 +10,7 @@ import {
   HorizontalCatalogRail,
 } from '../components/catalog/CatalogCards';
 import { CatalogTrackList } from '../components/catalog/CatalogTrackList';
+import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
 import {
   CatalogContentStatus,
   CatalogPageGate,
@@ -93,18 +94,23 @@ export default function GenreScreen(props: GenreScreenProps) {
         onRefresh={() => void genre.refetch()}
         header={
           <View style={styles.headerContent}>
-            <View style={styles.hero}>
-              <CatalogHeroArtwork uri={detail.picture} />
+            <CatalogDetailHero
+              artwork={<CatalogHeroArtwork uri={detail.picture} compact />}
+              actions={
+                <CatalogActionButton
+                  testID="genre-play-all"
+                  label={catalogStrings.common.playAll}
+                  icon="play"
+                  disabled={detail.tracks.length === 0}
+                  onPress={() => play(0)}
+                />
+              }
+            >
               <Text testID="genre-title" accessibilityRole="header" style={styles.title}>
                 {detail.name}
               </Text>
-              <CatalogActionButton
-                testID="genre-play-all"
-                label={catalogStrings.common.playAll}
-                disabled={detail.tracks.length === 0}
-                onPress={() => play(0)}
-              />
-            </View>
+              <Text style={styles.meta}>{catalogStrings.common.tracks(detail.tracks.length)}</Text>
+            </CatalogDetailHero>
             <CatalogRuntimeError id="genre" message={runtimeError} />
             <CatalogContentStatus
               id="genre"
@@ -198,9 +204,9 @@ export default function GenreScreen(props: GenreScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  headerContent: { gap: 28, paddingTop: 22 },
-  footerContent: { gap: 28, paddingTop: 28 },
-  hero: { alignItems: 'center', gap: 14, paddingHorizontal: 20 },
-  title: { color: colors.textPrimary, fontSize: 32, lineHeight: 38, fontWeight: '900', textAlign: 'center' },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 16 },
+  headerContent: { gap: 24, paddingTop: 24 },
+  footerContent: { gap: 32, paddingTop: 32 },
+  title: { color: colors.textPrimary, fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.7 },
+  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
 });

@@ -1,40 +1,20 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api";
-import { playlistPath } from "@/lib/slugs";
 import { usePlayerStore } from "@/store/player";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { useMe } from "@/hooks/useAuth";
-import {
-  useReleaseRadar,
-  useReleaseRadarSeen,
-} from "@/hooks/useReleaseRadar";
-import Link from "next/link";
-import Logo from "@/components/Logo";
-import TrackCard from "@/components/TrackCard";
-import AlbumCard from "@/components/AlbumCard";
+import { useReleaseRadar, useReleaseRadarSeen } from "@/hooks/useReleaseRadar";
+import { trackArtistLabel } from "@/lib/trackArtists";
+import { PlayIcon, RadioIcon, CompassIcon } from "@/components/icons";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
 import ShelfCard from "@/components/ShelfCard";
-import { CardGridSkeleton } from "@/components/Skeleton";
-import type {
-  Track,
-  AlbumSummary,
-  Genre,
-  PlaylistSummary,
-  HomeShelf,
-} from "@/types";
+import type { HomeShelf, Track } from "@/types";
 
 const EMPTY_TRACKS: Track[] = [];
-
-// Chip leiste: "Top-Auswahl" = full home; the rest filter to a mood track grid.
-const CHIPS: { key: string; label: string; mood?: string }[] = [
-  { key: "top", label: "Top-Auswahl" },
-  { key: "chill", label: "Chill", mood: "chill" },
-  { key: "focus", label: "Fokus", mood: "focus" },
-  { key: "workout", label: "Workout", mood: "workout" },
-  { key: "party", label: "Party", mood: "party" },
-];
 
 function greeting(hour: number): string {
   if (hour < 5) return "Gute Nacht";
@@ -43,350 +23,362 @@ function greeting(hour: number): string {
   return "Guten Abend";
 }
 
+type HomeQuery = {
+  error: Error | null;
+  isError: boolean;
+  isFetching: boolean;
+  refetch: () => Promise<unknown>;
+};
+
+function HomeError({ label, query }: { label: string; query: HomeQuery }) {
+  if (!query.isError) return null;
+  return (
+    <div role="alert" className="error-panel">
+      <p>
+        {label} konnten nicht geladen werden: {query.error?.message}
+      </p>
+      <button
+        type="button"
+        className="action-secondary mt-3"
+        onClick={() => void query.refetch()}
+        disabled={query.isFetching}
+      >
+        {query.isFetching ? "Wird geladen…" : "Erneut versuchen"}
+      </button>
+    </div>
+  );
+}
+
 export default function HomePage() {
-  const { data: me } = useMe();
-  const playQueue = usePlayerStore((s) => s.playQueue);
+  const meQuery = useMe();
+  const { data: me } = meQuery;
+  const playQueue = usePlayerStore((state) => state.playQueue);
   const [recent] = useLocalJson<Track[]>("sf_recent_tracks", EMPTY_TRACKS);
-  const [chip, setChip] = useState("top");
-
-  const activeMood = CHIPS.find((c) => c.key === chip)?.mood;
+  if (!Array.isArray(recent)) {
+    throw new Error(
+      'Ungültiger Hörverlauf in localStorage["sf_recent_tracks"]: erwartet wurde eine Titelliste.',
+    );
+  }
   const userId = me ? String(me.id) : null;
-
   const mixes = useQuery<HomeShelf[]>({
     queryKey: ["home-mixes", userId],
     queryFn: () => api.homeMixes(),
-    enabled: chip === "top" && userId !== null,
+    enabled: userId !== null,
   });
   const becauseYouListened = useQuery<HomeShelf[]>({
     queryKey: ["because-you-listened", userId],
     queryFn: () => api.becauseYouListened(),
-    enabled: chip === "top" && userId !== null,
+    enabled: userId !== null,
   });
-  const collections = useQuery<HomeShelf[]>({
-    queryKey: ["home-collections"],
-    queryFn: () => api.homeChartsCollections(),
-    enabled: chip === "top",
-  });
-  const radar = useReleaseRadar(chip === "top" ? me : undefined);
-  const releases = useQuery<AlbumSummary[]>({
-    queryKey: ["new-releases"],
-    queryFn: () => api.newReleases(),
-    enabled: chip === "top",
-  });
-  const genres = useQuery<Genre[]>({
-    queryKey: ["genres"],
-    queryFn: () => api.genres(),
-    enabled: chip === "top",
-  });
-  const community = useQuery<PlaylistSummary[]>({
-    queryKey: ["public-playlists"],
-    queryFn: () => api.publicPlaylists(),
-    enabled: chip === "top",
-  });
-  const mood = useQuery<Track[]>({
-    queryKey: ["home-mood", activeMood],
-    queryFn: () => api.homeMood(activeMood as string),
-    enabled: !!activeMood,
-  });
-
-  const hello = greeting(new Date().getHours());
-  const name = me?.display_name ? `, ${me.display_name}` : "";
+  const radar = useReleaseRadar(me);
   const radarTracks = radar.data ?? EMPTY_TRACKS;
-  const { unseenCount: unseenRadarCount } = useReleaseRadarSeen(
-    me?.id,
-    radarTracks,
-  );
-  const recentFallback = (mixes.data ?? []).flatMap((shelf) => shelf.tracks);
-  const displayRecent = recent.length > 0 ? recent : recentFallback;
-  const recentTitle = recent.length > 0 ? "Zuletzt gehört" : "Direkt starten";
-  const refreshError = [
-    mixes.error,
-    becauseYouListened.error,
-    collections.error,
-    radar.error,
-    releases.error,
-    genres.error,
-    community.error,
-    mood.error,
-  ].find((error): error is Error => error instanceof Error);
-  const hasCachedDiscoveryData = [
-    mixes.data,
-    becauseYouListened.data,
-    collections.data,
-    radar.data,
-    releases.data,
-    genres.data,
-    community.data,
-    mood.data,
-  ].some((data) => data !== undefined);
+  const { unseenCount } = useReleaseRadarSeen(me?.id, radarTracks);
+  const latest = recent[0];
+  const [showAllMixes, setShowAllMixes] = useState(false);
+  const covers = recent.filter((track) => track.cover).slice(0, 3);
+  const featuredMixCount = radarTracks.length > 0 ? 2 : 3;
 
   return (
-    <div className="flex flex-col gap-7 md:gap-8">
-      {/* Mobile logo header (sidebar is desktop-only) */}
-      <div className="flex md:hidden items-center gap-2 -mb-3">
-        <Logo size={22} className="drop-glow" />
-        <span className="text-base font-extrabold tracking-tight">
-          <span className="text-foreground">Logge</span>
-          <span className="mx-0.5 text-white/35">|</span>
-          <span className="text-accent">Rythm</span>
-        </span>
-      </div>
-
-      {/* Greeting */}
-      <div>
-        <h1 className="text-[2rem] leading-tight md:text-3xl font-extrabold mb-1">
-          {hello}
-          {name} <span className="align-middle">👋</span>
-        </h1>
-        <p className="text-muted">Entdecke neue Musik, die dich bewegt.</p>
-      </div>
-
-      {/* Chip leiste */}
-      <div className="flex flex-wrap gap-2 -mt-4 md:-mt-3">
-        {CHIPS.map((c) => {
-          const active = c.key === chip;
-          return (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => setChip(c.key)}
-              className={`press flex-shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition ${
-                active
-                  ? "bg-accent text-white glow-sm"
-                  : "bg-panel/70 text-muted hover:text-foreground hover:bg-panel-hover"
-              }`}
-            >
-              {c.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {refreshError && (
-        <div
-          role="alert"
-          className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
-        >
-          Einige Inhalte konnten nicht aktualisiert werden.{" "}
-          {hasCachedDiscoveryData
-            ? "Die zuletzt geladenen Inhalte bleiben sichtbar. "
-            : "Es sind noch keine gespeicherten Inhalte vorhanden. "}
-          {refreshError.message}
+    <div className="flex flex-col gap-8 md:gap-10 animate-in">
+      <header className="page-header">
+        <div>
+          <p className="page-eyebrow">Dein Musikraum</p>
+          <h1 className="page-title">
+            {greeting(new Date().getHours())}
+            {me?.display_name ? `, ${me.display_name}` : ""}
+          </h1>
+          <p className="page-description">
+            Deine Mixe und zuletzt gehörten Titel.
+          </p>
         </div>
-      )}
+        <Link href="/genre" className="action-secondary">
+          <CompassIcon width={18} height={18} />
+          Entdecken
+        </Link>
+      </header>
 
-      {/* Mood view */}
-      {activeMood && (
-        <section className="animate-in">
-          {mood.isLoading && <CardGridSkeleton count={10} />}
-          {!mood.isLoading && (mood.data?.length ?? 0) === 0 && (
-            <p className="text-muted">
-              Für diese Stimmung wurden keine Titel gefunden.
-            </p>
-          )}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {(mood.data ?? []).map((track, i) => (
-              <TrackCard
-                key={track.id}
-                track={track}
-                onPlay={() => playQueue(mood.data ?? [], i)}
+      <HomeError label="Deine Kontodaten" query={meQuery} />
+
+      <section
+        className="surface-card relative overflow-hidden p-6 sm:p-8"
+        aria-label="Musik starten"
+      >
+        <div className="relative z-10 max-w-xl lg:max-w-[52%]">
+          <p className="page-eyebrow">
+            {latest ? "Gleich weiterhören" : "Zeit für Musik"}
+          </p>
+          <h2 className="mt-2 text-3xl md:text-4xl font-semibold tracking-tight leading-tight">
+            {latest ? latest.title : "Was möchtest du heute hören?"}
+          </h2>
+          <p className="mt-3 text-muted text-sm sm:text-base">
+            {latest
+              ? trackArtistLabel(latest)
+              : "Deine Sammlung und neue Entdeckungen sind nur einen Klick entfernt."}
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            {latest ? (
+              <button
+                type="button"
+                className="action-primary"
+                onClick={() => playQueue(recent, 0, "Zuletzt gehört")}
+              >
+                <PlayIcon width={18} height={18} />
+                Weiterhören
+              </button>
+            ) : (
+              <Link href="/search" className="action-primary">
+                Musik suchen
+              </Link>
+            )}
+            <Link href="/library" className="action-secondary">
+              Meine Bibliothek
+            </Link>
+          </div>
+        </div>
+        {covers.length > 0 && (
+          <div
+            aria-hidden="true"
+            className="hidden lg:flex absolute right-8 top-1/2 -translate-y-1/2 items-center -space-x-5 pointer-events-none"
+          >
+            {covers.map((track, index) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={`${track.id}-${index}`}
+                src={track.cover}
+                alt=""
+                className={`h-36 w-36 xl:h-44 xl:w-44 rounded-xl object-cover border-4 border-panel ${index === 1 ? "relative z-10" : "opacity-55"}`}
               />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {recent.length > 0 && (
+        <section aria-labelledby="recent-heading">
+          <div className="section-heading">
+            <h2 id="recent-heading">Zuletzt gehört</h2>
+            <Link
+              href="/library?tab=recent"
+              className="text-sm text-muted hover:text-foreground"
+            >
+              Verlauf öffnen
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+            {recent.slice(0, 6).map((track, index) => (
+              <button
+                key={`${track.id}-${index}`}
+                type="button"
+                onClick={() => playQueue(recent, index, "Zuletzt gehört")}
+                className="group flex min-w-0 items-center gap-3 rounded-xl border border-white/5 bg-panel px-3 py-3 text-left hover:bg-panel-hover transition"
+              >
+                {track.cover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={track.cover}
+                    alt=""
+                    width={48}
+                    height={48}
+                    className="h-12 w-12 flex-shrink-0 rounded-md object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <CoverPlaceholder className="h-12 w-12 flex-shrink-0 rounded-md" />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {track.title}
+                  </span>
+                  <span className="block truncate text-xs text-muted mt-1">
+                    {trackArtistLabel(track)}
+                  </span>
+                </span>
+                <span className="action-icon flex-shrink-0" aria-hidden="true">
+                  <PlayIcon width={17} height={17} />
+                </span>
+              </button>
             ))}
           </div>
         </section>
       )}
 
-      {/* Default "Top-Auswahl" home */}
-      {chip === "top" && (
-        <>
-          {(displayRecent.length > 0 || mixes.isLoading) && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">{recentTitle}</h2>
-              {mixes.isLoading && displayRecent.length === 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7 gap-3 md:gap-4">
-                  {Array.from({ length: 7 }).map((_, i) => (
-                    <div key={i} className="skeleton rounded-2xl aspect-square" />
-                  ))}
-                </div>
-              ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-7 gap-3 md:gap-4">
-                {displayRecent.slice(0, 7).map((track, i) => (
-                  <TrackCard
-                    key={track.id}
-                    track={track}
-                    onPlay={() => playQueue(displayRecent, i)}
-                  />
+      {me && (
+        <section aria-labelledby="personal-heading">
+          <div className="section-heading">
+            <div>
+              <h2 id="personal-heading">Für dich zusammengestellt</h2>
+              <p className="text-sm text-muted mt-1">
+                Deine Mixe und neue Musik von Künstlern, denen du folgst.
+              </p>
+            </div>
+            <Link
+              href="/radar"
+              className="text-sm text-muted hover:text-foreground"
+            >
+              Release Radar
+            </Link>
+          </div>
+          <div className="space-y-3">
+            <HomeError label="Deine Mixe" query={mixes} />
+            <HomeError label="Dein Release Radar" query={radar} />
+          </div>
+          {(mixes.isLoading || radar.isLoading) &&
+            !mixes.data &&
+            !radar.data && (
+              <div
+                role="status"
+                aria-label="Persönliche Musik wird geladen"
+                className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4"
+              >
+                {Array.from({ length: 3 }, (_, index) => (
+                  <div key={index} className="skeleton h-44 rounded-xl" />
                 ))}
               </div>
-              )}
-            </section>
+            )}
+          <div
+            id="personal-mixes"
+            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+          >
+            {radarTracks.length > 0 && (
+              <ShelfCard
+                href="/radar"
+                variant="hero"
+                highlighted={unseenCount > 0}
+                statusBadge={unseenCount > 0 ? `${unseenCount} neu` : undefined}
+                shelf={{
+                  key: "release-radar",
+                  title: "Dein Release Radar",
+                  subtitle: "Neue Titel von deinen Künstlern",
+                  cover: radarTracks.find((track) => track.cover)?.cover,
+                  tracks: radarTracks,
+                }}
+              />
+            )}
+            {(mixes.data ?? [])
+              .slice(0, showAllMixes ? undefined : featuredMixCount)
+              .map((shelf, index) => (
+                <ShelfCard
+                  key={shelf.key}
+                  href={`/mix/${encodeURIComponent(shelf.key)}`}
+                  shelf={shelf}
+                  index={index}
+                  variant="hero"
+                />
+              ))}
+          </div>
+          {(mixes.data?.length ?? 0) > featuredMixCount && (
+            <button
+              type="button"
+              className="mt-4 text-sm text-muted hover:text-foreground"
+              aria-expanded={showAllMixes}
+              aria-controls="personal-mixes"
+              onClick={() => setShowAllMixes((current) => !current)}
+            >
+              {showAllMixes ? "Weniger anzeigen" : "Alle Mixe anzeigen"}
+            </button>
           )}
+          {mixes.isSuccess &&
+            radar.isSuccess &&
+            mixes.data.length === 0 &&
+            radarTracks.length === 0 && (
+              <div className="empty-panel">
+                <p>
+                  Deine persönlichen Mixe entstehen, wenn du Musik hörst und
+                  Künstlern folgst.
+                </p>
+                <Link href="/genre" className="action-secondary mt-4">
+                  Neue Musik entdecken
+                </Link>
+              </div>
+            )}
+        </section>
+      )}
 
-          {/* Für dich — curated mixes + Release Radar */}
-          {(mixes.isLoading ||
-            (mixes.data?.length ?? 0) > 0 ||
-            radarTracks.length > 0) && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">Für dich</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                {/* Radar remains visible while the slower mixes refresh. */}
-                {radarTracks.length > 0 && (
-                  <ShelfCard
-                    href="/radar"
-                    variant="hero"
-                    index={0}
-                    highlighted={unseenRadarCount > 0}
-                    statusBadge={
-                      unseenRadarCount > 0 ? `${unseenRadarCount} neu` : undefined
-                    }
-                    shelf={{
-                      key: "release-radar",
-                      title: "Dein Release Radar",
-                      subtitle:
-                        "Neues von Künstler:innen, die du hörst und folgst",
-                      cover: radarTracks.find((track) => track.cover)?.cover,
-                      tracks: radarTracks,
-                    }}
-                  />
-                )}
-                {(mixes.data ?? []).map((shelf, i) => (
+      {me &&
+        (becauseYouListened.isLoading ||
+          becauseYouListened.isError ||
+          (becauseYouListened.data?.length ?? 0) > 0) && (
+          <section aria-labelledby="listened-heading">
+            <div className="section-heading">
+              <h2 id="listened-heading">Weil du es gern hörst</h2>
+              <Link
+                href="/radio"
+                className="text-sm text-muted hover:text-foreground"
+              >
+                Deine Radios
+              </Link>
+            </div>
+            <HomeError
+              label="Empfehlungen zu deiner Musik"
+              query={becauseYouListened}
+            />
+            {becauseYouListened.isLoading && (
+              <div
+                role="status"
+                aria-label="Empfehlungen werden geladen"
+                className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4"
+              >
+                {Array.from({ length: 3 }, (_, index) => (
+                  <div key={index} className="skeleton h-36 rounded-xl" />
+                ))}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {(becauseYouListened.data ?? [])
+                .slice(0, 3)
+                .map((shelf, index) => (
                   <ShelfCard
                     key={shelf.key}
                     href={`/mix/${encodeURIComponent(shelf.key)}`}
                     shelf={shelf}
-                    index={i + 1}
+                    index={index}
                     variant="hero"
                   />
                 ))}
-                {mixes.isLoading &&
-                  mixes.data === undefined &&
-                  Array.from({ length: radarTracks.length > 0 ? 3 : 4 }).map(
-                    (_, i) => (
-                      <div
-                        key={`mix-skeleton-${i}`}
-                        className="skeleton rounded-2xl min-h-[168px]"
-                      />
-                    ),
-                  )}
-              </div>
-            </section>
-          )}
+            </div>
+          </section>
+        )}
 
-          {/* Weil du … gehört hast — per-artist recommendation rails */}
-          {(becauseYouListened.data ?? []).length > 0 && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">Weil du das gehört hast</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
-                {(becauseYouListened.data ?? []).map((shelf, i) => (
-                  <ShelfCard
-                    key={shelf.key}
-                    shelf={shelf}
-                    index={i}
-                    variant="hero"
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Charts — curated collections */}
-          {(collections.isLoading || (collections.data?.length ?? 0) > 0) && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">Charts</h2>
-              {collections.isLoading ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6 gap-3 md:gap-4">
-                  {Array.from({ length: 5 }).map((_, i) => (
-                    <div key={i} className="skeleton rounded-2xl aspect-[4/3]" />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6 gap-3 md:gap-4">
-                  {(collections.data ?? []).map((shelf, i) => (
-                    <ShelfCard
-                      key={shelf.key}
-                      shelf={shelf}
-                      index={i}
-                      variant="collection"
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
-          {(releases.isLoading || (releases.data?.length ?? 0) > 0) && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">Neue Veröffentlichungen</h2>
-              {releases.isLoading && <CardGridSkeleton count={10} />}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {(releases.data ?? []).map((al) => (
-                  <AlbumCard key={String(al.id)} album={al} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {(community.data ?? []).length > 0 && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">Playlists der Community</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                {(community.data ?? []).map((p) => (
-                  <Link
-                    key={String(p.id)}
-                    href={playlistPath(p)}
-                    className="block bg-panel/70 border border-white/5 hover:bg-panel-hover rounded-2xl p-4 hover-lift transition"
-                  >
-                    {p.cover_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={p.cover_url}
-                        alt={p.name}
-                        className="w-full aspect-square object-cover rounded-xl shadow-lg mb-3"
-                      />
-                    ) : (
-                      <div className="w-full aspect-square rounded-xl gradient-aurora opacity-80 flex items-center justify-center text-4xl mb-3">
-                        ♪
-                      </div>
-                    )}
-                    <div className="truncate font-semibold">{p.name}</div>
-                    <div className="truncate text-sm text-muted">
-                      {p.owner_name ? `von ${p.owner_name}` : "Playlist"} ·{" "}
-                      {p.track_count} Titel
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {(genres.data ?? []).length > 0 && (
-            <section className="animate-in">
-              <h2 className="text-2xl font-bold mb-4">Genres</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                {(genres.data ?? []).map((g) => (
-                  <Link
-                    key={String(g.id)}
-                    href={`/genre/${g.id}`}
-                    className="relative block rounded-2xl overflow-hidden aspect-[4/3] bg-panel hover-lift transition"
-                  >
-                    {g.picture && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={g.picture}
-                        alt={g.name}
-                        className="absolute inset-0 w-full h-full object-cover opacity-70"
-                      />
-                    )}
-                    <span className="absolute bottom-2 left-3 font-bold text-lg drop-shadow">
-                      {g.name}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-        </>
-      )}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Link
+          href="/genre"
+          className="surface-card flex items-start gap-4 p-5 hover:bg-panel-hover transition"
+        >
+          <CompassIcon
+            className="mt-1 text-muted flex-shrink-0"
+            width={22}
+            height={22}
+          />
+          <div>
+            <h2 className="font-medium">Lust auf etwas Neues?</h2>
+            <p className="text-sm text-muted mt-1">
+              Charts, neue Veröffentlichungen, Genres und Community-Playlists.
+            </p>
+            <span className="inline-block text-sm text-accent-soft mt-3">
+              Musik entdecken →
+            </span>
+          </div>
+        </Link>
+        <Link
+          href="/radio"
+          className="surface-card flex items-start gap-4 p-5 hover:bg-panel-hover transition"
+        >
+          <RadioIcon
+            className="mt-1 text-muted flex-shrink-0"
+            width={22}
+            height={22}
+          />
+          <div>
+            <h2 className="font-medium">Einfach laufen lassen</h2>
+            <p className="text-sm text-muted mt-1">
+              Deine Radios oder Musik für Fokus, Chill, Workout und Party.
+            </p>
+            <span className="inline-block text-sm text-accent-soft mt-3">
+              Radio auswählen →
+            </span>
+          </div>
+        </Link>
+      </div>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import {
   type RemoteFetchStatus,
 } from '../../data/remoteState';
 import { strings } from '../../localization';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
 
 interface HomeSectionProps {
   id: string;
@@ -177,19 +177,17 @@ export function HorizontalShelf<T>({ id, data, keyExtractor, renderItem }: Horiz
 }
 
 const styles = StyleSheet.create({
-  section: { gap: 10 },
-  heading: { color: colors.textPrimary, fontSize: 22, fontWeight: '800', paddingHorizontal: 16 },
-  rail: { gap: 12, paddingHorizontal: 16 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
+  section: { gap: spacing.md },
+  heading: { ...typography.section, color: colors.textPrimary, paddingHorizontal: spacing.lg },
+  rail: { gap: spacing.md, paddingHorizontal: spacing.lg },
+  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: spacing.lg },
   staleError: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  cachedNotice: { gap: 8, paddingHorizontal: 16 },
+  cachedNotice: { gap: spacing.xs, paddingHorizontal: spacing.lg },
   errorBox: {
-    marginHorizontal: 16,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: colors.surfaceElevated,
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.dangerSubtle,
     gap: 8,
   },
   error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
@@ -198,10 +196,10 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     justifyContent: 'center',
     paddingHorizontal: 14,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceElevated,
   },
-  retryText: { color: colors.onAccent, fontSize: 13, fontWeight: '700' },
+  retryText: { color: colors.textPrimary, fontSize: 13, fontWeight: '600' },
   pressed: { opacity: 0.74 },
   disabled: { opacity: 0.5 },
 });

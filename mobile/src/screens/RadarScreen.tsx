@@ -9,6 +9,7 @@ import {
   CatalogTrackRow,
 } from '../components/catalog/CatalogCards';
 import { CatalogTrackList } from '../components/catalog/CatalogTrackList';
+import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
 import {
   CatalogContentStatus,
   CatalogPageGate,
@@ -129,8 +130,18 @@ export default function RadarScreen(props: RadarScreenProps) {
         onRefresh={() => void radar.refetch()}
         header={
           <View style={styles.headerContent}>
-            <View style={styles.hero}>
-              <CatalogHeroArtwork uri={cover} />
+            <CatalogDetailHero
+              artwork={<CatalogHeroArtwork uri={cover} compact />}
+              actions={
+                <CatalogActionButton
+                  testID="release-radar-play-all"
+                  label={catalogStrings.common.playAll}
+                  icon="play"
+                  disabled={tracks.length === 0}
+                  onPress={() => play(0)}
+                />
+              }
+            >
               <Text style={styles.typeLabel}>{strings.home.radarTypeLabel}</Text>
               <Text testID="release-radar-title" accessibilityRole="header" style={styles.title}>
                 {strings.home.releaseRadar}
@@ -141,13 +152,7 @@ export default function RadarScreen(props: RadarScreenProps) {
                   ? `${strings.common.trackCount(tracks.length)} · ${strings.home.radarNewCount(newTrackIds.size)}`
                   : strings.common.trackCount(tracks.length)}
               </Text>
-              <CatalogActionButton
-                testID="release-radar-play-all"
-                label={catalogStrings.common.playAll}
-                disabled={tracks.length === 0}
-                onPress={() => play(0)}
-              />
-            </View>
+            </CatalogDetailHero>
 
             <CatalogRuntimeError id="release-radar-playback" message={playbackError} />
             <CatalogRuntimeError
@@ -206,24 +211,23 @@ export default function RadarScreen(props: RadarScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  headerContent: { gap: 24, paddingTop: 22 },
-  hero: { alignItems: 'center', gap: 10, paddingHorizontal: 20 },
+  headerContent: { gap: 24, paddingTop: 24 },
   typeLabel: {
-    color: colors.accent,
-    fontSize: 12,
+    color: colors.accentSoft,
+    fontSize: 11,
     lineHeight: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 32,
-    lineHeight: 38,
-    fontWeight: '900',
-    textAlign: 'center',
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: '800',
+    letterSpacing: -0.6,
   },
-  subtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 16 },
+  subtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  meta: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
 });

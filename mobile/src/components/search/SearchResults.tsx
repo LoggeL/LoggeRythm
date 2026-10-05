@@ -1,8 +1,8 @@
 import React from 'react';
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Track, TrackPlayCount } from '../../api/types';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { colors } from '../../theme';
+import { colors, radii, spacing, typography } from '../../theme';
 import AppIcon from '../AppIcon';
 import StandardTrackRow, {
   type TrackOccurrenceTarget,
@@ -77,6 +77,7 @@ interface SearchEntityCardProps {
   subtitle: string;
   imageUri: string;
   round?: boolean;
+  landscape?: boolean;
   disabled?: boolean;
   busy?: boolean;
   onPress: () => void;
@@ -89,6 +90,7 @@ export function SearchEntityCard({
   subtitle,
   imageUri,
   round = false,
+  landscape = false,
   disabled = false,
   busy = false,
   onPress,
@@ -101,21 +103,35 @@ export function SearchEntityCard({
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.entityCard, pressed && styles.pressed, disabled && styles.disabled]}
+      style={({ pressed }) => [
+        styles.entityCard,
+        landscape && styles.landscapeCard,
+        pressed && styles.pressed,
+        disabled && styles.disabled,
+      ]}
     >
-      {imageUri ? (
-        <Image
-          accessible={false}
-          source={{ uri: imageUri }}
-          style={[styles.entityArtwork, round && styles.roundArtwork]}
-        />
-      ) : (
-        <View style={[styles.entityArtwork, round && styles.roundArtwork, styles.placeholder]}>
-          <AppIcon name="music-note" color={colors.accentSoft} size={22} />
-        </View>
-      )}
-      <Text style={styles.title} numberOfLines={1}>{title}</Text>
-      <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
+      <View style={styles.artworkFrame}>
+        {imageUri ? (
+          <Image
+            accessible={false}
+            source={{ uri: imageUri }}
+            style={[styles.entityArtwork, landscape && styles.landscapeArtwork, round && styles.roundArtwork]}
+          />
+        ) : (
+          <View style={[styles.entityArtwork, landscape && styles.landscapeArtwork, round && styles.roundArtwork, styles.placeholder]}>
+            <AppIcon name="music-note" color={colors.accentSoft} size={22} />
+          </View>
+        )}
+        {busy ? (
+          <View style={styles.busyOverlay}>
+            <ActivityIndicator color={colors.onAccent} size="small" />
+          </View>
+        ) : null}
+      </View>
+      <View style={styles.copy}>
+        <Text style={styles.title} numberOfLines={2}>{title}</Text>
+        <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -136,20 +152,28 @@ export function SearchResultRail<T>({ id, data, keyExtractor, renderItem }: Sear
       keyExtractor={keyExtractor}
       renderItem={({ item, index }) => renderItem(item, index)}
       showsHorizontalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+      initialNumToRender={5}
+      maxToRenderPerBatch={6}
+      windowSize={5}
       contentContainerStyle={styles.rail}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  pressed: { opacity: 0.7, backgroundColor: colors.surfacePressed },
+  pressed: { opacity: 0.72 },
   disabled: { opacity: 0.5 },
-  entityCard: { width: 152, minHeight: 210, gap: 5 },
-  entityArtwork: { width: 152, height: 152, borderRadius: 12, backgroundColor: colors.surfaceElevated },
-  roundArtwork: { borderRadius: 76 },
-  placeholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
-  placeholderGlyph: { color: colors.accentSoft, fontSize: 28 },
-  title: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  subtitle: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  rail: { gap: 12, paddingHorizontal: 16 },
+  entityCard: { width: 148, gap: spacing.sm, paddingBottom: spacing.xxs },
+  landscapeCard: { width: 188 },
+  artworkFrame: { position: 'relative' },
+  entityArtwork: { width: 148, height: 148, borderRadius: radii.lg, backgroundColor: colors.surfaceElevated },
+  landscapeArtwork: { width: 188, height: 112 },
+  roundArtwork: { borderRadius: radii.pill },
+  placeholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.borderSubtle },
+  busyOverlay: { position: 'absolute', right: spacing.xs, bottom: spacing.xs, padding: spacing.xs, borderRadius: radii.pill, backgroundColor: colors.accent },
+  copy: { gap: spacing.xxs },
+  title: { ...typography.label, color: colors.textPrimary },
+  subtitle: { ...typography.caption, color: colors.textSecondary },
+  rail: { gap: spacing.md, paddingHorizontal: spacing.lg },
 });

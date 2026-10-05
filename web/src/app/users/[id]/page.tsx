@@ -9,6 +9,7 @@ import ArtistCard from "@/components/ArtistCard";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Avatar from "@/components/Avatar";
 import { DetailHeaderSkeleton } from "@/components/Skeleton";
+import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import type { PublicProfile } from "@/types";
 
 export default function UserProfilePage({
@@ -17,15 +18,33 @@ export default function UserProfilePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const { data, isLoading, isError } = useQuery<PublicProfile>({
-    queryKey: ["public-profile", id],
-    queryFn: () => api.publicProfile(id),
-    enabled: !!id,
-  });
+  const { data, isLoading, isError, error, refetch, isFetching } =
+    useQuery<PublicProfile>({
+      queryKey: ["public-profile", id],
+      queryFn: () => api.publicProfile(id),
+      enabled: !!id,
+    });
 
   if (isLoading) return <DetailHeaderSkeleton />;
-  if (isError || !data)
-    return <p className="text-red-400">Profil nicht gefunden.</p>;
+  if (!data) {
+    return (
+      <div role="alert" className="error-panel">
+        {isError
+          ? `Profil konnte nicht geladen werden: ${error.message}`
+          : "Profil nicht gefunden."}
+        {isError && (
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            className="ml-3 underline disabled:opacity-50"
+          >
+            Erneut versuchen
+          </button>
+        )}
+      </div>
+    );
+  }
 
   const playlists = data.playlists ?? [];
   const artists = data.top_artists ?? [];
@@ -34,39 +53,37 @@ export default function UserProfilePage({
 
   return (
     <div className="animate-in">
-      {/* Hero banner */}
-      <header className="relative overflow-hidden rounded-3xl border border-white/10 mb-8">
-        <div className="absolute inset-0 gradient-violet opacity-25" />
-        <div className="absolute -top-24 -right-10 w-72 h-72 rounded-full bg-accent/40 blur-3xl" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-transparent" />
-        <div className="relative flex flex-col items-center gap-5 p-6 text-center sm:flex-row sm:items-end sm:gap-6 sm:p-8 sm:text-left">
+      {isError && (
+        <p role="alert" className="error-panel mb-4">
+          Profil konnte nicht aktualisiert werden: {error.message}
+        </p>
+      )}
+      <CollectionHero
+        eyebrow="Profil"
+        title={name}
+        roundArtwork
+        artwork={
           <Avatar
             src={data.avatar_url}
             name={name}
-            size={140}
-            className="ring-4 ring-background shadow-2xl shadow-black/40"
+            size={224}
+            className="h-full! w-full!"
           />
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-accent-soft">
-              Profil
-            </p>
-            <h1 className="text-4xl font-extrabold sm:text-5xl break-words">
-              {name}
-            </h1>
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-muted sm:justify-start">
-              <Stat n={playlists.length} label="Playlists" />
-              <Dot />
-              <Stat n={artists.length} label="Künstler" />
-              <Dot />
-              <Stat n={totalTracks} label="Titel" />
-            </div>
-          </div>
-        </div>
-      </header>
+        }
+        metadata={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Stat n={playlists.length} label="Playlists" />
+            <Dot />
+            <Stat n={artists.length} label="Künstler" />
+            <Dot />
+            <Stat n={totalTracks} label="Titel" />
+          </span>
+        }
+      />
 
       {/* Public playlists */}
       <section className="mb-10">
-        <h2 className="text-2xl font-bold mb-4">Öffentliche Playlists</h2>
+        <h2 className="section-heading mb-4">Öffentliche Playlists</h2>
         {playlists.length === 0 ? (
           <EmptyCard>Keine öffentlichen Playlists.</EmptyCard>
         ) : (
@@ -75,7 +92,7 @@ export default function UserProfilePage({
               <Link
                 key={String(pl.id)}
                 href={playlistPath(pl)}
-                className="group block rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition hover-lift hover:bg-white/[0.06]"
+                className="music-card group block p-3"
               >
                 {pl.cover_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -97,7 +114,7 @@ export default function UserProfilePage({
 
       {/* Followed artists */}
       <section>
-        <h2 className="text-2xl font-bold mb-4">Künstler</h2>
+        <h2 className="section-heading mb-4">Künstler</h2>
         {artists.length === 0 ? (
           <EmptyCard>Keine gefolgten Künstler.</EmptyCard>
         ) : (
@@ -115,19 +132,20 @@ export default function UserProfilePage({
 function Stat({ n, label }: { n: number; label: string }) {
   return (
     <span>
-      <span className="font-bold text-foreground tabular-nums">{n}</span> {label}
+      <span className="font-bold text-foreground tabular-nums">{n}</span>{" "}
+      {label}
     </span>
   );
 }
 
 function Dot() {
-  return <span aria-hidden className="text-white/25">•</span>;
+  return (
+    <span aria-hidden className="text-white/25">
+      •
+    </span>
+  );
 }
 
 function EmptyCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-8 text-center text-muted">
-      {children}
-    </div>
-  );
+  return <div className="empty-panel">{children}</div>;
 }

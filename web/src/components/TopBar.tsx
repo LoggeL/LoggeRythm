@@ -1,84 +1,41 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
 import Avatar from "@/components/Avatar";
-import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  SearchIcon,
-} from "@/components/icons";
+import Logo from "@/components/Logo";
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "@/components/icons";
 
-/**
- * Sticky top chrome inside the main column: back/forward navigation, a search
- * pill that opens the command palette, and the mobile user avatar.
- */
 export default function TopBar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { data: me } = useMe();
-
-  function openSearch() {
-    window.dispatchEvent(new Event("open-command-palette"));
-  }
+  const searchPage = pathname === "/search";
 
   return (
-    <div className="sticky top-0 z-30 -mx-4 sm:-mx-8 px-4 sm:px-8 py-3 bg-background/70 backdrop-blur-xl flex items-center gap-3">
-      <div className="hidden sm:flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="Zurück"
-          className="w-10 h-10 rounded-full bg-white/[0.08] hover:bg-white/[0.12] text-foreground/80 flex items-center justify-center transition"
-        >
-          <ChevronLeftIcon />
-        </button>
-        <button
-          type="button"
-          onClick={() => router.forward()}
-          aria-label="Vor"
-          className="w-10 h-10 rounded-full bg-white/[0.08] hover:bg-white/[0.12] text-foreground/80 flex items-center justify-center transition"
-        >
-          <ChevronRightIcon />
-        </button>
+    <header className="sticky top-0 z-30 -mx-5 sm:-mx-8 xl:-mx-10 flex min-h-[76px] items-center gap-3 border-b border-border bg-background/95 px-5 backdrop-blur-xl sm:px-8 xl:px-10">
+      <Link href="/" className="lg:hidden flex-shrink-0" aria-label="Start"><Logo size={30} /></Link>
+      <div className="hidden lg:flex items-center gap-1">
+        <button type="button" onClick={() => router.back()} aria-label="Zurück" className="action-icon"><ChevronLeftIcon width={18} height={18} /></button>
+        <button type="button" onClick={() => router.forward()} aria-label="Vor" className="action-icon"><ChevronRightIcon width={18} height={18} /></button>
       </div>
-
-      <button
-        type="button"
-        onClick={openSearch}
-        className="group flex items-center gap-3 flex-1 min-w-0 max-w-3xl mx-auto bg-white/[0.08] hover:bg-white/[0.11] border border-white/10 rounded-full px-5 py-3.5 text-left transition backdrop-blur-md"
-      >
-        <SearchIcon
-          className="text-muted group-hover:text-foreground"
-          width={20}
-          height={20}
-        />
-        <span className="flex-1 text-[15px] text-muted truncate">
-          Künstler und Songs suchen
-        </span>
-        <kbd className="hidden sm:flex items-center gap-0.5 text-sm text-white/50">
-          ⌘ K
-        </kbd>
+      <div className="flex min-w-0 flex-1 items-center">
+        {!searchPage && (
+          <Link href="/search" className="flex h-11 w-full max-w-md items-center gap-3 rounded-xl border border-border bg-panel px-4 text-sm text-muted transition hover:border-white/20 hover:text-foreground" aria-label="Musik suchen">
+            <SearchIcon width={18} height={18} />
+            <span className="truncate">Was möchtest du hören?</span>
+          </Link>
+        )}
+        {searchPage && <span className="text-sm font-medium text-muted">Deine nächste Entdeckung</span>}
+      </div>
+      <button type="button" onClick={() => window.dispatchEvent(new Event("open-command-palette"))} title="Schnellsuche (⌘ K / Ctrl K)" aria-label="Schnellsuche öffnen" className="action-icon hidden sm:flex">
+        <kbd className="text-xs">⌘ K</kbd>
       </button>
-
-      <div className="hidden sm:flex items-center flex-shrink-0">
-        <Link
-          href="/account"
-          aria-label="Konto"
-          className="relative flex-shrink-0 rounded-full ring-2 ring-white/10 hover:ring-accent transition"
-        >
-          <Avatar src={me?.avatar_url} name={me?.display_name} size={36} />
-          <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-400 ring-2 ring-background" />
-        </Link>
-      </div>
-
-      <Link
-        href="/account"
-        aria-label="Konto"
-        className="sm:hidden flex-shrink-0 rounded-full ring-2 ring-white/10 hover:ring-accent transition"
-      >
-        <Avatar src={me?.avatar_url} name={me?.display_name} size={34} />
+      <Link href="/account" aria-label="Konto" className="flex flex-shrink-0 items-center gap-2 rounded-full border border-border bg-panel p-1 pr-1 transition hover:border-white/20 lg:pr-3">
+        <Avatar src={me?.avatar_url} name={me?.display_name} size={32} />
+        <span className="hidden max-w-28 truncate text-xs font-medium lg:inline">{me?.display_name}</span>
       </Link>
-    </div>
+    </header>
   );
 }

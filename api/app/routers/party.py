@@ -9,13 +9,16 @@ import asyncio
 import json
 import math
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
+from starlette.concurrency import run_in_threadpool
+from starlette.types import Receive, Scope, Send
 
 from ..auth import get_current_user
 from ..db.models import PartyMember, PartySession, PartyTrack, User
@@ -56,6 +59,33 @@ def _get_session(db: Session, code: str) -> PartySession:
     return session
 
 
+def _touch_session(db: Session, session: PartySession) -> None:
+    """Advance the canonical revision atomically, or reject a stale mutation.
+
+    A timestamp assigned before commit alone cannot order concurrent changes.
+    The conditional update locks the row until commit and ensures each committed
+    queue, playback or membership mutation has a strictly newer revision.
+    """
+    previous = session.updated_at
+    revision = max(
+        _utcnow(),
+        party_bus.utc_revision(previous) + timedelta(microseconds=1),
+    )
+    changed = db.execute(
+        update(PartySession)
+        .where(PartySession.code == session.code, PartySession.updated_at == previous)
+        .values(updated_at=revision)
+        .execution_options(synchronize_session=False)
+    )
+    if changed.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Party changed; reload before modifying it",
+        )
+    set_committed_value(session, "updated_at", revision)
+
+
 def _upsert_member(db: Session, session: PartySession, user: User) -> None:
     member = db.scalar(
         select(PartyMember).where(
@@ -63,18 +93,24 @@ def _upsert_member(db: Session, session: PartySession, user: User) -> None:
             PartyMember.user_id == user.id,
         )
     )
+    display_name = _member_display(user)
+    visible_change = member is None or member.display_name != display_name
     if member is None:
         db.add(
             PartyMember(
                 session_code=session.code,
                 user_id=user.id,
-                display_name=_member_display(user),
+                display_name=display_name,
                 last_seen=_utcnow(),
             )
         )
     else:
-        member.display_name = _member_display(user)
+        member.display_name = display_name
         member.last_seen = _utcnow()
+    # Refreshing last_seen does not change any wire field. Avoid competing with
+    # host playback updates when an existing member merely reads/reconnects.
+    if visible_change:
+        _touch_session(db, session)
 
 
 def _require_host(session: PartySession, user: User) -> None:
@@ -162,15 +198,76 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
     return state.model_dump(mode="json")
 
 
-def _build_state(db: Session, session: PartySession, user: User) -> PartyState:
-    data = _state_dict(db, session)
-    data["is_host"] = user.id == session.host_id
-    return PartyState(**data)
+def _commit_state_for_user(db: Session, session: PartySession, user: User) -> PartyState:
+    is_host = user.id == session.host_id
+    frame = _commit_state(db, session)
+    return PartyState(**{**frame.payload, "is_host": is_host})
 
 
-def _publish(db: Session, session: PartySession) -> None:
-    """Fan the current full state out to all SSE subscribers of this party."""
-    party_bus.publish(session.code, _state_dict(db, session))
+def _commit_state(db: Session, session: PartySession) -> party_bus.StateFrame:
+    """Capture state under the mutation's row lock, commit, then broadcast.
+
+    Flush first so refreshing the canonical state cannot discard pending ORM
+    changes. Reading before commit also prevents a snapshot conflict being
+    reported after a mutation has already been persisted.
+    """
+    db.flush()
+    frame = _canonical_frame(db, session)
+    db.commit()
+    party_bus.publish(session.code, frame)
+    return frame
+
+
+def _canonical_frame(db: Session, session: PartySession) -> party_bus.StateFrame:
+    """Read a consistent revision with its state, including lazy relationships."""
+    for _ in range(5):
+        payload = _state_dict(db, session)
+        revision = party_bus.utc_revision(session.updated_at)
+        current = db.scalar(
+            select(PartySession.updated_at).where(PartySession.code == session.code)
+        )
+        if current is None:
+            raise HTTPException(status_code=404, detail="Party not found")
+        if party_bus.utc_revision(current) == revision:
+            return party_bus.StateFrame(revision, payload)
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Party changed while reading its state; reconnect or reload",
+    )
+
+
+def _stream_snapshot(code: str) -> tuple[int, party_bus.StateFrame]:
+    """Load the initial state in a worker, closing its DB session before SSE."""
+    with SessionLocal() as db:
+        session = _get_session(db, code)
+        return session.host_id, _canonical_frame(db, session)
+
+
+class _PartyEventResponse(StreamingResponse):
+    """Close subscriptions even if sending fails before generator iteration."""
+
+    def __init__(
+        self,
+        content: AsyncIterator[str],
+        code: str,
+        subscription: party_bus.Subscription,
+    ) -> None:
+        super().__init__(
+            content,
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "X-Accel-Buffering": "no",
+            },
+        )
+        self._party_code = code
+        self._subscription = subscription
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            party_bus.unsubscribe(self._party_code, self._subscription)
 
 
 class PartyCreate(BaseModel):
@@ -206,8 +303,7 @@ def create_party(
     db.add(session)
     db.flush()
     _upsert_member(db, session, user)
-    db.commit()
-    return _build_state(db, session, user)
+    return _commit_state_for_user(db, session, user)
 
 
 @router.get(
@@ -224,8 +320,7 @@ def get_party(
 ) -> PartyState:
     session = _get_session(db, code)
     _upsert_member(db, session, user)
-    db.commit()
-    return _build_state(db, session, user)
+    return _commit_state_for_user(db, session, user)
 
 
 @router.post("/{code}/join", response_model=PartyState)
@@ -236,9 +331,7 @@ def join_party(
 ) -> PartyState:
     session = _get_session(db, code)
     _upsert_member(db, session, user)
-    db.commit()
-    _publish(db, session)
-    return _build_state(db, session, user)
+    return _commit_state_for_user(db, session, user)
 
 
 @router.post("/{code}/tracks", status_code=status.HTTP_204_NO_CONTENT)
@@ -270,9 +363,8 @@ def add_track(
             added_by=_member_display(user),
         )
     )
-    session.updated_at = _utcnow()
-    db.commit()
-    _publish(db, session)
+    _touch_session(db, session)
+    _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -304,9 +396,8 @@ def remove_track(
             session.is_playing = False
     elif current is not None:
         session.current_index = remaining.index(current)
-    session.updated_at = now
-    db.commit()
-    _publish(db, session)
+    _touch_session(db, session)
+    _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -336,9 +427,8 @@ def reorder_tracks(
         track.position = position_of[track.id]
     if current is not None:
         session.current_index = position_of[current.id]
-    session.updated_at = _utcnow()
-    db.commit()
-    _publish(db, session)
+    _touch_session(db, session)
+    _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -362,9 +452,8 @@ def set_current(
     # A track change resets the playback clock so guests re-sync from the top.
     session.position_sec = 0.0
     session.playback_updated_at = _utcnow()
-    session.updated_at = _utcnow()
-    db.commit()
-    _publish(db, session)
+    _touch_session(db, session)
+    _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -395,9 +484,8 @@ def set_playback(
     session.is_playing = body.is_playing
     session.position_sec = body.position_sec
     session.playback_updated_at = _utcnow()
-    session.updated_at = _utcnow()
-    db.commit()
-    _publish(db, session)
+    _touch_session(db, session)
+    _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -419,54 +507,47 @@ async def party_events(
     code: str,
     user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    """SSE stream of full party-state frames (initial + on every mutation).
+    """SSE stream of the latest full party state, with idle heartbeats.
 
     EventSource cannot set headers, but auth is cookie-based so the session
-    cookie rides along automatically through the Next proxy. We validate the
-    party and capture ``host_id`` up front using a short-lived DB session — the
-    stream itself holds no DB connection open for its (potentially long)
-    lifetime; subsequent frames come from the in-memory bus.
+    cookie rides along automatically through the Next proxy. Subscribe before
+    a worker loads the initial canonical state so mutations
+    during connection setup cannot disappear. No DB connection stays open for
+    the stream's lifetime; revisions order subsequent in-memory frames.
     """
-    with SessionLocal() as db:
-        session = db.get(PartySession, code)
-        if session is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Party not found"
-            )
-        host_id = session.host_id
-        initial = _state_dict(db, session)
-
-    queue = party_bus.subscribe(code)
+    user_id = user.id
+    subscription = party_bus.subscribe(code)
+    try:
+        host_id, initial = await run_in_threadpool(_stream_snapshot, code)
+    except BaseException:
+        party_bus.unsubscribe(code, subscription)
+        raise
 
     async def event_stream() -> AsyncIterator[str]:
         try:
-            initial["is_host"] = user.id == host_id
-            yield f"data: {json.dumps(initial)}\n\n"
+            latest = subscription.take_latest(initial)
+            frame = {**latest.payload, "is_host": user_id == host_id}
+            yield f"data: {json.dumps(frame)}\n\n"
             while True:
                 try:
-                    payload = await asyncio.wait_for(
-                        queue.get(), timeout=_HEARTBEAT_SEC
+                    incoming = await asyncio.wait_for(
+                        subscription.queue.get(), timeout=_HEARTBEAT_SEC
                     )
                 except asyncio.TimeoutError:
                     # Comment frame: keeps proxies/browsers from closing an idle
                     # connection. EventSource ignores comment lines.
                     yield ": ping\n\n"
                     continue
-                frame = {**payload, "is_host": user.id == host_id}
+                if incoming.updated_at <= latest.updated_at:
+                    continue
+                latest = incoming
+                frame = {**latest.payload, "is_host": user_id == host_id}
                 yield f"data: {json.dumps(frame)}\n\n"
         finally:
             # Runs on client disconnect (generator cancelled) — no leak.
-            party_bus.unsubscribe(code, queue)
+            party_bus.unsubscribe(code, subscription)
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache, no-transform",
-            # Disable proxy buffering so frames flush immediately.
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _PartyEventResponse(event_stream(), code, subscription)
 
 
 @router.post("/{code}/leave", status_code=status.HTTP_204_NO_CONTENT)
@@ -476,12 +557,12 @@ def leave_party(
     db: Session = Depends(get_db),
 ) -> Response:
     session = _get_session(db, code)
+    _touch_session(db, session)
     db.execute(
         delete(PartyMember).where(
             PartyMember.session_code == session.code,
             PartyMember.user_id == user.id,
         )
     )
-    db.commit()
-    _publish(db, session)
+    _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

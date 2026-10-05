@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 from app.routers import radio
+from app.services import lastfm_client, recommend
 
 
 def _track(tid: str, artist_id: str, artist: str) -> dict:
@@ -134,16 +135,16 @@ class RadioDiversityTests(unittest.TestCase):
 
     def test_lastfm_timeout_fails_with_source_context(self):
         with (
-            mock.patch.object(radio, "LASTFM_API_KEY", "configured"),
+            mock.patch.object(recommend, "LASTFM_API_KEY", "configured"),
             mock.patch.object(
-                radio.requests,
+                lastfm_client.requests,
                 "get",
-                side_effect=radio.requests.exceptions.Timeout("timed out"),
+                side_effect=lastfm_client.requests.exceptions.Timeout("timed out"),
             ),
         ):
             with self.assertRaisesRegex(
-                radio._RadioSourceError,
-                r"Last\.fm recommendations failed for 'Artist' - 'Title': timed out",
+                radio.LastfmError,
+                r"Recommendations \(track.getsimilar\) for 'Artist / Title': Last\.fm request failed \(Timeout\)",
             ):
                 radio._lastfm_similar("Artist", "Title")
 

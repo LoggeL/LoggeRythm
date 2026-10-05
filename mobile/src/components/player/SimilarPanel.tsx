@@ -205,16 +205,15 @@ export default function SimilarPanel(props: SimilarPanelProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, minHeight: 0, paddingTop: 12 },
+  container: { flex: 1, minHeight: 0, paddingTop: 20 },
   heading: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    fontWeight: '800',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    paddingHorizontal: 16,
-    marginBottom: 8,
+    color: colors.textPrimary,
+    fontSize: 20,
+    lineHeight: 28,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    paddingHorizontal: 4,
+    marginBottom: 16,
   },
   virtualList: { flex: 1, minHeight: 0 },
   list: { paddingBottom: 24 },

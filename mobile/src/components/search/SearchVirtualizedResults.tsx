@@ -27,6 +27,7 @@ export function SearchVirtualizedResults({
       ListHeaderComponent={header}
       ListFooterComponent={<View style={styles.footer} />}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       showsVerticalScrollIndicator={false}
       initialNumToRender={12}
       maxToRenderPerBatch={10}

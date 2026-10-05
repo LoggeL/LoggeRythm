@@ -159,6 +159,39 @@ internal class LoggeRythmPendingResult<T> {
   }
 }
 
+/** Overlapping destructive boundaries await one real cache clear and receive its exact result. */
+internal class LoggeRythmSharedCacheClear(
+  private val start: ((Result<LoggeRythmCacheClearResult>) -> Unit) -> Unit,
+) {
+  private var pending: MutableList<(Result<LoggeRythmCacheClearResult>) -> Unit>? = null
+
+  fun clear(callback: (Result<LoggeRythmCacheClearResult>) -> Unit) {
+    pending?.let { callbacks ->
+      callbacks += callback
+      return
+    }
+    val callbacks = mutableListOf(callback)
+    pending = callbacks
+    fun finish(result: Result<LoggeRythmCacheClearResult>) {
+      if (pending !== callbacks) return
+      pending = null
+      val failures = callbacks.mapNotNull { admitted ->
+        runCatching { admitted(result) }.exceptionOrNull()
+      }
+      if (failures.isNotEmpty()) {
+        val error = IllegalStateException("player-cache-clear-callback-failed", failures.first())
+        failures.drop(1).forEach(error::addSuppressed)
+        throw error
+      }
+    }
+    try {
+      start(::finish)
+    } catch (error: Exception) {
+      if (pending === callbacks) finish(Result.failure(error)) else throw error
+    }
+  }
+}
+
 /**
  * Keeps an externally publishable command policy separate from a snapshot that is only staged on
  * the persistence executor. A staged widening is never returned by [publishableCapabilities], and
@@ -383,6 +416,17 @@ internal class LoggeRythmPersistedBoundaryGate {
     restores.forEach { callback -> runCatching { callback(result) } }
   }
 
+  /** Settle an interrupted restore/bind explicitly before the owner destroys its session data. */
+  fun cancelForDestructiveClear() {
+    val interrupted = gateFailure<Unit>("player-session-cleared")
+    when (mode) {
+      Mode.IDLE -> Unit
+      Mode.EXACT_BIND -> finishExact(interrupted, restored = false)
+      Mode.SERVICE_RESTORE -> finishService(interrupted.map { false }, interrupted)
+      Mode.CLOSED -> throw LoggeRythmPersistedPlayerException("player-persistence-closed")
+    }
+  }
+
   fun close() {
     if (mode == Mode.CLOSED) return
     val binds = (exactBindCallbacks + deferredBindCallbacks).toList()
@@ -605,9 +649,10 @@ internal object LoggeRythmPersistedServiceBridge {
 internal class LoggeRythmPersistedPlayerCoordinator(
   context: Context,
   private val player: ExoPlayer,
-  private val clearCache: ((Result<LoggeRythmCacheClearResult>) -> Unit) -> Unit,
+  clearCache: ((Result<LoggeRythmCacheClearResult>) -> Unit) -> Unit,
   private val nowEpochMs: () -> Long = System::currentTimeMillis,
 ) : LoggeRythmPersistedServiceControl {
+  private val sharedCacheClear = LoggeRythmSharedCacheClear(clearCache)
   private val appContext = context.applicationContext
   private val mainHandler = Handler(Looper.getMainLooper())
   private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor { task ->
@@ -1359,7 +1404,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       callback(failure("player-persistence-closed"))
       return
     }
-    if (boundaryActive) {
+    if (boundaryActive && !boundaryGate.managesActiveBoundary()) {
       callback(failure("player-cleanup-active"))
       return
     }
@@ -1373,6 +1418,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       boundaryActive = true
       remotePolicyDurability.beginDestructiveBoundary()
       cancelScheduledWork()
+      // Signed-out startup may clear while Media3's notification controller is loading a cold
+      // service restore. Destruction owns the new generation; fail those restore/bind waiters and
+      // prevent their late I/O completion from bringing the cleared account back.
+      boundaryGate.cancelForDestructiveClear()
       clearLivePlayer(clearSession = true)
       val toClear = persistence
       persistence = null
@@ -1465,7 +1514,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       }
       LoggeRythmEncryptedLoadOutcome.Absent,
       LoggeRythmEncryptedLoadOutcome.DiscardedInvalid -> {
-        clearCache { cacheResult ->
+        sharedCacheClear.clear { cacheResult ->
           mainHandler.post {
             if (!generation.isCurrent(ticket) || closed) return@post
             cacheResult.fold(
@@ -1921,7 +1970,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     } else {
       clearRawEncryptedArtifacts(encryptedCallback)
     }
-    clearCache { result ->
+    sharedCacheClear.clear { result ->
       mainHandler.post {
         cacheResult = result
         finishIfComplete()

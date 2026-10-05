@@ -73,10 +73,11 @@ import {
   readNavigationStateUnlessLinked,
 } from './navigationPersistence';
 import { transientModalScreenOptions } from './navigationPolicy';
+import { navigateToSearch } from './navigationActions';
 import { strings } from './localization';
 import { useLocaleRevision } from './localization/LocaleProvider';
 import { spotifySharedTextCoordinator } from './share/sharedTextRuntime';
-import { colors, metrics } from './theme';
+import { colors, metrics, radii, spacing, typography } from './theme';
 
 export type SectionStackParams = {
   Home: undefined;
@@ -152,10 +153,7 @@ export function openTrackArtist(track: Track): TrackDetailNavigationResult {
 
 function openSpotifyImport(): boolean {
   if (!rootNavigation.isReady()) return false;
-  rootNavigation.navigate('Tabs', {
-    screen: 'SearchTab',
-    params: { screen: 'Search' },
-  });
+  navigateToSearch(rootNavigation);
   return true;
 }
 
@@ -184,7 +182,7 @@ function HomeRoute({ navigation }: SectionProps<'Home'>) {
       }
       onOpenMix={(params) => navigation.push('Mix', params)}
       onOpenRadar={() => navigation.push('Radar')}
-      onOpenSearch={() => navigation.navigate('Search')}
+      onOpenSearch={() => navigateToSearch(rootNavigation)}
     />
   );
 }
@@ -434,9 +432,11 @@ function RootHeaderTitle({ title }: { title: string }) {
 }
 
 const sectionScreenOptions = {
-  headerStyle: { backgroundColor: colors.backgroundElevated },
+  headerStyle: { backgroundColor: colors.background },
   headerTintColor: colors.textPrimary,
   headerShadowVisible: false,
+  headerTitleStyle: { fontSize: typography.label.fontSize, fontWeight: '600' as const },
+  contentStyle: { backgroundColor: colors.background },
 };
 
 function detailScreens() {
@@ -608,14 +608,24 @@ function TabIcon({
 
 function Tabs() {
   useLocaleRevision();
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.fill}>
       <Tab.Navigator
         initialRouteName="HomeTab"
         screenOptions={{
           headerShown: false,
-          tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
-          tabBarActiveTintColor: colors.accent,
+          tabBarStyle: {
+            height: TAB_BAR_HEIGHT + insets.bottom,
+            backgroundColor: colors.backgroundElevated,
+            borderTopColor: colors.borderSubtle,
+            paddingTop: spacing.xxs,
+            paddingBottom: Math.max(insets.bottom, spacing.xxs),
+            elevation: 0,
+          },
+          tabBarItemStyle: { minHeight: metrics.minimumTouchTarget },
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginBottom: spacing.xxs },
+          tabBarActiveTintColor: colors.accentSoft,
           tabBarInactiveTintColor: colors.textSecondary,
           tabBarHideOnKeyboard: true,
         }}
@@ -844,7 +854,7 @@ export default function RootNavigator() {
             });
           }}
         >
-          <RootStack.Navigator screenOptions={{ headerStyle: { backgroundColor: colors.backgroundElevated }, headerTintColor: colors.textPrimary }}>
+          <RootStack.Navigator screenOptions={sectionScreenOptions}>
             <RootStack.Screen name="Tabs" component={Tabs} options={{ headerShown: false }} />
             <RootStack.Screen
               name="Profile"
@@ -877,12 +887,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.accent,
+    borderColor: colors.border,
     backgroundColor: colors.surface,
     overflow: 'hidden',
   },
   profileAvatar: { width: '100%', height: '100%' },
-  profileInitial: { color: colors.textPrimary, fontSize: 17, fontWeight: '900' },
+  profileInitial: { color: colors.textPrimary, fontSize: 17, fontWeight: '600' },
   invalidLink: {
     flex: 1,
     alignItems: 'center',
@@ -891,14 +901,14 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: colors.background,
   },
-  invalidLinkTitle: { color: colors.textPrimary, fontSize: 24, fontWeight: '900', textAlign: 'center' },
-  invalidLinkBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  invalidLinkTitle: { ...typography.title, color: colors.textPrimary, textAlign: 'center' },
+  invalidLinkBody: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
   invalidLinkButton: {
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
-    borderRadius: 24,
+    borderRadius: radii.md,
     paddingHorizontal: 22,
-    backgroundColor: colors.accent,
+    backgroundColor: colors.accentSolid,
   },
   invalidLinkButtonText: { color: colors.onAccent, fontSize: 15, fontWeight: '800' },
   logoutButton: {
@@ -909,27 +919,26 @@ const styles = StyleSheet.create({
   logout: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
   errorBanner: {
     position: 'absolute',
-    left: 8,
-    right: 8,
-    borderRadius: 8,
+    left: spacing.sm,
+    right: spacing.sm,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.danger,
-    backgroundColor: colors.surfaceElevated,
-    padding: 10,
+    backgroundColor: colors.dangerSubtle,
+    padding: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: spacing.sm,
     zIndex: 3,
     elevation: 8,
   },
-  errorText: { color: colors.danger, fontSize: 12, flex: 1 },
+  errorText: { ...typography.caption, color: colors.textPrimary, flex: 1 },
   dismissButton: {
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
   dismiss: { color: colors.textPrimary, fontSize: 12, fontWeight: '700' },
-  tabIcon: { fontSize: 18, fontWeight: '700' },
   startupState: {
     position: 'absolute',
     inset: 0,
@@ -939,13 +948,13 @@ const styles = StyleSheet.create({
     padding: 28,
     gap: 14,
   },
-  startupTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  startupStatus: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  startupError: { color: colors.danger, fontSize: 13, lineHeight: 19, textAlign: 'center' },
+  startupTitle: { ...typography.title, color: colors.textPrimary, textAlign: 'center' },
+  startupStatus: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
+  startupError: { ...typography.body, color: colors.danger, textAlign: 'center' },
   retryButton: {
     minHeight: metrics.minimumTouchTarget,
-    backgroundColor: colors.accent,
-    borderRadius: 24,
+    backgroundColor: colors.accentSolid,
+    borderRadius: radii.md,
     paddingHorizontal: 28,
     justifyContent: 'center',
   },

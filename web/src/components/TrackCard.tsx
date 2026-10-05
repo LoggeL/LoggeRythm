@@ -43,7 +43,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
   return (
     <div
       onContextMenu={handleContextMenu}
-      className="group relative bg-panel/70 hover:bg-panel-hover border border-white/5 rounded-2xl p-4 transition hover-lift cursor-default"
+      className="music-card group relative p-2.5 sm:p-3 cursor-default"
     >
       <div className="relative mb-3">
         {track.album_id ? (
@@ -88,7 +88,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
           type="button"
           onClick={handlePlay}
           aria-label={playingThis ? "Pause" : "Abspielen"}
-          className="absolute bottom-2 right-2 w-12 h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-lg glow-sm opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition hover:bg-accent-hover hover:scale-105 press"
+          className="absolute bottom-2 right-2 w-11 h-11 rounded-full bg-accent text-white flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition hover:bg-accent-hover press"
         >
           {playingThis ? (
             <PauseIcon width={22} height={22} />
@@ -125,7 +125,7 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
         {track.album_id ? (
           <Link
             href={`/album/${track.album_id}`}
-            className={`block truncate font-semibold hover:underline ${
+            className={`block truncate text-sm font-semibold hover:underline ${
               isCurrent ? "text-accent" : "text-foreground"
             }`}
           >
@@ -133,14 +133,14 @@ export default function TrackCard({ track, onPlay }: TrackCardProps) {
           </Link>
         ) : (
           <div
-            className={`truncate font-semibold ${
+            className={`truncate text-sm font-semibold ${
               isCurrent ? "text-accent" : "text-foreground"
             }`}
           >
             {track.title}
           </div>
         )}
-        <ArtistLinks track={track} className="block truncate text-sm text-muted" />
+        <ArtistLinks track={track} className="mt-1 block truncate text-xs text-muted" />
       </div>
 
       {menuPos && (

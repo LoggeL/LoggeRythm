@@ -11,7 +11,8 @@ import type {
 import { catalogStrings } from '../../screens/catalogStrings';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { colors, metrics } from '../../theme';
-import AppIcon from '../AppIcon';
+import AppIcon, { type AppIconName } from '../AppIcon';
+import { ActionButton } from '../ui/ActionButton';
 import StandardTrackRow, {
   type TrackOccurrenceTarget,
 } from '../track/StandardTrackRow';
@@ -28,11 +29,20 @@ function Artwork({ uri, style }: { uri: string | null; style: object }) {
   );
 }
 
-export function CatalogHeroArtwork({ uri, round = false }: { uri: string; round?: boolean }) {
+export function CatalogHeroArtwork({
+  uri,
+  round = false,
+  compact = false,
+}: { uri: string; round?: boolean; compact?: boolean }) {
   return (
     <Artwork
       uri={uri || null}
-      style={[styles.heroArtwork, round && styles.heroArtworkRound]}
+      style={[
+        styles.heroArtwork,
+        round && styles.heroArtworkRound,
+        compact && styles.compactArtwork,
+        compact && round && styles.compactArtworkRound,
+      ]}
     />
   );
 }
@@ -268,6 +278,8 @@ export function CatalogActionButton({
   accessibilityLabel = label,
   disabled = false,
   secondary = false,
+  busy = false,
+  icon,
   onPress,
 }: {
   testID: string;
@@ -275,35 +287,31 @@ export function CatalogActionButton({
   accessibilityLabel?: string;
   disabled?: boolean;
   secondary?: boolean;
+  busy?: boolean;
+  icon?: AppIconName;
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <ActionButton
       testID={testID}
-      accessibilityRole="button"
+      label={label}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
       disabled={disabled}
+      busy={busy}
+      icon={icon}
+      variant={secondary ? 'secondary' : 'primary'}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.action,
-        secondary && styles.actionSecondary,
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
-      ]}
-    >
-      <Text style={[styles.actionText, secondary && styles.actionSecondaryText]}>{label}</Text>
-    </Pressable>
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  rail: { gap: 12, paddingHorizontal: 16 },
-  albumCard: { width: 152, minHeight: 214, gap: 5 },
+  rail: { gap: 16, paddingHorizontal: 20 },
+  albumCard: { width: 156, minHeight: 214, gap: 7 },
   squareArtwork: {
-    width: 152,
-    height: 152,
-    borderRadius: 12,
+    width: 156,
+    height: 156,
+    borderRadius: 10,
     backgroundColor: colors.surfaceElevated,
   },
   heroArtwork: {
@@ -313,13 +321,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceElevated,
   },
   heroArtworkRound: { borderRadius: 98 },
-  cardTitle: { color: colors.textPrimary, fontSize: 15, lineHeight: 19, fontWeight: '700' },
+  compactArtwork: { width: 112, height: 112, borderRadius: 14 },
+  compactArtworkRound: { borderRadius: 56 },
+  cardTitle: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '700' },
   cardSubtitle: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
   genreCard: {
-    width: 180,
-    height: 128,
+    width: 156,
+    height: 108,
     minHeight: metrics.minimumTouchTarget,
-    borderRadius: 14,
+    borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: colors.surfaceElevated,
   },
@@ -331,61 +341,42 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     justifyContent: 'flex-end',
-    padding: 12,
-    backgroundColor: 'rgba(10,10,20,0.38)',
+    padding: 14,
+    backgroundColor: 'rgba(10,10,20,0.58)',
   },
-  genreTitle: { color: colors.textPrimary, fontSize: 18, lineHeight: 22, fontWeight: '900' },
-  artistCard: { width: 132, minHeight: 180, alignItems: 'center', gap: 8 },
+  genreTitle: { color: colors.textPrimary, fontSize: 19, lineHeight: 24, fontWeight: '700' },
+  artistCard: { width: 128, minHeight: 176, alignItems: 'center', gap: 10 },
   artistArtwork: {
-    width: 132,
-    height: 132,
-    borderRadius: 66,
+    width: 128,
+    height: 128,
+    borderRadius: 64,
     backgroundColor: colors.surfaceElevated,
   },
   artistTitle: { color: colors.textPrimary, fontSize: 14, lineHeight: 18, fontWeight: '700', textAlign: 'center' },
   playlistCard: {
-    width: 252,
-    minHeight: 136,
+    width: 272,
+    minHeight: 112,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
+    gap: 14,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
   },
-  playlistArtwork: { width: 104, height: 104, borderRadius: 10, backgroundColor: colors.surface },
-  playlistMeta: { flex: 1, minWidth: 0, gap: 4 },
+  playlistArtwork: { width: 88, height: 88, borderRadius: 8, backgroundColor: colors.surfaceElevated },
+  playlistMeta: { flex: 1, minWidth: 0, gap: 5 },
   rowSupplementalMetadata: {
     color: colors.textSecondary,
     fontSize: 11,
     lineHeight: 15,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingBottom: 8,
   },
-  action: {
-    minHeight: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 22,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-  },
-  actionSecondary: {
-    backgroundColor: colors.surfaceElevated,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  actionText: { color: colors.onAccent, fontSize: 15, fontWeight: '800' },
-  actionSecondaryText: { color: colors.textPrimary },
   placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border,
   },
-  glyph: { color: colors.accentSoft, fontSize: 28 },
   pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
-  disabled: { opacity: 0.5 },
 });

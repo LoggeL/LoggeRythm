@@ -18,6 +18,7 @@ import {
   perceptualVolume,
 } from "@/lib/audioAnalyser";
 import { calculateLoudnessGain, loudnessMetadataFromTrack } from "@/lib/loudness";
+import { playWithMediaRecovery } from "@/lib/mediaPlayback";
 import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import { trackArtistLabel } from "@/lib/trackArtists";
@@ -40,25 +41,20 @@ import {
   QueueIcon,
   LyricsIcon,
   SpinnerIcon,
-  ChevronDownIcon,
   ExpandIcon,
 } from "@/components/icons";
 import { toast } from "@/store/toast";
 
-// Shared styling for the player's secondary icon buttons.
-const ICON_BTN =
-  "w-9 h-9 rounded-full grid place-items-center transition-colors";
+// The player uses the same quiet controls as the rest of the app.
+const ICON_BTN = "action-icon h-9 w-9 shrink-0";
 const ICON_IDLE = "text-muted hover:text-foreground hover:bg-white/10";
-// Rounded-square buttons (lyrics / queue) with a subtle elevated surface.
-const SQUARE_BTN =
-  "w-10 h-10 rounded-lg grid place-items-center transition-colors";
-const SQUARE_IDLE = "text-muted bg-white/5 hover:text-foreground hover:bg-white/10";
-const SQUARE_ACTIVE = "text-accent bg-accent/20 hover:bg-accent/25";
+const SQUARE_IDLE = "text-muted hover:text-foreground hover:bg-white/5";
+const SQUARE_ACTIVE = "text-accent bg-accent/10 hover:bg-accent/15";
 
 /** A violet-filled track for range inputs (filled up to `pct` percent). */
 function rangeFill(pct: number): string {
   const p = Math.max(0, Math.min(100, pct));
-  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, #4d4d57 ${p}%, #4d4d57 100%)`;
+  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, var(--border) ${p}%, var(--border) 100%)`;
 }
 
 const MEDIA_ERROR_LABELS: Record<number, string> = {
@@ -280,6 +276,26 @@ export default function PlayerBar() {
     [],
   );
 
+  const prepareFailedDeckReload = useCallback(
+    (expectedId: string) => {
+      cancelCrossfade();
+      clearErrorRetry();
+      clearErrorSkip();
+      pendingSeekCancel.current?.();
+      pendingSeekCancel.current = null;
+      pendingRetrySeekCancel.current?.();
+      pendingRetrySeekCancel.current = null;
+      errorRetries.current = { id: expectedId, count: 0 };
+      setReadyTrackId(null);
+      const state = usePlayerStore.getState();
+      // Preserve the failure until an actual playing event confirms recovery.
+      // Replay already requested zero; a resumed title keeps its last position.
+      state._setBuffering(true);
+      state.seek(state.seekTo ?? state.currentTime);
+    },
+    [cancelCrossfade, clearErrorRetry, clearErrorSkip],
+  );
+
   const { data: me } = useMe();
   const recordedRef = useRef<string | null>(null);
 
@@ -363,8 +379,9 @@ export default function PlayerBar() {
     if (!me?.is_approved) return;
     if (recordedRef.current === trackId) return;
     recordedRef.current = trackId;
-    api.recordPlay(track).catch(() => {
-      // ignore record failures
+    api.recordPlay(track).catch((error: unknown) => {
+      if (recordedRef.current === trackId) recordedRef.current = null;
+      toast.error(`Hörverlauf konnte nicht gespeichert werden: ${error instanceof Error ? error.message : String(error)}`);
     });
   }, [trackId, track, me?.is_approved]);
 
@@ -470,7 +487,7 @@ export default function PlayerBar() {
       // may start) — powers the visualizers.
       ensureAnalyser(el);
       const expectedId = String(trackId ?? "");
-      el.play().catch((reason) => {
+      playWithMediaRecovery(el, () => prepareFailedDeckReload(expectedId)).catch((reason) => {
         reportPlayFailure(el, activeIdx, expectedId, reason);
       });
     } else {
@@ -483,6 +500,7 @@ export default function PlayerBar() {
     trackId,
     activeIdx,
     cancelCrossfade,
+    prepareFailedDeckReload,
     reportPlayFailure,
   ]);
 
@@ -670,6 +688,13 @@ export default function PlayerBar() {
     if (el) {
       const target = seekTo;
       const expectedId = el.dataset.trackId ?? "";
+      // A same-ID replay can leave isPlaying unchanged, so it must also recover
+      // here instead of waiting for metadata from an already failed source.
+      if (el.error && usePlayerStore.getState().isPlaying) {
+        playWithMediaRecovery(el, () => prepareFailedDeckReload(expectedId)).catch((reason) => {
+          reportPlayFailure(el, activeIdx, expectedId, reason);
+        });
+      }
       const apply = () => {
         if (
           activeIdxRef.current !== activeIdx ||
@@ -711,7 +736,7 @@ export default function PlayerBar() {
       }
     }
     _clearSeek();
-  }, [seekTo, _clearSeek, activeIdx, cancelCrossfade, reportPlayFailure]);
+  }, [seekTo, _clearSeek, activeIdx, cancelCrossfade, prepareFailedDeckReload, reportPlayFailure]);
 
   // MediaSession: OS media keys + metadata + artwork.
   useEffect(() => {
@@ -814,10 +839,8 @@ export default function PlayerBar() {
     function onKey(e: KeyboardEvent) {
       const el = e.target as HTMLElement | null;
       if (
-        el &&
-        (el.tagName === "INPUT" ||
-          el.tagName === "TEXTAREA" ||
-          el.isContentEditable)
+        e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey ||
+        el?.closest('input, textarea, select, button, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="tab"], [role="slider"], [role="combobox"], [role="menuitem"]')
       ) {
         return;
       }
@@ -1102,11 +1125,8 @@ export default function PlayerBar() {
     <>
       {expanded && track && <NowPlaying onClose={closeFullscreen} />}
       <footer
-        className={`like-celebration-surface relative flex-shrink-0 backdrop-blur-xl px-3 sm:px-4 py-2 sm:py-0 pb-2 sm:pb-0 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 ${
-          hasTrack
-            ? "mx-3 mb-2 rounded-2xl border border-white/10 bg-background-elevated/95 shadow-2xl shadow-black/25 min-h-24 sm:mx-0 sm:mb-0 sm:rounded-none sm:border-x-0 sm:border-b-0 sm:min-h-0 sm:h-20"
-            : "bg-background-elevated/95 border-t border-white/10 min-h-16 sm:h-20"
-        }`}
+        aria-label="Musikplayer"
+        className="like-celebration-surface relative z-20 flex-shrink-0 border-t border-white/8 bg-panel px-3 pt-2 lg:px-5 lg:py-2"
       >
         {/* Two interchangeable decks — see the playback engine above. */}
         <audio
@@ -1136,78 +1156,55 @@ export default function PlayerBar() {
           onError={(e) => handleError(1, e)}
         />
 
-        {/* Track info */}
-        <div
-          className={`flex items-center gap-3 w-full sm:w-1/4 min-w-0 sm:pr-0 ${
-            hasTrack ? "pr-20" : "pr-0 justify-center sm:justify-start"
-          }`}
-        >
-          {track ? (
-            <TrackContext track={track} className="contents">
-              <button
-                type="button"
-                onClick={openFullscreen}
-                aria-label="Vollbild öffnen"
-                className="flex-shrink-0"
-              >
-                {track.cover ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={track.cover}
-                    alt=""
-                    className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover shadow-md ring-1 ring-white/10 hover:opacity-80 transition"
-                  />
-                ) : (
-                  <CoverPlaceholder className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl" />
-                )}
-              </button>
-              <div className="min-w-0">
-                {track.album_id ? (
-                  <Link
-                    href={`/album/${track.album_id}`}
-                    className="block truncate font-semibold text-[15px] uppercase tracking-wide hover:underline"
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,1.2fr)_minmax(0,1fr)] lg:gap-x-6 lg:gap-y-1">
+          <div className="flex min-w-0 items-center gap-3 lg:row-span-2">
+            {track ? (
+              <TrackContext track={track} className="contents">
+                <button
+                  type="button"
+                  onClick={openFullscreen}
+                  aria-label="Jetzt läuft öffnen"
+                  title="Jetzt läuft öffnen"
+                  className="flex-shrink-0 rounded-lg transition hover:opacity-80"
+                >
+                  {track.cover ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={track.cover} alt="" className="h-11 w-11 rounded-lg object-cover lg:h-12 lg:w-12" />
+                  ) : (
+                    <CoverPlaceholder className="h-11 w-11 rounded-lg lg:h-12 lg:w-12" />
+                  )}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={openFullscreen}
+                    className="block w-full truncate text-left text-sm font-semibold lg:hidden"
+                    aria-label={`${track.title}: Jetzt läuft öffnen`}
                   >
                     {track.title}
-                  </Link>
-                ) : (
-                  <div className="truncate font-semibold text-[15px] uppercase tracking-wide">
-                    {track.title}
-                  </div>
-                )}
-                {error || visiblePreloadError ? (
-                  <div
-                    className="line-clamp-2 text-xs text-red-400"
-                    title={error || visiblePreloadError || undefined}
-                  >
-                    {error || visiblePreloadError}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 min-w-0">
+                  </button>
+                  {track.album_id ? (
+                    <Link href={`/album/${track.album_id}`} className="hidden truncate text-sm font-semibold hover:underline lg:block">
+                      {track.title}
+                    </Link>
+                  ) : (
+                    <p className="hidden truncate text-sm font-semibold lg:block">{track.title}</p>
+                  )}
+                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
                     <CacheMarker trackId={track.id} />
-                    <ArtistLinks
-                      track={track}
-                      className="truncate text-xs text-muted"
-                      linkClassName="hover:underline hover:text-foreground"
-                    />
+                    <ArtistLinks track={track} className="truncate text-xs text-muted" linkClassName="hover:underline hover:text-foreground" />
                   </div>
-                )}
-              </div>
-              <div className="hidden sm:block">
-                <LikeButton key={track.id} track={track} />
-              </div>
-            </TrackContext>
-          ) : (
-            <div className="text-sm text-muted">Nichts wird abgespielt</div>
-          )}
-        </div>
+                </div>
+                <div className="hidden lg:block">
+                  <LikeButton key={track.id} track={track} />
+                </div>
+              </TrackContext>
+            ) : (
+              <p className="py-3 text-sm text-muted">Wähle einen Titel zum Abspielen.</p>
+            )}
+          </div>
 
-        {/* Controls + seek */}
-        <div
-          className={`w-full sm:flex-1 flex flex-col items-center gap-1 sm:max-w-2xl sm:mx-auto ${
-            hasTrack ? "" : "hidden sm:flex"
-          }`}
-        >
-          <div className="flex items-center justify-center gap-6">
+          <div className={`flex items-center justify-end gap-1 lg:justify-center lg:gap-2 ${hasTrack ? "" : "hidden lg:flex"}`}>
             <button
               type="button"
               onClick={toggleShuffle}
@@ -1215,34 +1212,32 @@ export default function PlayerBar() {
               aria-label="Zufallswiedergabe"
               aria-pressed={shuffle}
               title="Zufallswiedergabe"
-              className={`inline-flex disabled:opacity-40 transition ${
-                shuffle ? "text-accent" : "text-muted hover:text-foreground"
-              }`}
+              className={`action-icon hidden h-9 w-9 disabled:opacity-40 lg:grid ${shuffle ? "bg-accent/10 text-accent" : ICON_IDLE}`}
             >
-              <ShuffleIcon width={18} height={18} />
+              <ShuffleIcon width={17} height={17} />
             </button>
             <button
               type="button"
               onClick={prev}
               disabled={!hasTrack}
               aria-label="Vorheriger Titel"
-              className="text-muted hover:text-foreground disabled:opacity-40"
+              className={`action-icon hidden h-9 w-9 disabled:opacity-40 lg:grid ${ICON_IDLE}`}
             >
-              <PrevIcon width={22} height={22} />
+              <PrevIcon width={21} height={21} />
             </button>
             <button
               type="button"
               onClick={toggle}
               disabled={!hasTrack}
               aria-label={isPlaying ? "Pause" : "Abspielen"}
-              className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-accent text-white flex items-center justify-center shadow-[0_0_22px_rgba(124,92,255,0.6)] hover:scale-105 transition disabled:opacity-40"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-foreground text-background transition hover:opacity-85 disabled:opacity-40"
             >
               {isBuffering ? (
-                <SpinnerIcon width={22} height={22} className="animate-spin" />
+                <SpinnerIcon width={21} height={21} className="animate-spin" />
               ) : isPlaying ? (
-                <PauseIcon width={24} height={24} />
+                <PauseIcon width={22} height={22} />
               ) : (
-                <PlayIcon width={24} height={24} />
+                <PlayIcon width={22} height={22} />
               )}
             </button>
             <button
@@ -1250,9 +1245,9 @@ export default function PlayerBar() {
               onClick={next}
               disabled={!hasTrack}
               aria-label="Nächster Titel"
-              className="text-muted hover:text-foreground disabled:opacity-40"
+              className={`action-icon h-10 w-10 disabled:opacity-40 lg:h-9 lg:w-9 ${ICON_IDLE}`}
             >
-              <NextIcon width={22} height={22} />
+              <NextIcon width={21} height={21} />
             </button>
             <button
               type="button"
@@ -1260,81 +1255,41 @@ export default function PlayerBar() {
               disabled={!hasTrack}
               aria-label="Wiederholen"
               aria-pressed={repeat !== "off"}
-              title={
-                repeat === "one"
-                  ? "Titel wiederholen"
-                  : repeat === "all"
-                    ? "Alle wiederholen"
-                    : "Wiederholen aus"
-              }
-              className={`inline-flex disabled:opacity-40 transition ${
-                repeat !== "off" ? "text-accent" : "text-muted hover:text-foreground"
-              }`}
+              title={repeat === "one" ? "Titel wiederholen" : repeat === "all" ? "Alle wiederholen" : "Wiederholen aus"}
+              className={`action-icon hidden h-9 w-9 disabled:opacity-40 lg:grid ${repeat !== "off" ? "bg-accent/10 text-accent" : ICON_IDLE}`}
             >
-              <RepeatGlyph width={18} height={18} />
+              <RepeatGlyph width={17} height={17} />
             </button>
           </div>
 
-          <div className="flex items-center gap-2 w-full">
-            <span className="hidden min-[380px]:block text-xs text-muted w-10 text-right tabular-nums">
-              {formatTime(currentTime)}
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={duration || 0}
-              step={0.1}
-              value={Math.min(currentTime, duration || 0)}
-              onChange={(e) => seek(Number(e.target.value))}
-              disabled={!hasTrack || !duration}
-              className="flex-1"
-              style={{
-                background: rangeFill(
-                  duration ? (currentTime / duration) * 100 : 0,
-                ),
-              }}
-              aria-label="Fortschritt"
-            />
-            <span className="hidden min-[380px]:block text-xs text-muted w-10 tabular-nums">
-              {formatTime(duration)}
-            </span>
-          </div>
-        </div>
-
-        {/* Secondary controls — unified round icon buttons */}
-        <div className="hidden sm:flex items-center gap-1 w-1/4 justify-end">
-          <button
-            type="button"
-            onClick={toggleLyrics}
-            aria-label="Songtext"
-            aria-pressed={lyricsOpen}
-            title="Songtext"
-            className={`${SQUARE_BTN} ${lyricsOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
-          >
-            <LyricsIcon width={18} height={18} />
-          </button>
-          <button
-            type="button"
-            onClick={toggleQueue}
-            aria-label="Warteschlange"
-            aria-pressed={queueOpen}
-            title="Warteschlange"
-            className={`${SQUARE_BTN} ${queueOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
-          >
-            <QueueIcon width={18} height={18} />
-          </button>
-          <div className="flex items-center gap-1.5 ml-2">
+          <div className="hidden items-center justify-end gap-1 lg:row-span-2 lg:flex">
+            <button
+              type="button"
+              onClick={toggleLyrics}
+              aria-label="Songtext"
+              aria-pressed={lyricsOpen}
+              title="Songtext"
+              className={`${ICON_BTN} ${lyricsOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
+            >
+              <LyricsIcon width={18} height={18} />
+            </button>
+            <button
+              type="button"
+              onClick={toggleQueue}
+              aria-label="Warteschlange"
+              aria-pressed={queueOpen}
+              title="Warteschlange"
+              className={`${ICON_BTN} ${queueOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
+            >
+              <QueueIcon width={18} height={18} />
+            </button>
             <button
               type="button"
               onClick={toggleMute}
               aria-label={muted ? "Ton an" : "Stummschalten"}
               className={`${ICON_BTN} ${ICON_IDLE}`}
             >
-              {muted || volume === 0 ? (
-                <VolumeMutedIcon width={18} height={18} />
-              ) : (
-                <VolumeIcon width={18} height={18} />
-              )}
+              {muted || volume === 0 ? <VolumeMutedIcon width={18} height={18} /> : <VolumeIcon width={18} height={18} />}
             </button>
             <input
               type="range"
@@ -1343,45 +1298,44 @@ export default function PlayerBar() {
               step={0.01}
               value={muted ? 0 : volume}
               onChange={(e) => setVolume(Number(e.target.value))}
-              className="w-24"
+              className="w-16 xl:w-20"
               style={{ background: rangeFill((muted ? 0 : volume) * 100) }}
               aria-label="Lautstärke"
+              aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)} Prozent`}
             />
-          </div>
-          <button
-            type="button"
-            onClick={openFullscreen}
-            disabled={!hasTrack}
-            aria-label="Vollbild öffnen"
-            title="Vollbild"
-            className={`${ICON_BTN} ${ICON_IDLE} disabled:opacity-40`}
-          >
-            <ExpandIcon width={18} height={18} />
-          </button>
-        </div>
-
-        {/* Mobile expand chevron */}
-        {track && (
-          <div className="absolute right-3 top-3 flex items-center gap-1 sm:hidden">
-            <button
-              type="button"
-              onClick={toggleQueue}
-              aria-label="Warteschlange"
-              aria-pressed={queueOpen}
-              className={`p-2 rounded-full hover:bg-panel-hover transition ${
-                queueOpen ? "text-accent" : "text-muted hover:text-foreground"
-              }`}
-            >
-              <QueueIcon />
-            </button>
             <button
               type="button"
               onClick={openFullscreen}
-              aria-label="Vollbild öffnen"
-              className="text-muted hover:text-foreground p-2 rounded-full hover:bg-panel-hover"
+              disabled={!hasTrack}
+              aria-label="Jetzt läuft öffnen"
+              title="Jetzt läuft"
+              className={`${ICON_BTN} ${ICON_IDLE} disabled:opacity-40`}
             >
-              <ChevronDownIcon className="rotate-180" />
+              <ExpandIcon width={18} height={18} />
             </button>
+          </div>
+
+          <div className={`col-span-2 mt-2 flex w-full items-center gap-2 pb-1 lg:col-span-1 lg:col-start-2 lg:mt-0 lg:pb-0 ${hasTrack ? "" : "hidden lg:flex"}`}>
+            <span className="hidden w-9 text-right text-[10px] tabular-nums text-muted lg:block">{formatTime(currentTime)}</span>
+            <input
+              type="range"
+              min={0}
+              max={duration || 0}
+              step={0.1}
+              value={Math.min(currentTime, duration || 0)}
+              onChange={(e) => seek(Number(e.target.value))}
+              disabled={!hasTrack || !duration}
+              className="min-w-0 flex-1"
+              style={{ background: rangeFill(duration ? (currentTime / duration) * 100 : 0) }}
+              aria-label="Fortschritt"
+              aria-valuetext={`${formatTime(currentTime)} von ${formatTime(duration)}`}
+            />
+            <span className="hidden w-9 text-[10px] tabular-nums text-muted lg:block">{formatTime(duration)}</span>
+          </div>
+        </div>
+        {(error || visiblePreloadError) && (
+          <div role="alert" className="error-panel my-2 text-xs" title={error || visiblePreloadError || undefined}>
+            {error || visiblePreloadError}
           </div>
         )}
       </footer>

@@ -1,6 +1,5 @@
 "use client";
 
-import type { CoverPalette } from "@/hooks/useCoverColors";
 import { hiResCover } from "@/lib/cover";
 import type { Track } from "@/types";
 import TrackTitle from "@/components/TrackTitle";
@@ -15,33 +14,26 @@ import { SeekBar, TransportRow, VolumeRow } from "./Controls";
  */
 export default function CoverColumn({
   track,
-  palette,
   onClose,
 }: {
   track: Track;
-  palette: CoverPalette | null;
   onClose: () => void;
 }) {
-  const coverGlow = palette
-    ? `0 24px 80px rgba(${palette.rgb[0]}, ${palette.rgb[1]}, ${palette.rgb[2]}, 0.28)`
-    : undefined;
-
   return (
-    <div className="like-celebration-surface hidden min-h-0 flex-col lg:flex">
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8">
+    <div className="like-celebration-surface hidden min-h-0 flex-col overflow-y-auto rounded-2xl border border-border bg-panel/70 p-5 lg:flex">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5">
         <div
-          className="aspect-square w-full max-w-md rounded-[1.75rem] xl:max-w-lg"
-          style={{ boxShadow: coverGlow }}
+          className="aspect-square w-full max-w-[min(100%,34vh)] overflow-hidden rounded-xl border border-white/10"
         >
           {track.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={hiResCover(track.cover)}
               alt={track.album}
-              className="h-full w-full rounded-[1.75rem] object-cover shadow-2xl"
+              className="h-full w-full object-cover"
             />
           ) : (
-            <CoverPlaceholder className="h-full w-full rounded-[1.75rem]" />
+            <CoverPlaceholder className="h-full w-full" />
           )}
         </div>
 
@@ -50,7 +42,7 @@ export default function CoverColumn({
             <TrackTitle
               track={track}
               onNavigate={onClose}
-              className="min-w-0 truncate text-3xl font-extrabold hover:underline"
+              className="min-w-0 truncate text-xl font-semibold tracking-tight hover:underline xl:text-2xl"
             />
             <LikeButton key={track.id} track={track} />
           </div>
@@ -63,7 +55,7 @@ export default function CoverColumn({
         </div>
       </div>
 
-      <div className="mx-auto mt-8 w-full max-w-md">
+      <div className="mx-auto mt-5 w-full max-w-md">
         <SeekBar />
         <TransportRow />
         <VolumeRow />

@@ -28,6 +28,7 @@ export function SearchImportMode({
 }: SearchImportModeProps) {
   return (
     <SpotifyImportPanel
+      key={sharedRequest?.id ?? 'manual'}
       accountScope={accountScope}
       header={<View testID="search-import-mode">{chrome}</View>}
       sharedRequest={sharedRequest}

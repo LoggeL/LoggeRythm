@@ -36,16 +36,14 @@ function NavLink({
   return (
     <Link
       href={href}
-      className={`relative flex items-center gap-4 px-4 py-3 rounded-lg text-[17px] font-medium transition ${
+      aria-current={active ? "page" : undefined}
+      className={`relative flex min-h-11 items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition ${
         active
-          ? "text-accent"
+          ? "text-foreground bg-panel-hover"
           : "text-muted hover:text-foreground hover:bg-white/5"
       }`}
     >
-      {active && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-1 rounded-r-full bg-accent" />
-      )}
-      <span className="flex-shrink-0">{icon}</span>
+      <span className={`flex-shrink-0 ${active ? "text-accent-soft" : ""}`}>{icon}</span>
       {label}
     </Link>
   );
@@ -54,7 +52,8 @@ function NavLink({
 export default function Sidebar() {
   const { data: me } = useMe();
   const router = useRouter();
-  const { data: playlists } = usePlaylists(!!me);
+  const playlistQuery = usePlaylists(!!me);
+  const { data: playlists } = playlistQuery;
   const createPlaylist = useCreatePlaylist();
   const deletePlaylist = useDeletePlaylist();
   const [menu, setMenu] = useState<{
@@ -87,30 +86,29 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="hidden md:flex flex-col w-64 flex-shrink-0 bg-black/40 text-foreground border-r border-white/10">
+    <aside aria-label="Sammlung" className="hidden lg:flex flex-col w-[232px] flex-shrink-0 bg-background-elevated text-foreground border-r border-border">
       {/* Logo */}
-      <div className="px-5 pt-5 pb-4">
+      <div className="px-5 pt-7 pb-8">
         <Link
           href="/"
           className="flex items-center gap-3 transition-opacity hover:opacity-80"
         >
-          <Logo size={42} className="drop-glow" />
+          <Logo size={32} />
           <Wordmark />
         </Link>
       </div>
 
       {/* Primary nav */}
-      <nav className="px-3 flex flex-col gap-1">
+      <nav aria-label="Hauptnavigation" className="px-3 flex flex-col gap-1">
         <NavLink href="/" icon={<HomeIcon width={23} height={23} />} label="Start" />
         <NavLink href="/search" icon={<SearchIcon width={23} height={23} />} label="Suchen" />
         <NavLink href="/genre" icon={<CompassIcon width={23} height={23} />} label="Entdecken" />
         <NavLink href="/library" icon={<NotesIcon width={23} height={23} />} label="Bibliothek" />
-        <NavLink href="/radio" icon={<RadioIcon width={23} height={23} />} label="Radio" />
       </nav>
 
       {/* Library / playlists */}
-      <div className="mt-5 px-3 flex-1 min-h-0 flex flex-col">
-        <div className="mx-2 mb-2 border-t border-white/10" />
+      <div className="mt-7 px-3 flex-1 min-h-0 flex flex-col">
+        <div className="mx-2 mb-4 border-t border-border" />
         <div className="flex items-center justify-between px-2 py-1.5">
           <span className="text-xs font-semibold uppercase tracking-widest text-muted">
             Playlists
@@ -127,7 +125,11 @@ export default function Sidebar() {
         </div>
 
         <div className="flex-1 min-h-0 overflow-auto scroll-area px-1 mt-1">
-          {me ? (
+          {playlistQuery.isError && (
+            <div role="alert" className="px-2 py-3 text-xs text-red-300">{playlistQuery.error.message}<button type="button" disabled={playlistQuery.isFetching} onClick={() => void playlistQuery.refetch()} className="mt-2 block underline">Erneut versuchen</button></div>
+          )}
+          {playlistQuery.isPending && <p role="status" className="px-2 py-3 text-xs text-muted">Playlists werden geladen…</p>}
+          {me && !playlistQuery.isPending ? (
             playlists && playlists.length > 0 ? (
               <ul className="flex flex-col gap-1">
                 {playlists.map((p) => {
@@ -179,17 +181,22 @@ export default function Sidebar() {
                   );
                 })}
               </ul>
-            ) : (
+            ) : playlistQuery.isError ? null : (
               <p className="px-2 py-2 text-sm text-muted">
                 Noch keine Playlists.
               </p>
             )
-          ) : (
+          ) : !me ? (
             <p className="px-2 py-2 text-sm text-muted">
               Melde dich an, um Playlists zu sehen.
             </p>
-          )}
+          ) : null}
         </div>
+      </div>
+
+      <div className="border-t border-border px-3 py-3">
+        <NavLink href="/radio" icon={<RadioIcon width={20} height={20} />} label="Radio entdecken" />
+        <Link href="/library?tab=downloads" className="block px-3 py-2 text-xs text-muted hover:text-foreground">Offline-Sammlung</Link>
       </div>
 
       {!me && (
@@ -218,6 +225,7 @@ export default function Sidebar() {
         title="Neue Playlist"
       >
         <form onSubmit={handleCreate} className="flex flex-col gap-3">
+          {createPlaylist.isError && <p role="alert" className="error-panel">{createPlaylist.error.message}</p>}
           <label className="flex flex-col gap-1 text-sm">
             Name
             <input
@@ -226,7 +234,7 @@ export default function Sidebar() {
               required
               data-dialog-autofocus
               placeholder="Meine Playlist"
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+              className="field-input"
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
@@ -235,21 +243,21 @@ export default function Sidebar() {
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
               rows={2}
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent resize-none"
+              className="field-input resize-none"
             />
           </label>
           <div className="flex gap-2 justify-end">
             <button
               type="button"
               onClick={() => setCreating(false)}
-              className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+              className="action-secondary"
             >
               Abbrechen
             </button>
             <button
               type="submit"
-              disabled={createPlaylist.isPending}
-              className="px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-60"
+              disabled={createPlaylist.isPending || !newName.trim()}
+              className="action-primary"
             >
               {createPlaylist.isPending ? "Wird erstellt…" : "Erstellen"}
             </button>

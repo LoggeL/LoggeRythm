@@ -83,9 +83,9 @@ describe('Now Playing artwork primitives', () => {
     });
     expect(frameStyles[0]).toMatchObject({
       aspectRatio: 1,
-      backgroundColor: colors.accent,
-      shadowColor: colors.accent,
-      elevation: 14,
+      backgroundColor: colors.border,
+      shadowColor: '#000000',
+      elevation: 8,
     });
     expect(image?.props).toMatchObject({
       accessible: false,

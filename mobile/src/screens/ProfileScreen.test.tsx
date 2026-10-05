@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   useQueryClient: vi.fn(),
   deleteAccount: vi.fn(),
+  resolveServerUrl: vi.fn(),
 }));
 
 vi.mock('react', async (importOriginal) => {
@@ -40,7 +41,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
 }));
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
 vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
-vi.mock('../api/url', () => ({ resolveServerUrl: (value: string) => value }));
+vi.mock('../api/url', () => ({ resolveServerUrl: mocks.resolveServerUrl }));
 vi.mock('../config', () => ({
   getCurrentApiBase: () => 'https://music.example.test',
 }));
@@ -66,19 +67,6 @@ vi.mock('../localization', () => ({
       deleteCancel: 'Cancel',
     },
   },
-}));
-vi.mock('../theme', () => ({
-  colors: {
-    accent: '#f00',
-    background: '#000',
-    danger: '#f00',
-    onAccent: '#fff',
-    surface: '#111',
-    surfaceElevated: '#222',
-    textPrimary: '#fff',
-    textSecondary: '#aaa',
-  },
-  metrics: { minimumTouchTarget: 48 },
 }));
 vi.mock('./profileModel', () => ({ profileServerHost: () => 'music.example.test' }));
 vi.mock('./profileUpdate', () => ({ persistProfileUpdate: vi.fn() }));
@@ -128,6 +116,7 @@ function renderDeletionState(
 describe('ProfileScreen account deletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.resolveServerUrl.mockImplementation((value: string) => value);
     mocks.useAuth.mockReturnValue({
       user: {
         id: 7,
@@ -149,6 +138,18 @@ describe('ProfileScreen account deletion', () => {
       isStale: false,
       refetch: vi.fn(),
     });
+  });
+
+  it('reports an invalid configured avatar URL', () => {
+    // The authenticated response already has an optional avatar field. A
+    // present but malformed URL must remain a visible configuration failure.
+    const auth = mocks.useAuth();
+    mocks.useAuth.mockReturnValue({ ...auth, user: { ...auth.user, avatar_url: 'invalid-avatar' } });
+    const cause = new Error('Unsafe avatar origin');
+    mocks.resolveServerUrl.mockImplementation(() => { throw cause; });
+    expect(() => renderDeletionState(false, false, null)).toThrow(
+      'Profile avatar URL is invalid for the selected server',
+    );
   });
 
   it('opens a separate confirmation and cancel closes it without deleting', () => {

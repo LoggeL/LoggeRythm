@@ -24,7 +24,8 @@ import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, musicRepository, queryKeys } from '../data';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, metrics, radii, spacing, typography } from '../theme';
+import { ScreenHeader } from '../components/ui';
 import { profileDeleteFailureMessage } from './profileFeedback';
 import { persistProfileUpdate } from './profileUpdate';
 
@@ -37,8 +38,8 @@ function safeAvatarUri(value: string | null, apiBase: string): string | null {
   if (!value) return null;
   try {
     return resolveServerUrl(value, apiBase);
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error('Profile avatar URL is invalid for the selected server', { cause: error });
   }
 }
 
@@ -98,18 +99,14 @@ export default function ProfileScreen() {
         }
         contentContainerStyle={styles.content}
       >
-        <View testID="profile-hero" style={styles.hero}>
-          <Text accessibilityRole="header" style={styles.title}>{strings.profile.title}</Text>
-          <Text style={styles.subtitle}>{strings.profile.subtitle}</Text>
-        </View>
+        <ScreenHeader testID="profile-hero" title={strings.profile.title} subtitle={strings.profile.subtitle} style={styles.hero} />
 
         <ProfileIdentityCard
           user={user}
           avatarUri={safeAvatarUri(user.avatar_url, apiBase)}
           serverOrigin={apiBase}
         />
-        <LanguageSelector />
-        <AndroidUpdateCard />
+        <SleepTimerPanel />
         <ProfileEditForm
           key={`${user.display_name ?? ''}:${user.email}`}
           user={user}
@@ -124,7 +121,8 @@ export default function ProfileScreen() {
           error={errorOf(stats.error)}
           onRefresh={() => void stats.refetch()}
         />
-        <SleepTimerPanel />
+        <LanguageSelector />
+        <AndroidUpdateCard />
 
         <View testID="profile-danger" style={styles.dangerCard}>
           <Text accessibilityRole="header" style={styles.dangerTitle}>{strings.profile.dangerTitle}</Text>
@@ -201,22 +199,20 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { gap: 18, padding: 16, paddingBottom: 140 },
-  hero: { gap: 5, paddingHorizontal: 4, paddingVertical: 8 },
-  title: { color: colors.textPrimary, fontSize: 32, fontWeight: '900' },
-  subtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
-  dangerCard: { gap: 12, padding: 18, borderRadius: 18, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surface },
-  dangerTitle: { color: colors.danger, fontSize: 20, fontWeight: '800' },
-  dangerBody: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
-  deleteButton: { minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderRadius: 24, borderWidth: 1, borderColor: colors.danger },
-  deleteButtonText: { color: colors.danger, fontSize: 15, fontWeight: '800' },
+  content: { gap: spacing.lg, padding: spacing.lg, paddingBottom: 140 },
+  hero: { paddingVertical: spacing.xs },
+  dangerCard: { gap: spacing.sm, padding: spacing.md, borderRadius: radii.lg, backgroundColor: colors.dangerSubtle },
+  dangerTitle: { ...typography.section, color: colors.textPrimary },
+  dangerBody: { ...typography.body, color: colors.textSecondary },
+  deleteButton: { minHeight: metrics.minimumTouchTarget, alignSelf: 'flex-start', alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing.md, borderRadius: radii.md, backgroundColor: colors.surface },
+  deleteButtonText: { ...typography.label, color: colors.danger },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0, 0, 0, 0.76)' },
-  modalCard: { width: '100%', maxWidth: 430, gap: 16, padding: 22, borderRadius: 20, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surfaceElevated },
-  modalTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900' },
+  modalCard: { width: '100%', maxWidth: 430, gap: spacing.md, padding: spacing.xl, borderRadius: radii.xl, backgroundColor: colors.surfaceElevated },
+  modalTitle: { ...typography.section, color: colors.textPrimary },
   modalWarning: { color: colors.textSecondary, fontSize: 14, lineHeight: 21 },
   deleteError: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  deleteConfirmButton: { minHeight: metrics.minimumTouchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 16, borderRadius: 24, backgroundColor: colors.danger },
-  deleteConfirmText: { color: colors.onAccent, fontSize: 15, fontWeight: '900' },
+  deleteConfirmButton: { minHeight: metrics.minimumTouchTarget, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, borderRadius: radii.md, backgroundColor: colors.danger },
+  deleteConfirmText: { ...typography.label, color: colors.onAccent },
   cancelButton: { minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   cancelButtonText: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.72 },

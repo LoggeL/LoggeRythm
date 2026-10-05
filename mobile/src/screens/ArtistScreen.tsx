@@ -16,6 +16,8 @@ import {
   HorizontalCatalogRail,
 } from '../components/catalog/CatalogCards';
 import { ArtistVirtualizedList } from '../components/catalog/ArtistVirtualizedList';
+import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
+import AppIcon from '../components/AppIcon';
 import {
   CatalogContentStatus,
   CatalogPageGate,
@@ -218,8 +220,50 @@ export default function ArtistScreen(props: ArtistScreenProps) {
         onRefresh={refresh}
         header={
           <View style={styles.listHeader}>
-            <View style={styles.hero}>
-              <CatalogHeroArtwork uri={detail.picture} round />
+            <CatalogDetailHero
+              artwork={<CatalogHeroArtwork uri={detail.picture} round compact />}
+              actions={
+                <>
+                  <CatalogActionButton
+                    testID="artist-play-all"
+                    label={catalogStrings.common.play}
+                    icon="play"
+                    disabled={detail.top.length === 0}
+                    onPress={() => play(
+                      detail.top,
+                      0,
+                      artistTrackPlaybackContextId(artistId, 'popular'),
+                    )}
+                  />
+                  <CatalogQueryBoundary
+                    id="artist-follow-state"
+                    hasData={followState.data !== undefined}
+                    empty={false}
+                    isPending={followState.isPending}
+                    isFetching={followState.isFetching}
+                    isStale={followState.isStale}
+                    fetchStatus={followState.fetchStatus}
+                    error={followState.error}
+                    loadingLabel={catalogStrings.artist.followLoading}
+                    emptyLabel={catalogStrings.artist.followStateFailed}
+                    errorLabel={catalogStrings.artist.followStateFailed}
+                    retryLabel={catalogStrings.common.retry}
+                    onRetry={() => void followState.refetch()}
+                  >
+                    <CatalogActionButton
+                      testID="artist-follow-toggle"
+                      label={followLabel}
+                      accessibilityLabel={followAccessibilityLabel}
+                      disabled={followDisabled}
+                      busy={followMutation.isPending}
+                      secondary
+                      icon={following ? 'check' : 'plus'}
+                      onPress={() => followMutation.mutate(!following)}
+                    />
+                  </CatalogQueryBoundary>
+                </>
+              }
+            >
               <Text testID="artist-type-label" style={styles.typeLabel}>
                 {catalogStrings.artist.typeLabel}
               </Text>
@@ -231,43 +275,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
                   {catalogStrings.artist.fans(detail.fans)}
                 </Text>
               ) : null}
-              <View style={styles.actions}>
-                <CatalogActionButton
-                  testID="artist-play-all"
-                  label={catalogStrings.common.play}
-                  disabled={detail.top.length === 0}
-                  onPress={() => play(
-                    detail.top,
-                    0,
-                    artistTrackPlaybackContextId(artistId, 'popular'),
-                  )}
-                />
-                <CatalogQueryBoundary
-                  id="artist-follow-state"
-                  hasData={followState.data !== undefined}
-                  empty={false}
-                  isPending={followState.isPending}
-                  isFetching={followState.isFetching}
-                  isStale={followState.isStale}
-                  fetchStatus={followState.fetchStatus}
-                  error={followState.error}
-                  loadingLabel={catalogStrings.artist.followLoading}
-                  emptyLabel={catalogStrings.artist.followStateFailed}
-                  errorLabel={catalogStrings.artist.followStateFailed}
-                  retryLabel={catalogStrings.common.retry}
-                  onRetry={() => void followState.refetch()}
-                >
-                  <CatalogActionButton
-                    testID="artist-follow-toggle"
-                    label={followLabel}
-                    accessibilityLabel={followAccessibilityLabel}
-                    disabled={followDisabled}
-                    secondary={following}
-                    onPress={() => followMutation.mutate(!following)}
-                  />
-                </CatalogQueryBoundary>
-              </View>
-            </View>
+            </CatalogDetailHero>
 
             <CatalogRuntimeError id="artist" message={runtimeError} />
             <CatalogContentStatus
@@ -308,18 +316,21 @@ export default function ArtistScreen(props: ArtistScreenProps) {
             <Text accessibilityRole="header" style={styles.sectionTitle}>
               {catalogStrings.artist.searchSongs}
             </Text>
-            <TextInput
-              testID="artist-song-search-input"
-              accessibilityLabel={catalogStrings.artist.searchSongsLabel(detail.name)}
-              value={songInput}
-              onChangeText={(value) => setSongInputState({ artistId, value })}
-              placeholder={catalogStrings.artist.searchSongsPlaceholder(detail.name)}
-              placeholderTextColor={colors.textSecondary}
-              returnKeyType="search"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={styles.songSearchInput}
-            />
+            <View style={styles.songSearchField}>
+              <AppIcon name="magnify" color={colors.textSecondary} size={21} />
+              <TextInput
+                testID="artist-song-search-input"
+                accessibilityLabel={catalogStrings.artist.searchSongsLabel(detail.name)}
+                value={songInput}
+                onChangeText={(value) => setSongInputState({ artistId, value })}
+                placeholder={catalogStrings.artist.searchSongsPlaceholder(detail.name)}
+                placeholderTextColor={colors.textSecondary}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.songSearchInput}
+              />
+            </View>
             {songQuery.length === 0 ? null : (
               <CatalogQueryBoundary
                 id="artist-song-search-state"
@@ -462,48 +473,54 @@ export default function ArtistScreen(props: ArtistScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  listHeader: { gap: 28 },
-  listFooter: { gap: 28, paddingTop: 28 },
-  hero: { alignItems: 'center', gap: 12, paddingHorizontal: 20 },
+  listHeader: { gap: 24 },
+  listFooter: { gap: 32, paddingTop: 32 },
   typeLabel: {
-    color: colors.accent,
-    fontSize: 12,
+    color: colors.accentSoft,
+    fontSize: 11,
     lineHeight: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1.2,
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 32,
-    lineHeight: 38,
-    fontWeight: '900',
-    textAlign: 'center',
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: '800',
+    letterSpacing: -0.6,
   },
-  metaLine: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
+  metaLine: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10 },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 16 },
+  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
   songSearch: { gap: 12 },
   sectionTitle: {
     color: colors.textPrimary,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '800',
-    paddingHorizontal: 16,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700',
+    paddingHorizontal: 20,
   },
-  songSearchInput: {
+  songSearchField: {
     minHeight: 48,
-    marginHorizontal: 16,
-    paddingHorizontal: 16,
+    marginHorizontal: 20,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 24,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+  },
+  songSearchInput: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 48,
     color: colors.textPrimary,
-    backgroundColor: colors.surfaceElevated,
     fontSize: 15,
   },
-  about: { gap: 14, paddingHorizontal: 16 },
-  bio: { color: colors.textPrimary, fontSize: 14, lineHeight: 22 },
+  about: { gap: 16, paddingHorizontal: 20 },
+  bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 23 },
   tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
     color: colors.textPrimary,

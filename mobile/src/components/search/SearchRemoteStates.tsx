@@ -1,7 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { RemoteVisualState } from '../../data/remoteState';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
 import AppIcon from '../AppIcon';
 
 interface SearchLoadingStatusProps {
@@ -193,37 +193,35 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 18,
   },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  statusText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
+  status: { ...typography.caption, color: colors.textSecondary },
+  statusText: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg },
   compactStatus: {
     width: 24,
     height: 24,
-    marginHorizontal: 16,
+    marginHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 8,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
   },
   errorBox: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 12,
-    gap: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: colors.surfaceElevated,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
+    gap: spacing.xs,
+    borderRadius: radii.md,
+    backgroundColor: colors.dangerSubtle,
   },
   error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
   action: {
     minHeight: metrics.minimumTouchTarget,
     alignSelf: 'flex-start',
     justifyContent: 'center',
-    paddingHorizontal: 14,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceElevated,
   },
-  actionText: { color: colors.onAccent, fontSize: 13, fontWeight: '700' },
+  actionText: { ...typography.label, color: colors.textPrimary },
   disabled: { opacity: 0.54 },
   pressed: { opacity: 0.72 },
 });

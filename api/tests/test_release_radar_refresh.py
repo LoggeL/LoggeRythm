@@ -4,6 +4,8 @@ import unittest
 from datetime import date, timedelta
 from unittest.mock import ANY, patch
 
+from fastapi import HTTPException
+
 from app.routers import home
 from app.services import deezer_client as dc
 
@@ -52,6 +54,24 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
         artist_albums.assert_called_once_with("42", refresh=True)
         album_detail.assert_not_called()
 
+    def test_radar_album_only_loads_performer_credits_for_needed_tracks(self) -> None:
+        album = {
+            "id": "album", "title": "Album", "nb_tracks": 20,
+            "tracks": {"data": [{"id": str(index)} for index in range(20)]},
+        }
+        with (
+            patch.object(dc, "_public_get", return_value=album),
+            patch.object(dc, "normalize_public_tracks", side_effect=lambda tracks: tracks) as normalize,
+        ):
+            limited = dc.album_detail("album", track_limit=2)
+            full = dc.album_detail("album")
+
+        self.assertEqual([track["id"] for track in limited["tracks"]], ["0", "1"])
+        self.assertEqual(limited["nb_tracks"], 20)
+        self.assertEqual(len(normalize.call_args_list[0].args[0]), 2)
+        self.assertEqual(len(full["tracks"]), 20)
+        self.assertEqual(len(normalize.call_args_list[1].args[0]), 20)
+
     def test_artist_track_lookup_excludes_future_prerelease_album(self) -> None:
         today = date.today()
         current_release = today - timedelta(days=7)
@@ -95,7 +115,7 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
                 }
             ],
         )
-        album_detail.assert_called_once_with("released-single")
+        album_detail.assert_called_once_with("released-single", track_limit=2)
 
     def test_radar_forwards_manual_refresh_to_every_artist_lookup(self) -> None:
         with (
@@ -122,16 +142,35 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
             patch.object(home, "_radar_artist_ids", return_value=["42", "43"]),
             patch.object(home, "_artist_new_tracks", side_effect=artist_tracks),
         ):
-            with self.assertRaisesRegex(
-                dc.DeezerClientError,
-                "Release Radar failed for 1 of 2 artists: "
-                "artist 42: upstream unavailable",
-            ):
+            with self.assertRaises(HTTPException) as caught:
                 home.release_radar(
                     refresh=True,
                     user=object(),  # type: ignore[arg-type]
                     db=object(),  # type: ignore[arg-type]
                 )
+
+        self.assertEqual(caught.exception.status_code, 502)
+        self.assertIn(
+            "Release Radar failed for 1 of 2 artists: artist 42: upstream unavailable",
+            caught.exception.detail,
+        )
+
+    def test_radar_quota_failure_keeps_retry_status_and_never_returns_partial_tracks(self) -> None:
+        def artist_tracks(artist_id: str, _cutoff: str, *, refresh: bool) -> list[dict]:
+            if artist_id == "42":
+                raise dc.RateLimited("Quota limit exceeded")
+            return [{"id": "99", "title": "Partial result"}]
+
+        with (
+            patch.object(home, "_radar_artist_ids", return_value=["42", "43"]),
+            patch.object(home, "_artist_new_tracks", side_effect=artist_tracks),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                home.release_radar(user=object(), db=object())
+
+        self.assertEqual(caught.exception.status_code, 429)
+        self.assertIn("Quota limit exceeded", caught.exception.detail)
+        self.assertIn("1 of 2 artists", caught.exception.detail)
 
 
 if __name__ == "__main__":

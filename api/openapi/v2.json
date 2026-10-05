@@ -4766,7 +4766,7 @@
     },
     "/api/party/{code}/events": {
       "get": {
-        "description": "SSE stream of full party-state frames (initial + on every mutation).\n\nEventSource cannot set headers, but auth is cookie-based so the session\ncookie rides along automatically through the Next proxy. We validate the\nparty and capture ``host_id`` up front using a short-lived DB session — the\nstream itself holds no DB connection open for its (potentially long)\nlifetime; subsequent frames come from the in-memory bus.",
+        "description": "SSE stream of the latest full party state, with idle heartbeats.\n\nEventSource cannot set headers, but auth is cookie-based so the session\ncookie rides along automatically through the Next proxy. Subscribe before\na worker loads the initial canonical state so mutations\nduring connection setup cannot disappear. No DB connection stays open for\nthe stream's lifetime; revisions order subsequent in-memory frames.",
         "operationId": "party_events_api_party__code__events_get",
         "parameters": [
           {

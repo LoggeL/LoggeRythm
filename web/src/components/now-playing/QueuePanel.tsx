@@ -29,6 +29,7 @@ export default function QueuePanel({
   const cur = usePlayerStore(currentTrack);
   const jumpTo = usePlayerStore((s) => s.jumpTo);
   const clearQueue = usePlayerStore((s) => s.clearQueue);
+  const setQueueOpen = usePlayerStore((s) => s.setQueueOpen);
 
   const upcoming = queue.map((t, i) => ({ t, i })).filter(({ i }) => i > index);
   const manualUpcoming = upcoming.filter(({ i }) => origins[i] === "manual");
@@ -37,7 +38,7 @@ export default function QueuePanel({
   const renderItem = ({ t, i }: { t: Track; i: number }) => (
     <li
       key={`${t.id}-${i}`}
-      className="group flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-white/5"
+      className="group flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-panel-hover focus-within:bg-panel-hover"
     >
       <button
         type="button"
@@ -55,7 +56,7 @@ export default function QueuePanel({
         ) : (
           <CoverPlaceholder className="h-11 w-11 rounded-lg" />
         )}
-        <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/50 opacity-0 transition group-hover/cover:opacity-100">
+        <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/50 opacity-0 transition group-hover/cover:opacity-100 group-focus-within/cover:opacity-100">
           <PlayIcon width={16} height={16} className="text-white" />
         </span>
       </button>
@@ -80,36 +81,49 @@ export default function QueuePanel({
 
   return (
     <div className={className}>
-      <div className="mb-4 flex flex-shrink-0 items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-muted">
+      <div className="mb-4 flex flex-shrink-0 flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-medium text-muted">
           Warteschlange
         </span>
-        {upcoming.length > 0 && (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              setQueueOpen(true);
+            }}
+            aria-label="Warteschlange bearbeiten"
+            className="action-secondary px-3 py-1.5 text-xs"
+          >
+            Bearbeiten
+          </button>
+          {upcoming.length > 0 && (
           <button
             type="button"
             onClick={clearQueue}
-            className="press rounded-full bg-white/5 px-3 py-1 text-xs font-semibold text-muted transition hover:bg-white/10 hover:text-foreground"
+            className="action-secondary px-3 py-1.5 text-xs"
           >
             Leeren
           </button>
-        )}
+          )}
+        </div>
       </div>
       <div
         data-np-scroll
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-area pr-1"
+        className="surface-card min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-area p-3"
       >
         {cur && (
           <>
-            <p className="mb-2 text-[11px] uppercase tracking-widest text-accent">
+            <p className="mb-2 text-xs font-medium text-accent-soft">
               Aktueller Titel
             </p>
-            <div className="mb-5 flex items-center gap-3 rounded-2xl bg-accent/10 px-3 py-3 ring-1 ring-accent/25">
+            <div className="mb-5 flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 px-3 py-3">
               {cur.cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={cur.cover}
                   alt=""
-                  className="h-11 w-11 rounded-lg object-cover shadow"
+                  className="h-11 w-11 rounded-lg object-cover"
                 />
               ) : (
                 <CoverPlaceholder className="h-11 w-11 rounded-lg" />
@@ -118,7 +132,7 @@ export default function QueuePanel({
                 <TrackTitle
                   track={cur}
                   onNavigate={onClose}
-                  className="block truncate text-sm font-semibold text-accent hover:underline"
+                  className="block truncate text-sm font-semibold text-foreground hover:underline"
                 />
                 <ArtistLinks
                   track={cur}
@@ -134,7 +148,7 @@ export default function QueuePanel({
 
         {manualUpcoming.length > 0 && (
           <>
-            <p className="mb-2 text-[11px] uppercase tracking-widest text-muted">
+            <p className="mb-2 text-xs font-medium text-muted">
               Als Nächstes in der Warteschlange
             </p>
             <ul className="mb-5 flex flex-col">{manualUpcoming.map(renderItem)}</ul>
@@ -143,16 +157,16 @@ export default function QueuePanel({
 
         {contextUpcoming.length > 0 && (
           <>
-            <p className="mb-2 text-[11px] uppercase tracking-widest text-muted">
+            <p className="mb-2 text-xs font-medium text-muted">
               {queueContext ? `Als Nächstes: ${queueContext}` : "Als Nächstes"}
             </p>
             <ul className="flex flex-col">{contextUpcoming.map(renderItem)}</ul>
           </>
         )}
 
-        {!cur && upcoming.length === 0 && (
+        {upcoming.length === 0 && (
           <p className="px-2 py-4 text-sm text-muted">
-            Die Warteschlange ist leer.
+            {cur ? "Keine weiteren Titel in der Warteschlange." : "Die Warteschlange ist leer."}
           </p>
         )}
       </div>

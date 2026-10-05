@@ -12,7 +12,7 @@ import { presentError } from '../auth/presentationError';
 import BrandLockup from '../components/BrandLockup';
 import { getCurrentApiBase } from '../config';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, metrics, radii, spacing, typography } from '../theme';
 
 export default function PendingApprovalScreen() {
   const { user, refreshUser, logout } = useAuth();
@@ -115,19 +115,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.background,
-    padding: 32,
-    gap: 14,
+    padding: spacing.xxl,
+    gap: spacing.md,
   },
   brand: { marginBottom: 8 },
-  title: { color: colors.textPrimary, fontSize: 24, fontWeight: '800', textAlign: 'center' },
-  body: { color: colors.textSecondary, fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  title: { ...typography.title, color: colors.textPrimary, textAlign: 'center' },
+  body: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
   error: { color: colors.danger, fontSize: 13, textAlign: 'center' },
   status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, textAlign: 'center' },
   primaryButton: {
     minWidth: 180,
     minHeight: 48,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
+    borderRadius: radii.md,
+    backgroundColor: colors.accentSolid,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 8,

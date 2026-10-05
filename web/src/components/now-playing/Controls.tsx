@@ -12,12 +12,13 @@ import {
   RepeatOneIcon,
   VolumeIcon,
   VolumeMutedIcon,
+  SpinnerIcon,
 } from "@/components/icons";
 
 /** A filled track for range inputs (accent up to `pct` percent). */
 function rangeFill(pct: number): string {
   const p = Math.max(0, Math.min(100, pct));
-  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, #4d4d57 ${p}%, #4d4d57 100%)`;
+  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, var(--border) ${p}%, var(--border) 100%)`;
 }
 
 /**
@@ -49,6 +50,7 @@ export function SeekBar() {
           background: rangeFill(duration ? (currentTime / duration) * 100 : 0),
         }}
         aria-label="Fortschritt"
+        aria-valuetext={`${formatTime(currentTime)} von ${formatTime(duration)}`}
       />
       <span className="w-10 text-xs tabular-nums text-muted">
         {formatTime(duration)}
@@ -59,6 +61,7 @@ export function SeekBar() {
 
 export function TransportRow() {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const isBuffering = usePlayerStore((s) => s.isBuffering);
   const shuffle = usePlayerStore((s) => s.shuffle);
   const repeat = usePlayerStore((s) => s.repeat);
   const toggle = usePlayerStore((s) => s.toggle);
@@ -69,13 +72,14 @@ export function TransportRow() {
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
 
   return (
-    <div className="mt-4 flex items-center justify-center gap-5 md:mt-6 md:gap-7">
+    <div className="mt-3 flex items-center justify-center gap-2 sm:gap-4">
       <button
         type="button"
         onClick={toggleShuffle}
         aria-label="Zufallswiedergabe"
         aria-pressed={shuffle}
-        className={shuffle ? "text-accent" : "text-muted hover:text-foreground"}
+        title={shuffle ? "Zufallswiedergabe ausschalten" : "Zufallswiedergabe einschalten"}
+        className={`action-icon h-11 w-11 ${shuffle ? "bg-accent/10 text-accent" : ""}`}
       >
         <ShuffleIcon width={22} height={22} />
       </button>
@@ -83,38 +87,40 @@ export function TransportRow() {
         type="button"
         onClick={prev}
         aria-label="Vorheriger Titel"
-        className="text-muted transition hover:text-foreground"
+        className="action-icon h-11 w-11"
       >
-        <PrevIcon width={30} height={30} />
+        <PrevIcon width={24} height={24} />
       </button>
       <button
         type="button"
         onClick={toggle}
         aria-label={isPlaying ? "Pause" : "Abspielen"}
-        className="grid h-16 w-16 place-items-center rounded-full bg-accent text-white shadow-[0_0_34px_rgba(124,92,255,0.65)] transition hover:scale-105 md:h-[4.5rem] md:w-[4.5rem]"
+        aria-busy={isBuffering}
+        title={isBuffering ? "Wiedergabe wird geladen" : isPlaying ? "Pause" : "Abspielen"}
+        className="action-primary grid h-14 w-14 place-items-center rounded-full p-0"
       >
-        {isPlaying ? (
-          <PauseIcon width={30} height={30} />
+        {isBuffering ? (
+          <SpinnerIcon width={26} height={26} aria-hidden />
+        ) : isPlaying ? (
+          <PauseIcon width={26} height={26} />
         ) : (
-          <PlayIcon width={30} height={30} />
+          <PlayIcon width={26} height={26} />
         )}
       </button>
       <button
         type="button"
         onClick={next}
         aria-label="Nächster Titel"
-        className="text-muted transition hover:text-foreground"
+        className="action-icon h-11 w-11"
       >
-        <NextIcon width={30} height={30} />
+        <NextIcon width={24} height={24} />
       </button>
       <button
         type="button"
         onClick={cycleRepeat}
-        aria-label="Wiederholen"
+        aria-label={repeat === "one" ? "Wiederholen: ein Titel" : repeat === "all" ? "Wiederholen: alle Titel" : "Wiederholen: aus"}
         aria-pressed={repeat !== "off"}
-        className={
-          repeat !== "off" ? "text-accent" : "text-muted hover:text-foreground"
-        }
+        className={`action-icon h-11 w-11 ${repeat !== "off" ? "bg-accent/10 text-accent" : ""}`}
       >
         <RepeatGlyph width={22} height={22} />
       </button>
@@ -128,12 +134,13 @@ export function VolumeRow() {
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   return (
-    <div className="mt-5 hidden items-center justify-center gap-2 sm:flex">
+    <div className="mt-2 flex items-center justify-center gap-2">
       <button
         type="button"
         onClick={toggleMute}
         aria-label={muted ? "Ton an" : "Stummschalten"}
-        className="text-muted hover:text-foreground"
+        aria-pressed={muted}
+        className="action-icon h-11 w-11"
       >
         {muted || volume === 0 ? <VolumeMutedIcon /> : <VolumeIcon />}
       </button>
@@ -144,9 +151,10 @@ export function VolumeRow() {
         step={0.01}
         value={muted ? 0 : volume}
         onChange={(e) => setVolume(Number(e.target.value))}
-        className="w-44"
+        className="w-36 sm:w-40"
         style={{ background: rangeFill((muted ? 0 : volume) * 100) }}
         aria-label="Lautstärke"
+        aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)} Prozent`}
       />
     </div>
   );

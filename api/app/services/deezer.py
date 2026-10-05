@@ -32,14 +32,14 @@ USER_AGENT = "Mozilla/5.0 (X11; Linux i686; rv:135.0) Gecko/20100101 Firefox/135
 REQUEST_TIMEOUT = (5, 30)
 
 
-def get_user_data() -> tuple[str, dict]:
+def get_user_data(*, timeout: tuple[float, float] = REQUEST_TIMEOUT) -> tuple[str, dict]:
     """Fetch an authenticated full-playback license, rejecting anonymous data."""
     if session is None:
         raise DeezerApiException("Deezer session is not initialized")
     try:
         response = session.get(
             "https://www.deezer.com/ajax/gw-light.php?method=deezer.getUserData&input=3&api_version=1.0&api_token=",
-            timeout=REQUEST_TIMEOUT,
+            timeout=timeout,
         )
         response.raise_for_status()
     except requests.exceptions.RequestException as exc:
@@ -683,12 +683,38 @@ def get_song_infos_from_deezer_website(search_type, id):
 
     context = f"Deezer {search_type} {id}"
     url = "https://www.deezer.com/us/{}/{}".format(search_type, id)
-    resp = session.get(url, timeout=REQUEST_TIMEOUT)
-    if resp.status_code == 404:
-        raise Deezer404Exception("ERROR: Got a 404 for {} from Deezer".format(url))
-    if resp.status_code in (401, 403):
-        raise Deezer403Exception(f"{context} page denied access (HTTP {resp.status_code})")
-    resp.raise_for_status()
+    attempts = 0
+
+    def fetch_page():
+        nonlocal attempts
+        attempts += 1
+        response = session.get(url, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 404:
+            raise Deezer404Exception(f"{context} page not found (HTTP 404)")
+        if response.status_code in (401, 403):
+            raise Deezer403Exception(
+                f"{context} page denied access (HTTP {response.status_code})"
+            )
+        response.raise_for_status()
+        return response
+
+    try:
+        # A cold track page can time out once while the same account and track
+        # work immediately afterward. Retry this idempotent GET once, matching
+        # the existing media/CDN policy without retrying schema/auth failures.
+        resp = _retry_transient(fetch_page, attempts=2)
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        raise requests.exceptions.HTTPError(
+            f"{context} page request to www.deezer.com failed "
+            f"(HTTP {status}) after {attempts} attempt(s)",
+            response=exc.response,
+        ) from exc
+    except requests.exceptions.RequestException as exc:
+        raise DeezerApiException(
+            f"{context} page request to www.deezer.com failed "
+            f"({type(exc).__name__}) after {attempts} attempt(s)"
+        ) from exc
 
     parser = ScriptExtractor()
     parser.feed(resp.text)

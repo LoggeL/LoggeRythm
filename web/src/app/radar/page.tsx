@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useMe } from "@/hooks/useAuth";
 import {
   RADAR_TITLE,
@@ -13,9 +14,12 @@ import TrackRow from "@/components/TrackRow";
 import { RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon, RefreshIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
+import CollectionHero from "@/app/playlist/_components/CollectionHero";
+import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
 
 export default function RadarPage() {
-  const { data: me } = useMe();
+  const account = useMe();
+  const me = account.data;
   const playQueue = usePlayerStore((s) => s.playQueue);
   const radar = useReleaseRadar(me);
   const refreshRadar = useRefreshReleaseRadar(me);
@@ -31,92 +35,113 @@ export default function RadarPage() {
 
   return (
     <div className="animate-in">
-      <header className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6 mb-6">
-        <div className="relative w-40 h-40 flex-shrink-0">
-          {cover ? (
+      <CollectionHero
+        eyebrow="Playlist"
+        title={RADAR_TITLE}
+        description="Neues von Künstler:innen, die du hörst und folgst"
+        metadata={
+          account.isLoading || radar.isLoading
+            ? "Wird geladen…"
+            : `${tracks.length} Titel`
+        }
+        artwork={
+          cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={cover}
               alt={RADAR_TITLE}
-              className="w-40 h-40 rounded-md object-cover shadow-xl"
+              className="h-full w-full rounded-2xl object-cover"
             />
           ) : (
-            <CoverPlaceholder className="w-40 h-40 rounded-md shadow-xl" />
-          )}
-          {tracks.length > 0 && (
+            <CoverPlaceholder className="h-full w-full rounded-2xl" />
+          )
+        }
+        actions={
+          <>
             <button
               type="button"
               onClick={() => playQueue(tracks, 0, RADAR_TITLE)}
-              aria-label="Alle abspielen"
-              title="Alle abspielen"
-              className="absolute -bottom-3 -right-3 z-10 grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-xl shadow-accent/30 transition hover:bg-accent-hover hover:scale-105 press"
+              disabled={tracks.length === 0}
+              className="action-primary"
             >
-              <PlayIcon width={22} height={22} />
+              <PlayIcon width={18} height={18} /> Alle abspielen
             </button>
-          )}
-        </div>
-        <div className="min-w-0 max-w-full">
-          <p className="text-xs uppercase tracking-wide text-muted">Playlist</p>
-          <h1 className="text-4xl font-extrabold mb-2 truncate">{RADAR_TITLE}</h1>
-          <p className="text-muted">
-            Neues von Künstler:innen, die du hörst und folgst
-          </p>
-          <p className="text-sm text-muted mt-1">{tracks.length} Titel</p>
-          <button
-            type="button"
-            onClick={() => refreshRadar.mutate()}
-            disabled={!me || refreshRadar.isPending}
-            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-foreground transition hover:border-accent/60 hover:bg-accent/15 disabled:cursor-wait disabled:opacity-60"
-          >
-            <RefreshIcon
-              aria-hidden="true"
-              className={refreshRadar.isPending ? "animate-spin" : undefined}
-            />
-            {refreshRadar.isPending
-              ? "Release Radar wird aktualisiert…"
-              : "Release Radar aktualisieren"}
-          </button>
-          {refreshRadar.isSuccess && (
-            <p role="status" className="mt-2 text-sm text-accent-soft">
-              Release Radar wurde aktualisiert.
-            </p>
-          )}
-        </div>
-      </header>
+            <button
+              type="button"
+              onClick={() => refreshRadar.mutate()}
+              disabled={!me || refreshRadar.isPending}
+              className="action-secondary"
+            >
+              <RefreshIcon
+                aria-hidden="true"
+                className={refreshRadar.isPending ? "animate-spin" : undefined}
+              />
+              {refreshRadar.isPending
+                ? "Release Radar wird aktualisiert…"
+                : "Release Radar aktualisieren"}
+            </button>
+          </>
+        }
+      />
+      {refreshRadar.isSuccess && (
+        <p role="status" className="mb-4 text-sm text-accent-soft">
+          Release Radar wurde aktualisiert.
+        </p>
+      )}
 
       {radarError && (
-        <div
-          role="alert"
-          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
-        >
+        <div role="alert" className="error-panel mb-4">
           Release Radar konnte nicht aktualisiert werden.
           {tracks.length > 0 &&
             " Die zuletzt geladenen Songs bleiben sichtbar."}{" "}
           {radarError.message}
         </div>
       )}
-
-      {radar.isLoading ? (
-        <RowListSkeleton />
-      ) : radar.isError && radar.data === undefined ? (
-        null
-      ) : tracks.length === 0 ? (
-        <p className="text-muted">
-          Noch keine frischen Releases von deinen Künstler:innen. Folge Artists
-          oder höre mehr, dann füllt sich dein Radar.
-        </p>
-      ) : (
-        <div className="flex flex-col">
-          {tracks.map((track, i) => (
-            <TrackRow
-              key={track.id}
-              track={track}
-              index={i}
-              onPlay={() => playQueue(tracks, i, RADAR_TITLE)}
-            />
-          ))}
+      {account.isError && (
+        <div role="alert" className="error-panel mb-4">
+          Dein Konto konnte nicht geladen werden: {account.error.message}
+          <button
+            type="button"
+            onClick={() => void account.refetch()}
+            disabled={account.isFetching}
+            className="ml-3 underline disabled:opacity-50"
+          >
+            Erneut versuchen
+          </button>
         </div>
       )}
+
+      <CollectionTracks count={tracks.length}>
+        {account.isLoading || radar.isLoading ? (
+          <RowListSkeleton />
+        ) : account.isError && !me ? null : !me ? (
+          <div className="empty-panel">
+            <p className="mb-4">
+              Melde dich an, um deinen Release Radar zu hören.
+            </p>
+            <Link href="/login" className="action-primary">
+              Anmelden
+            </Link>
+          </div>
+        ) : radar.isError && radar.data === undefined ? null : tracks.length ===
+          0 ? (
+          <p className="empty-panel">
+            Noch keine frischen Releases von deinen Künstler:innen. Folge
+            Artists oder höre mehr, dann füllt sich dein Radar.
+          </p>
+        ) : (
+          <div className="flex flex-col">
+            {tracks.map((track, i) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                index={i}
+                onPlay={() => playQueue(tracks, i, RADAR_TITLE)}
+              />
+            ))}
+          </div>
+        )}
+      </CollectionTracks>
     </div>
   );
 }

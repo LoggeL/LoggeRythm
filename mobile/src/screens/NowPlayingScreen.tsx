@@ -22,7 +22,6 @@ import Player, {
   useProgress,
 } from '../player/player';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import BrandLockup from '../components/BrandLockup';
 import AppIcon from '../components/AppIcon';
 import TrackLikeButton from '../components/TrackLikeButton';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
@@ -70,8 +69,6 @@ import {
 
 type Props = NativeStackScreenProps<RootStackParams, 'NowPlaying'>;
 
-const FULLSCREEN_MINIMIZE_CAPTURE_HEIGHT = 180;
-
 function repeatModeLabel(mode: RepeatMode): string {
   if (mode === RepeatMode.One) return strings.player.repeatOne;
   if (mode === RepeatMode.All) return strings.player.repeatAll;
@@ -96,14 +93,12 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const [tab, setTab] = useState<NowPlayingTab>(DEFAULT_NOW_PLAYING_TAB);
   const fullscreenResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => false,
-    // Limit vertical capture to the fixed header/tabs region so nested panels retain scrolling.
-    // Horizontal tab navigation is Android-only and dominant-axis gated to avoid claiming scrolls.
+    // This responder belongs only to the noninteractive header surface.
+    // Artwork and nested panels keep their native scrolling and touch handling.
+    // A screen-level capture would steal native seek and transport gestures.
     onMoveShouldSetPanResponderCapture: (_event, gesture) => (
       Platform.OS === 'android' && shouldCaptureFullscreenTabSwipe(gesture)
-    ) || (
-      gesture.y0 <= insets.top + FULLSCREEN_MINIMIZE_CAPTURE_HEIGHT
-      && shouldCaptureFullscreenMinimize(gesture)
-    ),
+    ) || shouldCaptureFullscreenMinimize(gesture),
     onPanResponderRelease: (_event, gesture) => {
       if (shouldMinimizeFullscreenPlayer(gesture)) {
         navigation.goBack();
@@ -116,7 +111,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
       }
     },
     onPanResponderTerminationRequest: () => true,
-  }), [insets.top, navigation]);
+  }), [navigation]);
 
   useEffect(() => {
     const syncShuffleState = () => setShuffle(isContextShuffleEnabled());
@@ -160,14 +155,31 @@ export default function NowPlayingScreen({ navigation }: Props) {
         testID="now-playing-close"
         accessibilityRole="button"
         accessibilityLabel={strings.player.closeNowPlaying}
-        style={styles.closeButton}
+        style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
         onPress={() => navigation.goBack()}
         hitSlop={16}
       >
         <AppIcon name="chevron-down" color={colors.textPrimary} size={28} />
       </Pressable>
-      <BrandLockup compact horizontal accessibilityRole="header" />
-      <View style={styles.topBarSpacer} />
+      <View
+        testID="now-playing-gesture-header"
+        style={styles.headerGestureSurface}
+        {...fullscreenResponder.panHandlers}
+      >
+        <Text accessibilityRole="header" style={styles.topBarTitle}>
+          {strings.player.nowPlayingTabs.playing}
+        </Text>
+      </View>
+      <Pressable
+        testID="now-playing-open-queue"
+        accessibilityRole="button"
+        accessibilityLabel={strings.queue.title}
+        accessibilityState={{ selected: tab === 'queue' }}
+        onPress={() => setTab('queue')}
+        style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+      >
+        <AppIcon name="playlist-music-outline" color={tab === 'queue' ? colors.accentSoft : colors.textSecondary} size={23} />
+      </Pressable>
     </View>
   );
 
@@ -237,7 +249,6 @@ export default function NowPlayingScreen({ navigation }: Props) {
         styles.container,
         { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
       ]}
-      {...fullscreenResponder.panHandlers}
     >
       <NowPlayingBackdrop coverUri={track.cover} />
       {topBar}
@@ -372,30 +383,29 @@ export default function NowPlayingScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 28 },
-  fullBleedTab: { flex: 1, minHeight: 0, marginHorizontal: -28 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  dim: { color: colors.textSecondary },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 },
+  fullBleedTab: { flex: 1, minHeight: 0, marginHorizontal: -20 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
+  dim: { color: colors.textSecondary, fontSize: 15, lineHeight: 22, textAlign: 'center' },
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10 },
+  topBarTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.6 },
+  headerGestureSurface: { flex: 1, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
   closeButton: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  closeText: { color: colors.textPrimary, fontSize: 26 },
-  topBarSpacer: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget },
   playingScroll: { flex: 1, minHeight: 0 },
-  playingContent: { flexGrow: 1, paddingBottom: 4 },
+  playingContent: { flexGrow: 1, paddingBottom: 12 },
   artWrap: {
     flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingTop: 24,
+    paddingBottom: 12,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 12 },
-  likeButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  inlineError: { color: colors.danger, fontSize: 12, marginTop: 8 },
-  playerErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 24, gap: 16 },
+  likeButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
+  inlineError: { color: colors.danger, fontSize: 13, lineHeight: 19 },
+  playerErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surface },
   playerErrorText: { flex: 1 },
   inlineDismissButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  inlineDismissText: { color: colors.textPrimary, fontSize: 22 },
   iconButton: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  secondaryButton: { color: colors.textSecondary, fontSize: 22 },
-  activeButton: { color: colors.accent },
+  pressed: { opacity: 0.65 },
 });

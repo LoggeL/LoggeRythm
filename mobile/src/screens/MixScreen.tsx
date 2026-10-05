@@ -7,6 +7,7 @@ import {
   CatalogTrackRow,
 } from '../components/catalog/CatalogCards';
 import { CatalogTrackList } from '../components/catalog/CatalogTrackList';
+import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
 import {
   CatalogContentStatus,
   CatalogPageGate,
@@ -127,8 +128,18 @@ export default function MixScreen(props: MixScreenProps) {
         onRefresh={() => void mixes.refetch()}
         header={
           <View style={styles.headerContent}>
-            <View style={styles.hero}>
-              <CatalogHeroArtwork uri={mix.cover} />
+            <CatalogDetailHero
+              artwork={<CatalogHeroArtwork uri={mix.cover} compact />}
+              actions={
+                <CatalogActionButton
+                  testID="mix-play-all"
+                  label={strings.common.play}
+                  icon="play"
+                  disabled={mix.tracks.length === 0}
+                  onPress={() => play(0)}
+                />
+              }
+            >
               <Text style={styles.typeLabel}>{strings.navigation.playlists}</Text>
               <Text testID="mix-title" accessibilityRole="header" style={styles.title}>
                 {mix.title}
@@ -137,13 +148,7 @@ export default function MixScreen(props: MixScreenProps) {
                 <Text style={styles.subtitle}>{mix.subtitle}</Text>
               ) : null}
               <Text style={styles.meta}>{strings.common.trackCount(mix.tracks.length)}</Text>
-              <CatalogActionButton
-                testID="mix-play-all"
-                label={strings.common.play}
-                disabled={mix.tracks.length === 0}
-                onPress={() => play(0)}
-              />
-            </View>
+            </CatalogDetailHero>
 
             <CatalogRuntimeError id="mix" message={runtimeError} />
             {queryStatus}
@@ -177,26 +182,25 @@ export default function MixScreen(props: MixScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  headerContent: { gap: 24, paddingTop: 22 },
-  hero: { alignItems: 'center', gap: 10, paddingHorizontal: 20 },
+  headerContent: { gap: 24, paddingTop: 24 },
   typeLabel: {
-    color: colors.accent,
-    fontSize: 12,
+    color: colors.accentSoft,
+    fontSize: 11,
     lineHeight: 17,
-    fontWeight: '800',
+    fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
   title: {
     color: colors.textPrimary,
-    fontSize: 32,
-    lineHeight: 38,
-    fontWeight: '900',
-    textAlign: 'center',
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: '800',
+    letterSpacing: -0.6,
   },
-  subtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 16 },
+  subtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  meta: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
+  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
   pageState: {
     flex: 1,
     alignItems: 'center',

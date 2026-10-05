@@ -17,6 +17,8 @@ from ..schemas.track import (
 )
 from ..services import deezer_client as dc
 from ..services import lastfm
+from ..services.discovery import DiscoveryError
+from ..services.lastfm_client import LastfmError
 from .errors import to_http
 
 router = APIRouter(prefix="/api", tags=["browse"])
@@ -43,12 +45,21 @@ async def track_plays(
     ][:60]
     if not items:
         return {}
-    return await run_in_threadpool(lastfm.plays_for, items)
+    try:
+        return await run_in_threadpool(lastfm.plays_for, items)
+    except (LastfmError, DiscoveryError) as error:
+        raise to_http(error) from error
 
 
 @router.get("/health/deezer")
 async def health_deezer() -> dict:
-    ok = await run_in_threadpool(dc.health)
+    try:
+        ok = await run_in_threadpool(dc.health)
+    except dc.DeezerClientError as exc:
+        raise HTTPException(
+            status_code=to_http(exc).status_code,
+            detail=f"Deezer health check failed: {exc}",
+        ) from exc
     return {"ok": ok}
 
 
@@ -155,8 +166,11 @@ class ArtistAbout(BaseModel):
 @router.get("/artist-about", response_model=ArtistAbout)
 async def artist_about(name: str = Query(default="")) -> dict:
     """Last.fm artist biography + stats for the "About" section (lazy-loaded)."""
-    info = await run_in_threadpool(lastfm.artist_info, name)
-    return info or {}
+    try:
+        info = await run_in_threadpool(lastfm.artist_info, name)
+    except (LastfmError, DiscoveryError) as error:
+        raise to_http(error) from error
+    return info if info is not None else {}
 
 
 @router.get("/deezer-playlist/{playlist_id}")

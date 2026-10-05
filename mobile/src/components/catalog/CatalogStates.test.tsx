@@ -30,7 +30,9 @@ function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
 }
 
 function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
+  return elements(node).find((element) =>
+    element.props.testID === testID && typeof element.type !== 'function',
+  ) ?? null;
 }
 
 function section(

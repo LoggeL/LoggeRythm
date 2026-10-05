@@ -491,7 +491,7 @@ class LoggeRythmMediaLibraryService :
       Futures.allAsList(futures),
       object : FutureCallback<List<SessionResult>> {
         override fun onSuccess(results: List<SessionResult>) {
-          val failure = results.firstOrNull { it.resultCode != SessionResult.RESULT_SUCCESS }
+          val failure = notificationFavoriteLayoutFailure(results)
           if (failure == null) {
             callback?.invoke(Result.success(Unit))
           } else {

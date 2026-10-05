@@ -15,6 +15,7 @@ import {
   RadioStationCard,
 } from '../components/radio/RadioCards';
 import AppIcon from '../components/AppIcon';
+import { ScreenHeader } from '../components/ui';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
 import type { RemoteFetchStatus } from '../data/remoteState';
@@ -157,10 +158,11 @@ export default function RadioScreen() {
           <View accessible={false} style={styles.heroIcon}>
             <AppIcon name="radio" color={colors.accentSoft} size={30} />
           </View>
-          <View style={styles.heroText}>
-            <Text accessibilityRole="header" style={styles.heroTitle}>{strings.radio.title}</Text>
-            <Text style={styles.heroSubtitle}>{strings.radio.subtitle}</Text>
-          </View>
+          <ScreenHeader
+            title={strings.radio.title}
+            subtitle={strings.radio.subtitle}
+            style={styles.heroText}
+          />
         </View>
 
         {startError ? (
@@ -299,18 +301,14 @@ export default function RadioScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { gap: 30, padding: 16, paddingBottom: 140 },
-  hero: { minHeight: 142, flexDirection: 'row', alignItems: 'center', gap: 16, padding: 22, borderRadius: 18, borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.surfaceElevated },
-  heroIcon: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accent },
-  heroGlyph: { color: colors.onAccent, fontSize: 30 },
-  heroText: { flex: 1, gap: 4 },
-  heroTitle: { color: colors.textPrimary, fontSize: 32, fontWeight: '900' },
-  heroSubtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
-  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surfaceElevated },
+  content: { gap: 32, padding: 20, paddingTop: 24, paddingBottom: 144 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  heroIcon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSubtle },
+  heroText: { flex: 1 },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surface },
   errorText: { flex: 1, color: colors.danger, fontSize: 13, lineHeight: 19 },
   dismissButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  dismissText: { color: colors.textPrimary, fontSize: 23 },
-  section: { gap: 12 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '800' },
-  rail: { gap: 12, paddingRight: 8 },
+  section: { gap: 14 },
+  sectionTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+  rail: { gap: 16, paddingRight: 4 },
 });

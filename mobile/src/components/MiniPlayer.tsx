@@ -28,13 +28,14 @@ import {
 import type { RootStackParams } from '../navigation';
 import { trackArtistLabel } from '../api/trackArtists';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, metrics, radii, spacing, typography } from '../theme';
 import TrackLikeButton from './TrackLikeButton';
 import PlayerNoticeBanner from './PlayerNoticeBanner';
 import AppIcon from './AppIcon';
 
-export const TAB_BAR_HEIGHT = 56;
-export const MINI_PLAYER_HEIGHT = 64;
+export const TAB_BAR_HEIGHT = metrics.tabBarHeight;
+/** Content reserves the surface and the gap above the tab bar or safe area. */
+export const MINI_PLAYER_HEIGHT = metrics.miniPlayerSurfaceHeight + metrics.miniPlayerGap;
 
 export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
   const insets = useSafeAreaInsets();
@@ -81,20 +82,24 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
       />
       <View
         testID="mini-player"
-        style={[styles.bar, { bottom: (hasTabBar ? TAB_BAR_HEIGHT : 0) + insets.bottom }]}
+        style={[styles.bar, {
+          bottom: (hasTabBar ? TAB_BAR_HEIGHT : 0) + insets.bottom + metrics.miniPlayerGap,
+        }]}
         {...swipeResponder.panHandlers}
       >
         <Pressable
           testID="mini-player-open"
           accessibilityRole="button"
           accessibilityLabel={strings.player.openNowPlaying(track.title, artistLabel)}
-          style={styles.trackButton}
+          style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
           onPress={openNowPlaying}
         >
           {track.cover ? (
             <Image accessible={false} source={{ uri: track.cover }} style={styles.cover} />
           ) : (
-            <View style={[styles.cover, styles.coverPlaceholder]} />
+            <View style={[styles.cover, styles.coverPlaceholder]}>
+              <AppIcon name="music-note" color={colors.textSecondary} size={22} />
+            </View>
           )}
           <View style={styles.meta}>
             <Text style={styles.title} numberOfLines={1}>{track.title}</Text>
@@ -108,14 +113,14 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
           accessibilityLabel={playing ? strings.common.pause : strings.common.play}
           accessibilityState={{ busy: buffering }}
           onPress={() => run(strings.player.playPauseFailed, togglePlay)}
-          style={styles.btn}
+          style={({ pressed }) => [styles.btn, styles.playButton, pressed && styles.pressed]}
         >
           {buffering ? (
-            <ActivityIndicator color={colors.textPrimary} size="small" />
+            <ActivityIndicator color={colors.onAccent} size="small" />
           ) : (
             <AppIcon
               name={playing ? 'pause' : 'play'}
-              color={colors.textPrimary}
+              color={colors.onAccent}
               size={24}
             />
           )}
@@ -125,7 +130,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
           accessibilityRole="button"
           accessibilityLabel={strings.common.nextTrack}
           onPress={() => run(strings.player.nextFailed, next)}
-          style={styles.btn}
+          style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
         >
           <AppIcon name="skip-next" color={colors.textPrimary} size={26} />
         </Pressable>
@@ -140,33 +145,37 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
 const styles = StyleSheet.create({
   bar: {
     position: 'absolute',
-    left: 8,
-    right: 8,
+    left: spacing.sm,
+    right: spacing.sm,
+    height: metrics.miniPlayerSurfaceHeight,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.xxs,
     backgroundColor: colors.surfaceElevated,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.xs,
     zIndex: 2,
-    elevation: 6,
+    elevation: 4,
   },
-  trackButton: { minWidth: 0, minHeight: metrics.minimumTouchTarget, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  cover: { width: 44, height: 44, borderRadius: 5, backgroundColor: colors.surface },
-  coverPlaceholder: { borderWidth: 1, borderColor: colors.border },
+  trackButton: { minWidth: 0, minHeight: metrics.minimumTouchTarget, flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radii.sm },
+  cover: { width: 44, height: 44, borderRadius: radii.sm, backgroundColor: colors.surface },
+  coverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   meta: { minWidth: 0, flex: 1 },
-  title: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
-  artist: { color: colors.textSecondary, fontSize: 12, marginTop: 1 },
-  btn: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  title: { ...typography.label, color: colors.textPrimary },
+  artist: { ...typography.caption, color: colors.textSecondary },
+  btn: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: radii.md },
+  playButton: { backgroundColor: colors.accent },
+  pressed: { opacity: 0.75 },
   progressTrack: {
     position: 'absolute',
-    left: 10,
-    right: 10,
+    left: radii.lg,
+    right: radii.lg,
     bottom: 3,
     height: 2,
     borderRadius: 1,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.border,
     overflow: 'hidden',
   },
   progressFill: { height: 2, backgroundColor: colors.accent },

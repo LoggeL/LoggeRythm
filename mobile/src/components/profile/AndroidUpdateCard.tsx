@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { getActiveLocale, strings } from '../../localization';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
 import {
   androidUpdater,
   checkForAndroidUpdate,
@@ -294,13 +294,11 @@ export default function AndroidUpdateCard() {
 const styles = StyleSheet.create({
   card: {
     gap: 12,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: spacing.md,
+    borderRadius: radii.lg,
     backgroundColor: colors.surface,
   },
-  title: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
+  title: { ...typography.section, color: colors.textPrimary },
   body: { flex: 1, color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   progressBox: { gap: 8 },
@@ -327,20 +325,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 9,
     paddingHorizontal: 18,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
+    borderRadius: radii.md,
+    backgroundColor: colors.accentSolid,
   },
-  primaryText: { color: colors.onAccent, fontSize: 15, fontWeight: '900' },
+  primaryText: { ...typography.label, color: colors.onAccent },
   secondaryButton: {
     minHeight: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 18,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceElevated,
   },
-  secondaryText: { color: colors.textPrimary, fontSize: 15, fontWeight: '800' },
+  secondaryText: { ...typography.label, color: colors.textPrimary },
   pressed: { opacity: 0.72 },
   disabled: { opacity: 0.48 },
 });

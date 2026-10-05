@@ -18,7 +18,7 @@ export default function SimilarPanel({
 }) {
   const playQueue = usePlayerStore((s) => s.playQueue);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching, error, refetch } = useQuery({
     queryKey: ["similar-tracks", seedId],
     queryFn: () => api.radio(String(seedId)),
     enabled: !!seedId,
@@ -29,22 +29,31 @@ export default function SimilarPanel({
 
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col md:mt-6 lg:mt-0">
-      <span className="mb-4 flex-shrink-0 text-[11px] font-semibold uppercase tracking-widest text-muted">
+      <span className="mb-4 flex-shrink-0 text-xs font-medium text-muted">
         Ähnliche Titel
       </span>
       <div
         data-np-scroll
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-area rounded-3xl border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-black/20 backdrop-blur-xl sm:p-5"
+        className="surface-card min-h-0 flex-1 overflow-y-auto overscroll-contain scroll-area p-2 sm:p-3"
       >
         {isLoading && (
-          <p className="px-2 py-4 text-sm text-muted">
+          <p role="status" className="px-3 py-4 text-sm text-muted">
             Ähnliche Titel werden geladen…
           </p>
         )}
         {isError && (
-          <p className="px-2 py-4 text-sm text-muted">
-            Ähnliche Titel konnten nicht geladen werden.
-          </p>
+          <div role="alert" className="error-panel m-1">
+            <p className="font-medium">Ähnliche Titel konnten nicht geladen werden.</p>
+            <p className="mt-1 break-words text-xs">{error.message}</p>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="action-secondary mt-3"
+            >
+              {isFetching ? "Wird geladen…" : "Erneut versuchen"}
+            </button>
+          </div>
         )}
         {!isLoading && !isError && tracks.length === 0 && (
           <p className="px-2 py-4 text-sm text-muted">
@@ -55,7 +64,7 @@ export default function SimilarPanel({
           {tracks.map((t, i) => (
             <li
               key={`${t.id}-${i}`}
-              className="group flex items-center gap-3 rounded-2xl px-3 py-2 transition hover:bg-white/5"
+              className="group flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-panel-hover focus-within:bg-panel-hover"
             >
               <button
                 type="button"
@@ -71,12 +80,12 @@ export default function SimilarPanel({
                   <img
                     src={t.cover}
                     alt=""
-                    className="h-12 w-12 rounded-xl object-cover shadow"
+                    className="h-12 w-12 rounded-lg object-cover"
                   />
                 ) : (
-                  <CoverPlaceholder className="h-12 w-12 rounded-xl" />
+                  <CoverPlaceholder className="h-12 w-12 rounded-lg" />
                 )}
-                <span className="absolute inset-0 grid place-items-center rounded-xl bg-black/50 opacity-0 transition group-hover/cover:opacity-100">
+                <span className="absolute inset-0 grid place-items-center rounded-lg bg-black/50 opacity-0 transition group-hover/cover:opacity-100 group-focus-within/cover:opacity-100">
                   <PlayIcon width={18} height={18} className="text-white" />
                 </span>
               </button>
@@ -96,9 +105,9 @@ export default function SimilarPanel({
               <button
                 type="button"
                 onClick={() => addToQueue(t)}
-                aria-label="Zur Warteschlange hinzufügen"
+                aria-label={`${t.title} zur Warteschlange hinzufügen`}
                 title="Zur Warteschlange hinzufügen"
-                className="grid h-8 w-8 flex-shrink-0 place-items-center rounded-full text-muted opacity-0 transition hover:bg-white/10 hover:text-foreground group-hover:opacity-100"
+                className="action-icon h-11 w-11"
               >
                 <PlusIcon width={18} height={18} />
               </button>

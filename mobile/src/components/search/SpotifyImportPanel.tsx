@@ -35,8 +35,9 @@ import {
   type SpotifyImportInputErrorCode,
   type SpotifyImportRequest,
 } from '../../share/spotifyImport';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
 import AppIcon from '../AppIcon';
+import { ActionButton } from '../ui';
 import { SearchErrorNotice, SearchRemoteBoundary } from './SearchRemoteStates';
 import { SearchTrackResultRow } from './SearchResults';
 import {
@@ -262,8 +263,11 @@ function ResolvedSpotifyImport({
   const existingDestinationId = existingSave.variables?.playlist.id ?? null;
 
   const play = (index: number) => {
-    if (link === null || result === undefined || index < 0 || index >= result.tracks.length) {
-      return;
+    if (link === null || result === undefined) {
+      throw new Error('Spotify import playback requires a resolved import');
+    }
+    if (!Number.isInteger(index) || index < 0 || index >= result.tracks.length) {
+      throw new Error(`Spotify import playback index ${index} is outside ${result.tracks.length} matched tracks`);
     }
     setRuntimeError(null);
     setPlayingIndex(index);
@@ -352,30 +356,15 @@ function ResolvedSpotifyImport({
               placeholderTextColor={colors.textSecondary}
               style={styles.input}
             />
-            <Pressable
+            <ActionButton
               testID="spotify-import-save-new"
-              accessibilityRole="button"
-              accessibilityLabel={strings.search.importCreateAndSave}
-              accessibilityState={{
-                disabled: saving || newName.trim().length === 0,
-                busy: newSave.isPending,
-              }}
+              label={newSave.isPending ? strings.search.importSaving : strings.search.importCreateAndSave}
+              variant="secondary"
+              icon="playlist-plus"
+              busy={newSave.isPending}
               disabled={saving || newName.trim().length === 0}
               onPress={() => newSave.mutate(newName.trim())}
-              style={[
-                styles.secondaryButton,
-                (saving || newName.trim().length === 0) && styles.disabled,
-              ]}
-            >
-              {newSave.isPending ? (
-                <ActivityIndicator color={colors.textPrimary} size="small" />
-              ) : null}
-              <Text style={styles.secondaryButtonText}>
-                {newSave.isPending
-                  ? strings.search.importSaving
-                  : strings.search.importCreateAndSave}
-              </Text>
-            </Pressable>
+            />
             <Text style={styles.destinationTitle}>
               {strings.search.importExistingPlaylists}
             </Text>
@@ -414,7 +403,7 @@ function ResolvedSpotifyImport({
               playlist: item.playlist,
               tracks: result.tracks,
             })}
-            style={[styles.destinationButton, saving && styles.disabled]}
+            style={({ pressed }) => [styles.destinationButton, saving && styles.disabled, pressed && styles.pressed]}
           >
             <Text style={styles.destinationName} numberOfLines={1}>
               {item.playlist.name}
@@ -439,7 +428,7 @@ function ResolvedSpotifyImport({
         );
       case 'unmatched-track':
         return (
-          <Text style={styles.status} numberOfLines={1}>
+          <Text style={[styles.status, styles.unmatchedTrack]} numberOfLines={1}>
             {item.track.title} — {trackArtistLabel(item.track)}
           </Text>
         );
@@ -509,23 +498,15 @@ function ResolvedSpotifyImport({
               </Text>
             ) : null}
 
-            <Pressable
+            <ActionButton
               testID="spotify-import-play-all"
-              accessibilityRole="button"
-              accessibilityLabel={strings.search.importPlayAll}
-              accessibilityState={{
-                disabled: result.tracks.length === 0,
-                busy: playingIndex === 0,
-              }}
+              label={strings.search.importPlayAll}
+              icon="play"
+              busy={playingIndex === 0}
               disabled={result.tracks.length === 0 || playingIndex !== null}
               onPress={() => play(0)}
-              style={[styles.primaryButton, result.tracks.length === 0 && styles.disabled]}
-            >
-              {playingIndex === 0 ? (
-                <ActivityIndicator color={colors.onAccent} size="small" />
-              ) : null}
-              <Text style={styles.primaryButtonText}>{strings.search.importPlayAll}</Text>
-            </Pressable>
+              style={styles.inlineAction}
+            />
             </View>
           </SearchRemoteBoundary>
         </>
@@ -591,16 +572,14 @@ export default function SpotifyImportPanel({
         maxLength={8_192}
         style={styles.input}
       />
-      <Pressable
+      <ActionButton
         testID="spotify-import-resolve"
-        accessibilityRole="button"
-        accessibilityLabel={strings.search.importResolve}
+        label={strings.search.importResolve}
+        icon="arrow-right"
         disabled={input.trim().length === 0}
         onPress={submit}
-        style={[styles.primaryButton, input.trim().length === 0 && styles.disabled]}
-      >
-        <Text style={styles.primaryButtonText}>{strings.search.importResolve}</Text>
-      </Pressable>
+        style={styles.inlineAction}
+      />
       {inputError !== null ? (
         <SearchErrorNotice testID="spotify-import-input-error" message={inputError} />
       ) : null}
@@ -623,90 +602,69 @@ export default function SpotifyImportPanel({
 
 const styles = StyleSheet.create({
   panel: {
-    marginHorizontal: 16,
-    marginBottom: 20,
-    padding: 16,
-    gap: 12,
-    borderRadius: 18,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    borderRadius: radii.xl,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSubtle,
     backgroundColor: colors.surface,
   },
-  panelTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '800' },
+  panelTitle: { ...typography.section, color: colors.textPrimary },
   intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   input: {
     minHeight: metrics.minimumTouchTarget,
-    borderRadius: 12,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.background,
+    backgroundColor: colors.backgroundElevated,
     color: colors.textPrimary,
-    paddingHorizontal: 14,
-    fontSize: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 15,
   },
-  primaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 24,
-    paddingHorizontal: 18,
-    backgroundColor: colors.accent,
-  },
-  primaryButtonText: { color: colors.onAccent, fontSize: 14, fontWeight: '800' },
-  secondaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-  },
-  secondaryButtonText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700' },
+  inlineAction: { alignSelf: 'flex-start' },
   disabled: { opacity: 0.45 },
-  loadingRow: { minHeight: 72, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pressed: { backgroundColor: colors.surfacePressed },
   status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   smallStatus: { color: colors.textSecondary, fontSize: 11, lineHeight: 16 },
-  errorBox: { gap: 8, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.danger },
   successText: { color: colors.success, fontSize: 13, lineHeight: 19 },
   resultPanel: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 18,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: radii.xl,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSubtle,
     backgroundColor: colors.surface,
   },
-  result: { gap: 14, paddingBottom: 4 },
-  resultHeader: { flexDirection: 'row', gap: 14, alignItems: 'flex-end' },
-  cover: { width: 104, height: 104, borderRadius: 10, backgroundColor: colors.surfaceElevated },
+  result: { gap: spacing.lg },
+  resultHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
+  cover: { width: 88, height: 88, borderRadius: radii.md, backgroundColor: colors.surfaceElevated },
   coverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  coverGlyph: { color: colors.accentSoft, fontSize: 28 },
-  resultHeaderCopy: { flex: 1, minWidth: 0, gap: 3 },
-  typeLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  resultTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900' },
-  saveBlock: { gap: 10, marginTop: 8, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border },
-  saveTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '800' },
-  destinationTitle: { color: colors.textPrimary, fontSize: 14, fontWeight: '800', marginTop: 4 },
+  resultHeaderCopy: { flex: 1, minWidth: 0, gap: spacing.xxs },
+  typeLabel: { ...typography.caption, color: colors.accentSoft, fontWeight: '600' },
+  resultTitle: { ...typography.section, color: colors.textPrimary },
+  saveBlock: { gap: spacing.sm, marginHorizontal: spacing.lg, marginTop: spacing.xs, paddingTop: spacing.md },
+  saveTitle: { ...typography.section, color: colors.textPrimary },
+  destinationTitle: { ...typography.label, color: colors.textSecondary, marginTop: spacing.xxs },
   destinationButton: {
     minHeight: metrics.minimumTouchTarget,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
-    paddingHorizontal: 14,
-    marginTop: 8,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceElevated,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.surface,
   },
   destinationName: { flex: 1, color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
   destinationCount: { color: colors.textSecondary, fontSize: 12 },
-  unmatchedBlock: { gap: 4, paddingTop: 10, borderTopWidth: 1, borderTopColor: colors.border },
+  unmatchedBlock: { gap: spacing.xxs, marginHorizontal: spacing.lg, marginTop: spacing.lg, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+  unmatchedTrack: { paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
 });

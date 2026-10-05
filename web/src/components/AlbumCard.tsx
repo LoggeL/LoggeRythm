@@ -9,7 +9,7 @@ export default function AlbumCard({ album }: { album: AlbumSummary }) {
   return (
     <Link
       href={`/album/${album.id}`}
-      className="group block bg-panel/70 hover:bg-panel-hover border border-white/5 rounded-2xl p-4 transition hover-lift"
+      className="music-card group block p-2.5 sm:p-3"
     >
       {album.cover ? (
         <div className="mb-3 overflow-hidden rounded-xl">
@@ -23,8 +23,8 @@ export default function AlbumCard({ album }: { album: AlbumSummary }) {
       ) : (
         <CoverPlaceholder className="w-full aspect-square rounded-xl mb-3" />
       )}
-      <div className="truncate font-semibold">{album.title}</div>
-      <div className="truncate text-sm text-muted">
+      <div className="truncate text-sm font-semibold">{album.title}</div>
+      <div className="mt-1 truncate text-xs text-muted">
         {[year, album.artist].filter(Boolean).join(" · ")}
       </div>
     </Link>

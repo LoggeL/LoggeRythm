@@ -13,7 +13,8 @@ import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
 
 export function useTrackMenuItems(
   track: Track,
-  onRemove?: () => void
+  onRemove?: () => void,
+  removeLabel = "Aus Playlist entfernen",
 ): ContextMenuItem[] {
   const router = useRouter();
   const playNext = usePlayerStore((s) => s.playNext);
@@ -61,7 +62,7 @@ export function useTrackMenuItems(
     });
   if (onRemove)
     items.push({
-      label: "Aus Playlist entfernen",
+      label: removeLabel,
       danger: true,
       onClick: onRemove,
     });

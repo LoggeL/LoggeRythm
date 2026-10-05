@@ -19,6 +19,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Genre } from '../api/types';
 import { useProgress } from '../player/player';
 import AppIcon from '../components/AppIcon';
+import { FilterChip, ScreenHeader } from '../components/ui';
 import {
   SearchEntityCard,
   SearchResultRail,
@@ -50,7 +51,7 @@ import {
   getSpotifyImportRequestForScope,
   subscribeSpotifyImportRequests,
 } from '../share/spotifyImport';
-import { colors, metrics } from '../theme';
+import { colors, metrics, radii, spacing, typography } from '../theme';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import {
   SEARCH_SORTS,
@@ -135,6 +136,7 @@ export function SearchBrowseContent({
               title={genre.name}
               subtitle={strings.search.browseTitle}
               imageUri={genre.picture}
+              landscape
               onPress={() => onOpenGenre({ genreId: genre.id, name: genre.name })}
             />
           )}
@@ -345,7 +347,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         id: debouncedQuery,
         label: strings.queue.searchContext(debouncedQuery),
       },
-    }).catch((error) =>
+    }).catch(() =>
       setActionError(strings.search.playFailed),
     );
   };
@@ -476,7 +478,9 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
   const searchChrome = (
     <>
-        <View style={styles.searchBar}>
+        <ScreenHeader title={strings.navigation.search} style={styles.screenHeader} />
+        {!importing ? <View style={styles.searchBar}>
+          <AppIcon name="magnify" color={colors.textSecondary} size={23} />
           <TextInput
             testID="search-input"
             accessibilityLabel={strings.search.inputLabel}
@@ -499,12 +503,12 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
               accessibilityRole="button"
               accessibilityLabel={strings.search.clear}
               onPress={() => updateInput('')}
-              style={styles.clearButton}
+              style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
             >
               <AppIcon name="close" color={colors.textSecondary} size={20} />
             </Pressable>
           ) : null}
-        </View>
+        </View> : null}
 
         <View style={styles.importToggleRow}>
           <Pressable
@@ -522,15 +526,20 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
                 setManualImporting(true);
               }
             }}
-            style={[styles.importToggle, importing && styles.importToggleSelected]}
+            style={({ pressed }) => [
+              styles.importToggle,
+              importing && styles.importToggleSelected,
+              pressed && styles.pressed,
+            ]}
           >
+            <AppIcon name={importing ? 'close' : 'link-variant'} color={importing ? colors.accentSoft : colors.textSecondary} size={18} />
             <Text style={[styles.importToggleText, importing && styles.importToggleTextSelected]}>
               {importing ? strings.search.importClose : strings.search.importOpen}
             </Text>
           </Pressable>
         </View>
 
-        {inputIsSearchable ? (
+        {!importing && inputIsSearchable ? (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -540,51 +549,43 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             {SEARCH_TABS.map((candidate) => {
               const selected = candidate === tab;
               return (
-                <Pressable
+                <FilterChip
                   key={candidate}
                   testID={`search-tab-${candidate}`}
                   accessibilityRole="tab"
-                  accessibilityLabel={strings.search.tabs[candidate]}
-                  accessibilityState={{ selected }}
+                  label={strings.search.tabs[candidate]}
+                  selected={selected}
                   onPress={() => setTab(candidate)}
-                  style={[styles.tab, selected && styles.tabSelected]}
-                >
-                  <Text style={[styles.tabText, selected && styles.tabTextSelected]}>
-                    {strings.search.tabs[candidate]}
-                  </Text>
-                </Pressable>
+                />
               );
             })}
           </ScrollView>
         ) : null}
 
-        {inputIsSearchable && (tab === 'all' || tab === 'track') ? (
+        {!importing && inputIsSearchable && (tab === 'all' || tab === 'track') ? (
           <View testID="search-sort-controls" style={styles.sortBlock}>
-            <Text style={styles.sortLabel}>{strings.search.sortLabel}</Text>
+            <View style={styles.sortHeading}>
+              <AppIcon name="sort" color={colors.textSecondary} size={16} />
+              <Text style={styles.sortLabel}>{strings.search.sortLabel}</Text>
+            </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sorts}>
               {SEARCH_SORTS.map((candidate) => {
                 const selected = candidate === sort;
                 return (
-                  <Pressable
+                  <FilterChip
                     key={candidate}
                     testID={`search-sort-${candidate}`}
-                    accessibilityRole="button"
-                    accessibilityLabel={sortLabels[candidate]}
-                    accessibilityState={{ selected }}
+                    label={sortLabels[candidate]}
+                    selected={selected}
                     onPress={() => setSort(candidate)}
-                    style={[styles.sort, selected && styles.sortSelected]}
-                  >
-                    <Text style={[styles.sortText, selected && styles.sortTextSelected]}>
-                      {sortLabels[candidate]}
-                    </Text>
-                  </Pressable>
+                  />
                 );
               })}
             </ScrollView>
           </View>
         ) : null}
 
-        {actionError !== null ? (
+        {!importing && actionError !== null ? (
           <SearchErrorNotice testID="search-action-error" message={actionError} />
         ) : null}
     </>
@@ -754,83 +755,57 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  searchBar: { flexDirection: 'row', alignItems: 'center', padding: 16 },
+  screenHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.lg },
+  searchBar: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: spacing.lg,
+    paddingLeft: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surfaceElevated,
+  },
   input: {
     minHeight: metrics.minimumTouchTarget,
     flex: 1,
-    backgroundColor: colors.surface,
     color: colors.textPrimary,
-    borderRadius: 24,
-    paddingLeft: 16,
-    paddingRight: 52,
+    paddingRight: 12,
     paddingVertical: 10,
     fontSize: 16,
   },
   clearButton: {
-    position: 'absolute',
-    right: 18,
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  clearGlyph: { color: colors.textSecondary, fontSize: 25 },
-  importToggleRow: { alignItems: 'flex-end', paddingHorizontal: 16, paddingBottom: 12 },
+  importToggleRow: { alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
   importToggle: {
     minHeight: metrics.minimumTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceElevated,
+    gap: 7,
+    paddingHorizontal: 12,
+    borderRadius: radii.md,
   },
-  importToggleSelected: { backgroundColor: colors.textPrimary },
-  importToggleText: { color: colors.textSecondary, fontSize: 13, fontWeight: '700' },
-  importToggleTextSelected: { color: colors.background },
-  tabs: { gap: 8, paddingHorizontal: 16, paddingBottom: 12 },
-  tab: {
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceElevated,
-  },
-  tabSelected: { backgroundColor: colors.textPrimary },
-  tabText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
-  tabTextSelected: { color: colors.background, fontSize: 14, fontWeight: '800' },
-  sortBlock: { gap: 7, paddingBottom: 14 },
-  sortLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '700', paddingHorizontal: 16 },
-  sorts: { gap: 7, paddingHorizontal: 16 },
-  sort: {
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 13,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  sortSelected: { borderColor: colors.accent, backgroundColor: colors.surfaceElevated },
-  sortText: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
-  sortTextSelected: { color: colors.accentSoft },
-  browse: { gap: 14, paddingTop: 6 },
-  pressed: { opacity: 0.7 },
-  section: { gap: 10, paddingTop: 28 },
-  trackSectionHeader: { paddingTop: 28, paddingBottom: 10 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '800', paddingHorizontal: 16 },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 28 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
+  importToggleSelected: { backgroundColor: colors.accentSubtle },
+  importToggleText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
+  importToggleTextSelected: { color: colors.accentSoft },
+  tabs: { gap: spacing.xs, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
+  sortBlock: { gap: spacing.xs, paddingBottom: spacing.lg },
+  sortHeading: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg },
+  sortLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
+  sorts: { gap: spacing.xs, paddingHorizontal: spacing.lg },
+  browse: { gap: spacing.md, paddingTop: spacing.sm },
+  pressed: { opacity: 0.72 },
+  section: { gap: spacing.md, paddingTop: spacing.xxl },
+  trackSectionHeader: { paddingTop: spacing.xxl, paddingBottom: spacing.sm },
+  sectionTitle: { ...typography.section, color: colors.textPrimary, paddingHorizontal: spacing.lg },
+  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: spacing.lg },
   hint: { color: colors.textSecondary, textAlign: 'center', marginTop: 38, paddingHorizontal: 32 },
-  errorBox: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 12,
-    gap: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: colors.surfaceElevated,
-  },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  retryButton: { minHeight: metrics.minimumTouchTarget, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 14, borderRadius: 24, backgroundColor: colors.accent },
-  retryText: { color: colors.onAccent, fontSize: 13, fontWeight: '700' },
 });

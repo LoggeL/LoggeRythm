@@ -28,6 +28,8 @@ globalThis.window = {
 };
 
 const { usePlayerStore } = await import("../src/store/player.ts");
+const { getRecentTracks, assertRecentTracks } = await import("../src/store/player.ts");
+const { readLocalJsonSnapshot } = await import("../src/hooks/useLocalJson.ts");
 const { api } = await import("../src/lib/api.ts");
 const { startTrackRadio } = await import("../src/lib/radio.ts");
 const { useToastStore } = await import("../src/store/toast.ts");
@@ -58,6 +60,45 @@ test("explicit replay requests a native seek even when the track ID is unchanged
   state().playTrack(track(1));
   assert.equal(state().currentTime, 0);
   assert.equal(state().seekTo, 0);
+});
+
+test("playback publishes a reactive history snapshot used by Home and Library", (t) => {
+  const events = [];
+  t.mock.method(window, "dispatchEvent", (event) => events.push(event.type));
+  const before = readLocalJsonSnapshot("sf_recent_tracks", []);
+  state().playTrack(track(1));
+  const after = readLocalJsonSnapshot("sf_recent_tracks", []);
+  assert.notEqual(after, before);
+  assert.deepEqual(after.map((item) => item.id), ["1"]);
+  assert.equal(readLocalJsonSnapshot("sf_recent_tracks", []), after);
+  assert.deepEqual(events, ["local-json:sf_recent_tracks"]);
+  state().playTrack(track(2));
+  state().playTrack(track(1));
+  assert.deepEqual(getRecentTracks().map((item) => item.id), ["1", "2"]);
+});
+
+test("recent history keeps thirty tracks and rejects corrupt history before playback changes", (t) => {
+  for (let id = 0; id < 35; id++) state().playTrack(track(id));
+  assert.equal(getRecentTracks().length, 30);
+  assert.deepEqual(getRecentTracks().map((item) => item.id), Array.from({ length: 30 }, (_, index) => String(34 - index)));
+  saved.set("sf_recent_tracks", "{");
+  assert.throws(() => state().playTrack(track(99)), /sf_recent_tracks.*als JSON gelesen/);
+  assert.equal(state().queue[state().index].id, "34");
+  saved.set("sf_recent_tracks", JSON.stringify([{ id: "bad" }]));
+  assert.throws(() => getRecentTracks(), /sf_recent_tracks.*ungültiges Format/);
+  assert.throws(() => assertRecentTracks(null), /Liste zuletzt gehörter Titel/);
+  t.mock.method(window.localStorage, "getItem", () => { throw new Error("Storage denied"); });
+  assert.throws(() => getRecentTracks(), /sf_recent_tracks.*Storage denied/);
+});
+
+test("history write failures retain the active track and announce no history update", (t) => {
+  state().playTrack(track(1));
+  const events = [];
+  t.mock.method(window, "dispatchEvent", (event) => events.push(event.type));
+  t.mock.method(window.localStorage, "setItem", () => { throw new Error("Quota exhausted"); });
+  assert.throws(() => state().playTrack(track(2)), /sf_recent_tracks.*Quota exhausted/);
+  assert.equal(state().queue[state().index].id, "1");
+  assert.deepEqual(events, []);
 });
 
 test("duplicate queue entries restart the native playhead on the next entry", () => {

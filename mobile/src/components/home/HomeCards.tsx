@@ -4,7 +4,7 @@ import type { AlbumSummary, Genre, HomeShelf, Track } from '../../api/types';
 import type { RecentPlay } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
 import TrackStateIndicator from '../TrackStateIndicator';
 import AppIcon from '../AppIcon';
 import { useTrackPresentation } from '../player/TrackPresentationProvider';
@@ -162,13 +162,18 @@ export function HomeShelfCard({
         pressed && styles.pressed,
       ]}
     >
-      {cover ? (
-        <Image accessible={false} source={{ uri: cover }} style={styles.shelfArtwork} />
-      ) : (
-        <View style={[styles.shelfArtwork, styles.placeholder]}>
-          <AppIcon name="music-note" color={colors.accentSoft} size={29} />
+      <View style={styles.shelfArtworkFrame}>
+        {cover ? (
+          <Image accessible={false} source={{ uri: cover }} style={styles.shelfArtwork} />
+        ) : (
+          <View style={[styles.shelfArtwork, styles.placeholder]}>
+            <AppIcon name="music-note" color={colors.accentSoft} size={29} />
+          </View>
+        )}
+        <View accessible={false} style={styles.shelfAction}>
+          <AppIcon name={action === 'open' ? 'arrow-top-right' : 'play'} color={colors.onAccent} size={22} />
         </View>
-      )}
+      </View>
       <View style={styles.shelfMeta}>
         {statusBadge ? (
           <Text testID={`${testID}-status`} style={styles.statusBadge}>{statusBadge}</Text>
@@ -240,19 +245,17 @@ export function HomeGenreCard({ genre, testID, onPress }: GenreCardProps) {
 }
 
 const styles = StyleSheet.create({
-  trackCard: { width: 152, minHeight: 210 },
-  recentCard: { width: 152, minHeight: 220 },
+  trackCard: { width: 160, minHeight: 222 },
+  recentCard: { width: 160, minHeight: 222 },
   activeTrackCard: {
     backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.accent,
+    borderRadius: radii.md,
   },
   recentIdentity: {
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginTop: 5,
+    marginTop: spacing.xs,
   },
   recentPlay: { position: 'relative' },
   recentPlayBadge: {
@@ -267,42 +270,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   shelfCard: {
-    width: 248,
-    minHeight: 132,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
+    width: 176,
+    minHeight: 246,
+    gap: spacing.sm,
+    borderRadius: radii.md,
   },
-  shelfCardHighlighted: { borderColor: colors.accent, borderWidth: 2 },
+  shelfCardHighlighted: { backgroundColor: colors.accentSubtle },
+  shelfArtworkFrame: { position: 'relative' },
+  shelfAction: { position: 'absolute', right: 8, bottom: 8, width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(10,10,20,0.78)' },
   statusBadge: {
     alignSelf: 'flex-start',
     overflow: 'hidden',
-    borderRadius: 10,
+    borderRadius: radii.sm,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    color: colors.onAccent,
-    backgroundColor: colors.accent,
+    color: colors.accentSoft,
+    backgroundColor: colors.accentSubtle,
     fontSize: 11,
     lineHeight: 15,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   pressed: { opacity: 0.76, backgroundColor: colors.surfacePressed },
-  squareArtwork: { width: 152, height: 152, borderRadius: 12, backgroundColor: colors.surfaceElevated },
-  shelfArtwork: { width: 96, height: 96, borderRadius: 10, backgroundColor: colors.surface },
-  placeholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
-  shelfMeta: { flex: 1, minWidth: 0, gap: 5 },
-  title: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  subtitle: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  squareArtwork: { width: 160, height: 160, borderRadius: radii.md, backgroundColor: colors.surfaceElevated },
+  shelfArtwork: { width: 176, height: 176, borderRadius: radii.md, backgroundColor: colors.surface },
+  placeholder: { alignItems: 'center', justifyContent: 'center' },
+  shelfMeta: { minWidth: 0, gap: spacing.xxs, paddingHorizontal: 2, paddingBottom: spacing.xs },
+  title: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
+  subtitle: { ...typography.caption, color: colors.textSecondary },
   genreCard: {
     width: 180,
     height: 128,
     minHeight: metrics.minimumTouchTarget,
-    borderRadius: 14,
+    borderRadius: radii.md,
     overflow: 'hidden',
     backgroundColor: colors.surfaceElevated,
   },
@@ -314,5 +313,5 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: 'rgba(10,10,20,0.32)',
   },
-  genreTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '800' },
+  genreTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '600' },
 });

@@ -12,16 +12,18 @@ import ContextMenu from "@/components/ContextMenu";
 export default function TrackContext({
   track,
   onRemove,
+  removeLabel,
   children,
   className,
 }: {
   track: Track;
   onRemove?: () => void;
+  removeLabel?: string;
   children: React.ReactNode;
   className?: string;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const items = useTrackMenuItems(track, onRemove);
+  const items = useTrackMenuItems(track, onRemove, removeLabel);
   return (
     <div
       className={className}

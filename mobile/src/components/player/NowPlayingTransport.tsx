@@ -115,7 +115,7 @@ export default function NowPlayingTransport({
           accessibilityRole="button"
           accessibilityLabel={strings.common.previousTrack}
           onPress={onPrevious}
-          style={styles.iconButton}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
         >
           <AppIcon name="skip-previous" color={colors.textPrimary} size={30} />
         </Pressable>
@@ -124,7 +124,7 @@ export default function NowPlayingTransport({
           accessibilityRole="button"
           accessibilityLabel={playing ? strings.common.pause : strings.common.play}
           accessibilityState={{ busy: buffering }}
-          style={[styles.playButton, compact && styles.compactPlayButton]}
+          style={({ pressed }) => [styles.playButton, compact && styles.compactPlayButton, pressed && styles.pressed]}
           onPress={onTogglePlay}
         >
           {buffering ? (
@@ -146,7 +146,7 @@ export default function NowPlayingTransport({
           accessibilityRole="button"
           accessibilityLabel={strings.common.nextTrack}
           onPress={onNext}
-          style={styles.iconButton}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
         >
           <AppIcon name="skip-next" color={colors.textPrimary} size={30} />
         </Pressable>
@@ -158,7 +158,7 @@ export default function NowPlayingTransport({
 
 const styles = StyleSheet.create({
   transport: { flexShrink: 0 },
-  compactTransport: { paddingTop: 8 },
+  compactTransport: { paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
   slider: { width: '100%', height: metrics.minimumTouchTarget, marginTop: 16 },
   compactSlider: { flex: 1, height: metrics.minimumTouchTarget },
   compactProgressRow: {
@@ -171,14 +171,14 @@ const styles = StyleSheet.create({
   time: {
     minWidth: 34,
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontVariant: ['tabular-nums'],
   },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 28,
+    marginTop: 20,
   },
   compactControls: { justifyContent: 'center', gap: 28, marginTop: 2 },
   iconButton: {
@@ -186,6 +186,7 @@ const styles = StyleSheet.create({
     minHeight: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 16,
   },
   playButton: {
     minWidth: metrics.minimumTouchTarget,
@@ -202,4 +203,5 @@ const styles = StyleSheet.create({
     height: metrics.minimumTouchTarget,
     borderRadius: metrics.minimumTouchTarget / 2,
   },
+  pressed: { opacity: 0.65, transform: [{ scale: 0.96 }] },
 });

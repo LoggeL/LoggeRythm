@@ -9,6 +9,8 @@ import TrackRow from "@/components/TrackRow";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon } from "@/components/icons";
+import CollectionHero from "@/app/playlist/_components/CollectionHero";
+import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
 import type { Album } from "@/types";
 
 function totalRuntime(seconds: number): string {
@@ -40,7 +42,7 @@ export default function AlbumPage({
     );
   if (!data) {
     return (
-      <p className="text-red-400">
+      <p role="alert" className="error-panel">
         {isError
           ? `Album konnte nicht geladen werden: ${error.message}`
           : "Album nicht gefunden."}
@@ -60,58 +62,56 @@ export default function AlbumPage({
     .join(" · ");
 
   return (
-    <div>
+    <div className="animate-in">
       {isError && (
-        <div
-          role="alert"
-          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
-        >
+        <div role="alert" className="error-panel mb-4">
           Albumdaten konnten nicht aktualisiert werden. Der zuletzt geladene
           Stand bleibt sichtbar. {error.message}
         </div>
       )}
-      <header className="flex items-end gap-6 mb-6">
-        {data.cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.cover}
-            alt={data.title}
-            className="w-40 h-40 rounded-md object-cover shadow-xl"
-          />
-        ) : (
-          <CoverPlaceholder className="w-40 h-40 rounded-md" />
+      <CollectionHero
+        eyebrow="Album"
+        title={data.title}
+        artwork={
+          data.cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={data.cover}
+              alt={data.title}
+              className="h-full w-full rounded-2xl object-cover"
+            />
+          ) : (
+            <CoverPlaceholder className="h-full w-full rounded-2xl" />
+          )
+        }
+        description={
+          data.artist_id ? (
+            <Link
+              href={`/artist/${data.artist_id}`}
+              className="font-semibold text-foreground hover:underline"
+            >
+              {data.artist}
+            </Link>
+          ) : (
+            <span className="font-semibold text-foreground">{data.artist}</span>
+          )
+        }
+        metadata={meta}
+        actions={
+          <button
+            type="button"
+            onClick={() => playQueue(tracks, 0, data.title)}
+            disabled={tracks.length === 0}
+            className="action-primary"
+          >
+            <PlayIcon /> Alle abspielen
+          </button>
+        }
+      />
+      <CollectionTracks count={tracks.length}>
+        {tracks.length === 0 && (
+          <p className="empty-panel">Dieses Album enthält keine Titel.</p>
         )}
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted">Album</p>
-          <h1 className="text-4xl font-extrabold mb-2">{data.title}</h1>
-          <p className="text-muted">
-            {data.artist_id ? (
-              <Link
-                href={`/artist/${data.artist_id}`}
-                className="font-semibold text-foreground hover:underline"
-              >
-                {data.artist}
-              </Link>
-            ) : (
-              <span className="font-semibold text-foreground">{data.artist}</span>
-            )}
-          </p>
-          <p className="text-sm text-muted mt-1">{meta}</p>
-        </div>
-      </header>
-
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => playQueue(tracks, 0, data.title)}
-          disabled={tracks.length === 0}
-          className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-40"
-        >
-          <PlayIcon /> Alle abspielen
-        </button>
-      </div>
-
-      <div className="flex flex-col">
         {tracks.map((track, i) => (
           <TrackRow
             key={track.id}
@@ -121,7 +121,7 @@ export default function AlbumPage({
             onPlay={() => playQueue(tracks, i, data.title)}
           />
         ))}
-      </div>
+      </CollectionTracks>
     </div>
   );
 }

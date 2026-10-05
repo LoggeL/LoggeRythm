@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
+import AuthCard from "@/components/AuthCard";
 import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 
 export default function LoginPage() {
@@ -14,9 +15,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const inFlight = useRef(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setError(null);
     setLoading(true);
     try {
@@ -29,46 +33,48 @@ export default function LoginPage() {
       router.push("/");
     } catch (err) {
       setError(
-        err instanceof ApiError
+        err instanceof Error
           ? err.message
           : "Anmeldung fehlgeschlagen.",
       );
     } finally {
+      inFlight.current = false;
       setLoading(false);
     }
   }
 
   return (
-    <div className="max-w-md mx-auto mt-8 bg-panel rounded-lg p-8">
-      <h1 className="text-2xl font-extrabold mb-6 text-center">
-        Bei LoggeRythm anmelden
-      </h1>
+    <AuthCard title="Anmelden">
       <form onSubmit={submit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1 text-sm">
           E-Mail
           <input
             type="email"
+            autoComplete="email"
+            disabled={loading}
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+            className="field-input"
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           Passwort
           <input
             type="password"
+            autoComplete="current-password"
+            disabled={loading}
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+            className="field-input"
           />
         </label>
-        {error && <p className="text-sm text-red-400">{error}</p>}
+        {error && <p role="alert" className="error-panel">{error}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="mt-2 px-4 py-2.5 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
+          className="action-primary mt-2 w-full"
         >
           {loading ? "Anmelden…" : "Anmelden"}
         </button>
@@ -79,6 +85,6 @@ export default function LoginPage() {
           Registrieren
         </Link>
       </p>
-    </div>
+    </AuthCard>
   );
 }

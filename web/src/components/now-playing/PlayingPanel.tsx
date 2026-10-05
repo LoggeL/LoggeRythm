@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { usePlayerStore } from "@/store/player";
 import type { CoverPalette } from "@/hooks/useCoverColors";
 import { hiResCover } from "@/lib/cover";
@@ -10,16 +10,12 @@ import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import FullscreenVisualizer from "@/components/FullscreenVisualizer";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
+import { VisualizerIcon } from "@/components/icons";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
 /**
- * The "Jetzt läuft" centerpiece: album art with an audio-reactive spectrum,
- * track meta and the full transport stack, over a cover-tinted ambient panel.
- *
- * Responsive behaviour: on md+ it renders as a glass panel with its own
- * blurred-cover backdrop; on phones it goes full-bleed (the fullscreen shell
- * already provides the ambient backdrop) and the content column scrolls when
- * the viewport is too short (e.g. landscape).
+ * Art-first player with full transport controls and an optional spectrum.
+ * The content scrolls when the viewport is too short, including landscape.
  */
 export default function PlayingPanel({
   track,
@@ -31,49 +27,30 @@ export default function PlayingPanel({
   onClose: () => void;
 }) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const [showVisualizer, setShowVisualizer] = useState(false);
   const albumRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Cover-derived theming (falls back to the brand violet when unavailable).
-  const [gr, gg, gb] = palette?.rgb ?? [124, 92, 255];
-  const auraBg = `rgba(${gr}, ${gg}, ${gb}, 0.3)`;
-  const ambientBg = `radial-gradient(circle at 50% 26%, rgba(${gr}, ${gg}, ${gb}, 0.34), transparent 46%), linear-gradient(to bottom, rgba(10,10,20,0.2), rgba(10,10,20,0.92))`;
-  const frameBg = palette
-    ? `conic-gradient(from 135deg, ${palette.secondary}, ${palette.primary}, ${palette.gradient[2]}, ${palette.secondary})`
-    : "conic-gradient(from 135deg, #3b82ff, #7c5cff, #ff6ec7, #3b82ff)";
-
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:mt-0">
-      <span className="sr-only lg:not-sr-only lg:mb-4 lg:flex-shrink-0 lg:text-[11px] lg:font-semibold lg:uppercase lg:tracking-widest lg:text-muted">
-        Jetzt läuft
-      </span>
-      {/* The visualizer is clipped by its own rounded wrapper while the panel
-          keeps the album's static aura visible beyond its bounds. */}
+      <div className="mb-3 flex flex-shrink-0 items-center justify-between gap-3">
+        <span className="text-xs font-medium text-muted">Jetzt läuft</span>
+        <button
+          type="button"
+          onClick={() => setShowVisualizer((visible) => !visible)}
+          aria-pressed={showVisualizer}
+          className="filter-chip"
+        >
+          <VisualizerIcon width={16} height={16} />
+          Visualisierung
+        </button>
+      </div>
       <div
         ref={panelRef}
-        className="like-celebration-surface relative min-h-0 flex-1 md:rounded-[2.25rem] md:border md:border-white/10 md:bg-white/[0.04] md:backdrop-blur-2xl"
+        className="like-celebration-surface relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-panel/70"
       >
-        {/* Panel-local backdrop, desktop only — the shell's ambient backdrop
-            already covers the full-bleed mobile layout. */}
-        {track.cover && (
-          <div className="absolute inset-0 z-0 hidden overflow-hidden md:block md:rounded-[2.25rem]">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={hiResCover(track.cover)}
-              alt=""
-              aria-hidden
-              className="absolute inset-0 h-full w-full scale-125 object-cover opacity-30 blur-3xl saturate-150"
-            />
-            <div
-              aria-hidden
-              className="absolute inset-0"
-              style={{ background: ambientBg }}
-            />
-          </div>
-        )}
-
-        {/* A single capped canvas spectrum supplies restrained audio motion. */}
-        <div className="pointer-events-none absolute inset-0 z-[1] overflow-hidden md:rounded-[2.25rem]">
+        {showVisualizer && (
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-[1] overflow-hidden opacity-70">
           <FullscreenVisualizer
             isPlaying={isPlaying}
             anchorRef={albumRef}
@@ -84,52 +61,42 @@ export default function PlayingPanel({
             rgb={palette?.rgb}
           />
         </div>
+        )}
         {/* Keep timestamps and transport controls crisp over the visualizer. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-36 bg-gradient-to-t from-background/80 via-background/25 to-transparent md:h-44 md:rounded-b-[2.25rem]"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-44 bg-gradient-to-t from-panel via-panel/70 to-transparent"
         />
 
         <div
           data-np-scroll
-          className="relative z-10 flex h-full min-h-0 flex-col items-center gap-3 overflow-y-auto overscroll-contain no-scrollbar p-2 pb-16 md:gap-5 md:p-7 md:pb-24 md:[@media(min-height:600px)]:overflow-visible"
+          className="relative z-10 flex h-full min-h-0 flex-col items-center gap-5 overflow-y-auto overscroll-contain scroll-area p-4 sm:p-6 lg:p-8"
         >
-          {/* Album centerpiece with a static cover-derived aura + gradient frame */}
-          <div className="relative grid w-full min-h-28 flex-1 place-items-center">
-            <div
-              aria-hidden
-              className="absolute aspect-square w-[min(52vw,30vh)] rounded-full blur-[90px]"
-              style={{ backgroundColor: auraBg }}
-            />
+          <div className="relative grid w-full min-h-40 flex-1 place-items-center">
             <div
               ref={albumRef}
-              className="relative aspect-square h-full max-h-[min(46vh,20rem)] max-w-full rounded-[1.75rem] md:max-h-[min(42vh,15.5rem)]"
+              className="relative aspect-square w-[min(100%,32vh)] max-w-80 overflow-hidden rounded-xl border border-white/10 sm:w-[min(100%,36vh)] lg:max-w-96"
             >
-              <div
-                aria-hidden
-                className="absolute -inset-[3px] rounded-[2rem] opacity-70 blur-[1px]"
-                style={{ background: frameBg }}
-              />
               {track.cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={hiResCover(track.cover)}
                   alt={track.album}
-                  className="relative h-full w-full rounded-[1.75rem] object-cover shadow-2xl"
+                  className="relative h-full w-full object-cover"
                 />
               ) : (
-                <CoverPlaceholder className="relative h-full w-full rounded-[1.75rem] shadow-2xl" />
+                <CoverPlaceholder className="relative h-full w-full" />
               )}
             </div>
           </div>
 
-          <div className="w-full max-w-2xl flex-shrink-0">
-            <div className="mb-2 px-12 text-center md:mb-3">
+          <div className="w-full max-w-lg flex-shrink-0">
+            <div className="mb-4 text-center">
               <div className="flex items-center justify-center gap-3">
                 <TrackTitle
                   track={track}
                   onNavigate={onClose}
-                  className="min-w-0 truncate text-2xl font-extrabold tracking-tight hover:underline md:text-4xl"
+                  className="min-w-0 truncate text-xl font-semibold tracking-tight hover:underline md:text-2xl"
                 />
                 <LikeButton key={track.id} track={track} />
               </div>

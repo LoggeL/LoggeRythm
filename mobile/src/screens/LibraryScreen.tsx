@@ -2,11 +2,9 @@ import React, { useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Image,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +12,7 @@ import type { Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import { LibraryRecentRow } from '../components/library/LibraryRecentRow';
+import { LibraryCreatePlaylistDialog } from '../components/library/LibraryCreatePlaylistDialog';
 import {
   LibraryVirtualizedList,
   type LibraryListItem,
@@ -27,6 +26,7 @@ import {
 } from '../components/library/librarySectionState';
 import StandardTrackRow from '../components/track/StandardTrackRow';
 import AppIcon from '../components/AppIcon';
+import { ActionButton, ScreenHeader } from '../components/ui';
 import { showTrackActions } from '../components/trackActions';
 import { getCurrentApiBase } from '../config';
 import {
@@ -42,7 +42,7 @@ import { useOfflineDownloads } from '../offline/hooks';
 import { refreshBrowseTree } from '../player/browseTree';
 import { playTracks } from '../player/controller';
 import { reportPlayerNotice } from '../player/notices';
-import { colors, metrics } from '../theme';
+import { colors, radii, spacing, typography } from '../theme';
 import {
   assertLibraryRouteCallbacks,
   libraryFollowArtistRoute,
@@ -343,23 +343,6 @@ export default function LibraryScreen(props: LibraryScreenProps) {
       state: libraryQuerySectionState(playlists, playlists.data?.length === 0),
       emptyText: libraryStrings.library.noPlaylists,
       onRetry: () => void playlists.refetch(),
-      action: (
-        <View style={styles.actionRow}>
-          <Pressable
-            testID="library-create-playlist"
-            accessibilityRole="button"
-            accessibilityLabel={libraryStrings.library.createPlaylist}
-            onPress={() => {
-              setCreateVisible(true);
-              createPlaylist.reset();
-            }}
-            style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}
-          >
-            <AppIcon name="plus" color={colors.onAccent} size={20} />
-            <Text style={styles.primaryActionText}>{libraryStrings.library.createPlaylist}</Text>
-          </Pressable>
-        </View>
-      ),
     },
     liked: {
       title: libraryStrings.library.likedTracks,
@@ -437,7 +420,7 @@ export default function LibraryScreen(props: LibraryScreenProps) {
           >
             <AppIcon
               name="heart"
-              color={colors.onAccent}
+              color={colors.accentSoft}
               size={21}
               style={styles.collectionGlyph}
             />
@@ -527,12 +510,22 @@ export default function LibraryScreen(props: LibraryScreenProps) {
         onRefresh={refresh}
         header={
           <View style={styles.listHeader}>
-            <View style={styles.hero}>
-              <Text testID="library-title" accessibilityRole="header" style={styles.title}>
-                {libraryStrings.library.title}
-              </Text>
-              <Text style={styles.subtitle}>{libraryStrings.library.subtitle}</Text>
-            </View>
+            <ScreenHeader
+              titleTestID="library-title"
+              title={libraryStrings.library.title}
+              subtitle={libraryStrings.library.subtitle}
+              style={styles.hero}
+            />
+            <ActionButton
+              testID="library-create-playlist"
+              label={libraryStrings.library.createPlaylist}
+              icon="plus"
+              onPress={() => {
+                setCreateVisible(true);
+                createPlaylist.reset();
+              }}
+              style={styles.createAction}
+            />
             {runtimeError !== null ? (
               <Text
                 testID="library-runtime-error"
@@ -548,217 +541,94 @@ export default function LibraryScreen(props: LibraryScreenProps) {
         renderItem={renderLibraryItem}
       />
 
-      <Modal
+      <LibraryCreatePlaylistDialog
         visible={createVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={closeCreate}
-      >
-        <View testID="library-create-modal" style={styles.modalBackdrop}>
-          <View accessibilityViewIsModal style={styles.modalCard}>
-            <Text accessibilityRole="header" style={styles.modalTitle}>
-              {libraryStrings.library.createTitle}
-            </Text>
-            <TextInput
-              testID="library-create-name"
-              accessibilityLabel={libraryStrings.library.name}
-              placeholder={libraryStrings.library.name}
-              placeholderTextColor={colors.textSecondary}
-              value={createName}
-              onChangeText={setCreateName}
-              editable={!createPlaylist.isPending}
-              autoFocus
-              maxLength={120}
-              style={styles.input}
-            />
-            <TextInput
-              testID="library-create-description"
-              accessibilityLabel={libraryStrings.library.description}
-              placeholder={libraryStrings.library.description}
-              placeholderTextColor={colors.textSecondary}
-              value={createDescription}
-              onChangeText={setCreateDescription}
-              editable={!createPlaylist.isPending}
-              multiline
-              maxLength={500}
-              style={[styles.input, styles.descriptionInput]}
-            />
-            {createValidation !== null || createPlaylist.error !== null ? (
-              <Text
-                testID="library-create-error"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="assertive"
-                style={styles.errorText}
-              >
-                {createValidation ?? libraryStrings.library.createFailed}
-              </Text>
-            ) : null}
-            <View style={styles.modalActions}>
-              <Pressable
-                testID="library-create-cancel"
-                accessibilityRole="button"
-                accessibilityLabel={libraryStrings.common.cancel}
-                disabled={createPlaylist.isPending}
-                onPress={closeCreate}
-                style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
-              >
-                <Text style={styles.secondaryActionText}>{libraryStrings.common.cancel}</Text>
-              </Pressable>
-              <Pressable
-                testID="library-create-submit"
-                accessibilityRole="button"
-                accessibilityLabel={
-                  createPlaylist.isPending
-                    ? libraryStrings.library.creating
-                    : libraryStrings.library.createPlaylist
-                }
-                accessibilityState={{ disabled: createPlaylist.isPending, busy: createPlaylist.isPending }}
-                disabled={createPlaylist.isPending}
-                onPress={submitCreate}
-                style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}
-              >
-                <Text style={styles.primaryActionText}>
-                  {createPlaylist.isPending
-                    ? libraryStrings.library.creating
-                    : libraryStrings.library.createPlaylist}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        name={createName}
+        description={createDescription}
+        error={createValidation ?? (createPlaylist.error !== null ? libraryStrings.library.createFailed : null)}
+        busy={createPlaylist.isPending}
+        onNameChange={setCreateName}
+        onDescriptionChange={setCreateDescription}
+        onClose={closeCreate}
+        onSubmit={submitCreate}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  listHeader: { gap: 30 },
-  hero: { gap: 7, paddingHorizontal: 16 },
-  title: { color: colors.textPrimary, fontSize: 32, lineHeight: 38, fontWeight: '900' },
-  subtitle: { color: colors.textSecondary, fontSize: 15, lineHeight: 21, maxWidth: 460 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
+  listHeader: { gap: spacing.lg },
+  hero: { paddingHorizontal: spacing.lg },
+  createAction: { alignSelf: 'flex-start', marginHorizontal: spacing.lg },
+  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: spacing.lg },
   cardStatus: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
   runtimeError: {
+    ...typography.caption,
     color: colors.danger,
-    marginHorizontal: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.dangerSubtle,
   },
   row: {
-    minHeight: 68,
+    minHeight: 76,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 7,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
   },
   rowMeta: { flex: 1, minWidth: 0 },
-  rowTitle: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '700' },
+  rowTitle: { color: colors.textPrimary, fontSize: 15, lineHeight: 21, fontWeight: '600' },
   rowSubtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 2 },
   artwork: {
-    width: 50,
-    height: 50,
-    borderRadius: 7,
+    width: 56,
+    height: 56,
+    borderRadius: radii.md,
     backgroundColor: colors.surfaceElevated,
   },
-  round: { borderRadius: 25 },
+  round: { borderRadius: radii.pill },
   artworkPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderSubtle,
   },
-  artworkGlyph: { color: colors.accentSoft, fontSize: 20 },
-  count: { color: colors.textSecondary, minWidth: 30, textAlign: 'right' },
-  chevron: { color: colors.textSecondary, fontSize: 28 },
-  actionRow: { paddingHorizontal: 16 },
-  primaryAction: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-  },
-  primaryActionText: { color: colors.onAccent, fontSize: 14, fontWeight: '800' },
-  secondaryAction: {
-    minHeight: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceElevated,
-  },
-  secondaryActionText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
+  count: { ...typography.caption, color: colors.textMuted, minWidth: 30, textAlign: 'right' },
   collectionAction: {
     minHeight: 74,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginHorizontal: 16,
-    padding: 12,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceElevated,
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    padding: spacing.sm,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: colors.surface,
   },
   collectionGlyph: {
-    width: 50,
-    height: 50,
-    borderRadius: 7,
-    color: colors.onAccent,
-    backgroundColor: colors.accent,
+    width: 52,
+    height: 52,
+    borderRadius: radii.md,
+    backgroundColor: colors.accentSubtle,
     textAlign: 'center',
-    lineHeight: 50,
+    lineHeight: 52,
     fontSize: 21,
     overflow: 'hidden',
   },
   unavailableCard: {
-    gap: 7,
-    marginHorizontal: 16,
-    padding: 16,
+    gap: spacing.xs,
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceElevated,
-  },
-  unavailableTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  downloadsList: { gap: 2 },
-  partialDownloadText: { color: colors.warning },
-  downloadGlyph: { color: colors.accent, fontSize: 24, fontWeight: '800', paddingRight: 6 },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
-  modalCard: {
-    gap: 14,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 18,
-    backgroundColor: colors.backgroundElevated,
-  },
-  modalTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900' },
-  input: {
-    minHeight: metrics.minimumTouchTarget,
-    color: colors.textPrimary,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.lg,
     backgroundColor: colors.surface,
   },
-  descriptionInput: { minHeight: 92, textAlignVertical: 'top' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  unavailableTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
+  downloadsList: { gap: spacing.xxs },
+  partialDownloadText: { color: colors.warning },
   pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
 });

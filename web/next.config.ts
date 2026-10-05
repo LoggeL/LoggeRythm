@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 const nextConfig: NextConfig = {
+  // Cold audio and generated lyrics need the longest API client deadline.
+  experimental: { proxyTimeout: 300_000 },
   // Pin the workspace root to this project to avoid Next.js inferring a
   // parent directory when multiple lockfiles exist on the machine.
   turbopack: {

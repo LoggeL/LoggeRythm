@@ -14,7 +14,6 @@ import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 import Lyrics from "@/components/Lyrics";
 import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
-import { usePlayerStore } from "@/store/player";
 
 export default function AppShell({
   children,
@@ -29,19 +28,6 @@ export default function AppShell({
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
-
-  // Open the queue panel by default from medium screens up (it docks as a
-  // static sidebar there); it stays collapsible via the player-bar toggle.
-  // Done in an effect (not store init) to stay SSR-safe; mobile is an overlay.
-  // Tracks the breakpoint via matchMedia so crossing it (resize/rotate)
-  // re-evaluates instead of freezing the initial viewport's choice.
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const apply = () => usePlayerStore.getState().setQueueOpen(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
-  }, []);
 
   // Login/register are always reachable (minimal chrome) so users can get in.
   const authRoute = pathname === "/login" || pathname === "/register";
@@ -97,18 +83,21 @@ export default function AppShell({
 
   // Full app — approved users only.
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-background">
+      <a href="#main-content" className="fixed left-4 top-4 z-[150] -translate-y-24 focus:translate-y-0 action-primary">Zum Inhalt</a>
       <PwaBanner />
       <div className="flex flex-1 min-h-0">
         <Sidebar />
         <div className="flex-1 min-w-0 flex flex-col bg-background">
           <main
             ref={mainRef}
+            id="main-content"
+            tabIndex={-1}
             className="flex-1 min-h-0 overflow-y-auto scroll-area"
           >
-            <div className="px-4 sm:px-8 pb-6 max-w-[92rem] mx-auto">
+            <div className="px-5 sm:px-8 xl:px-10 pb-10 max-w-[88rem] mx-auto">
               <TopBar />
-              <div key={pathname} className="animate-in pt-2">
+              <div key={pathname} className="animate-in pt-4 sm:pt-6">
                 {children}
               </div>
             </div>

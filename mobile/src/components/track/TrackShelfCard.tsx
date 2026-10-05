@@ -8,7 +8,7 @@ import { useTrackPresentation } from '../player/TrackPresentationProvider';
 import TrackLikeButton from '../TrackLikeButton';
 import TrackStateIndicator from '../TrackStateIndicator';
 import AppIcon from '../AppIcon';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing } from '../../theme';
 import TrackIdentityLinks from './TrackIdentityLinks';
 import { buildTrackMetadata } from './trackMetadata';
 import type { TrackOccurrenceTarget } from './StandardTrackRow';
@@ -122,24 +122,20 @@ export default function TrackShelfCard({
 }
 
 const styles = StyleSheet.create({
-  card: { width: 176, minHeight: 272, padding: 8, borderRadius: 14 },
+  card: { width: 160, minHeight: 256, borderRadius: radii.md },
   activeCard: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.accent,
+    backgroundColor: colors.accentSubtle,
   },
-  artworkButton: { width: 160, height: 160, borderRadius: 12 },
+  artworkButton: { width: 160, height: 160, borderRadius: radii.md },
   artwork: {
     width: 160,
     height: 160,
-    borderRadius: 12,
+    borderRadius: radii.md,
     backgroundColor: colors.surfaceElevated,
   },
   placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   rankBadge: {
     position: 'absolute',
@@ -153,7 +149,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     color: colors.onAccent,
     backgroundColor: colors.accent,
-    fontWeight: '900',
+    fontWeight: '600',
   },
   playBadge: {
     position: 'absolute',
@@ -164,13 +160,13 @@ const styles = StyleSheet.create({
     borderRadius: metrics.minimumTouchTarget / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(10,10,20,0.86)',
+    backgroundColor: 'rgba(11,12,16,0.86)',
   },
   identityRow: {
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    marginTop: 5,
+    marginTop: spacing.xs,
   },
   actionsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
   action: {

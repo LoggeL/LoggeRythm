@@ -3,7 +3,9 @@ import {
   Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -16,6 +18,7 @@ import { playlistEntryId, type Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import AppIcon from '../components/AppIcon';
+import { ActionButton } from '../components/ui';
 import {
   PlaylistQueryGate,
   PlaylistQueryNotice,
@@ -594,35 +597,37 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         }}
         ListHeaderComponent={
           <View style={styles.header}>
-            <PlaylistArtwork uri={coverUrl} />
-            <View style={styles.headerCopy}>
-              <View style={styles.titleRow}>
-                <Text testID="playlist-title" accessibilityRole="header" style={styles.title}>
-                  {title}
-                </Text>
-                {props.kind === 'playlist' && detail !== undefined ? (
-                  <Pressable
-                    testID="playlist-actions"
-                    accessibilityRole="button"
-                    accessibilityLabel={libraryStrings.playlist.openMenu}
-                    onPress={() => setPlaylistActionsVisible(true)}
-                    style={({ pressed }) => [
-                      styles.playlistActionsButton,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <AppIcon name="dots-vertical" color={colors.textSecondary} size={26} />
-                  </Pressable>
+            <View style={styles.heroIdentity}>
+              <PlaylistArtwork uri={coverUrl} />
+              <View style={styles.headerCopy}>
+                <View style={styles.titleRow}>
+                  <Text testID="playlist-title" accessibilityRole="header" style={styles.title}>
+                    {title}
+                  </Text>
+                  {props.kind === 'playlist' && detail !== undefined ? (
+                    <Pressable
+                      testID="playlist-actions"
+                      accessibilityRole="button"
+                      accessibilityLabel={libraryStrings.playlist.openMenu}
+                      onPress={() => setPlaylistActionsVisible(true)}
+                      style={({ pressed }) => [
+                        styles.playlistActionsButton,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <AppIcon name="dots-vertical" color={colors.textSecondary} size={26} />
+                    </Pressable>
+                  ) : null}
+                </View>
+                {detail?.owner_name ? (
+                  <Text style={styles.status}>{libraryStrings.playlist.byOwner(detail.owner_name)}</Text>
                 ) : null}
+                <Text testID="playlist-track-count" style={styles.status}>
+                  {libraryStrings.common.tracks(tracks.length)}
+                </Text>
               </View>
-              {description !== null ? <Text style={styles.description}>{description}</Text> : null}
-              {detail?.owner_name ? (
-                <Text style={styles.status}>{libraryStrings.playlist.byOwner(detail.owner_name)}</Text>
-              ) : null}
-              <Text testID="playlist-track-count" style={styles.status}>
-                {libraryStrings.common.tracks(tracks.length)}
-              </Text>
             </View>
+            {description !== null ? <Text style={styles.description}>{description}</Text> : null}
 
             {runtimeError !== null ? (
               <Text
@@ -681,16 +686,13 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
             )}
 
             {tracks.length > 0 && (!localFallback || firstLocalPlaybackIndex >= 0) ? (
-              <Pressable
+              <ActionButton
                 testID="playlist-play-all"
-                accessibilityRole="button"
-                accessibilityLabel={libraryStrings.playlist.playAll}
+                label={libraryStrings.playlist.playAll}
+                icon="play"
                 onPress={() => playContext(firstLocalPlaybackIndex)}
-                style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}
-              >
-                <AppIcon name="play" color={colors.onAccent} size={20} />
-                <Text style={styles.primaryActionText}>{libraryStrings.playlist.playAll}</Text>
-              </Pressable>
+                style={styles.playAction}
+              />
             ) : null}
 
             {canEdit && remoteDetail !== undefined ? (
@@ -724,32 +726,22 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
                   />
                 </View>
                 <View style={styles.ownerActions}>
-                  <Pressable
+                  <ActionButton
                     testID="playlist-edit"
-                    accessibilityRole="button"
-                    accessibilityLabel={libraryStrings.playlist.edit}
-                    accessibilityState={{ disabled: mutationPending }}
+                    label={libraryStrings.playlist.edit}
+                    icon="pencil-outline"
+                    variant="secondary"
                     disabled={mutationPending}
                     onPress={openEdit}
-                    style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
-                  >
-                    <Text style={styles.secondaryActionText}>{libraryStrings.playlist.edit}</Text>
-                  </Pressable>
-                  <Pressable
+                  />
+                  <ActionButton
                     testID="playlist-delete"
-                    accessibilityRole="button"
-                    accessibilityLabel={libraryStrings.playlist.delete}
-                    accessibilityState={{ disabled: mutationPending }}
+                    label={libraryStrings.playlist.delete}
+                    icon="delete-outline"
+                    variant="danger"
                     disabled={mutationPending}
                     onPress={confirmDelete}
-                    style={({ pressed }) => [
-                      styles.secondaryAction,
-                      styles.dangerAction,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.dangerText}>{libraryStrings.playlist.delete}</Text>
-                  </Pressable>
+                  />
                 </View>
                 {mutationPending ? (
                   <Text
@@ -811,7 +803,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         <View testID="playlist-actions-modal" style={styles.modalBackdrop}>
           <View accessibilityViewIsModal style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text accessibilityRole="header" style={styles.modalTitle}>
+              <Text accessibilityRole="header" style={[styles.modalTitle, styles.modalHeaderTitle]}>
                 {libraryStrings.playlist.menuTitle}
               </Text>
               <Pressable
@@ -859,7 +851,11 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           if (!updateMutation.isPending) setEditVisible(false);
         }}
       >
-        <View testID="playlist-edit-modal" style={styles.modalBackdrop}>
+        <KeyboardAvoidingView
+          testID="playlist-edit-modal"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalBackdrop}
+        >
           <View accessibilityViewIsModal style={styles.modalCard}>
             <Text accessibilityRole="header" style={styles.modalTitle}>
               {libraryStrings.playlist.editTitle}
@@ -899,41 +895,27 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
               </Text>
             ) : null}
             <View style={styles.modalActions}>
-              <Pressable
+              <ActionButton
                 testID="playlist-edit-cancel"
-                accessibilityRole="button"
-                accessibilityLabel={libraryStrings.common.cancel}
+                label={libraryStrings.common.cancel}
+                variant="ghost"
                 disabled={updateMutation.isPending}
                 onPress={() => setEditVisible(false)}
-                style={({ pressed }) => [styles.secondaryAction, pressed && styles.pressed]}
-              >
-                <Text style={styles.secondaryActionText}>{libraryStrings.common.cancel}</Text>
-              </Pressable>
-              <Pressable
+              />
+              <ActionButton
                 testID="playlist-edit-submit"
-                accessibilityRole="button"
-                accessibilityLabel={
+                label={
                   updateMutation.isPending
                     ? libraryStrings.common.saving
                     : libraryStrings.common.save
                 }
-                accessibilityState={{
-                  disabled: updateMutation.isPending,
-                  busy: updateMutation.isPending,
-                }}
-                disabled={updateMutation.isPending}
+                busy={updateMutation.isPending}
+                icon="check"
                 onPress={submitEdit}
-                style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}
-              >
-                <Text style={styles.primaryActionText}>
-                  {updateMutation.isPending
-                    ? libraryStrings.common.saving
-                    : libraryStrings.common.save}
-                </Text>
-              </Pressable>
+              />
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -942,12 +924,12 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   listContent: { paddingBottom: 144 },
-  header: { gap: 14, padding: 20, alignItems: 'stretch' },
+  header: { gap: 20, padding: 20, paddingTop: 24, alignItems: 'stretch' },
+  heroIdentity: { flexDirection: 'row', alignItems: 'center', gap: 18 },
   heroArtwork: {
-    width: 184,
-    height: 184,
-    alignSelf: 'center',
-    borderRadius: 18,
+    width: 112,
+    height: 112,
+    borderRadius: 14,
     backgroundColor: colors.surfaceElevated,
   },
   artworkPlaceholder: {
@@ -956,38 +938,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  heroGlyph: { color: colors.accentSoft, fontSize: 48 },
-  headerCopy: { gap: 5, alignItems: 'center' },
+  headerCopy: { flex: 1, minWidth: 0, gap: 6 },
   titleRow: {
     width: '100%',
     minHeight: metrics.minimumTouchTarget,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
   },
   title: {
     flexShrink: 1,
     color: colors.textPrimary,
-    fontSize: 30,
-    lineHeight: 36,
-    fontWeight: '900',
-    textAlign: 'center',
+    fontSize: 27,
+    lineHeight: 32,
+    fontWeight: '800',
+    letterSpacing: -0.6,
   },
   playlistActionsButton: {
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+    borderRadius: 12,
   },
-  description: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
+  description: { color: colors.textSecondary, fontSize: 14, lineHeight: 21 },
   status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   runtimeError: {
     color: colors.danger,
-    padding: 12,
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.danger,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
   },
   offlineNotice: {
     gap: 9,
@@ -1000,17 +983,7 @@ const styles = StyleSheet.create({
   offlineNoticeText: { color: colors.warning, fontSize: 13, lineHeight: 19 },
   errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
   empty: { color: colors.textSecondary, textAlign: 'center', marginTop: 32, paddingHorizontal: 20 },
-  primaryAction: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 22,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-  },
-  primaryActionText: { color: colors.onAccent, fontSize: 15, fontWeight: '800' },
+  playAction: { alignSelf: 'flex-start', minWidth: 148 },
   secondaryAction: {
     minHeight: metrics.minimumTouchTarget,
     alignItems: 'center',
@@ -1018,23 +991,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 24,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
   },
   secondaryActionText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
   ownerPanel: {
-    gap: 12,
-    padding: 14,
-    borderWidth: 1,
+    gap: 16,
+    paddingTop: 20,
+    borderTopWidth: 1,
     borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceElevated,
   },
   visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   ownerLabel: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
   ownerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  dangerAction: { borderColor: colors.danger },
-  dangerText: { color: colors.danger, fontSize: 14, fontWeight: '800' },
   trackMeta: { flex: 1, minWidth: 0 },
   trackControls: {
     minHeight: metrics.minimumTouchTarget,
@@ -1050,13 +1019,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconActionText: { color: colors.textSecondary, fontSize: 20, fontWeight: '800' },
   removeAction: { marginLeft: 2 },
-  removeText: { color: colors.danger, fontSize: 24 },
   disabled: { opacity: 0.34 },
   modalBackdrop: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     padding: 20,
     backgroundColor: 'rgba(0,0,0,0.72)',
   },
@@ -1065,11 +1032,12 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: colors.backgroundElevated,
   },
   modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  modalTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '900' },
+  modalTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
+  modalHeaderTitle: { flex: 1 },
   input: {
     minHeight: metrics.minimumTouchTarget,
     color: colors.textPrimary,
@@ -1077,7 +1045,7 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: colors.surface,
   },
   descriptionInput: { minHeight: 92, textAlignVertical: 'top' },

@@ -1,24 +1,24 @@
 "use client";
 
-import { useState } from "react";
-import { useLocalJson } from "@/hooks/useLocalJson";
-import { streamUrl } from "@/lib/api";
+import { useRef, useState } from "react";
+import { readLocalJsonSnapshot, useLocalJson } from "@/hooks/useLocalJson";
+import { assertDownloadEntries, cachePlaylistTracks, clearOfflineCaches, removePlaylistAudio, resolveLegacyDownloadEntries, type DownloadEntry } from "@/lib/offlineDownloads";
+import { api } from "@/lib/api";
 import { refreshDownloadedTracks } from "@/store/downloads";
 import { toast } from "@/store/toast";
 import type { Track } from "@/types";
 
-const AUDIO_CACHE = "sf-audio";
-const IMG_CACHE = "sf-img";
-
-interface DownloadEntry {
-  name: string;
-  total: number;
-  // Cached track ids, so removal can keep tracks shared with other downloaded
-  // playlists. Entries from before this field existed may lack it.
-  trackIds?: string[];
-}
-
+const STORAGE_KEY = "sf_downloads";
 const EMPTY: Record<string, DownloadEntry> = {};
+
+async function refreshAfterFailure(cause: unknown): Promise<never> {
+  try {
+    await refreshDownloadedTracks();
+  } catch (refreshError) {
+    throw new AggregateError([cause, refreshError], `${cause instanceof Error ? cause.message : String(cause)}; ${refreshError instanceof Error ? refreshError.message : String(refreshError)}`);
+  }
+  throw cause;
+}
 
 export interface DownloadProgress {
   id: string;
@@ -33,92 +33,80 @@ export interface DownloadProgress {
  */
 export function useDownloads() {
   const [downloads, setDownloads] = useLocalJson<Record<string, DownloadEntry>>(
-    "sf_downloads",
+    STORAGE_KEY,
     EMPTY,
   );
   const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const activeOperation = useRef(false);
+  assertDownloadEntries(downloads);
 
   const supported = typeof caches !== "undefined";
 
   async function downloadPlaylist(id: string, name: string, tracks: Track[]) {
-    if (!supported || !tracks.length) return;
-    const audio = await caches.open(AUDIO_CACHE);
-    const img = await caches.open(IMG_CACHE);
+    if (activeOperation.current) throw new Error("Ein Offline-Download wird bereits verarbeitet.");
+    activeOperation.current = true;
     setProgress({ id, done: 0, total: tracks.length });
-    let done = 0;
-    // Collect failures instead of skipping silently — a playlist is only
-    // marked "offline" when every track really made it into the cache.
-    const failed: string[] = [];
-    for (const t of tracks) {
-      try {
-        const u = streamUrl(String(t.id));
-        if (!(await audio.match(u))) {
-          const r = await fetch(u, { credentials: "include" });
-          if (!r.ok) {
-            throw new Error(`Server ${r.status}`);
-          }
-          await audio.put(u, r);
-        }
-        if (t.cover && !(await img.match(t.cover))) {
-          try {
-            const cr = await fetch(t.cover, { mode: "no-cors" });
-            await img.put(t.cover, cr);
-          } catch {
-            /* cover optional */
-          }
-        }
-      } catch {
-        failed.push(t.title);
-      }
-      done += 1;
-      setProgress({ id, done, total: tracks.length });
-    }
-    if (failed.length === 0) {
-      // Functional update: the download ran for minutes — merge into the
-      // *current* stored value, not the snapshot from when it started.
+    try {
+      const trackIds = await cachePlaylistTracks(tracks, (done) => setProgress({ id, done, total: tracks.length }));
       setDownloads((current) => ({
         ...current,
-        [id]: {
-          name,
-          total: tracks.length,
-          trackIds: tracks.map((t) => String(t.id)),
-        },
+        [id]: { name, total: tracks.length, trackIds },
       }));
+      await refreshDownloadedTracks();
       toast.success(`„${name}“ ist jetzt offline verfügbar.`);
-    } else {
-      toast.error(
-        `${failed.length} von ${tracks.length} Titeln konnten nicht heruntergeladen werden` +
-          ` (z. B. „${failed[0]}“). „${name}“ ist nicht vollständig offline.`,
-      );
+    } catch (cause) {
+      await refreshAfterFailure(cause);
+    } finally {
+      activeOperation.current = false;
+      setProgress(null);
     }
-    setProgress(null);
-    void refreshDownloadedTracks();
   }
 
-  async function removeDownload(id: string, tracks: Track[]) {
-    if (supported) {
-      // Keep audio that another downloaded playlist still references.
-      const keep = new Set<string>();
-      for (const [otherId, entry] of Object.entries(downloads)) {
-        if (otherId === id) continue;
-        for (const tid of entry.trackIds ?? []) keep.add(tid);
+  async function removeDownload(id: string, tracks?: Track[]) {
+    if (activeOperation.current) throw new Error("Ein Offline-Download wird bereits verarbeitet.");
+    activeOperation.current = true;
+    try {
+      const current = readLocalJsonSnapshot(STORAGE_KEY, EMPTY);
+      const indexed = await resolveLegacyDownloadEntries(current, async (legacyId) => {
+        if (legacyId === id && tracks) return tracks;
+        const playlist = await api.playlist(legacyId);
+        return playlist.tracks;
+      });
+      if (indexed !== current) {
+        setDownloads((latest) => {
+          const next = { ...latest };
+          for (const [legacyId, entry] of Object.entries(indexed)) {
+            if (next[legacyId] && !next[legacyId].trackIds) next[legacyId] = { ...next[legacyId], trackIds: entry.trackIds };
+          }
+          return next;
+        });
       }
-      const audio = await caches.open(AUDIO_CACHE);
-      for (const t of tracks) {
-        if (keep.has(String(t.id))) continue;
-        try {
-          await audio.delete(streamUrl(String(t.id)));
-        } catch {
-          /* ignore */
-        }
-      }
+      await removePlaylistAudio(id, readLocalJsonSnapshot(STORAGE_KEY, EMPTY));
+      setDownloads((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      await refreshDownloadedTracks();
+    } catch (cause) {
+      await refreshAfterFailure(cause);
+    } finally {
+      activeOperation.current = false;
     }
-    setDownloads((current) => {
-      const next = { ...current };
-      delete next[id];
-      return next;
-    });
-    void refreshDownloadedTracks();
+  }
+
+  async function clearAllDownloads() {
+    if (activeOperation.current) throw new Error("Ein Offline-Download wird bereits verarbeitet.");
+    if (!supported) throw new Error("Dieser Browser unterstützt keine Offline-Downloads.");
+    activeOperation.current = true;
+    try {
+      await clearOfflineCaches(() => setDownloads({}));
+      await refreshDownloadedTracks();
+    } catch (cause) {
+      await refreshAfterFailure(cause);
+    } finally {
+      activeOperation.current = false;
+    }
   }
 
   return {
@@ -127,6 +115,7 @@ export function useDownloads() {
     isDownloaded: (id: string) => !!downloads[id],
     downloadPlaylist,
     removeDownload,
+    clearAllDownloads,
     progress,
   };
 }

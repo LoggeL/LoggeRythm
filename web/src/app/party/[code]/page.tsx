@@ -261,13 +261,13 @@ export default function PartyPage({
 
   if (joinError) {
     return (
-      <div className="animate-in max-w-3xl">
-        <p role="alert" className="text-red-400 mb-4">{joinError}</p>
+      <div className="animate-in max-w-3xl space-y-4">
+        <p role="alert" className="error-panel">{joinError}</p>
         <button
           type="button"
           onClick={retryJoin}
           disabled={joining}
-          className="px-5 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-40 press"
+          className="action-primary"
         >
           {joining ? "Beitritt wird versucht…" : "Erneut versuchen"}
         </button>
@@ -279,13 +279,13 @@ export default function PartyPage({
   }
   if (!party) {
     return (
-      <div className="animate-in max-w-3xl">
-        <p role="alert" className="mb-4 text-red-400">{partyLoadError}</p>
+      <div className="animate-in max-w-3xl space-y-4">
+        <p role="alert" className="error-panel">{partyLoadError}</p>
         <button
           type="button"
           onClick={reloadParty}
           disabled={reloading}
-          className="px-5 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-40 press"
+          className="action-primary"
         >
           {reloading ? "Party wird geladen…" : "Erneut laden"}
         </button>
@@ -299,10 +299,11 @@ export default function PartyPage({
 
   return (
     <div className="animate-in">
-      <header className="mb-6">
-        <p className="text-xs uppercase tracking-wide text-muted">Party-Modus</p>
-        <h1 className="text-3xl font-extrabold mb-1">{party.name || "Party"}</h1>
-        <p className="text-sm text-muted">
+      <header className="page-header">
+        <div>
+        <p className="page-eyebrow">Gemeinsam hören</p>
+        <h1 className="page-title">{party.name || "Party"}</h1>
+        <p className="page-description">
           Code: {party.code} ·{" "}
           {isHost ? (
             <span className="text-accent font-medium">Du bist Host</span>
@@ -312,16 +313,17 @@ export default function PartyPage({
             </>
           )}
         </p>
+        </div>
       </header>
 
       {isError && (
-        <div role="alert" className="mb-6 rounded-lg bg-panel p-4">
-          <p className="mb-2 text-sm text-red-400">{partyLoadError}</p>
+        <div role="alert" className="error-panel mb-6">
+          <p className="mb-3 text-sm">{partyLoadError}</p>
           <button
             type="button"
             onClick={reloadParty}
             disabled={reloading}
-            className="text-sm text-foreground underline disabled:opacity-40"
+            className="action-secondary"
           >
             {reloading ? "Party wird geladen…" : "Erneut laden"}
           </button>
@@ -329,7 +331,7 @@ export default function PartyPage({
       )}
 
       {!isHost && (
-        <div className="mb-6 flex items-center gap-2 rounded-lg bg-panel px-4 py-3 text-sm text-muted">
+        <div className="surface-card mb-6 flex items-start gap-3 px-4 py-3 text-sm leading-relaxed text-muted">
           <span aria-hidden="true">🎧</span>
           Der Host steuert die Wiedergabe. Deine Wiedergabe folgt automatisch – du
           kannst weiterhin Songs zur Warteschlange hinzufügen.
@@ -337,13 +339,13 @@ export default function PartyPage({
       )}
 
       {/* Wide screens: queue/search as main column, share/members as sidebar. */}
-      <div className="grid gap-6 items-start lg:grid-cols-[minmax(0,1fr)_22rem]">
-      <aside className="flex flex-col gap-6 min-w-0 lg:order-2">
-      <section className="bg-panel rounded-lg p-4">
-        <p className="text-xs uppercase tracking-wide text-muted mb-2">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <aside className="order-2 flex min-w-0 flex-col gap-5">
+      <section className="surface-card p-4 sm:p-5">
+        <p className="mb-4 text-base font-semibold tracking-tight">
           Teilen
         </p>
-        <div className="mb-4 flex flex-col items-center rounded-lg bg-panel-hover p-4 text-center">
+        <div className="mb-4 flex flex-col items-center rounded-xl border border-border bg-background-elevated p-4 text-center">
           {shareUrl ? (
             <div className="rounded-xl bg-white p-2">
               <QRCodeSVG
@@ -368,33 +370,33 @@ export default function PartyPage({
             Kamera öffnen, QR-Code scannen und direkt mitmachen.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             readOnly
             value={shareUrl}
             aria-label="Einladungslink"
-            className="flex-1 min-w-0 bg-panel-hover rounded px-3 py-2 text-sm text-foreground"
+            className="field-input min-w-0 flex-1 text-xs"
           />
           <button
             type="button"
             onClick={copyLink}
             disabled={!shareUrl}
-            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:cursor-wait disabled:opacity-50 press"
+            className="action-secondary shrink-0 disabled:cursor-wait"
           >
             {copied ? "Kopiert!" : "Kopieren"}
           </button>
         </div>
       </section>
 
-      <section>
-        <p className="text-xs uppercase tracking-wide text-muted mb-2">
+      <section className="surface-card p-4 sm:p-5">
+        <p className="mb-4 text-base font-semibold tracking-tight">
           Mitglieder ({party.members.length})
         </p>
         <div className="flex flex-wrap gap-2">
           {party.members.map((m) => (
             <span
               key={m.name}
-              className="flex items-center gap-2 px-3 py-1 rounded-full bg-panel text-sm text-foreground"
+              className="flex max-w-full items-center gap-2 rounded-xl border border-border bg-background-elevated px-3 py-2 text-sm text-foreground"
             >
               <Avatar src={m.avatar_url} name={m.name} size={28} />
               {m.name}
@@ -407,20 +409,20 @@ export default function PartyPage({
         type="button"
         onClick={onLeave}
         disabled={queueDisabled}
-        className="self-start px-5 py-2 rounded-full bg-panel hover:bg-panel-hover text-foreground text-sm font-semibold disabled:opacity-40 press"
+        className="action-secondary self-start"
       >
         {leaving ? "Party wird verlassen…" : "Party verlassen"}
       </button>
-      {leaveError && <p role="alert" className="text-sm text-red-400">{leaveError}</p>}
+      {leaveError && <p role="alert" className="error-panel">{leaveError}</p>}
       </aside>
 
-      <div className="min-w-0 lg:order-1">
-      {queueError && <p role="alert" className="mb-4 text-sm text-red-400">{queueError}</p>}
-      <section className="mb-8">
-        <p className="text-xs uppercase tracking-wide text-muted mb-2">
+      <div className="order-1 min-w-0 space-y-5">
+      {queueError && <p role="alert" className="error-panel">{queueError}</p>}
+      <section className="surface-card p-4 sm:p-5">
+        <p className="mb-4 text-base font-semibold tracking-tight">
           Songs hinzufügen
         </p>
-        <form onSubmit={runSearch} aria-busy={searching} className="flex items-center gap-2 mb-3">
+        <form onSubmit={runSearch} aria-busy={searching} className="mb-4 flex flex-col items-stretch gap-2 sm:flex-row">
           <input
             value={q}
             onChange={(e) => {
@@ -433,42 +435,42 @@ export default function PartyPage({
             }}
             aria-label="Nach Titeln für die Party suchen"
             placeholder="Nach Titeln suchen…"
-            className="flex-1 min-w-0 bg-panel rounded px-3 py-2 text-sm text-foreground placeholder:text-muted"
+            className="field-input min-w-0 flex-1"
           />
           <button
             type="submit"
             disabled={searching || !q.trim()}
-            className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-40 press"
+            className="action-primary shrink-0"
           >
             {searching ? "Sucht…" : "Suchen"}
           </button>
         </form>
         {searching && <p role="status" className="text-sm text-muted">Titel werden gesucht…</p>}
-        {searchError && <p role="alert" className="text-sm text-red-400">{searchError}</p>}
+        {searchError && <p role="alert" className="error-panel">{searchError}</p>}
         {results.length === 0 && searchedTerm && !searching && (
           <p className="text-sm text-muted">
             Keine Treffer für „{searchedTerm}“.
           </p>
         )}
         {results.length > 0 && (
-          <ul className="flex flex-col gap-1">
+          <ul className="mt-4 flex flex-col gap-1">
             {results.map((t) => (
               <li
                 key={t.id}
-                className="flex items-center gap-3 px-2 py-2 rounded-md hover:bg-panel-hover"
+                className="flex flex-wrap items-center gap-3 rounded-xl px-2 py-3 transition hover:bg-panel-hover"
               >
                 {t.cover ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={t.cover}
                     alt=""
-                    className="w-10 h-10 rounded object-cover flex-shrink-0"
+                    className="h-11 w-11 flex-shrink-0 rounded-lg object-cover"
                   />
                 ) : (
-                  <CoverPlaceholder className="w-10 h-10 rounded flex-shrink-0" />
+                  <CoverPlaceholder className="h-11 w-11 flex-shrink-0 rounded-lg" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{t.title}</div>
+                  <div className="truncate text-sm font-medium">{t.title}</div>
                   <div className="truncate text-xs text-muted">
                     {trackArtistLabel(t)}
                   </div>
@@ -482,9 +484,10 @@ export default function PartyPage({
                   )}
                   disabled={queueDisabled}
                   aria-label={`"${t.title}" zur Party hinzufügen`}
-                  className="px-3 py-1 rounded-full bg-panel-hover text-sm hover:bg-accent hover:text-white disabled:opacity-40 press flex-shrink-0"
+                  className="action-secondary ml-auto min-w-11 shrink-0 px-3"
                 >
-                  + Hinzufügen
+                  <span aria-hidden="true">+</span>
+                  <span className="hidden sm:inline">Hinzufügen</span>
                 </button>
               </li>
             ))}
@@ -492,8 +495,8 @@ export default function PartyPage({
         )}
       </section>
 
-      <section aria-busy={queuePending} className="mb-8">
-        <p className="text-xs uppercase tracking-wide text-muted mb-2">
+      <section aria-busy={queuePending} className="surface-card p-4 sm:p-5">
+        <p className="mb-4 text-base font-semibold tracking-tight">
           Warteschlange ({tracks.length})
         </p>
         {queuePending && <p role="status" className="mb-2 text-sm text-muted">Warteschlange wird aktualisiert…</p>}
@@ -506,8 +509,8 @@ export default function PartyPage({
               return (
                 <li
                   key={t.id}
-                  className={`group flex items-center gap-2 px-2 py-2 rounded-md transition hover:bg-panel-hover ${
-                    isCurrent ? "bg-panel-hover" : ""
+                  className={`group flex flex-wrap items-center gap-2 rounded-xl px-3 py-3 transition hover:bg-panel-hover ${
+                    isCurrent ? "bg-accent/10 ring-1 ring-accent/20" : ""
                   }`}
                 >
                   <button
@@ -520,17 +523,17 @@ export default function PartyPage({
                     title={
                       isHost ? "Diesen Song abspielen" : "Nur der Host kann steuern"
                     }
-                    className="flex items-center gap-3 min-w-0 flex-1 text-left disabled:cursor-default"
+                    className="flex min-w-0 flex-1 basis-full items-center gap-3 text-left disabled:cursor-default sm:basis-auto"
                   >
                     {t.cover ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={t.cover}
                         alt=""
-                        className="w-10 h-10 rounded object-cover flex-shrink-0"
+                        className="h-11 w-11 flex-shrink-0 rounded-lg object-cover"
                       />
                     ) : (
-                      <CoverPlaceholder className="w-10 h-10 rounded flex-shrink-0" />
+                      <CoverPlaceholder className="h-11 w-11 flex-shrink-0 rounded-lg" />
                     )}
                     <div className="min-w-0">
                       <div
@@ -552,12 +555,12 @@ export default function PartyPage({
                     </span>
                   )}
 
-                  <span className="text-xs text-muted tabular-nums">
+                  <span className="mr-auto pl-14 text-xs tabular-nums text-muted sm:mr-0 sm:pl-0">
                     {formatTime(t.duration_sec)}
                   </span>
 
                   {isHost && (
-                    <div className="flex items-center flex-shrink-0">
+                    <div className="ml-auto flex flex-shrink-0 items-center gap-1">
                       <button
                         type="button"
                         onClick={() => mutateQueue(
@@ -566,7 +569,7 @@ export default function PartyPage({
                         )}
                         disabled={i === 0 || queueDisabled}
                         aria-label={`"${t.title}" nach oben verschieben`}
-                        className="min-w-8 min-h-9 text-muted hover:text-foreground px-1 disabled:opacity-30"
+                        className="action-icon h-11 w-11 disabled:opacity-30"
                       >
                         ↑
                       </button>
@@ -578,7 +581,7 @@ export default function PartyPage({
                         )}
                         disabled={i === tracks.length - 1 || queueDisabled}
                         aria-label={`"${t.title}" nach unten verschieben`}
-                        className="min-w-8 min-h-9 text-muted hover:text-foreground px-1 disabled:opacity-30"
+                        className="action-icon h-11 w-11 disabled:opacity-30"
                       >
                         ↓
                       </button>
@@ -590,7 +593,7 @@ export default function PartyPage({
                         )}
                         disabled={queueDisabled}
                         aria-label={`"${t.title}" aus der Party entfernen`}
-                        className="min-w-8 min-h-9 text-muted hover:text-foreground px-1 disabled:opacity-30"
+                        className="action-icon h-11 w-11 disabled:opacity-30"
                       >
                         ✕
                       </button>

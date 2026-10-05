@@ -345,6 +345,102 @@ class LoggeRythmPersistedPlayerCoordinatorTest {
   }
 
   @Test
+  fun restoreAndSignedOutClearShareTheSameVerifiedCacheOperation() {
+    val completions = mutableListOf<(Result<LoggeRythmCacheClearResult>) -> Unit>()
+    val shared = LoggeRythmSharedCacheClear { completions += it }
+    val results = mutableListOf<Result<LoggeRythmCacheClearResult>>()
+    shared.clear { results += it }
+    shared.clear { results += it }
+    assertEquals(1, completions.size)
+    assertTrue(results.isEmpty())
+
+    val verified = LoggeRythmCacheClearResult(20L, 0L, 2, true)
+    completions.single()(Result.success(verified))
+    assertEquals(listOf(verified, verified), results.map { it.getOrThrow() })
+
+    shared.clear { results += it }
+    assertEquals(2, completions.size)
+    completions.first()(Result.failure(IllegalStateException("late-old-completion")))
+    assertEquals(2, results.size)
+    completions.last()(Result.success(verified))
+    assertEquals(3, results.size)
+  }
+
+  @Test
+  fun joinedCacheClearWaitersAllReceiveTheActualFailure() {
+    var complete: ((Result<LoggeRythmCacheClearResult>) -> Unit)? = null
+    val shared = LoggeRythmSharedCacheClear { complete = it }
+    val results = mutableListOf<Result<LoggeRythmCacheClearResult>>()
+    shared.clear { results += it }
+    shared.clear { results += it }
+    val failure = LoggeRythmCacheException("player-cache-clear-unverified")
+
+    checkNotNull(complete)(Result.failure(failure))
+
+    assertEquals(2, results.size)
+    assertTrue(results.all { it.exceptionOrNull() === failure })
+  }
+
+  @Test
+  fun cacheClearCallbackFailureIsReportedAfterEveryWaiterSettles() {
+    var complete: ((Result<LoggeRythmCacheClearResult>) -> Unit)? = null
+    val shared = LoggeRythmSharedCacheClear { complete = it }
+    var secondSettled = false
+    shared.clear { throw IllegalStateException("first-callback-failed") }
+    shared.clear { secondSettled = it.isSuccess }
+
+    val error = runCatching {
+      checkNotNull(complete)(Result.success(LoggeRythmCacheClearResult(0L, 0L, 0, true)))
+    }.exceptionOrNull()
+
+    assertTrue(secondSettled)
+    assertEquals("player-cache-clear-callback-failed", error?.message)
+    assertEquals("first-callback-failed", error?.cause?.message)
+  }
+
+  @Test
+  fun signedOutClearInterruptsColdNotificationRestoreAndItsDeferredBinding() {
+    val gate = LoggeRythmPersistedBoundaryGate()
+    val generation = LoggeRythmPersistedGeneration()
+    val restoreTicket = generation.advance()
+    val results = mutableListOf<String?>()
+
+    gate.admitRestore { results += persistedCode(it.exceptionOrNull()) }.getOrThrow()
+    gate.admitBind(binding(42)) { results += persistedCode(it.exceptionOrNull()) }.getOrThrow()
+    assertTrue(gate.managesActiveBoundary())
+
+    generation.advance()
+    gate.cancelForDestructiveClear()
+    // The owner's generation fence rejects the late encrypted load/restore completion.
+    if (generation.isCurrent(restoreTicket)) {
+      gate.finishService(Result.success(true), Result.success(Unit))
+    }
+
+    assertFalse(gate.managesActiveBoundary())
+    assertNull(gate.deferredServiceBinding())
+    assertEquals(listOf("player-session-cleared", "player-session-cleared"), results)
+    assertEquals(
+      LoggeRythmPersistedBoundaryGate.BindAdmission.START_EXACT,
+      gate.admitBind(binding(43)) {}.getOrThrow(),
+    )
+  }
+
+  @Test
+  fun destructiveClearSettlesExactBindAndJoinedRestoreWithoutPublishingSuccess() {
+    val gate = LoggeRythmPersistedBoundaryGate()
+    val results = mutableListOf<String?>()
+    gate.admitBind(binding(42)) { results += persistedCode(it.exceptionOrNull()) }.getOrThrow()
+    gate.admitRestore { results += persistedCode(it.exceptionOrNull()) }.getOrThrow()
+
+    gate.cancelForDestructiveClear()
+    gate.finishExact(Result.success(Unit), restored = true)
+    gate.cancelForDestructiveClear()
+
+    assertFalse(gate.managesActiveBoundary())
+    assertEquals(listOf("player-session-cleared", "player-session-cleared"), results)
+  }
+
+  @Test
   fun closeSettlesEveryQueuedBoundaryCallbackExactlyOnce() {
     val gate = LoggeRythmPersistedBoundaryGate()
     val calls = AtomicInteger()

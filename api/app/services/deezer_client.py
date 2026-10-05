@@ -45,6 +45,9 @@ class DecryptFailed(DeezerClientError):
 
 
 # --- session lifecycle ----------------------------------------------------
+_HEALTH_TIMEOUT = (3, 5)
+
+
 def init_session() -> None:
     """Initialize the global Deezer session from env config (call on startup)."""
     # Fail loud: an empty ARL means authenticated calls will silently break
@@ -58,11 +61,18 @@ def init_session() -> None:
 
 
 def health() -> bool:
-    """Return True if the Deezer login (ARL) still works."""
+    """Validate account playback rights within the web proxy's deadline.
+
+    A particular song's page availability does not determine account health.
+    Keep provider failures visible instead of reporting an ambiguous False.
+    """
     try:
-        return bool(deezer.test_deezer_login())
-    except Exception:  # noqa: BLE001 — health must never raise
-        return False
+        deezer.get_user_data(timeout=_HEALTH_TIMEOUT)
+    except deezer.Deezer403Exception as exc:
+        raise AuthExpired(str(exc)) from exc
+    except deezer.DeezerApiException as exc:
+        raise DeezerClientError(f"Deezer account health check failed: {exc}") from exc
+    return True
 
 
 # --- normalization --------------------------------------------------------
@@ -586,10 +596,14 @@ def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
     return results[0] if results else None
 
 
-def album_detail(album_id: str) -> dict:
+def album_detail(album_id: str, *, track_limit: int | None = None) -> dict:
+    if track_limit is not None and track_limit < 1:
+        raise ValueError("Album track_limit must be positive")
     data = _public_get(f"/album/{album_id}")
     artist = data.get("artist") or {}
     tracks = (data.get("tracks") or {}).get("data") or []
+    if track_limit is not None:
+        tracks = tracks[:track_limit]
     norm_tracks = []
     for t in tracks:
         # album/{id} track items omit the album object; inject it.

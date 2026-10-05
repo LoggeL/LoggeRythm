@@ -26,7 +26,7 @@ import {
   PRODUCTION_API_BASE,
 } from '../config';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, metrics, radii, spacing, typography } from '../theme';
 
 type AuthMode = 'sign-in' | 'create-account';
 
@@ -212,10 +212,12 @@ export default function LoginScreen() {
       >
         <View testID="auth-card" style={styles.card}>
           <BrandLockup style={styles.logo} />
+          <Text accessibilityRole="header" style={styles.title}>{submitLabel}</Text>
           <Text style={styles.subtitle}>
             {creatingAccount ? strings.auth.createAccountSubtitle : strings.auth.signInSubtitle}
           </Text>
 
+          <Text style={styles.label}>{strings.auth.server}</Text>
           <TextInput
             testID="login-server"
             accessibilityLabel={strings.auth.server}
@@ -241,6 +243,8 @@ export default function LoginScreen() {
           ) : null}
 
           {creatingAccount && (
+            <View style={styles.field}>
+            <Text style={styles.label}>{strings.auth.displayName}</Text>
             <TextInput
               testID="register-display-name"
               accessibilityLabel={strings.auth.displayName}
@@ -254,7 +258,9 @@ export default function LoginScreen() {
               returnKeyType="next"
               editable={!busy}
             />
+            </View>
           )}
+          <Text style={styles.label}>{strings.auth.email}</Text>
           <TextInput
             testID="login-email"
             accessibilityLabel={strings.auth.email}
@@ -269,6 +275,7 @@ export default function LoginScreen() {
             returnKeyType="next"
             editable={!busy}
           />
+          <Text style={styles.label}>{strings.auth.password}</Text>
           <TextInput
             testID="login-password"
             accessibilityLabel={strings.auth.password}
@@ -285,6 +292,7 @@ export default function LoginScreen() {
           />
           {creatingAccount && (
             <>
+              <Text style={styles.label}>{strings.auth.confirmPassword}</Text>
               <TextInput
                 testID="register-confirm-password"
                 accessibilityLabel={strings.auth.confirmPassword}
@@ -298,6 +306,7 @@ export default function LoginScreen() {
                 returnKeyType="next"
                 editable={!busy}
               />
+              <Text style={styles.label}>{strings.auth.inviteOptional}</Text>
               <TextInput
                 testID="register-invite"
                 accessibilityLabel={strings.auth.inviteOptional}
@@ -367,31 +376,38 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { gap: 12, width: '100%', maxWidth: 520 },
-  logo: { marginBottom: 4 },
-  subtitle: { color: colors.textSecondary, fontSize: 15, textAlign: 'center', marginBottom: 12 },
-  serverHint: { color: colors.textSecondary, fontSize: 12, marginTop: -6, marginBottom: 2 },
+  card: { gap: spacing.xs, width: '100%', maxWidth: 440 },
+  logo: { marginBottom: spacing.lg },
+  title: { ...typography.title, color: colors.textPrimary },
+  subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.md },
+  field: { gap: spacing.xs },
+  label: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', marginTop: spacing.xs },
+  serverHint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xxs, marginBottom: spacing.xs },
   serverSwitchNotice: { color: colors.warning, fontSize: 13, lineHeight: 19 },
   input: {
     backgroundColor: colors.surface,
     color: colors.textPrimary,
-    borderRadius: 10,
-    paddingHorizontal: 14,
+    minHeight: metrics.minimumTouchTarget,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontSize: 16,
   },
-  error: { color: colors.danger, fontSize: 13 },
+  error: { color: colors.danger, fontSize: 13, lineHeight: 19, padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.dangerSubtle },
   busyStatus: { minHeight: 28, alignItems: 'center', justifyContent: 'center' },
   busyText: { color: colors.textSecondary, fontSize: 13 },
   button: {
-    backgroundColor: colors.accent,
-    borderRadius: 24,
+    backgroundColor: colors.accentSolid,
+    borderRadius: radii.md,
     minHeight: metrics.minimumTouchTarget,
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    marginTop: spacing.md,
   },
   buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: colors.onAccent, fontSize: 16, fontWeight: '700' },
+  buttonText: { ...typography.label, color: colors.onAccent },
   modeToggle: { minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  modeToggleText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  modeToggleText: { ...typography.label, color: colors.accentSoft },
 });

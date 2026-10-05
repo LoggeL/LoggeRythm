@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Track } from "@/types";
+import { readLocalJsonSnapshot, writeLocalJsonValue } from "@/hooks/useLocalJson";
 import {
   clearUpcomingItems,
   demoteOvertakenManualItems,
@@ -24,30 +25,43 @@ export interface PartyBridge {
 
 const RECENT_KEY = "sf_recent_tracks";
 const RECENT_MAX = 30;
+const EMPTY_RECENT: Track[] = [];
 
-function pushRecent(track: Track) {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = window.localStorage.getItem(RECENT_KEY);
-    const list: Track[] = raw ? JSON.parse(raw) : [];
-    const next = [track, ...list.filter((t) => String(t.id) !== String(track.id))].slice(
-      0,
-      RECENT_MAX,
-    );
-    window.localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    // ignore storage errors
+export function assertRecentTracks(value: unknown): asserts value is Track[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`Lokale Daten "${RECENT_KEY}": Eine Liste zuletzt gehörter Titel wurde erwartet.`);
+  }
+  for (const [index, track] of value.entries()) {
+    if (
+      !track || typeof track !== "object" ||
+      typeof track.id !== "string" || track.id.trim() === "" ||
+      typeof track.title !== "string" ||
+      typeof track.artist !== "string" ||
+      typeof track.album !== "string" ||
+      typeof track.cover !== "string" ||
+      typeof track.duration_sec !== "number" || !Number.isFinite(track.duration_sec) || track.duration_sec < 0 ||
+      (track.artists !== undefined && (!Array.isArray(track.artists) || track.artists.some((artist: unknown) =>
+        !artist || typeof artist !== "object" || !("id" in artist) ||
+        (typeof artist.id !== "string" && typeof artist.id !== "number") ||
+        !("name" in artist) || typeof artist.name !== "string")))
+    ) {
+      throw new Error(`Lokale Daten "${RECENT_KEY}": Titel an Position ${index + 1} hat ein ungültiges Format.`);
+    }
   }
 }
 
+function pushRecent(track: Track) {
+  if (typeof window === "undefined") return;
+  assertRecentTracks([track]);
+  const list = getRecentTracks();
+  const next = [track, ...list.filter((t) => String(t.id) !== String(track.id))].slice(0, RECENT_MAX);
+  writeLocalJsonValue(RECENT_KEY, next);
+}
+
 export function getRecentTracks(): Track[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(RECENT_KEY);
-    return raw ? (JSON.parse(raw) as Track[]) : [];
-  } catch {
-    return [];
-  }
+  const list = readLocalJsonSnapshot(RECENT_KEY, EMPTY_RECENT);
+  assertRecentTracks(list);
+  return list;
 }
 
 // Two-level queue: every queue entry carries an origin. "manual" tracks were

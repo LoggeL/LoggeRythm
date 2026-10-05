@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { useCoverColors } from "@/hooks/useCoverColors";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { hiResCover } from "@/lib/cover";
 import { ChevronDownIcon } from "@/components/icons";
 import CoverColumn from "./CoverColumn";
@@ -11,6 +12,7 @@ import QueuePanel from "./QueuePanel";
 import SimilarPanel from "./SimilarPanel";
 import LyricsPanel from "./LyricsPanel";
 import CompactLyrics from "./CompactLyrics";
+import { SeekBar, TransportRow } from "./Controls";
 import { useSwipeToClose } from "./useSwipeToClose";
 
 type NowPlayingTab = "playing" | "lyrics" | "similar" | "queue";
@@ -25,27 +27,27 @@ const TABS: [NowPlayingTab, string, boolean?][] = [
 
 /**
  * Fullscreen now-playing view. Layout is a single column on mobile (tabbed)
- * and a 2–3 column grid on lg+ (cover | content | queue). The whole view is
- * themed from the cover art via CSS variable overrides; on touch devices it
+ * and a 2–3 column grid on lg+ (cover | content | queue). The view
+ * uses a subtle cover-art backdrop; on touch devices it
  * closes with a swipe-down, on desktop with Escape or the chevron.
  */
 export default function NowPlaying({ onClose }: { onClose: () => void }) {
-  // Fullscreen opens on the lyrics tab by default.
-  const [tab, setTab] = useState<NowPlayingTab>("lyrics");
+  const [tab, setTab] = useState<NowPlayingTab>("playing");
   const track = usePlayerStore(currentTrack);
+  const error = usePlayerStore((s) => s.error);
   const palette = useCoverColors(track?.cover);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const swipeHandlers = useSwipeToClose(rootRef, onClose);
+  useDialogFocus(!!track, rootRef, onClose);
 
-  // Escape closes the fullscreen (desktop parity with the swipe gesture).
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   // The queue tab is mobile-only (desktop shows the queue column); if the
   // viewport grows to lg while it's active, fall back to the playing tab.
@@ -57,28 +59,35 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
     return () => mq.removeEventListener("change", onChange);
   }, [tab]);
 
+  const moveTab = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const visibleTabs = TABS.filter(([, , mobileOnly]) =>
+      !mobileOnly || !window.matchMedia("(min-width: 1024px)").matches,
+    );
+    const current = visibleTabs.findIndex(([key]) => key === tab);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? visibleTabs.length - 1
+      : (current + (event.key === "ArrowRight" ? 1 : -1) + visibleTabs.length) % visibleTabs.length;
+    const key = visibleTabs[next][0];
+    setTab(key);
+    rootRef.current?.querySelector<HTMLButtonElement>(`#now-playing-tab-${key}`)?.focus();
+  };
+
   if (!track) return null;
   const isPlayingView = tab === "playing";
 
-  // Override the accent CSS variables from the cover palette so every
-  // accent-coloured element in the fullscreen (tabs, sliders, play button,
-  // queue highlights, equalizer, active lyric line…) is themed automatically.
-  const accentStyle = palette
-    ? ({
-        "--accent": palette.primary,
-        "--accent-hover": palette.secondary,
-        "--accent-soft": palette.secondary,
-      } as CSSProperties)
-    : undefined;
   const [br, bg, bb] = palette?.rgb ?? [124, 92, 255];
-  const backdropBg = `radial-gradient(120% 80% at 50% -10%, rgba(${br}, ${bg}, ${bb}, 0.22), transparent 55%), linear-gradient(to bottom, rgba(10,10,20,0.55), rgba(10,10,20,0.92))`;
+  const backdropBg = `radial-gradient(100% 80% at 40% 0%, rgba(${br}, ${bg}, ${bb}, 0.1), transparent 60%), linear-gradient(to bottom, rgba(11,12,16,0.84), rgba(11,12,16,0.98))`;
 
   return (
     <div
       ref={rootRef}
-      style={accentStyle}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Vollbildplayer"
       {...swipeHandlers}
-      className="animate-in fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(0.5rem+env(safe-area-inset-top))] md:p-8"
+      className="animate-in fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(0.5rem+env(safe-area-inset-top))] md:p-6 lg:p-8"
     >
       {/* Ambient backdrop from the cover art */}
       {track.cover && (
@@ -88,7 +97,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             src={hiResCover(track.cover)}
             alt=""
             aria-hidden
-            className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-40 blur-3xl saturate-150"
+            className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-15 blur-3xl"
           />
           <div
             aria-hidden
@@ -106,25 +115,24 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
 
       <div className="relative mb-3 flex flex-shrink-0 items-center justify-between md:mb-6">
         <button
+          data-dialog-autofocus
           type="button"
           onClick={onClose}
           aria-label="Schließen"
-          className="grid h-10 w-10 place-items-center rounded-full text-muted transition hover:bg-white/10 hover:text-foreground"
+          className="action-icon h-11 w-11"
         >
           <ChevronDownIcon width={24} height={24} />
         </button>
-        <span className="text-base font-extrabold tracking-tight">
-          <span className="text-foreground">Logge</span>
-          <span className="mx-0.5 text-white/35">|</span>
-          <span className="text-accent">Rythm</span>
-        </span>
-        <span className="w-10" />
+        <span className="text-sm font-medium text-muted">Deine Musik</span>
+        <span className="w-11" />
       </div>
 
       {/* Tab pills — scrollable on narrow screens instead of clipping */}
       <div
         data-np-scroll
-        className="relative mx-auto mb-3 flex max-w-full flex-shrink-0 overflow-x-auto rounded-full bg-white/5 p-1 ring-1 ring-white/10 no-scrollbar md:mb-6"
+        role="tablist"
+        aria-label="Playeransicht"
+        className="relative mx-auto mb-4 flex max-w-full flex-shrink-0 overflow-x-auto rounded-xl border border-border bg-panel p-1 no-scrollbar md:mb-6"
       >
         {TABS.map(([key, label, mobileOnly]) => {
           const active = tab === key;
@@ -132,10 +140,16 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             <button
               key={key}
               type="button"
+              role="tab"
+              id={`now-playing-tab-${key}`}
+              aria-controls="now-playing-panel"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
               onClick={() => setTab(key)}
-              className={`${mobileOnly ? "lg:hidden " : ""}whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition sm:min-w-28 sm:px-5 sm:text-sm ${
+              onKeyDown={moveTab}
+              className={`${mobileOnly ? "lg:hidden " : ""}min-h-10 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:px-4 sm:text-sm ${
                 active
-                  ? "bg-accent text-white shadow-lg shadow-accent/30"
+                  ? "bg-accent/15 text-accent"
                   : "text-muted hover:bg-white/5 hover:text-foreground"
               }`}
             >
@@ -145,8 +159,17 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         })}
       </div>
 
+      {error && (
+        <p role="alert" className="error-panel relative mb-4 max-h-28 flex-shrink-0 overflow-y-auto">
+          {error}
+        </p>
+      )}
+
       <div
-        className={`relative flex min-h-0 flex-1 flex-col lg:grid lg:gap-8 xl:gap-10 ${
+        role="tabpanel"
+        id="now-playing-panel"
+        aria-labelledby={`now-playing-tab-${tab}`}
+        className={`relative flex min-h-0 flex-1 flex-col lg:grid lg:gap-6 xl:gap-8 ${
           isPlayingView
             ? "lg:grid-cols-[minmax(0,2.2fr)_0.9fr]"
             : "lg:grid-cols-[1.05fr_1.2fr_0.9fr]"
@@ -155,7 +178,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         {/* Left grid column (desktop, lyrics/similar tabs) — the playing tab
             uses the full-width PlayingPanel instead. */}
         {!isPlayingView && (
-          <CoverColumn track={track} palette={palette} onClose={onClose} />
+          <CoverColumn track={track} onClose={onClose} />
         )}
 
         {tab === "queue" ? (
@@ -169,7 +192,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
           <PlayingPanel track={track} palette={palette} onClose={onClose} />
         ) : (
           <>
-            <CompactLyrics track={track} palette={palette} onNavigate={onClose} />
+            <CompactLyrics track={track} onNavigate={onClose} />
             <LyricsPanel track={track} />
           </>
         )}
@@ -177,6 +200,12 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         {/* Right: queue (desktop only — third column) */}
         <QueuePanel onClose={onClose} />
       </div>
+      {(tab === "queue" || tab === "similar") && (
+        <div className="relative mt-3 flex-shrink-0 border-t border-border pt-3 lg:hidden">
+          <SeekBar />
+          <TransportRow />
+        </div>
+      )}
     </div>
   );
 }

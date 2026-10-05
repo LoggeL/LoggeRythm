@@ -84,7 +84,7 @@ describe('NowPlayingTabs', () => {
         flexGrow: 1,
         flexShrink: 0,
         minHeight: metrics.minimumTouchTarget,
-        minWidth: 112,
+        minWidth: 76,
       }),
     );
   });

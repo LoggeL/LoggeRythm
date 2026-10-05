@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "bc5ea1cfc285f9e4668e70674c60867bb697afa71c42a4923aeab5b886a4c36b" as const;
+export const GENERATED_OPENAPI_SHA256 = "d9471e98c21c3515a5f2ee8909b7721d12991b741eb4f5cd377cdead9074abb4" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;

@@ -3,10 +3,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import {
+  normalizeCatalogQuery,
+  SEARCH_DEBOUNCE_MS,
+  searchArtistsOptions,
+  searchTracksOptions,
+} from "@/lib/catalogQueries";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { usePlayerStore } from "@/store/player";
-import { SearchIcon, PlayIcon } from "@/components/icons";
+import { SearchIcon, PlayIcon, CloseIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track, ArtistSummary } from "@/types";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -15,6 +20,10 @@ type Row =
   | { kind: "track"; track: Track }
   | { kind: "artist"; artist: ArtistSummary };
 
+function rowKey(row: Row) {
+  return row.kind === "track" ? `track-${row.track.id}` : `artist-${row.artist.id}`;
+}
+
 /**
  * Global ⌘K / Ctrl+K command palette: a search overlay reachable from any
  * route. Arrow keys move the selection, Enter activates (play track / open
@@ -22,37 +31,16 @@ type Row =
  */
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const [debounced, setDebounced] = useState("");
-  const [sel, setSel] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const listId = useId();
-  useDialogFocus(open, panelRef);
-  const router = useRouter();
-  const playQueue = usePlayerStore((s) => s.playQueue);
-
-  // Open on ⌘K / Ctrl+K from anywhere; close on Esc. Reset happens here (not in
-  // an effect) so opening starts from a clean slate.
   useEffect(() => {
-    function reset() {
-      setQ("");
-      setDebounced("");
-      setSel(0);
-    }
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((v) => {
-          if (!v) reset();
-          return !v;
-        });
-      } else if (e.key === "Escape") {
+        setOpen((v) => !v);
+      } else if (e.key === "Escape" && !e.defaultPrevented) {
         setOpen(false);
       }
     }
     function onOpenEvent() {
-      reset();
       setOpen(true);
     }
     window.addEventListener("keydown", onKey);
@@ -63,70 +51,87 @@ export default function CommandPalette() {
     };
   }, []);
 
+  return open ? <PaletteDialog onClose={() => setOpen(false)} /> : null;
+}
+
+// Unmount the observers when closed. A shared route query continues; a request
+// used only by this dialog is cancelled by React Query through its signal.
+function PaletteDialog({ onClose }: { onClose: () => void }) {
+  const [q, setQ] = useState("");
+  const [debounced, setDebounced] = useState("");
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  useDialogFocus(true, panelRef, onClose);
+  const router = useRouter();
+  const playQueue = usePlayerStore((s) => s.playQueue);
+
   // Debounce the query.
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(q.trim()), 220);
+    const id = setTimeout(() => setDebounced(normalizeCatalogQuery(q)), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [q]);
 
-  const tracks = useQuery<Track[]>({
-    queryKey: ["cmdk-tracks", debounced],
-    queryFn: ({ signal }) => api.search(debounced, "track", signal),
-    enabled: open && debounced.length > 1,
+  const tracks = useQuery({
+    ...searchTracksOptions(debounced),
+    enabled: debounced.length > 1,
   });
-  const artists = useQuery<ArtistSummary[]>({
-    queryKey: ["cmdk-artists", debounced],
-    queryFn: ({ signal }) => api.searchArtists(debounced, signal),
-    enabled: open && debounced.length > 1,
+  const artists = useQuery({
+    ...searchArtistsOptions(debounced),
+    enabled: debounced.length > 1,
   });
 
-  const preparing = q.trim() !== debounced;
+  const term = normalizeCatalogQuery(q);
+  const preparing = term !== debounced;
   const rows: Row[] = preparing || debounced.length <= 1 ? [] : [
-    ...(artists.data ?? []).slice(0, 3).map((artist) => ({
+    ...(artists.isError ? [] : artists.data ?? []).slice(0, 3).map((artist) => ({
       kind: "artist" as const,
       artist,
     })),
-    ...(tracks.data ?? []).slice(0, 8).map((track) => ({
+    ...(tracks.isError ? [] : tracks.data ?? []).slice(0, 8).map((track) => ({
       kind: "track" as const,
       track,
     })),
   ];
-  const selected = Math.min(sel, Math.max(rows.length - 1, 0));
+  // A slower artist response can prepend rows. Keep the chosen track selected.
+  const selected = Math.max(rows.findIndex((row) => rowKey(row) === selectedKey), 0);
   useEffect(() => {
     panelRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
   }, [selected, rows.length]);
 
   function activate(row: Row) {
     if (row.kind === "track") {
-      const list = tracks.data ?? [row.track];
-      const idx = list.findIndex((t) => t.id === row.track.id);
-      playQueue(list, idx < 0 ? 0 : idx);
+      const list = tracks.data;
+      if (!list || tracks.isError) throw new Error("Schnellsuche: Die ausgewählten Titel sind nicht verfügbar.");
+      const idx = list.findIndex((t) => String(t.id) === String(row.track.id));
+      if (idx < 0) throw new Error("Schnellsuche: Der ausgewählte Titel fehlt in den aktuellen Ergebnissen.");
+      playQueue(list, idx);
     } else {
       router.push(`/artist/${row.artist.id}`);
     }
-    setOpen(false);
+    onClose();
   }
 
   function onInputKey(e: React.KeyboardEvent) {
     if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setSel((s) => Math.min(s + 1, Math.max(rows.length - 1, 0)));
+      const next = rows[Math.min(selected + 1, Math.max(rows.length - 1, 0))];
+      if (next) setSelectedKey(rowKey(next));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSel((s) => Math.max(s - 1, 0));
+      const next = rows[Math.max(selected - 1, 0)];
+      if (next) setSelectedKey(rowKey(next));
     } else if (e.key === "Enter") {
       e.preventDefault();
       if (rows[selected]) activate(rows[selected]);
     }
   }
 
-  if (!open) return null;
-
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-start justify-center pt-[12vh] px-4 bg-black/60 backdrop-blur-sm"
-      onClick={() => setOpen(false)}
+      className="fixed inset-0 z-[90] flex items-start justify-center px-4 pt-[10dvh] bg-black/70 backdrop-blur-md"
+      onClick={onClose}
     >
       <div
         ref={panelRef}
@@ -134,41 +139,45 @@ export default function CommandPalette() {
         aria-modal="true"
         aria-label="Schnellsuche"
         tabIndex={-1}
-        className="w-full max-w-xl bg-background-elevated border border-white/10 rounded-2xl shadow-2xl overflow-hidden pop-in"
+        className="surface-card w-full max-w-xl shadow-2xl overflow-hidden pop-in"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
           <SearchIcon width={18} height={18} className="text-muted" />
           <input
-            ref={inputRef}
             role="combobox"
             aria-label="Künstler und Songs suchen"
             aria-autocomplete="list"
             aria-controls={listId}
             aria-expanded={rows.length > 0}
             aria-activedescendant={rows.length > 0 ? `${listId}-${selected}` : undefined}
+            data-dialog-autofocus
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
-              setSel(0);
+              setSelectedKey(null);
             }}
             onKeyDown={onInputKey}
             placeholder="Künstler und Songs suchen…"
-            className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted"
+            className="min-w-0 flex-1 bg-transparent outline-none text-foreground placeholder:text-muted"
           />
           <kbd className="hidden sm:block text-[10px] text-muted border border-white/15 rounded px-1.5 py-0.5">
             Esc
           </kbd>
+          <button type="button" aria-label="Schnellsuche schließen" onClick={onClose} className="action-secondary p-2">
+            <CloseIcon width={16} height={16} />
+          </button>
         </div>
 
         <div className="max-h-[50dvh] overflow-y-auto scroll-area py-2">
-          {q.trim().length <= 1 && (
-            <p className="px-4 py-6 text-sm text-muted text-center">
-              Tippe, um zu suchen.
-            </p>
+          {term.length <= 1 && (
+            <div className="px-5 py-10 text-center">
+              <p className="text-sm font-medium">Deine Musik, direkt erreichbar</p>
+              <p className="mt-2 text-sm text-muted">Suche mit mindestens zwei Zeichen nach Titeln oder Künstlern.</p>
+            </div>
           )}
-          {q.trim().length > 1 && (preparing || (!tracks.isError && !artists.isError && rows.length === 0)) && (
-            <p className="px-4 py-6 text-sm text-muted text-center">
+          {term.length > 1 && (preparing || (!tracks.isError && !artists.isError && rows.length === 0)) && (
+            <p role="status" className="px-5 py-8 text-sm text-muted text-center">
               {preparing || tracks.isLoading || artists.isLoading
                 ? "Sucht…"
                 : "Keine Treffer."}
@@ -178,15 +187,15 @@ export default function CommandPalette() {
             { label: "Titel", result: tracks },
             { label: "Künstler", result: artists },
           ].filter(({ result }) => result.isError).map(({ label, result }) => (
-            <div key={label} role="alert" className="px-4 py-3 text-sm text-red-300">
+            <div key={label} role="alert" className="mx-3 my-2 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">
               {label} konnten nicht geladen werden: {result.error?.message}
-              <button type="button" className="ml-3 underline" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
+              <button type="button" className="action-secondary mt-3 block px-3 py-1.5 text-xs" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
             </div>
           ))}
-          <div id={listId} role="listbox" aria-label="Suchergebnisse">
+          <div id={listId} role="listbox" aria-label="Suchergebnisse" aria-busy={preparing || tracks.isFetching || artists.isFetching}>
           {rows.map((row, i) => {
             const active = i === selected;
-            const key = row.kind === "track" ? `t-${row.track.id}` : `a-${row.artist.id}`;
+            const key = rowKey(row);
             return (
               <button
                 key={key}
@@ -195,10 +204,10 @@ export default function CommandPalette() {
                 aria-selected={active}
                 tabIndex={-1}
                 type="button"
-                onMouseEnter={() => setSel(i)}
+                onMouseEnter={() => setSelectedKey(key)}
                 onClick={() => activate(row)}
-                className={`flex items-center gap-3 w-full px-4 py-2 text-left transition ${
-                  active ? "bg-accent/15" : "hover:bg-white/5"
+                className={`flex items-center gap-3 w-full px-5 py-3 text-left transition ${
+                  active ? "bg-white/8" : "hover:bg-white/5"
                 }`}
               >
                 {row.kind === "track" ? (
@@ -208,10 +217,10 @@ export default function CommandPalette() {
                       <img
                         src={row.track.cover}
                         alt=""
-                        className="w-9 h-9 rounded object-cover flex-shrink-0"
+                        className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
                       />
                     ) : (
-                      <CoverPlaceholder className="w-9 h-9 rounded flex-shrink-0" />
+                      <CoverPlaceholder className="w-10 h-10 rounded-lg flex-shrink-0" />
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">
@@ -249,6 +258,10 @@ export default function CommandPalette() {
             );
           })}
           </div>
+        </div>
+        <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-xs text-muted">
+          <span>↑ ↓ auswählen</span>
+          <span>Enter öffnen oder abspielen</span>
         </div>
       </div>
     </div>

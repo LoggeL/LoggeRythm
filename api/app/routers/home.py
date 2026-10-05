@@ -9,9 +9,7 @@ blocking DB session with blocking network calls.
 from __future__ import annotations
 
 import random
-import threading
-import time
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -25,6 +23,9 @@ from ..db.session import get_db
 from ..schemas.track import Track
 from ..services import deezer_client as dc
 from ..services import recommend
+from ..services.discovery import DiscoveryError, run_jobs
+from ..services.lastfm_client import LastfmError
+from ..services.singleflight_cache import SingleFlightTtlCache
 from .errors import to_http
 
 router = APIRouter(prefix="/api/home", tags=["home"])
@@ -168,6 +169,7 @@ def _radar_artist_ids(db: Session, user: User, limit: int = 60) -> list[str]:
 
 
 _RADAR_TRACKS_PER_ARTIST = 2
+_RADAR_MAX_WORKERS = 2
 
 
 def _artist_new_tracks(
@@ -196,7 +198,9 @@ def _artist_new_tracks(
     )
     tracks: list[dict] = []
     for al in recent:
-        detail = dc.album_detail(al["id"])
+        # Full albums can have dozens of songs. Only the remaining radar slots
+        # need performer-credit lookups, so trim before normalizing metadata.
+        detail = dc.album_detail(al["id"], track_limit=_RADAR_TRACKS_PER_ARTIST - len(tracks))
         for t in detail.get("tracks", []):
             # Real Track field (survives serialization) + drives global sort.
             t["release_date"] = detail.get("release_date", "")
@@ -229,7 +233,7 @@ def release_radar(
     cutoff = (date.today() - timedelta(days=90)).isoformat()
     tracks: list[dict] = []
     failures: list[tuple[str, dc.DeezerClientError]] = []
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=_RADAR_MAX_WORKERS) as ex:
         futures = {
             ex.submit(_artist_new_tracks, aid, cutoff, refresh=refresh): aid
             for aid in artist_ids
@@ -244,10 +248,12 @@ def release_radar(
         details = "; ".join(
             f"artist {artist_id}: {error}" for artist_id, error in failures
         )
-        raise dc.DeezerClientError(
+        error = DiscoveryError(
             f"Release Radar failed for {len(failures)} of "
-            f"{len(artist_ids)} artists: {details}"
-        ) from failures[0][1]
+            f"{len(artist_ids)} artists: {details}",
+            failures=tuple(error for _, error in failures),
+        )
+        raise to_http(error) from failures[0][1]
 
     tracks.sort(key=lambda t: t.get("release_date", ""), reverse=True)
     seen: set[str] = set()
@@ -318,7 +324,10 @@ def charts_collections() -> list[Shelf]:
 @router.get("/mood/{tag}", response_model=list[Track])
 def mood(tag: str) -> list[dict]:
     tags = _MOODS.get(tag, [tag])
-    return recommend.tag_top_tracks(tags, 40)
+    try:
+        return recommend.tag_top_tracks(tags, 40)
+    except (dc.DeezerClientError, LastfmError, DiscoveryError) as error:
+        raise to_http(error) from error
 
 
 @router.get("/because-you-listened", response_model=list[Shelf])
@@ -336,11 +345,23 @@ def because_you_listened(
     if user is None:
         return []
 
-    shelves: list[Shelf] = []
-    for artist in _user_top_artists(db, user, limit=3):
-        # Tracks by artists similar to this favourite, resolved to Deezer.
+    # Read seeds on the request thread before provider work starts. SQLAlchemy
+    # sessions must not be passed to these concurrent jobs.
+    artists = _user_top_artists(db, user, limit=3)
+
+    def artist_tracks(artist: str) -> list[dict]:
         names = recommend.similar_artists(artist, 8)
-        tracks = _dedupe(recommend.resolve_queries(names, 24)) if names else []
+        return _dedupe(recommend.resolve_queries(names, 24)) if names else []
+
+    try:
+        results = run_jobs({
+            artist: lambda artist=artist: artist_tracks(artist) for artist in artists
+        }, max_workers=3)
+    except (dc.DeezerClientError, LastfmError, DiscoveryError) as error:
+        raise to_http(error) from error
+
+    shelves: list[Shelf] = []
+    for artist, tracks in results.items():
         if not tracks:
             continue
         shelves.append(
@@ -361,9 +382,9 @@ def because_you_listened(
 # loads (and multiple tabs) don't recompute it every time.
 _MIXES_TTL_SEC = 3600
 _MIXES_CACHE_MAX = 256
-_mixes_cache: dict[str, tuple[float, list[Shelf]]] = {}
-_mixes_inflight: dict[str, Future[list[Shelf]]] = {}
-_mixes_lock = threading.Lock()
+_mixes_cache = SingleFlightTtlCache[str, list[Shelf]](
+    ttl_seconds=_MIXES_TTL_SEC, max_entries=_MIXES_CACHE_MAX, max_inflight=6,
+)
 
 
 @router.get("/mixes", response_model=list[Shelf])
@@ -372,56 +393,32 @@ def mixes(
     db: Session = Depends(get_db),
 ) -> list[Shelf]:
     cache_key = str(user.id) if user is not None else "anon"
-    with _mixes_lock:
-        hit = _mixes_cache.get(cache_key)
-        if hit is not None and time.monotonic() - hit[0] < _MIXES_TTL_SEC:
-            return hit[1]
-        pending = _mixes_inflight.get(cache_key)
-        if pending is None:
-            pending = Future()
-            _mixes_inflight[cache_key] = pending
-            leader = True
-        else:
-            leader = False
-
-    if not leader:
-        return pending.result()
-
     try:
-        shelves = _build_mixes(user, db)
-    except BaseException as error:
-        with _mixes_lock:
-            pending.set_exception(error)
-            del _mixes_inflight[cache_key]
-        raise
-
-    with _mixes_lock:
-        completed_at = time.monotonic()
-        _mixes_cache[cache_key] = (completed_at, shelves)
-        expired = [
-            key for key, (created_at, _) in _mixes_cache.items()
-            if completed_at - created_at >= _MIXES_TTL_SEC
-        ]
-        for key in expired:
-            del _mixes_cache[key]
-        if len(_mixes_cache) > _MIXES_CACHE_MAX:
-            oldest = min(_mixes_cache, key=lambda key: _mixes_cache[key][0])
-            del _mixes_cache[oldest]
-        pending.set_result(shelves)
-        del _mixes_inflight[cache_key]
-    return shelves
+        return _mixes_cache.get(cache_key, lambda: _build_mixes(user, db))
+    except (dc.DeezerClientError, LastfmError, DiscoveryError) as error:
+        raise to_http(error) from error
 
 
 def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
+    seeds = _user_seed_tracks(db, user)[:3] if user is not None else []
+    artists = _user_top_artists(db, user)[:2] if user is not None else []
+    jobs = {
+        f"seed-{index}": lambda title=title, artist=artist: recommend.similar_tracks(artist, title, 12)
+        for index, (title, artist) in enumerate(seeds)
+    }
+    jobs["chill"] = lambda: recommend.tag_top_tracks(_MOODS["chill"], 30)
+    jobs.update({
+        f"artist-{index}": lambda artist=artist: recommend.similar_artists(artist, 8)
+        for index, artist in enumerate(artists)
+    })
+    results = run_jobs(jobs)
     shelves: list[Shelf] = []
 
     # 1) Dein Mix der Woche — similar to the user's most-played seeds.
     if user is not None:
-        seeds = _user_seed_tracks(db, user)
-        pool: list[dict] = []
-        for title, artist in seeds[:3]:
-            pool.extend(recommend.similar_tracks(artist, title, 12))
-        pool = _dedupe(pool)
+        pool = _dedupe([
+            track for index in range(len(seeds)) for track in results[f"seed-{index}"]
+        ])
         if pool:
             random.shuffle(pool)
             shelves.append(
@@ -435,7 +432,7 @@ def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
             )
 
     # 2) Entspannt am Abend — chill mood.
-    chill = recommend.tag_top_tracks(_MOODS["chill"], 30)
+    chill = results["chill"]
     if chill:
         shelves.append(
             Shelf(
@@ -450,9 +447,7 @@ def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
     # 3) Entdecke Neues — tracks from artists similar to the user's favourites.
     discover: list[dict] = []
     if user is not None:
-        names: list[str] = []
-        for artist in _user_top_artists(db, user)[:2]:
-            names.extend(recommend.similar_artists(artist, 8))
+        names = [name for index in range(len(artists)) for name in results[f"artist-{index}"]]
         discover = _dedupe(recommend.resolve_queries(names, 24))
     if not discover:
         discover = recommend.tag_top_tracks(_MOODS["party"], 24)

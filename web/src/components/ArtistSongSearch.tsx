@@ -46,7 +46,7 @@ export default function ArtistSongSearch({
 
   return (
     <section className="mb-10">
-      <h2 className="text-2xl font-bold mb-4">Songs durchsuchen</h2>
+      <h2 className="section-heading mb-4">Songs durchsuchen</h2>
       <div className="relative max-w-xl mb-5">
         <SearchIcon
           className="absolute left-4 top-1/2 -translate-y-1/2 text-muted"
@@ -59,12 +59,12 @@ export default function ArtistSongSearch({
           onChange={(e) => setInput(e.target.value)}
           placeholder={`Songs von ${artistName} suchen…`}
           aria-label={`Songs von ${artistName} suchen`}
-          className="w-full rounded-full bg-white/[0.06] border border-white/10 pl-11 pr-4 py-3 text-[15px] outline-none placeholder:text-muted focus:border-accent focus:bg-white/[0.08] transition"
+          className="field-input w-full pl-11"
         />
       </div>
 
       {query.length > 0 && isError && (
-        <div role="alert" className="mb-4 text-red-300">
+        <div role="alert" className="error-panel mb-4">
           Songs konnten nicht geladen werden: {error.message}
           <button type="button" className="ml-3 underline" disabled={isFetching} onClick={() => void refetch()}>Erneut versuchen</button>
         </div>

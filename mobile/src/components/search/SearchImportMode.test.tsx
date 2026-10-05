@@ -15,6 +15,33 @@ function propsOf(node: React.ReactNode): ElementProps {
 }
 
 describe('Search import constrained-height ownership', () => {
+  it('restarts the import panel for a new shared URL while import mode is already open', () => {
+    const base = {
+      accountScope: 'origin::user:7',
+      chrome: React.createElement('SearchChrome'),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+    };
+    const firstRequest = {
+      id: 10,
+      accountScope: base.accountScope,
+      link: 'https://open.spotify.com/playlist/first',
+      errorCode: null,
+    };
+    const nextRequest = {
+      ...firstRequest,
+      id: 11,
+      link: 'https://open.spotify.com/album/next',
+    };
+    const first = SearchImportMode({ ...base, sharedRequest: firstRequest });
+    const next = SearchImportMode({ ...base, sharedRequest: nextRequest });
+    const manual = SearchImportMode({ ...base, sharedRequest: null });
+
+    expect(next.key).not.toBe(first.key);
+    expect(manual.key).not.toBe(next.key);
+    expect(next.props.sharedRequest).toBe(nextRequest);
+  });
+
   it('puts Search chrome inside the import owner instead of a fixed landscape/keyboard sibling', () => {
     const chrome = React.createElement('SearchChrome', { testID: 'search-chrome' });
     const onOpenAlbum = vi.fn();

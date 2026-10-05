@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 export interface ContextMenuItem {
   label: string;
@@ -26,6 +27,7 @@ export default function ContextMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
+  useDialogFocus(true, ref, onClose, false);
 
   // Clamp to viewport once the menu has measured its real size.
   useLayoutEffect(() => {
@@ -46,9 +48,6 @@ export default function ContextMenu({
   }, [x, y]);
 
   useEffect(() => {
-    const panel = ref.current;
-    const previous = document.activeElement;
-    ref.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]')?.focus();
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
@@ -56,8 +55,8 @@ export default function ContextMenu({
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" || e.key === "Tab") {
-        if (e.key === "Escape") e.preventDefault();
+      if (e.defaultPrevented) return;
+      if (e.key === "Tab") {
         onClose();
         return;
       }
@@ -82,7 +81,6 @@ export default function ContextMenu({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onClose);
       window.removeEventListener("scroll", onScroll, true);
-      if (previous instanceof HTMLElement && previous.isConnected && (panel?.contains(document.activeElement) || document.activeElement === document.body)) previous.focus();
     };
   }, [onClose]);
 
@@ -93,7 +91,7 @@ export default function ContextMenu({
       ref={ref}
       role="menu"
       style={{ left: pos.left, top: pos.top, width: MENU_WIDTH }}
-      className="pop-in fixed z-[100] max-h-[80dvh] overflow-y-auto rounded-md bg-[#282828] border border-white/10 shadow-xl py-1 text-sm"
+      className="pop-in fixed z-[130] max-h-[80dvh] overflow-y-auto rounded-xl bg-panel border border-border shadow-xl py-1.5 text-sm"
     >
       {items.map((it) => (
         <button

@@ -1,7 +1,8 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
+import AppIcon from '../AppIcon';
 import {
   resolveLibrarySectionVisualState,
   type LibrarySectionState,
@@ -190,9 +191,15 @@ export function LibrarySectionFooter(props: LibrarySectionPresentationProps) {
       ) : null}
 
       {visual.notice === 'stale' ? (
-        <Text testID={`${sectionId}-stale`} accessibilityLiveRegion="polite" style={styles.status}>
-          {libraryStrings.common.stale}
-        </Text>
+        <View
+          testID={`${sectionId}-stale`}
+          accessible
+          accessibilityLabel={libraryStrings.common.stale}
+          accessibilityLiveRegion="polite"
+          style={styles.staleMarker}
+        >
+          <AppIcon name="database-check-outline" color={colors.textMuted} size={15} />
+        </View>
       ) : null}
     </View>
   );
@@ -211,39 +218,36 @@ export function LibrarySection(props: LibrarySectionProps) {
 
 const styles = StyleSheet.create({
   section: { gap: 0 },
-  heading: { gap: 9 },
-  contentHeading: { paddingBottom: 9 },
-  footer: { gap: 8, paddingTop: 9 },
+  heading: { gap: spacing.sm },
+  contentHeading: { paddingBottom: spacing.sm },
+  footer: { gap: spacing.xs, paddingTop: spacing.xs },
   title: {
+    ...typography.section,
     color: colors.textPrimary,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '800',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
   },
-  inlineState: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
-  notice: { gap: 8, paddingHorizontal: 16 },
+  inlineState: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg },
+  status: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg },
+  staleMarker: { marginHorizontal: spacing.lg, padding: spacing.xxs, width: 24, borderRadius: radii.sm, backgroundColor: colors.surface },
+  notice: { gap: spacing.xs, paddingHorizontal: spacing.lg },
   warning: { color: colors.warning, fontSize: 13, lineHeight: 19 },
   errorBox: {
-    marginHorizontal: 16,
-    gap: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceElevated,
+    marginHorizontal: spacing.lg,
+    gap: spacing.xs,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.dangerSubtle,
   },
   errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
   retry: {
     alignSelf: 'flex-start',
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    backgroundColor: colors.surfaceElevated,
   },
-  retryText: { color: colors.onAccent, fontWeight: '800' },
+  retryText: { ...typography.label, color: colors.textPrimary },
   pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
   disabled: { opacity: 0.5 },
 });

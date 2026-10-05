@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   // Matches --background from globals.css.
-  themeColor: "#0a0a14",
+  themeColor: "#0b0c10",
   colorScheme: "dark",
 };
 

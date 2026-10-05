@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, useEffectEvent, type RefObject } from "react";
 
 const openDialogs: symbol[] = [];
 const focusableSelector =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** Keep keyboard navigation in the active overlay and restore its trigger. */
-export function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>) {
+export function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>, onClose?: () => void, trapTab = true) {
+  const close = useEffectEvent(() => onClose?.());
+  const canClose = onClose !== undefined;
   useEffect(() => {
     if (!open || !ref.current) return;
     const panel = ref.current;
@@ -22,7 +24,14 @@ export function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>
     (panel.querySelector<HTMLElement>("[data-dialog-autofocus]") ?? focusable()[0] ?? panel).focus();
 
     function onKey(event: KeyboardEvent) {
-      if (event.key !== "Tab" || openDialogs.at(-1) !== token) return;
+      if (openDialogs.at(-1) !== token) return;
+      if (event.key === "Escape" && canClose) {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+        return;
+      }
+      if (event.key !== "Tab" || !trapTab) return;
       const elements = focusable();
       const first = elements[0];
       const last = elements.at(-1);
@@ -50,5 +59,5 @@ export function useDialogFocus(open: boolean, ref: RefObject<HTMLElement | null>
         previous.focus();
       }
     };
-  }, [open, ref]);
+  }, [open, ref, canClose, trapTab]);
 }

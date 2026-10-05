@@ -1,12 +1,13 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
 import {
   resolveRemoteVisualState,
   type RemoteFetchStatus,
   type RemoteNotice,
 } from '../../data/remoteState';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { colors, metrics } from '../../theme';
+import { colors } from '../../theme';
+import { ActionButton } from '../ui/ActionButton';
 
 export interface CatalogQueryVisualState {
   /** A successful response exists, including a successful empty response. */
@@ -27,23 +28,16 @@ interface RetryButtonProps {
 
 function RetryButton({ id, accessibilityLabel, busy, onRetry }: RetryButtonProps) {
   return (
-    <Pressable
+    <ActionButton
       testID={`${id}-retry`}
-      accessibilityRole="button"
+      label={busy ? catalogStrings.common.retrying : catalogStrings.common.retry}
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ busy, disabled: busy }}
-      disabled={busy}
+      busy={busy}
+      icon="refresh"
+      variant="secondary"
       onPress={onRetry}
-      style={({ pressed }) => [
-        styles.retry,
-        busy && styles.disabled,
-        pressed && !busy && styles.pressed,
-      ]}
-    >
-      <Text style={styles.retryText}>
-        {busy ? catalogStrings.common.retrying : catalogStrings.common.retry}
-      </Text>
-    </Pressable>
+      style={styles.retry}
+    />
   );
 }
 
@@ -340,6 +334,7 @@ interface CatalogSectionProps extends CatalogQueryVisualState {
   empty: boolean;
   onRetry: () => void;
   children: React.ReactNode;
+  onLayout?: (event: LayoutChangeEvent) => void;
 }
 
 export function CatalogSection({
@@ -354,13 +349,14 @@ export function CatalogSection({
   error,
   onRetry,
   children,
+  onLayout,
 }: CatalogSectionProps) {
   const state = { hasData, isPending, isFetching, isStale, fetchStatus, error };
   const visual = visualState(state, empty);
   const sectionId = `catalog-section-${id}`;
   const retryLabel = catalogStrings.common.retrySection(title);
   return (
-    <View testID={sectionId} style={styles.section}>
+    <View testID={sectionId} style={styles.section} onLayout={onLayout}>
       <Text accessibilityRole="header" style={styles.heading}>{title}</Text>
       {visual.body === 'loading' ? (
         <View
@@ -440,50 +436,41 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 24,
   },
-  section: { gap: 10 },
+  section: { gap: 14 },
   boundary: { gap: 8 },
   heading: {
     color: colors.textPrimary,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '800',
-    paddingHorizontal: 16,
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    paddingHorizontal: 20,
   },
-  inlineLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 16 },
-  notice: { gap: 8, paddingHorizontal: 16 },
+  inlineLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20 },
+  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 20 },
+  notice: { gap: 10, paddingHorizontal: 20 },
   warning: { color: colors.warning, fontSize: 13, lineHeight: 19 },
   errorBox: {
     alignSelf: 'stretch',
-    marginHorizontal: 16,
+    marginHorizontal: 20,
     borderWidth: 1,
     borderColor: colors.danger,
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: 12,
-    padding: 12,
-    gap: 9,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    padding: 16,
+    gap: 12,
   },
   errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  retry: {
-    minHeight: metrics.minimumTouchTarget,
-    alignSelf: 'flex-start',
-    justifyContent: 'center',
-    borderRadius: 24,
-    paddingHorizontal: 18,
-    backgroundColor: colors.accent,
-  },
-  retryText: { color: colors.onAccent, fontSize: 14, fontWeight: '800' },
-  disabled: { opacity: 0.54 },
+  retry: { alignSelf: 'flex-start' },
   runtimeError: {
     color: colors.danger,
     fontSize: 13,
     lineHeight: 19,
-    marginHorizontal: 16,
-    padding: 12,
+    marginHorizontal: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: colors.danger,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
   },
-  pressed: { opacity: 0.76 },
 });

@@ -34,7 +34,7 @@ export function RowListSkeleton({ count = 8 }: { count?: number }) {
 
 export function DetailHeaderSkeleton() {
   return (
-    <div className="flex items-end gap-6 mb-6">
+    <div className="flex flex-col sm:flex-row items-start sm:items-end gap-6 mb-8">
       <div className="skeleton w-44 h-44 sm:w-48 sm:h-48 rounded-md flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="skeleton h-3 w-16 rounded mb-3" />

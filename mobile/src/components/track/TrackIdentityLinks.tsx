@@ -158,13 +158,13 @@ const styles = StyleSheet.create({
   title: {
     color: colors.textPrimary,
     fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 19,
+    fontWeight: '600',
+    lineHeight: 21,
   },
   details: {
     color: colors.textSecondary,
     fontSize: 12,
-    lineHeight: 17,
+    lineHeight: 18,
   },
   secondary: { color: colors.textSecondary, fontSize: 12 },
   fact: { color: colors.textSecondary, fontSize: 11 },

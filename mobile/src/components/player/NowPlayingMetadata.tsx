@@ -37,13 +37,13 @@ export default function NowPlayingMetadata({
           onPress={onOpenAlbum}
           style={({ pressed }) => [styles.link, pressed && styles.pressed]}
         >
-          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={1}>
+          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={compact ? 1 : 2}>
             {track.title}
           </Text>
         </Pressable>
       ) : (
         <View testID="now-playing-title-text" style={styles.link}>
-          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={1}>
+          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={compact ? 1 : 2}>
             {track.title}
           </Text>
         </View>
@@ -106,10 +106,11 @@ const styles = StyleSheet.create({
     minHeight: metrics.minimumTouchTarget,
     minWidth: metrics.minimumTouchTarget,
     justifyContent: 'center',
+    maxWidth: '100%',
   },
   pressed: { opacity: 0.72 },
-  title: { color: colors.textPrimary, fontSize: 22, fontWeight: '800' },
-  artist: { color: colors.textSecondary, fontSize: 16 },
-  compactTitle: { fontSize: 15 },
-  compactArtist: { fontSize: 13 },
+  title: { color: colors.textPrimary, fontSize: 25, lineHeight: 32, fontWeight: '700', letterSpacing: -0.6 },
+  artist: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
+  compactTitle: { fontSize: 17, lineHeight: 23, letterSpacing: -0.2 },
+  compactArtist: { fontSize: 13, lineHeight: 19 },
 });

@@ -1,0 +1,113 @@
+.hero {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(1.25rem, 3vw, 2.25rem);
+  padding: 0.25rem 0 2rem;
+}
+
+.artwork {
+  position: relative;
+  flex: 0 0 clamp(10rem, 22vw, 14rem);
+  width: clamp(10rem, 22vw, 14rem);
+  aspect-ratio: 1;
+  border-radius: 1rem;
+  background: var(--color-panel);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 22%);
+}
+
+.roundArtwork {
+  border-radius: 50%;
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0.6rem 0 0;
+  font-size: clamp(2rem, 4.5vw, 4.75rem);
+  line-height: 1.06;
+  letter-spacing: -0.045em;
+  overflow-wrap: anywhere;
+}
+
+.description {
+  margin-top: 1rem;
+  max-width: 52rem;
+  color: var(--color-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.metadata {
+  margin-top: 0.75rem;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1.5rem;
+}
+
+.actions > * {
+  max-width: 100%;
+}
+
+.tracks {
+  min-width: 0;
+  border-top: 1px solid var(--color-border);
+  padding-top: 1.25rem;
+}
+
+.trackHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.trackHeading h2 {
+  margin: 0;
+}
+
+.trackCount {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.4rem;
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1.25rem;
+    padding-bottom: 1.5rem;
+  }
+
+  .artwork {
+    flex-basis: auto;
+    width: min(52vw, 12rem);
+  }
+
+  .info {
+    width: 100%;
+  }
+
+  .title {
+    font-size: clamp(2rem, 8vw, 3rem);
+  }
+
+  .actions {
+    margin-top: 1.25rem;
+  }
+}

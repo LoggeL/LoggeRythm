@@ -6,6 +6,7 @@ import { useLyrics } from "@/hooks/useLyrics";
 import { MusicNoteIcon } from "@/components/icons";
 import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import type { Track } from "@/types";
+import LyricsStatus from "./LyricsStatus";
 
 /**
  * Roomy desktop lyrics column: large centered lines, the active one
@@ -19,7 +20,7 @@ export default function LyricsPanel({ track }: { track: Track }) {
   const currentTime = usePlayerStore((s) => s.currentTime);
   const seek = usePlayerStore((s) => s.seek);
   const lyrics = useLyrics(track.artist, track.title, track.id, currentTime);
-  const { lines, active, hasTimedLines, isLoading } = lyrics;
+  const { lines, active, hasTimedLines } = lyrics;
 
   useLayoutEffect(() => {
     const el = activeRef.current;
@@ -51,12 +52,12 @@ export default function LyricsPanel({ track }: { track: Track }) {
     <div className="hidden min-h-0 flex-col lg:flex">
       <span className="mb-4 flex flex-shrink-0 items-center gap-2 text-foreground/90">
         <MusicNoteIcon width={16} height={16} />
-        <span className="text-xs font-semibold uppercase tracking-widest">
-          Lyrics
+        <span className="text-xs font-medium">
+          Songtext
         </span>
         <LyricsVariantToggle lyrics={lyrics} />
       </span>
-      {lines.length > 0 ? (
+      {lines.length > 0 && !lyrics.isError ? (
         <div
           ref={scrollRef}
           data-np-scroll
@@ -75,12 +76,12 @@ export default function LyricsPanel({ track }: { track: Track }) {
                 style={
                   isActive
                     ? undefined
-                    : { opacity: dist === 1 ? 0.6 : dist === 2 ? 0.45 : 0.3 }
+                    : hasTimedLines ? { opacity: dist === 1 ? 0.85 : dist === 2 ? 0.7 : 0.55 } : undefined
                 }
-                className={`block w-full py-2 text-3xl font-bold leading-snug transition-all duration-300 ${
+                className={`block w-full py-3 text-2xl font-semibold leading-snug transition-colors duration-200 xl:text-3xl ${
                   isActive
                     ? "text-[color:var(--accent-soft)]"
-                    : "text-muted hover:opacity-90"
+                    : "text-foreground hover:opacity-90"
                 }`}
               >
                 {line.text || "♪"}
@@ -90,7 +91,7 @@ export default function LyricsPanel({ track }: { track: Track }) {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <p className="text-muted">{isLoading ? "Lädt…" : "Kein Songtext"}</p>
+          <LyricsStatus lyrics={lyrics} />
         </div>
       )}
     </div>

@@ -5,23 +5,15 @@ import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
 import LyricsVariantToggle from "@/components/LyricsVariantToggle";
-import type { CoverPalette } from "@/hooks/useCoverColors";
-import { formatTime } from "@/lib/format";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
-import {
-  PlayIcon,
-  PauseIcon,
-  NextIcon,
-  PrevIcon,
-  MusicNoteIcon,
-} from "@/components/icons";
+import { MusicNoteIcon } from "@/components/icons";
+import { SeekBar, TransportRow } from "./Controls";
+import LyricsStatus from "./LyricsStatus";
 
 interface CompactLyricsProps {
   track: Track;
-  /** Cover-derived palette for the static header-cover glow. */
-  palette?: CoverPalette | null;
   /** Called when a title/artist link navigates, to close the fullscreen view. */
   onNavigate?: () => void;
 }
@@ -34,24 +26,15 @@ interface CompactLyricsProps {
  */
 export default function CompactLyrics({
   track,
-  palette,
   onNavigate,
 }: CompactLyricsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
   const hasPositionedRef = useRef(false);
-  const isPlaying = usePlayerStore((s) => s.isPlaying);
   const currentTime = usePlayerStore((s) => s.currentTime);
-  const duration = usePlayerStore((s) => s.duration);
   const seek = usePlayerStore((s) => s.seek);
-  const toggle = usePlayerStore((s) => s.toggle);
-  const next = usePlayerStore((s) => s.next);
-  const prev = usePlayerStore((s) => s.prev);
-  const coverGlow = palette
-    ? `0 8px 28px rgba(${palette.rgb[0]}, ${palette.rgb[1]}, ${palette.rgb[2]}, 0.28)`
-    : undefined;
   const lyrics = useLyrics(track.artist, track.title, track.id, currentTime);
-  const { lines, active, hasTimedLines, isLoading } = lyrics;
+  const { lines, active, hasTimedLines } = lyrics;
 
   useLayoutEffect(() => {
     const el = activeRef.current;
@@ -80,19 +63,16 @@ export default function CompactLyrics({
   }, [active, lines.length]);
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col lg:hidden">
+    <div className="flex min-h-0 flex-1 flex-col lg:hidden">
       {/* Compact track header */}
       <div className="flex flex-shrink-0 items-center gap-3 pb-3">
-        <div
-          className="h-12 w-12 flex-shrink-0 rounded-lg"
-          style={{ boxShadow: coverGlow }}
-        >
+        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-border">
           {track.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={track.cover}
               alt=""
-              className="h-full w-full rounded-lg object-cover shadow"
+              className="h-full w-full object-cover"
             />
           ) : (
             <CoverPlaceholder className="h-full w-full rounded-lg" />
@@ -116,14 +96,14 @@ export default function CompactLyrics({
       {/* Lyrics label */}
       <div className="flex flex-shrink-0 items-center gap-2 pb-2 text-foreground/90">
         <MusicNoteIcon width={14} height={14} />
-        <span className="text-[11px] font-semibold uppercase tracking-widest">
-          Lyrics
+        <span className="text-xs font-medium">
+          Songtext
         </span>
         <LyricsVariantToggle lyrics={lyrics} />
       </div>
 
       {/* Lyrics */}
-      {lines.length > 0 ? (
+      {lines.length > 0 && !lyrics.isError ? (
         <div
           ref={scrollRef}
           data-np-scroll
@@ -142,10 +122,10 @@ export default function CompactLyrics({
                 style={
                   isActive
                     ? undefined
-                    : { opacity: dist === 1 ? 0.6 : dist === 2 ? 0.45 : 0.3 }
+                    : hasTimedLines ? { opacity: dist === 1 ? 0.85 : dist === 2 ? 0.7 : 0.55 } : undefined
                 }
-                className={`block w-full text-left py-1.5 text-lg font-bold leading-snug transition-all duration-300 ${
-                  isActive ? "text-[color:var(--accent-soft)]" : "text-muted"
+                className={`block w-full py-2 text-left text-xl font-semibold leading-snug transition-colors duration-200 ${
+                  isActive ? "text-accent-soft" : "text-foreground"
                 }`}
               >
                 {line.text || "♪"}
@@ -155,61 +135,14 @@ export default function CompactLyrics({
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <p className="text-muted">{isLoading ? "Lädt…" : "Kein Songtext"}</p>
+          <LyricsStatus lyrics={lyrics} />
         </div>
       )}
 
       {/* Slim transport */}
-      <div className="flex-shrink-0 pt-3">
-        <div className="flex items-center gap-2">
-          <span className="w-9 text-right text-[11px] tabular-nums text-muted">
-            {formatTime(currentTime)}
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={duration || 0}
-            step={0.1}
-            value={Math.min(currentTime, duration || 0)}
-            onChange={(e) => seek(Number(e.target.value))}
-            disabled={!duration}
-            className="flex-1"
-            aria-label="Fortschritt"
-          />
-          <span className="w-9 text-[11px] tabular-nums text-muted">
-            {formatTime(duration)}
-          </span>
-        </div>
-        <div className="mt-1 flex items-center justify-center gap-8">
-          <button
-            type="button"
-            onClick={prev}
-            aria-label="Vorheriger Titel"
-            className="text-muted hover:text-foreground"
-          >
-            <PrevIcon width={26} height={26} />
-          </button>
-          <button
-            type="button"
-            onClick={toggle}
-            aria-label={isPlaying ? "Pause" : "Abspielen"}
-            className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-black shadow-lg transition hover:scale-105"
-          >
-            {isPlaying ? (
-              <PauseIcon width={24} height={24} />
-            ) : (
-              <PlayIcon width={24} height={24} />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={next}
-            aria-label="Nächster Titel"
-            className="text-muted hover:text-foreground"
-          >
-            <NextIcon width={26} height={26} />
-          </button>
-        </div>
+      <div className="flex-shrink-0 border-t border-border pt-3">
+        <SeekBar />
+        <TransportRow />
       </div>
     </div>
   );

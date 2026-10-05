@@ -17,6 +17,9 @@ import { playlistIdFromParam, playlistPath } from "@/lib/slugs";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
 import Modal from "@/components/Modal";
+import CoverPlaceholder from "@/components/CoverPlaceholder";
+import CollectionHero from "../_components/CollectionHero";
+import CollectionTracks from "../_components/CollectionTracks";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import { PlayIcon, EditIcon, TrashIcon } from "@/components/icons";
 
@@ -28,7 +31,8 @@ export default function PlaylistPage({
   const { id: playlistParam } = use(params);
   const id = playlistIdFromParam(playlistParam);
   const router = useRouter();
-  const { data, isLoading, isError, error, refetch, isFetching } = usePlaylist(id);
+  const { data, isLoading, isError, error, refetch, isFetching } =
+    usePlaylist(id);
   const playQueue = usePlayerStore((s) => s.playQueue);
   const removeFromPlaylist = useRemoveFromPlaylist();
   const reorder = useReorderPlaylist();
@@ -36,8 +40,13 @@ export default function PlaylistPage({
   const deletePlaylist = useDeletePlaylist();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
-  const { isDownloaded, downloadPlaylist, removeDownload, progress, supported } =
-    useDownloads();
+  const {
+    isDownloaded,
+    downloadPlaylist,
+    removeDownload,
+    progress,
+    supported,
+  } = useDownloads();
 
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -46,6 +55,10 @@ export default function PlaylistPage({
   const [uploading, setUploading] = useState(false);
   const [visibilityPending, setVisibilityPending] = useState(false);
   const visibilityRequest = useRef(false);
+  const offlineRequest = useRef(false);
+  const [offlinePending, setOfflinePending] = useState<
+    "download" | "remove" | null
+  >(null);
   const [nameError, setNameError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -67,7 +80,9 @@ export default function PlaylistPage({
       qc.invalidateQueries({ queryKey: ["playlists"] });
       toast.success("Cover aktualisiert.");
     } catch (err) {
-      toast.error(`Cover-Upload fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(
+        `Cover-Upload fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       setUploading(false);
     }
@@ -82,14 +97,22 @@ export default function PlaylistPage({
     );
   if (isError && !data)
     return (
-      <div role="alert" className="text-red-400">
+      <div role="alert" className="error-panel">
         Playlist konnte nicht geladen werden: {error.message}
-        <button type="button" disabled={isFetching} onClick={() => void refetch()} className="ml-3 underline disabled:opacity-50">
+        <button
+          type="button"
+          disabled={isFetching}
+          onClick={() => void refetch()}
+          className="ml-3 underline disabled:opacity-50"
+        >
           Erneut versuchen
         </button>
       </div>
     );
-  if (!data) throw new Error("Playlist konnte nicht angezeigt werden: Die API-Antwort enthält keine Daten.");
+  if (!data)
+    throw new Error(
+      "Playlist konnte nicht angezeigt werden: Die API-Antwort enthält keine Daten.",
+    );
 
   const tracks = data.tracks ?? [];
   const isOwner = !!data.is_owner;
@@ -133,12 +156,39 @@ export default function PlaylistPage({
         qc.invalidateQueries({ queryKey: ["playlist", id] }),
         qc.invalidateQueries({ queryKey: ["playlists"] }),
       ]);
-      toast.success(next ? "Playlist ist jetzt öffentlich." : "Playlist ist jetzt privat.");
+      toast.success(
+        next ? "Playlist ist jetzt öffentlich." : "Playlist ist jetzt privat.",
+      );
     } catch (err) {
-      toast.error(`Sichtbarkeit konnte nicht geändert werden: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(
+        `Sichtbarkeit konnte nicht geändert werden: ${err instanceof Error ? err.message : String(err)}`,
+      );
     } finally {
       visibilityRequest.current = false;
       setVisibilityPending(false);
+    }
+  }
+
+  async function toggleOfflineDownload() {
+    if (offlineRequest.current) return;
+    const removing = isDownloaded(id);
+    offlineRequest.current = true;
+    setOfflinePending(removing ? "remove" : "download");
+    try {
+      if (removing) {
+        await removeDownload(id, tracks);
+        toast.info("Offline-Download entfernt.");
+      } else {
+        toast.info("Download gestartet…");
+        await downloadPlaylist(id, data!.name, tracks);
+      }
+    } catch (error) {
+      toast.error(
+        `Offline-Download konnte nicht ${removing ? "entfernt" : "gespeichert"} werden: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      offlineRequest.current = false;
+      setOfflinePending(null);
     }
   }
 
@@ -153,148 +203,161 @@ export default function PlaylistPage({
   return (
     <div className="animate-in">
       {isError && (
-        <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+        <div role="alert" className="error-panel mb-4">
           Playlist konnte nicht aktualisiert werden: {error.message}
-          <button type="button" disabled={isFetching} onClick={() => void refetch()} className="ml-3 underline disabled:opacity-50">
+          <button
+            type="button"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+            className="ml-3 underline disabled:opacity-50"
+          >
             Erneut versuchen
           </button>
         </div>
       )}
-      <header className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6 mb-6">
-        <div className="relative w-40 h-40 flex-shrink-0 group">
-          {data.cover_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.cover_url}
-              alt={data.name}
-              className="w-40 h-40 rounded-md object-cover shadow-xl"
-            />
-          ) : (
-            <div className="w-40 h-40 rounded-md bg-panel-hover flex items-center justify-center text-5xl shadow-xl">
-              ♪
-            </div>
-          )}
-          {isOwner && (
-            <>
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                aria-label="Cover ändern"
-                className="absolute inset-0 rounded-md bg-black/60 opacity-100 sm:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition flex flex-col items-center justify-center gap-1 text-sm font-medium disabled:opacity-100"
-              >
-                <EditIcon />
-                {uploading ? "Lädt…" : "Cover ändern"}
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                onChange={onCoverPick}
-                className="hidden"
-              />
-            </>
-          )}
-          {tracks.length > 0 && (
-            <button
-              type="button"
-              onClick={() => playQueue(tracks, 0, data.name)}
-              aria-label="Alle abspielen"
-              title="Alle abspielen"
-              className="absolute -bottom-3 -right-3 z-10 grid h-12 w-12 place-items-center rounded-full bg-accent text-white shadow-xl shadow-accent/30 transition hover:bg-accent-hover hover:scale-105 press"
-            >
-              <PlayIcon width={22} height={22} />
-            </button>
-          )}
-        </div>
-        <div className="min-w-0 max-w-full">
-          <p className="text-xs uppercase tracking-wide text-muted">Playlist</p>
-          <h1 className="text-4xl font-extrabold mb-2 truncate">{data.name}</h1>
-          {data.description && <p className="text-muted">{data.description}</p>}
-          <p className="text-sm text-muted mt-1">
+      <CollectionHero
+        eyebrow="Playlist"
+        title={data.name}
+        description={data.description}
+        metadata={
+          <>
             {!isOwner && data.owner_name ? `von ${data.owner_name} · ` : ""}
             {tracks.length} Titel
-          </p>
-        </div>
-      </header>
-
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        {tracks.length > 0 && (
-          <a
-            href={playlistExportUrl(id)}
-            download
-            aria-label="Playlist als MP3-ZIP exportieren"
-            title="Playlist als ZIP mit MP3-Dateien exportieren"
-            className="press px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
-          >
-            MP3 exportieren
-          </a>
-        )}
-        {supported && tracks.length > 0 && (
-          progress && progress.id === id ? (
-            <span className="text-sm text-muted">
-              Lädt… {progress.done}/{progress.total}
-            </span>
-          ) : isDownloaded(id) ? (
-            <button
-              type="button"
-              onClick={() => {
-                removeDownload(id, tracks);
-                toast.info("Offline-Download entfernt.");
-              }}
-              className="press px-3 py-1.5 rounded-full border border-accent text-accent text-sm font-medium"
-            >
-              ✓ Offline
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                downloadPlaylist(id, data.name, tracks);
-                toast.info("Download gestartet…");
-              }}
-              className="press px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
-            >
-              Herunterladen
-            </button>
-          )
-        )}
-        {isOwner && (
+          </>
+        }
+        artwork={
+          <>
+            {data.cover_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={data.cover_url}
+                alt={data.name}
+                className="h-full w-full rounded-2xl object-cover"
+              />
+            ) : (
+              <CoverPlaceholder className="h-full w-full rounded-2xl" />
+            )}
+            {isOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  aria-label="Cover ändern"
+                  className="absolute bottom-3 left-3 right-3 flex min-h-10 items-center justify-center gap-2 rounded-lg bg-black/75 px-3 py-2 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-black/90 disabled:cursor-wait disabled:opacity-60"
+                >
+                  <EditIcon width={14} height={14} />
+                  {uploading ? "Lädt…" : "Cover ändern"}
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={onCoverPick}
+                  className="hidden"
+                />
+              </>
+            )}
+          </>
+        }
+        actions={
           <>
             <button
               type="button"
-              onClick={toggleVisibility}
-              disabled={visibilityPending}
-              aria-pressed={data.is_public}
-              title={data.is_public ? "Playlist privat machen" : "Playlist veröffentlichen"}
-              className="px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition disabled:opacity-50 disabled:cursor-wait"
+              onClick={() => playQueue(tracks, 0, data.name)}
+              disabled={tracks.length === 0}
+              className="action-primary"
             >
-              {visibilityPending ? "Wird geändert…" : data.is_public ? "Öffentlich" : "Privat"}
+              <PlayIcon width={18} height={18} /> Alle abspielen
             </button>
-            <button
-              type="button"
-              onClick={startEdit}
-              aria-label="Playlist bearbeiten"
-              title="Bearbeiten"
-              className="text-muted hover:text-foreground p-2 rounded-full hover:bg-panel-hover"
-            >
-              <EditIcon />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                deletePlaylist.reset();
-                setConfirmingDelete(true);
-              }}
-              aria-label="Playlist löschen"
-              title="Löschen"
-              className="text-muted hover:text-red-400 p-2 rounded-full hover:bg-panel-hover"
-            >
-              <TrashIcon />
-            </button>
+            {tracks.length > 0 && (
+              <a
+                href={playlistExportUrl(id)}
+                download
+                aria-label="Playlist als MP3-ZIP exportieren"
+                title="Playlist als ZIP mit MP3-Dateien exportieren"
+                className="action-secondary"
+              >
+                MP3 exportieren
+              </a>
+            )}
+            {supported &&
+              tracks.length > 0 &&
+              (progress && progress.id === id ? (
+                <span role="status" className="text-sm text-muted">
+                  Lädt… {progress.done}/{progress.total}
+                </span>
+              ) : isDownloaded(id) ? (
+                <button
+                  type="button"
+                  onClick={() => void toggleOfflineDownload()}
+                  disabled={offlinePending !== null}
+                  aria-busy={offlinePending === "remove"}
+                  className="action-secondary text-accent-soft"
+                >
+                  {offlinePending === "remove" ? "Wird entfernt…" : "✓ Offline"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void toggleOfflineDownload()}
+                  disabled={offlinePending !== null}
+                  aria-busy={offlinePending !== null}
+                  className="action-secondary"
+                >
+                  {offlinePending === "remove"
+                    ? "Wird entfernt…"
+                    : offlinePending === "download"
+                      ? "Wird gespeichert…"
+                      : "Herunterladen"}
+                </button>
+              ))}
+            {isOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleVisibility}
+                  disabled={visibilityPending}
+                  aria-pressed={data.is_public}
+                  title={
+                    data.is_public
+                      ? "Playlist privat machen"
+                      : "Playlist veröffentlichen"
+                  }
+                  className="action-secondary"
+                >
+                  {visibilityPending
+                    ? "Wird geändert…"
+                    : data.is_public
+                      ? "Öffentlich"
+                      : "Privat"}
+                </button>
+                <button
+                  type="button"
+                  onClick={startEdit}
+                  aria-label="Playlist bearbeiten"
+                  title="Bearbeiten"
+                  className="action-icon"
+                >
+                  <EditIcon />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    deletePlaylist.reset();
+                    setConfirmingDelete(true);
+                  }}
+                  aria-label="Playlist löschen"
+                  title="Löschen"
+                  className="action-icon hover:text-red-400"
+                >
+                  <TrashIcon />
+                </button>
+              </>
+            )}
           </>
-        )}
-      </div>
+        }
+      />
 
       <Modal
         open={confirmingDelete}
@@ -308,14 +371,17 @@ export default function PlaylistPage({
           gemacht werden.
         </p>
         {deletePlaylist.isError && (
-          <p role="alert" className="text-sm text-red-400 mb-4">Playlist konnte nicht gelöscht werden: {deletePlaylist.error.message}</p>
+          <p role="alert" className="text-sm text-red-400 mb-4">
+            Playlist konnte nicht gelöscht werden:{" "}
+            {deletePlaylist.error.message}
+          </p>
         )}
         <div className="flex gap-2 justify-end">
           <button
             type="button"
             onClick={() => setConfirmingDelete(false)}
             disabled={deletePlaylist.isPending}
-            className="px-4 py-2 rounded-full text-muted hover:text-foreground disabled:opacity-50"
+            className="action-secondary"
           >
             Abbrechen
           </button>
@@ -350,9 +416,17 @@ export default function PlaylistPage({
               disabled={updatePlaylist.isPending}
               aria-invalid={nameError ? true : undefined}
               aria-describedby={nameError ? "playlist-name-error" : undefined}
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
+              className="field-input"
             />
-            {nameError && <span id="playlist-name-error" role="alert" className="text-red-400">{nameError}</span>}
+            {nameError && (
+              <span
+                id="playlist-name-error"
+                role="alert"
+                className="text-red-400"
+              >
+                {nameError}
+              </span>
+            )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Beschreibung
@@ -361,25 +435,28 @@ export default function PlaylistPage({
               onChange={(e) => setDescription(e.target.value)}
               disabled={updatePlaylist.isPending}
               rows={2}
-              className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent resize-none"
+              className="field-input resize-none"
             />
           </label>
           {updatePlaylist.isError && (
-            <p role="alert" className="text-sm text-red-400">Playlist konnte nicht gespeichert werden: {updatePlaylist.error.message}</p>
+            <p role="alert" className="text-sm text-red-400">
+              Playlist konnte nicht gespeichert werden:{" "}
+              {updatePlaylist.error.message}
+            </p>
           )}
           <div className="flex gap-2 justify-end">
             <button
               type="button"
               onClick={() => setEditing(false)}
               disabled={updatePlaylist.isPending}
-              className="px-4 py-2 rounded-full text-muted hover:text-foreground disabled:opacity-50"
+              className="action-secondary"
             >
               Abbrechen
             </button>
             <button
               type="submit"
               disabled={updatePlaylist.isPending}
-              className="px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
+              className="action-primary"
             >
               {updatePlaylist.isPending ? "Wird gespeichert…" : "Speichern"}
             </button>
@@ -387,30 +464,37 @@ export default function PlaylistPage({
         </form>
       </Modal>
 
-      {tracks.length === 0 ? (
-        <p className="text-muted">Diese Playlist ist leer.</p>
-      ) : (
-        <div className="flex flex-col">
-          {tracks.map((track, i) => (
-            <TrackRow
-              key={track.id}
-              track={track}
-              index={i}
-              onPlay={() => playQueue(tracks, i, data.name)}
-              onRemove={
-                isOwner
-                  ? () =>
-                      removeFromPlaylist.mutate({ id, deezerId: String(track.id) })
-                  : undefined
-              }
-              onMoveUp={isOwner && i > 0 ? () => move(i, i - 1) : undefined}
-              onMoveDown={
-                isOwner && i < tracks.length - 1 ? () => move(i, i + 1) : undefined
-              }
-            />
-          ))}
-        </div>
-      )}
+      <CollectionTracks count={tracks.length}>
+        {tracks.length === 0 ? (
+          <p className="empty-panel">Diese Playlist ist leer.</p>
+        ) : (
+          <div className="flex flex-col">
+            {tracks.map((track, i) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                index={i}
+                onPlay={() => playQueue(tracks, i, data.name)}
+                onRemove={
+                  isOwner
+                    ? () =>
+                        removeFromPlaylist.mutate({
+                          id,
+                          deezerId: String(track.id),
+                        })
+                    : undefined
+                }
+                onMoveUp={isOwner && i > 0 ? () => move(i, i - 1) : undefined}
+                onMoveDown={
+                  isOwner && i < tracks.length - 1
+                    ? () => move(i, i + 1)
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
+      </CollectionTracks>
     </div>
   );
 }

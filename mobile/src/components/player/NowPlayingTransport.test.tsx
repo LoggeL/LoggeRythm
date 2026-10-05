@@ -37,6 +37,7 @@ function textContent(node: React.ReactNode): string {
 }
 
 function flattenedStyle(value: unknown): Record<string, unknown> {
+  if (typeof value === 'function') return flattenedStyle(value({ pressed: false }));
   const parts = (Array.isArray(value) ? value.flat(Infinity) : [value])
     .filter((part): part is Record<string, unknown> => (
       part !== null && typeof part === 'object' && !Array.isArray(part)

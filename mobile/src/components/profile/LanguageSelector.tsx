@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { strings, type AppLocale } from '../../localization';
 import { useLocale } from '../../localization/LocaleProvider';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing, typography } from '../../theme';
 
 interface LanguageSelectorViewProps {
   locale: AppLocale;
@@ -135,14 +135,12 @@ export default function LanguageSelector() {
 const styles = StyleSheet.create({
   card: {
     gap: 12,
-    padding: 18,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: spacing.md,
+    borderRadius: radii.lg,
     backgroundColor: colors.surface,
   },
-  title: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
-  subtitle: { color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
+  title: { ...typography.section, color: colors.textPrimary },
+  subtitle: { ...typography.body, color: colors.textSecondary },
   options: { flexDirection: 'row', gap: 10 },
   option: {
     minHeight: metrics.minimumTouchTarget,
@@ -152,12 +150,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 9,
     paddingHorizontal: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderRadius: radii.md,
     backgroundColor: colors.surfaceElevated,
   },
-  optionSelected: { borderColor: colors.accent, backgroundColor: colors.surfacePressed },
+  optionSelected: { backgroundColor: colors.accentSubtle },
   indicator: {
     width: 18,
     height: 18,
@@ -169,7 +165,7 @@ const styles = StyleSheet.create({
   },
   indicatorSelected: { borderColor: colors.accent },
   indicatorDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
-  optionText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
+  optionText: { ...typography.label, color: colors.textSecondary },
   optionTextSelected: { color: colors.textPrimary },
   status: { color: colors.textSecondary, fontSize: 13 },
   error: { color: colors.danger, fontSize: 13, lineHeight: 19 },

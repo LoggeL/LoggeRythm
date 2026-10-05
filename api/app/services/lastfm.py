@@ -1,166 +1,112 @@
-"""Last.fm play-count lookups with an in-memory TTL cache.
-
-Last.fm is the only available source of real listen/play numbers (Deezer only
-exposes a popularity ``rank``). Each ``track.getInfo`` call covers one track, so
-lookups are batched, parallelised and cached aggressively to stay well under the
-public API's rate limits.
-"""
-import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
-
-import requests
+"""Last.fm metadata with bounded caches that share successful concurrent loads."""
+from __future__ import annotations
 
 from ..config import LASTFM_API_KEY
+from .discovery import run_jobs
+from .lastfm_client import LastfmError, count_field, get_json, list_objects, object_field
+from .singleflight_cache import SingleFlightTtlCache
 
-_LASTFM = "https://ws.audioscrobbler.com/2.0/"
-_CACHE_TTL = 60 * 60 * 24  # 24h — play counts barely move day to day
-_MAX_WORKERS = 6  # keep bursts under Last.fm's per-key rate limit
-
-# key "artist\ttitle" -> (fetched_at, {plays, listeners} | None)
-_cache: dict[str, tuple[float, dict | None]] = {}
-_lock = threading.Lock()
-
-
-def _now() -> float:
-    return time.monotonic()
+_CACHE_TTL = 60 * 60 * 24
+_MAX_WORKERS = 6
+_track_cache = SingleFlightTtlCache[str, dict | None](
+    ttl_seconds=_CACHE_TTL, max_entries=4096, max_inflight=_MAX_WORKERS,
+)
+_artist_cache = SingleFlightTtlCache[str, dict | None](
+    ttl_seconds=_CACHE_TTL, max_entries=1024, max_inflight=_MAX_WORKERS,
+)
 
 
 def _key(artist: str, title: str) -> str:
-    return f"{artist.strip().lower()}\t{title.strip().lower()}"
+    return f"{artist.strip().casefold()}\t{title.strip().casefold()}"
 
 
 def _get(params: dict) -> dict | None:
-    if not LASTFM_API_KEY:
-        return None
-    try:
-        resp = requests.get(
-            _LASTFM,
-            params={**params, "api_key": LASTFM_API_KEY, "format": "json"},
-            timeout=8,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except (requests.exceptions.RequestException, ValueError):
-        return None
+    seed = " / ".join(str(params[key]) for key in ("artist", "track") if key in params)
+    return get_json(
+        params, api_key=LASTFM_API_KEY, timeout=8,
+        context=f"Metadata ({params['method']}) for {seed!r}", allow_not_found=True,
+    )
 
 
 def _fetch_one(artist: str, title: str) -> dict | None:
-    data = _get(
-        {
-            "method": "track.getInfo",
-            "artist": artist,
-            "track": title,
-            "autocorrect": 1,
-        }
-    )
-    track = (data or {}).get("track") or {}
-    if not track:
+    data = _get({
+        "method": "track.getInfo", "artist": artist,
+        "track": title, "autocorrect": 1,
+    })
+    if data is None:
         return None
-    try:
-        plays = int(track.get("playcount") or 0)
-        listeners = int(track.get("listeners") or 0)
-    except (TypeError, ValueError):
-        return None
-    if plays <= 0 and listeners <= 0:
-        return None
-    return {"plays": plays, "listeners": listeners}
+    context = f"Play counts for {artist!r} / {title!r}"
+    track = object_field(data, "track", context=context)
+    plays = count_field(track, "playcount", context=context)
+    listeners = count_field(track, "listeners", context=context)
+    return {"plays": plays, "listeners": listeners} if plays or listeners else None
 
 
 def plays_for(items: list[dict]) -> dict[str, dict]:
-    """Resolve play counts for ``[{id, artist, title}]`` → ``{id: {plays, listeners}}``.
-
-    Results are cached by artist+title, so the same track requested from several
-    views (or repeated searches) only ever hits Last.fm once per TTL window.
-    """
-    now = _now()
-    out: dict[str, dict] = {}
-    todo: list[dict] = []  # uncached unique (artist,title) with one representative id
-
-    seen_keys: dict[str, list[str]] = {}  # cache key -> ids sharing it
-    for it in items:
-        artist = (it.get("artist") or "").strip()
-        title = (it.get("title") or "").strip()
-        tid = str(it.get("id") or "")
+    """Read unique artist/title keys once and fan each result out to all IDs."""
+    if not LASTFM_API_KEY:
+        return {}
+    seeds: dict[str, tuple[str, str]] = {}
+    ids: dict[str, list[str]] = {}
+    for item in items:
+        artist, title = item.get("artist"), item.get("title")
+        tid = str(item.get("id") or "")
+        # Public requests may omit metadata for tracks not yet resolved. These
+        # are explicitly ineligible for this optional metadata enrichment.
         if not artist or not title or not tid:
             continue
-        k = _key(artist, title)
-        seen_keys.setdefault(k, []).append(tid)
-        with _lock:
-            ent = _cache.get(k)
-        if ent and now - ent[0] < _CACHE_TTL:
-            if ent[1] is not None:
-                out[tid] = ent[1]
-        elif k not in {t["_k"] for t in todo}:
-            todo.append({"_k": k, "artist": artist, "title": title})
+        if not isinstance(artist, str) or not isinstance(title, str):
+            raise ValueError(f"Play-count track {tid!r} requires text artist and title")
+        artist, title = artist.strip(), title.strip()
+        if not artist or not title:
+            continue
+        key = _key(artist, title)
+        seeds.setdefault(key, (artist, title))
+        ids.setdefault(key, []).append(tid)
 
-    if todo and LASTFM_API_KEY:
-        with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-            results = list(
-                pool.map(lambda t: (t["_k"], _fetch_one(t["artist"], t["title"])), todo)
-            )
-        with _lock:
-            for k, res in results:
-                _cache[k] = (now, res)
-        for k, res in results:
-            if res is not None:
-                for tid in seen_keys.get(k, []):
-                    out[tid] = res
-    return out
+    def lookup(key: str) -> dict | None:
+        artist, title = seeds[key]
+        return _track_cache.get(key, lambda: _fetch_one(artist, title))
 
-
-# artist name (lowercased) -> (fetched_at, info | None)
-_artist_cache: dict[str, tuple[float, dict | None]] = {}
+    results = run_jobs({key: lambda key=key: lookup(key) for key in seeds}, max_workers=_MAX_WORKERS)
+    return {tid: value for key, value in results.items() if value is not None for tid in ids[key]}
 
 
 def _clean_bio(raw: str) -> str:
-    """Strip Last.fm's trailing "Read more on Last.fm" link/markup from a bio."""
-    text = raw or ""
-    marker = "<a href"
-    idx = text.find(marker)
-    if idx != -1:
-        text = text[:idx]
-    return text.strip()
+    marker = raw.find("<a href")
+    return (raw[:marker] if marker != -1 else raw).strip()
+
+
+def _fetch_artist(name: str) -> dict | None:
+    data = _get({"method": "artist.getInfo", "artist": name, "autocorrect": 1})
+    if data is None:
+        return None
+    context = f"Artist metadata for {name!r}"
+    artist = object_field(data, "artist", context=context)
+    stats = object_field(artist, "stats", context=context)
+    bio = object_field(artist, "bio", context=context).get("summary")
+    if not isinstance(bio, str):
+        raise LastfmError(f"{context}: Last.fm has no valid bio.summary text")
+    tags = list_objects(artist, "tags", "tag", context=context)
+    names: list[str] = []
+    for tag in tags:
+        value = tag.get("name")
+        if not isinstance(value, str) or not value.strip():
+            raise LastfmError(f"{context}: Last.fm tag has no valid name")
+        names.append(value.strip())
+    return {
+        "bio": _clean_bio(bio),
+        "listeners": count_field(stats, "listeners", context=context),
+        "playcount": count_field(stats, "playcount", context=context),
+        "tags": names[:5],
+    }
 
 
 def artist_info(name: str) -> dict | None:
-    """Last.fm ``artist.getInfo`` → ``{bio, listeners, playcount, tags}``.
-
-    Cached 24h per artist name; returns ``None`` when no key is configured or
-    the artist is unknown.
-    """
-    name = (name or "").strip()
+    """Unknown artists and disabled Last.fm are explicit missing enrichment."""
+    if not LASTFM_API_KEY:
+        return None
+    name = name.strip()
     if not name:
         return None
-    key = name.lower()
-    now = _now()
-    with _lock:
-        ent = _artist_cache.get(key)
-    if ent and now - ent[0] < _CACHE_TTL:
-        return ent[1]
-
-    data = _get({"method": "artist.getInfo", "artist": name, "autocorrect": 1})
-    artist = (data or {}).get("artist") or {}
-    info: dict | None = None
-    if artist:
-        stats = artist.get("stats") or {}
-        bio = (artist.get("bio") or {}).get("summary") or ""
-        tags = [
-            t.get("name", "")
-            for t in ((artist.get("tags") or {}).get("tag") or [])
-            if t.get("name")
-        ]
-        try:
-            listeners = int(stats.get("listeners") or 0)
-            playcount = int(stats.get("playcount") or 0)
-        except (TypeError, ValueError):
-            listeners = playcount = 0
-        info = {
-            "bio": _clean_bio(bio),
-            "listeners": listeners,
-            "playcount": playcount,
-            "tags": tags[:5],
-        }
-    with _lock:
-        _artist_cache[key] = (now, info)
-    return info
+    return _artist_cache.get(name.casefold(), lambda: _fetch_artist(name))

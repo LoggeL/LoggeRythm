@@ -77,20 +77,20 @@ export default function TrackRow({
     <div
       data-track-id={String(track.id)}
       onContextMenu={handleContextMenu}
-      className="like-celebration-surface group grid grid-cols-[2rem_1fr_auto] sm:grid-cols-[2rem_4fr_3fr_auto] items-center gap-3 px-3 py-2 rounded-md hover:bg-panel-hover transition"
+      className={`group grid grid-cols-[2rem_minmax(0,1fr)_auto] ${showAlbum ? "sm:grid-cols-[2rem_minmax(0,4fr)_minmax(0,3fr)_auto]" : ""} items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2.5 rounded-xl hover:bg-panel transition ${isCurrent ? "bg-accent/8" : ""}`}
     >
       {/* index / play */}
-      <div className="w-8 flex items-center justify-center text-muted text-sm">
+      <div className="relative h-9 w-8 flex items-center justify-center text-muted text-sm">
         <button
           type="button"
           onClick={handlePlay}
-          className="hidden group-hover:flex text-foreground"
-          aria-label={playingThis ? "Pause" : "Abspielen"}
+          className="track-row-play absolute inset-0 flex items-center justify-center rounded-lg text-foreground sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus-visible:opacity-100"
+          aria-label={`${playingThis ? "Pausieren" : "Abspielen"}: ${track.title}`}
         >
           {playingThis ? <PauseIcon /> : <PlayIcon />}
         </button>
         <span
-          className={`group-hover:hidden ${
+          className={`track-row-index hidden sm:inline sm:group-hover:invisible sm:group-focus-within:invisible ${
             isCurrent ? "text-accent" : ""
           }`}
         >
@@ -107,10 +107,10 @@ export default function TrackRow({
             alt=""
             width={40}
             height={40}
-            className="w-10 h-10 rounded object-cover flex-shrink-0"
+            className="w-11 h-11 rounded-lg object-cover flex-shrink-0"
           />
         ) : (
-          <CoverPlaceholder className="w-10 h-10 rounded flex-shrink-0" />
+          <CoverPlaceholder className="w-11 h-11 rounded-lg flex-shrink-0" />
         )}
         <div className="min-w-0">
           {track.album_id ? (
@@ -218,11 +218,11 @@ export default function TrackRow({
           }}
           aria-label="Zur Warteschlange hinzufügen"
           title="Zur Warteschlange hinzufügen"
-          className="text-muted hover:text-foreground p-1 rounded-full hover:bg-panel-hover transition press"
+          className="hidden sm:grid h-9 w-9 place-items-center text-muted hover:text-foreground rounded-full hover:bg-panel-hover transition"
         >
           <PlusIcon />
         </button>
-        <span className="text-sm text-muted w-10 text-right tabular-nums">
+        <span className="hidden sm:block text-xs text-muted w-10 text-right tabular-nums">
           {formatTime(track.duration_sec)}
         </span>
         <TrackMenu track={track} onRemove={onRemove} />

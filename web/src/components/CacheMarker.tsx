@@ -1,7 +1,7 @@
 "use client";
 
 import { DownloadedIcon } from "@/components/icons";
-import { useTrackCacheState } from "@/store/downloads";
+import { reportTrackCacheFailure, retryTrackCacheStatus, useTrackCacheError, useTrackCacheState } from "@/store/downloads";
 
 /**
  * Availability marker for a track:
@@ -17,22 +17,31 @@ export default function CacheMarker({
   className?: string;
 }) {
   const state = useTrackCacheState(trackId);
-  if (!state) return null;
+  const error = useTrackCacheError();
+  if (!state && !error) return null;
   const local = state === "local";
   return (
-    <span
-      title={
-        local
-          ? "Offline auf diesem Gerät verfügbar"
-          : "Auf dem Server gespeichert"
-      }
-      className={`inline-flex flex-shrink-0 ${
-        local ? "text-green-500" : "text-muted"
-      } ${className}`}
-    >
-      <DownloadedIcon
-        aria-label={local ? "Offline verfügbar" : "Auf dem Server gespeichert"}
-      />
+    <span className={`inline-flex items-center gap-1 flex-shrink-0 ${className}`}>
+      {state && (
+        <span
+          title={local ? "Offline auf diesem Gerät verfügbar" : "Auf dem Server gespeichert"}
+          className={`inline-flex ${local ? "text-green-500" : "text-muted"}`}
+        >
+          <DownloadedIcon aria-label={local ? "Offline verfügbar" : "Auf dem Server gespeichert"} />
+        </span>
+      )}
+      {error && <button
+        type="button"
+        title={`${error} Erneut versuchen.`}
+        aria-label={`Cache-Status fehlgeschlagen: ${error}. Erneut versuchen.`}
+        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-amber-400/40 text-xs font-semibold text-amber-300"
+        onClick={(event) => {
+          event.stopPropagation();
+          void retryTrackCacheStatus().catch(reportTrackCacheFailure);
+        }}
+      >
+        !
+      </button>}
     </span>
   );
 }

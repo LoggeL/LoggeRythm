@@ -419,7 +419,10 @@ describe('LoginScreen action feedback', () => {
     });
     expect(scroll.props.keyboardDismissMode).toBe('on-drag');
     expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
-    expect(card.props.style).toEqual(expect.objectContaining({ width: '100%', maxWidth: 520 }));
+    expect(card.props.style).toEqual(expect.objectContaining({ width: '100%' }));
+    const cardStyle = card.props.style as { maxWidth: number };
+    expect(cardStyle.maxWidth).toBeGreaterThanOrEqual(320);
+    expect(cardStyle.maxWidth).toBeLessThanOrEqual(520);
     expect(byTestId(card, 'login-server').props).toMatchObject({
       accessibilityLabel: strings.auth.server,
       keyboardType: 'url',

@@ -8,7 +8,7 @@ export default function ArtistCard({ artist }: { artist: ArtistSummary }) {
   return (
     <Link
       href={`/artist/${artist.id}`}
-      className="group block bg-panel/70 hover:bg-panel-hover border border-white/5 rounded-2xl p-4 transition hover-lift text-center"
+      className="music-card group block p-2.5 sm:p-3 text-center"
     >
       {artist.picture ? (
         <div className="mb-3 overflow-hidden rounded-full">
@@ -22,8 +22,8 @@ export default function ArtistCard({ artist }: { artist: ArtistSummary }) {
       ) : (
         <CoverPlaceholder className="w-full aspect-square rounded-full mb-3" />
       )}
-      <div className="truncate font-semibold">{artist.name}</div>
-      <div className="text-sm text-muted">Künstler</div>
+      <div className="truncate text-sm font-semibold">{artist.name}</div>
+      <div className="mt-1 text-xs text-muted">Künstler</div>
     </Link>
   );
 }

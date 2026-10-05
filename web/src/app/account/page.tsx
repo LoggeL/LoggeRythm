@@ -1,680 +1,30 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { Suspense, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMe, useLogout } from "@/hooks/useAuth";
 import { currentTrack, usePlayerStore } from "@/store/player";
-import { useBassGlow } from "@/hooks/useBassGlow";
-import { useCoverColors } from "@/hooks/useCoverColors";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { decodeListeningStats } from "@/lib/listeningStats";
 import { toast } from "@/store/toast";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
-import { RadialVisualizer } from "@/components/Visualizer";
-import {
-  ChevronRightIcon,
-  ClockIcon,
-  EditIcon,
-  StatusIcon,
-  UserIcon,
-  VisualizerIcon,
-} from "@/components/icons";
+import { ChevronRightIcon, ClockIcon, EditIcon, StatusIcon, UserIcon, VisualizerIcon } from "@/components/icons";
 import ListeningStats from "@/components/profile/ListeningStats";
-import type {
-  AdminUser,
-  StorageInfo,
-  InviteInfo,
-  PlaybackSettings,
-  UserStats,
-} from "@/types";
+import type { UserStats } from "@/types";
+import { AdminUsersSection, AdminStorageSection, AdminInvitesSection } from "./Administration";
+import { PlaybackSettingsSection, SleepTimerSection } from "./PlaybackSettings";
+import { formatCount, StatusBadge } from "./presentation";
 import styles from "./account.module.css";
 
-// Sub-navigation of the account page. Keeps the profile identity always visible
-// on top while the heavier content (stats, playback, admin tools) lives behind
-// tabs so nothing is crammed onto one scroll.
 type AccountTab = "stats" | "playback" | "admin";
 
-function formatBytes(bytes: number): string {
-  if (!bytes) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function formatCount(value: number): string {
-  return new Intl.NumberFormat("de-DE").format(value);
-}
-
-function StatusBadge({ approved }: { approved: boolean }) {
-  return (
-    <span
-      className={`${styles.statusBadge} ${
-        approved ? styles.statusApproved : styles.statusPending
-      }`}
-    >
-      <span className={styles.statusDot} aria-hidden />
-      {approved ? "Freigegeben" : "Wartet auf Freigabe"}
-    </span>
-  );
-}
-
-function AdminUsersSection() {
-  const qc = useQueryClient();
-  const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null);
-  const { data, isLoading, error } = useQuery<AdminUser[]>({
-    queryKey: ["admin-users"],
-    queryFn: api.adminUsers,
-  });
-
-  const approve = useMutation({
-    mutationFn: (id: string | number) => api.approveUser(id),
-    onSuccess: () => {
-      toast.success("Benutzer freigegeben.");
-      qc.invalidateQueries({ queryKey: ["admin-users"] });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.message : "Freigabe fehlgeschlagen.",
-      ),
-  });
-
-  const remove = useMutation({
-    mutationFn: (id: string | number) => api.deleteUser(id),
-    onSuccess: () => {
-      toast.success("Benutzer entfernt.");
-      setPendingDelete(null);
-      qc.invalidateQueries({ queryKey: ["admin-users"] });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.message : "Entfernen fehlgeschlagen.",
-      ),
-  });
-
-  return (
-    <section className={styles.panelCard}>
-      <div className={styles.sectionHeading}>
-        <span className={styles.sectionIcon} aria-hidden>
-          <UserIcon />
-        </span>
-        <div>
-          <span className={styles.panelKicker}>Community</span>
-          <h2>Benutzerverwaltung</h2>
-        </div>
-      </div>
-
-      <Modal
-        open={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
-        title="Benutzer entfernen"
-      >
-        <p className={styles.modalCopy}>
-          {pendingDelete
-            ? `${pendingDelete.display_name} (${pendingDelete.email}) wird samt Playlists, Likes und Verlauf endgültig entfernt.`
-            : ""}
-        </p>
-        <div className={styles.modalActions}>
-          <button
-            type="button"
-            onClick={() => setPendingDelete(null)}
-            className={styles.ghostButton}
-          >
-            Abbrechen
-          </button>
-          <button
-            type="button"
-            onClick={() => pendingDelete && remove.mutate(pendingDelete.id)}
-            disabled={remove.isPending}
-            className={styles.dangerButton}
-          >
-            {remove.isPending ? "Wird entfernt…" : "Entfernen"}
-          </button>
-        </div>
-      </Modal>
-
-      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
-      {error && (
-        <p className={styles.errorMessage}>
-          {error instanceof ApiError
-            ? error.message
-            : "Benutzer konnten nicht geladen werden."}
-        </p>
-      )}
-
-      {data && data.length === 0 && (
-        <p className={styles.stateMessage}>Keine Benutzer vorhanden.</p>
-      )}
-
-      {data && data.length > 0 && (
-        <ul className={styles.userList}>
-          {data.map((u) => (
-            <li
-              key={String(u.id)}
-              className={styles.userRow}
-            >
-              <Avatar src={u.avatar_url} name={u.display_name} size={36} />
-              <div className={styles.userIdentity}>
-                <div className={styles.userNameLine}>
-                  <span className={styles.userName}>
-                    {u.display_name}
-                  </span>
-                  {u.is_admin && (
-                    <span className={styles.adminBadge}>
-                      Admin
-                    </span>
-                  )}
-                </div>
-                <div className={styles.userEmail}>{u.email}</div>
-              </div>
-
-              <StatusBadge approved={u.is_approved} />
-
-              <div className={styles.rowActions}>
-                {!u.is_approved && (
-                  <button
-                    type="button"
-                    onClick={() => approve.mutate(u.id)}
-                    disabled={approve.isPending}
-                    className={styles.primarySmallButton}
-                  >
-                    Freigeben
-                  </button>
-                )}
-                {!u.is_admin && (
-                  <button
-                    type="button"
-                    onClick={() => setPendingDelete(u)}
-                    disabled={remove.isPending}
-                    className={styles.secondarySmallButton}
-                  >
-                    Entfernen
-                  </button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function AdminStorageSection() {
-  const qc = useQueryClient();
-  const { data, isLoading, error } = useQuery<StorageInfo>({
-    queryKey: ["admin-storage"],
-    queryFn: api.adminStorage,
-  });
-  const cleanup = useMutation({
-    mutationFn: api.adminStorageCleanup,
-    onSuccess: (r) => {
-      toast.success(
-        r.removed
-          ? `${r.removed} Titel entfernt (${formatBytes(r.freed_bytes)} frei).`
-          : "Nichts zu entfernen.",
-      );
-      qc.invalidateQueries({ queryKey: ["admin-storage"] });
-    },
-    onError: () => toast.error("Aufräumen fehlgeschlagen."),
-  });
-
-  return (
-    <section className={styles.panelCard}>
-      <div className={styles.panelHeaderRow}>
-        <div className={styles.sectionHeading}>
-          <span className={styles.sectionIcon} aria-hidden>
-            <StatusIcon />
-          </span>
-          <div>
-            <span className={styles.panelKicker}>System</span>
-            <h2>Speicher</h2>
-          </div>
-        </div>
-        <div className={styles.panelHeaderActions}>
-          {data && (
-            <span className={styles.retentionNote}>
-              {data.retention_days > 0
-                ? `Nicht gespielt seit ${data.retention_days} Tagen → automatisch gelöscht`
-                : "Keine automatische Löschung"}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => cleanup.mutate()}
-            disabled={cleanup.isPending}
-            className={styles.secondarySmallButton}
-          >
-            {cleanup.isPending ? "Räumt auf…" : "Jetzt aufräumen"}
-          </button>
-        </div>
-      </div>
-
-      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
-      {error && (
-        <p className={styles.errorMessage}>
-          {error instanceof ApiError
-            ? error.message
-            : "Speicher konnte nicht geladen werden."}
-        </p>
-      )}
-
-      {data && (
-        <>
-          <div className={styles.storageGrid}>
-            <div className={styles.storageMetric}>
-              <div className={styles.storageValue}>{data.track_count}</div>
-              <div className={styles.storageLabel}>Titel</div>
-            </div>
-            <div className={styles.storageMetric}>
-              <div className={styles.storageValue}>
-                {formatBytes(data.total_bytes)}
-              </div>
-              <div className={styles.storageLabel}>Belegt (Tracks)</div>
-            </div>
-            <div className={styles.storageMetric}>
-              <div className={styles.storageValue}>
-                {formatBytes(data.disk_free)}
-              </div>
-              <div className={styles.storageLabel}>Frei auf Disk</div>
-            </div>
-            <div className={styles.storageMetric}>
-              <div className={styles.storageValue}>
-                {formatBytes(data.disk_total)}
-              </div>
-              <div className={styles.storageLabel}>Disk gesamt</div>
-            </div>
-          </div>
-
-          {/* Disk usage bar */}
-          {data.disk_total > 0 && (
-            <div className={styles.storageProgressBlock}>
-              <div className={styles.storageProgressTrack}>
-                <div
-                  className={styles.storageProgressFill}
-                  style={{
-                    width: `${Math.min(100, (data.disk_used / data.disk_total) * 100)}%`,
-                  }}
-                />
-              </div>
-              <p className={styles.storageProgressLabel}>
-                {formatBytes(data.disk_used)} von {formatBytes(data.disk_total)} belegt
-                · {formatBytes(data.disk_free)} frei
-              </p>
-            </div>
-          )}
-        </>
-      )}
-    </section>
-  );
-}
-
-function AdminInvitesSection() {
-  const qc = useQueryClient();
-  const [lastCode, setLastCode] = useState<string | null>(null);
-  const { data, isLoading, error } = useQuery<InviteInfo[]>({
-    queryKey: ["admin-invites"],
-    queryFn: api.adminInvites,
-  });
-
-  const create = useMutation({
-    mutationFn: () => api.adminCreateInvite(),
-    onSuccess: (invite) => {
-      setLastCode(invite.code);
-      toast.success("Einladungslink erstellt.");
-      qc.invalidateQueries({ queryKey: ["admin-invites"] });
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError ? err.message : "Erstellen fehlgeschlagen.",
-      ),
-  });
-
-  const origin =
-    typeof window !== "undefined" ? window.location.origin : "";
-
-  function inviteUrl(code: string) {
-    return `${origin}/register?invite=${code}`;
-  }
-
-  async function copy(code: string) {
-    try {
-      await navigator.clipboard.writeText(inviteUrl(code));
-      toast.success("Link kopiert.");
-    } catch {
-      toast.error("Kopieren fehlgeschlagen.");
-    }
-  }
-
-  return (
-    <section className={styles.panelCard}>
-      <div className={styles.sectionHeading}>
-        <span className={styles.sectionIcon} aria-hidden>
-          <UserIcon />
-        </span>
-        <div>
-          <span className={styles.panelKicker}>Zugang</span>
-          <h2>Einladungslinks</h2>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => create.mutate()}
-        disabled={create.isPending}
-        className={styles.primaryButton}
-      >
-        Einladungslink erstellen
-      </button>
-
-      {lastCode && (
-        <div className={styles.inviteReveal}>
-          <code className={styles.inviteCodeWide}>
-            {inviteUrl(lastCode)}
-          </code>
-          <button
-            type="button"
-            onClick={() => copy(lastCode)}
-            className={styles.secondarySmallButton}
-          >
-            Kopieren
-          </button>
-        </div>
-      )}
-
-      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
-      {error && (
-        <p className={styles.errorMessage}>
-          {error instanceof ApiError
-            ? error.message
-            : "Einladungen konnten nicht geladen werden."}
-        </p>
-      )}
-
-      {data && data.length === 0 && (
-        <p className={styles.stateMessage}>Keine Einladungslinks vorhanden.</p>
-      )}
-
-      {data && data.length > 0 && (
-        <ul className={styles.inviteList}>
-          {data.map((inv) => (
-            <li
-              key={inv.code}
-              className={styles.inviteRow}
-            >
-              <code className={styles.inviteCode}>{inv.code}</code>
-              <span
-                className={`${styles.inviteState} ${
-                  inv.used_by_name
-                    ? styles.inviteUsed
-                    : styles.inviteFree
-                }`}
-              >
-                {inv.used_by_name || "frei"}
-              </span>
-              <span className={styles.inviteDate}>
-                {new Date(inv.created_at).toLocaleDateString()}
-              </span>
-              <button
-                type="button"
-                onClick={() => copy(inv.code)}
-                className={styles.secondarySmallButton}
-              >
-                Kopieren
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-const SLEEP_PRESETS = [15, 30, 45, 60];
-
-function SleepTimerSection() {
-  const sleepAt = usePlayerStore((s) => s.sleepAt);
-  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
-  const setSleepTimer = usePlayerStore((s) => s.setSleepTimer);
-  const setSleepAfterTrack = usePlayerStore((s) => s.setSleepAfterTrack);
-
-  // Tick once a second while armed so the remaining time counts down live.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (sleepAt == null) return;
-    const interval = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(interval);
-  }, [sleepAt]);
-
-  const remainingSec =
-    sleepAt == null ? null : Math.max(0, Math.round((sleepAt - now) / 1000));
-  const armed = sleepAt != null || sleepAfterTrack;
-
-  return (
-    <section className={`${styles.panelCard} ${styles.sleepCard}`}>
-      <div className={styles.sleepContent}>
-        <div>
-          <div className={styles.sectionHeading}>
-            <span className={styles.sectionIcon} aria-hidden>
-              <ClockIcon />
-            </span>
-            <div>
-              <span className={styles.panelKicker}>Nachtmodus</span>
-              <h2>Sleep-Timer</h2>
-            </div>
-          </div>
-          <p className={styles.sectionDescription}>
-            Lass die Musik ausklingen. Wir pausieren automatisch, wenn du es
-            möchtest.
-          </p>
-
-          <div className={styles.presetGrid} aria-label="Sleep-Timer auswählen">
-            <button
-              type="button"
-              onClick={() => setSleepTimer(null)}
-              aria-pressed={!armed}
-              className={`${styles.presetButton} ${
-                !armed ? styles.presetActive : ""
-              }`}
-            >
-              Aus
-            </button>
-            {SLEEP_PRESETS.map((m) => {
-              const previous = SLEEP_PRESETS[SLEEP_PRESETS.indexOf(m) - 1] ?? 0;
-              const active =
-                remainingSec != null &&
-                remainingSec > previous * 60 &&
-                remainingSec <= m * 60;
-              return (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setSleepTimer(m)}
-                  aria-pressed={active}
-                  className={`${styles.presetButton} ${
-                    active ? styles.presetActive : ""
-                  }`}
-                >
-                  <strong>{m}</strong>
-                  <span>min</span>
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => setSleepAfterTrack(true)}
-              aria-pressed={sleepAfterTrack}
-              className={`${styles.presetButton} ${styles.presetTrackEnd} ${
-                sleepAfterTrack ? styles.presetActive : ""
-              }`}
-            >
-              Ende des Titels
-            </button>
-          </div>
-        </div>
-
-        <div className={styles.timerDial} data-armed={armed} aria-live="polite">
-          <span className={styles.timerOrbit} aria-hidden />
-          <span className={styles.timerOrbitDot} aria-hidden />
-          <ClockIcon className={styles.timerIcon} />
-          {remainingSec != null ? (
-            <>
-              <strong>
-                {Math.floor(remainingSec / 60)}:
-                {String(remainingSec % 60).padStart(2, "0")}
-              </strong>
-              <span>bis zur Ruhe</span>
-            </>
-          ) : sleepAfterTrack ? (
-            <>
-              <strong>Outro</strong>
-              <span>nach diesem Titel</span>
-            </>
-          ) : (
-            <>
-              <strong>∞</strong>
-              <span>läuft weiter</span>
-            </>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function PlaybackSettingsSection() {
-  const qc = useQueryClient();
-  const { data, isLoading, error } = useQuery<PlaybackSettings>({
-    queryKey: ["playback-settings"],
-    queryFn: api.settings,
-  });
-
-  const updateSettings = useMutation({
-    mutationFn: (patch: Partial<PlaybackSettings>) => api.updateSettings(patch),
-    onSuccess: (next) => {
-      qc.setQueryData(["playback-settings"], next);
-      toast.success("Wiedergabe aktualisiert.");
-    },
-    onError: (err) =>
-      toast.error(
-        err instanceof ApiError
-          ? err.message
-          : "Wiedergabe konnte nicht aktualisiert werden.",
-      ),
-  });
-
-  const enabled = data?.crossfade_enabled ?? false;
-  const duration = data?.crossfade_duration_sec ?? 5;
-
-  return (
-    <section className={`${styles.panelCard} ${styles.playbackCard}`}>
-      <div className={styles.panelHeaderRow}>
-        <div className={styles.sectionHeading}>
-          <span className={styles.sectionIcon} aria-hidden>
-            <VisualizerIcon />
-          </span>
-          <div>
-            <span className={styles.panelKicker}>Übergangsmotor</span>
-            <h2>Crossfade</h2>
-          </div>
-        </div>
-
-        <label className={styles.switchLabel}>
-          <span>{enabled ? "Aktiv" : "Aus"}</span>
-          <input
-            type="checkbox"
-            checked={enabled}
-            disabled={isLoading || updateSettings.isPending}
-            onChange={(e) =>
-              updateSettings.mutate({ crossfade_enabled: e.target.checked })
-            }
-            className={styles.switchInput}
-          />
-          <span className={styles.switchTrack} aria-hidden>
-            <span className={styles.switchThumb} />
-          </span>
-        </label>
-      </div>
-
-      <p className={styles.sectionDescription}>
-        Zwei Titel, ein Moment. Bestimme, wie weich der nächste Song in den
-        laufenden gleitet.
-      </p>
-
-      {isLoading && <p className={styles.stateMessage}>Lädt…</p>}
-      {error && (
-        <p className={styles.errorMessage}>
-          {error instanceof ApiError
-            ? error.message
-            : "Einstellungen konnten nicht geladen werden."}
-        </p>
-      )}
-
-      {data && (
-        <div className={styles.crossfadeControl} data-enabled={enabled}>
-          <div className={styles.crossfadeVisual} aria-hidden>
-            <div className={`${styles.waveform} ${styles.waveformOutgoing}`}>
-              {[24, 52, 38, 78, 46, 86, 60, 34, 68, 48, 28, 58].map(
-                (height, index) => (
-                  <span key={index} style={{ height: `${height}%` }} />
-                ),
-              )}
-            </div>
-            <div className={styles.fadeLens}>
-              <strong>{duration}</strong>
-              <span>Sek.</span>
-            </div>
-            <div className={`${styles.waveform} ${styles.waveformIncoming}`}>
-              {[58, 30, 72, 42, 88, 62, 36, 80, 48, 68, 40, 54].map(
-                (height, index) => (
-                  <span key={index} style={{ height: `${height}%` }} />
-                ),
-              )}
-            </div>
-            <span className={styles.trackLabelLeft}>Jetzt</span>
-            <span className={styles.trackLabelRight}>Danach</span>
-          </div>
-
-          <div className={styles.rangeBlock}>
-            <div className={styles.rangeLabels}>
-              <span>Crossfade-Dauer</span>
-              <span>{duration} Sekunden</span>
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={12}
-              step={1}
-              value={duration}
-              disabled={!enabled || updateSettings.isPending}
-              onChange={(e) =>
-                updateSettings.mutate({
-                  crossfade_duration_sec: Number(e.target.value),
-                })
-              }
-              aria-label="Crossfade-Dauer"
-              className={styles.crossfadeRange}
-              style={{ "--range-value": `${(duration / 12) * 100}%` } as React.CSSProperties}
-            />
-            <div className={styles.rangeScale}>
-              <span>Direkt</span>
-              <span>12 s</span>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-export default function AccountPage() {
-  const { data: me, isLoading } = useMe();
+function AccountContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: me, isLoading, error: meError, refetch: refreshMe, isFetching: meFetching } = useMe();
   const logout = useLogout();
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -682,26 +32,13 @@ export default function AccountPage() {
   const liveTrack = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
 
-  // Same cache entry ListeningStats uses — the hero shows a few headline
-  // numbers, the stats tab the full breakdown.
-  const { data: stats } = useQuery<UserStats>({
+  // Share the validated query with the detailed listening statistics.
+  const { data: stats, error: statsError } = useQuery<UserStats>({
     queryKey: ["stats"],
     queryFn: async () => decodeListeningStats(await api.stats()),
     enabled: !!me,
   });
   const signalTrack = liveTrack ?? stats?.recent[0] ?? null;
-  const profileCover = signalTrack?.cover ?? null;
-  const palette = useCoverColors(profileCover);
-  const avatarGlowRef = useBassGlow<HTMLDivElement>(isPlaying, {
-    color: palette?.rgb,
-    baseSpread: 18,
-    peakSpread: 34,
-    baseAlpha: 0.28,
-    peakAlpha: 0.52,
-    maxScale: 0.012,
-    tintBorder: true,
-  });
-
   const uploadAvatar = useMutation({
     mutationFn: (file: File) => api.uploadAvatar(file),
     onSuccess: () => {
@@ -710,7 +47,7 @@ export default function AccountPage() {
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.message : "Upload fehlgeschlagen.",
+        err instanceof Error ? err.message : "Upload fehlgeschlagen.",
       ),
   });
 
@@ -723,7 +60,18 @@ export default function AccountPage() {
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [form, setForm] = useState({ display_name: "", email: "", password: "" });
-  const [tab, setTab] = useState<AccountTab>("stats");
+  const requestedTab = searchParams.get("tab");
+  const tab: AccountTab = requestedTab === "playback" ? "playback" : requestedTab === "admin" && me?.is_admin ? "admin" : "stats";
+  function selectTab(next: AccountTab) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", next);
+    router.replace(`/account?${params.toString()}`, { scroll: false });
+  }
+
+  const signOut = useMutation({
+    mutationFn: logout,
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Abmelden fehlgeschlagen."),
+  });
 
   const deleteAccount = useMutation({
     mutationFn: () => api.deleteMe(),
@@ -735,7 +83,7 @@ export default function AccountPage() {
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.message : "Löschen fehlgeschlagen.",
+        err instanceof Error ? err.message : "Löschen fehlgeschlagen.",
       ),
   });
 
@@ -750,10 +98,13 @@ export default function AccountPage() {
 
   const saveProfile = useMutation({
     mutationFn: () => {
+      if (!me) throw new Error("Das Profil ist nicht geladen. Lade dein Konto erneut.");
+      const displayName = form.display_name.trim();
+      const email = form.email.trim();
+      if (!email) throw new Error("Die E-Mail darf nicht leer sein.");
       const patch: { display_name?: string; email?: string; password?: string } = {};
-      if (form.display_name && form.display_name !== me?.display_name)
-        patch.display_name = form.display_name;
-      if (form.email && form.email !== me?.email) patch.email = form.email;
+      if (displayName !== (me.display_name ?? "")) patch.display_name = displayName;
+      if (email !== me.email) patch.email = email;
       if (form.password) patch.password = form.password;
       return api.updateMe(patch);
     },
@@ -764,7 +115,7 @@ export default function AccountPage() {
     },
     onError: (err) =>
       toast.error(
-        err instanceof ApiError ? err.message : "Speichern fehlgeschlagen.",
+        err instanceof Error ? err.message : "Speichern fehlgeschlagen.",
       ),
   });
 
@@ -773,10 +124,22 @@ export default function AccountPage() {
       <div className={styles.loadingState} role="status">
         <span className={styles.loadingOrb} aria-hidden />
         <div>
-          <span className={styles.panelKicker}>Sonic Passport</span>
-          <p>Dein Klangprofil wird geladen…</p>
+          <span className={styles.panelKicker}>Konto</span>
+          <p>Dein Profil wird geladen…</p>
         </div>
       </div>
+    );
+  }
+
+  if (meError && !me) {
+    return (
+      <section className="error-panel" role="alert">
+        <h1 className="page-title">Konto konnte nicht geladen werden</h1>
+        <p>{meError.message}</p>
+        <button type="button" onClick={() => refreshMe()} disabled={meFetching} className="action-secondary">
+          {meFetching ? "Wird aktualisiert…" : "Erneut versuchen"}
+        </button>
+      </section>
     );
   }
 
@@ -787,8 +150,8 @@ export default function AccountPage() {
           <UserIcon />
         </span>
         <span className={styles.panelKicker}>Privater Bereich</span>
-        <h1>Dein Klangprofil wartet.</h1>
-        <p>Melde dich an, um dein Konto und deine Hörsignatur zu verwalten.</p>
+        <h1>Dein Konto</h1>
+        <p>Melde dich an, um dein Profil, deinen Hörverlauf und deine Einstellungen zu öffnen.</p>
         <Link
           href="/login"
           className={styles.primaryButton}
@@ -808,7 +171,7 @@ export default function AccountPage() {
     {
       key: "stats",
       label: "Hörprofil",
-      description: "Deine Listening DNA",
+      description: "Verlauf & Statistiken",
       icon: <VisualizerIcon />,
     },
     {
@@ -821,200 +184,85 @@ export default function AccountPage() {
       ? [
           {
             key: "admin" as const,
-            label: "Studio",
-            description: "System & Community",
+            label: "Verwaltung",
+            description: "Benutzer & System",
             icon: <StatusIcon />,
           },
         ]
       : []),
   ];
 
-  const profileStyle = {
-    "--profile-primary": palette?.primary ?? "rgb(124, 92, 255)",
-    "--profile-secondary": palette?.secondary ?? "rgb(255, 110, 199)",
-  } as React.CSSProperties;
-  const sonicId = String(me.id)
-    .replace(/[^a-z0-9]/gi, "")
-    .slice(-8)
-    .toUpperCase();
-
-  function handleHeroPointerMove(event: React.PointerEvent<HTMLElement>) {
-    if (event.pointerType === "touch") return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.style.setProperty(
-      "--spotlight-x",
-      `${((event.clientX - rect.left) / rect.width) * 100}%`,
-    );
-    event.currentTarget.style.setProperty(
-      "--spotlight-y",
-      `${((event.clientY - rect.top) / rect.height) * 100}%`,
-    );
-  }
-
   function handleTabKeyDown(
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
   ) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
-    const direction = event.key === "ArrowRight" ? 1 : -1;
-    const nextIndex = (index + direction + TABS.length) % TABS.length;
-    setTab(TABS[nextIndex].key);
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? TABS.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + TABS.length) % TABS.length;
+    selectTab(TABS[nextIndex].key);
     tabRefs.current[nextIndex]?.focus();
   }
 
   return (
-    <div className={styles.page} style={profileStyle}>
-      <section
-        className={styles.hero}
-        onPointerMove={handleHeroPointerMove}
-        onPointerLeave={(event) => {
-          event.currentTarget.style.setProperty("--spotlight-x", "72%");
-          event.currentTarget.style.setProperty("--spotlight-y", "24%");
-        }}
-      >
-        <div className={styles.heroNoise} aria-hidden />
-        <div className={styles.heroHalo} aria-hidden />
-        <div className={styles.heroScanline} aria-hidden />
-
-        <div className={styles.heroTopline}>
-          <span className={styles.liveLabel}>
-            <span className={styles.liveDot} aria-hidden />
-            {isPlaying ? "Live signal" : "Sonic passport"}
-          </span>
-          <span className={styles.passportId}>LR / {sonicId} / PROFILE</span>
+    <div className={styles.page}>
+      <header className="page-header">
+        <div>
+          <span className="page-eyebrow">Dein Bereich</span>
+          <h1 className="page-title">Konto</h1>
+          <p className="page-description">Profil, Hörverlauf und Wiedergabe an einem Ort.</p>
         </div>
+      </header>
 
-        <div className={styles.heroGrid}>
-          <div className={styles.identityColumn}>
-            <div className={styles.identityCopy}>
-              <span className={styles.heroEyebrow}>Deine persönliche Frequenz</span>
-              <h1>
-                <span>{me.display_name}</span>
-                <em>klingt so.</em>
-              </h1>
-              <p className={styles.heroIntro}>
-                Jeder Play hinterlässt eine Spur. Hier wird daraus dein ganz
-                persönliches Klangbild.
-              </p>
-              <div className={styles.identityMeta}>
-                <StatusBadge approved={!!me.is_approved} />
-                {me.is_admin && <span className={styles.adminBadge}>Admin</span>}
-                <span className={styles.email}>{me.email}</span>
-              </div>
-            </div>
+      {meError && (
+        <div className="error-panel" role="alert">
+          <p>{meError.message}</p>
+          <button type="button" onClick={() => refreshMe()} disabled={meFetching} className="action-secondary">
+            {meFetching ? "Wird aktualisiert…" : "Profil erneut laden"}
+          </button>
+        </div>
+      )}
 
-            <div className={styles.heroActions}>
-              <button
-                type="button"
-                onClick={openEdit}
-                className={styles.primaryButton}
-              >
-                <EditIcon />
-                Profil bearbeiten
-              </button>
-              <button type="button" onClick={logout} className={styles.ghostButton}>
-                Abmelden
-                <ChevronRightIcon />
-              </button>
-            </div>
-
-            <div className={styles.heroMetrics}>
-              <article className={styles.heroMetric}>
-                <span>01 · All time</span>
-                <strong>{stats ? formatCount(stats.total_plays) : "…"}</strong>
-                <small>Wiedergaben</small>
-              </article>
-              <article className={styles.heroMetric}>
-                <span>02 · 30 Tage</span>
-                <strong>
-                  {stats ? formatCount(stats.total_plays_month ?? 0) : "…"}
-                </strong>
-                <small>neue Impulse</small>
-              </article>
-              <article className={`${styles.heroMetric} ${styles.heroMetricWide}`}>
-                <span>03 · Top Artist</span>
-                <strong>
-                  {stats ? stats.top_artists[0]?.label ?? "Noch unentdeckt" : "…"}
-                </strong>
-                <small>dein stärkstes Signal</small>
-              </article>
+      <section className={styles.profileCard} aria-label="Dein Profil">
+        <div className={styles.profileIdentity}>
+          <input ref={fileInput} type="file" accept="image/*" tabIndex={-1} aria-hidden="true" onChange={handleAvatarFile} className={styles.fileInput} />
+          <button type="button" onClick={() => fileInput.current?.click()} disabled={uploadAvatar.isPending} aria-label="Profilbild ändern" className={styles.avatarButton}>
+            <Avatar src={me.avatar_url} name={me.display_name} size={80} className={styles.avatarImage} />
+            <span className={styles.avatarEdit}><EditIcon /></span>
+          </button>
+          <div className={styles.profileCopy}>
+            <h2>{me.display_name}</h2>
+            <p className={styles.email}>{me.email}</p>
+            <div className={styles.identityMeta}>
+              <StatusBadge approved={!!me.is_approved} />
+              {me.is_admin && <span className={styles.adminBadge}>Admin</span>}
+              {uploadAvatar.isPending && <span role="status">Profilbild wird hochgeladen…</span>}
             </div>
           </div>
-
-          <div className={styles.orbitColumn}>
-            <div className={styles.orbitStage}>
-              <span className={styles.orbitRingOuter} aria-hidden />
-              <span className={styles.orbitRingInner} aria-hidden />
-              <span className={styles.orbitSatellite} aria-hidden />
-              <RadialVisualizer
-                isPlaying={isPlaying}
-                className={styles.radialVisualizer}
-              />
-
-              <div ref={avatarGlowRef} className={styles.avatarGlowShell}>
-                <input
-                  ref={fileInput}
-                  type="file"
-                  accept="image/*"
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  onChange={handleAvatarFile}
-                  className={styles.fileInput}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInput.current?.click()}
-                  disabled={uploadAvatar.isPending}
-                  aria-label="Profilbild ändern"
-                  className={styles.avatarButton}
-                >
-                  <Avatar
-                    src={me.avatar_url}
-                    name={me.display_name}
-                    size={168}
-                    className={styles.avatarImage}
-                  />
-                  <span className={styles.avatarEdit}>
-                    <EditIcon />
-                    {uploadAvatar.isPending ? "Upload…" : "Bild ändern"}
-                  </span>
-                </button>
-              </div>
-
-              <span className={`${styles.coordinate} ${styles.coordinateTop}`}>
-                48° 08′ N
-              </span>
-              <span className={`${styles.coordinate} ${styles.coordinateSide}`}>
-                FREQ · LR
-              </span>
-            </div>
-
-            <div className={styles.signalCard}>
-              {signalTrack?.cover ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={signalTrack.cover} alt="" />
-              ) : (
-                <span className={styles.signalPlaceholder} aria-hidden>
-                  <VisualizerIcon />
-                </span>
-              )}
-              <div className={styles.signalCopy}>
-                <span>
-                  <i className={isPlaying ? styles.signalPulse : ""} aria-hidden />
-                  {isPlaying && liveTrack ? "Jetzt läuft" : "Letzter Impuls"}
-                </span>
-                <strong>{signalTrack?.title ?? "Noch kein Titel"}</strong>
-                <small>{signalTrack?.artist ?? "Starte deine erste Wiedergabe"}</small>
-              </div>
-              <span className={styles.signalBars} aria-hidden>
-                {[42, 78, 56, 92, 64].map((height, index) => (
-                  <i key={index} style={{ height: `${height}%` }} />
-                ))}
-              </span>
-            </div>
+          <div className={styles.profileActions}>
+            <button type="button" onClick={openEdit} className="action-primary"><EditIcon /> Profil bearbeiten</button>
+            <button type="button" onClick={() => signOut.mutate()} disabled={signOut.isPending} className="action-secondary">
+              {signOut.isPending ? "Wird abgemeldet…" : "Abmelden"}
+            </button>
           </div>
         </div>
+
+        {statsError && <p className="error-panel" role="alert">Hörprofil konnte nicht geladen werden: {statsError.message}</p>}
+        {stats && (
+          <dl className={styles.profileMetrics}>
+            <div><dt>Wiedergaben gesamt</dt><dd>{formatCount(stats.total_plays)}</dd></div>
+            <div><dt>In den letzten 30 Tagen</dt><dd>{formatCount(stats.total_plays_month)}</dd></div>
+            <div><dt>Meistgehörter Künstler</dt><dd>{stats.top_artists[0]?.label ?? "Noch keine Wiedergaben"}</dd></div>
+          </dl>
+        )}
+        {signalTrack && (
+          <div className={styles.currentTrack}>
+            {signalTrack.cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={signalTrack.cover} alt="" width={36} height={36} />
+            ) : <span className={styles.signalPlaceholder} aria-hidden="true"><VisualizerIcon /></span>}
+            <div><span>{isPlaying && liveTrack ? "Jetzt läuft" : "Zuletzt gehört"}</span><strong>{signalTrack.title} <span>· {signalTrack.artist}</span></strong></div>
+          </div>
+        )}
       </section>
 
       <Modal
@@ -1056,6 +304,8 @@ export default function AccountPage() {
           <label className={styles.fieldLabel}>
             <span>Anzeigename</span>
             <input
+              autoComplete="nickname"
+              maxLength={120}
               value={form.display_name}
               onChange={(event) =>
                 setForm((current) => ({
@@ -1063,24 +313,27 @@ export default function AccountPage() {
                   display_name: event.target.value,
                 }))
               }
-              className={styles.fieldInput}
+              className="field-input"
             />
           </label>
           <label className={styles.fieldLabel}>
             <span>E-Mail</span>
             <input
               type="email"
+              required
+              autoComplete="email"
               value={form.email}
               onChange={(event) =>
                 setForm((current) => ({ ...current, email: event.target.value }))
               }
-              className={styles.fieldInput}
+              className="field-input"
             />
           </label>
           <label className={styles.fieldLabel}>
             <span>Neues Passwort</span>
             <input
               type="password"
+              autoComplete="new-password"
               value={form.password}
               minLength={8}
               placeholder="Leer lassen, um beizubehalten"
@@ -1090,7 +343,7 @@ export default function AccountPage() {
                   password: event.target.value,
                 }))
               }
-              className={styles.fieldInput}
+              className="field-input"
             />
           </label>
           <div className={styles.modalActions}>
@@ -1126,7 +379,7 @@ export default function AccountPage() {
               aria-selected={tab === item.key}
               aria-controls={`account-panel-${item.key}`}
               tabIndex={tab === item.key ? 0 : -1}
-              onClick={() => setTab(item.key)}
+              onClick={() => selectTab(item.key)}
               onKeyDown={(event) => handleTabKeyDown(event, index)}
               className={`${styles.tabButton} ${
                 tab === item.key ? styles.tabButtonActive : ""
@@ -1137,7 +390,6 @@ export default function AccountPage() {
                 <strong>{item.label}</strong>
                 <small>{item.description}</small>
               </span>
-              <span className={styles.tabIndex}>0{index + 1}</span>
             </button>
           ))}
         </div>
@@ -1183,7 +435,7 @@ export default function AccountPage() {
       <div className={styles.dangerZone}>
         <div>
           <span className={styles.panelKicker}>Privatsphäre</span>
-          <p>Du möchtest LoggeRythm nicht mehr verwenden?</p>
+          <p>Konto und persönliche Daten dauerhaft entfernen.</p>
         </div>
         <button
           type="button"
@@ -1195,4 +447,8 @@ export default function AccountPage() {
       </div>
     </div>
   );
+}
+
+export default function AccountPage() {
+  return <Suspense fallback={<div className={styles.loadingState} role="status">Konto wird geladen…</div>}><AccountContent /></Suspense>;
 }

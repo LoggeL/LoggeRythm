@@ -9,7 +9,7 @@ import { useTrackPresentation } from '../player/TrackPresentationProvider';
 import TrackLikeButton from '../TrackLikeButton';
 import TrackStateIndicator from '../TrackStateIndicator';
 import AppIcon from '../AppIcon';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, radii, spacing } from '../../theme';
 import TrackIdentityLinks from './TrackIdentityLinks';
 import {
   buildTrackMetadata,
@@ -82,11 +82,6 @@ export default function StandardTrackRow({
       ]}
     >
       <View style={styles.row}>
-        {position !== undefined ? (
-          <Text testID={`${testID}-position`} accessible={false} style={styles.position}>
-            {position}
-          </Text>
-        ) : null}
         <Pressable
           testID={testID}
           accessibilityRole="button"
@@ -114,6 +109,11 @@ export default function StandardTrackRow({
               <AppIcon name="music-note" color={colors.accentSoft} size={21} />
             </View>
           )}
+          {position !== undefined ? (
+            <Text testID={`${testID}-position`} accessible={false} style={styles.position}>
+              {position}
+            </Text>
+          ) : null}
           <View accessible={false} style={styles.playGlyphBadge}>
             {buffering ? (
               <ActivityIndicator color={colors.textPrimary} size={10} />
@@ -168,50 +168,52 @@ export default function StandardTrackRow({
 const styles = StyleSheet.create({
   container: {
     minHeight: 72,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderRadius: radii.md,
+    marginHorizontal: spacing.xs,
+    marginVertical: 2,
   },
   activeContainer: {
-    backgroundColor: colors.surface,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
+    backgroundColor: colors.accentSubtle,
   },
   highlightedContainer: {
     backgroundColor: colors.surfaceElevated,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
   },
   row: {
     minHeight: 72,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingLeft: 12,
+    paddingVertical: spacing.xs,
+    paddingLeft: spacing.xs,
   },
   position: {
-    width: 28,
-    color: colors.textSecondary,
-    fontSize: 13,
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    minWidth: 18,
+    paddingHorizontal: 3,
+    color: colors.textPrimary,
+    backgroundColor: 'rgba(11,12,16,0.86)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    fontSize: 10,
+    lineHeight: 16,
     textAlign: 'center',
-    marginRight: 6,
   },
   playTarget: {
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,
-    borderRadius: 7,
-    marginRight: 12,
+    borderRadius: radii.sm,
+    marginRight: spacing.sm,
   },
   artwork: {
     width: metrics.minimumTouchTarget,
     height: metrics.minimumTouchTarget,
-    borderRadius: 7,
+    borderRadius: radii.sm,
     backgroundColor: colors.surfaceElevated,
   },
   placeholder: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   playGlyphBadge: {
     position: 'absolute',
@@ -222,7 +224,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(10,10,20,0.86)',
+    backgroundColor: 'rgba(11,12,16,0.86)',
   },
   metadata: {
     minWidth: 0,
@@ -236,8 +238,7 @@ const styles = StyleSheet.create({
     height: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
   },
-  trailingControls: { paddingLeft: 12, paddingRight: 8, paddingBottom: 8 },
+  trailingControls: { paddingLeft: spacing.xs, paddingRight: spacing.xs, paddingBottom: spacing.xs },
   pressed: { opacity: 0.72, backgroundColor: colors.surfacePressed },
 });

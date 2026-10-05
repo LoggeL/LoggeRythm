@@ -29,6 +29,10 @@ export interface LyricsData {
   active: number;
   hasTimedLines: boolean;
   isLoading: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  error: Error | null;
+  retry: () => void;
   isAiGenerated: boolean;
   /** Which lyrics are currently displayed. */
   variant: LyricsVariant;
@@ -65,7 +69,7 @@ export function useLyrics(
   const duration = usePlayerStore((s) => s.duration);
   const override = useLyricsVariantOverride();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ["lyrics", trackId],
     queryFn: () => api.lyrics(artist, title, String(trackId)),
     enabled: !!trackId,
@@ -116,6 +120,10 @@ export function useLyrics(
     active,
     hasTimedLines,
     isLoading,
+    isFetching,
+    isError,
+    error,
+    retry: () => { void refetch(); },
     isAiGenerated: variant === "ai",
     variant,
     canToggle,

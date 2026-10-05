@@ -28,7 +28,7 @@ export default function AddToPlaylistModal() {
   const panelRef = useRef<HTMLDivElement>(null);
   const submitting = useRef(false);
   const busy = createPlaylist.isPending || addToPlaylist.isPending;
-  useDialogFocus(!!track, panelRef);
+  useDialogFocus(!!track, panelRef, close);
 
   // Reset the inline create form whenever the modal opens for a new track
   // ("adjust state during render" — avoids a setState-in-effect cascade).
@@ -102,7 +102,7 @@ export default function AddToPlaylistModal() {
       />
 
       {/* Panel */}
-      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Zu Playlist hinzufügen" aria-busy={busy} tabIndex={-1} onKeyDown={(e) => { if (e.key === "Escape") close(); }} className="pop-in relative flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1c1c22] shadow-2xl">
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Zu Playlist hinzufügen" aria-busy={busy} tabIndex={-1} className="pop-in surface-card relative flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden shadow-2xl">
         <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-foreground">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
@@ -16,15 +16,7 @@ export default function Modal({
   children: React.ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useDialogFocus(open, panelRef);
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  useDialogFocus(open, panelRef, onClose);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -40,7 +32,7 @@ export default function Modal({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="pop-in bg-panel rounded-lg p-5 w-[min(92vw,28rem)] max-h-[85dvh] overflow-y-auto shadow-xl"
+        className="pop-in surface-card p-6 w-[min(92vw,28rem)] max-h-[85dvh] overflow-y-auto shadow-2xl"
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold truncate">{title}</h2>

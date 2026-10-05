@@ -12,7 +12,7 @@ import type {
 } from '../../api/types';
 import type { RecentPlay } from '../../domain/listeningStats';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors } from '../../theme';
+import { colors, spacing } from '../../theme';
 import {
   LibrarySectionFooter,
   LibrarySectionHeader,
@@ -252,6 +252,8 @@ export function LibraryVirtualizedList({
         />
       }
       stickySectionHeadersEnabled={false}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
       initialNumToRender={14}
       maxToRenderPerBatch={12}
       windowSize={9}
@@ -261,6 +263,6 @@ export function LibraryVirtualizedList({
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 24, paddingBottom: 144 },
-  sectionHeader: { paddingTop: 30 },
+  content: { paddingTop: spacing.xl, paddingBottom: 144 },
+  sectionHeader: { paddingTop: spacing.xxl },
 });
