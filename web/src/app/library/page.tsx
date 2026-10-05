@@ -15,30 +15,32 @@ import TrackRow from "@/components/TrackRow";
 import ArtistCard from "@/components/ArtistCard";
 import { RowListSkeleton } from "@/components/Skeleton";
 import { HeartIcon, DownloadIcon } from "@/components/icons";
-
-type Tab = "playlists" | "liked" | "recent" | "downloads" | "following";
-
-const TAB_KEYS: Tab[] = ["playlists", "liked", "recent", "downloads", "following"];
+import { libraryTabFromParam, libraryTabHref, type LibraryTab } from "./navigation";
 
 function LibraryContent() {
-  const { data: me, isLoading: meLoading } = useMe();
-  const { data: likes, isLoading: likesLoading } = useLikes(!!me);
-  const { data: playlists } = usePlaylists(!!me);
-  const { data: following } = useFollowing(!!me);
+  const meQuery = useMe();
+  const { data: me, isLoading: meLoading } = meQuery;
+  const likesQuery = useLikes(!!me);
+  const { data: likes, isLoading: likesLoading } = likesQuery;
+  const playlistsQuery = usePlaylists(!!me);
+  const { data: playlists } = playlistsQuery;
+  const followingQuery = useFollowing(!!me);
+  const { data: following } = followingQuery;
   const { downloads, removeDownload, supported } = useDownloads();
   const playQueue = usePlayerStore((s) => s.playQueue);
 
   const searchParams = useSearchParams();
-  const paramTab = searchParams.get("tab");
-  const initialTab: Tab = TAB_KEYS.includes(paramTab as Tab)
-    ? (paramTab as Tab)
-    : "playlists";
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const tab = libraryTabFromParam(searchParams.get("tab"));
+  const tabHref = (next: LibraryTab) => libraryTabHref(searchParams.toString(), next);
   // Read once per mount — recently played only changes through playback.
   const [recent] = useState(() => getRecentTracks());
   const [removingDownload, setRemovingDownload] = useState<string | null>(null);
 
   if (meLoading) return <RowListSkeleton />;
+
+  if (meQuery.isError && !me) {
+    return <LibraryQueryError label="Deine Kontodaten" query={meQuery} />;
+  }
 
   if (!me) {
     return (
@@ -59,7 +61,7 @@ function LibraryContent() {
 
   const tracks = likes ?? [];
   const downloadEntries = Object.entries(downloads);
-  const TABS: { key: Tab; label: string }[] = [
+  const TABS: { key: LibraryTab; label: string }[] = [
     { key: "playlists", label: "Playlists" },
     { key: "liked", label: "Gelikte Titel" },
     { key: "recent", label: "Zuletzt gehört" },
@@ -85,13 +87,15 @@ function LibraryContent() {
   return (
     <div className="animate-in">
       <h1 className="text-3xl font-extrabold mb-4">Deine Bibliothek</h1>
+      {meQuery.isError && <LibraryQueryError label="Deine Kontodaten" query={meQuery} />}
 
       <div className="flex gap-2 mb-6 flex-wrap">
         {TABS.map((t) => (
-          <button
+          <Link
             key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
+            href={tabHref(t.key)}
+            scroll={false}
+            aria-current={tab === t.key ? "page" : undefined}
             className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
               tab === t.key
                 ? "bg-foreground text-background"
@@ -99,23 +103,29 @@ function LibraryContent() {
             }`}
           >
             {t.label}
-          </button>
+          </Link>
         ))}
       </div>
 
       {tab === "playlists" && (
+        <>
+        {playlistsQuery.isLoading && <RowListSkeleton />}
+        {playlistsQuery.isError && <LibraryQueryError label="Deine Playlists" query={playlistsQuery} />}
+        {likesQuery.isError && <LibraryQueryError label="Deine gelikten Titel" query={likesQuery} />}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          <button
-            type="button"
-            onClick={() => setTab("liked")}
+          <Link
+            href={tabHref("liked")}
+            scroll={false}
             className="hover-lift text-left bg-accent rounded-lg p-4 transition"
           >
             <div className="w-full aspect-square rounded-md bg-white/10 flex items-center justify-center mb-3">
               <HeartIcon filled width={40} height={40} className="text-white" />
             </div>
             <div className="font-semibold">Gelikte Titel</div>
-            <div className="text-sm text-white/70">{tracks.length} Titel</div>
-          </button>
+            <div className="text-sm text-white/70">
+              {likesQuery.isError ? "Laden fehlgeschlagen" : likesQuery.isSuccess ? `${tracks.length} Titel` : "Wird geladen…"}
+            </div>
+          </Link>
 
           {(playlists ?? []).map((p) => (
             <Link
@@ -142,13 +152,15 @@ function LibraryContent() {
             </Link>
           ))}
         </div>
+        </>
       )}
 
       {tab === "liked" && (
         <>
-          <p className="text-muted mb-4">Gelikte Titel · {tracks.length}</p>
+          <p className="text-muted mb-4">Gelikte Titel{likesQuery.isSuccess ? ` · ${tracks.length}` : ""}</p>
           {likesLoading && <RowListSkeleton />}
-          {!likesLoading && tracks.length === 0 && (
+          {likesQuery.isError && <LibraryQueryError label="Deine gelikten Titel" query={likesQuery} />}
+          {likesQuery.isSuccess && tracks.length === 0 && (
             <p className="text-muted">Du hast noch keine Titel geliked.</p>
           )}
           <div className="flex flex-col">
@@ -243,9 +255,12 @@ function LibraryContent() {
 
       {tab === "following" && (
         <>
-          {(following ?? []).length === 0 ? (
+          {followingQuery.isLoading && <RowListSkeleton />}
+          {followingQuery.isError && <LibraryQueryError label="Deine gefolgten Künstler" query={followingQuery} />}
+          {followingQuery.isSuccess && followingQuery.data.length === 0 && (
             <p className="text-muted">Du folgst noch keinen Künstlern.</p>
-          ) : (
+          )}
+          {following && following.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
               {(following ?? []).map((a) => (
                 <ArtistCard key={String(a.id)} artist={a} />
@@ -254,6 +269,28 @@ function LibraryContent() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+type RetryableQuery = {
+  error: Error | null;
+  isFetching: boolean;
+  refetch: () => Promise<unknown>;
+};
+
+function LibraryQueryError({ label, query }: { label: string; query: RetryableQuery }) {
+  return (
+    <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+      {label} konnten nicht geladen werden: {query.error?.message}
+      <button
+        type="button"
+        disabled={query.isFetching}
+        onClick={() => void query.refetch()}
+        className="ml-3 underline disabled:opacity-50"
+      >
+        {query.isFetching ? "Wird geladen…" : "Erneut versuchen"}
+      </button>
     </div>
   );
 }

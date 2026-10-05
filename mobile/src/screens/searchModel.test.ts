@@ -11,9 +11,11 @@ import {
   searchPopularityPercent,
   searchTrackCredit,
   scheduleSearchDebounce,
+  searchInputReducer,
   SEARCH_DEBOUNCE_MS,
   sortSearchTracks,
   wantedSearchEntities,
+  type SearchInputState,
 } from './searchModel';
 
 afterEach(() => {
@@ -64,6 +66,46 @@ describe('search model', () => {
     expect(publish).toHaveBeenCalledWith('daft punk');
     vi.runAllTimers();
     expect(publish).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a published query active when only whitespace changes', () => {
+    let state: SearchInputState = { input: 'daft punk', publishedQuery: 'daft punk' };
+    for (const value of ['daft punk ', '  daft   punk ', 'daft punk']) {
+      state = searchInputReducer(state, { type: 'edit', value });
+      expect(state.input).toBe(value);
+      expect(isCurrentSearchQuery(state.input, state.publishedQuery)).toBe(true);
+    }
+    state = searchInputReducer(state, { type: 'edit', value: 'daft punk live' });
+    expect(state.publishedQuery).toBe('');
+    expect(isCurrentSearchQuery(state.input, state.publishedQuery)).toBe(false);
+  });
+
+  it('publishes a pending debounce after whitespace edits without a replacement timer', () => {
+    vi.useFakeTimers();
+    let state: SearchInputState = { input: 'daft punk', publishedQuery: '' };
+    scheduleSearchDebounce(state.input, (query) => {
+      state = searchInputReducer(state, { type: 'publish', query });
+    });
+    vi.advanceTimersByTime(SEARCH_DEBOUNCE_MS - 1);
+    state = searchInputReducer(state, { type: 'edit', value: 'daft punk ' });
+    vi.advanceTimersByTime(1);
+    expect(state).toEqual({ input: 'daft punk ', publishedQuery: 'daft punk' });
+  });
+
+  it('starts an eligible query on keyboard submission and rejects obsolete publication', () => {
+    let state: SearchInputState = { input: '  daft   punk ', publishedQuery: '' };
+    state = searchInputReducer(state, { type: 'submit' });
+    expect(state.publishedQuery).toBe('daft punk');
+
+    state = searchInputReducer(state, { type: 'edit', value: 'new query' });
+    state = searchInputReducer(state, { type: 'publish', query: 'daft punk' });
+    expect(state.publishedQuery).toBe('');
+    state = searchInputReducer(state, { type: 'publish', query: 'new query' });
+    expect(state.publishedQuery).toBe('new query');
+
+    state = searchInputReducer(state, { type: 'edit', value: 'a' });
+    state = searchInputReducer(state, { type: 'submit' });
+    expect(state.publishedQuery).toBe('');
   });
 
   it('selects only the entity queries needed by a tab', () => {

@@ -10,14 +10,22 @@ import { toast } from "@/store/toast";
  * silently.
  */
 export async function startTrackRadio(track: Track): Promise<void> {
+  // Reserve the user's intent before starting async discovery. A later radio
+  // start, explicit playback, clear, or party join invalidates this session.
+  usePlayerStore.getState().setRadioActive(false);
+  const requestSession = usePlayerStore.getState().radioSession;
   try {
     const tracks = await api.radio(String(track.id));
     const store = usePlayerStore.getState();
+    if (store.radioSession !== requestSession) return;
     store.playQueue([track, ...tracks], 0, `Radio – ${track.title}`);
     store.setRadioActive(true);
     toast.info("Radio gestartet…");
-  } catch {
-    toast.error("Radio konnte nicht gestartet werden.");
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const error = new Error(`Radio konnte nicht gestartet werden: ${detail}`, { cause });
+    toast.error(error.message);
+    throw error;
   }
 }
 

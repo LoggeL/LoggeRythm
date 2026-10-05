@@ -37,7 +37,11 @@ export function useTrackMenuItems(
     },
     {
       label: "Song-Radio starten",
-      onClick: () => startTrackRadio(track),
+      onClick: () => {
+        void startTrackRadio(track).catch((error: Error) => {
+          usePlayerStore.getState()._setError(error.message);
+        });
+      },
     },
   ];
   if (me)
@@ -88,6 +92,8 @@ export default function TrackMenu({
         type="button"
         onClick={openMenu}
         aria-label="Weitere Optionen"
+        aria-haspopup="menu"
+        aria-expanded={!!pos}
         title="Weitere Optionen"
         className="text-muted hover:text-foreground p-1 rounded-full hover:bg-panel-hover transition"
       >

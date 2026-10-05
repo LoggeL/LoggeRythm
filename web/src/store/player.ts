@@ -66,7 +66,9 @@ function startTrack(queue: Track[], index: number, isPlaying = true) {
     isPlaying,
     currentTime: 0,
     duration: queue[index]?.duration_sec || 0,
-    seekTo: null,
+    // The audio engine reuses a loaded deck when the song ID is unchanged.
+    // Explicit starts must therefore seek even for a replay/duplicate entry.
+    seekTo: index >= 0 && index < queue.length ? 0 : null,
     error: null,
     isBuffering: false,
   };
@@ -105,10 +107,11 @@ interface PlayerState {
 
   // party mode bridge: when set, queue edits route to the party
   partyBridge: PartyBridge | null;
+  partyQueueItemIds: number[]; // stable server entry IDs; duplicate songs have different entries
 
   // actions
   setPartyBridge: (b: PartyBridge | null) => void;
-  setPartyQueue: (tracks: Track[], index: number) => void;
+  setPartyQueue: (tracks: Track[], index: number, itemIds: number[]) => void;
   // Guest-follow: apply the host's broadcast playback atomically. Pass a
   // numeric `seekTo` only when a drift correction is needed (null = leave the
   // playhead alone). No-op while nothing is loaded (index < 0).
@@ -181,6 +184,7 @@ export const usePlayerStore = create<PlayerState>()(
       lyricsOpen: false,
       seekTo: null,
       partyBridge: null,
+      partyQueueItemIds: [],
 
       radioActive: false,
       radioSession: 0,
@@ -194,23 +198,41 @@ export const usePlayerStore = create<PlayerState>()(
         }),
       setSleepAfterTrack: (v) => set({ sleepAfterTrack: v, sleepAt: null }),
 
-      setPartyBridge: (b) => set({ partyBridge: b }),
-      setPartyQueue: (tracks, index) => {
+      setPartyBridge: (b) =>
+        set((s) => ({
+          partyBridge: b,
+          ...(b ? { radioActive: false, radioSession: s.radioSession + 1 } : {}),
+        })),
+      setPartyQueue: (tracks, index, itemIds) => {
+        if (
+          itemIds.length !== tracks.length ||
+          itemIds.some((id) => !Number.isInteger(id) || id <= 0) ||
+          new Set(itemIds).size !== itemIds.length
+        ) {
+          throw new Error("Party queue entry IDs must be unique positive integers, one per track.");
+        }
+        if (!Number.isInteger(index) || index < -1 || index >= tracks.length) {
+          throw new RangeError(`Party queue index ${index} is outside a ${tracks.length}-item queue.`);
+        }
         const queue = tracks.map((track) => ({ ...track }));
         const origins = fillOrigins(queue.length, "context");
         set((s) => {
-          // Party frames arrive on every member/queue event. Preserve the
-          // active deck's clock only while the playing track is unchanged.
+          // Removing/reordering earlier entries shifts the index without
+          // changing the active entry. Song IDs alone cannot distinguish two
+          // party entries of the same song.
           const sameTrack =
             index >= 0 &&
             index < queue.length &&
-            s.index === index &&
+            s.index >= 0 &&
+            s.partyQueueItemIds[s.index] === itemIds[index] &&
             String(s.queue[s.index]?.id ?? "") === String(queue[index]?.id ?? "");
           return {
             queue,
             origins,
             originalQueue: [...queue],
             originalOrigins: [...origins],
+            partyQueueItemIds: [...itemIds],
+            index,
             ...(sameTrack
               ? {}
               : startTrack(
@@ -265,6 +287,8 @@ export const usePlayerStore = create<PlayerState>()(
           queueContext: null,
           ...startTrack([queueTrack], 0),
           radioActive: false,
+          radioSession: get().radioSession + 1,
+          partyQueueItemIds: [],
         });
       },
 
@@ -290,6 +314,8 @@ export const usePlayerStore = create<PlayerState>()(
           queueContext: context ?? null,
           ...startTrack(productQueue.queue, productQueue.index),
           radioActive: false,
+          radioSession: get().radioSession + 1,
+          partyQueueItemIds: [],
         });
       },
 
@@ -333,7 +359,11 @@ export const usePlayerStore = create<PlayerState>()(
         if (get().partyBridge) return;
         const { queue, index } = get();
         if (index >= 0 && index < queue.length) {
-          set(clearUpcomingItems(get()));
+          set({
+            ...clearUpcomingItems(get()),
+            radioActive: false,
+            radioSession: get().radioSession + 1,
+          });
         } else {
           set({
             queue: [],
@@ -342,6 +372,9 @@ export const usePlayerStore = create<PlayerState>()(
             originalOrigins: [],
             queueContext: null,
             ...startTrack([], -1, false),
+            radioActive: false,
+            radioSession: get().radioSession + 1,
+            partyQueueItemIds: [],
           });
         }
       },
@@ -374,6 +407,9 @@ export const usePlayerStore = create<PlayerState>()(
         set({
           ...origins,
           ...startTrack(queue, i),
+          // A pending radio start has disabled radioActive. Choosing another
+          // existing entry must supersede it just like choosing a new queue.
+          ...(!state.radioActive ? { radioSession: state.radioSession + 1 } : {}),
         });
       },
 
@@ -397,14 +433,20 @@ export const usePlayerStore = create<PlayerState>()(
           if (index + 1 < queue.length) bridge.setCurrent(index + 1);
           return;
         }
-        const { index, queue, repeat } = get();
+        const { index, queue, repeat, radioActive, radioSession } = get();
         if (index < 0) return;
         if (index < queue.length - 1) {
           get().jumpTo(index + 1);
         } else if (repeat === "all" && queue.length) {
           get().jumpTo(0);
         } else {
-          set({ isPlaying: false, currentTime: 0, seekTo: 0, isBuffering: false });
+          set({
+            isPlaying: false,
+            currentTime: 0,
+            seekTo: 0,
+            isBuffering: false,
+            ...(!radioActive ? { radioSession: radioSession + 1 } : {}),
+          });
         }
       },
 

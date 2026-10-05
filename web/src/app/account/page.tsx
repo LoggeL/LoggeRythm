@@ -730,7 +730,8 @@ export default function AccountPage() {
     onSuccess: () => {
       toast.success("Konto gelöscht.");
       qc.clear();
-      window.location.href = "/";
+      // Reload the document to dispose playback and in-memory account state.
+      window.location.replace(new URL("/", window.location.origin).href);
     },
     onError: (err) =>
       toast.error(

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 export default function Modal({
   open,
@@ -14,6 +15,8 @@ export default function Modal({
   title: string;
   children: React.ReactNode;
 }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, panelRef);
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -31,11 +34,13 @@ export default function Modal({
       onClick={onClose}
     >
       <div
+        ref={panelRef}
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
-        className="pop-in bg-panel rounded-lg p-5 w-[min(92vw,28rem)] shadow-xl"
+        className="pop-in bg-panel rounded-lg p-5 w-[min(92vw,28rem)] max-h-[85dvh] overflow-y-auto shadow-xl"
       >
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold truncate">{title}</h2>

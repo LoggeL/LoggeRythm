@@ -679,6 +679,13 @@ export default function PlayerBar() {
         }
         try {
           el.currentTime = target;
+          // Consecutive queue entries may use the same audio source. An ended
+          // deck stays paused even though the next entry is marked playing.
+          if (usePlayerStore.getState().isPlaying && el.paused) {
+            el.play().catch((reason) => {
+              reportPlayFailure(el, activeIdx, expectedId, reason);
+            });
+          }
         } catch (reason) {
           const detail =
             reason instanceof Error ? reason.message : String(reason);
@@ -704,7 +711,7 @@ export default function PlayerBar() {
       }
     }
     _clearSeek();
-  }, [seekTo, _clearSeek, activeIdx, cancelCrossfade]);
+  }, [seekTo, _clearSeek, activeIdx, cancelCrossfade, reportPlayFailure]);
 
   // MediaSession: OS media keys + metadata + artwork.
   useEffect(() => {

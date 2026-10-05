@@ -203,12 +203,7 @@ def _cleanup_loop() -> None:
 
     while True:
         time.sleep(6 * 3600)
-        try:
-            result = storage.cleanup_old()
-        except Exception:  # noqa: BLE001 — keep the daemon alive, but fail loud
-            print("ERROR: storage cleanup run failed — retention is NOT running:")
-            traceback.print_exc()
-            continue
+        result = storage.cleanup_old()
         if result.get("removed"):
             print(f"Storage cleanup: removed {result['removed']} stale tracks.")
 

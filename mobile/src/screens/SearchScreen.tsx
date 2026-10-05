@@ -1,6 +1,7 @@
 import React, {
   useEffect,
   useMemo,
+  useReducer,
   useState,
   useSyncExternalStore,
   type ReactNode,
@@ -61,6 +62,7 @@ import {
   orderedPlaylistTrackIds,
   resultLimit,
   scheduleSearchDebounce,
+  searchInputReducer,
   sortSearchTracks,
   wantedSearchEntities,
   type SearchRouteCallbacks,
@@ -152,8 +154,10 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const queryClient = useQueryClient();
   const activeProgress = useProgress(1);
   const accountScope = musicCacheScope(getCurrentApiBase(), user.id);
-  const [input, setInput] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [{ input, publishedQuery: debouncedQuery }, dispatchSearchInput] = useReducer(
+    searchInputReducer,
+    { input: '', publishedQuery: '' },
+  );
   const [tab, setTab] = useState<SearchTab>('all');
   const [sort, setSort] = useState<SearchSort>('relevance');
   const [actionError, setActionError] = useState<string | null>(null);
@@ -174,8 +178,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const wanted = wantedSearchEntities(tab);
 
   useEffect(() => {
-    return scheduleSearchDebounce(normalizedInput, setDebouncedQuery);
-  }, [normalizedInput]);
+    if (ready) return;
+    return scheduleSearchDebounce(normalizedInput, (query) => {
+      dispatchSearchInput({ type: 'publish', query });
+    });
+  }, [normalizedInput, ready]);
 
   useEffect(
     () => () => {
@@ -320,10 +327,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   });
 
   const updateInput = (value: string) => {
-    setInput(value);
-    setDebouncedQuery('');
+    dispatchSearchInput({ type: 'edit', value });
     setActionError(null);
-    void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+    if (normalizeSearchInput(value) !== normalizedInput) {
+      void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+    }
   };
 
   const play = (index: number) => {
@@ -477,6 +485,10 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             placeholderTextColor={colors.textSecondary}
             value={input}
             onChangeText={updateInput}
+            onSubmitEditing={() => {
+              dispatchSearchInput({ type: 'submit' });
+              Keyboard.dismiss();
+            }}
             returnKeyType="search"
             autoCapitalize="none"
             autoCorrect={false}
@@ -607,7 +619,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
           </>
         );
 
-  const searchRows = searchState.body === 'content'
+  const searchRows = ready && searchState.body === 'content'
     ? createSearchListRows({
       artists: wanted.artist ? shownArtists : [],
       tracks: wanted.track ? shownTracks : [],

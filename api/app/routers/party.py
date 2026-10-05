@@ -7,6 +7,7 @@ in-process :mod:`app.services.party_bus`.
 """
 import asyncio
 import json
+import math
 import secrets
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator
@@ -85,6 +86,23 @@ def _require_host(session: PartySession, user: User) -> None:
         )
 
 
+def _ordered_tracks(session: PartySession) -> list[PartyTrack]:
+    return sorted(session.tracks, key=lambda track: (track.position, track.id))
+
+
+def _current_track(
+    session: PartySession, tracks: list[PartyTrack]
+) -> PartyTrack | None:
+    if session.current_index == -1:
+        return None
+    if not 0 <= session.current_index < len(tracks):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Party playback index is outside the queue; select a track again",
+        )
+    return tracks[session.current_index]
+
+
 def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
     """Build the canonical, user-independent party state as a JSON-ready dict.
 
@@ -138,7 +156,7 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
                 duration_sec=t.duration_sec,
                 added_by=t.added_by,
             )
-            for t in session.tracks
+            for t in _ordered_tracks(session)
         ],
     )
     return state.model_dump(mode="json")
@@ -267,13 +285,26 @@ def remove_track(
 ) -> Response:
     session = _get_session(db, code)
     _require_host(session, user)
-    db.execute(
-        delete(PartyTrack).where(
-            PartyTrack.session_code == session.code,
-            PartyTrack.id == item_id,
-        )
-    )
-    session.updated_at = _utcnow()
+    tracks = _ordered_tracks(session)
+    current = _current_track(session, tracks)
+    removed = next((track for track in tracks if track.id == item_id), None)
+    if removed is None:
+        raise HTTPException(status_code=404, detail="Party track not found")
+    remaining = [track for track in tracks if track.id != item_id]
+    for position, track in enumerate(remaining):
+        track.position = position
+    db.delete(removed)
+    now = _utcnow()
+    if current is removed:
+        # Continue with the following track, or the previous one at the end.
+        session.current_index = min(session.current_index, len(remaining) - 1)
+        session.position_sec = 0.0
+        session.playback_updated_at = now
+        if not remaining:
+            session.is_playing = False
+    elif current is not None:
+        session.current_index = remaining.index(current)
+    session.updated_at = now
     db.commit()
     _publish(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -288,10 +319,23 @@ def reorder_tracks(
 ) -> Response:
     session = _get_session(db, code)
     _require_host(session, user)
+    tracks = _ordered_tracks(session)
+    current_ids = {track.id for track in tracks}
+    if (
+        len(body.ids) != len(tracks)
+        or len(set(body.ids)) != len(body.ids)
+        or set(body.ids) != current_ids
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Party queue changed; reload before reordering",
+        )
+    current = _current_track(session, tracks)
     position_of = {item_id: i for i, item_id in enumerate(body.ids)}
-    for t in session.tracks:
-        if t.id in position_of:
-            t.position = position_of[t.id]
+    for track in tracks:
+        track.position = position_of[track.id]
+    if current is not None:
+        session.current_index = position_of[current.id]
     session.updated_at = _utcnow()
     db.commit()
     _publish(db, session)
@@ -307,7 +351,14 @@ def set_current(
 ) -> Response:
     session = _get_session(db, code)
     _require_host(session, user)
+    if body.index < -1 or body.index >= len(session.tracks):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Party playback index must be -1 or refer to an existing queue track",
+        )
     session.current_index = body.index
+    if body.index == -1:
+        session.is_playing = False
     # A track change resets the playback clock so guests re-sync from the top.
     session.position_sec = 0.0
     session.playback_updated_at = _utcnow()
@@ -331,8 +382,18 @@ def set_playback(
     """
     session = _get_session(db, code)
     _require_host(session, user)
+    if not math.isfinite(body.position_sec) or body.position_sec < 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Party playback position must be a finite, non-negative number",
+        )
+    if body.is_playing and _current_track(session, _ordered_tracks(session)) is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Select a party track before starting playback",
+        )
     session.is_playing = body.is_playing
-    session.position_sec = max(0.0, body.position_sec)
+    session.position_sec = body.position_sec
     session.playback_updated_at = _utcnow()
     session.updated_at = _utcnow()
     db.commit()

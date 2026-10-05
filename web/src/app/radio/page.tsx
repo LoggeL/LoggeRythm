@@ -7,6 +7,7 @@ import { startTrackRadio, startTrackListRadio } from "@/lib/radio";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { toast } from "@/store/toast";
+import { usePlayerStore } from "@/store/player";
 import { CardGridSkeleton } from "@/components/Skeleton";
 import { PlayIcon, RadioIcon, SpinnerIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
@@ -100,7 +101,11 @@ export default function RadioPage() {
               <button
                 key={track.id}
                 type="button"
-                onClick={() => startTrackRadio(track)}
+                onClick={() => {
+                  void startTrackRadio(track).catch((error: Error) => {
+                    usePlayerStore.getState()._setError(error.message);
+                  });
+                }}
                 className="group relative block text-left bg-panel/70 hover:bg-panel-hover border border-white/5 rounded-2xl p-4 transition hover-lift"
               >
                 <div className="relative mb-3 overflow-hidden rounded-xl">

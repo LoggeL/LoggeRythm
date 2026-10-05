@@ -15,6 +15,7 @@ const ALLOWLISTED_ADVISORIES = new Map();
 const FAIL_SEVERITIES = new Set(['moderate', 'high', 'critical']);
 
 let stdout;
+let npmReportedVulnerabilities = false;
 try {
   stdout = execFileSync('npm', ['audit', '--omit=dev', '--json'], {
     encoding: 'utf8',
@@ -24,22 +25,80 @@ try {
   // npm audit exits non-zero when vulnerabilities exist but still prints the
   // JSON report; anything without parseable output is a real npm failure.
   stdout = error.stdout;
+  if (error.status !== 1) {
+    throw new Error(`npm audit failed to complete: ${error.message}`);
+  }
+  npmReportedVulnerabilities = true;
   if (typeof stdout !== 'string' || stdout.trim() === '') {
     throw new Error(`npm audit did not produce a report: ${error.message}`);
   }
 }
 
-const report = JSON.parse(stdout);
+let report;
+try {
+  report = JSON.parse(stdout);
+} catch (error) {
+  throw new Error(`npm audit returned invalid JSON: ${error.message}`);
+}
+if (report === null || typeof report !== 'object' || Array.isArray(report)) {
+  throw new Error('npm audit returned an invalid report: expected an object');
+}
 if (report.error) {
   throw new Error(`npm audit failed: ${JSON.stringify(report.error)}`);
+}
+if (report.auditReportVersion !== 2) {
+  throw new Error(`npm audit returned an unsupported report version: ${report.auditReportVersion}`);
+}
+if (
+  report.vulnerabilities === null ||
+  typeof report.vulnerabilities !== 'object' ||
+  Array.isArray(report.vulnerabilities)
+) {
+  throw new Error('npm audit returned an invalid report: vulnerabilities must be an object');
+}
+if (npmReportedVulnerabilities && Object.keys(report.vulnerabilities).length === 0) {
+  throw new Error('npm audit failed with exit code 1 but reported no vulnerabilities');
 }
 
 const offending = new Map();
 const seenAllowlisted = new Set();
-for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
+let directAdvisoryCount = 0;
+for (const [name, vulnerability] of Object.entries(report.vulnerabilities)) {
+  if (
+    vulnerability === null ||
+    typeof vulnerability !== 'object' ||
+    Array.isArray(vulnerability) ||
+    typeof vulnerability.name !== 'string' ||
+    vulnerability.name.trim() === '' ||
+    vulnerability.name !== name ||
+    !Array.isArray(vulnerability.via) ||
+    vulnerability.via.length === 0
+  ) {
+    throw new Error(`npm audit returned an invalid vulnerability entry for ${name}`);
+  }
   for (const via of vulnerability.via) {
-    if (typeof via !== 'object') continue; // transitive pointer, root is reported elsewhere
-    const advisoryId = via.url?.split('/').at(-1) ?? '';
+    if (typeof via === 'string' && via.trim() !== '') {
+      if (!Object.hasOwn(report.vulnerabilities, via)) {
+        throw new Error(`npm audit returned an unresolved vulnerability pointer for ${name}: ${via}`);
+      }
+      continue; // transitive pointer, root is reported elsewhere
+    }
+    if (
+      via === null ||
+      typeof via !== 'object' ||
+      Array.isArray(via) ||
+      typeof via.name !== 'string' ||
+      via.name.trim() === '' ||
+      typeof via.title !== 'string' ||
+      via.title.trim() === '' ||
+      !['info', 'low', 'moderate', 'high', 'critical'].includes(via.severity) ||
+      typeof via.url !== 'string' ||
+      !/^https:\/\/github\.com\/advisories\/GHSA-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/.test(via.url)
+    ) {
+      throw new Error(`npm audit returned an invalid advisory for ${name}`);
+    }
+    directAdvisoryCount += 1;
+    const advisoryId = via.url.split('/').at(-1);
     if (ALLOWLISTED_ADVISORIES.has(advisoryId)) {
       if (ALLOWLISTED_ADVISORIES.get(advisoryId) !== via.name) {
         throw new Error(
@@ -53,6 +112,9 @@ for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
     if (!FAIL_SEVERITIES.has(via.severity)) continue;
     offending.set(`${advisoryId} (${via.severity}) ${via.name}: ${via.title}`, via.url);
   }
+}
+if (Object.keys(report.vulnerabilities).length > 0 && directAdvisoryCount === 0) {
+  throw new Error('npm audit reported vulnerable dependency paths without any root advisory');
 }
 
 const stale = [...ALLOWLISTED_ADVISORIES.keys()].filter((id) => !seenAllowlisted.has(id));

@@ -54,7 +54,7 @@ export default function TopBar() {
           height={20}
         />
         <span className="flex-1 text-[15px] text-muted truncate">
-          Künstler, Songs, Alben oder Playlists suchen
+          Künstler und Songs suchen
         </span>
         <kbd className="hidden sm:flex items-center gap-0.5 text-sm text-white/50">
           ⌘ K

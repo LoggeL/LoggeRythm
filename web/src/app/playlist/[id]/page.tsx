@@ -28,7 +28,7 @@ export default function PlaylistPage({
   const { id: playlistParam } = use(params);
   const id = playlistIdFromParam(playlistParam);
   const router = useRouter();
-  const { data, isLoading, isError } = usePlaylist(id);
+  const { data, isLoading, isError, error, refetch, isFetching } = usePlaylist(id);
   const playQueue = usePlayerStore((s) => s.playQueue);
   const removeFromPlaylist = useRemoveFromPlaylist();
   const reorder = useReorderPlaylist();
@@ -44,6 +44,9 @@ export default function PlaylistPage({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [visibilityPending, setVisibilityPending] = useState(false);
+  const visibilityRequest = useRef(false);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) return;
@@ -63,8 +66,8 @@ export default function PlaylistPage({
       qc.invalidateQueries({ queryKey: ["playlist", id] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
       toast.success("Cover aktualisiert.");
-    } catch {
-      toast.error("Cover-Upload fehlgeschlagen.");
+    } catch (err) {
+      toast.error(`Cover-Upload fehlgeschlagen: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploading(false);
     }
@@ -77,38 +80,65 @@ export default function PlaylistPage({
         <RowListSkeleton />
       </div>
     );
-  if (isError || !data)
-    return <p className="text-red-400">Playlist nicht gefunden.</p>;
+  if (isError && !data)
+    return (
+      <div role="alert" className="text-red-400">
+        Playlist konnte nicht geladen werden: {error.message}
+        <button type="button" disabled={isFetching} onClick={() => void refetch()} className="ml-3 underline disabled:opacity-50">
+          Erneut versuchen
+        </button>
+      </div>
+    );
+  if (!data) throw new Error("Playlist konnte nicht angezeigt werden: Die API-Antwort enthält keine Daten.");
 
   const tracks = data.tracks ?? [];
   const isOwner = !!data.is_owner;
 
   function startEdit() {
+    updatePlaylist.reset();
+    setNameError(null);
     setName(data!.name);
     setDescription(data!.description ?? "");
     setEditing(true);
   }
 
-  async function saveEdit(e: React.FormEvent) {
+  function saveEdit(e: React.FormEvent) {
     e.preventDefault();
-    await updatePlaylist.mutateAsync({ id, patch: { name, description } });
-    setEditing(false);
+    if (updatePlaylist.isPending) return;
+    const nextName = name.trim();
+    if (!nextName) {
+      setNameError("Gib einen Namen für die Playlist ein.");
+      return;
+    }
+    setNameError(null);
+    updatePlaylist.mutate(
+      { id, patch: { name: nextName, description } },
+      { onSuccess: () => setEditing(false) },
+    );
   }
 
-  async function handleDelete() {
-    await deletePlaylist.mutateAsync(id);
-    router.push("/library");
+  function handleDelete() {
+    if (deletePlaylist.isPending) return;
+    deletePlaylist.mutate(id, { onSuccess: () => router.push("/library") });
   }
 
   async function toggleVisibility() {
+    if (visibilityRequest.current) return;
+    visibilityRequest.current = true;
+    setVisibilityPending(true);
     const next = !data!.is_public;
     try {
       await api.setPlaylistVisibility(id, next);
-      qc.invalidateQueries({ queryKey: ["playlist", id] });
-      qc.invalidateQueries({ queryKey: ["playlists"] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["playlist", id] }),
+        qc.invalidateQueries({ queryKey: ["playlists"] }),
+      ]);
       toast.success(next ? "Playlist ist jetzt öffentlich." : "Playlist ist jetzt privat.");
-    } catch {
-      toast.error("Sichtbarkeit konnte nicht geändert werden.");
+    } catch (err) {
+      toast.error(`Sichtbarkeit konnte nicht geändert werden: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      visibilityRequest.current = false;
+      setVisibilityPending(false);
     }
   }
 
@@ -122,6 +152,14 @@ export default function PlaylistPage({
 
   return (
     <div className="animate-in">
+      {isError && (
+        <div role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          Playlist konnte nicht aktualisiert werden: {error.message}
+          <button type="button" disabled={isFetching} onClick={() => void refetch()} className="ml-3 underline disabled:opacity-50">
+            Erneut versuchen
+          </button>
+        </div>
+      )}
       <header className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-6 mb-6">
         <div className="relative w-40 h-40 flex-shrink-0 group">
           {data.cover_url ? (
@@ -143,7 +181,7 @@ export default function PlaylistPage({
                 onClick={() => fileRef.current?.click()}
                 disabled={uploading}
                 aria-label="Cover ändern"
-                className="absolute inset-0 rounded-md bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-1 text-sm font-medium disabled:opacity-100"
+                className="absolute inset-0 rounded-md bg-black/60 opacity-100 sm:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition flex flex-col items-center justify-center gap-1 text-sm font-medium disabled:opacity-100"
               >
                 <EditIcon />
                 {uploading ? "Lädt…" : "Cover ändern"}
@@ -226,9 +264,12 @@ export default function PlaylistPage({
             <button
               type="button"
               onClick={toggleVisibility}
-              className="px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition"
+              disabled={visibilityPending}
+              aria-pressed={data.is_public}
+              title={data.is_public ? "Playlist privat machen" : "Playlist veröffentlichen"}
+              className="px-3 py-1.5 rounded-full border border-white/20 text-sm font-medium hover:border-white/60 transition disabled:opacity-50 disabled:cursor-wait"
             >
-              {data.is_public ? "Öffentlich" : "Privat"}
+              {visibilityPending ? "Wird geändert…" : data.is_public ? "Öffentlich" : "Privat"}
             </button>
             <button
               type="button"
@@ -241,7 +282,10 @@ export default function PlaylistPage({
             </button>
             <button
               type="button"
-              onClick={() => setConfirmingDelete(true)}
+              onClick={() => {
+                deletePlaylist.reset();
+                setConfirmingDelete(true);
+              }}
               aria-label="Playlist löschen"
               title="Löschen"
               className="text-muted hover:text-red-400 p-2 rounded-full hover:bg-panel-hover"
@@ -254,18 +298,24 @@ export default function PlaylistPage({
 
       <Modal
         open={confirmingDelete}
-        onClose={() => setConfirmingDelete(false)}
+        onClose={() => {
+          if (!deletePlaylist.isPending) setConfirmingDelete(false);
+        }}
         title="Playlist löschen"
       >
         <p className="text-sm text-muted mb-4">
           „{data.name}“ wird endgültig gelöscht. Das kann nicht rückgängig
           gemacht werden.
         </p>
+        {deletePlaylist.isError && (
+          <p role="alert" className="text-sm text-red-400 mb-4">Playlist konnte nicht gelöscht werden: {deletePlaylist.error.message}</p>
+        )}
         <div className="flex gap-2 justify-end">
           <button
             type="button"
             onClick={() => setConfirmingDelete(false)}
-            className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+            disabled={deletePlaylist.isPending}
+            className="px-4 py-2 rounded-full text-muted hover:text-foreground disabled:opacity-50"
           >
             Abbrechen
           </button>
@@ -282,7 +332,9 @@ export default function PlaylistPage({
 
       <Modal
         open={editing}
-        onClose={() => setEditing(false)}
+        onClose={() => {
+          if (!updatePlaylist.isPending) setEditing(false);
+        }}
         title="Playlist bearbeiten"
       >
         <form onSubmit={saveEdit} className="flex flex-col gap-3">
@@ -290,33 +342,46 @@ export default function PlaylistPage({
             Name
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setNameError(null);
+              }}
               required
+              disabled={updatePlaylist.isPending}
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? "playlist-name-error" : undefined}
               className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
             />
+            {nameError && <span id="playlist-name-error" role="alert" className="text-red-400">{nameError}</span>}
           </label>
           <label className="flex flex-col gap-1 text-sm">
             Beschreibung
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              disabled={updatePlaylist.isPending}
               rows={2}
               className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent resize-none"
             />
           </label>
+          {updatePlaylist.isError && (
+            <p role="alert" className="text-sm text-red-400">Playlist konnte nicht gespeichert werden: {updatePlaylist.error.message}</p>
+          )}
           <div className="flex gap-2 justify-end">
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="px-4 py-2 rounded-full text-muted hover:text-foreground"
+              disabled={updatePlaylist.isPending}
+              className="px-4 py-2 rounded-full text-muted hover:text-foreground disabled:opacity-50"
             >
               Abbrechen
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover"
+              disabled={updatePlaylist.isPending}
+              className="px-5 py-2 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50"
             >
-              Speichern
+              {updatePlaylist.isPending ? "Wird gespeichert…" : "Speichern"}
             </button>
           </div>
         </form>

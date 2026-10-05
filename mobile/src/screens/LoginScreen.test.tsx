@@ -152,6 +152,56 @@ describe('LoginScreen action feedback', () => {
     expect(mocks.announce).toHaveBeenCalledExactlyOnceWith(strings.auth.accountCreated);
   });
 
+  it.each([
+    ['sign-in', 'login-submit', 'login-password'],
+    ['create-account', 'register-submit', 'register-invite'],
+  ] as const)('starts %s once across concurrent button and keyboard submissions', async (
+    mode,
+    submitId,
+    keyboardId,
+  ) => {
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    const action = vi.fn(() => pending);
+    mocks.useAuth.mockReturnValue({ login: action, register: action });
+    const rendered = render({ mode });
+    const submit = byTestId(rendered.tree, submitId).props.onPress as () => Promise<void>;
+    const keyboardSubmit = byTestId(rendered.tree, keyboardId).props.onSubmitEditing as () => void;
+
+    const firstSubmission = submit();
+    keyboardSubmit();
+    await submit();
+
+    expect(action).toHaveBeenCalledOnce();
+    expect(rendered.setBusy.mock.calls).toEqual([[true]]);
+    expect(rendered.setError.mock.calls).toEqual([[null]]);
+    expect(rendered.authRequestInFlightRef.current).toBe(true);
+
+    finish();
+    await firstSubmission;
+    await submit();
+    expect(action).toHaveBeenCalledOnce();
+    expect(rendered.setBusy.mock.calls).toEqual([[true], [false]]);
+    expect(mocks.announce).toHaveBeenCalledOnce();
+  });
+
+  it('allows another submission after an authentication failure', async () => {
+    const login = vi.fn()
+      .mockRejectedValueOnce(new Error('Authentication failed'))
+      .mockResolvedValueOnce(undefined);
+    mocks.useAuth.mockReturnValue({ login, register: vi.fn() });
+    const rendered = render();
+    const submit = byTestId(rendered.tree, 'login-submit').props.onPress as () => Promise<void>;
+
+    await submit();
+    expect(rendered.authRequestInFlightRef.current).toBe(false);
+    await submit();
+
+    expect(login).toHaveBeenCalledTimes(2);
+    expect(rendered.setBusy.mock.calls).toEqual([[true], [false], [true], [false]]);
+    expect(mocks.announce).toHaveBeenCalledExactlyOnceWith(strings.auth.signedIn);
+  });
+
   it('hides transport details behind sign-in-specific recovery copy', async () => {
     const privateDetail =
       'POST https://prod.example.test/login leaked private@example.test and database host db.internal';

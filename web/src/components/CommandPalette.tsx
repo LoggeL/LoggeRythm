@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -9,6 +9,7 @@ import { usePlayerStore } from "@/store/player";
 import { SearchIcon, PlayIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track, ArtistSummary } from "@/types";
+import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 type Row =
   | { kind: "track"; track: Track }
@@ -25,6 +26,9 @@ export default function CommandPalette() {
   const [debounced, setDebounced] = useState("");
   const [sel, setSel] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  useDialogFocus(open, panelRef);
   const router = useRouter();
   const playQueue = usePlayerStore((s) => s.playQueue);
 
@@ -59,13 +63,6 @@ export default function CommandPalette() {
     };
   }, []);
 
-  // Focus the input once the overlay is mounted (DOM sync, not state).
-  useEffect(() => {
-    if (!open) return;
-    const id = setTimeout(() => inputRef.current?.focus(), 20);
-    return () => clearTimeout(id);
-  }, [open]);
-
   // Debounce the query.
   useEffect(() => {
     const id = setTimeout(() => setDebounced(q.trim()), 220);
@@ -83,7 +80,8 @@ export default function CommandPalette() {
     enabled: open && debounced.length > 1,
   });
 
-  const rows: Row[] = [
+  const preparing = q.trim() !== debounced;
+  const rows: Row[] = preparing || debounced.length <= 1 ? [] : [
     ...(artists.data ?? []).slice(0, 3).map((artist) => ({
       kind: "artist" as const,
       artist,
@@ -93,6 +91,10 @@ export default function CommandPalette() {
       track,
     })),
   ];
+  const selected = Math.min(sel, Math.max(rows.length - 1, 0));
+  useEffect(() => {
+    panelRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [selected, rows.length]);
 
   function activate(row: Row) {
     if (row.kind === "track") {
@@ -106,6 +108,7 @@ export default function CommandPalette() {
   }
 
   function onInputKey(e: React.KeyboardEvent) {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSel((s) => Math.min(s + 1, Math.max(rows.length - 1, 0)));
@@ -114,7 +117,7 @@ export default function CommandPalette() {
       setSel((s) => Math.max(s - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
-      if (rows[sel]) activate(rows[sel]);
+      if (rows[selected]) activate(rows[selected]);
     }
   }
 
@@ -126,6 +129,11 @@ export default function CommandPalette() {
       onClick={() => setOpen(false)}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Schnellsuche"
+        tabIndex={-1}
         className="w-full max-w-xl bg-background-elevated border border-white/10 rounded-2xl shadow-2xl overflow-hidden pop-in"
         onClick={(e) => e.stopPropagation()}
       >
@@ -133,13 +141,19 @@ export default function CommandPalette() {
           <SearchIcon width={18} height={18} className="text-muted" />
           <input
             ref={inputRef}
+            role="combobox"
+            aria-label="Künstler und Songs suchen"
+            aria-autocomplete="list"
+            aria-controls={listId}
+            aria-expanded={rows.length > 0}
+            aria-activedescendant={rows.length > 0 ? `${listId}-${selected}` : undefined}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
               setSel(0);
             }}
             onKeyDown={onInputKey}
-            placeholder="Künstler, Songs, Alben suchen…"
+            placeholder="Künstler und Songs suchen…"
             className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted"
           />
           <kbd className="hidden sm:block text-[10px] text-muted border border-white/15 rounded px-1.5 py-0.5">
@@ -147,20 +161,20 @@ export default function CommandPalette() {
           </kbd>
         </div>
 
-        <div className="max-h-[50vh] overflow-y-auto scroll-area py-2">
-          {debounced.length <= 1 && (
+        <div className="max-h-[50dvh] overflow-y-auto scroll-area py-2">
+          {q.trim().length <= 1 && (
             <p className="px-4 py-6 text-sm text-muted text-center">
               Tippe, um zu suchen.
             </p>
           )}
-          {debounced.length > 1 && !tracks.isError && !artists.isError && rows.length === 0 && (
+          {q.trim().length > 1 && (preparing || (!tracks.isError && !artists.isError && rows.length === 0)) && (
             <p className="px-4 py-6 text-sm text-muted text-center">
-              {tracks.isLoading || artists.isLoading
+              {preparing || tracks.isLoading || artists.isLoading
                 ? "Sucht…"
                 : "Keine Treffer."}
             </p>
           )}
-          {debounced.length > 1 && [
+          {!preparing && debounced.length > 1 && [
             { label: "Titel", result: tracks },
             { label: "Künstler", result: artists },
           ].filter(({ result }) => result.isError).map(({ label, result }) => (
@@ -169,12 +183,17 @@ export default function CommandPalette() {
               <button type="button" className="ml-3 underline" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
             </div>
           ))}
+          <div id={listId} role="listbox" aria-label="Suchergebnisse">
           {rows.map((row, i) => {
-            const active = i === sel;
+            const active = i === selected;
             const key = row.kind === "track" ? `t-${row.track.id}` : `a-${row.artist.id}`;
             return (
               <button
                 key={key}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={active}
+                tabIndex={-1}
                 type="button"
                 onMouseEnter={() => setSel(i)}
                 onClick={() => activate(row)}
@@ -229,6 +248,7 @@ export default function CommandPalette() {
               </button>
             );
           })}
+          </div>
         </div>
       </div>
     </div>

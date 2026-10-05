@@ -98,7 +98,7 @@ export function useParty(code: string | null) {
   useEffect(() => {
     if (!data) return;
     const tracks = data.tracks.map(partyTrackToTrack);
-    setPartyQueue(tracks, data.current_index);
+    setPartyQueue(tracks, data.current_index, data.tracks.map((entry) => entry.id));
     setParty({
       code: data.code,
       active: true,
@@ -168,6 +168,7 @@ export function useParty(code: string | null) {
     party: data,
     isLoading: query.isLoading,
     isError: query.isError,
+    error: query.error,
     refetch: query.refetch,
     create,
     join,

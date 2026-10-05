@@ -24,6 +24,42 @@ export function normalizeSearchInput(value: string): string {
   return value.trim().replace(/\s+/g, ' ');
 }
 
+export interface SearchInputState {
+  input: string;
+  publishedQuery: string;
+}
+
+export type SearchInputAction =
+  | { type: 'edit'; value: string }
+  | { type: 'publish'; query: string }
+  | { type: 'submit' };
+
+/** Keep the display text and published query aligned on their canonical identity. */
+export function searchInputReducer(
+  state: SearchInputState,
+  action: SearchInputAction,
+): SearchInputState {
+  switch (action.type) {
+    case 'edit':
+      return {
+        input: action.value,
+        publishedQuery: normalizeSearchInput(action.value) === normalizeSearchInput(state.input)
+          ? state.publishedQuery
+          : '',
+      };
+    case 'publish': {
+      const query = normalizeSearchInput(action.query);
+      // An obsolete debounce callback must never revive the previous input.
+      if (query !== normalizeSearchInput(state.input) || !isSearchableQuery(query)) return state;
+      return { ...state, publishedQuery: query };
+    }
+    case 'submit': {
+      const query = normalizeSearchInput(state.input);
+      return { ...state, publishedQuery: isSearchableQuery(query) ? query : '' };
+    }
+  }
+}
+
 export function isSearchableQuery(value: string): boolean {
   return Array.from(normalizeSearchInput(value)).length >= 2;
 }

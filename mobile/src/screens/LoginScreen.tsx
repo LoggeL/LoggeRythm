@@ -103,6 +103,7 @@ export default function LoginScreen() {
   }, []);
 
   const onSubmit = async () => {
+    if (authRequestInFlightRef.current) return;
     setError(null);
     let normalizedServer: string;
     try {

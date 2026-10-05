@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -15,6 +15,7 @@ import { CardGridSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import ImportPanel from "@/components/ImportPanel";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { SearchIcon, ImportIcon, FilterIcon } from "@/components/icons";
+import { rememberSearch } from "./history";
 import type {
   Track,
   ArtistSummary,
@@ -60,6 +61,7 @@ export default function SearchPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [importing, setImporting] = useState(false);
   const [startingPlaylist, setStartingPlaylist] = useState<string | null>(null);
+  const playlistRequest = useRef<string | null>(null);
   const [recent, setRecent] = useLocalJson<string[]>(
     "sf_recent_searches",
     EMPTY_STRINGS,
@@ -73,8 +75,7 @@ export default function SearchPage() {
   }, [input]);
 
   function commitRecent(q: string) {
-    if (!q) return;
-    setRecent([q, ...recent.filter((r) => r !== q)].slice(0, 8));
+    setRecent((current) => rememberSearch(current, q));
   }
 
   function clearRecent() {
@@ -145,7 +146,7 @@ export default function SearchPage() {
   );
 
   return (
-    <div onBlur={() => commitRecent(query)}>
+    <div>
       <h1 className="text-3xl font-extrabold mb-4">Suche</h1>
 
       <div className="mb-5 max-w-2xl">
@@ -155,6 +156,14 @@ export default function SearchPage() {
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onBlur={() => commitRecent(input)}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                setQuery(input.trim());
+                commitRecent(input);
+              }}
+              type="search"
+              aria-label="Nach Titeln, Künstlern, Alben oder Playlists suchen"
               placeholder="Titel, Künstler, Alben, Playlists…"
               className="flex-1 min-w-0 bg-transparent outline-none text-foreground placeholder:text-muted"
               autoFocus
@@ -162,7 +171,10 @@ export default function SearchPage() {
             {input && (
               <button
                 type="button"
-                onClick={() => setInput("")}
+                onClick={() => {
+                  setInput("");
+                  setQuery("");
+                }}
                 aria-label="Leeren"
                 className="text-muted hover:text-foreground flex-shrink-0"
               >
@@ -178,6 +190,7 @@ export default function SearchPage() {
               aria-label="Filter"
               aria-pressed={showFilters}
               title="Filter"
+              aria-controls="search-filters"
               className={`p-1 rounded-full transition flex-shrink-0 ${
                 showFilters || sort !== "relevance"
                   ? "text-accent"
@@ -193,6 +206,8 @@ export default function SearchPage() {
             type="button"
             onClick={() => setImporting((v) => !v)}
             title={importing ? "Import schließen" : "Von Spotify importieren"}
+            aria-label={importing ? "Import schließen" : "Von Spotify importieren"}
+            aria-expanded={importing}
             className={`flex-shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition ${
               importing
                 ? "bg-foreground text-background"
@@ -207,13 +222,14 @@ export default function SearchPage() {
         </div>
 
         {showFilters && (
-          <div className="mt-2 flex items-center gap-2 flex-wrap bg-panel/70 border border-white/5 rounded-2xl px-3 py-2">
+          <div id="search-filters" className="mt-2 flex items-center gap-2 flex-wrap bg-panel/70 border border-white/5 rounded-2xl px-3 py-2">
             <span className="text-xs text-muted mr-1">Sortierung:</span>
             {SORTS.map((s) => (
               <button
                 key={s.key}
                 type="button"
                 onClick={() => setSort(s.key)}
+                aria-pressed={sort === s.key}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition ${
                   sort === s.key
                     ? "bg-accent text-white"
@@ -240,6 +256,7 @@ export default function SearchPage() {
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
+              aria-pressed={tab === t.key}
               className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
                 tab === t.key
                   ? "bg-foreground text-background"
@@ -273,7 +290,11 @@ export default function SearchPage() {
                   <button
                     key={r}
                     type="button"
-                    onClick={() => setInput(r)}
+                    onClick={() => {
+                      setInput(r);
+                      setQuery(r);
+                      commitRecent(r);
+                    }}
                     className="px-4 py-1.5 rounded-full bg-panel text-sm hover:bg-panel-hover press"
                   >
                     {r}
@@ -395,17 +416,23 @@ export default function SearchPage() {
                 <button
                   key={String(p.id)}
                   type="button"
-                  disabled={startingPlaylist === String(p.id)}
+                  disabled={startingPlaylist !== null}
                   onClick={async () => {
+                    if (playlistRequest.current !== null) return;
+                    playlistRequest.current = String(p.id);
                     setStartingPlaylist(String(p.id));
                     try {
                       const pl = await api.deezerPlaylist(String(p.id));
+                      if (pl.tracks.length === 0) {
+                        throw new Error("Diese Playlist enthält keine abspielbaren Titel.");
+                      }
                       usePlayerStore.getState().playQueue(pl.tracks, 0, p.title);
                     } catch (err) {
                       toast.error(
                         `Playlist konnte nicht geladen werden — ${err instanceof Error ? err.message : String(err)}`,
                       );
                     } finally {
+                      playlistRequest.current = null;
                       setStartingPlaylist(null);
                     }
                   }}

@@ -46,6 +46,9 @@ export default function ContextMenu({
   }, [x, y]);
 
   useEffect(() => {
+    const panel = ref.current;
+    const previous = document.activeElement;
+    ref.current?.querySelector<HTMLButtonElement>('button[role="menuitem"]')?.focus();
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
@@ -53,10 +56,20 @@ export default function ContextMenu({
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" || e.key === "Tab") {
+        if (e.key === "Escape") e.preventDefault();
+        onClose();
+        return;
+      }
+      const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') ?? []);
+      if (!buttons.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      e.preventDefault();
+      const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (current + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next].focus();
     }
-    function onScroll() {
-      onClose();
+    function onScroll(event: Event) {
+      if (!ref.current?.contains(event.target as Node)) onClose();
     }
     document.addEventListener("mousedown", onDoc);
     document.addEventListener("contextmenu", onCtx);
@@ -69,6 +82,7 @@ export default function ContextMenu({
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onClose);
       window.removeEventListener("scroll", onScroll, true);
+      if (previous instanceof HTMLElement && previous.isConnected && (panel?.contains(document.activeElement) || document.activeElement === document.body)) previous.focus();
     };
   }, [onClose]);
 
@@ -79,7 +93,7 @@ export default function ContextMenu({
       ref={ref}
       role="menu"
       style={{ left: pos.left, top: pos.top, width: MENU_WIDTH }}
-      className="pop-in fixed z-[100] rounded-md bg-[#282828] border border-white/10 shadow-xl py-1 text-sm"
+      className="pop-in fixed z-[100] max-h-[80dvh] overflow-y-auto rounded-md bg-[#282828] border border-white/10 shadow-xl py-1 text-sm"
     >
       {items.map((it) => (
         <button
@@ -87,10 +101,10 @@ export default function ContextMenu({
           type="button"
           role="menuitem"
           onClick={() => {
-            it.onClick();
             onClose();
+            it.onClick();
           }}
-          className={`w-full text-left px-3 py-2 flex items-center gap-2.5 truncate transition hover:bg-white/10 ${
+          className={`w-full text-left px-3 py-2 flex items-center gap-2.5 truncate transition hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none ${
             it.danger ? "text-red-400" : "text-foreground"
           }`}
         >

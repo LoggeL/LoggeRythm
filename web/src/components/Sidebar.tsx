@@ -68,17 +68,20 @@ export default function Sidebar() {
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
 
-  async function handleCreate(e: React.FormEvent) {
+  function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     const name = newName.trim();
-    if (!name) return;
-    await createPlaylist.mutateAsync({
+    if (!name || createPlaylist.isPending) return;
+    createPlaylist.mutate({
       name,
       description: newDescription.trim() || undefined,
+    }, {
+      onSuccess: () => {
+        setCreating(false);
+        setNewName("");
+        setNewDescription("");
+      },
     });
-    setCreating(false);
-    setNewName("");
-    setNewDescription("");
   }
 
   const pathname = usePathname();
@@ -221,7 +224,7 @@ export default function Sidebar() {
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               required
-              autoFocus
+              data-dialog-autofocus
               placeholder="Meine Playlist"
               className="bg-background border border-white/15 rounded px-3 py-2 outline-none focus:border-accent"
             />

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState, useSyncExternalStore } from "react";
+import { use, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { useParty } from "@/hooks/useParty";
@@ -14,6 +14,11 @@ import { PlayIcon } from "@/components/icons";
 import Avatar from "@/components/Avatar";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import type { Track } from "@/types";
+import {
+  createPartySearchRequests,
+  leavePartyAndNavigate,
+  partyFailureMessage,
+} from "../requests";
 
 export default function PartyPage({
   params,
@@ -26,6 +31,8 @@ export default function PartyPage({
     party,
     isLoading,
     isError,
+    error,
+    refetch,
     join,
     add,
     remove,
@@ -34,7 +41,6 @@ export default function PartyPage({
     setPlayback,
     leave,
   } = useParty(code);
-  const playerIndex = usePlayerStore((s) => s.index);
   const followHostPlayback = usePlayerStore((s) => s.followHostPlayback);
 
   const isHost = !!party?.is_host;
@@ -49,9 +55,12 @@ export default function PartyPage({
     if (!code || !isHost) return;
     const broadcast = () => {
       const ps = usePlayerStore.getState();
-      setPlayback(ps.isPlaying, ps.currentTime).catch(() =>
-        toast.error("Wiedergabe konnte nicht an die Party gesendet werden."),
-      );
+      setPlayback(ps.isPlaying, ps.currentTime).catch((error: unknown) => {
+        toast.error(partyFailureMessage(
+          "Wiedergabe konnte nicht an die Party gesendet werden",
+          error,
+        ));
+      });
     };
     const unsub = usePlayerStore.subscribe((s, prev) => {
       if (s.isPlaying !== prev.isPlaying || s.index !== prev.index) broadcast();
@@ -101,19 +110,54 @@ export default function PartyPage({
   const [searching, setSearching] = useState(false);
   // Term of the last completed search — drives the "keine Treffer" empty state.
   const [searchedTerm, setSearchedTerm] = useState<string | null>(null);
-  const [joinFailed, setJoinFailed] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [queuePending, setQueuePending] = useState(false);
+  const [queueError, setQueueError] = useState<string | null>(null);
+  const [reloading, setReloading] = useState(false);
+  const queueBusy = useRef(false);
+  const leaveBusy = useRef(false);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchRequests] = useState(createPartySearchRequests);
+
+  useEffect(() => () => {
+    searchRequests.cancel();
+    if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+  }, [searchRequests]);
 
   // Join on mount; a failed join gets a visible retry instead of only a toast.
   useEffect(() => {
     if (!code) return;
+    let active = true;
     join()
-      .then(() => setJoinFailed(false))
-      .catch(() => {
-        setJoinFailed(true);
-        toast.error("Beitritt zur Party fehlgeschlagen.");
+      .then(() => {
+        if (active) setJoinError(null);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        const message = partyFailureMessage("Beitritt zur Party fehlgeschlagen", error);
+        setJoinError(message);
+        toast.error(message);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code]);
+    return () => { active = false; };
+  }, [code, join]);
+
+  const retryJoin = async () => {
+    setJoining(true);
+    try {
+      await join();
+      setJoinError(null);
+    } catch (error) {
+      const message = partyFailureMessage("Beitritt zur Party fehlgeschlagen", error);
+      setJoinError(message);
+      toast.error(message);
+    } finally {
+      setJoining(false);
+    }
+  };
 
   const isClient = useSyncExternalStore(
     subscribeToClientState,
@@ -131,9 +175,10 @@ export default function PartyPage({
     try {
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Link konnte nicht kopiert werden.");
+      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 1500);
+    } catch (error) {
+      toast.error(partyFailureMessage("Link konnte nicht kopiert werden", error));
     }
   };
 
@@ -141,42 +186,90 @@ export default function PartyPage({
     e.preventDefault();
     const term = q.trim();
     if (!term) return;
+    const request = searchRequests.start();
     setSearching(true);
+    setSearchError(null);
+    setResults([]);
+    setSearchedTerm(null);
     try {
-      const tracks = await api.search(term, "track");
+      const tracks = await api.search(term, "track", request.signal);
+      if (!request.isCurrent()) return;
       setResults(tracks);
       setSearchedTerm(term);
-    } catch {
-      toast.error("Suche fehlgeschlagen.");
+    } catch (error) {
+      if (!request.isCurrent()) return;
+      const message = partyFailureMessage(`Suche nach "${term}" fehlgeschlagen`, error);
+      setSearchError(message);
     } finally {
-      setSearching(false);
+      if (request.isCurrent()) setSearching(false);
     }
   };
 
   const onLeave = async () => {
+    if (leaveBusy.current || queueBusy.current) return;
+    leaveBusy.current = true;
+    setLeaving(true);
+    setLeaveError(null);
     try {
-      await leave();
+      await leavePartyAndNavigate(leave, () => router.push("/"));
+    } catch (error) {
+      const message = partyFailureMessage("Party konnte nicht verlassen werden", error);
+      setLeaveError(message);
+      toast.error(message);
     } finally {
-      router.push("/");
+      leaveBusy.current = false;
+      setLeaving(false);
     }
   };
 
-  if (joinFailed) {
+  const mutateQueue = async (
+    action: string,
+    operation: () => Promise<void>,
+    successMessage?: string,
+  ) => {
+    if (queueBusy.current || leaveBusy.current) return;
+    queueBusy.current = true;
+    setQueuePending(true);
+    setQueueError(null);
+    try {
+      await operation();
+      if (successMessage) toast.success(successMessage);
+    } catch (error) {
+      const message = partyFailureMessage(action, error);
+      setQueueError(message);
+      toast.error(message);
+    } finally {
+      queueBusy.current = false;
+      setQueuePending(false);
+    }
+  };
+
+  const reloadParty = async () => {
+    setReloading(true);
+    try {
+      await refetch({ throwOnError: true });
+    } catch (error) {
+      toast.error(partyFailureMessage("Party konnte nicht geladen werden", error));
+    } finally {
+      setReloading(false);
+    }
+  };
+
+  const partyLoadError = error
+    ? partyFailureMessage("Party konnte nicht geladen werden", error)
+    : "Die API hat keine Party-Daten zurückgegeben.";
+
+  if (joinError) {
     return (
       <div className="animate-in max-w-3xl">
-        <p className="text-red-400 mb-4">Beitritt zur Party fehlgeschlagen.</p>
+        <p role="alert" className="text-red-400 mb-4">{joinError}</p>
         <button
           type="button"
-          onClick={() => {
-            setJoinFailed(false);
-            join().catch(() => {
-              setJoinFailed(true);
-              toast.error("Beitritt zur Party fehlgeschlagen.");
-            });
-          }}
-          className="px-5 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover press"
+          onClick={retryJoin}
+          disabled={joining}
+          className="px-5 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-40 press"
         >
-          Erneut versuchen
+          {joining ? "Beitritt wird versucht…" : "Erneut versuchen"}
         </button>
       </div>
     );
@@ -184,11 +277,25 @@ export default function PartyPage({
   if (isLoading && !party) {
     return <p className="text-muted animate-in">Party wird geladen…</p>;
   }
-  if (isError || !party) {
-    return <p className="text-red-400 animate-in">Party nicht gefunden.</p>;
+  if (!party) {
+    return (
+      <div className="animate-in max-w-3xl">
+        <p role="alert" className="mb-4 text-red-400">{partyLoadError}</p>
+        <button
+          type="button"
+          onClick={reloadParty}
+          disabled={reloading}
+          className="px-5 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-40 press"
+        >
+          {reloading ? "Party wird geladen…" : "Erneut laden"}
+        </button>
+      </div>
+    );
   }
 
   const tracks = party.tracks;
+  const trackIds = tracks.map((track) => track.id);
+  const queueDisabled = queuePending || leaving;
 
   return (
     <div className="animate-in">
@@ -206,6 +313,20 @@ export default function PartyPage({
           )}
         </p>
       </header>
+
+      {isError && (
+        <div role="alert" className="mb-6 rounded-lg bg-panel p-4">
+          <p className="mb-2 text-sm text-red-400">{partyLoadError}</p>
+          <button
+            type="button"
+            onClick={reloadParty}
+            disabled={reloading}
+            className="text-sm text-foreground underline disabled:opacity-40"
+          >
+            {reloading ? "Party wird geladen…" : "Erneut laden"}
+          </button>
+        </div>
+      )}
 
       {!isHost && (
         <div className="mb-6 flex items-center gap-2 rounded-lg bg-panel px-4 py-3 text-sm text-muted">
@@ -285,32 +406,45 @@ export default function PartyPage({
       <button
         type="button"
         onClick={onLeave}
-        className="self-start px-5 py-2 rounded-full bg-panel hover:bg-panel-hover text-foreground text-sm font-semibold press"
+        disabled={queueDisabled}
+        className="self-start px-5 py-2 rounded-full bg-panel hover:bg-panel-hover text-foreground text-sm font-semibold disabled:opacity-40 press"
       >
-        Party verlassen
+        {leaving ? "Party wird verlassen…" : "Party verlassen"}
       </button>
+      {leaveError && <p role="alert" className="text-sm text-red-400">{leaveError}</p>}
       </aside>
 
       <div className="min-w-0 lg:order-1">
+      {queueError && <p role="alert" className="mb-4 text-sm text-red-400">{queueError}</p>}
       <section className="mb-8">
         <p className="text-xs uppercase tracking-wide text-muted mb-2">
           Songs hinzufügen
         </p>
-        <form onSubmit={runSearch} className="flex items-center gap-2 mb-3">
+        <form onSubmit={runSearch} aria-busy={searching} className="flex items-center gap-2 mb-3">
           <input
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => {
+              searchRequests.cancel();
+              setQ(e.target.value);
+              setSearching(false);
+              setSearchError(null);
+              setResults([]);
+              setSearchedTerm(null);
+            }}
+            aria-label="Nach Titeln für die Party suchen"
             placeholder="Nach Titeln suchen…"
             className="flex-1 min-w-0 bg-panel rounded px-3 py-2 text-sm text-foreground placeholder:text-muted"
           />
           <button
             type="submit"
-            disabled={searching}
+            disabled={searching || !q.trim()}
             className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-40 press"
           >
-            Suchen
+            {searching ? "Sucht…" : "Suchen"}
           </button>
         </form>
+        {searching && <p role="status" className="text-sm text-muted">Titel werden gesucht…</p>}
+        {searchError && <p role="alert" className="text-sm text-red-400">{searchError}</p>}
         {results.length === 0 && searchedTerm && !searching && (
           <p className="text-sm text-muted">
             Keine Treffer für „{searchedTerm}“.
@@ -341,14 +475,14 @@ export default function PartyPage({
                 </div>
                 <button
                   type="button"
-                  onClick={() =>
-                    add(t)
-                      .then(() => toast.success("Zur Party hinzugefügt."))
-                      .catch(() =>
-                        toast.error("Song konnte nicht hinzugefügt werden."),
-                      )
-                  }
-                  className="px-3 py-1 rounded-full bg-panel-hover text-sm hover:bg-accent hover:text-white press flex-shrink-0"
+                  onClick={() => mutateQueue(
+                    `"${t.title}" konnte nicht hinzugefügt werden`,
+                    () => add(t),
+                    "Zur Party hinzugefügt.",
+                  )}
+                  disabled={queueDisabled}
+                  aria-label={`"${t.title}" zur Party hinzufügen`}
+                  className="px-3 py-1 rounded-full bg-panel-hover text-sm hover:bg-accent hover:text-white disabled:opacity-40 press flex-shrink-0"
                 >
                   + Hinzufügen
                 </button>
@@ -358,17 +492,17 @@ export default function PartyPage({
         )}
       </section>
 
-      <section className="mb-8">
+      <section aria-busy={queuePending} className="mb-8">
         <p className="text-xs uppercase tracking-wide text-muted mb-2">
           Warteschlange ({tracks.length})
         </p>
+        {queuePending && <p role="status" className="mb-2 text-sm text-muted">Warteschlange wird aktualisiert…</p>}
         {tracks.length === 0 ? (
           <p className="text-sm text-muted">Noch keine Songs in der Party.</p>
         ) : (
           <ul className="flex flex-col">
             {tracks.map((t, i) => {
-              const isCurrent = i === playerIndex;
-              const ids = tracks.map((x) => x.id);
+              const isCurrent = i === party.current_index;
               return (
                 <li
                   key={t.id}
@@ -378,8 +512,11 @@ export default function PartyPage({
                 >
                   <button
                     type="button"
-                    onClick={() => isHost && setCurrent(i)}
-                    disabled={!isHost}
+                    onClick={() => mutateQueue(
+                      `"${t.title}" konnte nicht abgespielt werden`,
+                      () => setCurrent(i),
+                    )}
+                    disabled={!isHost || queueDisabled}
                     title={
                       isHost ? "Diesen Song abspielen" : "Nur der Host kann steuern"
                     }
@@ -420,30 +557,40 @@ export default function PartyPage({
                   </span>
 
                   {isHost && (
-                    <div className="flex items-center opacity-0 group-hover:opacity-100 transition">
+                    <div className="flex items-center flex-shrink-0">
                       <button
                         type="button"
-                        onClick={() => reorder(swap(ids, i, i - 1))}
-                        disabled={i === 0}
-                        aria-label="Nach oben"
-                        className="text-muted hover:text-foreground px-1 disabled:opacity-30"
+                        onClick={() => mutateQueue(
+                          `"${t.title}" konnte nicht nach oben verschoben werden`,
+                          () => reorder(swap(trackIds, i, i - 1)),
+                        )}
+                        disabled={i === 0 || queueDisabled}
+                        aria-label={`"${t.title}" nach oben verschieben`}
+                        className="min-w-8 min-h-9 text-muted hover:text-foreground px-1 disabled:opacity-30"
                       >
                         ↑
                       </button>
                       <button
                         type="button"
-                        onClick={() => reorder(swap(ids, i, i + 1))}
-                        disabled={i === tracks.length - 1}
-                        aria-label="Nach unten"
-                        className="text-muted hover:text-foreground px-1 disabled:opacity-30"
+                        onClick={() => mutateQueue(
+                          `"${t.title}" konnte nicht nach unten verschoben werden`,
+                          () => reorder(swap(trackIds, i, i + 1)),
+                        )}
+                        disabled={i === tracks.length - 1 || queueDisabled}
+                        aria-label={`"${t.title}" nach unten verschieben`}
+                        className="min-w-8 min-h-9 text-muted hover:text-foreground px-1 disabled:opacity-30"
                       >
                         ↓
                       </button>
                       <button
                         type="button"
-                        onClick={() => remove(t.id)}
-                        aria-label="Entfernen"
-                        className="text-muted hover:text-foreground px-1"
+                        onClick={() => mutateQueue(
+                          `"${t.title}" konnte nicht entfernt werden`,
+                          () => remove(t.id),
+                        )}
+                        disabled={queueDisabled}
+                        aria-label={`"${t.title}" aus der Party entfernen`}
+                        className="min-w-8 min-h-9 text-muted hover:text-foreground px-1 disabled:opacity-30"
                       >
                         ✕
                       </button>
