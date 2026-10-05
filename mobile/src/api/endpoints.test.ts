@@ -11,17 +11,23 @@ import {
   createPlaylist,
   deleteAdminUser,
   deletePlaylist,
+  DISCOVERY_TIMEOUT_MS,
   getAdminInvites,
   getAdminStatus,
   getAdminStorage,
   getAdminUsers,
   getAlbum,
+  getBecauseYouListened,
   getCachedTrackIds,
   getDeezerPlaylist,
+  getHomeChartCollections,
+  getHomeMixes,
   getLyrics,
+  getMood,
   getPlaylist,
   getPublicPlaylists,
   getRadio,
+  getReleaseRadar,
   searchAlbums,
   getTrack,
   getTrackPlayCounts,
@@ -51,6 +57,58 @@ import {
 const mocks = vi.hoisted(() => ({ apiRequest: vi.fn() }));
 
 vi.mock('./client', () => ({ apiRequest: mocks.apiRequest }));
+
+describe('cold discovery request deadlines', () => {
+  beforeEach(() => {
+    mocks.apiRequest.mockReset();
+    mocks.apiRequest.mockResolvedValue(undefined);
+  });
+
+  it.each([
+    ['personal mixes', getHomeMixes, '/api/home/mixes'],
+    ['listening recommendations', getBecauseYouListened, '/api/home/because-you-listened'],
+    ['chart collections', getHomeChartCollections, '/api/home/charts-collections'],
+    ['release radar', getReleaseRadar, '/api/home/release-radar'],
+    ['mood discovery', (signal?: AbortSignal) => getMood('focus', signal), '/api/home/mood/focus'],
+    ['track radio', (signal?: AbortSignal) => getRadio('42', signal), '/api/radio/42'],
+  ] as const)('allows cold provider resolution for %s while retaining caller cancellation', async (_name, request, path) => {
+    const caller = new AbortController();
+
+    await request(caller.signal);
+
+    expect(DISCOVERY_TIMEOUT_MS).toBe(90_000);
+    expect(mocks.apiRequest).toHaveBeenCalledWith(path, expect.objectContaining({
+      signal: caller.signal,
+      timeoutMs: 90_000,
+    }));
+  });
+
+  it('retains the shorter journal radio deadline and the same authority and signal', async () => {
+    const caller = new AbortController();
+    const authority = Object.freeze({}) as AuthenticatedRequestAuthority;
+
+    await getRadio('42', caller.signal, 4_000, authority);
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/radio/42', expect.objectContaining({
+      signal: caller.signal,
+      timeoutMs: 4_000,
+      authenticatedRequestAuthority: authority,
+    }));
+  });
+
+  it('uses the discovery deadline with an explicit radio authority when no override is supplied', async () => {
+    const caller = new AbortController();
+    const authority = Object.freeze({}) as AuthenticatedRequestAuthority;
+
+    await getRadio('42', caller.signal, undefined, authority);
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/radio/42', expect.objectContaining({
+      signal: caller.signal,
+      timeoutMs: 90_000,
+      authenticatedRequestAuthority: authority,
+    }));
+  });
+});
 
 describe('API endpoint URL construction', () => {
   beforeEach(() => {

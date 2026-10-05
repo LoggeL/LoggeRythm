@@ -25,6 +25,8 @@ import type {
 } from "@/types";
 
 const BASE = "/api";
+// Cold personalized discovery resolves many provider records before replying.
+const DISCOVERY_TIMEOUT_MS = 90_000;
 
 class ApiError extends Error {
   status: number;
@@ -116,16 +118,16 @@ export const api = {
     req<PlaylistSearchResult[]>(`/search/playlist?q=${encodeURIComponent(q)}`, { signal }),
   charts: () => req<Track[]>(`/charts`),
   // Home / discovery shelves
-  homeMixes: () => req<HomeShelf[]>(`/home/mixes`),
-  becauseYouListened: () => req<HomeShelf[]>(`/home/because-you-listened`),
-  homeChartsCollections: () => req<HomeShelf[]>(`/home/charts-collections`),
+  homeMixes: () => req<HomeShelf[]>(`/home/mixes`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
+  becauseYouListened: () => req<HomeShelf[]>(`/home/because-you-listened`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
+  homeChartsCollections: () => req<HomeShelf[]>(`/home/charts-collections`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   releaseRadar: (refresh = false) =>
     req<Track[]>(
       `/home/release-radar${refresh ? "?refresh=true" : ""}`,
-      refresh ? { cache: "no-store" } : undefined,
+      { timeoutMs: DISCOVERY_TIMEOUT_MS, cache: refresh ? "no-store" : undefined },
     ),
   homeMood: (tag: string) =>
-    req<Track[]>(`/home/mood/${encodeURIComponent(tag)}`),
+    req<Track[]>(`/home/mood/${encodeURIComponent(tag)}`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   genres: () => req<Genre[]>(`/genres`),
   genre: (id: string) => req<GenreDetail>(`/genres/${encodeURIComponent(id)}`),
   newReleases: () => req<AlbumSummary[]>(`/new-releases`),
@@ -286,7 +288,7 @@ export const api = {
 
   // Song radio (seed track → similar tracks)
   radio: (deezerId: string) =>
-    req<Track[]>(`/radio/${encodeURIComponent(deezerId)}`),
+    req<Track[]>(`/radio/${encodeURIComponent(deezerId)}`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
 
   // Profile / avatar / public profile
   uploadAvatar: (file: File) => {

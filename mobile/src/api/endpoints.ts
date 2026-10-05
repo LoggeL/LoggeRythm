@@ -71,6 +71,10 @@ import type {
   User,
 } from './types';
 
+// Cold personalized discovery can exceed the usual 20s request deadline while resolving provider
+// recommendations. Keep its budget explicit so normal requests retain their shorter deadline.
+export const DISCOVERY_TIMEOUT_MS = 90_000;
+
 function pathSegment(value: string | number): string {
   return encodeURIComponent(String(value));
 }
@@ -178,12 +182,17 @@ export function getCharts(signal?: AbortSignal): Promise<Track[]> {
 }
 
 export function getHomeMixes(signal?: AbortSignal): Promise<HomeShelf[]> {
-  return apiRequest<HomeShelf[]>('/api/home/mixes', { signal, decode: decodeHomeShelves });
+  return apiRequest<HomeShelf[]>('/api/home/mixes', {
+    signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
+    decode: decodeHomeShelves,
+  });
 }
 
 export function getBecauseYouListened(signal?: AbortSignal): Promise<HomeShelf[]> {
   return apiRequest<HomeShelf[]>('/api/home/because-you-listened', {
     signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
     decode: decodeHomeShelves,
   });
 }
@@ -191,17 +200,23 @@ export function getBecauseYouListened(signal?: AbortSignal): Promise<HomeShelf[]
 export function getHomeChartCollections(signal?: AbortSignal): Promise<HomeShelf[]> {
   return apiRequest<HomeShelf[]>('/api/home/charts-collections', {
     signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
     decode: decodeHomeShelves,
   });
 }
 
 export function getReleaseRadar(signal?: AbortSignal): Promise<Track[]> {
-  return apiRequest<Track[]>('/api/home/release-radar', { signal, decode: decodeTrackList });
+  return apiRequest<Track[]>('/api/home/release-radar', {
+    signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
+    decode: decodeTrackList,
+  });
 }
 
 export function getMood(tag: string, signal?: AbortSignal): Promise<Track[]> {
   return apiRequest<Track[]>(`/api/home/mood/${pathSegment(tag)}`, {
     signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
     decode: decodeTrackList,
   });
 }
@@ -256,7 +271,7 @@ export function getArtistAbout(name: string, signal?: AbortSignal): Promise<Arti
 export function getRadio(
   deezerId: DeezerId,
   signal?: AbortSignal,
-  timeoutMs?: number,
+  timeoutMs: number = DISCOVERY_TIMEOUT_MS,
   authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
 ): Promise<Track[]> {
   return apiRequest<Track[]>(`/api/radio/${pathSegment(deezerId)}`, {

@@ -73,3 +73,30 @@ test("AI lyrics retain both the variant query and the transcription deadline", a
   t.mock.timers.tick(300_000);
   await rejection;
 });
+
+test("cold discovery survives the ordinary deadline and still aborts stalled requests", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const signals = [];
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, { signal, cache }) => {
+    signals.push(signal);
+    requests.push({ url, cache });
+    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
+  });
+  const pending = [
+    api.homeMixes(),
+    api.becauseYouListened(),
+    api.homeChartsCollections(),
+    api.releaseRadar(true),
+    api.homeMood("chill"),
+    api.radio("66609426"),
+  ].map((request) => assert.rejects(request, /Zeitüberschreitung nach 90 Sekunden/));
+  t.mock.timers.tick(35_000);
+  assert.equal(signals.length, 6);
+  assert.equal(signals.every((signal) => !signal.aborted), true);
+  assert.equal(requests[3].url, "/api/home/release-radar?refresh=true");
+  assert.equal(requests[3].cache, "no-store");
+  t.mock.timers.tick(55_000);
+  await Promise.all(pending);
+  assert.equal(signals.every((signal) => signal.aborted), true);
+});
