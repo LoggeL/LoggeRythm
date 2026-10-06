@@ -2,19 +2,22 @@
 
 import { useRef, useState } from "react";
 import { usePlayerStore } from "@/store/player";
+import { useLocalJson } from "@/hooks/useLocalJson";
 import type { CoverPalette } from "@/hooks/useCoverColors";
 import { hiResCover } from "@/lib/cover";
+import { INITIAL_VISUALIZER_PREFERENCES, VISUALIZER_MODES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerScene";
 import type { Track } from "@/types";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
-import FullscreenVisualizer from "@/components/FullscreenVisualizer";
+import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
+import BassReactiveArtwork from "@/components/BassReactiveArtwork";
 import { VisualizerIcon } from "@/components/icons";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
 /**
- * Art-first player with full transport controls and an optional spectrum.
+ * Immersive artwork with selectable real-audio scenes and full transport controls.
  * The content scrolls when the viewport is too short, including landscape.
  */
 export default function PlayingPanel({
@@ -27,30 +30,49 @@ export default function PlayingPanel({
   onClose: () => void;
 }) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const [showVisualizer, setShowVisualizer] = useState(false);
+  const [storedPreferences, setPreferences] = useLocalJson<VisualizerPreferences>("player:visualizer", INITIAL_VISUALIZER_PREFERENCES);
+  const preferences = validateVisualizerPreferences(storedPreferences);
+  const showVisualizer = preferences.enabled;
+  const [signalStatus, setSignalStatus] = useState<VisualizerStatus>(isPlaying ? "waiting" : "paused");
   const albumRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:mt-0">
-      <div className="mb-3 flex flex-shrink-0 items-center justify-between gap-3">
-        <span className="text-xs font-medium text-muted">Jetzt läuft</span>
+      <div className="mb-3 flex flex-shrink-0 flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => setShowVisualizer((visible) => !visible)}
+          onClick={() => setPreferences((current) => ({ ...validateVisualizerPreferences(current), enabled: !current.enabled }))}
           aria-pressed={showVisualizer}
-          className="filter-chip"
+          aria-label={showVisualizer ? "Visualisierung ausblenden" : "Visualisierung einblenden"}
+          data-audio-signal={signalStatus}
+          className="filter-chip min-h-11 sm:min-h-9"
         >
           <VisualizerIcon width={16} height={16} />
           Visualisierung
         </button>
+        {showVisualizer && (
+          <div role="group" aria-label="Visualisierungsmodus" className="flex w-full gap-1 rounded-xl border border-border bg-panel/80 p-1 sm:w-auto">
+            {VISUALIZER_MODES.map(({ id, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={preferences.mode === id}
+                onClick={() => setPreferences((current) => ({ ...validateVisualizerPreferences(current), mode: id }))}
+                className={`min-h-11 flex-1 rounded-lg px-3 text-xs font-medium transition sm:min-h-9 sm:flex-none ${preferences.mode === id ? "bg-accent/20 text-accent-soft" : "text-muted hover:bg-white/5 hover:text-foreground"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <div
         ref={panelRef}
-        className="like-celebration-surface relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-panel/70"
+        className="like-celebration-surface relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-background/75"
       >
         {showVisualizer && (
-        <div aria-hidden className="pointer-events-none absolute inset-0 z-[1] overflow-hidden opacity-70">
+        <div aria-hidden className="pointer-events-none absolute inset-0 z-[1] overflow-hidden">
           <FullscreenVisualizer
             isPlaying={isPlaying}
             anchorRef={albumRef}
@@ -59,13 +81,15 @@ export default function PlayingPanel({
             colors={palette?.gradient}
             glow={palette?.primary}
             rgb={palette?.rgb}
+            mode={preferences.mode}
+            onStatusChange={setSignalStatus}
           />
         </div>
         )}
         {/* Keep timestamps and transport controls crisp over the visualizer. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-44 bg-gradient-to-t from-panel via-panel/70 to-transparent"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-52 bg-gradient-to-t from-background via-background/85 to-transparent"
         />
 
         <div
@@ -75,8 +99,9 @@ export default function PlayingPanel({
           <div className="relative grid w-full min-h-40 flex-1 place-items-center">
             <div
               ref={albumRef}
-              className="relative aspect-square w-[min(100%,32vh)] max-w-80 overflow-hidden rounded-xl border border-white/10 sm:w-[min(100%,36vh)] lg:max-w-96"
+              className={`relative aspect-square max-w-80 rounded-xl ${showVisualizer ? "w-[min(48vw,30vh)] sm:w-[min(100%,34vh)]" : "w-[min(100%,32vh)] sm:w-[min(100%,36vh)]"} lg:max-w-96`}
             >
+              <BassReactiveArtwork className="border border-white/15">
               {track.cover ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -87,6 +112,7 @@ export default function PlayingPanel({
               ) : (
                 <CoverPlaceholder className="relative h-full w-full" />
               )}
+              </BassReactiveArtwork>
             </div>
           </div>
 

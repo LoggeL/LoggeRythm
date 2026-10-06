@@ -12,6 +12,7 @@ import CoverPlaceholder from "@/components/CoverPlaceholder";
 import CacheMarker from "@/components/CacheMarker";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
+import EqualizerBars from "@/components/EqualizerBars";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
 const DOCK_QUERY = "(min-width: 1536px)";
@@ -283,6 +284,7 @@ export default function QueueSidebar() {
                 <div className="min-w-0 flex-1">
                   <TrackTitle track={cur} className="block truncate text-sm font-medium hover:underline" />
                   <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                    <EqualizerBars height={12} isPlaying={isPlaying} />
                     <CacheMarker trackId={cur.id} />
                     <ArtistLinks track={cur} className="truncate text-xs text-muted" linkClassName="hover:underline hover:text-foreground" />
                   </div>

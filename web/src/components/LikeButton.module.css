@@ -1,0 +1,141 @@
+.button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: visible;
+  color: var(--muted);
+  transition: background .16s ease, color .16s ease;
+}
+.button:hover { background: var(--panel-hover); color: var(--foreground); }
+.button:active:not(:disabled) .heart { transform: scale(.82); }
+.button:disabled { cursor: wait; opacity: .65; }
+.button.liked { color: #f084cf; }
+.heart { overflow: visible; transition: transform .12s ease; }
+.liked .heart { filter: drop-shadow(0 0 5px #ff72c333); }
+.gradient { position: absolute; pointer-events: none; }
+.celebrating .heart { animation: heartBeat 1.15s cubic-bezier(.2,.8,.2,1) both; }
+
+/* Outside all song scroll containers. Every layer is decorative and lets all
+   pointer and keyboard interaction pass through to the original controls. */
+.celebration { position: fixed; inset: 0; z-index: 1000; pointer-events: none; overflow: hidden; }
+.celebration * { pointer-events: none; }
+.origin { position: absolute; width: 0; height: 0; overflow: visible; }
+.surface {
+  position: absolute;
+  border-radius: 16px;
+  background: radial-gradient(ellipse 260px 180px at var(--origin-x) var(--origin-y), #ff7acd50, #a079ff25 42%, transparent 75%);
+  animation: surfaceFlare 1.2s ease-out both;
+}
+.bloom, .flash, .ring, .heartEcho, .motionlessFeedback { position: absolute; left: 0; top: 0; }
+.bloom {
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff4ffb8 0, #ff83d48a 12%, #d463ff44 35%, #9164ff10 58%, transparent 72%);
+  mix-blend-mode: screen;
+  animation: bloom 900ms cubic-bezier(.16,1,.3,1) both;
+}
+.flash {
+  width: 96px;
+  height: 96px;
+  background: radial-gradient(ellipse 4% 52% at center, #fff6ff, transparent), radial-gradient(ellipse 52% 4% at center, #fff6ff, transparent);
+  transform: translate(-50%, -50%) rotate(18deg);
+  animation: flash 540ms ease-out both;
+}
+.ring {
+  width: 128px;
+  height: 128px;
+  border: 2px solid #ffe4f7;
+  border-radius: 50%;
+  box-shadow: 0 0 12px #ff91d0, inset 0 0 9px #ff91d066;
+  animation: shockwave 780ms cubic-bezier(.16,1,.3,1) both;
+}
+.ringMiddle { width: 184px; height: 184px; border: 1px solid #f78edccc; box-shadow: 0 0 16px #fc6ecb66; animation-delay: 75ms; animation-duration: 920ms; }
+.ringOuter { width: 230px; height: 230px; border: 1px solid #b49bff99; box-shadow: 0 0 12px #8c66ff44; animation-delay: 135ms; animation-duration: 1050ms; }
+.particle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--flight-color);
+  opacity: 0;
+  animation: flight 1050ms cubic-bezier(.15,.75,.2,1) var(--flight-delay) both;
+  will-change: transform, opacity;
+}
+.particleSpark {
+  width: 3px;
+  height: var(--flight-size);
+  border-radius: 3px;
+  background: var(--flight-color);
+  box-shadow: 0 0 6px var(--flight-color);
+}
+.particleHeart {
+  width: var(--flight-size);
+  height: var(--flight-size);
+  filter: drop-shadow(0 0 3px #ff79ca80);
+  animation-duration: 1200ms;
+}
+.heartEcho {
+  color: #ffa6db;
+  filter: drop-shadow(0 0 12px #ff72c3);
+  animation: heartAscend 1150ms cubic-bezier(.16,1,.3,1) 85ms both;
+}
+.motionlessFeedback { display: none; }
+
+@keyframes heartBeat {
+  0% { transform: scale(.8); filter: drop-shadow(0 0 0 #ff72c3); }
+  24% { transform: scale(1.5) rotate(-12deg); filter: drop-shadow(0 0 8px #ff72c3b3); }
+  43% { transform: scale(.94) rotate(6deg); }
+  63% { transform: scale(1.15) rotate(-3deg); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 5px #ff72c333); }
+}
+@keyframes surfaceFlare { 0% { opacity: 0; } 14% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes bloom {
+  0% { transform: translate(-50%, -50%) scale(.1); opacity: 0; }
+  18% { opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; }
+}
+@keyframes flash {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(18deg) scale(.1); }
+  22% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(32deg) scale(1.2); }
+}
+@keyframes shockwave {
+  0% { transform: translate(-50%, -50%) scale(.12); opacity: 0; }
+  16% { opacity: .9; }
+  100% { transform: translate(-50%, -50%) scale(1.12); opacity: 0; }
+}
+@keyframes flight {
+  0% { transform: translate(-50%, -50%) rotate(var(--flight-rotation)) scale(.2); opacity: 0; }
+  12% { opacity: 1; }
+  65% { opacity: .85; }
+  100% { transform: translate(calc(-50% + var(--flight-x)), calc(-50% + var(--flight-y))) rotate(var(--flight-rotation)) scale(.6); opacity: 0; }
+}
+@keyframes heartAscend {
+  0% { transform: translate(-50%, -50%) scale(.3) rotate(-14deg); opacity: 0; }
+  22% { transform: translate(-50%, calc(-50% - 26px)) scale(1.1) rotate(7deg); opacity: .85; }
+  100% { transform: translate(-50%, calc(-50% - 84px)) scale(.65) rotate(-6deg); opacity: 0; }
+}
+
+@media (hover: none), (pointer: coarse) { .button { width: 44px; height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  .button, .heart { transition: none; }
+  .button:active:not(:disabled) .heart { transform: none; }
+  .celebrating .heart { animation: none; filter: drop-shadow(0 0 7px #ff72c380); }
+  .surface, .origin > :not(.motionlessFeedback) { display: none; animation: none; }
+  .motionlessFeedback {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    transform: translate(-50%, -50%);
+    border: 1px solid #ff9fd2;
+    border-radius: 50%;
+    background: #382137;
+    color: #ff9ed7;
+    box-shadow: 0 0 16px #ff72c344;
+  }
+}

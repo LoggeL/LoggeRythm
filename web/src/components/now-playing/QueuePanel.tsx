@@ -5,6 +5,7 @@ import { formatTime } from "@/lib/format";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import EqualizerBars from "@/components/EqualizerBars";
+import BassReactiveArtwork from "@/components/BassReactiveArtwork";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import { PlayIcon } from "@/components/icons";
 import type { Track } from "@/types";
@@ -118,16 +119,16 @@ export default function QueuePanel({
               Aktueller Titel
             </p>
             <div className="mb-5 flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/10 px-3 py-3">
-              {cur.cover ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={cur.cover}
-                  alt=""
-                  className="h-11 w-11 rounded-lg object-cover"
-                />
-              ) : (
-                <CoverPlaceholder className="h-11 w-11 rounded-lg" />
-              )}
+              <div className="h-11 w-11 shrink-0 rounded-lg">
+                <BassReactiveArtwork>
+                  {cur.cover ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={cur.cover} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <CoverPlaceholder className="h-full w-full" />
+                  )}
+                </BassReactiveArtwork>
+              </div>
               <div className="min-w-0 flex-1">
                 <TrackTitle
                   track={cur}

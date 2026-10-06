@@ -79,7 +79,7 @@ export function TransportRow() {
         aria-label="Zufallswiedergabe"
         aria-pressed={shuffle}
         title={shuffle ? "Zufallswiedergabe ausschalten" : "Zufallswiedergabe einschalten"}
-        className={`action-icon h-11 w-11 ${shuffle ? "bg-accent/10 text-accent" : ""}`}
+        className={`action-icon h-11 w-11 ${shuffle ? "bg-accent/10 text-accent-soft" : ""}`}
       >
         <ShuffleIcon width={22} height={22} />
       </button>
@@ -120,7 +120,7 @@ export function TransportRow() {
         onClick={cycleRepeat}
         aria-label={repeat === "one" ? "Wiederholen: ein Titel" : repeat === "all" ? "Wiederholen: alle Titel" : "Wiederholen: aus"}
         aria-pressed={repeat !== "off"}
-        className={`action-icon h-11 w-11 ${repeat !== "off" ? "bg-accent/10 text-accent" : ""}`}
+        className={`action-icon h-11 w-11 ${repeat !== "off" ? "bg-accent/10 text-accent-soft" : ""}`}
       >
         <RepeatGlyph width={22} height={22} />
       </button>

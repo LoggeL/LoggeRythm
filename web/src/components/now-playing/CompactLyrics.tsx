@@ -8,6 +8,7 @@ import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
+import BassReactiveArtwork from "@/components/BassReactiveArtwork";
 import { MusicNoteIcon } from "@/components/icons";
 import { SeekBar, TransportRow } from "./Controls";
 import LyricsStatus from "./LyricsStatus";
@@ -66,7 +67,8 @@ export default function CompactLyrics({
     <div className="flex min-h-0 flex-1 flex-col lg:hidden">
       {/* Compact track header */}
       <div className="flex flex-shrink-0 items-center gap-3 pb-3">
-        <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-border">
+        <div className="h-12 w-12 flex-shrink-0 rounded-lg">
+          <BassReactiveArtwork className="border border-border">
           {track.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -77,6 +79,7 @@ export default function CompactLyrics({
           ) : (
             <CoverPlaceholder className="h-full w-full rounded-lg" />
           )}
+          </BassReactiveArtwork>
         </div>
         <div className="min-w-0 flex-1">
           <TrackTitle

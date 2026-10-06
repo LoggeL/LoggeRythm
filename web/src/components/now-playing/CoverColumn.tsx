@@ -6,6 +6,7 @@ import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
+import BassReactiveArtwork from "@/components/BassReactiveArtwork";
 import { SeekBar, TransportRow, VolumeRow } from "./Controls";
 
 /**
@@ -23,8 +24,9 @@ export default function CoverColumn({
     <div className="like-celebration-surface hidden min-h-0 flex-col overflow-y-auto rounded-2xl border border-border bg-panel/70 p-5 lg:flex">
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5">
         <div
-          className="aspect-square w-full max-w-[min(100%,34vh)] overflow-hidden rounded-xl border border-white/10"
+          className="aspect-square w-full max-w-[min(100%,34vh)] rounded-xl"
         >
+          <BassReactiveArtwork className="border border-white/10">
           {track.cover ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -35,6 +37,7 @@ export default function CoverColumn({
           ) : (
             <CoverPlaceholder className="h-full w-full" />
           )}
+          </BassReactiveArtwork>
         </div>
 
         <div className="w-full max-w-md text-center">

@@ -94,9 +94,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes popIn { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
 @keyframes pulseSoft { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
-@keyframes eqBar { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
 .skeleton { background: var(--panel-hover); animation: pulseSoft 1.5s ease-in-out infinite; }
 .like-celebration-surface { position: relative; isolation: isolate; }
+.equalizer-bars { display: inline-flex; flex-shrink: 0; align-items: flex-end; justify-content: center; gap: 2px; color: var(--accent-soft); }
+.equalizer-bars [data-equalizer-bar] { width: 3px; height: 100%; border-radius: 2px; transform-origin: bottom; background-image: linear-gradient(to top, var(--accent), var(--accent-soft)); box-shadow: 0 0 6px #7c5cff55; transition: transform 65ms linear; }
 .new-content-highlight { border-color: #7c5cff65; }
 
 @layer utilities {
@@ -116,11 +117,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .hover-lift { transition: background .18s ease, border-color .18s ease; }
   .press { transition: transform .1s ease, background .15s ease; }
   .press:active { transform: scale(.98); }
-  .eq-bar { transform-origin: bottom; animation: eqBar .9s ease-in-out infinite; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .animate-in, .pop-in, .skeleton, .eq-bar { animation: none; }
+  .animate-in, .pop-in, .skeleton { animation: none; }
+  .equalizer-bars [data-equalizer-bar] { transition: none; }
   .press:active { transform: none; }
 }
 @media (hover: none), (pointer: coarse) {

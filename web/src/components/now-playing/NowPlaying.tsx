@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { useCoverColors } from "@/hooks/useCoverColors";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { hiResCover } from "@/lib/cover";
+import { fullscreenTheme } from "@/lib/fullscreenTheme";
 import { ChevronDownIcon } from "@/components/icons";
 import CoverColumn from "./CoverColumn";
 import PlayingPanel from "./PlayingPanel";
@@ -14,6 +15,7 @@ import LyricsPanel from "./LyricsPanel";
 import CompactLyrics from "./CompactLyrics";
 import { SeekBar, TransportRow } from "./Controls";
 import { useSwipeToClose } from "./useSwipeToClose";
+import styles from "./fullscreen.module.css";
 
 type NowPlayingTab = "playing" | "lyrics" | "similar" | "queue";
 
@@ -87,7 +89,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       aria-modal="true"
       aria-label="Vollbildplayer"
       {...swipeHandlers}
-      className="animate-in fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(0.5rem+env(safe-area-inset-top))] md:p-6 lg:p-8"
+      style={fullscreenTheme(palette) as CSSProperties}
+      className={`${styles.scope} animate-in fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(0.5rem+env(safe-area-inset-top))] md:p-6 lg:p-8`}
     >
       {/* Ambient backdrop from the cover art */}
       {track.cover && (
@@ -123,7 +126,6 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         >
           <ChevronDownIcon width={24} height={24} />
         </button>
-        <span className="text-sm font-medium text-muted">Deine Musik</span>
         <span className="w-11" />
       </div>
 

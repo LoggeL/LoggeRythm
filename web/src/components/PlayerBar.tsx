@@ -23,6 +23,7 @@ import { useMe } from "@/hooks/useAuth";
 import { formatTime } from "@/lib/format";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import LikeButton from "@/components/LikeButton";
+import EqualizerBars from "@/components/EqualizerBars";
 import NowPlaying from "@/components/now-playing/NowPlaying";
 import TrackContext from "@/components/TrackContext";
 import CacheMarker from "@/components/CacheMarker";
@@ -1191,6 +1192,7 @@ export default function PlayerBar() {
                     <p className="hidden truncate text-sm font-semibold lg:block">{track.title}</p>
                   )}
                   <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                    <EqualizerBars height={12} isPlaying={isPlaying && !isBuffering} />
                     <CacheMarker trackId={track.id} />
                     <ArtistLinks track={track} className="truncate text-xs text-muted" linkClassName="hover:underline hover:text-foreground" />
                   </div>

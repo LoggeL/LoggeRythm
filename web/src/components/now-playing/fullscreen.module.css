@@ -1,0 +1,38 @@
+.scope :global(.action-primary) {
+  background: var(--accent-solid);
+  color: var(--on-accent, #fff);
+}
+
+.scope :global(.action-primary:hover) {
+  background: var(--accent-hover);
+}
+
+.scope :global(.text-accent) {
+  color: var(--accent-soft);
+}
+
+.scope :global(.action-icon[aria-pressed="true"]),
+.scope :global(.filter-chip[aria-pressed="true"]),
+.scope :global(button[role="tab"][aria-selected="true"]) {
+  color: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.scope :global(input[type="range"]) {
+  accent-color: var(--accent);
+}
+
+.scope :global(input[type="range"]::-webkit-slider-thumb) {
+  background: var(--accent);
+  outline: 1px solid var(--accent-soft);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.scope :global(input[type="range"]::-moz-range-thumb) {
+  background: var(--accent);
+  outline: 1px solid var(--accent-soft);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+}

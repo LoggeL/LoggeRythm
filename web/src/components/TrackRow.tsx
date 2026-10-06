@@ -11,6 +11,7 @@ import { PlayIcon, PauseIcon, PlusIcon } from "@/components/icons";
 import CacheMarker from "@/components/CacheMarker";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
+import EqualizerBars from "@/components/EqualizerBars";
 import TrackMenu, { useTrackMenuItems } from "@/components/TrackMenu";
 import ContextMenu from "@/components/ContextMenu";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
@@ -94,7 +95,7 @@ export default function TrackRow({
             isCurrent ? "text-accent" : ""
           }`}
         >
-          {playingThis ? "▶" : index !== undefined ? index + 1 : ""}
+          {isCurrent ? <EqualizerBars bars={4} height={17} isPlaying={playingThis} /> : index !== undefined ? index + 1 : ""}
         </span>
       </div>
 
