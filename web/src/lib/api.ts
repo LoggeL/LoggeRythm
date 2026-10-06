@@ -9,7 +9,6 @@ import type {
   ArtistSummary,
   Playlist,
   PlaylistSummary,
-  PlaylistSearchResult,
   Genre,
   GenreDetail,
   HomeShelf,
@@ -23,6 +22,7 @@ import type {
   PlaybackSettings,
   LyricsResponse,
 } from "@/types";
+import { decodeSearchArtists, decodeSearchPlaylists, decodeSearchTracks } from "@/lib/searchDecoders";
 
 const BASE = "/api";
 // Cold personalized discovery resolves many provider records before replying.
@@ -108,14 +108,25 @@ async function req<T>(
   }
 }
 
+async function searchReq<T>(path: string, decode: (value: unknown) => T, signal?: AbortSignal): Promise<T> {
+  const payload = await req<unknown>(path, { signal });
+  try {
+    return decode(payload);
+  } catch (cause) {
+    const error = new ApiError(200, `API ${path}: ${cause instanceof Error ? cause.message : "Ungültige Suchantwort."}`);
+    error.cause = cause;
+    throw error;
+  }
+}
+
 export const api = {
   // Discovery / catalog
   search: (q: string, type: "track" | "album" = "track", signal?: AbortSignal) =>
-    req<Track[]>(`/search?q=${encodeURIComponent(q)}&type=${type}`, { signal }),
+    searchReq(`/search?q=${encodeURIComponent(q)}&type=${type}`, decodeSearchTracks, signal),
   searchArtists: (q: string, signal?: AbortSignal) =>
-    req<ArtistSummary[]>(`/search/artist?q=${encodeURIComponent(q)}`, { signal }),
+    searchReq(`/search/artist?q=${encodeURIComponent(q)}`, decodeSearchArtists, signal),
   searchPlaylists: (q: string, signal?: AbortSignal) =>
-    req<PlaylistSearchResult[]>(`/search/playlist?q=${encodeURIComponent(q)}`, { signal }),
+    searchReq(`/search/playlist?q=${encodeURIComponent(q)}`, decodeSearchPlaylists, signal),
   charts: () => req<Track[]>(`/charts`),
   // Home / discovery shelves
   homeMixes: () => req<HomeShelf[]>(`/home/mixes`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),

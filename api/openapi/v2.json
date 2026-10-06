@@ -6442,6 +6442,10 @@
             "required": false,
             "schema": {
               "default": "track",
+              "enum": [
+                "track",
+                "album"
+              ],
               "title": "Type",
               "type": "string"
             }

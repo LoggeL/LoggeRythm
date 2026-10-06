@@ -1,4 +1,6 @@
 """Browse + search endpoints (health, search, tracks meta, charts, albums, artists)."""
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
@@ -66,9 +68,10 @@ async def health_deezer() -> dict:
 @router.get("/search", response_model=list[Track])
 async def search(
     q: str = Query(default=""),
-    type: str = Query(default="track"),
+    type: Literal["track", "album"] = Query(default="track"),
 ) -> list[dict]:
-    if not q.strip():
+    q = q.strip()
+    if not q:
         return []
     try:
         if type == "album":
@@ -80,7 +83,8 @@ async def search(
 
 @router.get("/search/artist", response_model=list[ArtistSummary])
 async def search_artist(q: str = Query(default="")) -> list[dict]:
-    if not q.strip():
+    q = q.strip()
+    if not q:
         return []
     try:
         return await run_in_threadpool(dc.search_artists, q)
@@ -90,7 +94,8 @@ async def search_artist(q: str = Query(default="")) -> list[dict]:
 
 @router.get("/search/playlist", response_model=list[PlaylistSearchResult])
 async def search_playlist(q: str = Query(default="")) -> list[dict]:
-    if not q.strip():
+    q = q.strip()
+    if not q:
         return []
     try:
         return await run_in_threadpool(dc.search_playlists, q)

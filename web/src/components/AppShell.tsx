@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
@@ -14,6 +14,7 @@ import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 import Lyrics from "@/components/Lyrics";
 import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
+import { SearchProvider } from "@/hooks/useSearchNavigation";
 
 export default function AppShell({
   children,
@@ -83,6 +84,8 @@ export default function AppShell({
 
   // Full app — approved users only.
   return (
+    <Suspense fallback={<div role="status" className="p-6 text-muted">Lädt…</div>}>
+    <SearchProvider>
     <div className="h-full flex flex-col bg-background">
       <a href="#main-content" className="fixed left-4 top-4 z-[150] -translate-y-24 focus:translate-y-0 action-primary">Zum Inhalt</a>
       <PwaBanner />
@@ -114,5 +117,7 @@ export default function AppShell({
       <AddToPlaylistModal />
       <Toaster />
     </div>
+    </SearchProvider>
+    </Suspense>
   );
 }

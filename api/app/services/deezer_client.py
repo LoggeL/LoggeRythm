@@ -218,28 +218,6 @@ def search_tracks(query: str) -> list[dict]:
     return [normalize_search_item(i) for i in items]
 
 
-def search_albums(query: str) -> list[dict]:
-    try:
-        items = deezer.deezer_search(query, deezer.TYPE_ALBUM)
-    except deezer.DeezerApiException as e:
-        raise DeezerClientError(str(e)) from e
-    out = []
-    for i in items:
-        out.append(
-            {
-                "id": str(i.get("album_id", i.get("id", ""))),
-                "title": i.get("album", "") or "",
-                "artist": i.get("artist", "") or "",
-                "album": i.get("album", "") or "",
-                "album_id": i.get("album_id", "") or "",
-                "cover": i.get("img_url", "") or "",
-                "duration_sec": 0,
-                "preview_url": None,
-            }
-        )
-    return out
-
-
 def track_metadata(deezer_id: str) -> dict:
     """Fetch a single track's metadata (private website gw)."""
     try:
@@ -435,6 +413,9 @@ def search_tracks_public(query: str, limit: int = 40) -> list[dict]:
     """Track search with complete ordered performer credits."""
     if limit < 1 or limit > 100:
         raise ValueError(f"search track limit must be between 1 and 100, got {limit}")
+    query = query.strip()
+    if not query:
+        return []
     def load() -> list[dict]:
         data = _public_get(f"/search?q={quote_plus(query)}&limit={limit}")
         items = data.get("data")
@@ -449,28 +430,107 @@ def search_tracks_public(query: str, limit: int = 40) -> list[dict]:
     return deepcopy(_search_tracks_flights.get((query, limit), load))
 
 
+def _search_items(query: str, entity: str, *, limit: int) -> list[dict]:
+    data = _public_get(f"/search/{entity}?q={quote_plus(query)}&limit={limit}")
+    items = data.get("data")
+    context = f"Public Deezer {entity} search"
+    if not isinstance(items, list):
+        raise DeezerClientError(f"{context}: data must be an array")
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise DeezerClientError(f"{context}: data[{index}] must be an object")
+    return items
+
+
+def _search_id(item: dict, context: str) -> str:
+    value = item.get("id")
+    if isinstance(value, bool) or not (
+        isinstance(value, int) and 0 < value <= 2**53 - 1
+        or isinstance(value, str) and value.isascii() and value.isdigit() and bool(value.lstrip("0"))
+    ):
+        raise DeezerClientError(
+            f"{context}: id must be a positive numeric identifier; numeric IDs must be safe for JavaScript clients"
+        )
+    return str(value)
+
+
+def _search_text(item: dict, field: str, context: str) -> str:
+    value = item.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise DeezerClientError(f"{context}: {field} must be nonempty text")
+    return value
+
+
+def _search_artwork(item: dict, prefix: str, context: str) -> str:
+    fields = (f"{prefix}_medium", f"{prefix}_big", prefix)
+    for field in fields:
+        value = item.get(field)
+        if value is not None and not isinstance(value, str):
+            raise DeezerClientError(f"{context}: {field} must be text or null")
+    # Artwork is optional in provider results. A supplied malformed value must
+    # still fail even when a different resolution happens to be available.
+    return next((item[field] for field in fields if item.get(field)), "")
+
+
+def search_albums(query: str) -> list[dict]:
+    """Public album search, retaining the catalog's existing Track projection."""
+    query = query.strip()
+    if not query:
+        return []
+    out = []
+    for index, item in enumerate(_search_items(query, "album", limit=25)):
+        context = f"Public Deezer album search: data[{index}]"
+        album_id = _search_id(item, context)
+        title = _search_text(item, "title", context)
+        artist = item.get("artist")
+        if not isinstance(artist, dict):
+            raise DeezerClientError(f"{context}: artist must be an object")
+        out.append({
+            "id": album_id,
+            "title": title,
+            "artist": _search_text(artist, "name", f"{context}.artist"),
+            "album": title,
+            "album_id": item["id"],
+            "cover": _search_artwork(item, "cover", context),
+            "duration_sec": 0,
+            "preview_url": None,
+        })
+    return out
+
+
 def search_artists(query: str) -> list[dict]:
-    data = _public_get(f"/search/artist?q={quote_plus(query)}&limit=24")
-    items = data.get("data") or []
-    return [normalize_artist_summary(a) for a in items]
+    query = query.strip()
+    if not query:
+        return []
+    out = []
+    for index, item in enumerate(_search_items(query, "artist", limit=24)):
+        context = f"Public Deezer artist search: data[{index}]"
+        out.append({
+            "id": _search_id(item, context),
+            "name": _search_text(item, "name", context),
+            "picture": _search_artwork(item, "picture", context),
+        })
+    return out
 
 
 def search_playlists(query: str) -> list[dict]:
-    data = _public_get(f"/search/playlist?q={quote_plus(query)}&limit=24")
-    items = data.get("data") or []
+    query = query.strip()
+    if not query:
+        return []
     out = []
-    for p in items:
-        out.append(
-            {
-                "id": str(p.get("id", "")),
-                "title": p.get("title", "") or "",
-                "cover": p.get("picture_medium")
-                or p.get("picture_big")
-                or p.get("picture", "")
-                or "",
-                "track_count": int(p.get("nb_tracks", 0) or 0),
-            }
-        )
+    for index, item in enumerate(_search_items(query, "playlist", limit=24)):
+        context = f"Public Deezer playlist search: data[{index}]"
+        count = item.get("nb_tracks")
+        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 2**53 - 1:
+            raise DeezerClientError(
+                f"{context}: nb_tracks must be a nonnegative integer safe for JavaScript clients"
+            )
+        out.append({
+            "id": _search_id(item, context),
+            "title": _search_text(item, "title", context),
+            "cover": _search_artwork(item, "picture", context),
+            "track_count": count,
+        })
     return out
 
 

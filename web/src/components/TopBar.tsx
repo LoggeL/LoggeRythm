@@ -1,17 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
 import Avatar from "@/components/Avatar";
 import Logo from "@/components/Logo";
-import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from "@/components/icons";
+import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+import SearchField from "@/components/SearchField";
+import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 
 export default function TopBar() {
   const router = useRouter();
   const pathname = usePathname();
   const { data: me } = useMe();
   const searchPage = pathname === "/search";
+  const search = useSearchNavigation();
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (searchPage) inputRef.current?.focus({ preventScroll: true });
+  }, [searchPage]);
 
   return (
     <header className="sticky top-0 z-30 -mx-5 sm:-mx-8 xl:-mx-10 flex min-h-[76px] items-center gap-3 border-b border-border bg-background/95 px-5 backdrop-blur-xl sm:px-8 xl:px-10">
@@ -21,13 +29,13 @@ export default function TopBar() {
         <button type="button" onClick={() => router.forward()} aria-label="Vor" className="action-icon"><ChevronRightIcon width={18} height={18} /></button>
       </div>
       <div className="flex min-w-0 flex-1 items-center">
-        {!searchPage && (
-          <Link href="/search" className="flex h-11 w-full max-w-md items-center gap-3 rounded-xl border border-border bg-panel px-4 text-sm text-muted transition hover:border-white/20 hover:text-foreground" aria-label="Musik suchen">
-            <SearchIcon width={18} height={18} />
-            <span className="truncate">Was möchtest du hören?</span>
-          </Link>
-        )}
-        {searchPage && <span className="text-sm font-medium text-muted">Deine nächste Entdeckung</span>}
+        <SearchField value={search.input} onValueChange={search.setInput}
+          onSubmit={() => search.submit()} onClear={search.clear} inputRef={inputRef}
+          className="w-full max-w-2xl"
+          inputProps={{
+            onCompositionStart: () => search.setComposing(true),
+            onCompositionEnd: () => search.setComposing(false),
+          }} />
       </div>
       <button type="button" onClick={() => window.dispatchEvent(new Event("open-command-palette"))} title="Schnellsuche (⌘ K / Ctrl K)" aria-label="Schnellsuche öffnen" className="action-icon hidden sm:flex">
         <kbd className="text-xs">⌘ K</kbd>

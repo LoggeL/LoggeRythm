@@ -13,6 +13,7 @@ import { trackArtistLabel } from "@/lib/trackArtists";
 import { PlayIcon } from "@/components/icons";
 import Avatar from "@/components/Avatar";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
+import SearchField from "@/components/SearchField";
 import type { Track } from "@/types";
 import {
   createPartySearchRequests,
@@ -182,8 +183,16 @@ export default function PartyPage({
     }
   };
 
-  const runSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const changeSearch = (value: string) => {
+    searchRequests.cancel();
+    setQ(value);
+    setSearching(false);
+    setSearchError(null);
+    setResults([]);
+    setSearchedTerm(null);
+  };
+
+  const runSearch = async () => {
     const term = q.trim();
     if (!term) return;
     const request = searchRequests.start();
@@ -422,29 +431,25 @@ export default function PartyPage({
         <p className="mb-4 text-base font-semibold tracking-tight">
           Songs hinzufügen
         </p>
-        <form onSubmit={runSearch} aria-busy={searching} className="mb-4 flex flex-col items-stretch gap-2 sm:flex-row">
-          <input
-            value={q}
-            onChange={(e) => {
-              searchRequests.cancel();
-              setQ(e.target.value);
-              setSearching(false);
-              setSearchError(null);
-              setResults([]);
-              setSearchedTerm(null);
-            }}
-            aria-label="Nach Titeln für die Party suchen"
-            placeholder="Nach Titeln suchen…"
-            className="field-input min-w-0 flex-1"
-          />
-          <button
-            type="submit"
-            disabled={searching || !q.trim()}
-            className="action-primary shrink-0"
-          >
-            {searching ? "Sucht…" : "Suchen"}
-          </button>
-        </form>
+        <SearchField
+          value={q}
+          onValueChange={changeSearch}
+          onSubmit={() => { void runSearch(); }}
+          onClear={() => changeSearch("")}
+          label="Nach Titeln für die Party suchen"
+          placeholder="Nach Titeln suchen…"
+          className="mb-4"
+          inputProps={{ "aria-busy": searching }}
+          trailing={(
+            <button
+              type="submit"
+              disabled={searching || !q.trim()}
+              className="action-primary shrink-0"
+            >
+              {searching ? "Sucht…" : "Suchen"}
+            </button>
+          )}
+        />
         {searching && <p role="status" className="text-sm text-muted">Titel werden gesucht…</p>}
         {searchError && <p role="alert" className="error-panel">{searchError}</p>}
         {results.length === 0 && searchedTerm && !searching && (

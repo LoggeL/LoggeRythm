@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export const SEARCH_DEBOUNCE_MS = 250;
+export const SEARCH_MIN_LENGTH = 2;
 export const SEARCH_STALE_TIME = 60_000;
 
 export function normalizeCatalogQuery(query: string): string {

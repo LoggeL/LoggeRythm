@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import test from "node:test";
-import { api, ApiError } from "../src/lib/api.ts";
+
+const resolver = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "@/lib/searchDecoders") {
+      return nextResolve(new URL("../src/lib/searchDecoders.ts", import.meta.url).href, context);
+    }
+    return nextResolve(specifier, context);
+  },
+});
+const { api, ApiError } = await import("../src/lib/api.ts");
+resolver.deregister();
 
 test("JSON endpoints reject HTML and malformed success responses", async (t) => {
   t.mock.method(globalThis, "fetch", async () => new Response("<html>Bad gateway</html>", { headers: { "content-type": "text/html" } }));

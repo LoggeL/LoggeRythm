@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "d9471e98c21c3515a5f2ee8909b7721d12991b741eb4f5cd377cdead9074abb4" as const;
+export const GENERATED_OPENAPI_SHA256 = "5af38e8d9ea180d8105036b5d27611d754c88c715d1c7294f6a96fb925623089" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -1256,7 +1256,7 @@ export interface GeneratedApiOperations {
     request: {
       query?: {
         q?: string;
-        type?: string;
+        type?: "track" | "album";
       };
     };
     responses: {
