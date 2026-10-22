@@ -92,9 +92,13 @@ export interface LibraryRefetchable {
   refetch: () => Promise<unknown>;
 }
 
-/** Pull-to-refresh always attempts every remote Library section independently. */
+/** Pull-to-refresh retries every section and the native car library independently. */
 export async function refreshLibraryQueries(
   queries: readonly LibraryRefetchable[],
+  refreshAutoBrowse?: () => Promise<void>,
 ): Promise<void> {
-  await Promise.allSettled(queries.map((query) => query.refetch()));
+  await Promise.allSettled([
+    ...queries.map((query) => query.refetch()),
+    ...(refreshAutoBrowse === undefined ? [] : [refreshAutoBrowse()]),
+  ]);
 }

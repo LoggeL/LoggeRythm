@@ -1,11 +1,14 @@
 import Player, { type BrowseCategory, type BrowseItem } from './player';
 import { authenticatedHeadersFor } from '../api/client';
+import { resolveServerUrl } from '../api/url';
 import type { Playlist, Track } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
 import { getApiBase } from '../config';
 import { getConnectivitySnapshot } from '../connectivity/store';
 import { musicRepository } from '../data/repositories';
 import { strings } from '../localization';
+import { offlineScopeOrigin } from '../offline/scope';
+import { clearPlayerNotice, getPlayerNotice } from './notices';
 import {
   getOfflinePlaylistBrowseDetail,
   listOfflinePlaylistSummaries,
@@ -76,6 +79,13 @@ function currentOfflineCopy(): OfflineBrowseTreeCopy {
   };
 }
 
+function browseArtworkUrl(value: string | null | undefined, origin: string): string | undefined {
+  if (!value) return undefined;
+  // Verified local artwork remains subject to the native file allowlist. Server
+  // covers, including uploaded playlist covers, use the bound account's origin.
+  return value.startsWith('file:') ? value : resolveServerUrl(value, origin);
+}
+
 /**
  * Build Android Auto nodes only from the encrypted manifest and verified native
  * file registry. The caller supplies the resolver so this transformation stays
@@ -99,6 +109,7 @@ export function buildOfflineDownloadsBrowseCategory(
 
   const summaries = listOfflinePlaylistSummaries(manifest, scope);
   if (summaries.length === 0) return null;
+  const origin = offlineScopeOrigin(scope);
 
   return {
     mediaId: 'library:downloads',
@@ -128,7 +139,7 @@ export function buildOfflineDownloadsBrowseCategory(
           title: track.title,
           artist: trackArtistLabel(track),
           albumTitle: track.album,
-          artworkUrl: track.cover || undefined,
+          artworkUrl: browseArtworkUrl(track.cover, origin),
           url: { uri },
           duration: track.duration_sec,
           mimeType: 'audio/mpeg',
@@ -143,7 +154,7 @@ export function buildOfflineDownloadsBrowseCategory(
         mediaId: `download-playlist:${summary.id}`,
         title: summary.name,
         artist: copy.downloadedProgress(children.length, summary.offline.totalOccurrences),
-        artworkUrl: summary.cover_url || undefined,
+        artworkUrl: browseArtworkUrl(summary.cover_url, origin),
         children,
       };
     }),
@@ -228,7 +239,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
       title: track.title,
       artist: trackArtistLabel(track),
       albumTitle: track.album,
-      artworkUrl: track.cover || undefined,
+      artworkUrl: browseArtworkUrl(track.cover, base),
       url: {
         uri: `${base}/api/tracks/${encodeURIComponent(track.id)}/stream`,
         headers: streamHeaders,
@@ -262,7 +273,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
         return [{
           mediaId: `playlist:${playlist.id}`,
           title: playlist.name,
-          artworkUrl: playlist.cover_url || undefined,
+          artworkUrl: browseArtworkUrl(playlist.cover_url, base),
           children: playlist.tracks.map((track, index) =>
             toItem(track, `playlist:${playlist.id}:${index}:${track.id}`),
           ),
@@ -320,6 +331,9 @@ export async function refreshBrowseTree(): Promise<void> {
   activeController = controller;
   try {
     await publishBrowseTree(controller.signal);
+    if (controller.signal.aborted) return;
+    const notice = getPlayerNotice();
+    if (notice?.dedupeKey === 'auto-library-refresh') clearPlayerNotice(notice.id);
   } catch (error) {
     if (!(error instanceof BrowseTreePublicationCancelledError)) throw error;
   } finally {

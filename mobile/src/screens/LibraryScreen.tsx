@@ -238,6 +238,7 @@ export default function LibraryScreen(props: LibraryScreenProps) {
   const stats = useQuery(musicQueries.stats(scope));
   const following = useQuery(musicQueries.following(scope));
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [refreshingAuto, setRefreshingAuto] = useState(false);
   const [recentPlaybackIndex, setRecentPlaybackIndex] = useState<number | null>(null);
   const recentPlaybackInFlight = useRef(false);
   const [createVisible, setCreateVisible] = useState(false);
@@ -270,11 +271,19 @@ export default function LibraryScreen(props: LibraryScreenProps) {
   });
 
   const queries = [playlists, likes, stats, following];
-  const refreshing = queries.some((query) => query.isFetching && !query.isPending);
+  const refreshing = refreshingAuto || queries.some((query) => query.isFetching && !query.isPending);
 
   const refresh = () => {
     setRuntimeError(null);
-    void refreshLibraryQueries(queries);
+    setRefreshingAuto(true);
+    void refreshLibraryQueries(queries, () => refreshLibraryAutoBrowse(refreshBrowseTree, () => {
+      reportPlayerNotice(
+        'bookkeeping',
+        'auto-library-refresh',
+        strings.player.autoLibraryFailed,
+        strings.player.autoLibraryRefreshFailedMessage,
+      );
+    })).finally(() => setRefreshingAuto(false));
   };
 
   const playContext = (tracks: Track[], index: number) => {

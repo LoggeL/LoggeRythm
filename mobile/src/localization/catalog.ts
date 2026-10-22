@@ -886,7 +886,7 @@ export const de: StringCatalog = {
     playerErrorDismiss: 'Player-Fehler schließen',
     autoLibraryFailed: 'Android-Auto-Mediathek konnte nicht geladen werden',
     autoLibraryRefreshFailedMessage:
-      'Die Wiedergabe bleibt verfügbar. Die Android-Auto-Mediathek wird beim nächsten Aktualisieren erneut geladen.',
+      'Die Wiedergabe bleibt verfügbar. Ziehe die Mediathek zum erneuten Laden nach unten.',
     autoLibraryReadyLog: '[LoggeRythm] Android-Auto-Mediathek ist bereit',
     notificationChannelName: 'Wiedergabe',
     autoLikedSongs: 'Lieblingstitel',
@@ -1412,7 +1412,7 @@ export const en: StringCatalog = {
     startFailedMessage: 'The audio player could not be prepared. Please retry.',
     playerErrorDismiss: 'Dismiss player error', autoLibraryFailed: 'Android Auto library failed to load',
     autoLibraryRefreshFailedMessage:
-      'Playback remains available. The Android Auto library will retry on its next refresh.',
+      'Playback remains available. Pull down in Library to retry loading the Android Auto library.',
     autoLibraryReadyLog: '[LoggeRythm] Android Auto library ready',
     notificationChannelName: 'Playback', autoLikedSongs: 'Liked Songs', autoPlaylists: 'Playlists',
     autoDownloads: 'Downloads',

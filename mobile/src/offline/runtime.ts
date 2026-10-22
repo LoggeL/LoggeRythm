@@ -1,3 +1,4 @@
+import { offlineScopeOrigin } from './scope';
 import { authenticatedHeadersFor } from '../api/client';
 import type { Playlist, Track } from '../api/types';
 import { getApiBase } from '../config';
@@ -99,19 +100,6 @@ function assertCurrent(value: OfflineRuntimeContext): void {
   }
 }
 
-function scopeOrigin(scope: string): string {
-  const marker = '::user:';
-  const markerIndex = scope.lastIndexOf(marker);
-  if (markerIndex <= 0 || markerIndex + marker.length >= scope.length) {
-    throw new Error('Offline account scope is invalid');
-  }
-  const origin = scope.slice(0, markerIndex);
-  if (new URL(origin).origin !== origin) {
-    throw new Error('Offline account scope origin is not canonical');
-  }
-  return origin;
-}
-
 function recoverableNativeManifestError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const code = (error as { code?: unknown }).code;
@@ -202,7 +190,7 @@ async function persistManifest(
 }
 
 async function hydrateContext(scope: string, epoch: number): Promise<OfflineRuntimeContext> {
-  scopeOrigin(scope);
+  offlineScopeOrigin(scope);
   if (context !== null && context.scope !== scope) {
     throw new Error('Clear the previous offline account before hydrating another account');
   }
@@ -424,7 +412,7 @@ export function downloadPlaylistForOffline(scope: string, playlist: Playlist): P
     }
 
     try {
-      const origin = scopeOrigin(scope);
+      const origin = offlineScopeOrigin(scope);
       const configuredOrigin = new URL(await getApiBase()).origin;
       if (origin !== configuredOrigin) {
         throw new Error('Offline download scope does not match the configured server');
@@ -525,7 +513,7 @@ export function downloadTrackForOffline(scope: string, track: Track): Promise<vo
     }
 
     try {
-      const origin = scopeOrigin(scope);
+      const origin = offlineScopeOrigin(scope);
       const configuredOrigin = new URL(await getApiBase()).origin;
       if (origin !== configuredOrigin) {
         throw new Error('Offline download scope does not match the configured server');

@@ -160,6 +160,21 @@ describe('Library section state model', () => {
     expect(following).toHaveBeenCalledOnce();
   });
 
+  it('retries car publication even when a section fails and waits for native acknowledgement', async () => {
+    let acknowledge!: () => void;
+    const auto = vi.fn(() => new Promise<void>((resolve) => { acknowledge = resolve; }));
+    let complete = false;
+    const refresh = refreshLibraryQueries([
+      { refetch: vi.fn(async () => { throw new Error('Stats unavailable'); }) },
+    ], auto).then(() => { complete = true; });
+    await Promise.resolve();
+    expect(auto).toHaveBeenCalledOnce();
+    expect(complete).toBe(false);
+    acknowledge();
+    await refresh;
+    expect(complete).toBe(true);
+  });
+
   it('retains last-good rows only inside the exact origin-and-account query scope', async () => {
     const offline = Object.assign(new Error('Network request failed'), { status: 0 });
     const getLikes = vi

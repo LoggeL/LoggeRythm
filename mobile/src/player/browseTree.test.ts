@@ -1,6 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Playlist, Track } from '../api/types';
 import { strings } from '../localization';
+import { mapBrowseTreeToNative } from './nativePlayerPort';
+import { clearPlayerNotice, getPlayerNotice, reportPlayerNotice } from './notices';
+
 import {
   attachDownloadedTrack,
   beginPlaylistDownload,
@@ -21,6 +24,8 @@ import {
   refreshBrowseTree,
   refreshOfflineBrowseTree,
 } from './browseTree';
+
+vi.mock('react-native', () => ({ NativeEventEmitter: class {}, NativeModules: {} }));
 
 const mocks = vi.hoisted(() => ({
   setBrowseTree: vi.fn(),
@@ -125,6 +130,7 @@ function rejectWhenAborted(signal?: AbortSignal): Promise<never> {
 }
 
 describe('Android Auto browse-tree publication', () => {
+  afterEach(() => clearPlayerNotice());
   beforeEach(async () => {
     await clearBrowseTree();
     resetOfflineSnapshot();
@@ -141,6 +147,62 @@ describe('Android Auto browse-tree publication', () => {
     mocks.getLikes.mockResolvedValue([]);
     mocks.getPlaylists.mockResolvedValue([]);
     mocks.getPlaylist.mockRejectedValue(new Error('getPlaylist should not be called'));
+  });
+
+  it('publishes uploaded playlist and track covers as absolute native URLs', async () => {
+    const playlist = {
+      ...offlinePlaylist(),
+      cover_url: '/api/playlists/7/cover?v=123',
+      tracks: [{ ...track, cover: '/api/tracks/3135556/cover' }],
+    };
+    mocks.getLikes.mockResolvedValueOnce([track]);
+    mocks.getPlaylists.mockResolvedValueOnce([{ id: 7, name: playlist.name }]);
+    mocks.getPlaylist.mockResolvedValueOnce(playlist);
+    mocks.setBrowseTree.mockImplementationOnce(async (categories) => {
+      const tree = mapBrowseTreeToNative(categories);
+      const nativePlaylist = tree.root.children?.[1]?.children?.[0];
+      expect(nativePlaylist?.artworkUrl).toBe('https://music.example.test/api/playlists/7/cover?v=123');
+      expect(nativePlaylist?.children?.[0]?.artworkUrl)
+        .toBe('https://music.example.test/api/tracks/3135556/cover');
+      expect(nativePlaylist?.children?.[0]?.extras?.track).toEqual(playlist.tracks[0]);
+    });
+
+    await expect(refreshBrowseTree()).resolves.toBeUndefined();
+    expect(mocks.setBrowseTree).toHaveBeenCalledOnce();
+  });
+
+  it('resolves downloaded playlist covers from the persisted account without auth or network', () => {
+    const playlist = { ...offlinePlaylist(), cover_url: '/api/playlists/7/cover?v=123' };
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(offlineScope), playlist, offlineTime);
+    manifest = attachDownloadedTrack(manifest, playlist.id, playlist.tracks[0], 4096, offlineTime);
+    publishOfflineManifest({
+      manifest,
+      directoryUri: offlineDirectory,
+      trackUris: { [track.id]: `${offlineDirectory}${track.id}.mp3` },
+      availableDiskBytes: 1_000_000,
+    });
+    const category = buildOfflineDownloadsBrowseCategory(
+      getOfflineSnapshot(), offlineUriForTrack,
+      { downloadsTitle: 'Downloads', downloadedProgress: () => 'Downloaded' },
+    );
+    expect(category?.items[0].artworkUrl)
+      .toBe('https://music.example.test/api/playlists/7/cover?v=123');
+    expect(() => mapBrowseTreeToNative([category!])).not.toThrow();
+    expect(mocks.getApiBase).not.toHaveBeenCalled();
+    expect(mocks.authenticatedHeadersFor).not.toHaveBeenCalled();
+  });
+
+  it('clears only the car-library notice after a successful retry', async () => {
+    reportPlayerNotice('bookkeeping', 'auto-library-refresh', 'Auto failed', 'Retry');
+    mocks.setBrowseTree.mockRejectedValueOnce(new Error('Native unavailable'));
+    await expect(refreshBrowseTree()).rejects.toThrow('Native unavailable');
+    expect(getPlayerNotice()?.dedupeKey).toBe('auto-library-refresh');
+    await refreshBrowseTree();
+    expect(getPlayerNotice()).toBeNull();
+
+    reportPlayerNotice('bookkeeping', 'record-play', 'History failed', 'Retry');
+    await refreshBrowseTree();
+    expect(getPlayerNotice()?.dedupeKey).toBe('record-play');
   });
 
   it('builds exact duplicate offline occurrences without auth, network, or cache claims', () => {
