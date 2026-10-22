@@ -302,6 +302,7 @@ class LoggeRythmHostileControllerInstrumentedTest {
           runCatching { context.unbindService(connection) }
         }
       }
+      clearBoundPlayerTestState(instrumentation)
       val activeController = trustedController
       val activeHandler = controllerHandler
       if (activeController != null && activeHandler != null) {
@@ -457,7 +458,7 @@ class LoggeRythmHostileControllerInstrumentedTest {
   )
 
   private fun clearTestState(context: Context) {
-    LoggeRythmPlayerRuntime.clearSessionAndAllData()
+    check(LoggeRythmPlayerRuntime.currentSessionBinding() == null) { "previous-test-session-still-bound" }
     LoggeRythmEncryptedAndroidKeyStoreCipher().clearKey()
     LoggeRythmEncryptedAndroidBlobFile(context).clear()
   }

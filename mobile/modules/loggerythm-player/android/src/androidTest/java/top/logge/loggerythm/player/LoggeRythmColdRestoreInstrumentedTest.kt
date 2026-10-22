@@ -125,8 +125,36 @@ class LoggeRythmColdRestoreInstrumentedTest {
         REMOTE_CAPABILITIES,
         LoggeRythmPersistedServiceBridge.publicState().remoteCapabilities,
       )
+
+      // A later fixture owns this same file/key. Clear through the live owner
+      // before releasing it, then prove a late player event cannot erase or
+      // overwrite a different account's fixture.
+      val codec = LoggeRythmPersistedStateCodec(LoggeRythmPlayerProtocol(
+        listOf(context.filesDir, context.noBackupFilesDir, context.cacheDir),
+      ))
+      val cipher = LoggeRythmEncryptedAndroidKeyStoreCipher()
+      val blob = LoggeRythmEncryptedAndroidBlobFile(context)
+      val saved = requireNotNull(LoggeRythmEncryptedStateStore(codec, cipher, blob, binding).load())
+      clearBoundPlayerTestState(instrumentation)
+      assertNull(blob.read())
+      val nextBinding = binding.copy(accountScope = "user:771")
+      val nextState = saved.copy(sessionBinding = nextBinding, positionMs = 22L)
+      val nextStore = LoggeRythmEncryptedStateStore(codec, cipher, blob, nextBinding)
+      nextStore.save(nextState)
+      onLooper(restored.handler) { restored.browser.repeatMode = Player.REPEAT_MODE_ALL }
+      val eventDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DEVICE_TIMEOUT_SECONDS)
+      while (onLooper(restored.handler) { restored.browser.repeatMode } != Player.REPEAT_MODE_ALL) {
+        check(System.nanoTime() < eventDeadline) { "late-player-event-timeout" }
+        Thread.sleep(POLL_INTERVAL_MS)
+      }
+      instrumentation.waitForIdleSync()
+      assertEquals(LoggeRythmEncryptedLoadOutcome.Restored(nextState), nextStore.loadOutcome())
     } finally {
-      restored.close()
+      try {
+        clearBoundPlayerTestState(instrumentation)
+      } finally {
+        restored.close()
+      }
     }
   }
 
@@ -263,7 +291,7 @@ class LoggeRythmColdRestoreInstrumentedTest {
   )
 
   private fun clearTestState() {
-    LoggeRythmPlayerRuntime.clearSessionAndAllData()
+    check(LoggeRythmPlayerRuntime.currentSessionBinding() == null) { "previous-test-session-still-bound" }
     LoggeRythmEncryptedAndroidKeyStoreCipher().clearKey()
     LoggeRythmEncryptedAndroidBlobFile(context).clear()
   }

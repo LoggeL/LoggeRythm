@@ -129,7 +129,10 @@ class LoggeRythmEncryptedPersistenceInstrumentedTest {
     assertTrue(target.isFile)
     assertEquals(PRIVATE_FILE_MODE, mode)
     assertEquals(listOf(PERSISTENCE_FILE_NAME), directory.listFiles().orEmpty().map { it.name }.sorted())
-    assertEquals(sampleState(positionMs = 22L), store.load())
+    assertEquals(
+      LoggeRythmEncryptedLoadOutcome.Restored(sampleState(positionMs = 22L)),
+      store.loadOutcome(),
+    )
   }
 
   @Test

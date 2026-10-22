@@ -89,6 +89,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
 
   @After
   fun tearDown() {
+    clearBoundPlayerTestState(instrumentation)
     controller?.let { active -> runCatching { active.unregisterCallback(controllerCallback) } }
     compatController?.unregisterCallback(compatCallback)
     browser?.let { active -> runCatching { onLooper { active.disconnect() } } }
@@ -571,7 +572,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
   }
 
   private fun clearTestState() {
-    LoggeRythmPlayerRuntime.clearSessionAndAllData()
+    check(LoggeRythmPlayerRuntime.currentSessionBinding() == null) { "previous-test-session-still-bound" }
     LoggeRythmEncryptedAndroidKeyStoreCipher().clearKey()
     LoggeRythmEncryptedAndroidBlobFile(context).clear()
   }

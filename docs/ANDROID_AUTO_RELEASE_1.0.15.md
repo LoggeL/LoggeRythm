@@ -38,6 +38,11 @@ now tell the user how to retry.
   into test fixtures.
 
 The native controller and playback implementation is unchanged from 1.0.14.
+The first CI run exposed a test cleanup race: a service fixture deleted the
+shared encryption key/file before admitted service writes had completed. Device
+tests now await the coordinator clear before releasing the service, verify that
+a later player event preserves a different fixture account, and report the exact
+encrypted-load outcome. No assertion is skipped and no retry hides the failure.
 This verification does not establish acceptance in a physical vehicle or Google
 Android Auto projection host. Private playlist artwork still obeys the server's
 existing access rules; this patch does not expose private covers publicly or
