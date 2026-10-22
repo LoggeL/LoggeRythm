@@ -25,9 +25,18 @@ const advisory = () => ({
   range: '<2.0.0',
 });
 
+const reviewedVulnerabilities = () => Object.fromEntries([
+  ['braces', 'GHSA-vfj7-8cjw-p6xm'],
+  ['node-forge', 'GHSA-86w9-cpqp-85rv'],
+].map(([name, id]) => [name, {
+  name,
+  via: [{ ...advisory(), name, url: `https://github.com/advisories/${id}` }],
+}]));
+
 const vulnerableReport = (via = [advisory()]) => ({
   auditReportVersion: 2,
   vulnerabilities: {
+    ...reviewedVulnerabilities(),
     'unsafe-library': {
       name: 'unsafe-library',
       severity: 'high',
@@ -82,10 +91,22 @@ function assertFailure(result, messagePattern) {
   assert.doesNotMatch(result.stdout, /found no moderate\+/);
 }
 
-test('a valid clean npm audit report passes', () => {
+test('a clean report requires removing stale reviewed exceptions', () => {
   const result = runAudit(cleanReport());
+  assertFailure(result, /Stale audit allowlist entries/);
+});
+
+test('only the exact reviewed unpatched advisories pass', () => {
+  const result = runAudit({ ...cleanReport(), vulnerabilities: reviewedVulnerabilities() }, { exitCode: 1 });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /found no moderate\+ advisories/);
+  assert.match(result.stdout, /2 reviewed unfixable advisories/);
+});
+
+test('a reviewed advisory cannot exempt a different package', () => {
+  const result = runAudit(vulnerableReport([
+    { ...advisory(), url: 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm' },
+  ]), { exitCode: 1 });
+  assertFailure(result, /was reviewed for braces but now flags unsafe-library/);
 });
 
 test('a real high advisory fails and identifies the package, advisory, severity, and URL', () => {

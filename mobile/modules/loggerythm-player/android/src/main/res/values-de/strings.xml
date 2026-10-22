@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="loggerythm_player_car_action_open_app">LoggeRythm öffnen</string>
+    <string name="loggerythm_player_car_error_signed_out">Öffne LoggeRythm auf deinem Handy und melde dich an, um deine Bibliothek im Auto zu nutzen.</string>
+    <string name="loggerythm_player_car_error_restore_failed">LoggeRythm konnte deine Bibliothek auf diesem Handy nicht neu laden. Öffne die App auf deinem Handy und versuche es dann erneut.</string>
+    <string name="loggerythm_player_car_error_library_empty">Deine Bibliothek ist leer oder wird noch geladen. Öffne LoggeRythm auf deinem Handy, um sie zu aktualisieren.</string>
+    <string name="loggerythm_player_car_error_list_unavailable">Diese Liste ist nicht mehr verfügbar. Geh zurück und öffne sie erneut.</string>
+    <string name="loggerythm_player_car_error_item_unavailable">Dieser Titel ist nicht mehr in deiner Bibliothek. Geh zurück und wähle einen anderen.</string>
+    <string name="loggerythm_player_car_error_search_no_match">In deiner LoggeRythm-Bibliothek passt nichts zu „%1$s“.</string>
+    <string name="loggerythm_player_car_error_nothing_to_play">Noch nichts zum Abspielen. Öffne LoggeRythm auf deinem Handy, um deine Bibliothek zu laden.</string>
+    <string name="loggerythm_player_car_error_controls_not_ready">Die Wiedergabe im Auto ist noch nicht eingerichtet. Öffne LoggeRythm einmal auf deinem Handy und versuche es dann erneut.</string>
+    <string name="loggerythm_player_car_error_not_ready">LoggeRythm lädt noch. Versuche es gleich noch einmal.</string>
+    <string name="loggerythm_player_car_error_busy">LoggeRythm ist gerade beschäftigt. Versuche es gleich noch einmal.</string>
+    <string name="loggerythm_player_car_error_unsupported">LoggeRythm kann diese Anfrage nicht abspielen. Wähle stattdessen etwas aus deiner Bibliothek.</string>
+</resources>

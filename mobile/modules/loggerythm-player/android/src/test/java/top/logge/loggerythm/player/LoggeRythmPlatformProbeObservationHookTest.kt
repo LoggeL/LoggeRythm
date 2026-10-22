@@ -80,6 +80,53 @@ class LoggeRythmPlatformProbeObservationHookTest {
     }
   }
 
+  @Test
+  fun bootstrapLookupAndLiveBinderAreRecordedSeparatelyFromRealConnectDecision() {
+    val requestId = "bootstrap-request"
+    LoggeRythmPlatformProbeObservationHook.arm(requestId)
+    try {
+      val tracked = LoggeRythmPlatformProbeObservationHook.beginRawBind(
+        action = LoggeRythmPlatformProbeObservationHook.PLATFORM_BROWSER_SERVICE_ACTION,
+        suppliedRequestId = requestId,
+      )
+      val bootstrap = deniedLegacyController().copy(frameworkBootstrap = true)
+      LoggeRythmPlatformProbeObservationHook.recordLookup(bootstrap)
+      LoggeRythmPlatformProbeObservationHook.completeRawBind(
+        tracked = tracked,
+        binderReturned = true,
+      )
+      val rejected = LoggeRythmPlatformProbeControllerObservation(
+        uid = 10_123,
+        packageName = "example.hostile",
+        controllerVersion = MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION,
+        trusted = false,
+        allowed = false,
+      )
+      // Foreign or absent root-hint request IDs are never attributed to the armed probe.
+      LoggeRythmPlatformProbeObservationHook.recordConnectDecision("foreign-request", rejected)
+      LoggeRythmPlatformProbeObservationHook.recordConnectDecision(null, rejected)
+      LoggeRythmPlatformProbeObservationHook.recordConnectDecision(requestId, rejected)
+
+      val observation = requireNotNull(LoggeRythmPlatformProbeObservationHook.drain(requestId))
+      assertEquals(LoggeRythmPlatformProbePhase.LIVE_BINDER_RETURNED, observation.phase)
+      assertEquals(1, observation.lookupCount)
+      assertEquals(bootstrap, observation.matchedController)
+      assertEquals(1, observation.connectDecisionCount)
+      assertEquals(rejected, observation.connectDecision)
+    } finally {
+      LoggeRythmPlatformProbeObservationHook.drain(requestId)
+    }
+  }
+
+  @Test
+  fun connectDecisionWithoutArmedProbeIsIgnored() {
+    LoggeRythmPlatformProbeObservationHook.recordConnectDecision(
+      "unarmed-request",
+      deniedLegacyController(),
+    )
+    assertNull(LoggeRythmPlatformProbeObservationHook.drain("unarmed-request"))
+  }
+
   private fun deniedLegacyController() = LoggeRythmPlatformProbeControllerObservation(
     uid = -1,
     packageName = MediaSession.ControllerInfo.LEGACY_CONTROLLER_PACKAGE_NAME,

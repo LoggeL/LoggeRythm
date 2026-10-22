@@ -5,10 +5,10 @@ set -euo pipefail
 export ANDROID_VERSION_CODE=$((20000 + GITHUB_RUN_NUMBER))
 
 chmod +x ./gradlew
-./gradlew --no-daemon \
+./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
   :loggerythm_player-native:connectedDebugAndroidTest
 
-./gradlew --no-daemon :app:clean :app:assembleRelease \
+./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" :app:clean :app:assembleRelease \
   -PreactNativeArchitectures=x86_64 \
   -PhermesEnabled=true \
   -Pandroid.enableMinifyInReleaseBuilds=true \

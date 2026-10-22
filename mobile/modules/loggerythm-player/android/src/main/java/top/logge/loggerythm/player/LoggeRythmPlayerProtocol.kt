@@ -91,11 +91,17 @@ internal data class BrowseNodeSpec(
   val url: String?,
   val cookie: String?,
   val children: List<BrowseNodeSpec>,
+  /**
+   * App-private queue extras of a playable leaf, validated by the strict queue extras policy.
+   * They only enter [PlayerItemSpec] and encrypted state; Media3 browse results never carry them.
+   */
+  val extrasJson: String = "{}",
 ) {
   override fun toString(): String =
     "BrowseNodeSpec(id=<redacted>, title=<redacted>, subtitle=<redacted>, " +
       "artist=<redacted>, album=<redacted>, artworkUrl=<redacted>, durationMs=$durationMs, " +
-      "playable=$playable, url=<redacted>, cookie=<redacted>, children=<redacted:${children.size}>)"
+      "playable=$playable, url=<redacted>, cookie=<redacted>, children=<redacted:${children.size}>, " +
+      "extrasJson=<redacted>)"
 }
 
 internal data class BrowseTreeSpec(val root: BrowseNodeSpec) {
@@ -341,6 +347,8 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     if (childValues.length() > MAX_BROWSE_CHILDREN) fail("browse-children-limit-exceeded")
     if (playable && url == null) fail("browse-playable-url-missing")
     if (!playable && (url != null || cookie != null)) fail("browse-container-media-invalid")
+    if (!playable && value.has("extras")) fail("browse-container-extras-invalid")
+    val extrasJson = optionalExtras(value)
     if (cookie != null && url?.startsWith("https://") != true) fail("header-url-invalid")
     if (playable && childValues.length() != 0) fail("browse-playable-children-invalid")
     val children = List(childValues.length()) { index ->
@@ -358,6 +366,7 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       url = url,
       cookie = cookie,
       children = children,
+      extrasJson = extrasJson,
     )
   }
 
@@ -599,6 +608,7 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       "url",
       "headers",
       "children",
+      "extras",
     )
   }
 }

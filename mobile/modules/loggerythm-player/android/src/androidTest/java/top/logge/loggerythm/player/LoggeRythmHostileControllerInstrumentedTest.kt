@@ -4,7 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -176,26 +175,22 @@ class LoggeRythmHostileControllerInstrumentedTest {
       assertEquals(0, probe.getInt("playerCommandCount"))
       assertFalse(probe.getBoolean("mutationCallsIssued"))
 
-      // The service also advertises the platform MediaBrowserService action used by legacy hosts.
-      // The helper's raw bind carries a random request ID only as an Intent extra. The target
-      // observes it around the unchanged MediaLibraryService.onBind implementation and must return
-      // null after exactly one denied onGetSession lookup. The subsequent real MediaBrowser attempt
-      // carries no test extra; on API 36 its complete silent window is only secondary client-surface
-      // evidence. The same-Component Media3 browser proves the service remains live before/after.
+      // The service also advertises the platform MediaBrowserService action used by legacy hosts
+      // such as Android Auto. Media3 resolves that bind through an identity-free placeholder, and
+      // Android caches the returned binder for later legacy binds, so the target must hand out the
+      // live legacy browser binder (a null binder locks out every car host). Admission happens on
+      // the real connection instead: the helper's platform MediaBrowser reaches onConnect with its
+      // own platform-verified package/UID and must be rejected explicitly there. The random request
+      // ID travels as a raw-bind Intent extra and as a root hint; it never changes the decision.
       assertTrue(probe.getBoolean("legacyServiceBindAttempted"))
       assertTrue(probe.getBoolean("legacyServiceBindAccepted"))
       assertTrue(probe.getBoolean("legacyServiceComponentMatched"))
       assertFalse(probe.getBoolean("legacyServiceBindTimedOut"))
       assertEquals(1, probe.getInt("legacyServiceBindCallbackCount"))
-      assertTrue(probe.getBoolean("legacyServiceNullBindingCallback"))
-      assertFalse(probe.getBoolean("legacyServiceBinderReached"))
-      assertFalse(probe.getBoolean("legacyServiceBinderAlive"))
+      assertFalse(probe.getBoolean("legacyServiceNullBindingCallback"))
+      assertTrue(probe.getBoolean("legacyServiceBinderReached"))
+      assertTrue(probe.getBoolean("legacyServiceBinderAlive"))
       assertTrue(probe.getBoolean("legacyRawBindReleasedBeforeBrowser"))
-      val rawPlatformNullBindingObserved =
-        probe.getBoolean("legacyServiceNullBindingCallback") &&
-          probe.getInt("legacyServiceBindCallbackCount") == 1 &&
-          !probe.getBoolean("legacyServiceBinderReached") &&
-          !probe.getBoolean("legacyServiceBinderAlive")
       assertTrue(probe.getBoolean("legacyConnectionAttempted"))
       assertTrue(probe.getBoolean("legacyConnectDispatchCompleted"))
       assertFalse(probe.getBoolean("legacyConnectedCallback"))
@@ -203,35 +198,19 @@ class LoggeRythmHostileControllerInstrumentedTest {
       assertEquals(LEGACY_OBSERVATION_WINDOW_MS, probe.getLong("legacyObservationWindowMs"))
       assertEquals("", probe.getString("legacyFailureClass"))
 
+      // With a live binder the platform reports the rejected onGetRoot explicitly on every API.
       val explicitPlatformRejection =
         probe.getBoolean("legacyConnectionFailedCallback") &&
           probe.getInt("legacyCallbackCount") == 1 &&
           !probe.getBoolean("legacyTimedOut") &&
           !probe.getBoolean("legacyObservationWindowCompleted") &&
-          probe.getString("legacyConnectionOutcome") == "REJECTED_BY_BROWSER_CALLBACK"
-      val silentPlatformRejection =
-        Build.VERSION.SDK_INT == API_36 &&
-          !probe.getBoolean("legacyConnectionFailedCallback") &&
-          probe.getInt("legacyCallbackCount") == 0 &&
-          probe.getBoolean("legacyTimedOut") &&
-          probe.getBoolean("legacyObservationWindowCompleted") &&
-          probe.getLong("legacyObservedDurationMs") >=
-          probe.getLong("legacyObservationWindowMs") &&
-          probe.getString("legacyConnectionOutcome") ==
-          "NO_CALLBACK_WITHIN_OBSERVATION_WINDOW"
-      if (explicitPlatformRejection) {
-        assertEquals("CALLBACK_OBSERVED", probe.getString("legacyProbePhase"))
-      } else if (silentPlatformRejection) {
-        assertEquals("SILENT_WINDOW_COMPLETED", probe.getString("legacyProbePhase"))
-      }
-      assertTrue(
-        "Platform denial must be explicit except for the complete API 36 silent window",
-        explicitPlatformRejection || silentPlatformRejection,
-      )
+          probe.getString("legacyConnectionOutcome") == "REJECTED_BY_BROWSER_CALLBACK" &&
+          probe.getString("legacyProbePhase") == "CALLBACK_OBSERVED"
+      assertTrue("Platform denial must be an explicit onConnectionFailed", explicitPlatformRejection)
 
       assertEquals(platformProbeNonce, platformObservation.requestId)
       assertEquals(
-        LoggeRythmPlatformProbePhase.NULL_BIND_CONFIRMED,
+        LoggeRythmPlatformProbePhase.LIVE_BINDER_RETURNED,
         platformObservation.phase,
       )
       assertEquals(1, platformObservation.matchedRawBindCount)
@@ -239,19 +218,29 @@ class LoggeRythmHostileControllerInstrumentedTest {
       assertEquals(1, platformObservation.lookupCount)
       val matchedPlatformController = requireNotNull(platformObservation.matchedController)
       assertEquals(
-        MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION,
-        matchedPlatformController.controllerVersion,
+        LoggeRythmPlatformProbeControllerObservation(
+          uid = UNKNOWN_LEGACY_UID,
+          packageName = MediaSession.ControllerInfo.LEGACY_CONTROLLER_PACKAGE_NAME,
+          controllerVersion = MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION,
+          trusted = false,
+          allowed = false,
+          frameworkBootstrap = true,
+        ),
+        matchedPlatformController,
       )
-      assertTrue(
-        matchedPlatformController.uid == UNKNOWN_LEGACY_UID ||
-          matchedPlatformController.uid == helperApplication.uid,
+      assertTrue(platformObservation.connectDecisionCount >= 1)
+      val connectDecision = requireNotNull(platformObservation.connectDecision)
+      assertEquals(
+        LoggeRythmPlatformProbeControllerObservation(
+          uid = helperApplication.uid,
+          packageName = HELPER_PACKAGE,
+          controllerVersion = MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION,
+          trusted = false,
+          allowed = false,
+          frameworkBootstrap = false,
+        ),
+        connectDecision,
       )
-      assertTrue(
-        matchedPlatformController.packageName == MediaSession.ControllerInfo.LEGACY_CONTROLLER_PACKAGE_NAME ||
-          matchedPlatformController.packageName == HELPER_PACKAGE,
-      )
-      assertFalse(matchedPlatformController.trusted)
-      assertFalse(matchedPlatformController.allowed)
 
       assertFalse(probe.getBoolean("legacyRootAccessible"))
       assertFalse(probe.getBoolean("legacySessionTokenAccessible"))
@@ -266,13 +255,15 @@ class LoggeRythmHostileControllerInstrumentedTest {
       val legacyBoundaryClassification = if (
         media3Before.isLive &&
         media3After.isLive &&
-        platformObservation.phase == LoggeRythmPlatformProbePhase.NULL_BIND_CONFIRMED &&
+        platformObservation.phase == LoggeRythmPlatformProbePhase.LIVE_BINDER_RETURNED &&
         platformObservation.matchedRawBindCount == 1 &&
         platformObservation.uncorrelatedRawBindCount == 0 &&
         platformObservation.lookupCount == 1 &&
+        matchedPlatformController.frameworkBootstrap &&
         !matchedPlatformController.allowed &&
-        rawPlatformNullBindingObserved &&
-        (explicitPlatformRejection || silentPlatformRejection) &&
+        connectDecision.uid == helperApplication.uid &&
+        !connectDecision.allowed &&
+        explicitPlatformRejection &&
         !probe.getBoolean("legacyRootAccessible") &&
         !probe.getBoolean("legacySessionTokenAccessible")
       ) {
@@ -555,10 +546,9 @@ class LoggeRythmHostileControllerInstrumentedTest {
     const val DEVICE_TIMEOUT_SECONDS = 10L
     const val CONTROLLER_POLL_MS = 50L
     const val POST_PROBE_SETTLE_MS = 500L
-    const val PROBE_SCHEMA_VERSION = 6
+    const val PROBE_SCHEMA_VERSION = 7
     const val LEGACY_OBSERVATION_WINDOW_MS = 10_000L
     const val UNKNOWN_LEGACY_UID = -1
-    const val API_36 = 36
 
     val EXPECTED_PROBE_KEYS = setOf(
       "probeSchemaVersion",

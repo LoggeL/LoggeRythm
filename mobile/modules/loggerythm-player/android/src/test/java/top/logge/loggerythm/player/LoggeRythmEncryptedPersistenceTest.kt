@@ -10,6 +10,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import org.json.JSONObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -62,7 +63,13 @@ class LoggeRythmEncryptedPersistenceTest {
     assertFalse(durableText.contains("/api/tracks/one"))
     assertFalse(durableText.contains("/api/tracks/auto-one"))
     assertFalse(durableText.contains("browse_session"))
-    assertEquals(state, store.load())
+    assertFalse(durableText.contains("private-car-track"))
+    val loaded = store.load()
+    assertEquals(state, loaded)
+    assertEquals(
+      BROWSE_LEAF_EXTRAS,
+      loaded?.browseTree?.root?.children?.single()?.extrasJson,
+    )
     assertTrue(requireNotNull(cipher.lastDecryptedPlaintext).all { it == 0.toByte() })
   }
 
@@ -335,6 +342,7 @@ class LoggeRythmEncryptedPersistenceTest {
               url = "${binding.origin}/api/tracks/auto-one/stream",
               cookie = "browse_session=secret-cookie",
               children = emptyList(),
+              extrasJson = BROWSE_LEAF_EXTRAS,
             ),
           ),
         ),
@@ -344,6 +352,13 @@ class LoggeRythmEncryptedPersistenceTest {
         RemotePlayerCapability.NEXT,
       ),
     )
+
+  private companion object {
+    val BROWSE_LEAF_EXTRAS: String = JSONObject()
+      .put("track", JSONObject().put("id", "auto-one").put("title", "private-car-track"))
+      .put("radio", false)
+      .toString()
+  }
 
   private fun assertEnvelopeInvalid(envelope: ByteArray) {
     val error = org.junit.Assert.assertThrows(LoggeRythmPersistedStateException::class.java) {

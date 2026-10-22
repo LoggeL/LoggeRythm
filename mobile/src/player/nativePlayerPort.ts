@@ -217,6 +217,8 @@ export interface NativeBrowseNodeV1 {
   playable: boolean;
   url?: string;
   headers?: { Cookie: string };
+  /** Sanitized app-private sidecar of a playable leaf; never Media3 metadata. */
+  extras?: Readonly<Record<string, unknown>>;
   children?: readonly NativeBrowseNodeV1[];
 }
 
@@ -460,7 +462,11 @@ export function mapMediaItemToNativeQueueItem(item: MediaItem): NativeQueueWireI
   };
 }
 
-/** Exact public Media3 browse schema. App-private extras never enter this tree. */
+/**
+ * Exact in-process native browse schema. Playable leaves carry the same sanitized
+ * private extras as queue items so a car selection keeps its Track; native code
+ * keeps them out of Media3 browse results and external controllers.
+ */
 export function mapBrowseTreeToNative(
   categories: readonly BrowseCategory[],
 ): NativeBrowseTreeV1 {
@@ -489,10 +495,18 @@ export function mapBrowseTreeToNative(
     });
     if (item.url !== undefined) {
       const source = sourceUrl({ mediaId: item.mediaId, url: item.url });
+      const privateExtras = item.extras === undefined
+        ? undefined
+        : sanitizeMediaItemForPublic({
+          mediaId: item.mediaId,
+          url: item.url,
+          extras: item.extras,
+        }).extras;
       return {
         id: item.mediaId,
         title: item.title,
         ...(item.artist === undefined ? {} : { artist: item.artist }),
+        ...(item.albumTitle === undefined ? {} : { album: item.albumTitle }),
         ...(artwork === undefined ? {} : { artworkUrl: artwork }),
         ...(item.duration === undefined
           ? {}
@@ -500,6 +514,7 @@ export function mapBrowseTreeToNative(
         playable: true,
         url: source.url,
         ...(source.headers === undefined ? {} : { headers: source.headers }),
+        ...(privateExtras === undefined ? {} : { extras: privateExtras }),
       };
     }
     return {
@@ -986,13 +1001,15 @@ export class NativeBackedPlayerPort implements PlayerPort {
     }), { enabled: false });
   }
 
-  setBrowseTree(categories: readonly BrowseCategory[]): void {
+  setBrowseTree(categories: readonly BrowseCategory[]): Promise<void> {
     validateBrowseTree(categories);
     this.rememberBrowseSources(categories);
     const nativeTree = mapBrowseTreeToNative(categories);
-    this.scheduleFireAndForget(
+    return this.scheduleAwaitable(
       'setBrowseTree',
       () => this.dependencies.nativeModule.setBrowseTree(safeJson(nativeTree)),
+      () => undefined,
+      false,
     );
   }
 
@@ -1105,6 +1122,7 @@ export class NativeBackedPlayerPort implements PlayerPort {
           url: item.url,
           title: item.title,
           artist: item.artist,
+          albumTitle: item.albumTitle,
           artworkUrl: item.artworkUrl,
           duration: item.duration,
           isLive: item.isLive,
@@ -1393,13 +1411,6 @@ export class NativeBackedPlayerPort implements PlayerPort {
     return resultPromise;
   }
 
-  private scheduleFireAndForget(
-    operation: PlayerOperationName,
-    task: () => Promise<unknown>,
-  ): void {
-    void this.scheduleAwaitable(operation, task, () => undefined).catch(() => undefined);
-  }
-
   private snapshotFromResult(
     result: unknown,
     fallback: Readonly<PlayerSnapshot>,
@@ -1451,6 +1462,11 @@ export class NativeBackedPlayerPort implements PlayerPort {
       const source = this.sourceById(id);
       if (source === null) this.unavailableSourceIds.add(id);
       else this.unavailableSourceIds.delete(id);
+      // Legacy native sidecars may report `{}`; never let that erase this account's
+      // known private metadata (e.g. a car-selected browse leaf's Track).
+      const extras = Object.keys(nativeItem.extras).length === 0 && source?.extras !== undefined
+        ? source.extras
+        : nativeItem.extras;
       const item: MediaItem = {
         ...(source ?? { mediaId: id, url: unavailableSourceUrl(id) }),
         mediaId: id,
@@ -1461,7 +1477,7 @@ export class NativeBackedPlayerPort implements PlayerPort {
         ...(nativeItem.durationMs === null
           ? {}
           : { duration: millisecondsToSeconds(nativeItem.durationMs) }),
-        extras: nativeItem.extras,
+        extras,
       };
       return sanitizeMediaItemForPublic(item);
     });

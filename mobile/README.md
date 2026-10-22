@@ -127,13 +127,13 @@ src/
     setup.ts       connected native-player readiness, notification, commands, disk cache
     controller.ts  play / queue / next-prev / repeat-shuffle + race-safe radio extension/recovery
     queueContract.ts and recoveryPolicy.ts — product ordering and classified retry rules
-    browseTree.ts  setBrowseTree() — Android Auto library (Liked Songs + Playlists)
+    browseTree.ts  acknowledged Android Auto library (Liked Songs, Playlists, Downloads)
     mediaItem.ts   Track ⇄ MediaItem mapping (full Track carried in `extras`)
   screens/        16 auth, Home/Search/Discover/Radio/Library/Profile/catalog/player screens
   components/     shared brand, home, search, catalog, radio, profile, track and mini-player UI
   navigation.tsx  auth/approval gate → five typed tab stacks + player/queue overlays + links
 plugins/
-  withAndroidAuto.js          Auto service/metadata plus production/custom link intent filters
+  withFirstPartyPlayer.js     Auto service/metadata plus production/custom link intent filters
   withSharedTextIntent.js     owned text/plain ACTION_SEND bridge
   withMusicVolumeControl.js   visible-app hardware keys target STREAM_MUSIC
   withAndroidLauncherAssets.js  format-safe production-brand launcher resources
@@ -168,12 +168,23 @@ playing/paused route evidence remains a release gate.
 
 ### Android Auto
 
-`browseTree.ts` publishes a browsable tree (Liked Songs + one folder per
-playlist) via `setBrowseTree()`. Transport is handled natively without a live
-JavaScript command loop. The unsupported voice-search capability is not
-advertised. Sibling-queue selection, encrypted cold browse-tree restore,
-partial-failure refresh, mutation refresh, DHU, and large-library evidence
-remain explicit release work.
+`browseTree.ts` publishes Liked Songs, Playlists and verified offline Downloads
+and awaits the native acknowledgement. A failed playlist request is reported
+without discarding healthy sections. Native commits and offline refreshes are
+serialized so a pending acknowledgement cannot overwrite a newer library.
+
+The Media3 service supports platform/legacy browser connections, encrypted cold
+restore, subscriptions, paged children, playlist sibling queues and transport
+without a live JavaScript UI. Search and car voice requests resolve titles,
+artists, albums and playlists from the published library. They do not search
+the entire remote catalog. Sign-in/setup errors are localized and actionable.
+Car voice requests use MediaSession callbacks; the phone Activity does not
+advertise a standalone search Intent it cannot consume.
+
+The first account sign-in and library synchronization happen on the phone.
+See [`docs/ANDROID_AUTO_RELEASE_1.0.14.md`](../docs/ANDROID_AUTO_RELEASE_1.0.14.md)
+for the version's automated evidence and the remaining physical head-unit/DHU
+acceptance boundary.
 
 ### Architecture decision
 

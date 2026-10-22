@@ -122,7 +122,7 @@ jobs:
           : "${GITHUB_RUN_NUMBER:?GitHub did not provide GITHUB_RUN_NUMBER}"
           export ANDROID_VERSION_CODE=$((10000 + GITHUB_RUN_NUMBER))
           chmod +x ./gradlew
-          ./gradlew --no-daemon \
+          ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
             :loggerythm_player-native:testReleaseUnitTest \
             :loggerythm_player-native:lintRelease \
             :loggerythm_player-hostile-controller:lintDebug \

@@ -2,6 +2,7 @@ package top.logge.loggerythm.player
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -108,6 +109,115 @@ class LoggeRythmPersistedStateTest {
     assertCode("browse-root-id-invalid") {
       codec.encode(sampleState().copy(
         browseTree = BrowseTreeSpec(sampleBrowseTree().root.copy(id = "other:root")),
+      ))
+    }
+  }
+
+  @Test
+  fun browseLeafPrivateExtrasSurviveCodecAndCarCreatedQueueRestore() {
+    val trackExtras = JSONObject()
+      .put(
+        "track",
+        JSONObject()
+          .put("id", "auto-one")
+          .put("title", "Auto One")
+          .put("artist", "Artist")
+          .put("artists", JSONArray()),
+      )
+      .put("radio", false)
+      .toString()
+    val tree = sampleBrowseTree(leafExtrasJson = trackExtras)
+    val leaf = tree.root.children.single().children.single()
+    // Simulate the native queue captured from a car selection of this leaf.
+    val carQueueItem = LoggeRythmPersistedQueueItem(
+      id = leaf.id,
+      url = requireNotNull(leaf.url),
+      title = leaf.title,
+      artist = leaf.artist,
+      album = leaf.album,
+      artworkUrl = leaf.artworkUrl,
+      durationMs = leaf.durationMs,
+      cookie = leaf.cookie,
+      extrasJson = leaf.extrasJson,
+    )
+    val state = sampleState().copy(
+      queue = listOf(carQueueItem),
+      activeIndex = 0,
+      contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
+      browseTree = tree,
+    )
+
+    val encoded = codec.encode(state)
+    val restored = codec.decode(encoded, binding)
+
+    assertEquals(state, restored)
+    assertEquals(
+      trackExtras,
+      restored.browseTree?.root?.children?.single()?.children?.single()?.extrasJson,
+    )
+    assertEquals(trackExtras, restored.queue.single().toPlayerItemSpec().extrasJson)
+    assertFalse(restored.browseTree.toString().contains("Auto One"))
+  }
+
+  @Test
+  fun legacyBrowseBlobsWithoutLeafExtrasRemainReadable() {
+    val state = sampleState()
+    val encoded = JSONObject(String(codec.encode(state), StandardCharsets.UTF_8))
+    val leaf = encoded.getJSONObject("browseTree").getJSONObject("root")
+      .getJSONArray("children").getJSONObject(0)
+      .getJSONArray("children").getJSONObject(0)
+    // Empty private extras are omitted so the pre-1.0.14 browse node shape is unchanged.
+    assertFalse(leaf.has("extras"))
+
+    val restored = codec.decode(encoded.toString().toByteArray(StandardCharsets.UTF_8), binding)
+
+    assertEquals(state, restored)
+    assertEquals(
+      "{}",
+      restored.browseTree?.root?.children?.single()?.children?.single()?.extrasJson,
+    )
+  }
+
+  @Test
+  fun rejectsSecretOrOversizedBrowseLeafExtras() {
+    assertCode("browse-extras-key-invalid") {
+      codec.encode(sampleState().copy(
+        browseTree = sampleBrowseTree(leafExtrasJson = """{"track":{"refreshToken":"no"}}"""),
+      ))
+    }
+    val tampered = JSONObject(String(codec.encode(sampleState()), StandardCharsets.UTF_8))
+    tampered.getJSONObject("browseTree").getJSONObject("root")
+      .getJSONArray("children").getJSONObject(0)
+      .getJSONArray("children").getJSONObject(0)
+      .put("extras", JSONObject().put("sessionCookie", "no"))
+    assertCode("browse-extras-key-invalid") {
+      codec.decode(tampered.toString().toByteArray(StandardCharsets.UTF_8), binding)
+    }
+    assertCode("browse-browse-container-extras-invalid") {
+      codec.encode(sampleState().copy(
+        browseTree = BrowseTreeSpec(sampleBrowseTree().root.copy(extrasJson = """{"a":1}""")),
+      ))
+    }
+
+    // Each leaf is under the 32 KiB extras limit, but the total is counted before encoding.
+    val largeExtras = JSONObject().apply {
+      repeat(15) { index -> put("k$index", "x".repeat(2_000)) }
+    }.toString()
+    val base = sampleBrowseTree()
+    val category = base.root.children.single()
+    val template = category.children.single()
+    val leaves = List(80) { index ->
+      template.copy(
+        id = "track:large-$index",
+        url = "https://loggerythm.logge.top/api/tracks/large-$index/stream",
+        extrasJson = largeExtras,
+      )
+    }
+    assertCode("state-size-invalid") {
+      codec.encode(sampleState().copy(
+        browseTree = BrowseTreeSpec(
+          base.root.copy(children = listOf(category.copy(children = leaves))),
+        ),
       ))
     }
   }
@@ -365,6 +475,7 @@ class LoggeRythmPersistedStateTest {
   private fun sampleBrowseTree(
     url: String = "https://loggerythm.logge.top/api/tracks/auto-one/stream",
     cookie: String? = "browse-session=opaque",
+    leafExtrasJson: String = "{}",
   ): BrowseTreeSpec = BrowseTreeSpec(
     BrowseNodeSpec(
       id = LoggeRythmPlayerRuntime.BROWSE_ROOT_ID,
@@ -402,6 +513,7 @@ class LoggeRythmPersistedStateTest {
               url = url,
               cookie = cookie,
               children = emptyList(),
+              extrasJson = leafExtrasJson,
             ),
           ),
         ),

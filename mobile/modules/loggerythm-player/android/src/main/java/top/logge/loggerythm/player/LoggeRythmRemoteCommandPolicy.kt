@@ -1,5 +1,6 @@
 package top.logge.loggerythm.player
 
+import android.annotation.SuppressLint
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
@@ -34,42 +35,26 @@ internal class LoggeRythmRemoteCommandPolicy {
     capabilities = emptySet()
   }
 
+  // The IntDef checker cannot trace the collection returned by our exhaustive
+  // internal Player.COMMAND_* whitelist. No caller-provided integers enter it.
+  @SuppressLint("WrongConstant")
   fun playerCommands(profile: RemoteControllerProfile): Player.Commands {
     if (profile == RemoteControllerProfile.INTERNAL) {
       return MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS.buildUpon()
         .remove(Player.COMMAND_SET_SHUFFLE_MODE)
         .build()
     }
-    val codes = playerCommandCodes(profile)
     return Player.Commands.Builder()
-      .addIf(Player.COMMAND_GET_CURRENT_MEDIA_ITEM, Player.COMMAND_GET_CURRENT_MEDIA_ITEM in codes)
-      .addIf(Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_TIMELINE in codes)
-      .addIf(Player.COMMAND_GET_METADATA, Player.COMMAND_GET_METADATA in codes)
-      .addIf(Player.COMMAND_GET_AUDIO_ATTRIBUTES, Player.COMMAND_GET_AUDIO_ATTRIBUTES in codes)
-      .addIf(Player.COMMAND_GET_VOLUME, Player.COMMAND_GET_VOLUME in codes)
-      .addIf(Player.COMMAND_PLAY_PAUSE, Player.COMMAND_PLAY_PAUSE in codes)
-      .addIf(Player.COMMAND_PREPARE, Player.COMMAND_PREPARE in codes)
-      .addIf(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT in codes)
-      .addIf(
-        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
-        Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM in codes,
-      )
-      .addIf(Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS in codes)
-      .addIf(
-        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
-        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM in codes,
-      )
-      .addIf(
-        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
-        Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM in codes,
-      )
-      .addIf(Player.COMMAND_STOP, Player.COMMAND_STOP in codes)
-      .addIf(Player.COMMAND_SEEK_FORWARD, Player.COMMAND_SEEK_FORWARD in codes)
-      .addIf(Player.COMMAND_SEEK_BACK, Player.COMMAND_SEEK_BACK in codes)
-      .addIf(Player.COMMAND_SET_MEDIA_ITEM, Player.COMMAND_SET_MEDIA_ITEM in codes)
+      .addAll(*playerCommandCodes(profile).toIntArray())
       .build()
   }
 
+  /**
+   * Player commands advertised to [profile]. For the media notification controller this set is
+   * also Media3's source for the platform session's `PlaybackState` actions, which Android Auto and
+   * other legacy hosts read. It may therefore contain [PLATFORM_MIRROR_ONLY_COMMANDS], which the
+   * notification controller itself is never [permits]-ted to use.
+   */
   fun playerCommandCodes(profile: RemoteControllerProfile): Set<Int> {
     if (profile == RemoteControllerProfile.INTERNAL) return emptySet()
     val commands = linkedSetOf(
@@ -102,11 +87,21 @@ internal class LoggeRythmRemoteCommandPolicy {
       }
     }
 
-    // Trusted library controllers may select only IDs resolved by onAddMediaItems.
-    // Notification controllers never receive queue-replacement permission.
-    if (profile == RemoteControllerProfile.TRUSTED_BROWSER) {
-      commands += setOf(Player.COMMAND_SET_MEDIA_ITEM, Player.COMMAND_PREPARE)
+    // Selecting a queue entry only navigates the existing queue, like repeated next/previous.
+    if (
+      RemotePlayerCapability.NEXT in capabilities ||
+      RemotePlayerCapability.PREVIOUS in capabilities
+    ) {
+      commands += Player.COMMAND_SEEK_TO_MEDIA_ITEM
     }
+
+    // Trusted library controllers may select only IDs resolved from the native browse tree by
+    // onSetMediaItems; caller URIs and metadata are ignored. The notification set advertises the
+    // same selection so the platform session exposes the PLAY/PREPARE_FROM_MEDIA_ID and
+    // PLAY/PREPARE_FROM_SEARCH actions Android Auto requires. Those requests arrive from the real
+    // platform controller (admitted and resolved separately), never as the notification
+    // controller, which [permits] still denies queue replacement.
+    commands += setOf(Player.COMMAND_SET_MEDIA_ITEM, Player.COMMAND_PREPARE)
     return commands
   }
 
@@ -128,13 +123,24 @@ internal class LoggeRythmRemoteCommandPolicy {
       SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM,
       SessionCommand.COMMAND_CODE_LIBRARY_SUBSCRIBE,
       SessionCommand.COMMAND_CODE_LIBRARY_UNSUBSCRIBE,
+      // Local search over public tree metadata; enables the car's search UI.
+      SessionCommand.COMMAND_CODE_LIBRARY_SEARCH,
+      SessionCommand.COMMAND_CODE_LIBRARY_GET_SEARCH_RESULT,
     )
     else -> emptySet()
   }
 
   fun permits(profile: RemoteControllerProfile, playerCommand: Int): Boolean = when (profile) {
     RemoteControllerProfile.INTERNAL -> playerCommand != Player.COMMAND_SET_SHUFFLE_MODE
-    else -> playerCommand in playerCommandCodes(profile)
+    RemoteControllerProfile.NOTIFICATION ->
+      playerCommand in playerCommandCodes(profile) &&
+        playerCommand !in PLATFORM_MIRROR_ONLY_COMMANDS
+    RemoteControllerProfile.TRUSTED_BROWSER -> playerCommand in playerCommandCodes(profile)
+  }
+
+  companion object {
+    /** Advertised on the platform session for legacy hosts, never usable by notifications. */
+    val PLATFORM_MIRROR_ONLY_COMMANDS: Set<Int> = setOf(Player.COMMAND_SET_MEDIA_ITEM)
   }
 }
 

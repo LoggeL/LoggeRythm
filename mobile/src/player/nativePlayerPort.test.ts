@@ -16,6 +16,7 @@ import {
   type MediaItem,
   type RemoteControlConfig,
 } from './playerPort';
+import { mediaItemToTrack } from './mediaItem';
 import { serializePersistablePlayerState } from './playerState';
 
 vi.mock('react-native', () => ({
@@ -619,6 +620,24 @@ describe('NativeBackedPlayerPort', () => {
     port.dispose();
   });
 
+  it('awaits native browse publication and reports rejection to its caller exactly once', async () => {
+    const publication = deferred<unknown>();
+    const module = nativeModule({ setBrowseTree: vi.fn(() => publication.promise) });
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    let settled = false;
+    const pending = port.setBrowseTree([]).then(() => { settled = true; });
+    const rejected = expect(pending).rejects.toMatchObject({
+      operation: 'setBrowseTree', code: 'native-rejected',
+    });
+    await Promise.resolve();
+    expect(module.setBrowseTree).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+    publication.reject(new Error('native persistence unavailable'));
+    await rejected;
+    await expect(port.flush()).resolves.toBeUndefined();
+    port.dispose();
+  });
+
   it('strictly rejects unsupported remote-command shapes before native dispatch', () => {
     const module = nativeModule();
     const port = createNativePlayerPort({ nativeModule: module, emitter });
@@ -727,7 +746,7 @@ describe('NativeBackedPlayerPort', () => {
         http: { url: 'https://safe.test/progress', headers: { Cookie: 'not-sent-by-setup' } },
       },
     });
-    port.setBrowseTree([]);
+    await port.setBrowseTree([]);
     await port.clearPersistedQueue();
     await port.clearCache();
     await port.flush();
@@ -1009,7 +1028,7 @@ describe('NativeBackedPlayerPort', () => {
     port.dispose();
   });
 
-  it('maps browse categories through a non-playable root and keeps extras private', () => {
+  it('maps browse categories through a non-playable root with sanitized private leaf extras', () => {
     const tree = mapBrowseTreeToNative([{
       mediaId: 'library:likes',
       title: 'Liked songs',
@@ -1017,6 +1036,7 @@ describe('NativeBackedPlayerPort', () => {
         mediaId: 'liked:one',
         title: 'One',
         artist: 'Logge',
+        albumTitle: 'Library Album',
         url: {
           uri: 'https://loggerythm.test/api/tracks/one/stream',
           headers: { Cookie: 'session=browse-private' },
@@ -1039,15 +1059,105 @@ describe('NativeBackedPlayerPort', () => {
             id: 'liked:one',
             title: 'One',
             artist: 'Logge',
+            album: 'Library Album',
             durationMs: 2_500,
             playable: true,
             url: 'https://loggerythm.test/api/tracks/one/stream',
             headers: { Cookie: 'session=browse-private' },
+            extras: { track: { id: 'one' } },
           }],
         }],
       },
     });
     expect(JSON.stringify(tree)).not.toContain('never-external');
-    expect(JSON.stringify(tree)).not.toContain('extras');
+    expect(JSON.stringify(tree)).not.toContain('refreshToken');
+  });
+
+  it('keeps container browse nodes free of extras and omits absent leaf extras', () => {
+    const tree = mapBrowseTreeToNative([{
+      mediaId: 'library:playlists',
+      title: 'Playlists',
+      items: [{
+        mediaId: 'playlist:one',
+        title: 'One',
+        artist: 'Owner',
+        children: [{
+          mediaId: 'playlist:one:0',
+          title: 'Legacy leaf',
+          url: 'https://loggerythm.test/api/tracks/legacy/stream',
+        }],
+      }],
+    }]);
+    const category = tree.root.children?.[0];
+    const container = category?.children?.[0];
+    expect(tree.root).not.toHaveProperty('extras');
+    expect(category).not.toHaveProperty('extras');
+    expect(container).not.toHaveProperty('extras');
+    expect(container?.children?.[0]).not.toHaveProperty('extras');
+  });
+
+  it('keeps full Track metadata for car-selected browse leaves across native snapshots', async () => {
+    const track = {
+      id: '7',
+      title: 'Car Track',
+      artist: 'Logge',
+      artists: [{ id: '1', name: 'Logge' }],
+    };
+    const module = nativeModule();
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    await port.setupPlayer({ sessionBinding: SESSION_BINDING });
+    await port.setBrowseTree([{
+      mediaId: 'library:liked',
+      title: 'Liked',
+      items: [{
+        mediaId: 'liked:0:7',
+        title: 'Car Track',
+        artist: 'Logge',
+        url: {
+          uri: 'https://loggerythm.logge.top/api/tracks/7/stream',
+          headers: { Cookie: 'sf_session=browse-private' },
+        },
+        extras: { track, radio: false, sessionToken: 'never-native' },
+      }],
+    }]);
+    const sent = vi.mocked(module.setBrowseTree).mock.calls[0][0];
+    const sentLeaf = JSON.parse(sent).root.children[0].children[0];
+    expect(sentLeaf.extras).toEqual({ track, radio: false });
+    expect(sent).not.toContain('never-native');
+
+    // An older native sidecar reports `{}`; the known same-account source wins.
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['liked:0:7'], { extras: {} }),
+    });
+    expect(mediaItemToTrack(port.getQueue()[0])).toEqual(track);
+    expect(port.getQueue()[0].extras).toEqual({ track, radio: false });
+    expect(JSON.stringify(port.getSnapshot())).not.toContain('browse-private');
+    expect(JSON.stringify(port.getSnapshot())).not.toContain('never-native');
+
+    // Native extras that are present remain authoritative.
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['liked:0:7'], {
+        extras: { track: { ...track, title: 'Native Track' }, radio: false },
+      }),
+    });
+    expect(mediaItemToTrack(port.getQueue()[0])?.title).toBe('Native Track');
+    port.dispose();
+  });
+
+  it('restores a car-created queue cold from native private extras without a JS source', () => {
+    const track = { id: '9', title: 'Restored', artist: 'Logge', artists: [] };
+    const port = createNativePlayerPort({ nativeModule: nativeModule(), emitter });
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['liked:0:9'], { extras: { track, radio: false } }),
+    });
+    expect(mediaItemToTrack(port.getQueue()[0])).toEqual(track);
+
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['liked:1:9'], { extras: {} }),
+    });
+    // Without a known source, an empty native sidecar stays empty and fails loudly downstream.
+    expect(port.getQueue()[0].extras).toEqual({});
+    expect(() => mediaItemToTrack(port.getQueue()[0])).toThrow(/missing Track metadata/);
+    port.dispose();
   });
 });

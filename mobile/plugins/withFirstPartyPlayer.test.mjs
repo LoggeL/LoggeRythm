@@ -119,7 +119,7 @@ describe('withFirstPartyPlayer app integration', () => {
     }]);
   });
 
-  it('keeps the deliberate Android Auto voice-search lint policy idempotent', () => {
+  it('keeps the phone Activity search-intent lint policy idempotent', () => {
     const once = plugin.transformAutoLint('android { }\n');
     expect(plugin.transformAutoLint(once)).toBe(once);
     expect(once).toContain("disable 'MissingIntentFilterForMediaSearch'");
@@ -264,8 +264,9 @@ describe('loggerythm-player Android library contract', () => {
       'utf8',
     );
     expect(service).toContain(
-      '.setSessionActivity(LoggeRythmSessionActivity.pendingIntent(this))',
+      'sessionActivity = LoggeRythmSessionActivity.pendingIntent(this)',
     );
+    expect(service).toContain('.setSessionActivity(sessionActivity)');
     expect(sessionActivity).toContain(
       'context.packageManager.getLaunchIntentForPackage(context.packageName)',
     );
@@ -319,7 +320,9 @@ describe('loggerythm-player Android library contract', () => {
     expect(source).not.toMatch(/isBlockingSynchronousMethod\s*=\s*true/);
     expect(source).not.toContain('putMap("headers"');
     expect(source).not.toContain('putString("Cookie"');
-    expect(source).not.toContain('Log.');
+    // The React bridge cannot log private JSON. The Media3 service separately
+    // logs public controller identities and classified error codes for car QA.
+    expect(playerModule()).not.toContain('Log.');
   });
 
   it('rejects a destructive cache clear while a durable radio queue commit is active', () => {

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Car-facing media errors published through Media3 (Android Auto / Automotive OS). Keep them
+     short, actionable, and free of account, URL, or diagnostic details. -->
+<resources>
+    <string name="loggerythm_player_car_action_open_app">Open LoggeRythm</string>
+    <string name="loggerythm_player_car_error_signed_out">Open LoggeRythm on your phone and sign in to use your library in the car.</string>
+    <string name="loggerythm_player_car_error_restore_failed">LoggeRythm couldn\'t reload your library on this phone. Open the app on your phone, then try again.</string>
+    <string name="loggerythm_player_car_error_library_empty">Your library is empty or still loading. Open LoggeRythm on your phone to refresh it.</string>
+    <string name="loggerythm_player_car_error_list_unavailable">This list is no longer available. Go back and open it again.</string>
+    <string name="loggerythm_player_car_error_item_unavailable">This song is no longer in your library. Go back and choose another one.</string>
+    <string name="loggerythm_player_car_error_search_no_match">Nothing in your LoggeRythm library matches “%1$s”.</string>
+    <string name="loggerythm_player_car_error_nothing_to_play">There\'s nothing to play yet. Open LoggeRythm on your phone to load your library.</string>
+    <string name="loggerythm_player_car_error_controls_not_ready">Car playback isn\'t set up yet. Open LoggeRythm on your phone once, then try again.</string>
+    <string name="loggerythm_player_car_error_not_ready">LoggeRythm is still loading. Try again in a moment.</string>
+    <string name="loggerythm_player_car_error_busy">LoggeRythm is busy. Try again in a moment.</string>
+    <string name="loggerythm_player_car_error_unsupported">LoggeRythm can\'t play this request. Choose something from your library instead.</string>
+</resources>

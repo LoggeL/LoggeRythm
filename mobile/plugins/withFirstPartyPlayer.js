@@ -10,7 +10,7 @@ const path = require('path');
 const AUTOMOTIVE_META_NAME = 'com.google.android.gms.car.application';
 const ATTRIBUTION_ICON_META_NAME = 'androidx.car.app.TintableAttributionIcon';
 const WEB_LINK_HOST = 'loggerythm.logge.top';
-const UNSUPPORTED_SEARCH_ACTION = 'android.media.action.MEDIA_PLAY_FROM_SEARCH';
+const PHONE_MEDIA_SEARCH_ACTION = 'android.media.action.MEDIA_PLAY_FROM_SEARCH';
 const PLAYER_SERVICE_NAME = 'top.logge.loggerythm.player.LoggeRythmMediaLibraryService';
 const PLAYBACK_EVENT_HEADLESS_SERVICE_NAME =
   'top.logge.loggerythm.player.LoggeRythmPlaybackEventHeadlessService';
@@ -101,7 +101,7 @@ function configureWebLinks(application, enableVerifiedAppLinks) {
   if (!activity) throw new Error('withFirstPartyPlayer: .MainActivity not found');
   activity['intent-filter'] = activity['intent-filter'] || [];
   activity['intent-filter'] = activity['intent-filter'].filter((filter) =>
-    !filter.action?.some((action) => action.$?.['android:name'] === UNSUPPORTED_SEARCH_ACTION));
+    !filter.action?.some((action) => action.$?.['android:name'] === PHONE_MEDIA_SEARCH_ACTION));
   let webLinks = activity['intent-filter'].find((filter) =>
     filter.data?.some((data) => data.$?.['android:host'] === WEB_LINK_HOST),
   );
@@ -145,7 +145,9 @@ function transformAutoLint(source) {
   const end = '// @generated end withFirstPartyPlayer Auto lint';
   const previous = new RegExp(`${start}[\\s\\S]*?${end}\\n?`, 'g');
   const block = `${start}
-// Voice search is intentionally not advertised until the library implements it.
+// Car voice search is served by Media3's session callbacks and platform actions.
+// The React phone activity does not consume standalone MEDIA_PLAY_FROM_SEARCH
+// intents, so do not advertise an Activity route that would drop those requests.
 android {
     lint {
         disable 'MissingIntentFilterForMediaSearch'

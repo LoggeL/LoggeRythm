@@ -1,18 +1,21 @@
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const xcodeRequire = createRequire(require.resolve('xcode/package.json'));
-const uuid = xcodeRequire('uuid');
-const uuidPackage = xcodeRequire('uuid/package.json');
+const xcodePackage = require('xcode/package.json');
+const xcode = require('xcode');
 
-if (uuidPackage.version !== '11.1.1') {
-  throw new Error(`xcode must resolve the reviewed uuid 11.1.1 override, got ${uuidPackage.version}`);
+// Expo 57.0.31 uses xcode 4, which removed uuid in favor of node:crypto.
+// Keep checking the actual prebuild dependency instead of pinning a package
+// that is no longer part of the dependency graph.
+if (!xcodePackage.version.startsWith('4.') || xcodePackage.dependencies?.uuid !== undefined) {
+  throw new Error(`Expected reviewed xcode 4 without the legacy uuid dependency, got ${xcodePackage.version}`);
 }
-if (typeof uuid.v4 !== 'function') {
-  throw new Error('The reviewed uuid override is not CommonJS-compatible with xcode');
-}
-if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid.v4())) {
-  throw new Error('The reviewed uuid override did not produce a valid v4 identifier');
+const project = xcode.project('dependency-check.pbxproj');
+project.hash = { project: { objects: {} } };
+const first = project.generateUuid();
+const second = project.generateUuid();
+if (!/^[A-F0-9]{24}$/.test(first) || !/^[A-F0-9]{24}$/.test(second) || first === second) {
+  throw new Error('xcode could not generate distinct valid project identifiers');
 }
 
-console.log(`Verified xcode build-time uuid override ${uuidPackage.version}`);
+console.log(`Verified xcode ${xcodePackage.version} native crypto identifier generation`);

@@ -47,7 +47,9 @@ public final class HostileControllerProbeService extends Service {
       "top.logge.loggerythm.player.hostilecontroller.IHostileControllerProbe";
   public static final int TRANSACTION_RUN_PROBE = IBinder.FIRST_CALL_TRANSACTION;
 
-  private static final int PROBE_SCHEMA_VERSION = 6;
+  // 7: the target hands the framework a live legacy browser binder and rejects this helper's real
+  // identity on connect, so a raw bind now reaches a binder and the browser fails explicitly.
+  private static final int PROBE_SCHEMA_VERSION = 7;
   private static final String PLATFORM_BROWSER_SERVICE_ACTION =
       "android.media.browse.MediaBrowserService";
   private static final String PLATFORM_PROBE_NONCE_KEY =

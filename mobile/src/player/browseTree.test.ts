@@ -125,9 +125,15 @@ function rejectWhenAborted(signal?: AbortSignal): Promise<never> {
 }
 
 describe('Android Auto browse-tree publication', () => {
-  beforeEach(() => {
-    clearBrowseTree();
+  beforeEach(async () => {
+    await clearBrowseTree();
     resetOfflineSnapshot();
+    publishOfflineManifest({
+      manifest: createEmptyOfflineManifest(offlineScope),
+      directoryUri: offlineDirectory,
+      trackUris: {},
+      availableDiskBytes: 1_000_000,
+    });
     vi.clearAllMocks();
     mocks.connectivityStatus = 'unknown';
     mocks.getApiBase.mockResolvedValue('https://music.example.test');
@@ -321,7 +327,7 @@ describe('Android Auto browse-tree publication', () => {
 
     const publishing = refreshBrowseTree();
     await vi.waitFor(() => expect(mocks.getLikes).toHaveBeenCalledTimes(1));
-    clearBrowseTree();
+    await clearBrowseTree();
 
     await expect(publishing).resolves.toBeUndefined();
     expect(mocks.setBrowseTree).toHaveBeenCalledExactlyOnceWith([]);
@@ -332,6 +338,87 @@ describe('Android Auto browse-tree publication', () => {
 
     await expect(refreshBrowseTree()).rejects.toThrow('likes endpoint unavailable');
     expect(mocks.setBrowseTree).not.toHaveBeenCalled();
+  });
+
+  it('publishes healthy playlists and likes while explicitly reporting an unavailable playlist', async () => {
+    mocks.getLikes.mockResolvedValueOnce([track]);
+    mocks.getPlaylists.mockResolvedValueOnce([
+      { id: 7, name: 'Available' }, { id: 8, name: 'Unavailable' },
+    ]);
+    mocks.getPlaylist.mockImplementation(async (id: number) => {
+      if (id === 8) throw new Error('HTTP 503');
+      return { ...offlinePlaylist(), name: 'Available', tracks: [track] };
+    });
+    await expect(publishBrowseTree()).rejects.toThrow('Unavailable (8): HTTP 503');
+    expect(mocks.setBrowseTree).toHaveBeenLastCalledWith([
+      expect.objectContaining({ mediaId: 'library:liked' }),
+      expect.objectContaining({
+        mediaId: 'library:playlists',
+        items: [expect.objectContaining({ mediaId: 'playlist:7' })],
+      }),
+    ]);
+  });
+
+  it('retains a failed same-account playlist but removes playlists deleted from the index', async () => {
+    mocks.getPlaylists.mockResolvedValueOnce([
+      { id: 7, name: 'Retained' }, { id: 8, name: 'Deleted' },
+    ]);
+    mocks.getPlaylist.mockImplementation(async (id: number) => ({
+      ...offlinePlaylist(), id, tracks: [track],
+    }));
+    await publishBrowseTree();
+    mocks.getPlaylists.mockResolvedValueOnce([{ id: 7, name: 'Retained' }]);
+    mocks.getPlaylist.mockRejectedValueOnce(new Error('network unavailable'));
+    await expect(publishBrowseTree()).rejects.toThrow('network unavailable');
+    expect(mocks.setBrowseTree.mock.calls.at(-1)?.[0][0].items.map(
+      ({ mediaId }: { mediaId: string }) => mediaId,
+    )).toEqual(['playlist:7']);
+  });
+
+  it('never treats a missing account scope as permission to retain a previous tree', async () => {
+    resetOfflineSnapshot();
+    mocks.getLikes.mockResolvedValueOnce([track]);
+    await publishBrowseTree();
+    await refreshOfflineBrowseTree();
+    expect(mocks.setBrowseTree).toHaveBeenLastCalledWith([]);
+  });
+
+  it('does not announce successful publication before native acknowledgement', async () => {
+    let acknowledge!: () => void;
+    mocks.setBrowseTree.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    }));
+    let settled = false;
+    const publishing = publishBrowseTree().then(() => { settled = true; });
+    await vi.waitFor(() => expect(mocks.setBrowseTree).toHaveBeenCalledOnce());
+    expect(settled).toBe(false);
+    acknowledge();
+    await publishing;
+    expect(settled).toBe(true);
+  });
+
+  it('preserves newly acknowledged remote nodes during a concurrent download refresh', async () => {
+    let acknowledge!: () => void;
+    mocks.getLikes.mockResolvedValueOnce([track]);
+    mocks.setBrowseTree.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      acknowledge = resolve;
+    }));
+    const publishing = publishBrowseTree();
+    await vi.waitFor(() => expect(mocks.setBrowseTree).toHaveBeenCalledOnce());
+    const offlineRefresh = refreshOfflineBrowseTree();
+    acknowledge();
+    await Promise.all([publishing, offlineRefresh]);
+    expect(mocks.setBrowseTree).toHaveBeenLastCalledWith([
+      expect.objectContaining({ mediaId: 'library:liked' }),
+    ]);
+  });
+
+  it('reports native publication failure instead of caching it as a usable remote tree', async () => {
+    mocks.getLikes.mockResolvedValueOnce([track]);
+    mocks.setBrowseTree.mockRejectedValueOnce(new Error('native browse rejected'));
+    await expect(publishBrowseTree()).rejects.toThrow('native browse rejected');
+    await refreshOfflineBrowseTree();
+    expect(mocks.setBrowseTree).toHaveBeenLastCalledWith([]);
   });
 
   it('encodes stream path segments before publishing native browse items', async () => {

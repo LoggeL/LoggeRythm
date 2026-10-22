@@ -2,7 +2,9 @@ package top.logge.loggerythm.player
 
 import java.io.File
 import java.nio.file.Files
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,12 +155,48 @@ class LoggeRythmPlayerProtocolTest {
     assertEquals("Artist", track.artist)
     assertEquals("Album", track.album)
     assertEquals(1234L, track.durationMs)
+    // Old producers omit extras; the leaf keeps the empty private sidecar.
+    assertEquals("{}", track.extrasJson)
 
-    assertCode("unexpected-key") {
+    assertCode("browse-container-extras-invalid") {
       protocol.parseBrowseTree(
         """{"root":{"id":"root","title":"Library","extras":{"stableId":"root"}}}""",
       )
     }
+  }
+
+  @Test
+  fun browseLeafPrivateExtrasReuseStrictQueueExtrasPolicy() {
+    fun leaf(extras: String) =
+      """{"root":{"id":"root","title":"Library","children":[{"id":"track:1","title":"Track",""" +
+        """"playable":true,"url":"https://example.test/track.mp3","extras":$extras}]}}"""
+
+    val parsed = protocol.parseBrowseTree(
+      leaf("""{"track":{"id":"1","title":"Track","artist":"Artist","artists":[]},"radio":false}"""),
+    ).root.children.single()
+    val extras = JSONObject(parsed.extrasJson)
+    assertEquals("1", extras.getJSONObject("track").getString("id"))
+    assertEquals(false, extras.getBoolean("radio"))
+    assertEquals(
+      "{}",
+      protocol.parseBrowseTree(leaf("null")).root.children.single().extrasJson,
+    )
+
+    assertCode("extras-key-invalid") { protocol.parseBrowseTree(leaf("""{"accessToken":"no"}""")) }
+    assertCode("extras-key-invalid") {
+      protocol.parseBrowseTree(leaf("""{"track":{"id":"1","sessionCookie":"no"}}"""))
+    }
+    assertCode("extras-key-invalid") { protocol.parseBrowseTree(leaf("""{"Authorization":"no"}""")) }
+    assertCode("extras-string-invalid") {
+      protocol.parseBrowseTree(leaf("""{"track":"${"x".repeat(2_049)}"}"""))
+    }
+    assertCode("extras-size-invalid") {
+      val values = (0 until 20).joinToString(",") { """"k$it":"${"x".repeat(2_000)}"""" }
+      protocol.parseBrowseTree(leaf("{$values}"))
+    }
+    assertCode("object-value-invalid") { protocol.parseBrowseTree(leaf("[]")) }
+    assertTrue(parsed.toString().contains("extrasJson=<redacted>"))
+    assertFalse(parsed.toString().contains("Artist"))
   }
 
   @Test

@@ -25,6 +25,7 @@ vi.mock('./player', () => ({
     clearCache: mocks.clearCache,
   },
   PlayerCommand: {
+    Stop: 'stop',
     PlayPause: 'play-pause',
     Next: 'next',
     Previous: 'previous',
@@ -145,6 +146,10 @@ describe('account-bound native player readiness', () => {
 
     expect(player.isPlayerReady()).toBe(true);
     expect(mocks.setCommands).toHaveBeenCalledOnce();
+    expect(mocks.setCommands).toHaveBeenCalledWith({
+      capabilities: ['play-pause', 'stop', 'next', 'previous', 'seek'],
+      handling: 'native',
+    });
     expect(mocks.restoreControllerStateFromNativeQueue).toHaveBeenCalledOnce();
     expect(mocks.installPlaybackListeners).toHaveBeenCalledOnce();
     await expect(player.ensurePlayer()).resolves.toBeUndefined();

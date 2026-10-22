@@ -9,7 +9,7 @@
 
     <application>
         <activity
-            android:name=".LoggeRythmPlayerTestActivity"
+            android:name="top.logge.loggerythm.player.LoggeRythmPlayerTestActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

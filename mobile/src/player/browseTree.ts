@@ -20,6 +20,22 @@ const PLAYLIST_FETCH_CONCURRENCY = 4;
 let publicationRevision = 0;
 let activeController: AbortController | null = null;
 let lastRemoteTree: { scope: string | null; categories: BrowseCategory[] } | null = null;
+let publicationTail: Promise<void> = Promise.resolve();
+
+function retainedRemoteForScope(scope: string | null): BrowseCategory[] {
+  // An unhydrated/null scope is not an account identity and cannot authorize
+  // retaining a previous user's library during a failed refresh.
+  return scope !== null && lastRemoteTree?.scope === scope ? lastRemoteTree.categories : [];
+}
+
+/** Serialize native commits and their cache acknowledgement as one boundary. */
+function commitPublication(action: () => Promise<void>): Promise<void> {
+  const pending = publicationTail.then(action);
+  // The returned promise reports this operation's failure to its caller. A
+  // rejected commit must not prevent the next independently reported retry.
+  publicationTail = pending.then(() => undefined, () => undefined);
+  return pending;
+}
 
 export interface OfflineBrowseTreeCopy {
   downloadsTitle: string;
@@ -47,10 +63,10 @@ export function cancelBrowseTreePublication(): void {
   activeController = null;
 }
 
-export function clearBrowseTree(): void {
+export async function clearBrowseTree(): Promise<void> {
   cancelBrowseTreePublication();
   lastRemoteTree = null;
-  Player.setBrowseTree([]);
+  await commitPublication(() => Player.setBrowseTree([]));
 }
 
 function currentOfflineCopy(): OfflineBrowseTreeCopy {
@@ -111,6 +127,7 @@ export function buildOfflineDownloadsBrowseCategory(
           mediaId: `download:${summary.id}:${position}:${track.id}`,
           title: track.title,
           artist: trackArtistLabel(track),
+          albumTitle: track.album,
           artworkUrl: track.cover || undefined,
           url: { uri },
           duration: track.duration_sec,
@@ -147,7 +164,7 @@ async function loadPlaylists(
   summaries: Awaited<ReturnType<typeof musicRepository.getPlaylists>>,
   signal: AbortSignal | undefined,
   revision: number,
-): Promise<Playlist[]> {
+): Promise<{ playlists: Playlist[]; failures: string[] }> {
   const playlists: Playlist[] = [];
   const failures: string[] = [];
   for (let offset = 0; offset < summaries.length; offset += PLAYLIST_FETCH_CONCURRENCY) {
@@ -165,16 +182,14 @@ async function loadPlaylists(
     });
   }
   assertCurrent(revision, signal);
-  if (failures.length > 0) {
-    throw new Error(`Failed to load Android Auto playlists: ${failures.join('; ')}`);
-  }
-  return playlists;
+  return { playlists, failures };
 }
 
 /** Publish an account-scoped, uniquely identified Android Auto / CarPlay tree. */
 export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
   const revision = ++publicationRevision;
   const publicationScope = getOfflineSnapshot().scope;
+  const failures: string[] = [];
   try {
     assertCurrent(revision, signal);
     const initialDownloads = offlineCategoryForScope(publicationScope);
@@ -182,22 +197,37 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
       // Known-offline startup must not wait for auth or issue doomed repository
       // requests. Remote entries are deliberately omitted because their URLs are
       // not verified local downloads and would not be playable in this state.
-      Player.setBrowseTree(initialDownloads === null ? [] : [initialDownloads]);
+      await commitPublication(async () => {
+        assertCurrent(revision, signal);
+        await Player.setBrowseTree(initialDownloads === null ? [] : [initialDownloads]);
+      });
       return;
     }
     const base = await getApiBase();
     const streamHeaders = await authenticatedHeadersFor(base);
-    const [likes, summaries] = await Promise.all([
+    const [likesResult, summariesResult] = await Promise.allSettled([
       musicRepository.getLikes(signal),
       musicRepository.getPlaylists(signal),
     ]);
     assertCurrent(revision, signal);
-    const playlists = await loadPlaylists(summaries, signal, revision);
+    const retained = retainedRemoteForScope(publicationScope);
+    const likes = likesResult.status === 'fulfilled' ? likesResult.value : null;
+    if (likesResult.status === 'rejected') {
+      failures.push(`Liked songs: ${String(likesResult.reason)}`);
+    }
+    if (summariesResult.status === 'rejected') {
+      failures.push(`Playlists: ${String(summariesResult.reason)}`);
+    }
+    const loaded = summariesResult.status === 'fulfilled'
+      ? await loadPlaylists(summariesResult.value, signal, revision)
+      : null;
+    if (loaded !== null) failures.push(...loaded.failures);
 
     const toItem = (track: Track, mediaId: string): BrowseItem => ({
       mediaId,
       title: track.title,
       artist: trackArtistLabel(track),
+      albumTitle: track.album,
       artworkUrl: track.cover || undefined,
       url: {
         uri: `${base}/api/tracks/${encodeURIComponent(track.id)}/stream`,
@@ -208,36 +238,62 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
     });
 
     const categories: BrowseCategory[] = [];
-    if (likes.length > 0) {
+    if (likes !== null && likes.length > 0) {
       categories.push({
         mediaId: 'library:liked',
         title: strings.player.autoLikedSongs,
         items: likes.map((track, index) => toItem(track, `liked:${index}:${track.id}`)),
       });
+    } else if (likes === null) {
+      const previous = retained.find(({ mediaId }) => mediaId === 'library:liked');
+      if (previous) categories.push(previous);
     }
-    if (playlists.length > 0) {
-      categories.push({
-        mediaId: 'library:playlists',
-        title: strings.player.autoPlaylists,
-        items: playlists.map((playlist) => ({
+    if (loaded !== null && summariesResult.status === 'fulfilled') {
+      const previous = retained.find(({ mediaId }) => mediaId === 'library:playlists');
+      const byId = new Map(loaded.playlists.map((playlist) => [playlist.id, playlist]));
+      const items = summariesResult.value.flatMap((summary): BrowseItem[] => {
+        const playlist = byId.get(summary.id);
+        if (playlist === undefined) {
+          const existing = previous?.items.find(({ mediaId }) => mediaId === `playlist:${summary.id}`);
+          // Only retain a failed playlist while it is still in this account's
+          // current index. Every such failure is reported after publication.
+          return existing === undefined ? [] : [existing];
+        }
+        return [{
           mediaId: `playlist:${playlist.id}`,
           title: playlist.name,
+          artworkUrl: playlist.cover_url || undefined,
           children: playlist.tracks.map((track, index) =>
             toItem(track, `playlist:${playlist.id}:${index}:${track.id}`),
           ),
-        })),
+        }];
       });
+      if (items.length > 0) categories.push({
+        mediaId: 'library:playlists',
+        title: strings.player.autoPlaylists,
+        items,
+      });
+    } else if (loaded === null) {
+      const previous = retained.find(({ mediaId }) => mediaId === 'library:playlists');
+      if (previous) categories.push(previous);
     }
 
     assertCurrent(revision, signal);
     const downloads = offlineCategoryForScope(publicationScope);
     const remoteCategories = [...categories];
     if (downloads !== null) categories.push(downloads);
-    // Atomically replace only after every remote source has loaded. The remote
-    // subset is retained separately so a transient same-account refresh failure
-    // can refresh verified Downloads without blanking previously published nodes.
-    Player.setBrowseTree(categories);
-    lastRemoteTree = { scope: publicationScope, categories: remoteCategories };
+    // A broken playlist must not make all healthy categories unavailable in the
+    // car. Publish the usable same-account subset atomically, then report every
+    // source failure. Never overwrite a cold-restored tree with an empty failure.
+    if (categories.length > 0 || failures.length === 0) {
+      await commitPublication(async () => {
+        assertCurrent(revision, signal);
+        await Player.setBrowseTree(categories);
+        assertCurrent(revision, signal);
+        lastRemoteTree = publicationScope === null
+          ? null : { scope: publicationScope, categories: remoteCategories };
+      });
+    }
   } catch (error) {
     if (signal?.aborted || revision !== publicationRevision) {
       if (error instanceof BrowseTreePublicationCancelledError) throw error;
@@ -245,12 +301,16 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
     }
     const downloads = offlineCategoryForScope(publicationScope);
     if (downloads !== null) {
-      const retainedRemote = lastRemoteTree?.scope === publicationScope
-        ? lastRemoteTree.categories
-        : [];
-      Player.setBrowseTree([...retainedRemote, downloads]);
+      await commitPublication(async () => {
+        assertCurrent(revision, signal);
+        const retainedRemote = retainedRemoteForScope(publicationScope);
+        await Player.setBrowseTree([...retainedRemote, downloads]);
+      });
     }
     throw error;
+  }
+  if (failures.length > 0) {
+    throw new Error(`Android Auto library refresh incomplete: ${failures.join('; ')}`);
   }
 }
 
@@ -273,11 +333,11 @@ export async function refreshBrowseTree(): Promise<void> {
  */
 export async function refreshOfflineBrowseTree(): Promise<void> {
   const scope = getOfflineSnapshot().scope;
-  const downloads = offlineCategoryForScope(scope);
-  const retainedRemote = lastRemoteTree?.scope === scope
-    ? lastRemoteTree.categories
-    : [];
-  Player.setBrowseTree(
-    downloads === null ? retainedRemote : [...retainedRemote, downloads],
-  );
+  await commitPublication(async () => {
+    const downloads = offlineCategoryForScope(scope);
+    const retainedRemote = retainedRemoteForScope(scope);
+    await Player.setBrowseTree(
+      downloads === null ? retainedRemote : [...retainedRemote, downloads],
+    );
+  });
 }

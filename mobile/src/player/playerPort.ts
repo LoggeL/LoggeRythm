@@ -220,6 +220,7 @@ export interface BrowseItem {
   mediaId: string;
   title: string;
   artist?: string;
+  albumTitle?: string;
   artworkUrl?: MediaUrl;
   url?: MediaUrl;
   duration?: number;
@@ -406,7 +407,7 @@ export interface PlayerPort {
   setNotificationFavoriteState(mediaId: string | null, liked: boolean | null): Promise<void>;
   setRepeatMode(mode: RepeatMode): void;
   setShuffleEnabled(enabled: boolean): void;
-  setBrowseTree(categories: readonly BrowseCategory[]): void;
+  setBrowseTree(categories: readonly BrowseCategory[]): Promise<void>;
   sleepAfterTime(seconds: number, options?: { fadeOutSeconds?: number }): void;
   sleepAfterMediaItemAtIndex(index?: number): void;
   cancelSleepTimer(): void;

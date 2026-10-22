@@ -79,11 +79,67 @@ class LoggeRythmRemoteCommandPolicyTest {
       Player.COMMAND_SEEK_TO_PREVIOUS,
       Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
       Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
+      Player.COMMAND_SEEK_TO_MEDIA_ITEM,
       Player.COMMAND_STOP,
       Player.COMMAND_SEEK_FORWARD,
       Player.COMMAND_SEEK_BACK,
     ).forEach { command -> assertTrue(command in notification) }
-    assertExternalMutationCommandsAbsent(notification, allowValidatedBrowseSelection = false)
+    // Advertised only as the platform PlaybackState mirror, never usable by the notification.
+    assertExternalMutationCommandsAbsent(notification, allowValidatedBrowseSelection = true)
+    assertFalse(policy.permits(RemoteControllerProfile.NOTIFICATION, Player.COMMAND_SET_MEDIA_ITEM))
+  }
+
+  @Test
+  fun platformMirrorAdvertisesAndroidAutoRequiredActionsOnlyAfterConfiguration() {
+    val policy = LoggeRythmRemoteCommandPolicy()
+
+    // Unconfigured cold state: no transport or selection action can appear on the platform.
+    val unconfigured = policy.playerCommandCodes(RemoteControllerProfile.NOTIFICATION)
+    listOf(
+      Player.COMMAND_SET_MEDIA_ITEM,
+      Player.COMMAND_PLAY_PAUSE,
+      Player.COMMAND_STOP,
+      Player.COMMAND_SEEK_TO_MEDIA_ITEM,
+    ).forEach { command -> assertFalse(command in unconfigured) }
+
+    // The exact capability set installed by the app's setup.
+    policy.install(
+      setOf(
+        RemotePlayerCapability.PLAY_PAUSE,
+        RemotePlayerCapability.STOP,
+        RemotePlayerCapability.NEXT,
+        RemotePlayerCapability.PREVIOUS,
+        RemotePlayerCapability.SEEK,
+      ),
+    )
+    val mirror = policy.playerCommandCodes(RemoteControllerProfile.NOTIFICATION)
+    // Media3 maps these to ACTION_PLAY/PAUSE, ACTION_STOP, ACTION_PLAY/PREPARE_FROM_MEDIA_ID and
+    // ACTION_PLAY/PREPARE_FROM_SEARCH: the actions Android Auto requires from a media app.
+    assertTrue(Player.COMMAND_PLAY_PAUSE in mirror)
+    assertTrue(Player.COMMAND_STOP in mirror)
+    assertTrue(Player.COMMAND_SET_MEDIA_ITEM in mirror)
+    assertTrue(Player.COMMAND_PREPARE in mirror)
+    assertTrue(Player.COMMAND_SEEK_TO_MEDIA_ITEM in mirror)
+
+    assertFalse(policy.permits(RemoteControllerProfile.NOTIFICATION, Player.COMMAND_SET_MEDIA_ITEM))
+    assertTrue(policy.permits(RemoteControllerProfile.NOTIFICATION, Player.COMMAND_PLAY_PAUSE))
+    assertTrue(policy.permits(RemoteControllerProfile.TRUSTED_BROWSER, Player.COMMAND_SET_MEDIA_ITEM))
+    assertTrue(policy.permits(RemoteControllerProfile.TRUSTED_BROWSER, Player.COMMAND_STOP))
+  }
+
+  @Test
+  fun queueEntrySelectionFollowsNextOrPreviousCapability() {
+    val policy = LoggeRythmRemoteCommandPolicy()
+    policy.install(setOf(RemotePlayerCapability.PLAY_PAUSE))
+    assertFalse(
+      Player.COMMAND_SEEK_TO_MEDIA_ITEM in
+        policy.playerCommandCodes(RemoteControllerProfile.TRUSTED_BROWSER),
+    )
+
+    policy.install(setOf(RemotePlayerCapability.PREVIOUS))
+    assertTrue(
+      policy.permits(RemoteControllerProfile.TRUSTED_BROWSER, Player.COMMAND_SEEK_TO_MEDIA_ITEM),
+    )
   }
 
   @Test
@@ -101,8 +157,10 @@ class LoggeRythmRemoteCommandPolicyTest {
     assertTrue(SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM in sessionCommands)
     assertTrue(SessionCommand.COMMAND_CODE_LIBRARY_SUBSCRIBE in sessionCommands)
     assertTrue(SessionCommand.COMMAND_CODE_LIBRARY_UNSUBSCRIBE in sessionCommands)
-    assertFalse(SessionCommand.COMMAND_CODE_LIBRARY_SEARCH in sessionCommands)
+    assertTrue(SessionCommand.COMMAND_CODE_LIBRARY_SEARCH in sessionCommands)
+    assertTrue(SessionCommand.COMMAND_CODE_LIBRARY_GET_SEARCH_RESULT in sessionCommands)
     assertFalse(SessionCommand.COMMAND_CODE_SESSION_SET_RATING in sessionCommands)
+    assertTrue(policy.sessionCommandCodes(RemoteControllerProfile.NOTIFICATION).isEmpty())
   }
 
   @Test

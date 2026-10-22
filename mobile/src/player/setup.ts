@@ -95,6 +95,7 @@ async function initializePlayer(binding: Readonly<PlayerSessionBinding>): Promis
     await Player.setCommands({
       capabilities: [
         PlayerCommand.PlayPause,
+        PlayerCommand.Stop,
         PlayerCommand.Next,
         PlayerCommand.Previous,
         PlayerCommand.Seek,

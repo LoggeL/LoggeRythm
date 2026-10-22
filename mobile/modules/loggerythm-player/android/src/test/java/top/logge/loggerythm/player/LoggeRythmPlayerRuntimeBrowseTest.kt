@@ -119,6 +119,33 @@ class LoggeRythmPlayerRuntimeBrowseTest {
     }
   }
 
+  @Test
+  fun carSelectedLeafCarriesPrivateExtrasIntoQueueSidecarButNeverIntoMedia3Metadata() {
+    val privateExtras = """{"track":{"id":"7","title":"Selected","artist":"Artist","artists":[]},""" +
+      """"radio":false}"""
+    val selected = playable("track:selected", "Selected", "/selected", "session=one")
+      .copy(extrasJson = privateExtras)
+    val legacyLeaf = playable("track:legacy", "Legacy", "/legacy", "session=one")
+    val installed = LoggeRythmPlayerRuntime.installBrowseTree(
+      tree(container("library:liked", "Liked", listOf(legacyLeaf, selected))),
+    )
+
+    val node = installed.nodes.getValue(selected.id)
+    val source = requireNotNull(node.source)
+    assertEquals(privateExtras, source.extrasJson)
+    assertEquals("{}", requireNotNull(installed.nodes.getValue(legacyLeaf.id).source).extrasJson)
+    assertNull(node.mediaItem.mediaMetadata.extras)
+    assertNull(node.mediaItem.requestMetadata.extras)
+    assertNull(LoggeRythmPlayerRuntime.browseItem(selected.id)?.mediaMetadata?.extras)
+    assertFalse(node.toString().contains("Selected"))
+    assertEquals(privateExtras, LoggeRythmPlayerRuntime.persistedBrowseTree()
+      ?.root?.children?.single()?.children?.last()?.extrasJson)
+
+    // The car selection installs these exact native sources; JS snapshots receive the Track.
+    LoggeRythmPlayerRuntime.installQueue(listOf(source))
+    assertEquals(privateExtras, LoggeRythmPlayerRuntime.extrasFor(selected.id))
+  }
+
   private fun tree(vararg children: BrowseNodeSpec): BrowseTreeSpec = BrowseTreeSpec(
     root = container(
       LoggeRythmPlayerRuntime.BROWSE_ROOT_ID,

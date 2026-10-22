@@ -213,7 +213,7 @@ internal object LoggeRythmPlayerRuntime {
             artworkUrl = node.artworkUrl,
             durationMs = node.durationMs,
             cookie = node.cookie,
-            extrasJson = "{}",
+            extrasJson = node.extrasJson,
           ).also { requireCookieMatchesBinding(it, binding) }
         } else {
           null
@@ -288,6 +288,21 @@ internal object LoggeRythmPlayerRuntime {
       return@synchronized null
     }
     RuntimeBrowseSelection(mediaItems, selectedIndex)
+  }
+
+  /**
+   * Resolve one published non-root container to its ordered directly playable children, starting
+   * at the first. Like [playableBrowseSiblings], only native tree sources are used.
+   */
+  fun playableBrowseChildren(containerId: String): RuntimeBrowseSelection? = synchronized(lock) {
+    val tree = browseTree
+    if (containerId == tree.rootId) return@synchronized null
+    val container = tree.nodes[containerId]?.takeIf { it.source == null }
+      ?: return@synchronized null
+    val mediaItems = container.childIds.mapNotNull { childId ->
+      tree.nodes[childId]?.takeIf { it.source != null }?.mediaItem
+    }
+    if (mediaItems.isEmpty()) null else RuntimeBrowseSelection(mediaItems, 0)
   }
 
   fun cookieFor(url: String): String? = synchronized(lock) {
