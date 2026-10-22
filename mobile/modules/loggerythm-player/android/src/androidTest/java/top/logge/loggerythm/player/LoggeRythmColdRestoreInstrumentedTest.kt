@@ -127,7 +127,7 @@ class LoggeRythmColdRestoreInstrumentedTest {
       )
 
       // A later fixture owns this same file/key. Clear through the live owner
-      // before releasing it, then prove a late player event cannot erase or
+      // before releasing it, then prove late persistence callbacks cannot erase or
       // overwrite a different account's fixture.
       val codec = LoggeRythmPersistedStateCodec(LoggeRythmPlayerProtocol(
         listOf(context.filesDir, context.noBackupFilesDir, context.cacheDir),
@@ -141,13 +141,15 @@ class LoggeRythmColdRestoreInstrumentedTest {
       val nextState = saved.copy(sessionBinding = nextBinding, positionMs = 22L)
       val nextStore = LoggeRythmEncryptedStateStore(codec, cipher, blob, nextBinding)
       nextStore.save(nextState)
-      onLooper(restored.handler) { restored.browser.repeatMode = Player.REPEAT_MODE_ALL }
-      val eventDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DEVICE_TIMEOUT_SECONDS)
-      while (onLooper(restored.handler) { restored.browser.repeatMode } != Player.REPEAT_MODE_ALL) {
-        check(System.nanoTime() < eventDeadline) { "late-player-event-timeout" }
-        Thread.sleep(POLL_INTERVAL_MS)
+      val rejectedSave = AtomicReference<Result<Unit>>()
+      instrumentation.runOnMainSync {
+        // The old controller can lose command access after clear. Exercise the
+        // actual late persistence callbacks without relying on its optimistic
+        // local repeat-mode mask or a command Android is allowed to reject.
+        LoggeRythmPersistedServiceBridge.onLiveQueueCleared()
+        LoggeRythmPersistedServiceBridge.onBrowseTreeInstalled(rejectedSave::set)
       }
-      instrumentation.waitForIdleSync()
+      assertTrue(requireNotNull(rejectedSave.get()).isFailure)
       assertEquals(LoggeRythmEncryptedLoadOutcome.Restored(nextState), nextStore.loadOutcome())
     } finally {
       try {
