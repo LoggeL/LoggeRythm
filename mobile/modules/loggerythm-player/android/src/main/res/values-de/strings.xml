@@ -12,4 +12,5 @@
     <string name="loggerythm_player_car_error_not_ready">LoggeRythm lädt noch. Versuche es gleich noch einmal.</string>
     <string name="loggerythm_player_car_error_busy">LoggeRythm ist gerade beschäftigt. Versuche es gleich noch einmal.</string>
     <string name="loggerythm_player_car_error_unsupported">LoggeRythm kann diese Anfrage nicht abspielen. Wähle stattdessen etwas aus deiner Bibliothek.</string>
+    <string name="loggerythm_player_car_error_refresh_required">Öffne LoggeRythm einmal auf deinem Handy, um die Auto-Bibliothek zu aktualisieren. Versuche es danach erneut.</string>
 </resources>

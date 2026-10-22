@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadata
 import androidx.media3.session.legacy.MediaBrowserCompat as MediaBrowser
+import androidx.media3.session.legacy.MediaControllerCompat
+import androidx.media3.session.legacy.PlaybackStateCompat
+import androidx.media3.session.legacy.MediaSessionCompat
 import android.media.session.MediaController
 import android.media.session.PlaybackState
 import android.net.Uri
@@ -52,6 +55,12 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
   private var activity: android.app.Activity? = null
   private var browser: MediaBrowser? = null
   private var controller: MediaController? = null
+  private var compatController: MediaControllerCompat? = null
+  private val compatCallback = object : MediaControllerCompat.Callback() {
+    override fun onPlaybackStateChanged(state: PlaybackStateCompat?) {
+      state?.errorMessage?.toString()?.let(errorMessages::add)
+    }
+  }
   private val errorMessages = CopyOnWriteArrayList<String>()
   private val controllerCallback = object : MediaController.Callback() {
     override fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -81,6 +90,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
   @After
   fun tearDown() {
     controller?.let { active -> runCatching { active.unregisterCallback(controllerCallback) } }
+    compatController?.unregisterCallback(compatCallback)
     browser?.let { active -> runCatching { onLooper { active.disconnect() } } }
     thread.quitSafely()
     thread.join(DEVICE_TIMEOUT_SECONDS * 1_000L)
@@ -145,6 +155,17 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
         PlaybackState.ACTION_PREPARE_FROM_MEDIA_ID or
         PlaybackState.ACTION_PREPARE_FROM_SEARCH,
     )
+
+    // An old persisted tree from 1.0.13 has no Track sidecars. Selecting it must
+    // request a phone refresh rather than create a queue the phone UI cannot render.
+    fun withoutPrivateExtras(node: BrowseNodeSpec): BrowseNodeSpec = node.copy(
+      extrasJson = "{}", children = node.children.map(::withoutPrivateExtras),
+    )
+    installPolicyAndTreeOnMain(BrowseTreeSpec(withoutPrivateExtras(libraryTree().root)))
+    platformController.transportControls.prepareFromMediaId(LIKED_TRACK_IDS[0], null)
+    awaitErrorMessage(context.getString(R.string.loggerythm_player_car_error_refresh_required))
+    assertTrue(LoggeRythmPlayerRuntime.queueSources().isEmpty())
+    installPolicyAndTreeOnMain()
 
     // The standard Play button can start the available library even with an empty queue.
     platformController.transportControls.play()
@@ -212,6 +233,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
       LoggeRythmPlayerRuntime.extrasFor(ROADTRIP_TRACK_IDS[0]),
     ).getJSONObject("track").getString("title"))
     platformController.unregisterCallback(controllerCallback)
+    compatController?.unregisterCallback(compatCallback)
     onLooper { requireNotNull(browser).disconnect() }
     browser = null
     context.stopService(serviceIntent)
@@ -235,6 +257,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     val root: String,
     val extras: Bundle,
     val token: android.media.session.MediaSession.Token,
+    val compatToken: MediaSessionCompat.Token,
   )
 
   private fun connectPlatformBrowser(): ConnectedPlatformBrowser {
@@ -276,7 +299,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     )
     val active = requireNotNull(browser)
     return onLooper {
-      ConnectedPlatformBrowser(active.root, active.extras ?: Bundle.EMPTY, active.sessionToken.token as android.media.session.MediaSession.Token)
+      ConnectedPlatformBrowser(active.root, active.extras ?: Bundle.EMPTY, active.sessionToken.token as android.media.session.MediaSession.Token, active.sessionToken)
     }
   }
 
@@ -284,6 +307,14 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     val created = MediaController(context, connected.token)
     created.registerCallback(controllerCallback, handler)
     controller = created
+    // Media3 sends nonfatal errors as one-shot compat events. The platform may
+    // coalesce its immediately-cleared PlaybackState; Auto's compat binder retains the event.
+    compatController = onLooper {
+      MediaControllerCompat(context, connected.compatToken).also {
+        it.registerCallback(compatCallback, handler)
+      }
+    }
+    poll("compat-session-not-ready") { compatController?.isSessionReady == true }
     return created
   }
 
@@ -413,8 +444,7 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     assertTrue(LoggeRythmPersistedServiceBridge.isReady())
   }
 
-  private fun installPolicyAndTreeOnMain() {
-    val tree = libraryTree()
+  private fun installPolicyAndTreeOnMain(tree: BrowseTreeSpec = libraryTree()) {
     val completed = CountDownLatch(1)
     val outcome = AtomicReference<Result<Unit>>()
     instrumentation.runOnMainSync {

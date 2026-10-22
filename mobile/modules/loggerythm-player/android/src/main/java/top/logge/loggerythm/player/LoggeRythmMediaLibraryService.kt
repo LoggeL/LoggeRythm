@@ -747,7 +747,7 @@ class LoggeRythmMediaLibraryService :
       val selection = LoggeRythmPlayerRuntime.playableBrowseSiblings(mediaId)
         ?: LoggeRythmPlayerRuntime.playableBrowseChildren(mediaId)
         ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
-      return MediaItemsWithStartPosition(selection.mediaItems, selection.startIndex, 0L)
+      return validatedCarSelection(selection)
     }
 
     val query = requested.requestMetadata.searchQuery
@@ -766,6 +766,19 @@ class LoggeRythmMediaLibraryService :
       is LoggeRythmLibraryTarget.Container ->
         LoggeRythmPlayerRuntime.playableBrowseChildren(target.mediaId)
     } ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
+    return validatedCarSelection(selection)
+  }
+
+  private fun validatedCarSelection(selection: RuntimeBrowseSelection): MediaItemsWithStartPosition {
+    val tree = LoggeRythmPlayerRuntime.browseTree()
+    if (selection.mediaItems.any { item ->
+        val source = tree.nodes[item.mediaId]?.source
+        source == null || !LoggeRythmCarLibraryState.hasPhoneTrackMetadata(source.extrasJson)
+      }) {
+      // Do not create a queue that will crash the phone's Track rendering after an upgrade.
+      // Opening the phone refreshes the library with the backward-compatible private sidecars.
+      throw LoggeRythmCarRequestException(LoggeRythmCarError.LIBRARY_REFRESH_REQUIRED)
+    }
     return MediaItemsWithStartPosition(selection.mediaItems, selection.startIndex, 0L)
   }
 
@@ -783,7 +796,7 @@ class LoggeRythmMediaLibraryService :
       ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.NOTHING_TO_PLAY)
     val selection = LoggeRythmPlayerRuntime.playableBrowseChildren(target.mediaId)
       ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
-    return MediaItemsWithStartPosition(selection.mediaItems, selection.startIndex, 0L)
+    return validatedCarSelection(selection)
   }
 
   private fun finishServiceOnlyRestoreWaiters() {

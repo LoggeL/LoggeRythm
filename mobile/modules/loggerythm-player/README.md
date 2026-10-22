@@ -202,6 +202,9 @@ Accepted car hosts (trusted browser profile) get, once `setCommands` has been ac
 Caller-supplied URIs, metadata, start index, and position are never used for external or
 legacy requests. Only the same-app Media3 controller may set fully resolved items directly.
 
+Legacy browse records without private Track metadata require a phone-library refresh before
+selection can create a queue; the car shows an explicit open-app resolution.
+
 Expected library/request failures return explicit Media3 errors. `LoggeRythmCarError` maps each case to
 a `SessionError` code and a localized (`values`, `values-de`) message: signed out, discarded cold
 restore, empty library, unavailable list or item, no voice match, nothing to play, controls not

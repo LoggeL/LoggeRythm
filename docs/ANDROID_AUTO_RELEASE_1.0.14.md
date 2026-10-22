@@ -24,7 +24,9 @@ applicable, an action to open LoggeRythm on the phone.
 
 Car-created queues preserve private Track metadata for the phone UI and encrypted
 restoration. Those sidecars never enter external Media3 metadata or browse/search
-results. Old encrypted browse records without private extras remain readable.
+results. Old encrypted browse records without private extras remain readable. Selecting
+such a legacy list explicitly asks the user to open the phone app once to refresh
+it; it cannot create a new queue lacking the Track required by the phone UI.
 
 The JavaScript publisher now waits for the native library acknowledgement.
 A failed playlist refresh reports a specific error while retaining usable
@@ -57,7 +59,7 @@ Verified locally on 2026-10-22:
 - TypeScript, ESLint, 1,240 mobile tests and 86 QA-tool tests pass (one existing TODO).
 - 259 API tests and generated API/Android contract checks pass; the shared web
   queue contract, web typecheck and scoped lint pass.
-- 148 native JVM tests, release lint, hostile-controller lint and optimized
+- 149 native JVM tests, release lint, hostile-controller lint and optimized
   ARM64 release build pass. Expo Doctor passes all 21 checks.
 - All 9 native device tests pass on an Android 16 / API 36 ARM64 emulator. The
   legacy-browser scenario decodes private WAV files with the real ExoPlayer,
@@ -66,11 +68,11 @@ Verified locally on 2026-10-22:
 - A separate-UID untrusted controller obtains the framework binder but is denied
   the session and cannot read data or mutate playback.
 - The source/APK gate scans 505 source files and 1,095 APK entries with no findings.
-- Version 1.0.14 uses versionCode 10062 and the existing release signer, SHA-256
+- The local candidate uses the existing release signer, SHA-256
   `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
 
 The release notes record final APK digest, CI, startup and update-installation
-results. This repository report describes the tested implementation; the release
+results, including the CI-assigned versionCode. This repository report describes the tested implementation; the release
 asset is the installation artifact.
 
 A physical car/phone projection session and the Google Desktop Head Unit remain

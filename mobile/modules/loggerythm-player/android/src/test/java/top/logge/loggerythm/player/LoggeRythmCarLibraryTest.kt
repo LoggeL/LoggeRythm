@@ -27,6 +27,19 @@ class LoggeRythmCarLibraryTest {
   }
 
   @Test
+  fun legacyOrIncompleteBrowseTrackRequiresAnExplicitPhoneRefresh() {
+    val valid = """{"track":{"id":"123","title":"Track","artist":"Artist","artists":[{"id":4,"name":"Artist"}]}}"""
+    assertTrue(LoggeRythmCarLibraryState.hasPhoneTrackMetadata(valid))
+    listOf("{}", "not json", """{"track":{"id":"123"}}""",
+      valid.replace("\"artists\":[{\"id\":4,\"name\":\"Artist\"}]", "\"artists\":null"),
+      valid.replace("\"name\":\"Artist\"", "\"name\":null"),
+    ).forEach { invalid ->
+      org.junit.Assert.assertFalse(LoggeRythmCarLibraryState.hasPhoneTrackMetadata(invalid))
+    }
+    assertTrue(LoggeRythmCarError.LIBRARY_REFRESH_REQUIRED.offersOpenApp)
+  }
+
+  @Test
   fun onlyMedia3LegacyBrowserPlaceholderIsAFrameworkBootstrap() {
     assertEquals(
       LoggeRythmSessionLookup.FRAMEWORK_LEGACY_BROWSER_BOOTSTRAP,

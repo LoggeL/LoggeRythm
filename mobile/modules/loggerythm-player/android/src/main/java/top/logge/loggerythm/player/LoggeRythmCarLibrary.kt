@@ -4,6 +4,9 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
 import java.text.Normalizer
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONException
+import org.json.JSONObject
 
 /** What a `MediaSessionService.onGetSession` call represents. */
 internal enum class LoggeRythmSessionLookup {
@@ -75,6 +78,12 @@ internal enum class LoggeRythmCarError(
     R.string.loggerythm_player_car_error_library_empty,
     offersOpenApp = true,
   ),
+  LIBRARY_REFRESH_REQUIRED(
+    "car-library-refresh-required",
+    SessionError.ERROR_SESSION_SETUP_REQUIRED,
+    R.string.loggerythm_player_car_error_refresh_required,
+    offersOpenApp = true,
+  ),
   LIST_UNAVAILABLE(
     "car-list-unavailable",
     SessionError.ERROR_BAD_VALUE,
@@ -141,6 +150,20 @@ internal class LoggeRythmCarRequestException(
 ) : IllegalStateException(error.code)
 
 internal object LoggeRythmCarLibraryState {
+  /** Older encrypted browse records lack the private Track required by the phone UI. */
+  fun hasPhoneTrackMetadata(extrasJson: String): Boolean = try {
+    val track = JSONObject(extrasJson).optJSONObject("track")
+    val artists = track?.opt("artists") as? JSONArray
+    track != null && track.opt("id") is String && track.opt("title") is String &&
+      track.opt("artist") is String && artists != null && (0 until artists.length()).all { index ->
+        val artist = artists.optJSONObject(index)
+        artist != null && (artist.opt("id") is String || artist.opt("id") is Number) &&
+          artist.opt("name") is String
+      }
+  } catch (_: JSONException) {
+    false // The caller returns the explicit refresh-required car error; never queues this item.
+  }
+
   /**
    * Why the library root cannot be served, or null when an account-bound tree exists. A missing
    * binding after a failed cold restore needs the app (the encrypted state was discarded); every
