@@ -23,7 +23,7 @@ export default function SearchField({ value, onValueChange, onSubmit, onClear, l
     return localRef.current;
   });
   return (
-    <form role="search" className={`flex min-h-12 min-w-0 items-center gap-3 rounded-xl border border-border bg-panel px-3 transition focus-within:border-accent/70 sm:px-4 ${className}`}
+    <form role="search" className={`flex min-h-11 min-w-0 items-center gap-3 rounded-full border border-transparent bg-white/[0.07] px-4 transition hover:bg-white/[0.1] focus-within:border-white/25 focus-within:bg-white/[0.1] ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
         if (!localRef.current?.dataset.composing) onSubmit();
@@ -40,8 +40,8 @@ export default function SearchField({ value, onValueChange, onSubmit, onClear, l
           delete event.currentTarget.dataset.composing;
           inputProps?.onCompositionEnd?.(event);
         }}
-        className={`h-12 w-full min-w-0 bg-transparent text-base text-foreground outline-none! placeholder:text-muted [&::-webkit-search-cancel-button]:appearance-none ${inputProps?.className ?? ""}`} />
-      {value && <button type="button" aria-label="Suche leeren" className="action-icon min-h-11! min-w-11! shrink-0" onClick={() => {
+        className={`h-11 w-full min-w-0 bg-transparent text-[15px] text-foreground outline-none! placeholder:text-subtle [&::-webkit-search-cancel-button]:appearance-none ${inputProps?.className ?? ""}`} />
+      {value && <button type="button" aria-label="Suche leeren" className="action-icon -mr-2 h-9 min-h-0 w-9 shrink-0" onClick={() => {
         onClear();
         localRef.current?.focus({ preventScroll: true });
       }}><CloseIcon width={17} height={17} /></button>}

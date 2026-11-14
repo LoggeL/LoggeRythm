@@ -107,6 +107,10 @@ interface PlayerState {
   error: string | null;
   queueOpen: boolean;
   lyricsOpen: boolean;
+  /** Fullscreen "now playing" surface. */
+  nowPlayingOpen: boolean;
+  /** Next-track preload failure for the current queue pair, if any. */
+  preloadError: string | null;
   radioActive: boolean; // endless "song radio" — auto-extends the queue
   // Changes on every explicit radio-mode transition, even when the boolean
   // value is unchanged, so async station work can identify its owning session.
@@ -136,6 +140,8 @@ interface PlayerState {
   setQueueOpen: (v: boolean) => void;
   toggleLyrics: () => void;
   setLyricsOpen: (v: boolean) => void;
+  setNowPlayingOpen: (v: boolean) => void;
+  _setPreloadError: (msg: string | null) => void;
   playTrack: (track: Track) => void;
   playQueue: (tracks: Track[], startIndex?: number, context?: string) => void;
   addToQueue: (track: Track) => void;
@@ -196,6 +202,8 @@ export const usePlayerStore = create<PlayerState>()(
       error: null,
       queueOpen: false,
       lyricsOpen: false,
+      nowPlayingOpen: false,
+      preloadError: null,
       seekTo: null,
       partyBridge: null,
       partyQueueItemIds: [],
@@ -289,6 +297,10 @@ export const usePlayerStore = create<PlayerState>()(
       setQueueOpen: (v) => set({ queueOpen: v }),
       toggleLyrics: () => set({ lyricsOpen: !get().lyricsOpen }),
       setLyricsOpen: (v) => set({ lyricsOpen: v }),
+      setNowPlayingOpen: (v) => set({ nowPlayingOpen: v }),
+      _setPreloadError: (msg) => {
+        if (get().preloadError !== msg) set({ preloadError: msg });
+      },
 
       playTrack: (track) => {
         const queueTrack = { ...track };

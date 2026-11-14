@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
-import AppShell from "@/components/AppShell";
+import AppShell from "@/components/shell/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -11,6 +11,11 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+const displayFace = Bricolage_Grotesque({
+  variable: "--font-display-face",
   subsets: ["latin"],
 });
 
@@ -25,8 +30,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Matches --background from globals.css.
-  themeColor: "#0b0c10",
+  // Matches --backdrop from globals.css.
+  themeColor: "#050608",
   colorScheme: "dark",
 };
 
@@ -38,7 +43,7 @@ export default function RootLayout({
   return (
     <html
       lang="de"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${displayFace.variable} h-full antialiased`}
     >
       <body className="h-full">
         <Providers>

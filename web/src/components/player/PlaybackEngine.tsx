@@ -7,7 +7,6 @@ import {
   useState,
   type SyntheticEvent,
 } from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { api, streamUrl } from "@/lib/api";
@@ -20,43 +19,8 @@ import {
 import { calculateLoudnessGain, loudnessMetadataFromTrack } from "@/lib/loudness";
 import { playWithMediaRecovery } from "@/lib/mediaPlayback";
 import { useMe } from "@/hooks/useAuth";
-import { formatTime } from "@/lib/format";
-import { trackArtistLabel } from "@/lib/trackArtists";
-import LikeButton from "@/components/LikeButton";
-import EqualizerBars from "@/components/EqualizerBars";
-import NowPlaying from "@/components/now-playing/NowPlaying";
-import TrackContext from "@/components/TrackContext";
-import CacheMarker from "@/components/CacheMarker";
-import ArtistLinks from "@/components/ArtistLinks";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
-import {
-  PlayIcon,
-  PauseIcon,
-  NextIcon,
-  PrevIcon,
-  VolumeIcon,
-  VolumeMutedIcon,
-  ShuffleIcon,
-  RepeatIcon,
-  RepeatOneIcon,
-  QueueIcon,
-  LyricsIcon,
-  SpinnerIcon,
-  ExpandIcon,
-} from "@/components/icons";
 import { toast } from "@/store/toast";
-
-// The player uses the same quiet controls as the rest of the app.
-const ICON_BTN = "action-icon h-9 w-9 shrink-0";
-const ICON_IDLE = "text-muted hover:text-foreground hover:bg-white/10";
-const SQUARE_IDLE = "text-muted hover:text-foreground hover:bg-white/5";
-const SQUARE_ACTIVE = "text-accent bg-accent/10 hover:bg-accent/15";
-
-/** A violet-filled track for range inputs (filled up to `pct` percent). */
-function rangeFill(pct: number): string {
-  const p = Math.max(0, Math.min(100, pct));
-  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, var(--border) ${p}%, var(--border) 100%)`;
-}
+import { usePlayerSideEffects } from "@/components/player/usePlayerSideEffects";
 
 const MEDIA_ERROR_LABELS: Record<number, string> = {
   1: "Wiedergabe abgebrochen",
@@ -123,7 +87,13 @@ function releaseMedia(el: HTMLAudioElement): void {
   el.load();
 }
 
-export default function PlayerBar() {
+/**
+ * Headless playback engine: owns the two <audio> decks, crossfade, seeking,
+ * stream-error recovery and next-track preloading. It renders no UI — every
+ * visible surface reads from the player store, which this component feeds.
+ */
+export default function PlaybackEngine() {
+  usePlayerSideEffects();
   // Two interchangeable decks: one is "active" (drives the store + UI), the
   // other prefetches the next track for a gapless crossfade. On handoff we just
   // swap which deck is active — the faded-in deck keeps playing, so there is no
@@ -191,7 +161,6 @@ export default function PlayerBar() {
     },
     [cancelCrossfade, clearErrorRetry, clearErrorSkip],
   );
-  const [expanded, setExpanded] = useState(false);
   // A preload begins only after the current deck is ready. That
   // avoids competing with the current track's first materialization while
   // still giving the next download almost the full song length to finish.
@@ -201,31 +170,19 @@ export default function PlayerBar() {
     message: string;
   } | null>(null);
 
-  const queueOpen = usePlayerStore((s) => s.queueOpen);
-  const toggleQueue = usePlayerStore((s) => s.toggleQueue);
-  const lyricsOpen = usePlayerStore((s) => s.lyricsOpen);
-  const toggleLyrics = usePlayerStore((s) => s.toggleLyrics);
-
   const track = usePlayerStore(currentTrack);
+  const queue = usePlayerStore((s) => s.queue);
+  const index = usePlayerStore((s) => s.index);
+  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const volume = usePlayerStore((s) => s.volume);
   const muted = usePlayerStore((s) => s.muted);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const duration = usePlayerStore((s) => s.duration);
   const seekTo = usePlayerStore((s) => s.seekTo);
-  const shuffle = usePlayerStore((s) => s.shuffle);
   const repeat = usePlayerStore((s) => s.repeat);
-  const isBuffering = usePlayerStore((s) => s.isBuffering);
-  const error = usePlayerStore((s) => s.error);
 
-  const toggle = usePlayerStore((s) => s.toggle);
   const next = usePlayerStore((s) => s.next);
-  const prev = usePlayerStore((s) => s.prev);
-  const seek = usePlayerStore((s) => s.seek);
-  const setVolume = usePlayerStore((s) => s.setVolume);
-  const toggleMute = usePlayerStore((s) => s.toggleMute);
-  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
-  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const _setCurrentTime = usePlayerStore((s) => s._setCurrentTime);
   const _setDuration = usePlayerStore((s) => s._setDuration);
   const _onEnded = usePlayerStore((s) => s._onEnded);
@@ -238,7 +195,6 @@ export default function PlayerBar() {
   const trackLoudnessGain = calculateLoudnessGain(
     track ? loudnessMetadataFromTrack(track) : null,
   ).gainLinear;
-
   const reportPlayFailure = useCallback(
     (
       el: HTMLAudioElement,
@@ -298,17 +254,7 @@ export default function PlayerBar() {
   );
 
   const { data: me } = useMe();
-  const recordedRef = useRef<string | null>(null);
 
-  const radioActive = usePlayerStore((s) => s.radioActive);
-  const radioSession = usePlayerStore((s) => s.radioSession);
-  const queueLen = usePlayerStore((s) => s.queue.length);
-  const queue = usePlayerStore((s) => s.queue);
-  const index = usePlayerStore((s) => s.index);
-  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
-  // A replacement station may start while the previous top-up is still in
-  // flight. Track the owning session instead of globally blocking all fetches.
-  const radioFetchingSession = useRef<number | null>(null);
   const { data: settings } = useQuery({
     queryKey: ["playback-settings"],
     queryFn: api.settings,
@@ -374,71 +320,6 @@ export default function PlayerBar() {
     };
   }, [currentTrackId, nextTrackId, nextTrackTitle, preloadKey, readyTrackId]);
 
-  // Record a play once per (new) track for approved, logged-in users.
-  useEffect(() => {
-    if (!track || !trackId) return;
-    if (!me?.is_approved) return;
-    if (recordedRef.current === trackId) return;
-    recordedRef.current = trackId;
-    api.recordPlay(track).catch((error: unknown) => {
-      if (recordedRef.current === trackId) recordedRef.current = null;
-      toast.error(`Hörverlauf konnte nicht gespeichert werden: ${error instanceof Error ? error.message : String(error)}`);
-    });
-  }, [trackId, track, me?.is_approved]);
-
-  // Reflect the current song in the browser tab title.
-  useEffect(() => {
-    const base = "LoggeRythm";
-    document.title = track
-      ? `${track.title} • ${trackArtistLabel(track)}`
-      : base;
-    return () => {
-      document.title = base;
-    };
-  }, [trackId, track]);
-
-  // Endless radio: when near the end, pull the next ~5 similar songs
-  // seeded by the current track (so the station keeps evolving).
-  useEffect(() => {
-    if (!radioActive || !track) return;
-    if (queueLen - index > 2) return; // still have a buffer
-    if (radioFetchingSession.current === radioSession) return;
-    radioFetchingSession.current = radioSession;
-    const requestSession = radioSession;
-    api
-      .radio(String(track.id))
-      .then((more) => {
-        const state = usePlayerStore.getState();
-        if (
-          state.radioSession !== requestSession ||
-          !state.radioActive
-        ) {
-          return;
-        }
-        const have = new Set(state.queue.map((t) => String(t.id)));
-        const fresh = more.filter((t) => !have.has(String(t.id))).slice(0, 5);
-        if (fresh.length) state.appendToQueue(fresh);
-      })
-      .catch((e) => {
-        const state = usePlayerStore.getState();
-        if (
-          state.radioSession !== requestSession ||
-          !state.radioActive
-        ) {
-          return;
-        }
-        // Stop the radio visibly instead of silently starving the queue.
-        state.setRadioActive(false);
-        toast.error(
-          `Song-Radio konnte nicht erweitert werden: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      })
-      .finally(() => {
-        if (radioFetchingSession.current === requestSession) {
-          radioFetchingSession.current = null;
-        }
-      });
-  }, [radioActive, radioSession, index, queueLen, track]);
 
   // Load the current track into the active deck — unless that deck is already
   // playing it, which is the case right after a crossfade handoff.
@@ -739,159 +620,6 @@ export default function PlayerBar() {
     _clearSeek();
   }, [seekTo, _clearSeek, activeIdx, cancelCrossfade, prepareFailedDeckReload, reportPlayFailure]);
 
-  // MediaSession: OS media keys + metadata + artwork.
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
-    const session = navigator.mediaSession;
-    if (!track) {
-      session.metadata = null;
-      return;
-    }
-    session.metadata = new MediaMetadata({
-      title: track.title,
-      artist: trackArtistLabel(track),
-      album: track.album,
-      artwork: track.cover
-        ? [
-            { src: track.cover, sizes: "250x250", type: "image/jpeg" },
-            { src: track.cover, sizes: "500x500", type: "image/jpeg" },
-          ]
-        : [],
-    });
-    session.setActionHandler("play", () => usePlayerStore.getState().play());
-    session.setActionHandler("pause", () => usePlayerStore.getState().pause());
-    session.setActionHandler("previoustrack", () =>
-      usePlayerStore.getState().prev(),
-    );
-    session.setActionHandler("nexttrack", () =>
-      usePlayerStore.getState().next(),
-    );
-    session.setActionHandler("seekto", (detail) => {
-      if (detail.seekTime != null) usePlayerStore.getState().seek(detail.seekTime);
-    });
-    session.setActionHandler("seekforward", (detail) => {
-      const state = usePlayerStore.getState();
-      state.seek(
-        Math.min(
-          state.currentTime + (detail.seekOffset ?? 10),
-          state.duration || 0,
-        ),
-      );
-    });
-    session.setActionHandler("seekbackward", (detail) => {
-      const state = usePlayerStore.getState();
-      state.seek(Math.max(state.currentTime - (detail.seekOffset ?? 10), 0));
-    });
-    try {
-      session.setActionHandler("stop", () => usePlayerStore.getState().pause());
-    } catch {
-      // "stop" is not supported everywhere
-    }
-
-    return () => {
-      session.metadata = null;
-      const actions: MediaSessionAction[] = [
-        "play",
-        "pause",
-        "previoustrack",
-        "nexttrack",
-        "seekto",
-        "seekforward",
-        "seekbackward",
-        "stop",
-      ];
-      for (const action of actions) {
-        try {
-          session.setActionHandler(action, null);
-        } catch {
-          // Some browsers reject unsupported actions instead of ignoring them.
-        }
-      }
-    };
-  }, [track]);
-
-  useEffect(() => {
-    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
-    try {
-      navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
-    } catch {
-      // unsupported
-    }
-  }, [isPlaying]);
-
-  // Sleep timer: pause when the deadline passes.
-  const sleepAt = usePlayerStore((s) => s.sleepAt);
-  useEffect(() => {
-    if (sleepAt == null) return;
-    const tick = () => {
-      const s = usePlayerStore.getState();
-      if (s.sleepAt != null && Date.now() >= s.sleepAt) {
-        s.setSleepTimer(null);
-        s.pause();
-        toast.info("Sleep-Timer: Wiedergabe pausiert.");
-      }
-    };
-    const interval = window.setInterval(tick, 1000);
-    return () => window.clearInterval(interval);
-  }, [sleepAt]);
-
-  // Keyboard shortcuts (ignore while typing in inputs).
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      const el = e.target as HTMLElement | null;
-      if (
-        e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey ||
-        el?.closest('input, textarea, select, button, a[href], [contenteditable]:not([contenteditable="false"]), [role="button"], [role="tab"], [role="slider"], [role="combobox"], [role="menuitem"]')
-      ) {
-        return;
-      }
-      const s = usePlayerStore.getState();
-      if (s.index < 0) return;
-      switch (e.key) {
-        case " ":
-          e.preventDefault();
-          s.toggle();
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          s.seek(Math.min(s.currentTime + 5, s.duration || s.currentTime + 5));
-          break;
-        case "ArrowLeft":
-          e.preventDefault();
-          s.seek(Math.max(s.currentTime - 5, 0));
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          s.setVolume(Math.min(s.volume + 0.05, 1));
-          break;
-        case "ArrowDown":
-          e.preventDefault();
-          s.setVolume(Math.max(s.volume - 0.05, 0));
-          break;
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const hasTrack = !!track;
-  const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
-  const openFullscreen = () => {
-    setExpanded(true);
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen?.().catch(() => {
-        // Browser fullscreen can be denied by the browser; keep app fullscreen.
-      });
-    }
-  };
-  const closeFullscreen = () => {
-    setExpanded(false);
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {
-        // ignore browser fullscreen exit failures
-      });
-    }
-  };
 
   // A new track (manual skip, queue advance) invalidates any pending
   // auto-skip from the previous track's failure.
@@ -908,18 +636,6 @@ export default function PlayerBar() {
       pendingRetrySeekCancel.current = null;
     };
   }, [trackId, clearErrorRetry, clearErrorSkip]);
-
-  useEffect(() => {
-    document.body.dataset.nowPlayingExpanded = expanded ? "true" : "false";
-
-    window.addEventListener("spotifrei:close-now-playing", closeFullscreen);
-    window.addEventListener("spotifrei:open-now-playing", openFullscreen);
-    return () => {
-      window.removeEventListener("spotifrei:close-now-playing", closeFullscreen);
-      window.removeEventListener("spotifrei:open-now-playing", openFullscreen);
-      document.body.dataset.nowPlayingExpanded = "false";
-    };
-  }, [expanded]);
 
   // Only the active deck drives the store. These functions are called from
   // explicit JSX media-event handlers, never while React is rendering.
@@ -1122,225 +838,39 @@ export default function PlayerBar() {
     );
   };
 
+  const setPreloadError = usePlayerStore((s) => s._setPreloadError);
+  useEffect(() => {
+    setPreloadError(visiblePreloadError);
+  }, [setPreloadError, visiblePreloadError]);
+
   return (
     <>
-      {expanded && track && <NowPlaying onClose={closeFullscreen} />}
-      <footer
-        aria-label="Musikplayer"
-        className="like-celebration-surface relative z-20 flex-shrink-0 border-t border-white/8 bg-panel px-3 pt-2 lg:px-5 lg:py-2"
-      >
-        {/* Two interchangeable decks — see the playback engine above. */}
-        <audio
-          ref={deckA}
-          aria-hidden="true"
-          preload="auto"
-          onTimeUpdate={(e) => handleTimeUpdate(0, e)}
-          onLoadedMetadata={(e) => handleLoadedMetadata(0, e)}
-          onEnded={(e) => handleEnded(0, e)}
-          onWaiting={(e) => handleWaiting(0, e)}
-          onStalled={(e) => handleWaiting(0, e)}
-          onPlaying={(e) => handlePlaying(0, e)}
-          onCanPlay={(e) => handleCanPlay(0, e)}
-          onError={(e) => handleError(0, e)}
-        />
-        <audio
-          ref={deckB}
-          aria-hidden="true"
-          preload="auto"
-          onTimeUpdate={(e) => handleTimeUpdate(1, e)}
-          onLoadedMetadata={(e) => handleLoadedMetadata(1, e)}
-          onEnded={(e) => handleEnded(1, e)}
-          onWaiting={(e) => handleWaiting(1, e)}
-          onStalled={(e) => handleWaiting(1, e)}
-          onPlaying={(e) => handlePlaying(1, e)}
-          onCanPlay={(e) => handleCanPlay(1, e)}
-          onError={(e) => handleError(1, e)}
-        />
-
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,1.2fr)_minmax(0,1fr)] lg:gap-x-6 lg:gap-y-1">
-          <div className="flex min-w-0 items-center gap-3 lg:row-span-2">
-            {track ? (
-              <TrackContext track={track} className="contents">
-                <button
-                  type="button"
-                  onClick={openFullscreen}
-                  aria-label="Jetzt läuft öffnen"
-                  title="Jetzt läuft öffnen"
-                  className="flex-shrink-0 rounded-lg transition hover:opacity-80"
-                >
-                  {track.cover ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={track.cover} alt="" className="h-11 w-11 rounded-lg object-cover lg:h-12 lg:w-12" />
-                  ) : (
-                    <CoverPlaceholder className="h-11 w-11 rounded-lg lg:h-12 lg:w-12" />
-                  )}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={openFullscreen}
-                    className="block w-full truncate text-left text-sm font-semibold lg:hidden"
-                    aria-label={`${track.title}: Jetzt läuft öffnen`}
-                  >
-                    {track.title}
-                  </button>
-                  {track.album_id ? (
-                    <Link href={`/album/${track.album_id}`} className="hidden truncate text-sm font-semibold hover:underline lg:block">
-                      {track.title}
-                    </Link>
-                  ) : (
-                    <p className="hidden truncate text-sm font-semibold lg:block">{track.title}</p>
-                  )}
-                  <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-                    <EqualizerBars height={12} isPlaying={isPlaying && !isBuffering} />
-                    <CacheMarker trackId={track.id} />
-                    <ArtistLinks track={track} className="truncate text-xs text-muted" linkClassName="hover:underline hover:text-foreground" />
-                  </div>
-                </div>
-                <div className="hidden lg:block">
-                  <LikeButton key={track.id} track={track} />
-                </div>
-              </TrackContext>
-            ) : (
-              <p className="py-3 text-sm text-muted">Wähle einen Titel zum Abspielen.</p>
-            )}
-          </div>
-
-          <div className={`flex items-center justify-end gap-1 lg:justify-center lg:gap-2 ${hasTrack ? "" : "hidden lg:flex"}`}>
-            <button
-              type="button"
-              onClick={toggleShuffle}
-              disabled={!hasTrack}
-              aria-label="Zufallswiedergabe"
-              aria-pressed={shuffle}
-              title="Zufallswiedergabe"
-              className={`action-icon hidden h-9 w-9 disabled:opacity-40 lg:grid ${shuffle ? "bg-accent/10 text-accent" : ICON_IDLE}`}
-            >
-              <ShuffleIcon width={17} height={17} />
-            </button>
-            <button
-              type="button"
-              onClick={prev}
-              disabled={!hasTrack}
-              aria-label="Vorheriger Titel"
-              className={`action-icon hidden h-9 w-9 disabled:opacity-40 lg:grid ${ICON_IDLE}`}
-            >
-              <PrevIcon width={21} height={21} />
-            </button>
-            <button
-              type="button"
-              onClick={toggle}
-              disabled={!hasTrack}
-              aria-label={isPlaying ? "Pause" : "Abspielen"}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-foreground text-background transition hover:opacity-85 disabled:opacity-40"
-            >
-              {isBuffering ? (
-                <SpinnerIcon width={21} height={21} className="animate-spin" />
-              ) : isPlaying ? (
-                <PauseIcon width={22} height={22} />
-              ) : (
-                <PlayIcon width={22} height={22} />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={next}
-              disabled={!hasTrack}
-              aria-label="Nächster Titel"
-              className={`action-icon h-10 w-10 disabled:opacity-40 lg:h-9 lg:w-9 ${ICON_IDLE}`}
-            >
-              <NextIcon width={21} height={21} />
-            </button>
-            <button
-              type="button"
-              onClick={cycleRepeat}
-              disabled={!hasTrack}
-              aria-label="Wiederholen"
-              aria-pressed={repeat !== "off"}
-              title={repeat === "one" ? "Titel wiederholen" : repeat === "all" ? "Alle wiederholen" : "Wiederholen aus"}
-              className={`action-icon hidden h-9 w-9 disabled:opacity-40 lg:grid ${repeat !== "off" ? "bg-accent/10 text-accent" : ICON_IDLE}`}
-            >
-              <RepeatGlyph width={17} height={17} />
-            </button>
-          </div>
-
-          <div className="hidden items-center justify-end gap-1 lg:row-span-2 lg:flex">
-            <button
-              type="button"
-              onClick={toggleLyrics}
-              aria-label="Songtext"
-              aria-pressed={lyricsOpen}
-              title="Songtext"
-              className={`${ICON_BTN} ${lyricsOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
-            >
-              <LyricsIcon width={18} height={18} />
-            </button>
-            <button
-              type="button"
-              onClick={toggleQueue}
-              aria-label="Warteschlange"
-              aria-pressed={queueOpen}
-              title="Warteschlange"
-              className={`${ICON_BTN} ${queueOpen ? SQUARE_ACTIVE : SQUARE_IDLE}`}
-            >
-              <QueueIcon width={18} height={18} />
-            </button>
-            <button
-              type="button"
-              onClick={toggleMute}
-              aria-label={muted ? "Ton an" : "Stummschalten"}
-              className={`${ICON_BTN} ${ICON_IDLE}`}
-            >
-              {muted || volume === 0 ? <VolumeMutedIcon width={18} height={18} /> : <VolumeIcon width={18} height={18} />}
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={muted ? 0 : volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
-              className="w-16 xl:w-20"
-              style={{ background: rangeFill((muted ? 0 : volume) * 100) }}
-              aria-label="Lautstärke"
-              aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)} Prozent`}
-            />
-            <button
-              type="button"
-              onClick={openFullscreen}
-              disabled={!hasTrack}
-              aria-label="Jetzt läuft öffnen"
-              title="Jetzt läuft"
-              className={`${ICON_BTN} ${ICON_IDLE} disabled:opacity-40`}
-            >
-              <ExpandIcon width={18} height={18} />
-            </button>
-          </div>
-
-          <div className={`col-span-2 mt-2 flex w-full items-center gap-2 pb-1 lg:col-span-1 lg:col-start-2 lg:mt-0 lg:pb-0 ${hasTrack ? "" : "hidden lg:flex"}`}>
-            <span className="hidden w-9 text-right text-[10px] tabular-nums text-muted lg:block">{formatTime(currentTime)}</span>
-            <input
-              type="range"
-              min={0}
-              max={duration || 0}
-              step={0.1}
-              value={Math.min(currentTime, duration || 0)}
-              onChange={(e) => seek(Number(e.target.value))}
-              disabled={!hasTrack || !duration}
-              className="min-w-0 flex-1"
-              style={{ background: rangeFill(duration ? (currentTime / duration) * 100 : 0) }}
-              aria-label="Fortschritt"
-              aria-valuetext={`${formatTime(currentTime)} von ${formatTime(duration)}`}
-            />
-            <span className="hidden w-9 text-[10px] tabular-nums text-muted lg:block">{formatTime(duration)}</span>
-          </div>
-        </div>
-        {(error || visiblePreloadError) && (
-          <div role="alert" className="error-panel my-2 text-xs" title={error || visiblePreloadError || undefined}>
-            {error || visiblePreloadError}
-          </div>
-        )}
-      </footer>
+      <audio
+        ref={deckA}
+        aria-hidden="true"
+        preload="auto"
+        onTimeUpdate={(e) => handleTimeUpdate(0, e)}
+        onLoadedMetadata={(e) => handleLoadedMetadata(0, e)}
+        onEnded={(e) => handleEnded(0, e)}
+        onWaiting={(e) => handleWaiting(0, e)}
+        onStalled={(e) => handleWaiting(0, e)}
+        onPlaying={(e) => handlePlaying(0, e)}
+        onCanPlay={(e) => handleCanPlay(0, e)}
+        onError={(e) => handleError(0, e)}
+      />
+      <audio
+        ref={deckB}
+        aria-hidden="true"
+        preload="auto"
+        onTimeUpdate={(e) => handleTimeUpdate(1, e)}
+        onLoadedMetadata={(e) => handleLoadedMetadata(1, e)}
+        onEnded={(e) => handleEnded(1, e)}
+        onWaiting={(e) => handleWaiting(1, e)}
+        onStalled={(e) => handleWaiting(1, e)}
+        onPlaying={(e) => handlePlaying(1, e)}
+        onCanPlay={(e) => handleCanPlay(1, e)}
+        onError={(e) => handleError(1, e)}
+      />
     </>
   );
 }

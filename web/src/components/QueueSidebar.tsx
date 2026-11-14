@@ -15,7 +15,7 @@ import ArtistLinks from "@/components/ArtistLinks";
 import EqualizerBars from "@/components/EqualizerBars";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 
-const DOCK_QUERY = "(min-width: 1536px)";
+const DOCK_QUERY = "(min-width: 1280px)";
 function subscribeDock(listener: () => void) {
   const media = window.matchMedia(DOCK_QUERY);
   media.addEventListener("change", listener);
@@ -228,7 +228,7 @@ export default function QueueSidebar() {
           aria-hidden="true"
           tabIndex={-1}
           onClick={closeQueue}
-          className="fixed inset-0 z-[65] bg-black/55 backdrop-blur-sm 2xl:hidden"
+          className="fixed inset-0 z-[65] bg-black/55 backdrop-blur-sm xl:hidden"
         />
       )}
       <aside
@@ -238,16 +238,16 @@ export default function QueueSidebar() {
         aria-label="Warteschlange"
         aria-hidden={!open}
         inert={!open}
-        className={`fixed inset-y-0 right-0 z-[70] flex w-full max-w-sm flex-col overflow-hidden border-l border-white/8 bg-panel sm:max-w-[320px] 2xl:static 2xl:z-auto 2xl:max-w-none ${
+        className={`fixed inset-y-0 right-0 z-[70] flex w-full max-w-sm flex-col overflow-hidden border-l border-hairline bg-background sm:max-w-[340px] xl:rounded-[var(--radius-panel)] xl:border-l-0 xl:static xl:z-auto xl:max-w-none ${
           animate ? "transition-[width,transform,opacity] duration-200 ease-out motion-reduce:transition-none" : ""
         } ${
           open
-            ? "translate-x-0 opacity-100 2xl:w-[320px] 2xl:flex-shrink-0"
-            : "pointer-events-none translate-x-full opacity-0 2xl:w-0 2xl:translate-x-0 2xl:border-l-0"
+            ? "translate-x-0 opacity-100 xl:w-[340px] xl:flex-shrink-0"
+            : "pointer-events-none translate-x-full opacity-0 xl:-ml-2 xl:w-0 xl:translate-x-0"
         }`}
       >
-        <div className="flex h-full w-full flex-shrink-0 flex-col 2xl:w-[320px]">
-          <div className="flex flex-shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-[calc(1rem+env(safe-area-inset-top))] 2xl:pt-4">
+        <div className="flex h-full w-full flex-shrink-0 flex-col xl:w-[340px]">
+          <div className="flex flex-shrink-0 items-center justify-between gap-2 px-4 pb-2 pt-[calc(1rem+env(safe-area-inset-top))] xl:pt-4">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Warteschlange</h2>
               <p className="mt-0.5 text-xs text-muted">{upcoming.length} Titel als Nächstes</p>
