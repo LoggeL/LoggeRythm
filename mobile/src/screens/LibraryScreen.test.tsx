@@ -2,6 +2,7 @@ import type React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
 import type { OfflinePlaylistBrowseSummary } from '../offline/browse';
+import { byTestId as byTestID, textContent as textLines } from '../test/render';
 import { LibraryDownloadsList, LibraryLikedTrackRow } from './LibraryScreen';
 import { libraryStrings } from './libraryStrings';
 
@@ -15,6 +16,14 @@ vi.mock('react-native', () => ({
   TextInput: 'TextInput',
   View: 'View',
 }));
+vi.mock('../components/AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../components/ui', async (original) => ({
+  ...(await original<typeof import('../components/ui')>()),
+  BottomSheet: 'BottomSheet',
+  PressableScale: 'PressableScale',
+  TrackRowSkeleton: 'TrackRowSkeleton',
+}));
+vi.mock('../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
 
 vi.mock('../components/track/StandardTrackRow', () => ({
   default: 'StandardTrackRow',
@@ -46,24 +55,8 @@ function propsOf(node: React.ReactNode): ElementProps {
   return (node as React.ReactElement<ElementProps>).props;
 }
 
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestID(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`Missing ${testID}`);
-  return found;
-}
-
 function textContent(node: React.ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(textContent).join('');
-  if (node === null || typeof node !== 'object' || !('props' in node)) return '';
-  return textContent((node as React.ReactElement<ElementProps>).props.children);
+  return textLines(node).join(' ');
 }
 
 const track: Track = {
@@ -211,8 +204,10 @@ describe('LibraryDownloadsList', () => {
     const empty = LibraryDownloadsList({ ...props, availability: 'ready' });
     const unavailable = LibraryDownloadsList({ ...props, availability: 'unavailable' });
 
-    expect(byTestID(loading, 'library-downloads-loading').props.accessibilityRole)
-      .toBe('progressbar');
+    // The skeleton group is the labelled progressbar (pinned by Skeleton.test).
+    expect(byTestID(loading, 'library-downloads-loading').type).toBe('TrackRowSkeleton');
+    expect(byTestID(loading, 'library-downloads-loading').props.accessibilityLabel)
+      .toBe(libraryStrings.library.downloadsLoading);
     expect(textContent(byTestID(empty, 'library-downloads-empty')))
       .toContain(libraryStrings.library.noDownloads);
     expect(byTestID(unavailable, 'library-downloads-unavailable').props)

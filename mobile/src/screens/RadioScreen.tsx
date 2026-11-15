@@ -1,142 +1,28 @@
-import React, { useMemo, useState } from 'react';
-import {
-  AccessibilityInfo,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import React from 'react';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { trackArtistLabel } from '../api/trackArtists';
 import {
   RadioQueryStation,
   RadioSection,
   RadioStationCard,
 } from '../components/radio/RadioCards';
-import AppIcon from '../components/AppIcon';
-import { ScreenHeader } from '../components/ui';
-import { getCurrentApiBase } from '../config';
-import { musicCacheScope, musicQueries } from '../data';
-import type { RemoteFetchStatus } from '../data/remoteState';
-import { useAuth } from '../auth/AuthContext';
-import { trackArtistLabel } from '../api/trackArtists';
+import { RadioHero } from '../components/radio/RadioHero';
+import { useOnAirStation } from '../components/radio/useOnAirStation';
+import { radioStationKey, useRadioStations } from '../components/radio/useRadioStations';
+import { AppText, IconButton, SectionHeader, Surface } from '../components/ui';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
-import { playTracks, startRadio } from '../player/controller';
-import { colors, metrics } from '../theme';
-import {
-  RADIO_MOODS,
-  orderedUniqueRadioTracks,
-  personalStationIds,
-  radioContentState,
-} from './radioModel';
-
-function combinedFetchStatus(
-  queries: readonly { fetchStatus: RemoteFetchStatus }[],
-): RemoteFetchStatus {
-  if (queries.some((query) => query.fetchStatus === 'paused')) return 'paused';
-  if (queries.some((query) => query.fetchStatus === 'fetching')) return 'fetching';
-  return 'idle';
-}
+import { colors, layout, spacing } from '../theme';
 
 export default function RadioScreen() {
-  const { user } = useAuth();
-  if (user === null) throw new Error('RadioScreen requires an authenticated user');
-
-  const queryClient = useQueryClient();
-  const scope = musicCacheScope(getCurrentApiBase(), user.id);
-  const [startingKey, setStartingKey] = useState<string | null>(null);
-  const [startError, setStartError] = useState<string | null>(null);
-
-  const stats = useQuery(musicQueries.stats(scope));
-  const genres = useQuery(musicQueries.genres());
-  const personalIds = useMemo(() => personalStationIds(stats.data?.recent ?? []), [stats.data?.recent]);
-  const personalTracks = useQueries({
-    queries: personalIds.map((id) => musicQueries.track(id)),
+  const radio = useRadioStations();
+  const onAir = useOnAirStation();
+  const bottom = useBottomInset();
+  const { startingKey } = radio;
+  const stationState = (key: string) => ({
+    busy: startingKey === key,
+    blocked: startingKey !== null && startingKey !== key,
   });
-  const moodTracks = useQueries({
-    queries: RADIO_MOODS.map((mood) => musicQueries.mood(mood.tag)),
-  });
-
-  const resolvedPersonal = personalIds.flatMap((id, index) => {
-    const track = personalTracks[index]?.data;
-    return track === undefined ? [] : [{ id, track }];
-  });
-  const personalQueries = [stats, ...personalTracks];
-  const personalError = stats.error
-    ?? personalTracks.find((query) => query.error !== null)?.error
-    ?? null;
-  const personalHasData = stats.data !== undefined
-    && (personalIds.length === 0 || resolvedPersonal.length > 0);
-  const personalState = radioContentState({
-    hasData: personalHasData,
-    empty: personalHasData && resolvedPersonal.length === 0,
-    pending: personalQueries.some((query) => query.isPending),
-    fetching: personalQueries.some((query) => query.isFetching),
-    stale: personalQueries.some((query) => query.isStale),
-    fetchStatus: combinedFetchStatus(personalQueries),
-    error: personalError,
-  });
-  const genreState = radioContentState({
-    hasData: genres.data !== undefined,
-    empty: genres.data !== undefined && genres.data.length === 0,
-    pending: genres.isPending,
-    fetching: genres.isFetching,
-    stale: genres.isStale,
-    fetchStatus: genres.fetchStatus,
-    error: genres.error,
-  });
-  const everyQuery = [stats, genres, ...personalTracks, ...moodTracks];
-  const refreshing = everyQuery.some((query) => query.isFetching && !query.isPending);
-  const blocked = startingKey !== null;
-
-  const refresh = () => {
-    void Promise.allSettled(everyQuery.map((query) => query.refetch()));
-  };
-
-  const runStation = async (key: string, title: string, action: () => Promise<void>) => {
-    if (startingKey !== null) return;
-    setStartingKey(key);
-    setStartError(null);
-    try {
-      await action();
-      AccessibilityInfo.announceForAccessibility(strings.radio.started(title));
-    } catch (error) {
-      setStartError(
-        error instanceof Error && error.message === strings.radio.stationEmpty
-          ? `${strings.radio.startFailed(title)}: ${strings.radio.stationEmpty}`
-          : strings.radio.startFailed(title),
-      );
-    } finally {
-      setStartingKey(null);
-    }
-  };
-
-  const startMood = (index: number) => {
-    const mood = RADIO_MOODS[index];
-    const title = strings.radio.moods[mood.tag].title;
-    void runStation(`mood:${mood.tag}`, title, async () => {
-      const tracks = orderedUniqueRadioTracks(moodTracks[index]?.data ?? []);
-      if (tracks.length === 0) throw new Error(strings.radio.stationEmpty);
-      await playTracks(tracks, 0, {
-        radio: true,
-        context: { type: 'radio', id: `mood:${mood.tag}`, label: title },
-      });
-    });
-  };
-
-  const startGenre = (id: string, name: string) => {
-    const title = strings.radio.genreRadio(name);
-    void runStation(`genre:${id}`, title, async () => {
-      const detail = await queryClient.fetchQuery(musicQueries.genre(id));
-      const tracks = orderedUniqueRadioTracks(detail.tracks);
-      if (tracks.length === 0) throw new Error(strings.radio.stationEmpty);
-      await playTracks(tracks, 0, {
-        radio: true,
-        context: { type: 'radio', id: `genre:${id}`, label: title },
-      });
-    });
-  };
 
   return (
     <View testID="radio-screen" style={styles.container}>
@@ -144,53 +30,47 @@ export default function RadioScreen() {
         testID="radio-scroll"
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
+            refreshing={radio.refreshing}
+            onRefresh={radio.refresh}
             accessibilityLabel={strings.radio.refreshing}
             tintColor={colors.accent}
             colors={[colors.accent]}
             progressBackgroundColor={colors.surfaceElevated}
           />
         }
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
       >
-        <View testID="radio-hero" style={styles.hero}>
-          <View accessible={false} style={styles.heroIcon}>
-            <AppIcon name="radio" color={colors.accentSoft} size={30} />
-          </View>
-          <ScreenHeader
-            title={strings.radio.title}
-            subtitle={strings.radio.subtitle}
-            style={styles.heroText}
-          />
+        <View style={styles.gutter}>
+          <RadioHero onAir={onAir} />
         </View>
 
-        {startError ? (
-          <View testID="radio-error" accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.errorBanner}>
-            <Text style={styles.errorText}>{startError}</Text>
-            <Pressable
+        {radio.startError ? (
+          <Surface
+            testID="radio-error"
+            accessibilityRole="alert"
+            accessibilityLiveRegion="assertive"
+            style={[styles.gutter, styles.errorBanner]}
+          >
+            <AppText variant="callout" color="danger" style={styles.errorText}>{radio.startError}</AppText>
+            <IconButton
               testID="radio-error-dismiss"
-              accessibilityRole="button"
+              icon="close"
+              size="sm"
               accessibilityLabel={strings.radio.dismissError}
-              onPress={() => setStartError(null)}
-              style={styles.dismissButton}
-            >
-              <AppIcon name="close" color={colors.textSecondary} size={20} />
-            </Pressable>
-          </View>
+              onPress={radio.dismissStartError}
+            />
+          </Surface>
         ) : null}
 
         <RadioSection
           id="personal"
           title={strings.radio.personalTitle}
           subtitle={strings.radio.personalSubtitle}
-          state={personalState}
+          state={radio.personalState}
           loadingText={strings.radio.personalLoading}
           emptyText={strings.radio.personalEmpty}
-          busy={personalQueries.some((query) => query.isFetching)}
-          onRetry={() => {
-            void Promise.allSettled(personalQueries.map((query) => query.refetch()));
-          }}
+          busy={radio.personalBusy}
+          onRetry={radio.retryPersonal}
         >
           <ScrollView
             testID="radio-personal-list"
@@ -198,62 +78,50 @@ export default function RadioScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.rail}
           >
-            {resolvedPersonal.map(({ id, track }) => {
-              const key = `personal:${id}`;
-              return (
-                <RadioStationCard
-                  key={id}
-                  testID={`radio-personal-${id}`}
-                  title={track.title}
-                  subtitle={trackArtistLabel(track)}
-                  cover={track.cover}
-                  variant="personal"
-                  busy={startingKey === key}
-                  blocked={blocked && startingKey !== key}
-                  onPress={() => void runStation(key, track.title, () => startRadio(track))}
-                />
-              );
-            })}
+            {radio.personal.map(({ id, track }) => (
+              <RadioStationCard
+                key={id}
+                testID={`radio-personal-${id}`}
+                title={track.title}
+                subtitle={trackArtistLabel(track)}
+                cover={track.cover}
+                variant="personal"
+                {...stationState(radioStationKey.personal(String(track.id)))}
+                onAir={onAir?.id === String(track.id)}
+                onPress={() => radio.startPersonal(track)}
+              />
+            ))}
           </ScrollView>
         </RadioSection>
 
         <View testID="radio-section-moods" style={styles.section}>
-          <Text accessibilityRole="header" style={styles.sectionTitle}>{strings.radio.moodsTitle}</Text>
+          <SectionHeader title={strings.radio.moodsTitle} />
           <ScrollView
             testID="radio-mood-list"
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.rail}
           >
-            {RADIO_MOODS.map((mood, index) => {
-              const query = moodTracks[index];
+            {radio.moods.map((mood) => {
               const copy = strings.radio.moods[mood.tag];
-              const tracks = orderedUniqueRadioTracks(query.data ?? []);
-              const key = `mood:${mood.tag}`;
-              const state = radioContentState({
-                hasData: query.data !== undefined,
-                empty: query.data !== undefined && tracks.length === 0,
-                pending: query.isPending,
-                fetching: query.isFetching,
-                stale: query.isStale,
-                fetchStatus: query.fetchStatus,
-                error: query.error,
-              });
+              const key = radioStationKey.mood(mood.tag);
+              const state = stationState(key);
               return (
                 <RadioQueryStation
                   key={mood.tag}
                   testID={`radio-mood-${mood.tag}`}
                   title={copy.title}
                   subtitle={copy.subtitle}
-                  cover={tracks.find((track) => track.cover)?.cover ?? ''}
-                  state={state}
-                  queryBusy={query.isFetching}
-                  stationBusy={startingKey === key}
-                  blocked={blocked && startingKey !== key}
+                  cover={mood.cover}
+                  state={mood.state}
+                  queryBusy={mood.busy}
+                  stationBusy={state.busy}
+                  blocked={state.blocked}
+                  onAir={onAir?.id === key}
                   loadingText={strings.radio.moodLoading(copy.title)}
                   emptyText={strings.radio.stationEmpty}
-                  onRetry={() => void query.refetch()}
-                  onPress={() => startMood(index)}
+                  onRetry={mood.retry}
+                  onPress={() => radio.startMood(mood.tag)}
                 />
               );
             })}
@@ -263,11 +131,11 @@ export default function RadioScreen() {
         <RadioSection
           id="genres"
           title={strings.radio.genresTitle}
-          state={genreState}
+          state={radio.genreState}
           loadingText={strings.radio.genresLoading}
           emptyText={strings.radio.genresEmpty}
-          busy={genres.isFetching}
-          onRetry={() => void genres.refetch()}
+          busy={radio.genresBusy}
+          onRetry={radio.retryGenres}
         >
           <ScrollView
             testID="radio-genre-list"
@@ -275,20 +143,19 @@ export default function RadioScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.rail}
           >
-            {(genres.data ?? []).map((genre) => {
-              const key = `genre:${genre.id}`;
-              const title = strings.radio.genreRadio(genre.name);
+            {radio.genres.map((genre) => {
+              const key = radioStationKey.genre(genre.id);
               return (
                 <RadioStationCard
                   key={genre.id}
                   testID={`radio-genre-${genre.id}`}
-                  title={title}
+                  title={strings.radio.genreRadio(genre.name)}
                   subtitle={genre.name}
                   cover={genre.picture}
                   variant="genre"
-                  busy={startingKey === key}
-                  blocked={blocked && startingKey !== key}
-                  onPress={() => startGenre(genre.id, genre.name)}
+                  {...stationState(key)}
+                  onAir={onAir?.id === key}
+                  onPress={() => radio.startGenre(genre.id, genre.name)}
                 />
               );
             })}
@@ -301,14 +168,16 @@ export default function RadioScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { gap: 32, padding: 20, paddingTop: 24, paddingBottom: 144 },
-  hero: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  heroIcon: { width: 54, height: 54, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSubtle },
-  heroText: { flex: 1 },
-  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surface },
-  errorText: { flex: 1, color: colors.danger, fontSize: 13, lineHeight: 19 },
-  dismissButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  section: { gap: 14 },
-  sectionTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
-  rail: { gap: 16, paddingRight: 4 },
+  content: { gap: layout.sectionGap, paddingTop: spacing.md },
+  gutter: { marginHorizontal: layout.pagePadding },
+  section: { gap: layout.headerGap },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingLeft: spacing.md,
+    paddingVertical: spacing.xxs,
+  },
+  errorText: { flex: 1 },
+  rail: { gap: layout.railGap, paddingHorizontal: layout.pagePadding },
 });

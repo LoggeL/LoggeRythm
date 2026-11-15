@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   PanResponder,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -22,7 +19,6 @@ import Player, {
   useProgress,
 } from '../player/player';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import AppIcon from '../components/AppIcon';
 import TrackLikeButton from '../components/TrackLikeButton';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
 import {
@@ -37,6 +33,8 @@ import {
   type NowPlayingTab,
 } from '../components/player/NowPlayingTabs';
 import NowPlayingTransport from '../components/player/NowPlayingTransport';
+import { PlayerErrorBanner } from '../components/player/PlayerErrorBanner';
+import { PlayerToggleButton } from '../components/player/PlayerToggleButton';
 import SimilarPanel from '../components/player/SimilarPanel';
 import { QueueSurface } from './QueueScreen';
 import { mediaItemToTrack } from '../player/mediaItem';
@@ -53,7 +51,9 @@ import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/e
 import { isPlayerReady } from '../player/setup';
 import type { RootStackParams } from '../navigation';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { AppText, EmptyState, IconButton, Skeleton } from '../components/ui';
+import { colors, layout, metrics, radii, spacing } from '../theme';
+import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import { nowPlayingArtworkSize } from './nowPlayingLayout';
 import {
   nowPlayingAlbumDestination,
@@ -151,51 +151,58 @@ export default function NowPlayingScreen({ navigation }: Props) {
 
   const topBar = (
     <View style={styles.topBar}>
-      <Pressable
+      <IconButton
         testID="now-playing-close"
-        accessibilityRole="button"
+        icon="chevron-down"
+        size="lg"
+        color={colors.textPrimary}
         accessibilityLabel={strings.player.closeNowPlaying}
-        style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
         onPress={() => navigation.goBack()}
-        hitSlop={16}
-      >
-        <AppIcon name="chevron-down" color={colors.textPrimary} size={28} />
-      </Pressable>
+      />
       <View
         testID="now-playing-gesture-header"
         style={styles.headerGestureSurface}
         {...fullscreenResponder.panHandlers}
       >
-        <Text accessibilityRole="header" style={styles.topBarTitle}>
+        <View accessible={false} style={styles.grabber} />
+        <AppText accessibilityRole="header" variant="overline" color="secondary" numberOfLines={1}>
           {strings.player.nowPlayingTabs.playing}
-        </Text>
+        </AppText>
       </View>
-      <Pressable
+      <IconButton
         testID="now-playing-open-queue"
-        accessibilityRole="button"
+        icon="playlist-music-outline"
+        selected={tab === 'queue'}
         accessibilityLabel={strings.queue.title}
-        accessibilityState={{ selected: tab === 'queue' }}
         onPress={() => setTab('queue')}
-        style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-      >
-        <AppIcon name="playlist-music-outline" color={tab === 'queue' ? colors.accentSoft : colors.textSecondary} size={23} />
-      </Pressable>
+      />
     </View>
   );
+  const framePadding = { paddingTop: insets.top + spacing.xs };
+  const loadingCoverSize = nowPlayingArtworkSize(window.width, window.height);
 
   if (body === 'loading') {
     return (
-      <View testID="now-playing-screen" style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      <View testID="now-playing-screen" style={[styles.container, framePadding]}>
         {topBar}
         <View
           testID="now-playing-loading"
           accessibilityRole="progressbar"
           accessibilityLabel={strings.player.preparing}
           accessibilityLiveRegion="polite"
-          style={styles.empty}
+          style={styles.loading}
         >
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.dim}>{strings.player.preparing}</Text>
+          <Skeleton
+            width={loadingCoverSize}
+            height={loadingCoverSize}
+            radius="xl"
+            style={styles.loadingCover}
+          />
+          <Skeleton width="70%" height={28} />
+          <Skeleton width="45%" height={18} />
+          <AppText variant="callout" color="secondary" align="center">
+            {strings.player.preparing}
+          </AppText>
         </View>
       </View>
     );
@@ -203,18 +210,21 @@ export default function NowPlayingScreen({ navigation }: Props) {
 
   if (body === 'empty' || !track) {
     return (
-      <View testID="now-playing-screen" style={[styles.container, { paddingTop: insets.top + 8 }]}>
+      <View testID="now-playing-screen" style={[styles.container, framePadding]}>
         {topBar}
-        <View testID="now-playing-empty" accessibilityLiveRegion="polite" style={styles.empty}>
-          <Text style={styles.dim}>{strings.player.nothingPlaying}</Text>
-        </View>
+        <EmptyState
+          layout="page"
+          testID="now-playing-empty"
+          icon="music-circle-outline"
+          title={strings.player.nothingPlaying}
+        />
       </View>
     );
   }
 
   const buffering = playbackState === PlaybackState.Buffering;
   const sliderPosition = seekState?.trackId === track.id ? seekState.value : position;
-  const artworkSize = nowPlayingArtworkSize(window.width, window.height);
+  const artworkSize = loadingCoverSize;
   const openAlbum = () => {
     const destination = nowPlayingAlbumDestination(track);
     if (destination === null) {
@@ -231,6 +241,16 @@ export default function NowPlayingScreen({ navigation }: Props) {
     }
     navigation.navigate('Tabs', destination);
   };
+  const openCatalogAlbum = (params: AlbumRouteParams) =>
+    navigation.navigate('Tabs', {
+      screen: 'DiscoverTab',
+      params: { screen: 'Album', params },
+    });
+  const openCatalogArtist = (params: ArtistRouteParams) =>
+    navigation.navigate('Tabs', {
+      screen: 'DiscoverTab',
+      params: { screen: 'Artist', params },
+    });
   const changeSeekPosition = (seconds: number) => {
     setSeekState({ trackId: track.id, value: seconds });
   };
@@ -247,20 +267,21 @@ export default function NowPlayingScreen({ navigation }: Props) {
       testID="now-playing-screen"
       style={[
         styles.container,
-        { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 16 },
+        framePadding,
+        { paddingBottom: insets.bottom + spacing.md },
       ]}
     >
       <NowPlayingBackdrop coverUri={track.cover} />
       {topBar}
       <NowPlayingTabs selected={tab} onSelect={setTab} />
-      {playerError && (
-        <View testID="now-playing-player-error" style={styles.playerErrorRow} accessibilityRole="alert" accessibilityLiveRegion="assertive">
-          <Text style={[styles.inlineError, styles.playerErrorText]}>{playerError}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={strings.player.playerErrorDismiss} onPress={clearPlayerError} style={styles.inlineDismissButton}>
-            <AppIcon name="close" color={colors.textSecondary} size={20} />
-          </Pressable>
-        </View>
-      )}
+      {playerError ? (
+        <PlayerErrorBanner
+          testID="now-playing-player-error"
+          message={playerError}
+          onDismiss={clearPlayerError}
+          style={styles.playerError}
+        />
+      ) : null}
       <PlayerNoticeBanner />
 
       {tab === 'lyrics' ? (
@@ -283,27 +304,15 @@ export default function NowPlayingScreen({ navigation }: Props) {
       ) : tab === 'similar' ? (
         <SimilarPanel
           seed={track}
-          onOpenAlbum={(params) => navigation.navigate('Tabs', {
-            screen: 'DiscoverTab',
-            params: { screen: 'Album', params },
-          })}
-          onOpenArtist={(params) => navigation.navigate('Tabs', {
-            screen: 'DiscoverTab',
-            params: { screen: 'Artist', params },
-          })}
+          onOpenAlbum={openCatalogAlbum}
+          onOpenArtist={openCatalogArtist}
         />
       ) : tab === 'queue' ? (
         <View style={styles.fullBleedTab}>
           <QueueSurface
             embedded
-            onOpenAlbum={(params) => navigation.navigate('Tabs', {
-              screen: 'DiscoverTab',
-              params: { screen: 'Album', params },
-            })}
-            onOpenArtist={(params) => navigation.navigate('Tabs', {
-              screen: 'DiscoverTab',
-              params: { screen: 'Artist', params },
-            })}
+            onOpenAlbum={openCatalogAlbum}
+            onOpenArtist={openCatalogArtist}
           />
         </View>
       ) : (
@@ -339,42 +348,34 @@ export default function NowPlayingScreen({ navigation }: Props) {
             onPrevious={playPrevious}
             onTogglePlay={togglePlayback}
             onNext={playNext}
-            leadingControl={<Pressable
-              testID="now-playing-shuffle"
-              accessibilityRole="button"
-              accessibilityLabel={shuffle ? strings.player.disableShuffle : strings.player.enableShuffle}
-              accessibilityState={{ checked: shuffle, busy: shufflePending, disabled: shufflePending }}
-              disabled={shufflePending}
-              onPress={() => void toggleContextShuffle()}
-              style={styles.iconButton}
-            >
-              <AppIcon
-                name="shuffle-variant"
-                color={shuffle ? colors.accent : colors.textSecondary}
-                size={24}
+            leadingControl={
+              <PlayerToggleButton
+                testID="now-playing-shuffle"
+                icon="shuffle-variant"
+                checked={shuffle}
+                busy={shufflePending}
+                accessibilityLabel={
+                  shuffle ? strings.player.disableShuffle : strings.player.enableShuffle
+                }
+                onPress={() => void toggleContextShuffle()}
               />
-            </Pressable>}
-            trailingControl={<Pressable
-              testID="now-playing-repeat"
-              accessibilityRole="button"
-              accessibilityLabel={repeatModeLabel(repeat)}
-              accessibilityHint={strings.player.changeRepeatMode}
-              accessibilityState={{ checked: repeat !== RepeatMode.Off }}
-              onPress={() =>
-                run(strings.player.repeatFailed, () => {
-                  const nextMode = cycleRepeat();
-                  setRepeat(nextMode);
-                  AccessibilityInfo.announceForAccessibility(repeatModeLabel(nextMode));
-                })
-              }
-              style={styles.iconButton}
-            >
-              <AppIcon
-                name={repeat === RepeatMode.One ? 'repeat-once' : 'repeat'}
-                color={repeat !== RepeatMode.Off ? colors.accent : colors.textSecondary}
-                size={24}
+            }
+            trailingControl={
+              <PlayerToggleButton
+                testID="now-playing-repeat"
+                icon={repeat === RepeatMode.One ? 'repeat-once' : 'repeat'}
+                checked={repeat !== RepeatMode.Off}
+                accessibilityLabel={repeatModeLabel(repeat)}
+                accessibilityHint={strings.player.changeRepeatMode}
+                onPress={() =>
+                  run(strings.player.repeatFailed, () => {
+                    const nextMode = cycleRepeat();
+                    setRepeat(nextMode);
+                    AccessibilityInfo.announceForAccessibility(repeatModeLabel(nextMode));
+                  })
+                }
               />
-            </Pressable>}
+            }
           />
         </ScrollView>
       )}
@@ -382,30 +383,58 @@ export default function NowPlayingScreen({ navigation }: Props) {
   );
 }
 
+const GRABBER_WIDTH = 36;
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 },
-  fullBleedTab: { flex: 1, minHeight: 0, marginHorizontal: -20 },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
-  dim: { color: colors.textSecondary, fontSize: 15, lineHeight: 22, textAlign: 'center' },
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10 },
-  topBarTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.6 },
-  headerGestureSurface: { flex: 1, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  closeButton: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: layout.pagePadding,
+  },
+  fullBleedTab: { flex: 1, minHeight: 0, marginHorizontal: -layout.pagePadding },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: -spacing.sm,
+    paddingBottom: spacing.xxs,
+  },
+  headerGestureSurface: {
+    flex: 1,
+    minHeight: metrics.minimumTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xxs,
+  },
+  grabber: {
+    width: GRABBER_WIDTH,
+    height: spacing.xxs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fillStrong,
+  },
+  loading: { flex: 1, alignItems: 'center', gap: spacing.md, paddingTop: spacing.xl },
+  loadingCover: { marginBottom: spacing.md },
+  playerError: { marginTop: spacing.sm },
   playingScroll: { flex: 1, minHeight: 0 },
-  playingContent: { flexGrow: 1, paddingBottom: 12 },
+  playingContent: { flexGrow: 1, paddingBottom: spacing.sm },
   artWrap: {
     flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 24,
-    paddingBottom: 12,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.sm,
   },
-  titleRow: { flexDirection: 'row', alignItems: 'center', marginTop: 24, gap: 16 },
-  likeButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
-  inlineError: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  playerErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: colors.danger, backgroundColor: colors.surface },
-  playerErrorText: { flex: 1 },
-  inlineDismissButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  iconButton: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  pressed: { opacity: 0.65 },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.lg,
+  },
+  likeButton: {
+    width: metrics.minimumTouchTarget,
+    height: metrics.minimumTouchTarget,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

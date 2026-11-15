@@ -2,6 +2,10 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { LyricsLine, LyricsResponse } from '../../api/types';
 import { strings } from '../../localization';
+import {
+  queryByTestId as byTestId,
+  textContent as renderedText,
+} from '../../test/render';
 import { LyricsPanelView } from './LyricsPanel';
 
 vi.mock('react-native', () => ({
@@ -14,26 +18,17 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn() }));
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  Skeleton: 'Skeleton',
+}));
 vi.mock('../../data', () => ({ musicQueries: { lyrics: vi.fn() } }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
-}
-
 function textContent(node: React.ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(textContent).join('');
-  if (node === null || typeof node !== 'object' || !('props' in node)) return '';
-  return textContent((node as React.ReactElement<ElementProps>).props.children);
+  return renderedText(node).join('');
 }
 
 const lines: LyricsLine[] = [

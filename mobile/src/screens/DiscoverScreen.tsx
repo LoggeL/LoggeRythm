@@ -5,19 +5,20 @@ import type { Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import {
   CatalogAlbumCard,
-  CatalogGenreCard,
   CatalogPlaylistCard,
   CatalogTrackCard,
   HorizontalCatalogRail,
 } from '../components/catalog/CatalogCards';
 import { CatalogRuntimeError, CatalogSection } from '../components/catalog/CatalogStates';
+import { GenreTileGrid } from '../components/search/GenreTiles';
 import { FilterChip, ScreenHeader } from '../components/ui';
 import { showTrackActions } from '../components/trackActions';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { playTracks } from '../player/controller';
-import { colors } from '../theme';
+import { colors, layout, spacing } from '../theme';
 import {
   assertDiscoverRouteCallbacks,
   catalogTestIdSegment,
@@ -51,6 +52,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const scroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<Partial<Record<string, number>>>({});
+  const bottomInset = useBottomInset();
   const queries = [charts, genres, releases, playlists];
   const refreshing = queries.some((query) => query.isFetching && !query.isPending);
 
@@ -63,13 +65,13 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
     if (scroll.current === null || offset === undefined) {
       throw new Error(`Discover section ${id} is not laid out yet`);
     }
-    scroll.current.scrollTo({ y: Math.max(0, offset - 20), animated: true });
+    scroll.current.scrollTo({ y: Math.max(0, offset - spacing.lg), animated: true });
   };
   const shortcuts = [
     { id: 'charts', title: catalogStrings.discover.charts },
-    { id: 'genres', title: catalogStrings.discover.genres },
     { id: 'new-releases', title: catalogStrings.discover.newReleases },
     { id: 'community-playlists', title: catalogStrings.discover.communityPlaylists },
+    { id: 'genres', title: catalogStrings.discover.genres },
   ];
 
   const playContext = (tracks: Track[], index: number) => {
@@ -103,13 +105,13 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
             progressBackgroundColor={colors.surfaceElevated}
           />
         }
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
       >
         <ScreenHeader
           titleTestID="discover-title"
           title={catalogStrings.discover.title}
           subtitle={catalogStrings.discover.subtitle}
-          style={styles.hero}
+          style={styles.gutter}
         />
         <ScrollView
           testID="discover-shortcuts"
@@ -161,33 +163,6 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
                 }
                 onOpenAlbum={onOpenAlbum}
                 onOpenArtist={onOpenArtist}
-              />
-            )}
-          />
-        </CatalogSection>
-
-        <CatalogSection
-          id="genres"
-          onLayout={({ nativeEvent }) => { sectionOffsets.current.genres = nativeEvent.layout.y; }}
-          title={catalogStrings.discover.genres}
-          hasData={genres.data !== undefined}
-          empty={(genres.data?.length ?? 0) === 0}
-          isPending={genres.isPending}
-          isFetching={genres.isFetching}
-          isStale={genres.isStale}
-          fetchStatus={genres.fetchStatus}
-          error={genres.error}
-          onRetry={() => void genres.refetch()}
-        >
-          <HorizontalCatalogRail
-            id="discover-genres"
-            data={genres.data ?? []}
-            keyExtractor={(genre) => genre.id}
-            renderItem={(genre) => (
-              <CatalogGenreCard
-                genre={genre}
-                testID={`discover-genre-${catalogTestIdSegment(genre.id)}`}
-                onPress={() => onOpenGenre({ genreId: genre.id, name: genre.name })}
               />
             )}
           />
@@ -251,6 +226,28 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
             )}
           />
         </CatalogSection>
+
+        <CatalogSection
+          id="genres"
+          onLayout={({ nativeEvent }) => { sectionOffsets.current.genres = nativeEvent.layout.y; }}
+          title={catalogStrings.discover.genres}
+          hasData={genres.data !== undefined}
+          empty={(genres.data?.length ?? 0) === 0}
+          isPending={genres.isPending}
+          isFetching={genres.isFetching}
+          isStale={genres.isStale}
+          fetchStatus={genres.fetchStatus}
+          error={genres.error}
+          onRetry={() => void genres.refetch()}
+        >
+          <GenreTileGrid
+            testID="discover-genre-grid"
+            genres={genres.data ?? []}
+            tileTestID={(genre) => `discover-genre-${catalogTestIdSegment(genre.id)}`}
+            tileAccessibilityLabel={(genre) => catalogStrings.common.openGenre(genre.name)}
+            onOpenGenre={(genre) => onOpenGenre({ genreId: genre.id, name: genre.name })}
+          />
+        </CatalogSection>
       </ScrollView>
     </View>
   );
@@ -258,7 +255,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { gap: 28, paddingTop: 24, paddingBottom: 144 },
-  hero: { paddingHorizontal: 20 },
-  shortcuts: { gap: 8, paddingHorizontal: 20 },
+  content: { gap: layout.sectionGap, paddingTop: spacing.md },
+  gutter: { paddingHorizontal: layout.pagePadding },
+  shortcuts: { gap: spacing.xs, paddingHorizontal: layout.pagePadding },
 });

@@ -1,8 +1,16 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors, metrics, radii, spacing, typography } from '../../theme';
-import AppIcon from '../AppIcon';
+import { colors, layout, radii, spacing } from '../../theme';
+import AppIcon, { type AppIconName } from '../AppIcon';
+import {
+  AppText,
+  EmptyState,
+  ErrorState,
+  SectionHeader,
+  TrackRowSkeleton,
+} from '../ui';
+import { InlineNotice } from './InlineNotice';
 import {
   resolveLibrarySectionVisualState,
   type LibrarySectionState,
@@ -13,18 +21,27 @@ interface SharedSectionProps {
   title: string;
   state: LibrarySectionState;
   action?: React.ReactNode;
+  /** Renders the trailing "show all" link, e.g. when only a preview is listed. */
+  onShowAll?: () => void;
   children: React.ReactNode;
 }
 
 interface QuerySectionProps extends SharedSectionProps {
   state: Extract<LibrarySectionState, { kind: 'query' }>;
   emptyText: string;
+  /** The next step shown under the empty title. */
+  emptyHint?: string;
+  emptyIcon?: AppIconName;
+  emptyAction?: React.ReactNode;
   onRetry: () => void;
 }
 
 interface PolicySectionProps extends SharedSectionProps {
   state: Extract<LibrarySectionState, { kind: 'policy' }>;
   emptyText?: never;
+  emptyHint?: never;
+  emptyIcon?: never;
+  emptyAction?: never;
   onRetry?: never;
 }
 
@@ -35,21 +52,8 @@ type WithoutChildren<T> = T extends unknown ? Omit<T, 'children'> : never;
 /** State/title/action contract shared by the virtualized and legacy section owners. */
 export type LibrarySectionPresentationProps = WithoutChildren<LibrarySectionProps>;
 
-function retryButton(id: string, title: string, busy: boolean, onRetry: () => void) {
-  return (
-    <Pressable
-      testID={`library-section-${id}-retry`}
-      accessibilityRole="button"
-      accessibilityLabel={libraryStrings.library.retrySection(title)}
-      accessibilityState={{ disabled: busy, busy }}
-      disabled={busy}
-      onPress={onRetry}
-      style={({ pressed }) => [styles.retry, pressed && styles.pressed, busy && styles.disabled]}
-    >
-      <Text style={styles.retryText}>{libraryStrings.common.retry}</Text>
-    </Pressable>
-  );
-}
+/** Skeleton rows per loading section: enough to hold the layout, few enough to scan. */
+const LOADING_ROWS = 3;
 
 /** Whether a section's item rows are safe to expose for its current remote state. */
 export function librarySectionShowsContent(
@@ -58,81 +62,83 @@ export function librarySectionShowsContent(
   return state.kind === 'policy' || resolveLibrarySectionVisualState(state).body === 'content';
 }
 
+function heading(props: LibrarySectionPresentationProps) {
+  return (
+    <SectionHeader
+      title={props.title}
+      trailing={props.action}
+      onShowAll={props.onShowAll}
+      showAllAccessibilityLabel={libraryStrings.library.showSection(props.title)}
+      showAllTestID={`library-section-${props.id}-show-all`}
+    />
+  );
+}
+
 /**
  * Shared section heading/body-state presenter. SectionList uses this as its
  * header so row data remains virtualized without changing loading/error/empty
  * semantics.
  */
 export function LibrarySectionHeader(props: LibrarySectionPresentationProps) {
-  const { id, title, action } = props;
+  const { id, title } = props;
   const sectionId = `library-section-${id}`;
 
   if (props.state.kind === 'policy') {
     return (
-      <View testID={sectionId} style={[styles.heading, styles.contentHeading]}>
-        <Text accessibilityRole="header" style={styles.title}>{title}</Text>
-        {action}
+      <View testID={sectionId} style={styles.heading}>
+        {heading(props)}
       </View>
     );
   }
 
-  const onRetry = props.onRetry;
+  const { onRetry, emptyText } = props;
   if (onRetry === undefined) {
     throw new Error('Remote Library sections require an onRetry callback');
   }
+  if (emptyText === undefined) {
+    throw new Error('Remote Library sections require an emptyText');
+  }
   const visual = resolveLibrarySectionVisualState(props.state);
   const retryBusy = props.state.fetching;
+  const failed = visual.body === 'offline' || visual.body === 'hard-error';
   return (
-    <View
-      testID={sectionId}
-      style={[styles.heading, visual.body === 'content' && styles.contentHeading]}
-    >
-      <Text accessibilityRole="header" style={styles.title}>{title}</Text>
-      {action}
+    <View testID={sectionId} style={styles.heading}>
+      {heading(props)}
 
       {visual.body === 'loading' ? (
-        <View
+        <TrackRowSkeleton
           testID={`${sectionId}-loading`}
-          accessibilityRole="progressbar"
           accessibilityLabel={libraryStrings.library.loadingSection(title)}
-          accessibilityLiveRegion="polite"
-          style={styles.inlineState}
-        >
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.status}>{libraryStrings.library.loadingSection(title)}</Text>
-        </View>
+          count={LOADING_ROWS}
+        />
       ) : null}
 
-      {visual.body === 'offline' ? (
-        <View
-          testID={`${sectionId}-offline`}
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-          style={styles.errorBox}
-        >
-          <Text style={styles.errorText}>{libraryStrings.common.offline}</Text>
-          {retryButton(id, title, retryBusy, onRetry)}
-        </View>
-      ) : null}
-
-      {visual.body === 'hard-error' ? (
-        <View
-          testID={`${sectionId}-error`}
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-          style={styles.errorBox}
-        >
-          <Text style={styles.errorText}>{libraryStrings.common.loadFailed}</Text>
-          {retryButton(id, title, retryBusy, onRetry)}
-        </View>
+      {failed ? (
+        <ErrorState
+          testID={`${sectionId}-${visual.body === 'offline' ? 'offline' : 'error'}`}
+          kind={visual.body === 'offline' ? 'offline' : 'error'}
+          message={
+            visual.body === 'offline'
+              ? libraryStrings.common.offline
+              : libraryStrings.common.loadFailed
+          }
+          onRetry={onRetry}
+          retryBusy={retryBusy}
+          retryTestID={`${sectionId}-retry`}
+          retryAccessibilityLabel={libraryStrings.library.retrySection(title)}
+          style={styles.gutter}
+        />
       ) : null}
 
       {visual.body === 'empty' ? (
-        <Text testID={`${sectionId}-empty`} accessibilityLiveRegion="polite" style={styles.status}>
-          {props.emptyText}
-        </Text>
+        <EmptyState
+          testID={`${sectionId}-empty`}
+          title={emptyText}
+          message={props.emptyHint}
+          icon={props.emptyIcon}
+          action={props.emptyAction}
+        />
       ) : null}
-
     </View>
   );
 }
@@ -152,42 +158,37 @@ export function LibrarySectionFooter(props: LibrarySectionPresentationProps) {
 
   if (visual.notice === null) return null;
 
+  const cached = visual.notice === 'cached-offline' || visual.notice === 'cached-refresh-error';
   return (
     <View testID={`${sectionId}-footer`} style={styles.footer}>
-      {visual.notice === 'cached-offline' ? (
-        <View
-          testID={`${sectionId}-cached-offline`}
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          style={styles.notice}
-        >
-          <Text style={styles.warning}>{libraryStrings.common.cachedOffline}</Text>
-          {retryButton(id, title, retryBusy, onRetry)}
-        </View>
-      ) : null}
-
-      {visual.notice === 'cached-refresh-error' ? (
-        <View
-          testID={`${sectionId}-cached-error`}
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          style={styles.notice}
-        >
-          <Text style={styles.warning}>{libraryStrings.common.cachedRefreshFailed}</Text>
-          {retryButton(id, title, retryBusy, onRetry)}
-        </View>
+      {cached ? (
+        <InlineNotice
+          testID={`${sectionId}-${visual.notice === 'cached-offline' ? 'cached-offline' : 'cached-error'}`}
+          message={
+            visual.notice === 'cached-offline'
+              ? libraryStrings.common.cachedOffline
+              : libraryStrings.common.cachedRefreshFailed
+          }
+          retry={{
+            testID: `${sectionId}-retry`,
+            accessibilityLabel: libraryStrings.library.retrySection(title),
+            busy: retryBusy,
+            onRetry,
+          }}
+        />
       ) : null}
 
       {visual.notice === 'refreshing' ? (
-        <Text
+        <AppText
           testID={`${sectionId}-refreshing`}
           accessibilityRole="progressbar"
           accessibilityLabel={libraryStrings.common.refreshing}
           accessibilityLiveRegion="polite"
-          style={styles.status}
+          variant="caption"
+          color="muted"
         >
           {libraryStrings.common.refreshing}
-        </Text>
+        </AppText>
       ) : null}
 
       {visual.notice === 'stale' ? (
@@ -208,7 +209,7 @@ export function LibrarySectionFooter(props: LibrarySectionPresentationProps) {
 /** Shared state contract for every remote Library collection and static policy section. */
 export function LibrarySection(props: LibrarySectionProps) {
   return (
-    <View style={styles.section}>
+    <View>
       {LibrarySectionHeader(props)}
       {librarySectionShowsContent(props.state) ? props.children : null}
       {LibrarySectionFooter(props)}
@@ -217,37 +218,13 @@ export function LibrarySection(props: LibrarySectionProps) {
 }
 
 const styles = StyleSheet.create({
-  section: { gap: 0 },
-  heading: { gap: spacing.sm },
-  contentHeading: { paddingBottom: spacing.sm },
-  footer: { gap: spacing.xs, paddingTop: spacing.xs },
-  title: {
-    ...typography.section,
-    color: colors.textPrimary,
-    paddingHorizontal: spacing.lg,
-  },
-  inlineState: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.lg },
-  status: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg },
-  staleMarker: { marginHorizontal: spacing.lg, padding: spacing.xxs, width: 24, borderRadius: radii.sm, backgroundColor: colors.surface },
-  notice: { gap: spacing.xs, paddingHorizontal: spacing.lg },
-  warning: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  errorBox: {
-    marginHorizontal: spacing.lg,
-    gap: spacing.xs,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.dangerSubtle,
-  },
-  errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  retry: {
+  heading: { gap: layout.headerGap, paddingBottom: spacing.xs },
+  gutter: { marginHorizontal: layout.pagePadding },
+  footer: { gap: spacing.xs, paddingTop: spacing.xs, paddingHorizontal: layout.pagePadding },
+  staleMarker: {
     alignSelf: 'flex-start',
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceElevated,
+    padding: spacing.xxs,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
   },
-  retryText: { ...typography.label, color: colors.textPrimary },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
-  disabled: { opacity: 0.5 },
 });

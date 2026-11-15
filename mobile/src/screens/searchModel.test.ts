@@ -7,6 +7,7 @@ import {
   isSearchableQuery,
   normalizeSearchInput,
   orderedPlaylistTrackIds,
+  pickSearchTopResult,
   resultLimit,
   searchPopularityPercent,
   searchTrackCredit,
@@ -167,5 +168,36 @@ describe('search model', () => {
       ],
       album: 'Album',
     })).toBe('Primary, Guest · Album');
+  });
+
+  it('promotes the named artist, else the leading track, artist, then album', () => {
+    const track = (id: string): Track => ({
+      id,
+      title: `Track ${id}`,
+      artist: 'Artist',
+      artist_id: '1',
+      artists: [{ id: '1', name: 'Artist' }],
+      album: 'Album',
+      album_id: '2',
+      cover: '',
+      duration_sec: 180,
+      preview_url: null,
+      rank: 0,
+      release_date: '',
+    });
+    const artist = { id: '9', name: 'Kraftwerk', picture: '' };
+    const album = { id: '4', title: 'Autobahn', artistName: 'Kraftwerk', artworkUrl: null };
+    const tracks = [track('1'), track('2')];
+
+    expect(pickSearchTopResult({ query: '  kraft ', artists: [artist], tracks, albums: [album] }))
+      .toEqual({ kind: 'artist', artist });
+    expect(pickSearchTopResult({ query: 'autobahn', artists: [artist], tracks, albums: [album] }))
+      .toEqual({ kind: 'track', track: tracks[0], index: 0 });
+    expect(pickSearchTopResult({ query: 'autobahn', artists: [artist], tracks: [], albums: [album] }))
+      .toEqual({ kind: 'artist', artist });
+    expect(pickSearchTopResult({ query: 'autobahn', artists: [], tracks: [], albums: [album] }))
+      .toEqual({ kind: 'album', album });
+    expect(pickSearchTopResult({ query: 'autobahn', artists: [], tracks: [], albums: [] }))
+      .toBeNull();
   });
 });

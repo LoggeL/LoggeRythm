@@ -167,4 +167,67 @@ describe('Search remote-state accessibility primitives', () => {
     expect(elements(rendered).some((element) => element.props.testID === 'import-result-offline'))
       .toBe(false);
   });
+
+  it('swaps the inline progress line for a content-shaped placeholder on first load', () => {
+    const base = {
+      id: 'genres',
+      loadingLabel: 'Loading genres',
+      emptyLabel: 'No genres',
+      offlineLabel: 'Genres offline',
+      errorLabel: 'Genres failed',
+      cachedOfflineLabel: 'Saved genres offline',
+      cachedErrorLabel: 'Saved genres after error',
+      refreshingLabel: 'Refreshing genres',
+      staleLabel: 'Saved genres',
+      retryLabel: 'Reload genres',
+      retryBusy: false,
+      onRetry: vi.fn(),
+      children: React.createElement('GenreGrid'),
+    };
+    const loadingFallback = vi.fn((props: { testID: string; accessibilityLabel: string }) =>
+      React.createElement('GenreGridSkeleton', props));
+    const loading = SearchRemoteBoundary({
+      ...base,
+      state: { body: 'loading', notice: null },
+      loadingFallback,
+    });
+
+    expect(byTestId(loading, 'genres-loading')).toMatchObject({
+      type: 'GenreGridSkeleton',
+      props: { accessibilityLabel: 'Loading genres' },
+    });
+    expect(elements(loading).some((element) => element.type === 'GenreGrid')).toBe(false);
+
+    // A refresh of visible content never falls back to the placeholder.
+    loadingFallback.mockClear();
+    const refreshing = SearchRemoteBoundary({
+      ...base,
+      state: { body: 'content', notice: 'refreshing' },
+      loadingFallback,
+    });
+    expect(loadingFallback).not.toHaveBeenCalled();
+    expect(byTestId(refreshing, 'genres-refreshing')).not.toBeNull();
+    expect(elements(refreshing).some((element) => element.type === 'GenreGrid')).toBe(true);
+  });
+
+  it('gives the retry a 48dp target and dims it only while pressed and idle', () => {
+    const idle = byTestId(
+      SearchErrorNotice({ testID: 'e', message: 'm', actionLabel: 'Retry', onAction: vi.fn() }),
+      'e-action',
+    );
+    const style = idle.props.style as (state: { pressed: boolean }) => unknown[];
+    const flat = (entries: unknown[]) => Object.assign({}, ...entries.filter(Boolean));
+
+    expect(flat(style({ pressed: false })).minHeight).toBe(48);
+    expect(flat(style({ pressed: true })).opacity).toBe(0.72);
+
+    const busy = byTestId(
+      SearchErrorNotice({
+        testID: 'e', message: 'm', actionLabel: 'Retry', actionBusy: true, onAction: vi.fn(),
+      }),
+      'e-action',
+    );
+    const busyStyle = busy.props.style as (state: { pressed: boolean }) => unknown[];
+    expect(flat(busyStyle({ pressed: true })).opacity).toBe(0.4);
+  });
 });

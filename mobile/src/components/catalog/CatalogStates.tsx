@@ -1,80 +1,39 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, View, type LayoutChangeEvent } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  View,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import {
   resolveRemoteVisualState,
-  type RemoteFetchStatus,
   type RemoteNotice,
 } from '../../data/remoteState';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { colors } from '../../theme';
-import { ActionButton } from '../ui/ActionButton';
+import { colors, layout, radii, spacing } from '../../theme';
+import {
+  AppText,
+  CardRailSkeleton,
+  EmptyState,
+  ErrorState,
+  RetryButton,
+  SectionHeader,
+  TrackRowSkeleton,
+} from '../ui';
+import type { AppIconName } from '../AppIcon';
+import { CatalogBlockSkeleton, CatalogPageSkeleton } from './CatalogSkeletons';
+import type { CatalogQueryVisualState } from './catalogQueryState';
 
-export interface CatalogQueryVisualState {
-  /** A successful response exists, including a successful empty response. */
-  hasData: boolean;
-  isPending: boolean;
-  isFetching: boolean;
-  isStale: boolean;
-  fetchStatus: RemoteFetchStatus;
-  error: unknown;
-}
+export type { CatalogQueryVisualState } from './catalogQueryState';
 
-interface RetryButtonProps {
-  id: string;
-  accessibilityLabel: string;
-  busy: boolean;
-  onRetry: () => void;
-}
-
-function RetryButton({ id, accessibilityLabel, busy, onRetry }: RetryButtonProps) {
-  return (
-    <ActionButton
-      testID={`${id}-retry`}
-      label={busy ? catalogStrings.common.retrying : catalogStrings.common.retry}
-      accessibilityLabel={accessibilityLabel}
-      busy={busy}
-      icon="refresh"
-      variant="secondary"
-      onPress={onRetry}
-      style={styles.retry}
-    />
-  );
-}
-
-interface BlockingStateProps extends RetryButtonProps {
-  kind: 'error' | 'offline';
-  message: string;
-  page: boolean;
-}
-
-function BlockingState({
-  id,
-  kind,
-  message,
-  page,
-  accessibilityLabel,
-  busy,
-  onRetry,
-}: BlockingStateProps) {
-  return (
-    <View style={page ? styles.pageState : undefined}>
-      <View
-        testID={`${id}-${kind}`}
-        accessibilityRole="alert"
-        accessibilityLiveRegion="assertive"
-        style={styles.errorBox}
-      >
-        <Text style={styles.errorText}>{message}</Text>
-        <RetryButton
-          id={id}
-          accessibilityLabel={accessibilityLabel}
-          busy={busy}
-          onRetry={onRetry}
-        />
-      </View>
-    </View>
-  );
-}
+/**
+ * The shape of the content a boundary stands in for while it loads:
+ * `rail` album/track cards, `artists` round cards, `rows` track rows,
+ * `text` a paragraph, `pill` one button.
+ */
+export type CatalogSkeletonShape = 'rail' | 'artists' | 'rows' | 'text' | 'pill';
 
 function visualState(state: CatalogQueryVisualState, empty: boolean) {
   return resolveRemoteVisualState({
@@ -88,10 +47,163 @@ function visualState(state: CatalogQueryVisualState, empty: boolean) {
   });
 }
 
+interface CatalogLoadingProps {
+  testID: string;
+  label: string;
+  shape: CatalogSkeletonShape;
+  padded: boolean;
+}
+
+/** One loading presentation per content shape, always a labelled progressbar. */
+function CatalogLoading({ testID, label, shape, padded }: CatalogLoadingProps) {
+  const flush = padded ? undefined : styles.flush;
+  if (shape === 'rows') {
+    return (
+      <TrackRowSkeleton testID={testID} accessibilityLabel={label} count={4} style={flush} />
+    );
+  }
+  if (shape === 'text' || shape === 'pill') {
+    return (
+      <CatalogBlockSkeleton
+        testID={testID}
+        accessibilityLabel={label}
+        shape={shape}
+        padded={padded}
+      />
+    );
+  }
+  return (
+    <CardRailSkeleton
+      testID={testID}
+      accessibilityLabel={label}
+      round={shape === 'artists'}
+      style={flush}
+    />
+  );
+}
+
+interface CatalogBlockingProps {
+  id: string;
+  body: 'offline' | 'hard-error';
+  errorLabel: string;
+  retryLabel: string;
+  retryBusy: boolean;
+  onRetry: () => void;
+  page: boolean;
+  padded: boolean;
+}
+
+/** The one blocking failure presentation: offline or error, always retryable. */
+function CatalogBlocking({
+  id,
+  body,
+  errorLabel,
+  retryLabel,
+  retryBusy,
+  onRetry,
+  page,
+  padded,
+}: CatalogBlockingProps) {
+  const offline = body === 'offline';
+  return (
+    <ErrorState
+      testID={`${id}-${offline ? 'offline' : 'error'}`}
+      retryTestID={`${id}-retry`}
+      kind={offline ? 'offline' : 'error'}
+      layout={page ? 'page' : 'inline'}
+      message={offline ? catalogStrings.common.offline : errorLabel}
+      onRetry={onRetry}
+      retryBusy={retryBusy}
+      retryLabel={retryBusy ? catalogStrings.common.retrying : catalogStrings.common.retry}
+      retryAccessibilityLabel={retryLabel}
+      style={!page && padded ? styles.inset : undefined}
+    />
+  );
+}
+
+interface CatalogNoticeProps {
+  id: string;
+  notice: RemoteNotice;
+  retryLabel: string;
+  retryBusy: boolean;
+  onRetry: () => void;
+  padded: boolean;
+  /** false where a pull-to-refresh control already reports the refresh. */
+  refreshIndicator: boolean;
+}
+
+/** The non-blocking line above cached content. At most one is ever shown. */
+function CatalogNotice({
+  id,
+  notice,
+  retryLabel,
+  retryBusy,
+  onRetry,
+  padded,
+  refreshIndicator,
+}: CatalogNoticeProps) {
+  const inset = padded ? styles.inset : undefined;
+  if (notice === 'cached-offline' || notice === 'cached-refresh-error') {
+    const offline = notice === 'cached-offline';
+    return (
+      <View
+        testID={`${id}-${offline ? 'cached-offline' : 'cached-error'}`}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="polite"
+        style={[styles.notice, inset]}
+      >
+        <AppText variant="callout" color="warning">
+          {offline
+            ? catalogStrings.common.cachedOffline
+            : catalogStrings.common.cachedRefreshFailed}
+        </AppText>
+        <RetryButton
+          testID={`${id}-retry`}
+          label={retryBusy ? catalogStrings.common.retrying : catalogStrings.common.retry}
+          accessibilityLabel={retryLabel}
+          busy={retryBusy}
+          onRetry={onRetry}
+        />
+      </View>
+    );
+  }
+  if (notice === 'refreshing') {
+    if (!refreshIndicator) return null;
+    return (
+      <View
+        testID={`${id}-refreshing`}
+        accessibilityRole="progressbar"
+        accessibilityLabel={catalogStrings.common.refreshing}
+        accessibilityLiveRegion="polite"
+        style={[styles.refreshing, inset]}
+      >
+        <ActivityIndicator accessible={false} color={colors.accent} size="small" />
+        <AppText variant="caption" color="muted">{catalogStrings.common.refreshing}</AppText>
+      </View>
+    );
+  }
+  if (notice === 'stale') {
+    return (
+      <AppText
+        testID={`${id}-stale`}
+        accessibilityLiveRegion="polite"
+        variant="caption"
+        color="muted"
+        style={inset}
+      >
+        {catalogStrings.common.stale}
+      </AppText>
+    );
+  }
+  return null;
+}
+
 interface CatalogPageGateProps extends CatalogQueryVisualState {
   id: string;
   loadingLabel: string;
   onRetry: () => void;
+  /** Shapes the first-load skeleton: `artist` has a round hero. */
+  variant?: 'collection' | 'artist';
 }
 
 /** Full-page state for a detail query. Cached data always wins over a blocking state. */
@@ -105,47 +217,30 @@ export function CatalogPageGate({
   error,
   loadingLabel,
   onRetry,
+  variant = 'collection',
 }: CatalogPageGateProps) {
   const state = { hasData, isPending, isFetching, isStale, fetchStatus, error };
   const visual = visualState(state, false);
-  const retryBusy = fetchStatus === 'fetching';
   if (visual.body === 'loading') {
     return (
-      <View
+      <CatalogPageSkeleton
         testID={`${id}-loading`}
-        accessibilityRole="progressbar"
         accessibilityLabel={loadingLabel}
-        accessibilityLiveRegion="polite"
-        style={styles.pageState}
-      >
-        <ActivityIndicator color={colors.accent} size="large" />
-        <Text style={styles.status}>{loadingLabel}</Text>
-      </View>
-    );
-  }
-  if (visual.body === 'offline') {
-    return (
-      <BlockingState
-        id={id}
-        kind="offline"
-        message={catalogStrings.common.offline}
-        accessibilityLabel={catalogStrings.common.retry}
-        busy={retryBusy}
-        onRetry={onRetry}
-        page
+        round={variant === 'artist'}
       />
     );
   }
-  if (visual.body === 'hard-error') {
+  if (visual.body === 'offline' || visual.body === 'hard-error') {
     return (
-      <BlockingState
+      <CatalogBlocking
         id={id}
-        kind="error"
-        message={catalogStrings.common.loadFailed}
-        accessibilityLabel={catalogStrings.common.retry}
-        busy={retryBusy}
+        body={visual.body}
+        errorLabel={catalogStrings.common.loadFailed}
+        retryLabel={catalogStrings.common.retry}
+        retryBusy={fetchStatus === 'fetching'}
         onRetry={onRetry}
         page
+        padded={false}
       />
     );
   }
@@ -156,70 +251,16 @@ interface CatalogContentStatusProps extends CatalogQueryVisualState {
   id: string;
   onRetry: () => void;
   retryLabel?: string;
+  /** Applies the page gutter. Disable inside an already padded container. */
+  padded?: boolean;
+  /**
+   * Show the inline "refreshing" line. Pass false on pages whose list owns a
+   * pull-to-refresh control, so a background refresh does not shift content.
+   */
+  refreshIndicator?: boolean;
 }
 
-interface CatalogNoticeProps {
-  id: string;
-  notice: RemoteNotice;
-  retryLabel: string;
-  retryBusy: boolean;
-  onRetry: () => void;
-}
-
-function CatalogNotice({
-  id,
-  notice,
-  retryLabel,
-  retryBusy,
-  onRetry,
-}: CatalogNoticeProps) {
-  if (notice === 'cached-offline' || notice === 'cached-refresh-error') {
-    const offline = notice === 'cached-offline';
-    return (
-      <View
-        testID={`${id}-${offline ? 'cached-offline' : 'cached-error'}`}
-        accessibilityRole="alert"
-        accessibilityLiveRegion="polite"
-        style={styles.notice}
-      >
-        <Text style={styles.warning}>
-          {offline
-            ? catalogStrings.common.cachedOffline
-            : catalogStrings.common.cachedRefreshFailed}
-        </Text>
-        <RetryButton
-          id={id}
-          accessibilityLabel={retryLabel}
-          busy={retryBusy}
-          onRetry={onRetry}
-        />
-      </View>
-    );
-  }
-  if (notice === 'refreshing') {
-    return (
-      <View
-        testID={`${id}-refreshing`}
-        accessibilityRole="progressbar"
-        accessibilityLabel={catalogStrings.common.refreshing}
-        accessibilityLiveRegion="polite"
-        style={styles.inlineLoading}
-      >
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.status}>{catalogStrings.common.refreshing}</Text>
-      </View>
-    );
-  }
-  if (notice === 'stale') {
-    return (
-      <Text testID={`${id}-stale`} accessibilityLiveRegion="polite" style={styles.status}>
-        {catalogStrings.common.stale}
-      </Text>
-    );
-  }
-  return null;
-}
-
+/** The notice line of a page that already shows cached content. */
 export function CatalogContentStatus({
   id,
   hasData,
@@ -230,6 +271,8 @@ export function CatalogContentStatus({
   error,
   onRetry,
   retryLabel = catalogStrings.common.retry,
+  padded = true,
+  refreshIndicator = true,
 }: CatalogContentStatusProps) {
   const state = { hasData, isPending, isFetching, isStale, fetchStatus, error };
   const visual = visualState(state, false);
@@ -240,23 +283,31 @@ export function CatalogContentStatus({
       retryLabel={retryLabel}
       retryBusy={fetchStatus === 'fetching'}
       onRetry={onRetry}
+      padded={padded}
+      refreshIndicator={refreshIndicator}
     />
   );
 }
 
-interface CatalogQueryBoundaryProps extends CatalogQueryVisualState {
+interface CatalogBoundaryBodyProps extends CatalogQueryVisualState {
   id: string;
   empty: boolean;
   loadingLabel: string;
   emptyLabel: string;
-  errorLabel?: string;
-  retryLabel?: string;
+  emptyIcon?: AppIconName;
+  emptyAction?: React.ReactNode;
+  errorLabel: string;
+  retryLabel: string;
+  skeleton: CatalogSkeletonShape;
+  padded: boolean;
+  /** Show the inline "refreshing" line below the body. */
+  refreshIndicator: boolean;
   onRetry: () => void;
   children: React.ReactNode;
 }
 
-/** Query boundary without a heading, for embedded controls and result panes. */
-export function CatalogQueryBoundary({
+/** Body + notice of one remote collection: the shared core of every boundary. */
+function CatalogBoundaryBody({
   id,
   hasData,
   empty,
@@ -267,54 +318,48 @@ export function CatalogQueryBoundary({
   error,
   loadingLabel,
   emptyLabel,
-  errorLabel = catalogStrings.common.loadFailed,
-  retryLabel = catalogStrings.common.retry,
+  emptyIcon,
+  emptyAction,
+  errorLabel,
+  retryLabel,
+  skeleton,
+  padded,
+  refreshIndicator,
   onRetry,
   children,
-}: CatalogQueryBoundaryProps) {
+}: CatalogBoundaryBodyProps) {
   const state = { hasData, isPending, isFetching, isStale, fetchStatus, error };
   const visual = visualState(state, empty);
   const retryBusy = fetchStatus === 'fetching';
   return (
-    <View testID={id} style={styles.boundary}>
+    <>
       {visual.body === 'loading' ? (
-        <View
+        <CatalogLoading
           testID={`${id}-loading`}
-          accessibilityRole="progressbar"
-          accessibilityLabel={loadingLabel}
-          accessibilityLiveRegion="polite"
-          style={styles.inlineLoading}
-        >
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.status}>{loadingLabel}</Text>
-        </View>
-      ) : null}
-      {visual.body === 'offline' ? (
-        <BlockingState
-          id={id}
-          kind="offline"
-          message={catalogStrings.common.offline}
-          accessibilityLabel={retryLabel}
-          busy={retryBusy}
-          onRetry={onRetry}
-          page={false}
+          label={loadingLabel}
+          shape={skeleton}
+          padded={padded}
         />
       ) : null}
-      {visual.body === 'hard-error' ? (
-        <BlockingState
+      {visual.body === 'offline' || visual.body === 'hard-error' ? (
+        <CatalogBlocking
           id={id}
-          kind="error"
-          message={errorLabel}
-          accessibilityLabel={retryLabel}
-          busy={retryBusy}
+          body={visual.body}
+          errorLabel={errorLabel}
+          retryLabel={retryLabel}
+          retryBusy={retryBusy}
           onRetry={onRetry}
           page={false}
+          padded={padded}
         />
       ) : null}
       {visual.body === 'empty' ? (
-        <Text testID={`${id}-empty`} accessibilityLiveRegion="polite" style={styles.status}>
-          {emptyLabel}
-        </Text>
+        <EmptyState
+          testID={`${id}-empty`}
+          title={emptyLabel}
+          icon={emptyIcon}
+          action={emptyAction}
+        />
       ) : null}
       {visual.body === 'content' ? children : null}
       <CatalogNotice
@@ -323,154 +368,176 @@ export function CatalogQueryBoundary({
         retryLabel={retryLabel}
         retryBusy={retryBusy}
         onRetry={onRetry}
+        padded={padded}
+        refreshIndicator={refreshIndicator}
       />
+    </>
+  );
+}
+
+interface CatalogBoundaryOptions {
+  /** Placeholder shape while loading. Defaults to a card rail. */
+  skeleton?: CatalogSkeletonShape;
+  /** Glyph and next step of the empty state. */
+  emptyIcon?: AppIconName;
+  emptyAction?: React.ReactNode;
+  /** Applies the page gutter to states. Disable inside an already padded container. */
+  padded?: boolean;
+}
+
+interface CatalogQueryBoundaryProps extends CatalogQueryVisualState, CatalogBoundaryOptions {
+  /**
+   * Show the inline "refreshing" line below the content. Pass false where a
+   * pull-to-refresh control already reports the refresh, so a background
+   * refetch does not grow the boundary and shift what follows it.
+   */
+  refreshIndicator?: boolean;
+  id: string;
+  empty: boolean;
+  loadingLabel: string;
+  emptyLabel: string;
+  errorLabel?: string;
+  retryLabel?: string;
+  onRetry: () => void;
+  children: React.ReactNode;
+  /** Layout of the boundary itself, e.g. `flex: 1` inside a row. */
+  style?: StyleProp<ViewStyle>;
+}
+
+/** Query boundary without a heading, for embedded controls and result panes. */
+export function CatalogQueryBoundary({
+  id,
+  errorLabel = catalogStrings.common.loadFailed,
+  retryLabel = catalogStrings.common.retry,
+  skeleton = 'rows',
+  padded = true,
+  refreshIndicator = true,
+  children,
+  style,
+  ...query
+}: CatalogQueryBoundaryProps) {
+  return (
+    <View testID={id} style={[styles.boundary, style]}>
+      <CatalogBoundaryBody
+        id={id}
+        errorLabel={errorLabel}
+        retryLabel={retryLabel}
+        skeleton={skeleton}
+        padded={padded}
+        refreshIndicator={refreshIndicator}
+        {...query}
+      >
+        {children}
+      </CatalogBoundaryBody>
     </View>
   );
 }
 
-interface CatalogSectionProps extends CatalogQueryVisualState {
+interface CatalogSectionProps extends CatalogQueryVisualState, CatalogBoundaryOptions {
   id: string;
   title: string;
   empty: boolean;
+  /** Overrides the generic "nothing available for <title>" empty copy. */
+  emptyLabel?: string;
   onRetry: () => void;
   children: React.ReactNode;
   onLayout?: (event: LayoutChangeEvent) => void;
 }
 
+/**
+ * A titled section of a screen with the full remote-state contract. A
+ * background refresh is a quiet marker in the heading's trailing slot, never
+ * an extra line, so refetching does not move the section or what follows it.
+ */
 export function CatalogSection({
   id,
   title,
-  hasData,
-  empty,
-  isPending,
-  isFetching,
-  isStale,
-  fetchStatus,
-  error,
-  onRetry,
+  emptyLabel = catalogStrings.common.sectionEmpty(title),
+  skeleton = 'rail',
+  padded = true,
   children,
   onLayout,
+  ...query
 }: CatalogSectionProps) {
-  const state = { hasData, isPending, isFetching, isStale, fetchStatus, error };
-  const visual = visualState(state, empty);
   const sectionId = `catalog-section-${id}`;
-  const retryLabel = catalogStrings.common.retrySection(title);
+  const { hasData, isPending, isFetching, isStale, fetchStatus, error, empty } = query;
+  const refreshing =
+    visualState({ hasData, isPending, isFetching, isStale, fetchStatus, error }, empty)
+      .notice === 'refreshing';
   return (
     <View testID={sectionId} style={styles.section} onLayout={onLayout}>
-      <Text accessibilityRole="header" style={styles.heading}>{title}</Text>
-      {visual.body === 'loading' ? (
-        <View
-          testID={`${sectionId}-loading`}
-          accessibilityRole="progressbar"
-          accessibilityLabel={catalogStrings.common.sectionLoading(title)}
-          accessibilityLiveRegion="polite"
-          style={styles.inlineLoading}
-        >
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.status}>{catalogStrings.common.sectionLoading(title)}</Text>
-        </View>
-      ) : null}
-      {visual.body === 'offline' ? (
-        <BlockingState
-          id={sectionId}
-          kind="offline"
-          message={catalogStrings.common.offline}
-          accessibilityLabel={retryLabel}
-          busy={fetchStatus === 'fetching'}
-          onRetry={onRetry}
-          page={false}
-        />
-      ) : null}
-      {visual.body === 'hard-error' ? (
-        <BlockingState
-          id={sectionId}
-          kind="error"
-          message={catalogStrings.common.loadFailed}
-          accessibilityLabel={retryLabel}
-          busy={fetchStatus === 'fetching'}
-          onRetry={onRetry}
-          page={false}
-        />
-      ) : null}
-      {visual.body === 'empty' ? (
-        <Text
-          testID={`${sectionId}-empty`}
-          accessibilityLiveRegion="polite"
-          style={styles.status}
-        >
-          {catalogStrings.common.sectionEmpty(title)}
-        </Text>
-      ) : null}
-      {visual.body === 'content' ? children : null}
-      <CatalogNotice
-        id={sectionId}
-        notice={visual.notice}
-        retryLabel={retryLabel}
-        retryBusy={fetchStatus === 'fetching'}
-        onRetry={onRetry}
+      <SectionHeader
+        title={title}
+        padded={padded}
+        trailing={
+          refreshing ? (
+            <View
+              testID={`${sectionId}-refreshing`}
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLabel={`${title}. ${catalogStrings.common.refreshing}`}
+              accessibilityLiveRegion="polite"
+              style={styles.marker}
+            >
+              <ActivityIndicator accessible={false} color={colors.textMuted} size="small" />
+            </View>
+          ) : undefined
+        }
       />
+      <CatalogBoundaryBody
+        id={sectionId}
+        loadingLabel={catalogStrings.common.sectionLoading(title)}
+        emptyLabel={emptyLabel}
+        errorLabel={catalogStrings.common.loadFailed}
+        retryLabel={catalogStrings.common.retrySection(title)}
+        skeleton={skeleton}
+        padded={padded}
+        refreshIndicator={false}
+        {...query}
+      >
+        {children}
+      </CatalogBoundaryBody>
     </View>
   );
 }
 
-export function CatalogRuntimeError({ id, message }: { id: string; message: string | null }) {
+/** A failed user action (playback, follow) on a page that otherwise works. */
+export function CatalogRuntimeError({
+  id,
+  message,
+  padded = true,
+}: {
+  id: string;
+  message: string | null;
+  padded?: boolean;
+}) {
   if (message === null) return null;
   return (
-    <Text
+    <ErrorState
       testID={`${id}-runtime-error`}
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive"
-      style={styles.runtimeError}
-    >
-      {message}
-    </Text>
+      message={message}
+      style={padded ? styles.inset : undefined}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  pageState: {
-    flex: 1,
-    backgroundColor: colors.background,
+  section: { gap: layout.headerGap },
+  boundary: { gap: spacing.xs },
+  inset: { marginHorizontal: layout.pagePadding },
+  flush: { paddingHorizontal: 0 },
+  notice: {
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.panel,
+    backgroundColor: colors.warningSubtle,
+  },
+  refreshing: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  // Fits inside the heading's line box, so the header keeps its height.
+  marker: {
+    width: spacing.xl,
+    height: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
-    padding: 24,
-  },
-  section: { gap: 14 },
-  boundary: { gap: 8 },
-  heading: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    paddingHorizontal: 20,
-  },
-  inlineLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 20 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: 20 },
-  notice: { gap: 10, paddingHorizontal: 20 },
-  warning: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  errorBox: {
-    alignSelf: 'stretch',
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 16,
-    gap: 12,
-  },
-  errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  retry: { alignSelf: 'flex-start' },
-  runtimeError: {
-    color: colors.danger,
-    fontSize: 13,
-    lineHeight: 19,
-    marginHorizontal: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
   },
 });

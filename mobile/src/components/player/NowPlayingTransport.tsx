@@ -1,15 +1,9 @@
 import React, { type ReactNode } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { strings } from '../../localization';
-import { colors, metrics } from '../../theme';
-import AppIcon from '../AppIcon';
+import { colors, metrics, spacing } from '../../theme';
+import { AppText, IconButton, PlayButton } from '../ui';
 
 export interface NowPlayingTransportProps {
   position: number;
@@ -72,12 +66,24 @@ export default function NowPlayingTransport({
       maximumValue={maximumValue}
       value={sliderPosition}
       minimumTrackTintColor={colors.accent}
-      maximumTrackTintColor={colors.surfaceElevated}
-      thumbTintColor={colors.accent}
+      maximumTrackTintColor={colors.fillStrong}
+      thumbTintColor={colors.textPrimary}
       onValueChange={onPositionChange}
       onSlidingComplete={onSeek}
     />
   );
+
+  const time = (suffix: 'position' | 'duration', seconds: number) => (
+    <AppText
+      testID={`${testIDPrefix}-${suffix}`}
+      variant="caption"
+      color="secondary"
+      style={styles.time}
+    >
+      {formatTime(seconds)}
+    </AppText>
+  );
+  const ring = compact ? COMPACT_RING : FULL_RING;
 
   return (
     <View
@@ -86,122 +92,114 @@ export default function NowPlayingTransport({
     >
       {compact ? (
         <View style={styles.compactProgressRow}>
-          <Text testID={`${testIDPrefix}-position`} style={styles.time}>
-            {formatTime(displayPosition)}
-          </Text>
+          {time('position', displayPosition)}
           {slider}
-          <Text testID={`${testIDPrefix}-duration`} style={styles.time}>
-            {formatTime(usableDuration)}
-          </Text>
+          {time('duration', usableDuration)}
         </View>
       ) : (
         <>
           {slider}
           <View style={styles.timeRow}>
-            <Text testID={`${testIDPrefix}-position`} style={styles.time}>
-              {formatTime(displayPosition)}
-            </Text>
-            <Text testID={`${testIDPrefix}-duration`} style={styles.time}>
-              {formatTime(usableDuration)}
-            </Text>
+            {time('position', displayPosition)}
+            {time('duration', usableDuration)}
           </View>
         </>
       )}
 
       <View style={[styles.controls, compact && styles.compactControls]}>
         {leadingControl}
-        <Pressable
+        <IconButton
           testID={`${testIDPrefix}-previous`}
-          accessibilityRole="button"
+          icon="skip-previous"
+          size="lg"
+          color={colors.textPrimary}
           accessibilityLabel={strings.common.previousTrack}
           onPress={onPrevious}
-          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-        >
-          <AppIcon name="skip-previous" color={colors.textPrimary} size={30} />
-        </Pressable>
-        <Pressable
-          testID={`${testIDPrefix}-play-pause`}
-          accessibilityRole="button"
-          accessibilityLabel={playing ? strings.common.pause : strings.common.play}
-          accessibilityState={{ busy: buffering }}
-          style={({ pressed }) => [styles.playButton, compact && styles.compactPlayButton, pressed && styles.pressed]}
-          onPress={onTogglePlay}
-        >
+          style={styles.target}
+        />
+        <View style={styles.playSlot}>
+          {/* Never `busy`: a stalled buffer must stay pausable. */}
+          <PlayButton
+            testID={`${testIDPrefix}-play-pause`}
+            size={compact ? 'sm' : 'lg'}
+            playing={playing}
+            accessibilityLabel={playing ? strings.common.pause : strings.common.play}
+            onPress={onTogglePlay}
+            style={styles.target}
+          />
           {buffering ? (
-            <ActivityIndicator
-              testID={`${testIDPrefix}-buffering`}
-              color={colors.onAccent}
-              accessibilityLabel={strings.player.buffering}
-            />
-          ) : (
-            <AppIcon
-              name={playing ? 'pause' : 'play'}
-              color={colors.onAccent}
-              size={compact ? 26 : 34}
-            />
-          )}
-        </Pressable>
-        <Pressable
+            <View pointerEvents="none" style={styles.bufferingRing}>
+              <ActivityIndicator
+                testID={`${testIDPrefix}-buffering`}
+                accessibilityRole="progressbar"
+                accessibilityLabel={strings.player.buffering}
+                accessibilityLiveRegion="polite"
+                color={colors.accentSoft}
+                size={ring}
+              />
+            </View>
+          ) : null}
+        </View>
+        <IconButton
           testID={`${testIDPrefix}-next`}
-          accessibilityRole="button"
+          icon="skip-next"
+          size="lg"
+          color={colors.textPrimary}
           accessibilityLabel={strings.common.nextTrack}
           onPress={onNext}
-          style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
-        >
-          <AppIcon name="skip-next" color={colors.textPrimary} size={30} />
-        </Pressable>
+          style={styles.target}
+        />
         {trailingControl}
       </View>
     </View>
   );
 }
 
+/** Spinner diameters: a ring just outside the 64dp / 48dp play button. */
+const FULL_RING = 84;
+const COMPACT_RING = 64;
+
 const styles = StyleSheet.create({
   transport: { flexShrink: 0 },
-  compactTransport: { paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.border },
-  slider: { width: '100%', height: metrics.minimumTouchTarget, marginTop: 16 },
+  compactTransport: {
+    paddingTop: spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  slider: { width: '100%', height: metrics.minimumTouchTarget, marginTop: spacing.sm },
   compactSlider: { flex: 1, height: metrics.minimumTouchTarget },
   compactProgressRow: {
     minHeight: metrics.minimumTouchTarget,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: spacing.xxs,
   },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -6 },
-  time: {
-    minWidth: 34,
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: -spacing.xs,
+    paddingHorizontal: spacing.xxs,
   },
+  time: { minWidth: 36, fontVariant: ['tabular-nums'] },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: spacing.lg,
   },
-  compactControls: { justifyContent: 'center', gap: 28, marginTop: 2 },
-  iconButton: {
+  compactControls: { justifyContent: 'center', gap: spacing.xl, marginTop: spacing.xxs },
+  target: {
     minWidth: metrics.minimumTouchTarget,
     minHeight: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 16,
   },
-  playButton: {
-    minWidth: metrics.minimumTouchTarget,
-    minHeight: metrics.minimumTouchTarget,
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.accent,
+  playSlot: { alignItems: 'center', justifyContent: 'center' },
+  bufferingRing: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  compactPlayButton: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    borderRadius: metrics.minimumTouchTarget / 2,
-  },
-  pressed: { opacity: 0.65, transform: [{ scale: 0.96 }] },
 });

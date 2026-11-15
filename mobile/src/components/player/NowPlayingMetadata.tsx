@@ -1,10 +1,11 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import type { ArtistRef, Track } from '../../api/types';
 import { trackArtistCredits } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import { trackAlbumRoute, trackArtistRoute } from '../../navigationLinks';
-import { colors, metrics } from '../../theme';
+import { metrics, opacity } from '../../theme';
+import { AppText } from '../ui';
 
 export interface NowPlayingMetadataProps {
   track: Track;
@@ -26,6 +27,7 @@ export default function NowPlayingMetadata({
 }: NowPlayingMetadataProps) {
   const albumNavigable = trackAlbumRoute(track) !== null;
   const artists = trackArtistCredits(track);
+  const artistVariant = compact ? 'callout' : 'body';
 
   return (
     <View testID="now-playing-metadata" style={styles.container}>
@@ -37,15 +39,15 @@ export default function NowPlayingMetadata({
           onPress={onOpenAlbum}
           style={({ pressed }) => [styles.link, pressed && styles.pressed]}
         >
-          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={compact ? 1 : 2}>
+          <AppText variant={compact ? 'bodyStrong' : 'title'} numberOfLines={compact ? 1 : 2}>
             {track.title}
-          </Text>
+          </AppText>
         </Pressable>
       ) : (
         <View testID="now-playing-title-text" style={styles.link}>
-          <Text style={[styles.title, compact && styles.compactTitle]} numberOfLines={compact ? 1 : 2}>
+          <AppText variant={compact ? 'bodyStrong' : 'title'} numberOfLines={compact ? 1 : 2}>
             {track.title}
-          </Text>
+          </AppText>
         </View>
       )}
 
@@ -58,13 +60,14 @@ export default function NowPlayingMetadata({
           return (
             <React.Fragment key={`${String(artist.id)}-${index}`}>
               {index > 0 ? (
-                <Text
+                <AppText
                   testID={`now-playing-artist-separator-${index}`}
                   accessible={false}
-                  style={[styles.artist, compact && styles.compactArtist]}
+                  variant={artistVariant}
+                  color="secondary"
                 >
                   {', '}
-                </Text>
+                </AppText>
               ) : null}
               {artistNavigable ? (
                 <Pressable
@@ -74,17 +77,19 @@ export default function NowPlayingMetadata({
                   onPress={() => onOpenArtist(artist)}
                   style={({ pressed }) => [styles.artistLink, pressed && styles.pressed]}
                 >
-                  <Text style={[styles.artist, compact && styles.compactArtist]}>
+                  <AppText variant={artistVariant} color="secondary" numberOfLines={1}>
                     {artist.name}
-                  </Text>
+                  </AppText>
                 </Pressable>
               ) : (
-                <Text
+                <AppText
                   testID={`now-playing-artist-text-${index}`}
-                  style={[styles.artist, compact && styles.compactArtist]}
+                  variant={artistVariant}
+                  color="secondary"
+                  numberOfLines={1}
                 >
                   {artist.name}
-                </Text>
+                </AppText>
               )}
             </React.Fragment>
           );
@@ -108,9 +113,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     maxWidth: '100%',
   },
-  pressed: { opacity: 0.72 },
-  title: { color: colors.textPrimary, fontSize: 25, lineHeight: 32, fontWeight: '700', letterSpacing: -0.6 },
-  artist: { color: colors.textSecondary, fontSize: 15, lineHeight: 21 },
-  compactTitle: { fontSize: 17, lineHeight: 23, letterSpacing: -0.2 },
-  compactArtist: { fontSize: 13, lineHeight: 19 },
+  pressed: { opacity: opacity.pressed },
 });

@@ -1,5 +1,6 @@
-import type React from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import { colors } from '../theme';
+import { flatStyle, queryByTestId as byTestID, textContent } from '../test/render';
 import { ConnectivityBannerView } from './ConnectivityBanner';
 
 vi.mock('react-native', () => ({
@@ -27,23 +28,6 @@ vi.mock('../localization', () => ({
     },
   },
 }));
-vi.mock('../theme', () => ({
-  colors: { success: '#0f0', textPrimary: '#fff', textSecondary: '#aaa', warning: '#ff0' },
-}));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestID(node: React.ReactNode, testID: string) {
-  return elements(node).find((element) => element.props.testID === testID);
-}
-
 describe('ConnectivityBannerView', () => {
   it('announces the persistent offline state assertively without private diagnostics', () => {
     const rendered = ConnectivityBannerView({ kind: 'offline', topInset: 24 });
@@ -53,6 +37,23 @@ describe('ConnectivityBannerView', () => {
       accessibilityLabel: 'Offline. Only downloads are available.',
     });
     expect(JSON.stringify(rendered)).not.toContain('https://');
+    expect(textContent(rendered)).toEqual(
+      expect.arrayContaining(['Offline', 'Only downloads are available.']),
+    );
+  });
+
+  it('uses the status tokens and keeps clear of the status bar', () => {
+    const offline = byTestID(ConnectivityBannerView({ kind: 'offline', topInset: 24 }), 'connectivity-offline');
+    const restored = byTestID(ConnectivityBannerView({ kind: 'restored' }), 'connectivity-restored');
+
+    expect(flatStyle(offline?.props.style)).toMatchObject({
+      backgroundColor: colors.warningSubtle,
+      paddingTop: 24,
+    });
+    expect(flatStyle(restored?.props.style)).toMatchObject({
+      backgroundColor: colors.successSubtle,
+      paddingTop: 8,
+    });
   });
 
   it('announces restored connectivity politely as a transient status', () => {

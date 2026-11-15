@@ -33,6 +33,13 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
+// The confirmation is a BottomSheet (Animated + safe-area hooks); a string
+// mock keeps its `visible` / `onClose` props and its children.
+vi.mock('../components/ui', async (original) => ({
+  ...(await original<typeof import('../components/ui')>()),
+  BottomSheet: 'BottomSheet',
+}));
+vi.mock('../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
 vi.mock('../components/profile/ProfileSections', () => ({
   ListeningStatsPanel: 'ListeningStatsPanel',
   ProfileEditForm: 'ProfileEditForm',
@@ -154,11 +161,12 @@ describe('ProfileScreen account deletion', () => {
 
   it('opens a separate confirmation and cancel closes it without deleting', () => {
     const opening = renderDeletionState(false, false, null);
-    expect(elements(opening.tree).find((element) => element.type === 'Modal')?.props.visible)
+    expect(elements(opening.tree).find((element) => element.type === 'BottomSheet')?.props.visible)
       .toBe(false);
     (byTestId(opening.tree, 'profile-delete').props.onPress as () => void)();
     expect(opening.setError).toHaveBeenCalledExactlyOnceWith(null);
     expect(opening.setConfirming).toHaveBeenCalledExactlyOnceWith(true);
+    expect(byTestId(opening.tree, 'profile-delete-confirmation').type).toBe('BottomSheet');
     expect(mocks.deleteAccount).not.toHaveBeenCalled();
 
     mocks.useState.mockReset();
@@ -186,7 +194,7 @@ describe('ProfileScreen account deletion', () => {
 
     mocks.useState.mockReset();
     const failed = renderDeletionState(true, false, 'Delete failed');
-    const modal = elements(failed.tree).find((element) => element.type === 'Modal');
+    const modal = elements(failed.tree).find((element) => element.type === 'BottomSheet');
     expect(modal?.props.visible).toBe(true);
     expect(byTestId(failed.tree, 'profile-delete-error').props.accessibilityRole).toBe('alert');
     expect(byTestId(failed.tree, 'profile-delete-error').props.accessibilityLiveRegion)
@@ -209,8 +217,8 @@ describe('ProfileScreen account deletion', () => {
     const pending = renderDeletionState(true, true, null);
     expect(byTestId(pending.tree, 'profile-delete-confirm').props.disabled).toBe(true);
     expect(byTestId(pending.tree, 'profile-delete-cancel').props.disabled).toBe(true);
-    const modal = elements(pending.tree).find((element) => element.type === 'Modal');
-    (modal?.props.onRequestClose as () => void)();
+    const modal = elements(pending.tree).find((element) => element.type === 'BottomSheet');
+    (modal?.props.onClose as () => void)();
     expect(pending.setConfirming).not.toHaveBeenCalled();
     expect(mocks.deleteAccount).toHaveBeenCalledOnce();
   });

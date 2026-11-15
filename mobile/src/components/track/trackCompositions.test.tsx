@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
-import { metrics } from '../../theme';
+import { byTestId, elements, flatStyle, queryByTestId } from '../../test/render';
+import { colors, layout, metrics } from '../../theme';
 import StandardTrackRow from './StandardTrackRow';
 import TrackShelfCard from './TrackShelfCard';
 
@@ -29,25 +30,22 @@ vi.mock('react-native', () => ({
 vi.mock('../player/TrackPresentationProvider', () => ({
   useTrackPresentation: mocks.useTrackPresentation,
 }));
+// PressableScale owns animation state (a hook), so it cannot be called outside a render.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  PressableScale: 'PressableScale',
+}));
 vi.mock('../TrackLikeButton', () => ({ default: 'TrackLikeButton' }));
 vi.mock('../TrackStateIndicator', () => ({ default: 'TrackStateIndicator' }));
 vi.mock('./TrackIdentityLinks', () => ({ default: 'TrackIdentityLinks' }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
+// The shared primitives (IconButton, Artwork, AppText) are real here, so the
+// shared helpers expand them down to host elements.
+const byTestID = byTestId;
 
-function byTestID(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`Missing ${testID}`);
-  return found;
-}
-
+/** Walks through function components, so a Pressable inside a primitive counts too. */
 function assertNoNestedPressables(node: React.ReactNode, inside = false): void {
   if (Array.isArray(node)) {
     node.forEach((child) => assertNoNestedPressables(child, inside));
@@ -55,7 +53,12 @@ function assertNoNestedPressables(node: React.ReactNode, inside = false): void {
   }
   if (node === null || typeof node !== 'object' || !('props' in node)) return;
   const element = node as React.ReactElement<ElementProps>;
-  const pressable = element.type === 'Pressable';
+  if (typeof element.type === 'function') {
+    const render = element.type as (props: ElementProps) => React.ReactNode;
+    assertNoNestedPressables(render(element.props), inside);
+    return;
+  }
+  const pressable = element.type === 'Pressable' || element.type === 'PressableScale';
   if (inside && pressable) throw new Error('nested Pressable');
   assertNoNestedPressables(element.props.children, inside || pressable);
 }
@@ -110,7 +113,45 @@ describe('shared track compositions', () => {
     (byTestID(rendered, 'row-42-actions').props.onPress as () => void)();
     expect(onPlay).toHaveBeenCalledOnce();
     expect(onActions).toHaveBeenCalledOnce();
+    expect(byTestID(rendered, 'row-42-actions').props.accessibilityRole).toBe('button');
     assertNoNestedPressables(rendered);
+  });
+
+  it('keeps one row height and marks the active occurrence', () => {
+    const rendered = StandardTrackRow({
+      track,
+      testID: 'row-42',
+      onPlay: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+    });
+
+    const container = flatStyle(byTestID(rendered, 'row-42-container').props.style);
+    expect(container.minHeight).toBe(layout.rowHeight);
+    expect(container.backgroundColor).toBe(colors.accentSubtle);
+    const identity = elements(rendered).find((element) => element.type === 'TrackIdentityLinks');
+    expect(identity?.props.active).toBe(true);
+    // No overflow control and no supplemental line unless the owner provides them.
+    expect(queryByTestId(rendered, 'row-42-actions')).toBeNull();
+    expect(queryByTestId(rendered, 'row-42-metadata')).toBeNull();
+    expect(queryByTestId(rendered, 'row-42-position')).toBeNull();
+  });
+
+  it('renders an owner-supplied collection fact as one labelled line in the row', () => {
+    const rendered = StandardTrackRow({
+      track,
+      testID: 'row-42',
+      caption: 'New · 2 days ago',
+      highlighted: true,
+      onPlay: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+    });
+
+    const fact = byTestID(rendered, 'row-42-metadata');
+    expect(fact.props.children).toBe('New · 2 days ago');
+    expect(fact.props.accessibilityLabel).toBe('New · 2 days ago');
+    expect(fact.props.numberOfLines).toBe(2);
   });
 
   it('uses a dedicated artwork play target and sibling card controls', () => {
@@ -129,11 +170,11 @@ describe('shared track compositions', () => {
     });
 
     const play = byTestID(rendered, 'card-42');
-    const style = play.props.style as (state: { pressed: boolean }) => unknown[];
-    expect(style({ pressed: false })).toContainEqual(expect.objectContaining({
-      width: 160,
-      height: 160,
-    }));
+    expect(play.type).toBe('PressableScale');
+    expect(flatStyle(play.props.style)).toMatchObject({
+      width: layout.artwork.card,
+      height: layout.artwork.card,
+    });
     expect(elements(rendered).some((element) =>
       element.type === 'TrackLikeButton' && element.props.testID === 'card-42-like')).toBe(true);
     expect(byTestID(rendered, 'card-42-actions').props.accessibilityRole).toBe('button');

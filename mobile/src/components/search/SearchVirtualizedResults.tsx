@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet } from 'react-native';
 import { colors } from '../../theme';
 import { searchListRowKey, type SearchListRow } from './searchListModel';
 
@@ -7,6 +7,8 @@ interface SearchVirtualizedResultsProps {
   accessibilityLabel: string;
   rows: readonly SearchListRow[];
   header: React.ReactElement | null;
+  /** Space below the last row: `useBottomInset()` of the owning screen. */
+  bottomInset: number;
   renderRow: (row: SearchListRow) => React.ReactElement | null;
 }
 
@@ -15,6 +17,7 @@ export function SearchVirtualizedResults({
   accessibilityLabel,
   rows,
   header,
+  bottomInset,
   renderRow,
 }: SearchVirtualizedResultsProps) {
   return (
@@ -25,7 +28,6 @@ export function SearchVirtualizedResults({
       keyExtractor={searchListRowKey}
       renderItem={({ item }) => renderRow(item)}
       ListHeaderComponent={header}
-      ListFooterComponent={<View style={styles.footer} />}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       showsVerticalScrollIndicator={false}
@@ -33,7 +35,7 @@ export function SearchVirtualizedResults({
       maxToRenderPerBatch={10}
       windowSize={9}
       removeClippedSubviews
-      contentContainerStyle={styles.content}
+      contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomInset }}
       style={styles.list}
     />
   );
@@ -41,6 +43,4 @@ export function SearchVirtualizedResults({
 
 const styles = StyleSheet.create({
   list: { flex: 1, backgroundColor: colors.background },
-  content: { flexGrow: 1 },
-  footer: { height: 132 },
 });

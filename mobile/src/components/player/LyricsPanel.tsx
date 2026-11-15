@@ -1,20 +1,13 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { LyricsLine, LyricsResponse, Track } from '../../api/types';
 import { musicQueries } from '../../data';
 import type { RemoteFetchStatus } from '../../data/remoteState';
 import { strings } from '../../localization';
-import { colors, metrics } from '../../theme';
+import { colors, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
-import { ActionButton } from '../ui';
+import { AppText, EmptyState, ErrorState, RetryButton, Skeleton } from '../ui';
 import {
   activeLyricIndex,
   lyricLineKey,
@@ -68,17 +61,57 @@ function sourceLabel(response: LyricsResponse): string | null {
   }
 }
 
-function retryButton(busy: boolean, onRetry: () => void) {
+const SKELETON_LINES = ['72%', '54%', '86%', '61%', '78%', '47%'] as const;
+
+/** Placeholder lines shaped like the lyric rows they stand in for. */
+function LyricsSkeleton() {
   return (
-    <ActionButton
-      testID="lyrics-retry"
-      label={strings.common.retry}
-      accessibilityLabel={strings.player.lyrics.retry}
-      busy={busy}
-      onPress={onRetry}
-      icon="refresh"
-      style={styles.retry}
-    />
+    <View
+      testID="lyrics-loading"
+      accessibilityRole="progressbar"
+      accessibilityLabel={strings.player.lyrics.loading}
+      accessibilityLiveRegion="polite"
+      style={styles.skeleton}
+    >
+      {SKELETON_LINES.map((width, index) => (
+        <Skeleton key={index} width={width} height={22} />
+      ))}
+    </View>
+  );
+}
+
+function Badge({ testID, label }: { testID: string; label: string }) {
+  return (
+    <View testID={testID} style={styles.badge}>
+      <AppText variant="micro" color="accent">{label}</AppText>
+    </View>
+  );
+}
+
+interface CachedNoticeProps {
+  testID: string;
+  message: string;
+  retryBusy: boolean;
+  onRetry: () => void;
+}
+
+/** Warning under still-valid cached lyrics, with the shared retry control. */
+function CachedNotice({ testID, message, retryBusy, onRetry }: CachedNoticeProps) {
+  return (
+    <View
+      testID={testID}
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      style={styles.notice}
+    >
+      <AppText variant="caption" color="warning" style={styles.noticeCopy}>{message}</AppText>
+      <RetryButton
+        testID="lyrics-retry"
+        accessibilityLabel={strings.player.lyrics.retry}
+        busy={retryBusy}
+        onRetry={onRetry}
+      />
+    </View>
   );
 }
 
@@ -110,20 +143,16 @@ export function LyricsPanelView({
   return (
     <View testID="lyrics-panel" style={styles.panel}>
       <View style={styles.header}>
-        <Text accessibilityRole="header" style={styles.heading}>
+        <AppText accessibilityRole="header" variant="overline" color="secondary">
           {strings.player.lyrics.title}
-        </Text>
+        </AppText>
         {response !== undefined ? (
           <View testID="lyrics-metadata" style={styles.badges}>
             {response.synced ? (
-              <Text testID="lyrics-synced" style={styles.badge}>
-                {strings.player.lyrics.synchronized}
-              </Text>
+              <Badge testID="lyrics-synced" label={strings.player.lyrics.synchronized} />
             ) : null}
             {response.ai_generated ? (
-              <Text testID="lyrics-ai-generated" style={styles.badge}>
-                {strings.player.lyrics.aiGenerated}
-              </Text>
+              <Badge testID="lyrics-ai-generated" label={strings.player.lyrics.aiGenerated} />
             ) : null}
             {response.cached ? (
               <View
@@ -131,63 +160,46 @@ export function LyricsPanelView({
                 accessible
                 accessibilityRole="image"
                 accessibilityLabel={strings.player.lyrics.cached}
-                style={styles.cachedIcon}
+                style={styles.badge}
               >
-                <AppIcon
-                  name="database-check-outline"
-                  color={colors.textSecondary}
-                  size={14}
-                />
+                <AppIcon name="database-check-outline" color={colors.textSecondary} size={14} />
               </View>
             ) : null}
             {provider !== null ? (
-              <Text testID="lyrics-source" style={styles.source}>{provider}</Text>
+              <AppText testID="lyrics-source" variant="micro" color="muted" numberOfLines={1}>
+                {provider}
+              </AppText>
             ) : null}
           </View>
         ) : null}
       </View>
 
-      {visual.body === 'loading' ? (
-        <View
-          testID="lyrics-loading"
-          accessibilityRole="progressbar"
-          accessibilityLabel={strings.player.lyrics.loading}
-          accessibilityLiveRegion="polite"
-          style={styles.centered}
-        >
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.status}>{strings.player.lyrics.loading}</Text>
-        </View>
-      ) : null}
+      {visual.body === 'loading' ? <LyricsSkeleton /> : null}
 
-      {visual.body === 'hard-error' ? (
-        <View
-          testID="lyrics-error"
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-          style={styles.errorBox}
-        >
-          <Text style={styles.errorText}>{strings.player.lyrics.loadFailed}</Text>
-          {retryButton(isFetching, onRetry)}
-        </View>
-      ) : null}
-
-      {visual.body === 'offline' ? (
-        <View
-          testID="lyrics-offline"
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-          style={styles.errorBox}
-        >
-          <Text style={styles.errorText}>{strings.player.lyrics.offline}</Text>
-          {retryButton(isFetching, onRetry)}
-        </View>
+      {visual.body === 'hard-error' || visual.body === 'offline' ? (
+        <ErrorState
+          testID={visual.body === 'offline' ? 'lyrics-offline' : 'lyrics-error'}
+          retryTestID="lyrics-retry"
+          kind={visual.body === 'offline' ? 'offline' : 'error'}
+          message={
+            visual.body === 'offline'
+              ? strings.player.lyrics.offline
+              : strings.player.lyrics.loadFailed
+          }
+          retryAccessibilityLabel={strings.player.lyrics.retry}
+          retryBusy={isFetching}
+          onRetry={onRetry}
+          style={styles.error}
+        />
       ) : null}
 
       {visual.body === 'empty' ? (
-        <View testID="lyrics-empty" accessibilityLiveRegion="polite" style={styles.centered}>
-          <Text style={styles.status}>{strings.player.lyrics.empty}</Text>
-        </View>
+        <EmptyState
+          testID="lyrics-empty"
+          icon="text-box-remove-outline"
+          title={strings.player.lyrics.empty}
+          style={styles.empty}
+        />
       ) : null}
 
       {visual.body === 'content' ? (
@@ -214,15 +226,11 @@ export function LyricsPanelView({
                 accessibilityHint={strings.player.lyrics.lineSeekHint}
                 accessibilityState={{ selected: active }}
                 onPress={() => onSeek(item.t)}
-                style={({ pressed }) => [
-                  styles.line,
-                  active && styles.activeLine,
-                  pressed && styles.pressed,
-                ]}
+                style={({ pressed }) => [styles.line, pressed ? styles.pressed : null]}
               >
-                <Text style={[styles.lineText, active && styles.activeLineText]}>
+                <AppText variant="section" color={active ? 'primary' : 'muted'}>
                   {text}
-                </Text>
+                </AppText>
               </Pressable>
             );
           }}
@@ -230,49 +238,49 @@ export function LyricsPanelView({
       ) : null}
 
       {visual.notice === 'refreshing' ? (
-        <Text
+        <AppText
           testID="lyrics-refreshing"
           accessibilityRole="progressbar"
           accessibilityLabel={strings.player.lyrics.refreshing}
           accessibilityLiveRegion="polite"
-          style={styles.noticeText}
+          variant="caption"
+          color="secondary"
+          align="center"
+          style={styles.status}
         >
           {strings.player.lyrics.refreshing}
-        </Text>
+        </AppText>
       ) : null}
 
       {visual.notice === 'cached-refresh-error' ? (
-        <View
+        <CachedNotice
           testID="lyrics-cached-error"
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          style={styles.notice}
-        >
-          <Text style={styles.noticeText}>{strings.player.lyrics.cachedRefreshFailed}</Text>
-          {retryButton(isFetching, onRetry)}
-        </View>
+          message={strings.player.lyrics.cachedRefreshFailed}
+          retryBusy={isFetching}
+          onRetry={onRetry}
+        />
       ) : null}
 
       {visual.notice === 'cached-offline' ? (
-        <View
+        <CachedNotice
           testID="lyrics-cached-offline"
-          accessibilityRole="alert"
-          accessibilityLiveRegion="polite"
-          style={styles.notice}
-        >
-          <Text style={styles.noticeText}>{strings.player.lyrics.cachedOffline}</Text>
-          {retryButton(isFetching, onRetry)}
-        </View>
+          message={strings.player.lyrics.cachedOffline}
+          retryBusy={isFetching}
+          onRetry={onRetry}
+        />
       ) : null}
 
       {visual.notice === 'stale' ? (
-        <Text
+        <AppText
           testID="lyrics-stale"
           accessibilityLiveRegion="polite"
-          style={styles.noticeText}
+          variant="caption"
+          color="secondary"
+          align="center"
+          style={styles.status}
         >
           {strings.player.lyrics.stale}
-        </Text>
+        </AppText>
       ) : null}
     </View>
   );
@@ -327,72 +335,51 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
   );
 }
 
+const BADGE_HEIGHT = 24;
+
 const styles = StyleSheet.create({
-  panel: { flex: 1, minHeight: 0, paddingTop: 16 },
-  header: { alignItems: 'flex-start', gap: 3, paddingHorizontal: 4, paddingBottom: 12 },
-  heading: { color: colors.textSecondary, fontSize: 12, lineHeight: 18, fontWeight: '600' },
-  badges: {
-    minHeight: 24,
+  panel: { flex: 1, minHeight: 0, paddingTop: spacing.sm },
+  header: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 6,
-    marginTop: 5,
+    gap: spacing.xs,
+    minHeight: BADGE_HEIGHT,
+    paddingBottom: spacing.xs,
+  },
+  badges: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.xxs,
   },
   badge: {
-    color: colors.accentSoft,
-    backgroundColor: colors.surfaceElevated,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  cachedIcon: {
-    width: 26,
-    height: 24,
-    alignItems: 'center',
+    minHeight: BADGE_HEIGHT,
     justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: colors.surfaceElevated,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
   },
-  source: { color: colors.textSecondary, fontSize: 10 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  status: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, textAlign: 'center' },
-  errorBox: {
-    marginTop: 18,
-    gap: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceElevated,
-  },
-  errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  retry: {
-    alignSelf: 'center',
-  },
+  skeleton: { flex: 1, gap: spacing.lg, paddingTop: spacing.xl },
+  error: { marginTop: spacing.md },
+  empty: { flex: 1, justifyContent: 'center' },
   list: { flex: 1, minHeight: 0 },
-  listContent: { paddingTop: 80, paddingBottom: 120 },
+  // Head and tail room lets the first and last line reach the vertical centre.
+  listContent: { paddingTop: spacing.xxxl, paddingBottom: spacing.xxxl * 3 },
   line: {
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingVertical: spacing.xs,
   },
-  activeLine: { backgroundColor: colors.accentSubtle },
-  lineText: {
-    color: colors.textSecondary,
-    fontSize: 22,
-    lineHeight: 31,
-    fontWeight: '600',
-    textAlign: 'left',
-    opacity: 0.8,
+  notice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xxs,
   },
-  activeLineText: { color: colors.textPrimary, opacity: 1 },
-  notice: { alignItems: 'center', gap: 6, paddingVertical: 6 },
-  noticeText: { color: colors.warning, fontSize: 12, lineHeight: 17, textAlign: 'center' },
-  pressed: { opacity: 0.72 },
+  noticeCopy: { flex: 1 },
+  status: { paddingVertical: spacing.xxs },
+  pressed: { opacity: opacity.pressed },
 });

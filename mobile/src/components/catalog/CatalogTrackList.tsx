@@ -1,6 +1,7 @@
 import React from 'react';
 import { FlatList, RefreshControl, StyleSheet } from 'react-native';
 import type { Track } from '../../api/types';
+import { useBottomInset } from '../../hooks/useBottomInset';
 import { colors } from '../../theme';
 
 export interface CatalogTrackOccurrence {
@@ -39,7 +40,7 @@ export interface CatalogTrackListProps {
   renderTrack: (track: Track, index: number) => React.ReactElement;
 }
 
-/** The detail page's only vertical scroll owner. */
+/** The detail page's only vertical scroll owner. Its content clears the mini player. */
 export function CatalogTrackList({
   id,
   tracks,
@@ -51,6 +52,7 @@ export function CatalogTrackList({
   onRefresh,
   renderTrack,
 }: CatalogTrackListProps) {
+  const bottom = useBottomInset();
   return (
     <FlatList
       testID={`${id}-scroll`}
@@ -75,7 +77,7 @@ export function CatalogTrackList({
       maxToRenderPerBatch={10}
       windowSize={9}
       removeClippedSubviews
-      contentContainerStyle={styles.content}
+      contentContainerStyle={{ paddingBottom: bottom }}
       style={styles.list}
     />
   );
@@ -83,5 +85,4 @@ export function CatalogTrackList({
 
 const styles = StyleSheet.create({
   list: { flex: 1 },
-  content: { paddingBottom: 144 },
 });

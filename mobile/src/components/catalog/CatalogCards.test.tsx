@@ -1,7 +1,16 @@
 import type React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
-import { CatalogTrackCard, CatalogTrackRow } from './CatalogCards';
+import { catalogStrings } from '../../screens/catalogStrings';
+import { layout } from '../../theme';
+import { Artwork } from '../ui';
+import {
+  CatalogAlbumCard,
+  CatalogArtistCard,
+  CatalogHeroArtwork,
+  CatalogTrackCard,
+  CatalogTrackRow,
+} from './CatalogCards';
 
 vi.mock('react-native', () => ({
   FlatList: 'FlatList',
@@ -14,6 +23,11 @@ vi.mock('react-native', () => ({
   View: 'View',
 }));
 
+// PressableScale owns animation state (a hook), so it cannot be called outside a render.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  PressableScale: 'PressableScale',
+}));
 vi.mock('../track/StandardTrackRow', () => ({ default: 'StandardTrackRow' }));
 vi.mock('../track/TrackShelfCard', () => ({ default: 'TrackShelfCard' }));
 
@@ -24,12 +38,6 @@ function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
   if (node === null || typeof node !== 'object' || !('props' in node)) return [];
   const element = node as React.ReactElement<ElementProps>;
   return [element, ...elements(element.props.children)];
-}
-
-function findByTestID(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const match = elements(node).find((element) => element.props.testID === testID);
-  if (match === undefined) throw new Error(`No element has testID ${testID}`);
-  return match;
 }
 
 const track: Track = {
@@ -81,10 +89,10 @@ describe('CatalogTrackRow', () => {
       plays: { plays: 12_345, listeners: 6_789 },
       onOpenAlbum,
       onOpenArtist,
+      // The fact is rendered by the shared row as `${testID}-metadata`
+      // (covered in trackCompositions.test), inside its highlight.
+      caption: metadata,
     });
-    expect(findByTestID(row, 'artist-track-12-0-metadata').props.children).toBe(metadata);
-    expect(findByTestID(row, 'artist-track-12-0-metadata').props.accessibilityLabel)
-      .toBe(metadata);
   });
 
   it('does not manufacture a metadata line when no count is available', () => {
@@ -98,8 +106,71 @@ describe('CatalogTrackRow', () => {
       onOpenArtist: vi.fn(),
     });
 
-    expect(elements(row).some((element) => element.props.testID === 'artist-track-12-0-metadata'))
+    const shared = elements(row).find((element) => element.type === 'StandardTrackRow');
+    expect(shared?.props.caption).toBeUndefined();
+  });
+
+  it('lets a page that is the album itself drop the redundant album label', () => {
+    const base = {
+      track,
+      index: 0,
+      testID: 'album-track-12-0',
+      occurrence,
+      onPress: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+    };
+    const shared = (row: React.ReactNode) =>
+      elements(row).find((element) => element.type === 'StandardTrackRow');
+
+    expect(shared(CatalogTrackRow({ ...base, showAlbumLabel: false }))?.props.showAlbumLabel)
       .toBe(false);
+    // Unset keeps the shared row's own default instead of forcing a value.
+    expect(shared(CatalogTrackRow(base))?.props.showAlbumLabel).toBeUndefined();
+  });
+});
+
+describe('catalog cards', () => {
+  it('opens an album from one labelled, springy artwork tile', () => {
+    const onPress = vi.fn();
+    const card = CatalogAlbumCard({
+      album: { id: '9', title: 'Parity', artist: 'LoggeRythm', cover: '', release_date: '' },
+      testID: 'artist-album-9',
+      onPress,
+    });
+
+    expect(card.type).toBe('PressableScale');
+    expect(card.props).toMatchObject({
+      testID: 'artist-album-9',
+      accessibilityRole: 'button',
+      accessibilityLabel: catalogStrings.common.openAlbum('Parity', 'LoggeRythm'),
+    });
+    (card.props.onPress as () => void)();
+    expect(onPress).toHaveBeenCalledOnce();
+    expect(elements(card).some((element) => element.type === Artwork)).toBe(true);
+  });
+
+  it('renders artists round and labels the card with the artist name', () => {
+    const card = CatalogArtistCard({
+      artist: { id: '7', name: 'LoggeRythm', picture: '' },
+      testID: 'artist-related-7',
+      onPress: vi.fn(),
+    });
+
+    expect(card.props.accessibilityLabel).toBe(catalogStrings.common.openArtist('LoggeRythm'));
+    const artwork = elements(card).find((element) => element.type === Artwork);
+    expect(artwork?.props).toMatchObject({ shape: 'round', size: layout.artwork.card });
+  });
+
+  it('keeps the hero cover on the artwork scale, round for artists', () => {
+    expect(CatalogHeroArtwork({ uri: 'https://example.test/a.jpg' }).props).toMatchObject({
+      size: layout.artwork.hero,
+      shape: 'square',
+    });
+    expect(CatalogHeroArtwork({ uri: '', round: true, compact: true }).props).toMatchObject({
+      size: layout.artwork.lg,
+      shape: 'round',
+    });
   });
 });
 

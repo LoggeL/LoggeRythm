@@ -1,5 +1,6 @@
-import type { DeezerId, DeezerPlaylistTrack, Track } from '../api/types';
+import type { ArtistSummary, DeezerId, DeezerPlaylistTrack, Track } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
+import type { AlbumCard } from '../domain/catalog';
 import type { AppLocale } from '../localization';
 export const SEARCH_TABS = ['all', 'track', 'album', 'artist', 'playlist'] as const;
 export type SearchTab = (typeof SEARCH_TABS)[number];
@@ -117,6 +118,48 @@ export function sortSearchTracks(
 
 export function resultLimit(tab: SearchTab, entity: SearchEntity): number | undefined {
   return tab === 'all' ? (entity === 'track' ? 6 : 5) : undefined;
+}
+
+/** The single result promoted above the grouped sections of the "all" tab. */
+export type SearchTopResult =
+  | { kind: 'artist'; artist: ArtistSummary }
+  | { kind: 'track'; track: Track; index: number }
+  | { kind: 'album'; album: AlbumCard };
+
+export interface SearchTopResultInput {
+  query: string;
+  artists: readonly ArtistSummary[];
+  tracks: readonly Track[];
+  albums: readonly AlbumCard[];
+}
+
+/**
+ * Promote the most relevant hit without re-ranking the backend order: the
+ * leading artist wins when the query names it (exact or prefix match),
+ * otherwise the leading track, then the leading artist, then the leading
+ * album. Returns null when nothing was found.
+ */
+export function pickSearchTopResult({
+  query,
+  artists,
+  tracks,
+  albums,
+}: SearchTopResultInput): SearchTopResult | null {
+  const needle = normalizeSearchInput(query).toLocaleLowerCase();
+  const leadingArtist = artists[0];
+  if (
+    leadingArtist !== undefined
+    && needle.length > 0
+    && leadingArtist.name.trim().toLocaleLowerCase().startsWith(needle)
+  ) {
+    return { kind: 'artist', artist: leadingArtist };
+  }
+  const leadingTrack = tracks[0];
+  if (leadingTrack !== undefined) return { kind: 'track', track: leadingTrack, index: 0 };
+  if (leadingArtist !== undefined) return { kind: 'artist', artist: leadingArtist };
+  const leadingAlbum = albums[0];
+  if (leadingAlbum !== undefined) return { kind: 'album', album: leadingAlbum };
+  return null;
 }
 
 /** Preserve external playlist order and duplicates before strict full-track resolution. */

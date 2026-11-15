@@ -1,14 +1,10 @@
 import React, { useRef, useState } from 'react';
-import {
-  AccessibilityInfo,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
 import { strings, type AppLocale } from '../../localization';
 import { useLocale } from '../../localization/LocaleProvider';
-import { colors, metrics, radii, spacing, typography } from '../../theme';
+import { colors, metrics, opacity, radii, spacing } from '../../theme';
+import { AppText } from '../ui';
+import { ProfileGroup } from './ProfileGroup';
 
 interface LanguageSelectorViewProps {
   locale: AppLocale;
@@ -18,6 +14,11 @@ interface LanguageSelectorViewProps {
   onSelect(locale: AppLocale): void;
 }
 
+/**
+ * LanguageSelectorView is the app-language setting: a settings row with a
+ * two-option segmented radio group. Both options lock while the choice is
+ * being persisted; the saving status and a persistence failure appear below.
+ */
 export function LanguageSelectorView({
   locale,
   ready,
@@ -32,17 +33,16 @@ export function LanguageSelectorView({
   ];
 
   return (
-    <View testID="profile-language" style={styles.card}>
-      <Text accessibilityRole="header" style={styles.title}>
-        {strings.profile.languageTitle}
-      </Text>
-      <Text style={styles.subtitle}>
-        {strings.profile.languageSubtitle}
-      </Text>
+    <ProfileGroup
+      testID="profile-language"
+      icon="translate"
+      title={strings.profile.languageTitle}
+      description={strings.profile.languageSubtitle}
+    >
       <View
         accessibilityRole="radiogroup"
         accessibilityLabel={strings.profile.languageTitle}
-        style={styles.options}
+        style={[styles.segments, disabled ? styles.disabled : null]}
       >
         {options.map((option) => {
           const selected = option.locale === locale;
@@ -56,43 +56,41 @@ export function LanguageSelectorView({
               disabled={disabled}
               onPress={() => onSelect(option.locale)}
               style={({ pressed }) => [
-                styles.option,
-                selected && styles.optionSelected,
-                pressed && styles.pressed,
-                disabled && styles.disabled,
+                styles.segment,
+                selected ? styles.segmentSelected : null,
+                pressed ? styles.pressed : null,
               ]}
             >
-              <View style={[styles.indicator, selected && styles.indicatorSelected]}>
-                {selected ? <View style={styles.indicatorDot} /> : null}
-              </View>
-              <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+              <AppText variant="label" color={selected ? 'onLight' : 'secondary'} numberOfLines={1}>
                 {option.label}
-              </Text>
+              </AppText>
             </Pressable>
           );
         })}
       </View>
       {busy ? (
-        <Text
+        <AppText
           testID="profile-language-status"
+          variant="callout"
+          color="secondary"
           accessibilityRole="text"
           accessibilityLiveRegion="polite"
-          style={styles.status}
         >
           {strings.profile.languageChanging}
-        </Text>
+        </AppText>
       ) : null}
       {error ? (
-        <Text
+        <AppText
           testID="profile-language-error"
+          variant="callout"
+          color="danger"
           accessibilityRole="alert"
           accessibilityLiveRegion="assertive"
-          style={styles.error}
         >
           {error}
-        </Text>
+        </AppText>
       ) : null}
-    </View>
+    </ProfileGroup>
   );
 }
 
@@ -133,42 +131,23 @@ export default function LanguageSelector() {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: 12,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-  },
-  title: { ...typography.section, color: colors.textPrimary },
-  subtitle: { ...typography.body, color: colors.textSecondary },
-  options: { flexDirection: 'row', gap: 10 },
-  option: {
-    minHeight: metrics.minimumTouchTarget,
-    flex: 1,
+  segments: {
     flexDirection: 'row',
+    gap: spacing.xxs,
+    padding: spacing.xxs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
+  },
+  segment: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 9,
-    paddingHorizontal: 12,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceElevated,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.pill,
   },
-  optionSelected: { backgroundColor: colors.accentSubtle },
-  indicator: {
-    width: 18,
-    height: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 9,
-    borderWidth: 2,
-    borderColor: colors.textSecondary,
-  },
-  indicatorSelected: { borderColor: colors.accent },
-  indicatorDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
-  optionText: { ...typography.label, color: colors.textSecondary },
-  optionTextSelected: { color: colors.textPrimary },
-  status: { color: colors.textSecondary, fontSize: 13 },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  pressed: { opacity: 0.72 },
-  disabled: { opacity: 0.48 },
+  segmentSelected: { backgroundColor: colors.textPrimary },
+  pressed: { opacity: opacity.pressed },
+  disabled: { opacity: opacity.disabled },
 });

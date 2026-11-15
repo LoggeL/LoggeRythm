@@ -1,13 +1,14 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 import type { Track, TrackPlayCount } from '../../api/types';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { colors, radii, spacing, typography } from '../../theme';
-import AppIcon from '../AppIcon';
+import { colors, layout, radii, spacing } from '../../theme';
+import type { AppIconName } from '../AppIcon';
 import StandardTrackRow, {
   type TrackOccurrenceTarget,
 } from '../track/StandardTrackRow';
 import type { TrackPopularityPolicy } from '../track/trackMetadata';
+import { AppText, Artwork, PressableScale } from '../ui';
 
 export interface SearchTrackResultRowProps {
   track: Track;
@@ -75,14 +76,17 @@ interface SearchEntityCardProps {
   accessibilityLabel: string;
   title: string;
   subtitle: string;
-  imageUri: string;
+  imageUri: string | null;
+  /** Round artwork for artists. */
   round?: boolean;
-  landscape?: boolean;
+  /** Placeholder glyph while there is no artwork. */
+  icon?: AppIconName;
   disabled?: boolean;
   busy?: boolean;
   onPress: () => void;
 }
 
+/** One card of a horizontal result rail: artwork, title and one meta line. */
 export function SearchEntityCard({
   testID,
   accessibilityLabel,
@@ -90,49 +94,48 @@ export function SearchEntityCard({
   subtitle,
   imageUri,
   round = false,
-  landscape = false,
+  icon,
   disabled = false,
   busy = false,
   onPress,
 }: SearchEntityCardProps) {
   return (
-    <Pressable
+    <PressableScale
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.entityCard,
-        landscape && styles.landscapeCard,
-        pressed && styles.pressed,
-        disabled && styles.disabled,
-      ]}
+      style={styles.entityCard}
     >
-      <View style={styles.artworkFrame}>
-        {imageUri ? (
-          <Image
-            accessible={false}
-            source={{ uri: imageUri }}
-            style={[styles.entityArtwork, landscape && styles.landscapeArtwork, round && styles.roundArtwork]}
-          />
-        ) : (
-          <View style={[styles.entityArtwork, landscape && styles.landscapeArtwork, round && styles.roundArtwork, styles.placeholder]}>
-            <AppIcon name="music-note" color={colors.accentSoft} size={22} />
-          </View>
-        )}
+      <View>
+        <Artwork
+          uri={imageUri}
+          size={layout.artwork.card}
+          shape={round ? 'round' : 'square'}
+          icon={icon}
+        />
         {busy ? (
-          <View style={styles.busyOverlay}>
-            <ActivityIndicator color={colors.onAccent} size="small" />
+          <View style={styles.busyBadge}>
+            <ActivityIndicator accessible={false} color={colors.onAccent} size="small" />
           </View>
         ) : null}
       </View>
       <View style={styles.copy}>
-        <Text style={styles.title} numberOfLines={2}>{title}</Text>
-        <Text style={styles.subtitle} numberOfLines={1}>{subtitle}</Text>
+        <AppText variant="label" numberOfLines={2} align={round ? 'center' : undefined}>
+          {title}
+        </AppText>
+        <AppText
+          variant="caption"
+          color="secondary"
+          numberOfLines={1}
+          align={round ? 'center' : undefined}
+        >
+          {subtitle}
+        </AppText>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -162,18 +165,15 @@ export function SearchResultRail<T>({ id, data, keyExtractor, renderItem }: Sear
 }
 
 const styles = StyleSheet.create({
-  pressed: { opacity: 0.72 },
-  disabled: { opacity: 0.5 },
-  entityCard: { width: 148, gap: spacing.sm, paddingBottom: spacing.xxs },
-  landscapeCard: { width: 188 },
-  artworkFrame: { position: 'relative' },
-  entityArtwork: { width: 148, height: 148, borderRadius: radii.lg, backgroundColor: colors.surfaceElevated },
-  landscapeArtwork: { width: 188, height: 112 },
-  roundArtwork: { borderRadius: radii.pill },
-  placeholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.borderSubtle },
-  busyOverlay: { position: 'absolute', right: spacing.xs, bottom: spacing.xs, padding: spacing.xs, borderRadius: radii.pill, backgroundColor: colors.accent },
-  copy: { gap: spacing.xxs },
-  title: { ...typography.label, color: colors.textPrimary },
-  subtitle: { ...typography.caption, color: colors.textSecondary },
-  rail: { gap: spacing.md, paddingHorizontal: spacing.lg },
+  entityCard: { width: layout.artwork.card, gap: spacing.xs },
+  busyBadge: {
+    position: 'absolute',
+    right: spacing.xs,
+    bottom: spacing.xs,
+    padding: spacing.xs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+  },
+  copy: { gap: spacing.xxs / 2 },
+  rail: { gap: layout.railGap, paddingHorizontal: layout.pagePadding },
 });

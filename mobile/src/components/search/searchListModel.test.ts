@@ -73,4 +73,25 @@ describe('search vertical-list model', () => {
     expect(createSearchListRows({ artists: [], tracks: [], albums: [], playlists: [] }))
       .toEqual([]);
   });
+
+  it('puts the promoted top result above every section and keys it uniquely', () => {
+    const rows = createSearchListRows({
+      artists: [artist],
+      tracks: [track('1')],
+      albums: [],
+      playlists: [],
+      topResult: { kind: 'artist', artist },
+    });
+
+    expect(rows.map(({ kind }) => kind)).toEqual([
+      'top-result',
+      'artist-section',
+      'track-header',
+      'track',
+    ]);
+    expect(searchListRowKey(rows[0])).toBe('section:top-result');
+    expect(createSearchListRows({
+      artists: [], tracks: [track('1')], albums: [], playlists: [], topResult: null,
+    }).map(({ kind }) => kind)).toEqual(['track-header', 'track']);
+  });
 });

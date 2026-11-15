@@ -13,6 +13,7 @@ vi.mock('react-native', () => ({
   Text: 'Text',
   View: 'View',
 }));
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 

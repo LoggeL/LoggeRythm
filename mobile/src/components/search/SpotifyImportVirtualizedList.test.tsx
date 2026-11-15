@@ -66,6 +66,7 @@ describe('SpotifyImportVirtualizedList', () => {
       accessibilityLabel: 'Spotify import',
       rows,
       header,
+      bottomInset: 96,
       renderRow,
     });
     const props = propsOf(rendered);
@@ -83,7 +84,7 @@ describe('SpotifyImportVirtualizedList', () => {
     });
     expect(props.ListHeaderComponent).toBe(header);
     expect(props.style).toMatchObject({ flex: 1 });
-    expect(props.contentContainerStyle).toMatchObject({ flexGrow: 1 });
+    expect(props.contentContainerStyle).toMatchObject({ flexGrow: 1, paddingBottom: 96 });
     const keyExtractor = props.keyExtractor as (row: SpotifyImportListRow) => string;
     expect(rows.map(keyExtractor)).toEqual(['matched:7:0', 'matched:7:1']);
 

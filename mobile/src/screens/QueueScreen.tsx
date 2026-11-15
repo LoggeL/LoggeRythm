@@ -1,35 +1,28 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  Image,
-  Pressable,
-  SectionList,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Pressable, SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Player, { Event, useProgress } from '../player/player';
+import { useProgress } from '../player/player';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { Track } from '../api/types';
-import { trackArtistLabel } from '../api/trackArtists';
-import AppIcon from '../components/AppIcon';
-import { ActionButton } from '../components/ui';
-import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
-import TrackStateIndicator from '../components/TrackStateIndicator';
-import { useTrackPresentationResolver } from '../components/player/TrackPresentationProvider';
-import TrackIdentityLinks from '../components/track/TrackIdentityLinks';
-import { buildTrackMetadata } from '../components/track/trackMetadata';
+import AppIcon, { type AppIconName } from '../components/AppIcon';
 import {
-  trackIdentityCopy,
-  trackStateIndicatorCopy,
-} from '../components/track/trackPresentationCopy';
+  ActionButton,
+  AppText,
+  EmptyState,
+  ErrorState,
+  TrackRowSkeleton,
+} from '../components/ui';
+import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
+import { PlayerErrorBanner } from '../components/player/PlayerErrorBanner';
+import {
+  QueueMetadataNoticeView,
+  QueueSnapshotNoticeView,
+} from '../components/player/QueueNotices';
+import { QueueRow } from '../components/player/QueueRow';
+import { useTrackPresentationResolver } from '../components/player/TrackPresentationProvider';
 import { musicQueries } from '../data';
 import {
   clearUpcomingQueue,
-  getQueueSnapshot,
   isContextShuffleEnabled,
   moveQueueItem,
   removeQueueItem,
@@ -37,19 +30,10 @@ import {
   toggleShuffle,
 } from '../player/controller';
 import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/errors';
-import { mediaItemToTrack } from '../player/mediaItem';
-import {
-  queueContextOf,
-  queueOriginalContextOrderOf,
-  queueOriginOf,
-  queueStableIdOf,
-  type QueueContextMetadata,
-  type QueueOrigin,
-} from '../player/queueContract';
 import type { RootStackParams } from '../navigation';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../theme';
 import {
   authoritativeQueueTrackPresentation,
   resolveQueueMetadataVisualState,
@@ -58,8 +42,10 @@ import {
   buildQueuePresentation,
   contextLabelForSection,
   type QueuePresentationSection,
+  type QueueSectionKind,
 } from './queuePresentation';
 import { resolveQueueSnapshotVisualState } from './queueSnapshotState';
+import { useQueueSnapshot, type QueueSnapshotRow } from './useQueueSnapshot';
 
 type ScreenProps = NativeStackScreenProps<RootStackParams, 'Queue'>;
 
@@ -85,47 +71,33 @@ export function queueSurfacePadding(
 ): QueueSurfacePadding {
   return embedded
     ? { paddingTop: 0, paddingBottom: 0 }
-    : { paddingTop: topInset + 8, paddingBottom: Math.max(bottomInset, 12) };
+    : { paddingTop: topInset + spacing.xs, paddingBottom: Math.max(bottomInset, spacing.sm) };
 }
 
-interface QueueRow {
-  stableId: string;
-  origin: QueueOrigin;
-  context: QueueContextMetadata | null;
-  originalContextOrder: number | null;
-  track: Track;
-}
-
-interface QueueState {
-  rows: QueueRow[];
-  activeIndex: number | null;
-}
-
-interface QueueSnapshotStatus {
-  hasSnapshot: boolean;
-  refreshing: boolean;
-  error: unknown;
-}
-
-type QueueUiSection = QueuePresentationSection<QueueRow> & { title: string };
+type QueueUiSection = QueuePresentationSection<QueueSnapshotRow> & { title: string };
 
 function testIdPart(stableId: string): string {
   const sanitized = stableId.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
   return sanitized.length > 0 ? sanitized : 'item';
 }
 
-function retryButton(testID: string, label: string, busy: boolean, onPress: () => void) {
-  return (
-    <ActionButton
-      testID={testID}
-      label={strings.common.retry}
-      accessibilityLabel={label}
-      busy={busy}
-      onPress={onPress}
-      icon="refresh"
-      style={styles.retryButton}
-    />
-  );
+function sectionTitle(kind: QueueSectionKind, rows: QueueUiSection['data']): string {
+  switch (kind) {
+    case 'history':
+      return strings.queue.historySection;
+    case 'current':
+      return strings.queue.nowPlayingSection;
+    case 'manual':
+      return strings.queue.upNextSection;
+    case 'context':
+      return strings.queue.contextSection(
+        contextLabelForSection(
+          rows,
+          strings.queue.legacyContextLabel,
+          strings.queue.unknownContext,
+        ),
+      );
+  }
 }
 
 export function QueueSurfaceHeader({
@@ -139,23 +111,26 @@ export function QueueSurfaceHeader({
 }) {
   return (
     <View testID="queue-header" style={styles.header}>
-      <View>
-        <Text accessibilityRole="header" style={[styles.heading, embedded && styles.embeddedHeading]}>{strings.queue.title}</Text>
-        <Text accessibilityLiveRegion="polite" style={styles.count}>
+      <View style={styles.headerCopy}>
+        <AppText
+          accessibilityRole="header"
+          variant={embedded ? 'section' : 'hero'}
+          numberOfLines={1}
+        >
+          {strings.queue.title}
+        </AppText>
+        <AppText accessibilityLiveRegion="polite" variant="callout" color="secondary">
           {strings.queue.upcomingCount(upcomingCount)}
-        </Text>
+        </AppText>
       </View>
       {!embedded && onClose !== undefined ? (
-        <Pressable
+        <ActionButton
           testID="queue-close"
-          accessibilityRole="button"
+          variant="secondary"
+          label={strings.queue.done}
           accessibilityLabel={strings.queue.close}
           onPress={onClose}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.closeText}>{strings.queue.done}</Text>
-        </Pressable>
+        />
       ) : null}
     </View>
   );
@@ -172,15 +147,65 @@ export function QueueSurfaceGlobalFeedback({
   return (
     <>
       {playerError !== null ? (
-        <View testID="queue-error" accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.errorBanner}>
-          <Text style={styles.errorText}>{playerError}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel={strings.player.playerErrorDismiss} onPress={clearPlayerError} style={styles.errorDismiss}>
-            <AppIcon name="close" color={colors.textSecondary} size={20} />
-          </Pressable>
-        </View>
+        <PlayerErrorBanner
+          testID="queue-error"
+          message={playerError}
+          onDismiss={clearPlayerError}
+          style={styles.errorBanner}
+        />
       ) : null}
       <PlayerNoticeBanner />
     </>
+  );
+}
+
+interface QueueToolProps {
+  testID: string;
+  icon: AppIconName;
+  label: string;
+  accessibilityLabel: string;
+  accessibilityHint?: string;
+  /** Present for mode toggles only; reported as `checked`. */
+  checked?: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}
+
+/** Labelled queue command pill. A toggle reports `checked`, which ActionButton cannot. */
+function QueueTool({
+  testID,
+  icon,
+  label,
+  accessibilityLabel,
+  accessibilityHint,
+  checked,
+  busy,
+  disabled,
+  onPress,
+}: QueueToolProps) {
+  const foreground = checked === true ? colors.accentSoft : colors.textPrimary;
+  return (
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityState={checked === undefined ? { busy, disabled } : { checked, busy, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.tool,
+        checked === true ? styles.toolChecked : null,
+        pressed ? styles.pressed : null,
+        disabled ? styles.disabled : null,
+      ]}
+    >
+      <AppIcon name={icon} color={foreground} size={18} />
+      <AppText variant="label" numberOfLines={1} style={[styles.toolLabel, { color: foreground }]}>
+        {label}
+      </AppText>
+    </Pressable>
   );
 }
 
@@ -195,19 +220,14 @@ export function QueueSurface({
   const playerError = usePlayerError();
   const activeProgress = useProgress(1);
   const { presentationFor } = useTrackPresentationResolver();
-  const [queue, setQueue] = useState<QueueState>({ rows: [], activeIndex: null });
-  const [snapshotStatus, setSnapshotStatus] = useState<QueueSnapshotStatus>({
-    hasSnapshot: false,
-    refreshing: false,
-    error: null,
-  });
+  const { queue, status: snapshotStatus, shuffle, setShuffle, refresh: refreshQueue } =
+    useQueueSnapshot();
   const [mutationPending, setMutationPending] = useState(false);
-  const [shuffle, setShuffle] = useState(isContextShuffleEnabled);
   const mutationLock = useRef(false);
-  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const metadataEnabled = snapshotStatus.hasSnapshot && queue.rows.length > 0;
   const cachedTracksQuery = useQuery({
     ...musicQueries.cachedTrackIds(),
-    enabled: snapshotStatus.hasSnapshot && queue.rows.length > 0,
+    enabled: metadataEnabled,
   });
   const expectedStableIds = useMemo(
     () => queue.rows.map((candidate) => candidate.stableId),
@@ -217,41 +237,17 @@ export function QueueSurface({
     () => buildQueuePresentation(queue.rows, queue.activeIndex),
     [queue.activeIndex, queue.rows],
   );
-  const sections = useMemo<QueueUiSection[]>(
-    () =>
-      presentation.sections.map((section) => {
-        let title: string;
-        switch (section.kind) {
-          case 'history':
-            title = strings.queue.historySection;
-            break;
-          case 'current':
-            title = strings.queue.currentSection;
-            break;
-          case 'manual':
-            title = strings.queue.manualSection;
-            break;
-          case 'context':
-            title = strings.queue.contextSection(
-              contextLabelForSection(
-                section.data,
-                strings.queue.legacyContextLabel,
-                strings.queue.unknownContext,
-              ),
-            );
-            break;
-        }
-        return { ...section, title };
-      }),
-    [presentation.sections],
-  );
+  // Titles are resolved per render so they follow a locale switch.
+  const sections: QueueUiSection[] = presentation.sections.map((section) => ({
+    ...section,
+    title: sectionTitle(section.kind, section.data),
+  }));
   const snapshotVisual = resolveQueueSnapshotVisualState({
     hasSnapshot: snapshotStatus.hasSnapshot,
     empty: queue.rows.length === 0,
     refreshing: snapshotStatus.refreshing,
     error: snapshotStatus.error,
   });
-  const metadataEnabled = snapshotStatus.hasSnapshot && queue.rows.length > 0;
   const metadataVisual = metadataEnabled
     ? resolveQueueMetadataVisualState({
         hasData: cachedTracksQuery.data !== undefined,
@@ -263,64 +259,6 @@ export function QueueSurface({
         error: cachedTracksQuery.error,
       })
     : null;
-
-  const refreshQueue = useCallback(() => {
-    setSnapshotStatus((current) => ({
-      ...current,
-      refreshing: true,
-      error: null,
-    }));
-    if (refreshTimer.current !== null) clearTimeout(refreshTimer.current);
-    refreshTimer.current = setTimeout(() => {
-      refreshTimer.current = null;
-      try {
-        const snapshot = getQueueSnapshot();
-        const stableIds = new Set<string>();
-        const rows = snapshot.items.map((item, index) => {
-          if (typeof item.mediaId !== 'string' || item.mediaId.length === 0) {
-            throw new Error(`Queue item ${index} has no mediaId`);
-          }
-          const track = mediaItemToTrack(item);
-          if (track === null) throw new Error(`Queue item ${index} has no Track metadata`);
-          const stableId = queueStableIdOf(item);
-          if (stableIds.has(stableId)) {
-            throw new Error(`Queue item ${index} has duplicate stable id ${stableId}`);
-          }
-          stableIds.add(stableId);
-          return {
-            stableId,
-            origin: queueOriginOf(item),
-            context: queueContextOf(item),
-            originalContextOrder: queueOriginalContextOrderOf(item),
-            track,
-          };
-        });
-        setQueue({ rows, activeIndex: snapshot.activeIndex });
-        setShuffle(isContextShuffleEnabled());
-        setSnapshotStatus({ hasSnapshot: true, refreshing: false, error: null });
-      } catch (cause) {
-        setSnapshotStatus((current) => ({
-          ...current,
-          refreshing: false,
-          error: cause,
-        }));
-      }
-    }, 0);
-  }, []);
-
-  useEffect(() => {
-    refreshQueue();
-    const queueSubscription = Player.addEventListener(Event.QueueChanged, refreshQueue);
-    const transitionSubscription = Player.addEventListener(
-      Event.MediaItemTransition,
-      refreshQueue,
-    );
-    return () => {
-      if (refreshTimer.current !== null) clearTimeout(refreshTimer.current);
-      queueSubscription.remove();
-      transitionSubscription.remove();
-    };
-  }, [refreshQueue]);
 
   const runMutation = async (context: string, action: () => Promise<string>) => {
     if (mutationLock.current) return;
@@ -345,13 +283,14 @@ export function QueueSurface({
     presentation.sections.find((section) => section.kind === 'context')?.data.length ?? 0;
   const canToggleShuffle = queue.activeIndex !== null && (shuffle || upcomingContextCount > 1);
   const canClearUpcoming = upcomingCount > 0;
+  const transparent = embedded ? styles.transparent : null;
 
   return (
     <View
       testID={embedded ? 'queue-panel' : 'queue-screen'}
       style={[
         styles.container,
-        embedded && styles.embeddedContainer,
+        transparent,
         queueSurfacePadding(embedded, insets.top, insets.bottom),
       ]}
     >
@@ -362,23 +301,16 @@ export function QueueSurface({
       />
 
       <View testID="queue-tools" style={styles.tools}>
-        <Pressable
+        <QueueTool
           testID="queue-shuffle"
-          accessibilityRole="button"
+          icon="shuffle-variant"
+          label={shuffle ? strings.queue.restoreOrder : strings.queue.shuffle}
           accessibilityLabel={
             shuffle ? strings.player.disableShuffle : strings.player.enableShuffle
           }
-          accessibilityState={{
-            checked: shuffle,
-            busy: mutationPending,
-            disabled: mutationPending || !canToggleShuffle,
-          }}
+          checked={shuffle}
+          busy={mutationPending}
           disabled={mutationPending || !canToggleShuffle}
-          style={[
-            styles.toolButton,
-            shuffle && styles.toolButtonActive,
-            (mutationPending || !canToggleShuffle) && styles.disabled,
-          ]}
           onPress={() =>
             void runMutation(strings.player.shuffleFailed, async () => {
               const enabled = await toggleShuffle(expectedStableIds);
@@ -386,26 +318,15 @@ export function QueueSurface({
               return enabled ? strings.queue.shuffleEnabled : strings.queue.orderRestored;
             })
           }
-        >
-          <AppIcon name="shuffle-variant" color={shuffle ? colors.accentSoft : colors.textSecondary} size={18} />
-          <Text style={[styles.toolText, shuffle && styles.toolTextActive]}>
-            {shuffle ? strings.queue.restoreOrder : strings.queue.shuffle}
-          </Text>
-        </Pressable>
-        <Pressable
+        />
+        <QueueTool
           testID="queue-clear-upcoming"
-          accessibilityRole="button"
+          icon="playlist-remove"
+          label={strings.queue.clearUpcoming}
           accessibilityLabel={strings.queue.clearUpcoming}
           accessibilityHint={strings.queue.clearUpcomingHint}
-          accessibilityState={{
-            busy: mutationPending,
-            disabled: mutationPending || !canClearUpcoming,
-          }}
+          busy={mutationPending}
           disabled={mutationPending || !canClearUpcoming}
-          style={[
-            styles.toolButton,
-            (mutationPending || !canClearUpcoming) && styles.disabled,
-          ]}
           onPress={() =>
             void runMutation(strings.queue.clearUpcomingFailed, async () => {
               await clearUpcomingQueue(expectedStableIds);
@@ -413,334 +334,140 @@ export function QueueSurface({
               return strings.queue.clearedUpcoming(upcomingCount);
             })
           }
-        >
-          <AppIcon name="playlist-remove" color={colors.textSecondary} size={18} />
-          <Text style={styles.toolText}>{strings.queue.clearUpcoming}</Text>
-        </Pressable>
+        />
       </View>
 
       <QueueSurfaceGlobalFeedback embedded={embedded} playerError={playerError} />
 
       {snapshotVisual.body === 'loading' ? (
-        <View
-          testID="queue-loading"
-          accessibilityRole="progressbar"
-          accessibilityLabel={strings.queue.loading}
-          accessibilityLiveRegion="polite"
-          style={styles.centered}
-        >
-          <ActivityIndicator color={colors.accent} />
-          <Text style={styles.emptyDetail}>{strings.queue.loading}</Text>
-        </View>
+        <TrackRowSkeleton testID="queue-loading" accessibilityLabel={strings.queue.loading} />
       ) : snapshotVisual.body === 'hard-error' ? (
-        <View
+        <ErrorState
+          layout="page"
           testID="queue-snapshot-error"
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-          style={styles.blockingState}
-        >
-          <Text style={styles.errorText}>{strings.queue.loadFailed}</Text>
-          {retryButton('queue-snapshot-retry', strings.common.retry, snapshotStatus.refreshing, refreshQueue)}
-        </View>
+          retryTestID="queue-snapshot-retry"
+          message={strings.queue.loadFailed}
+          onRetry={refreshQueue}
+          retryBusy={snapshotStatus.refreshing}
+          style={transparent}
+        />
       ) : (
         <>
-        {snapshotVisual.notice === 'cached-refresh-error' ? (
-          <View
-            testID="queue-snapshot-cached-error"
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={styles.stateNotice}
-          >
-            <Text style={styles.warningText}>{strings.queue.loadFailed}</Text>
-            {retryButton('queue-snapshot-retry', strings.common.retry, snapshotStatus.refreshing, refreshQueue)}
-          </View>
-        ) : null}
-        {snapshotVisual.notice === 'refreshing' ? (
-          <View
-            testID="queue-snapshot-refreshing"
-            accessibilityRole="progressbar"
-            accessibilityLabel={strings.queue.loading}
-            accessibilityLiveRegion="polite"
-            style={styles.inlineStatus}
-          >
-            <ActivityIndicator color={colors.accent} size="small" />
-            <Text style={styles.emptyDetail}>{strings.queue.loading}</Text>
-          </View>
-        ) : null}
+          <QueueSnapshotNoticeView
+            notice={snapshotVisual.notice}
+            retryBusy={snapshotStatus.refreshing}
+            onRetry={refreshQueue}
+          />
+          <QueueMetadataNoticeView
+            state={metadataVisual}
+            retryBusy={cachedTracksQuery.fetchStatus === 'fetching'}
+            onRetry={() => void cachedTracksQuery.refetch()}
+          />
 
-        {metadataVisual?.body === 'loading' ? (
-          <View
-            testID="queue-metadata-loading"
-            accessibilityRole="progressbar"
-            accessibilityLabel={strings.search.remoteLoading(strings.search.metadataTitle)}
-            accessibilityLiveRegion="polite"
-            style={styles.inlineStatus}
-          >
-            <ActivityIndicator color={colors.accent} size="small" />
-            <Text style={styles.emptyDetail}>
-              {strings.search.remoteLoading(strings.search.metadataTitle)}
-            </Text>
-          </View>
-        ) : null}
-        {metadataVisual?.body === 'offline' || metadataVisual?.body === 'hard-error' ? (
-          <View
-            testID={`queue-metadata-${metadataVisual.body === 'offline' ? 'offline' : 'error'}`}
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={styles.stateNotice}
-          >
-            <Text style={styles.warningText}>
-              {metadataVisual.body === 'offline'
-                ? strings.search.remoteOffline(strings.search.metadataTitle)
-                : strings.search.remoteLoadFailed(strings.search.metadataTitle)}
-            </Text>
-            {retryButton(
-              'queue-metadata-retry',
-              strings.search.retrySection(strings.search.metadataTitle),
-              cachedTracksQuery.fetchStatus === 'fetching',
-              () => void cachedTracksQuery.refetch(),
-            )}
-          </View>
-        ) : null}
-        {metadataVisual?.notice === 'cached-offline'
-        || metadataVisual?.notice === 'cached-refresh-error' ? (
-          <View
-            testID={`queue-metadata-${metadataVisual.notice === 'cached-offline' ? 'cached-offline' : 'cached-error'}`}
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-            style={styles.stateNotice}
-          >
-            <Text style={styles.warningText}>
-              {metadataVisual.notice === 'cached-offline'
-                ? strings.search.remoteCachedOffline(strings.search.metadataTitle)
-                : strings.search.remoteCachedRefreshFailed(strings.search.metadataTitle)}
-            </Text>
-            {retryButton(
-              'queue-metadata-retry',
-              strings.search.retrySection(strings.search.metadataTitle),
-              cachedTracksQuery.fetchStatus === 'fetching',
-              () => void cachedTracksQuery.refetch(),
-            )}
-          </View>
-        ) : null}
-        {metadataVisual?.notice === 'refreshing' ? (
-          <Text
-            testID="queue-metadata-refreshing"
-            accessibilityLiveRegion="polite"
-            style={styles.metadataStatus}
-          >
-            {strings.search.remoteRefreshing(strings.search.metadataTitle)}
-          </Text>
-        ) : null}
-        {metadataVisual?.notice === 'stale' ? (
-          <Text testID="queue-metadata-stale" accessibilityLiveRegion="polite" style={styles.metadataStatus}>
-            {strings.search.remoteStale(strings.search.metadataTitle)}
-          </Text>
-        ) : null}
-
-        <SectionList
-          testID="queue-list"
-          sections={sections}
-          keyExtractor={(entry) => entry.row.stableId}
-          stickySectionHeadersEnabled={false}
-          contentContainerStyle={queue.rows.length === 0 ? styles.emptyList : styles.list}
-          ListEmptyComponent={
-            <View testID="queue-empty" accessibilityLiveRegion="polite" style={styles.centered}>
-              <Text style={styles.emptyTitle}>{strings.queue.emptyTitle}</Text>
-              <Text style={styles.emptyDetail}>{strings.queue.emptyDetail}</Text>
-            </View>
-          }
-          renderSectionHeader={({ section }) => (
-            <View
-              testID={`queue-section-${section.kind}`}
-              style={[styles.sectionHeader, embedded && styles.embeddedSectionHeader]}
-            >
-              <Text accessibilityRole="header" style={styles.sectionTitle}>
-                {section.title}
-              </Text>
-              <Text style={styles.sectionCount}>
-                {strings.common.trackCount(section.data.length)}
-              </Text>
-            </View>
-          )}
-          renderItem={({ item: { row, nativeIndex } }) => {
-            const active = nativeIndex === queue.activeIndex;
-            const upcoming =
-              queue.activeIndex === null || nativeIndex > queue.activeIndex;
-            const first = nativeIndex === 0;
-            const last = nativeIndex === queue.rows.length - 1;
-            const previous = queue.rows[nativeIndex - 1];
-            const following = queue.rows[nativeIndex + 1];
-            const canMoveUp =
-              !active &&
-              !first &&
-              nativeIndex - 1 !== queue.activeIndex &&
-              (queue.activeIndex === null ||
-                nativeIndex <= queue.activeIndex ||
-                previous?.origin === row.origin);
-            const canMoveDown =
-              !active &&
-              !last &&
-              nativeIndex + 1 !== queue.activeIndex &&
-              (queue.activeIndex === null ||
-                nativeIndex <= queue.activeIndex ||
-                following?.origin === row.origin);
-            const rowTestId = `queue-row-${testIdPart(row.stableId)}`;
-            const resolvedPresentation = presentationFor(
-              {
-                trackId: row.track.id,
-                queueContext:
-                  row.context === null
-                    ? null
-                    : { type: row.context.type, id: row.context.id },
-                originalContextOrder: row.originalContextOrder,
-              },
-              active ? { rollingDeviceCacheSeconds: activeProgress.cached } : undefined,
-            );
-            // Queue-native index is authoritative even for duplicate manual or legacy ids.
-            const rowPresentation = authoritativeQueueTrackPresentation(
-              resolvedPresentation,
-              active,
-            );
-            return (
-              <View testID={rowTestId} style={[styles.row, active && styles.activeRow]}>
-                <View style={styles.rowMain}>
-                  <Pressable
-                    testID={`${rowTestId}-track`}
-                    accessibilityRole="button"
-                    accessibilityLabel={strings.queue.skipLabel(
-                      row.track.title,
-                      trackArtistLabel(row.track),
-                      active,
-                    )}
-                    accessibilityHint={active ? undefined : strings.queue.skipHint}
-                    accessibilityState={{
-                      selected: active,
-                      busy: rowPresentation.playback === 'buffering',
-                      disabled: mutationPending,
-                    }}
-                    disabled={mutationPending}
-                    style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
-                    onPress={() =>
-                      void runMutation(strings.queue.skipFailed(row.track.title), async () => {
-                        await skipToQueueItem(nativeIndex, expectedStableIds);
-                        return strings.queue.skippedTo(row.track.title);
-                      })
-                    }
-                  >
-                    {row.track.cover ? (
-                      <Image accessible={false} source={{ uri: row.track.cover }} style={styles.artwork} />
-                    ) : (
-                      <View style={[styles.artwork, styles.artworkPlaceholder]}>
-                        <AppIcon name="music-note" color={colors.textSecondary} size={24} />
-                      </View>
-                    )}
-                    {active && (
-                      <View accessible={false} pointerEvents="none" style={styles.artworkPlaying}>
-                        <AppIcon name="equalizer" color={colors.onAccent} size={18} />
-                      </View>
-                    )}
-                  </Pressable>
-
-                  <View style={styles.metadata}>
-                    <TrackIdentityLinks
-                      metadata={buildTrackMetadata(row.track)}
-                      testID={`${rowTestId}-identity`}
-                      copy={trackIdentityCopy}
-                      onOpenAlbum={onOpenAlbum}
-                      onOpenArtist={onOpenArtist}
-                      showAlbumLabel
-                      showDuration
-                      showPopularity={false}
-                    />
-                    <View style={styles.rowState}>
-                      <TrackStateIndicator
-                        presentation={rowPresentation}
-                        copy={trackStateIndicatorCopy}
-                        testID={`${rowTestId}-state`}
-                      />
-                      {upcoming && row.origin === 'manual' && (
-                        <Text numberOfLines={1} style={styles.manualPriority}>
-                          {strings.queue.manualPriority}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                </View>
-                <View style={styles.actions}>
-                  <Pressable
-                    testID={`${rowTestId}-move-up`}
-                    accessibilityRole="button"
-                    accessibilityLabel={strings.queue.moveUp(row.track.title)}
-                    accessibilityState={{ disabled: mutationPending || !canMoveUp }}
-                    disabled={mutationPending || !canMoveUp}
-                    style={({ pressed }) => [
-                      styles.actionButton,
-                      pressed && styles.pressed,
-                      (mutationPending || !canMoveUp) && styles.disabled,
-                    ]}
-                    onPress={() =>
-                      void runMutation(strings.queue.moveUpFailed(row.track.title), async () => {
-                        await moveQueueItem(
-                          nativeIndex,
-                          nativeIndex - 1,
-                          expectedStableIds,
-                        );
-                        return strings.queue.movedUp(row.track.title);
-                      })
-                    }
-                  >
-                    <AppIcon name="arrow-up" color={colors.textSecondary} size={20} />
-                  </Pressable>
-                  <Pressable
-                    testID={`${rowTestId}-move-down`}
-                    accessibilityRole="button"
-                    accessibilityLabel={strings.queue.moveDown(row.track.title)}
-                    accessibilityState={{ disabled: mutationPending || !canMoveDown }}
-                    disabled={mutationPending || !canMoveDown}
-                    style={({ pressed }) => [
-                      styles.actionButton,
-                      pressed && styles.pressed,
-                      (mutationPending || !canMoveDown) && styles.disabled,
-                    ]}
-                    onPress={() =>
-                      void runMutation(strings.queue.moveDownFailed(row.track.title), async () => {
-                        await moveQueueItem(
-                          nativeIndex,
-                          nativeIndex + 1,
-                          expectedStableIds,
-                        );
-                        return strings.queue.movedDown(row.track.title);
-                      })
-                    }
-                  >
-                    <AppIcon name="arrow-down" color={colors.textSecondary} size={20} />
-                  </Pressable>
-                  <Pressable
-                    testID={`${rowTestId}-remove`}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      active
-                        ? strings.queue.cannotRemoveCurrent(row.track.title)
-                        : strings.queue.remove(row.track.title)
-                    }
-                    accessibilityState={{ disabled: mutationPending || active }}
-                    disabled={mutationPending || active}
-                    style={({ pressed }) => [styles.actionButton, pressed && styles.pressed, (mutationPending || active) && styles.disabled]}
-                    onPress={() =>
-                      void runMutation(strings.queue.removeFailed(row.track.title), async () => {
-                        await removeQueueItem(nativeIndex, expectedStableIds);
-                        return strings.queue.removed(row.track.title);
-                      })
-                    }
-                  >
-                    <AppIcon name="close" color={colors.danger} size={20} />
-                  </Pressable>
-                </View>
+          <SectionList
+            testID="queue-list"
+            sections={sections}
+            keyExtractor={(entry) => entry.row.stableId}
+            stickySectionHeadersEnabled={false}
+            contentContainerStyle={queue.rows.length === 0 ? styles.emptyList : styles.list}
+            ListEmptyComponent={
+              <EmptyState
+                layout="page"
+                testID="queue-empty"
+                icon="playlist-music-outline"
+                title={strings.queue.emptyTitle}
+                message={strings.queue.emptyDetail}
+                style={transparent}
+              />
+            }
+            renderSectionHeader={({ section }) => (
+              <View testID={`queue-section-${section.kind}`} style={styles.sectionHeader}>
+                <AppText
+                  accessibilityRole="header"
+                  variant="overline"
+                  color={section.kind === 'current' ? 'accent' : 'secondary'}
+                  numberOfLines={1}
+                  style={styles.sectionTitle}
+                >
+                  {section.title}
+                </AppText>
+                <AppText variant="caption" color="muted">
+                  {strings.common.trackCount(section.data.length)}
+                </AppText>
               </View>
-            );
-          }}
-        />
+            )}
+            renderItem={({ item: { row, nativeIndex } }) => {
+              const active = nativeIndex === queue.activeIndex;
+              const first = nativeIndex === 0;
+              const last = nativeIndex === queue.rows.length - 1;
+              const previous = queue.rows[nativeIndex - 1];
+              const following = queue.rows[nativeIndex + 1];
+              const canMoveUp =
+                !active &&
+                !first &&
+                nativeIndex - 1 !== queue.activeIndex &&
+                (queue.activeIndex === null ||
+                  nativeIndex <= queue.activeIndex ||
+                  previous?.origin === row.origin);
+              const canMoveDown =
+                !active &&
+                !last &&
+                nativeIndex + 1 !== queue.activeIndex &&
+                (queue.activeIndex === null ||
+                  nativeIndex <= queue.activeIndex ||
+                  following?.origin === row.origin);
+              const title = row.track.title;
+              const resolvedPresentation = presentationFor(
+                {
+                  trackId: row.track.id,
+                  queueContext:
+                    row.context === null
+                      ? null
+                      : { type: row.context.type, id: row.context.id },
+                  originalContextOrder: row.originalContextOrder,
+                },
+                active ? { rollingDeviceCacheSeconds: activeProgress.cached } : undefined,
+              );
+              return (
+                <QueueRow
+                  track={row.track}
+                  testID={`queue-row-${testIdPart(row.stableId)}`}
+                  active={active}
+                  // Queue-native index is authoritative even for duplicate manual or legacy ids.
+                  presentation={authoritativeQueueTrackPresentation(resolvedPresentation, active)}
+                  disabled={mutationPending}
+                  canMoveUp={canMoveUp}
+                  canMoveDown={canMoveDown}
+                  onOpenAlbum={onOpenAlbum}
+                  onOpenArtist={onOpenArtist}
+                  onSkip={() =>
+                    void runMutation(strings.queue.skipFailed(title), async () => {
+                      await skipToQueueItem(nativeIndex, expectedStableIds);
+                      return strings.queue.skippedTo(title);
+                    })
+                  }
+                  onMoveUp={() =>
+                    void runMutation(strings.queue.moveUpFailed(title), async () => {
+                      await moveQueueItem(nativeIndex, nativeIndex - 1, expectedStableIds);
+                      return strings.queue.movedUp(title);
+                    })
+                  }
+                  onMoveDown={() =>
+                    void runMutation(strings.queue.moveDownFailed(title), async () => {
+                      await moveQueueItem(nativeIndex, nativeIndex + 1, expectedStableIds);
+                      return strings.queue.movedDown(title);
+                    })
+                  }
+                  onRemove={() =>
+                    void runMutation(strings.queue.removeFailed(title), async () => {
+                      await removeQueueItem(nativeIndex, expectedStableIds);
+                      return strings.queue.removed(title);
+                    })
+                  }
+                />
+              );
+            }}
+          />
         </>
       )}
     </View>
@@ -766,126 +493,47 @@ export default function QueueScreen({ navigation }: ScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  embeddedContainer: { backgroundColor: 'transparent' },
+  transparent: { backgroundColor: 'transparent' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 18,
+    gap: spacing.sm,
+    paddingHorizontal: layout.pagePadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
   },
+  headerCopy: { flex: 1, minWidth: 0 },
   tools: {
     flexDirection: 'row',
-    gap: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    gap: spacing.xs,
+    paddingHorizontal: layout.pagePadding,
+    paddingBottom: spacing.sm,
   },
-  toolButton: {
+  tool: {
     flex: 1,
     minHeight: metrics.minimumTouchTarget,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
   },
-  toolButtonActive: { borderColor: colors.accentSoft, backgroundColor: colors.surfaceElevated },
-  toolText: { flexShrink: 1, color: colors.textSecondary, fontSize: 12, fontWeight: '600', textAlign: 'center' },
-  toolTextActive: { color: colors.accentSoft },
-  heading: { color: colors.textPrimary, fontSize: 30, lineHeight: 38, fontWeight: '700', letterSpacing: -0.7 },
-  embeddedHeading: { fontSize: 23, lineHeight: 30 },
-  count: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, marginTop: 4 },
-  closeButton: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 14, backgroundColor: colors.surface },
-  closeText: { color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
-  errorBanner: {
-    marginHorizontal: 20,
-    marginBottom: 10,
-    padding: 10,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    backgroundColor: colors.surfaceElevated,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  errorText: { flex: 1, color: colors.danger, fontSize: 12, lineHeight: 17 },
-  errorDismiss: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  errorDismissText: { color: colors.textPrimary, fontSize: 22 },
-  blockingState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
-  stateNotice: { gap: 8, marginHorizontal: 20, marginBottom: 8 },
-  warningText: { color: colors.warning, fontSize: 12, lineHeight: 17 },
-  inlineStatus: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20 },
-  metadataStatus: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, paddingHorizontal: 20, paddingBottom: 6 },
-  retryButton: { alignSelf: 'flex-start' },
-  pressed: { opacity: 0.72 },
-  list: { paddingHorizontal: 16, paddingBottom: 24 },
-  emptyList: { flexGrow: 1, paddingHorizontal: 20 },
+  toolChecked: { backgroundColor: colors.accentSubtle },
+  toolLabel: { flexShrink: 1 },
+  pressed: { opacity: opacity.pressed },
+  disabled: { opacity: opacity.disabled },
+  errorBanner: { marginHorizontal: layout.pagePadding, marginBottom: spacing.xs },
+  list: { paddingHorizontal: spacing.sm, paddingBottom: layout.scrollEndGap },
+  emptyList: { flexGrow: 1 },
   sectionHeader: {
-    minHeight: 42,
-    paddingHorizontal: 4,
-    paddingTop: 20,
-    paddingBottom: 12,
     flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    backgroundColor: colors.background,
-  },
-  embeddedSectionHeader: { backgroundColor: 'transparent' },
-  sectionTitle: { flex: 1, color: colors.textPrimary, fontSize: 14, lineHeight: 20, fontWeight: '600' },
-  sectionCount: { color: colors.textSecondary, fontSize: 11, marginLeft: 12 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  emptyTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  emptyDetail: { color: colors.textSecondary, fontSize: 14, textAlign: 'center' },
-  row: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    paddingHorizontal: 12,
-    paddingTop: 12,
-    paddingBottom: 4,
-    marginBottom: 8,
-  },
-  activeRow: {
-    backgroundColor: colors.surfaceElevated,
-    borderColor: colors.accent,
-  },
-  rowMain: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  trackButton: {
-    width: 56,
-    height: 56,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xs,
   },
-  artwork: {
-    width: 56,
-    height: 56,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
-  },
-  artworkPlaceholder: { borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-  artworkPlaying: { position: 'absolute', right: -4, bottom: -4, width: 24, height: 24, borderRadius: 8, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
-  metadata: {
-    flex: 1,
-    minWidth: 0,
-    paddingVertical: 2,
-    gap: 6,
-  },
-  rowState: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
-  manualPriority: {
-    flexShrink: 1,
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    fontWeight: '500',
-  },
-  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4, gap: 4 },
-  actionButton: { width: metrics.minimumTouchTarget, height: metrics.minimumTouchTarget, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  disabled: { opacity: 0.24 },
+  sectionTitle: { flex: 1 },
 });

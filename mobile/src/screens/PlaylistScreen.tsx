@@ -1,77 +1,42 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  FlatList,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FlatList, StyleSheet, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
 import { playlistEntryId, type Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
-import AppIcon from '../components/AppIcon';
-import { ActionButton } from '../components/ui';
+import { InlineNotice } from '../components/library/InlineNotice';
+import { PlaylistActionsSheet } from '../components/library/PlaylistActionsSheet';
+import { PlaylistDeleteSheet } from '../components/library/PlaylistDeleteSheet';
+import { PlaylistEditSheet, usePlaylistEditForm } from '../components/library/PlaylistEditSheet';
+import { PlaylistHero } from '../components/library/PlaylistHero';
 import {
   PlaylistQueryGate,
   PlaylistQueryNotice,
   resolvePlaylistRemoteVisualState,
 } from '../components/library/PlaylistRemoteStates';
-import OfflinePlaylistControl, {
-  type OfflinePlaylistControlCopy,
-} from '../components/offline/OfflinePlaylistControl';
-import StandardTrackRow from '../components/track/StandardTrackRow';
+import { PlaylistTrackRow } from '../components/library/PlaylistTrackRow';
+import { usePlaylistMutations } from '../components/library/usePlaylistMutations';
+import { usePlaylistOffline } from '../components/library/usePlaylistOffline';
+import type { OfflinePlaylistControlCopy } from '../components/offline/OfflinePlaylistControl';
 import { showTrackActions } from '../components/trackActions';
+import { ActionButton, AppText, EmptyState } from '../components/ui';
 import { getCurrentApiBase } from '../config';
-import {
-  invalidatePlaylistCaches,
-  musicCacheScope,
-  musicMutations,
-  musicQueries,
-  optimisticallyRemovePlaylistTrack,
-  optimisticallyReorderPlaylistTracks,
-  optimisticallySetPlaylistVisibility,
-  optimisticallyUpdatePlaylist,
-  refreshLibraryAutoBrowse,
-  removeDeletedPlaylistFromCache,
-  restorePlaylistCache,
-} from '../data';
+import { musicCacheScope, musicQueries } from '../data';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { useOfflineDownloads } from '../offline/hooks';
-import {
-  downloadPlaylistForOffline,
-  removeOfflinePlaylist,
-} from '../offline/runtime';
-import {
-  refreshBrowseTree,
-  refreshOfflineBrowseTree,
-} from '../player/browseTree';
-import { playTracks } from '../player/controller';
-import { reportPlayerNotice } from '../player/notices';
-import { colors, metrics } from '../theme';
+import { playTracks, toggleShuffle } from '../player/controller';
+import { colors, layout, spacing } from '../theme';
 import {
   assertPlaylistScreenContract,
   libraryPlaybackSelection,
-  libraryTestIdSegment,
   likedTrackOccurrence,
   playlistTrackOccurrence,
-  playlistUpdateRequest,
   reorderedPlaylistEntryIds,
-  type LibraryAlbumRouteParams,
-  type LibraryArtistRouteParams,
-  type LibraryTrackOccurrence,
   type PlaylistScreenContract,
   type TrackMoveDirection,
 } from './libraryModel';
 import { libraryStrings } from './libraryStrings';
-import { runOfflinePlaylistScreenAction } from './offlineScreenActions';
 import {
   accountOfflinePlaylistDetail,
   firstDownloadedOccurrenceIndex,
@@ -80,34 +45,15 @@ import {
   playlistOfflineControlState,
   playlistScreenPlaybackOptions,
   type OfflineScreenFailure,
-  type OfflineScreenOperation,
 } from './offlineScreenModel';
-import { playlistFailureMessage, playlistNameValidation } from './playlistFeedback';
+import { playlistFailureMessage } from './playlistFeedback';
+
+export { PlaylistTrackRow } from '../components/library/PlaylistTrackRow';
+export { refreshOfflineAutoBrowse } from '../components/library/autoBrowse';
 
 export type PlaylistScreenProps = PlaylistScreenContract;
 
-function PlaylistArtwork({ uri }: { uri: string | null }) {
-  return uri ? (
-    <Image accessible={false} source={{ uri }} style={styles.heroArtwork} />
-  ) : (
-    <View style={[styles.heroArtwork, styles.artworkPlaceholder]}>
-      <AppIcon name="music-note" color={colors.accentSoft} size={28} />
-    </View>
-  );
-}
-
-function reportAutoBrowseRefreshFailure() {
-  reportPlayerNotice(
-    'bookkeeping',
-    'auto-library-refresh',
-    strings.player.autoLibraryFailed,
-    strings.player.autoLibraryRefreshFailedMessage,
-  );
-}
-
-export function refreshOfflineAutoBrowse(): Promise<void> {
-  return refreshLibraryAutoBrowse(refreshOfflineBrowseTree, reportAutoBrowseRefreshFailure);
-}
+type PlaylistSheet = 'actions' | 'delete' | null;
 
 export function offlineControlCopy(
   failure: OfflineScreenFailure,
@@ -135,100 +81,6 @@ export function offlineControlCopy(
   };
 }
 
-interface PlaylistTrackRowProps {
-  track: Track;
-  index: number;
-  count: number;
-  occurrence: LibraryTrackOccurrence;
-  canEdit: boolean;
-  controlsDisabled: boolean;
-  onPlay: () => void;
-  onOpenActions: () => void;
-  onOpenAlbum: (params: LibraryAlbumRouteParams) => void;
-  onOpenArtist: (params: LibraryArtistRouteParams) => void;
-  onMove: (direction: TrackMoveDirection) => void;
-  onRemove: () => void;
-}
-
-export function PlaylistTrackRow({
-  track,
-  index,
-  count,
-  occurrence,
-  canEdit,
-  controlsDisabled,
-  onPlay,
-  onOpenActions,
-  onOpenAlbum,
-  onOpenArtist,
-  onMove,
-  onRemove,
-}: PlaylistTrackRowProps) {
-  const rowId = `playlist-track-${libraryTestIdSegment(track.id)}-${index}`;
-  return (
-    <StandardTrackRow
-      track={track}
-      testID={rowId}
-      occurrence={occurrence}
-      position={index + 1}
-      onPlay={onPlay}
-      onActions={onOpenActions}
-      onOpenAlbum={onOpenAlbum}
-      onOpenArtist={onOpenArtist}
-      trailingControls={canEdit ? (
-        <View style={styles.trackControls}>
-          <Pressable
-            testID={`${rowId}-up`}
-            accessibilityRole="button"
-            accessibilityLabel={libraryStrings.playlist.moveUp(track.title)}
-            accessibilityState={{ disabled: controlsDisabled || index === 0 }}
-            disabled={controlsDisabled || index === 0}
-            onPress={() => onMove('up')}
-            style={({ pressed }) => [
-              styles.iconAction,
-              (controlsDisabled || index === 0) && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <AppIcon name="arrow-up" color={colors.textSecondary} size={20} />
-          </Pressable>
-          <Pressable
-            testID={`${rowId}-down`}
-            accessibilityRole="button"
-            accessibilityLabel={libraryStrings.playlist.moveDown(track.title)}
-            accessibilityState={{ disabled: controlsDisabled || index === count - 1 }}
-            disabled={controlsDisabled || index === count - 1}
-            onPress={() => onMove('down')}
-            style={({ pressed }) => [
-              styles.iconAction,
-              (controlsDisabled || index === count - 1) && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <AppIcon name="arrow-down" color={colors.textSecondary} size={20} />
-          </Pressable>
-          <Pressable
-            testID={`${rowId}-remove`}
-            accessibilityRole="button"
-            accessibilityLabel={libraryStrings.playlist.remove(track.title)}
-            accessibilityState={{ disabled: controlsDisabled }}
-            disabled={controlsDisabled}
-            onPress={onRemove}
-            style={({ pressed }) => [
-              styles.iconAction,
-              styles.removeAction,
-              controlsDisabled && styles.disabled,
-              pressed && styles.pressed,
-            ]}
-          >
-            <AppIcon name="close" color={colors.danger} size={20} />
-          </Pressable>
-        </View>
-      ) : undefined}
-    />
-  );
-}
-
 export default function PlaylistScreen(props: PlaylistScreenProps) {
   assertPlaylistScreenContract(props);
   const { user } = useAuth();
@@ -237,7 +89,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
   const apiBase = getCurrentApiBase();
   const scope = musicCacheScope(apiBase, user.id);
   const offlineSnapshot = useOfflineDownloads();
-  const queryClient = useQueryClient();
+  const bottomInset = useBottomInset();
   const playlistId = props.kind === 'playlist' ? props.playlistId : 1;
   const likedQuery = useQuery({
     ...musicQueries.likes(scope),
@@ -248,103 +100,20 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     enabled: props.kind === 'playlist',
   });
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
-  const [playlistActionsVisible, setPlaylistActionsVisible] = useState(false);
-  const [editVisible, setEditVisible] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editDescription, setEditDescription] = useState('');
-  const [editValidation, setEditValidation] = useState<string | null>(null);
-  const [offlineOperation, setOfflineOperation] = useState<OfflineScreenOperation>(null);
-  const [offlineActionFailure, setOfflineActionFailure] = useState<OfflineScreenFailure>(null);
-
-  const refreshAutoBrowse = () =>
-    refreshLibraryAutoBrowse(refreshBrowseTree, reportAutoBrowseRefreshFailure);
-
-  const updateMutation = useMutation({
-    ...musicMutations.updatePlaylist(scope),
-    onMutate: ({ id, patch }) => optimisticallyUpdatePlaylist(queryClient, scope, id, patch),
-    onError: (_error, { id }, snapshot) => {
-      if (snapshot !== undefined) restorePlaylistCache(queryClient, scope, id, snapshot);
-    },
-    onSuccess: async (_result, { id }) => {
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, scope, id),
-        refreshAutoBrowse(),
-      ]);
-      setEditVisible(false);
-      setEditValidation(null);
-    },
-    onSettled: async (_result, error, { id }) => {
-      if (error !== null) await invalidatePlaylistCaches(queryClient, scope, id);
-    },
-  });
-  const visibilityMutation = useMutation({
-    ...musicMutations.setPlaylistVisibility(scope),
-    onMutate: ({ id, isPublic }) =>
-      optimisticallySetPlaylistVisibility(queryClient, scope, id, isPublic),
-    onError: (_error, { id }, snapshot) => {
-      if (snapshot !== undefined) restorePlaylistCache(queryClient, scope, id, snapshot);
-    },
-    onSuccess: async (_result, { id }) => {
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, scope, id),
-        refreshAutoBrowse(),
-      ]);
-    },
-    onSettled: async (_result, error, { id }) => {
-      if (error !== null) await invalidatePlaylistCaches(queryClient, scope, id);
-    },
-  });
-  const removeMutation = useMutation({
-    ...musicMutations.removeFromPlaylist(scope),
-    onMutate: ({ id, entryId }) =>
-      optimisticallyRemovePlaylistTrack(queryClient, scope, id, entryId),
-    onError: (_error, { id }, snapshot) => {
-      if (snapshot !== undefined) restorePlaylistCache(queryClient, scope, id, snapshot);
-    },
-    onSuccess: async (_result, { id }) => {
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, scope, id),
-        refreshAutoBrowse(),
-      ]);
-    },
-    onSettled: async (_result, error, { id }) => {
-      if (error !== null) await invalidatePlaylistCaches(queryClient, scope, id);
-    },
-  });
-  const reorderMutation = useMutation({
-    ...musicMutations.reorderPlaylist(scope),
-    onMutate: ({ id, entryIds }) =>
-      optimisticallyReorderPlaylistTracks(queryClient, scope, id, entryIds),
-    onError: (_error, { id }, snapshot) => {
-      if (snapshot !== undefined) restorePlaylistCache(queryClient, scope, id, snapshot);
-    },
-    onSuccess: async (_result, { id }) => {
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, scope, id),
-        refreshAutoBrowse(),
-      ]);
-    },
-    onSettled: async (_result, error, { id }) => {
-      if (error !== null) await invalidatePlaylistCaches(queryClient, scope, id);
-    },
-  });
-  const deleteMutation = useMutation({
-    ...musicMutations.deletePlaylist(scope),
-    onSuccess: async (_result, id) => {
-      if (props.kind !== 'playlist') return;
-      removeDeletedPlaylistFromCache(queryClient, scope, id);
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, scope),
-        refreshAutoBrowse(),
-      ]);
-      props.onDeleted();
-    },
-  });
+  const [sheet, setSheet] = useState<PlaylistSheet>(null);
+  const [reordering, setReordering] = useState(false);
+  const mutations = usePlaylistMutations(scope, { onDeleted: props.onDeleted });
+  const editForm = usePlaylistEditForm(mutations.update);
 
   const remoteDetail = props.kind === 'playlist' ? playlistQuery.data : undefined;
   const offlineDetail = props.kind === 'playlist'
     ? accountOfflinePlaylistDetail(offlineSnapshot, scope, props.playlistId)
     : null;
+  const offline = usePlaylistOffline(
+    scope,
+    props.kind === 'playlist' ? props.playlistId : null,
+    remoteDetail ?? offlineDetail?.playlist,
+  );
   const localFallback = props.kind === 'playlist'
     && remoteDetail === undefined
     && offlineDetail !== null;
@@ -353,161 +122,82 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     ? (likedQuery.data ?? [])
     : (remoteDetail?.tracks ?? []);
   const tracks = props.kind === 'liked' ? remoteTracks : (detail?.tracks ?? []);
-  const hasData = props.kind === 'liked'
-    ? likedQuery.data !== undefined
-    : remoteDetail !== undefined;
-  const isPending = props.kind === 'liked' ? likedQuery.isPending : playlistQuery.isPending;
-  const isFetching = props.kind === 'liked' ? likedQuery.isFetching : playlistQuery.isFetching;
-  const isStale = props.kind === 'liked' ? likedQuery.isStale : playlistQuery.isStale;
-  const fetchStatus = props.kind === 'liked' ? likedQuery.fetchStatus : playlistQuery.fetchStatus;
-  const queryError = props.kind === 'liked' ? likedQuery.error : playlistQuery.error;
-  const refetch = props.kind === 'liked' ? likedQuery.refetch : playlistQuery.refetch;
+  const query = props.kind === 'liked' ? likedQuery : playlistQuery;
   const queryVisual = resolvePlaylistRemoteVisualState({
-    hasData,
+    hasData: props.kind === 'liked' ? likedQuery.data !== undefined : remoteDetail !== undefined,
     empty: remoteTracks.length === 0,
-    isPending,
-    isFetching,
-    isStale,
-    fetchStatus,
-    error: queryError,
+    isPending: query.isPending,
+    isFetching: query.isFetching,
+    isStale: query.isStale,
+    fetchStatus: query.fetchStatus,
+    error: query.error,
   });
-  const queryRetryBusy = fetchStatus === 'fetching';
+  const queryRetryBusy = query.fetchStatus === 'fetching';
+  const refetch = () => void query.refetch();
   const canEdit = props.kind === 'playlist' && remoteDetail?.is_owner === true;
-  const mutationPending =
-    updateMutation.isPending ||
-    visibilityMutation.isPending ||
-    removeMutation.isPending ||
-    reorderMutation.isPending ||
-    deleteMutation.isPending;
-  const mutationError =
-    updateMutation.error ??
-    visibilityMutation.error ??
-    removeMutation.error ??
-    reorderMutation.error ??
-    deleteMutation.error;
   const offlineControlState = props.kind === 'playlist'
     ? playlistOfflineControlState({
         snapshot: offlineSnapshot,
         accountScope: scope,
         playlistId: props.playlistId,
         sourceTrackCount: detail?.tracks.length ?? 0,
-        operation: offlineOperation,
-        actionFailure: offlineActionFailure,
+        operation: offline.operation,
+        actionFailure: offline.failure,
       })
     : null;
   const firstLocalPlaybackIndex = localFallback && offlineDetail !== null
     ? firstDownloadedOccurrenceIndex(offlineDetail)
     : 0;
-  const offlineActionBusy =
-    offlineControlState?.kind === 'downloading'
-    || offlineControlState?.kind === 'removing';
 
-  const resetMutationErrors = () => {
-    updateMutation.reset();
-    visibilityMutation.reset();
-    removeMutation.reset();
-    reorderMutation.reset();
-    deleteMutation.reset();
-  };
-
-  const playContext = (index: number) => {
-    try {
-      const selected = localFallback && offlineDetail !== null
-        ? localPlaylistPlaybackSelection(offlineDetail, index)
-        : libraryPlaybackSelection(tracks, index);
-      if (selected === null || offlineControlState?.kind === 'removing') {
-        setRuntimeError(libraryStrings.playlist.localTrackUnavailable);
-        return;
-      }
-      const context =
-        props.kind === 'liked'
-          ? ({
-              type: 'liked',
-              id: String(user.id),
-              label: strings.navigation.likedSongs,
-            } as const)
-          : ({
-              type: 'playlist',
-              id: String(props.playlistId),
-              label: detail?.name ?? props.name,
-            } as const);
-      setRuntimeError(null);
-      void playTracks(
-        selected.tracks,
-        selected.startIndex,
-        playlistScreenPlaybackOptions(context, localFallback),
-      ).catch((error) => setRuntimeError(playlistFailureMessage('playback', error)));
-    } catch (error) {
-      setRuntimeError(playlistFailureMessage('playback', error));
-    }
-  };
-
-  const startOfflineDownload = () => {
-    if (props.kind !== 'playlist') return;
-    const source = remoteDetail ?? offlineDetail?.playlist;
-    if (source === undefined) {
-      setOfflineActionFailure('download');
+  const startPlayback = async (index: number, shuffle: boolean): Promise<void> => {
+    const selected = localFallback && offlineDetail !== null
+      ? localPlaylistPlaybackSelection(offlineDetail, index)
+      : libraryPlaybackSelection(tracks, index);
+    if (selected === null || offlineControlState?.kind === 'removing') {
+      setRuntimeError(libraryStrings.playlist.localTrackUnavailable);
       return;
     }
-    setOfflineActionFailure(null);
-    setOfflineOperation('downloading');
-    void runOfflinePlaylistScreenAction(
-      () => downloadPlaylistForOffline(scope, source),
-      refreshOfflineAutoBrowse,
-    )
-      .catch(() => setOfflineActionFailure('download'))
-      .finally(() => setOfflineOperation(null));
+    const context =
+      props.kind === 'liked'
+        ? ({
+            type: 'liked',
+            id: String(user.id),
+            label: strings.navigation.likedSongs,
+          } as const)
+        : ({
+            type: 'playlist',
+            id: String(props.playlistId),
+            label: detail?.name ?? props.name,
+          } as const);
+    setRuntimeError(null);
+    await playTracks(
+      selected.tracks,
+      selected.startIndex,
+      playlistScreenPlaybackOptions(context, localFallback),
+    );
+    // Product shuffle reorders the upcoming context items of the queue that
+    // was just started; it is the same switch the player screen toggles.
+    if (shuffle) await toggleShuffle();
   };
 
-  const removeOfflineDownload = () => {
-    if (props.kind !== 'playlist') return;
-    setOfflineActionFailure(null);
-    setOfflineOperation('removing');
-    void runOfflinePlaylistScreenAction(
-      () => removeOfflinePlaylist(scope, props.playlistId),
-      refreshOfflineAutoBrowse,
-    )
-      .catch(() => setOfflineActionFailure('remove'))
-      .finally(() => setOfflineOperation(null));
-  };
-
-  const openEdit = () => {
-    if (!canEdit || remoteDetail === undefined) return;
-    resetMutationErrors();
-    setEditName(remoteDetail.name);
-    setEditDescription(remoteDetail.description ?? '');
-    setEditValidation(null);
-    setEditVisible(true);
-  };
-
-  const submitEdit = () => {
-    if (props.kind !== 'playlist' || !canEdit) return;
-    const validation = playlistNameValidation(editName);
-    setEditValidation(validation);
-    if (validation !== null) return;
-    updateMutation.reset();
-    try {
-      updateMutation.mutate({
-        id: props.playlistId,
-        patch: playlistUpdateRequest(editName, editDescription),
-      });
-    } catch (error) {
-      setEditValidation(playlistFailureMessage('mutation', error));
-    }
+  const playContext = (index: number, shuffle = false) => {
+    startPlayback(index, shuffle).catch((error: unknown) =>
+      setRuntimeError(playlistFailureMessage('playback', error)),
+    );
   };
 
   const changeVisibility = (isPublic: boolean) => {
     if (props.kind !== 'playlist' || !canEdit) return;
-    resetMutationErrors();
-    visibilityMutation.mutate({ id: props.playlistId, isPublic });
+    mutations.resetErrors();
+    mutations.visibility.mutate({ id: props.playlistId, isPublic });
   };
 
   const removeTrack = async (track: Track): Promise<void> => {
     if (props.kind !== 'playlist' || !canEdit) {
       throw new Error(libraryStrings.playlist.ownerOnly);
     }
-    resetMutationErrors();
-    await removeMutation.mutateAsync({
+    mutations.resetErrors();
+    await mutations.removeTrack.mutateAsync({
       id: props.playlistId,
       entryId: playlistEntryId(track),
     });
@@ -530,32 +220,15 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
 
   const moveTrack = (index: number, direction: TrackMoveDirection) => {
     if (props.kind !== 'playlist' || !canEdit) return;
-    resetMutationErrors();
+    mutations.resetErrors();
     try {
-      reorderMutation.mutate({
+      mutations.reorder.mutate({
         id: props.playlistId,
         entryIds: reorderedPlaylistEntryIds(tracks, index, direction),
       });
     } catch (error) {
       setRuntimeError(playlistFailureMessage('mutation', error));
     }
-  };
-
-  const confirmDelete = () => {
-    if (props.kind !== 'playlist' || !canEdit || remoteDetail === undefined) return;
-    resetMutationErrors();
-    Alert.alert(
-      libraryStrings.playlist.deleteTitle,
-      libraryStrings.playlist.deleteMessage(remoteDetail.name),
-      [
-        { text: libraryStrings.common.cancel, style: 'cancel' },
-        {
-          text: libraryStrings.playlist.deleteConfirm,
-          style: 'destructive',
-          onPress: () => deleteMutation.mutate(props.playlistId),
-        },
-      ],
-    );
   };
 
   if (
@@ -570,17 +243,21 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
       <PlaylistQueryGate
         visual={queryVisual}
         retryBusy={queryRetryBusy}
-        onRetry={() => void refetch()}
+        onRetry={refetch}
       />
     );
   }
 
   const title = detail?.name ?? props.name;
-  const description = detail?.description ?? null;
   const coverUrl =
     detail?.cover_url === null || detail?.cover_url === undefined
       ? null
       : resolveServerUrl(detail.cover_url, apiBase);
+  const playable = tracks.length > 0 && (!localFallback || firstLocalPlaybackIndex >= 0);
+  const showRowControls = canEdit && reordering;
+  // The delete sheet owns the failure of its own request; every other
+  // mutation failure is shown in the header.
+  const headerMutationError = sheet === 'delete' ? null : mutations.error;
 
   return (
     <View testID="playlist-screen" style={styles.container}>
@@ -592,171 +269,111 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           ? `playlist-entry-${String(playlistEntryId(track))}`
           : `${props.kind}-track-${track.id}-${String(index)}`}
         refreshing={queryVisual.notice === 'refreshing'}
-        onRefresh={() => {
-          void refetch();
-        }}
+        onRefresh={refetch}
+        showsVerticalScrollIndicator={false}
         ListHeaderComponent={
           <View style={styles.header}>
-            <View style={styles.heroIdentity}>
-              <PlaylistArtwork uri={coverUrl} />
-              <View style={styles.headerCopy}>
-                <View style={styles.titleRow}>
-                  <Text testID="playlist-title" accessibilityRole="header" style={styles.title}>
-                    {title}
-                  </Text>
-                  {props.kind === 'playlist' && detail !== undefined ? (
-                    <Pressable
-                      testID="playlist-actions"
-                      accessibilityRole="button"
-                      accessibilityLabel={libraryStrings.playlist.openMenu}
-                      onPress={() => setPlaylistActionsVisible(true)}
-                      style={({ pressed }) => [
-                        styles.playlistActionsButton,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <AppIcon name="dots-vertical" color={colors.textSecondary} size={26} />
-                    </Pressable>
-                  ) : null}
-                </View>
-                {detail?.owner_name ? (
-                  <Text style={styles.status}>{libraryStrings.playlist.byOwner(detail.owner_name)}</Text>
-                ) : null}
-                <Text testID="playlist-track-count" style={styles.status}>
-                  {libraryStrings.common.tracks(tracks.length)}
-                </Text>
-              </View>
-            </View>
-            {description !== null ? <Text style={styles.description}>{description}</Text> : null}
+            <PlaylistHero
+              title={title}
+              coverUrl={coverUrl}
+              liked={props.kind === 'liked'}
+              ownerName={detail?.owner_name ?? null}
+              trackCount={tracks.length}
+              durationSeconds={tracks.reduce((total, track) => total + track.duration_sec, 0)}
+              visibility={
+                canEdit && remoteDetail !== undefined
+                  ? (remoteDetail.is_public ? 'public' : 'private')
+                  : null
+              }
+              description={detail?.description ?? null}
+              playable={playable}
+              onPlay={() => playContext(firstLocalPlaybackIndex)}
+              onShuffle={() => playContext(firstLocalPlaybackIndex, true)}
+              download={
+                offlineControlState === null || detail === undefined
+                  ? null
+                  : {
+                      kind: offlineControlState.kind,
+                      accessibilityLabel: offlineControlState.kind === 'idle'
+                        ? libraryStrings.playlist.downloadAction
+                        : libraryStrings.playlist.downloadStatus,
+                      disabled: offlineControlState.kind === 'idle' && tracks.length === 0,
+                      onPress: offlineControlState.kind === 'idle'
+                        ? offline.download
+                        : () => setSheet('actions'),
+                    }
+              }
+              onOpenActions={
+                props.kind === 'playlist' && detail !== undefined
+                  ? () => setSheet('actions')
+                  : undefined
+              }
+            />
 
             {runtimeError !== null ? (
-              <Text
+              <InlineNotice
                 testID="playlist-runtime-error"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="assertive"
-                style={styles.runtimeError}
-              >
-                {runtimeError}
-              </Text>
+                tone="danger"
+                live="assertive"
+                message={runtimeError}
+              />
             ) : null}
 
-            {mutationError !== null ? (
-              <Text
+            {headerMutationError !== null ? (
+              <InlineNotice
                 testID="playlist-mutation-error"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="assertive"
-                style={styles.runtimeError}
-              >
-                {playlistFailureMessage('mutation', mutationError)}
-              </Text>
+                tone="danger"
+                live="assertive"
+                message={playlistFailureMessage('mutation', headerMutationError)}
+              />
             ) : null}
 
             {localFallback ? (
-              <View
+              <InlineNotice
                 testID="playlist-local-copy"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="polite"
-                style={styles.offlineNotice}
-              >
-                <Text style={styles.offlineNoticeText}>
-                  {libraryStrings.playlist.localCopy}
-                </Text>
-                <Pressable
-                  testID="playlist-local-copy-retry"
-                  accessibilityRole="button"
-                  accessibilityLabel={libraryStrings.common.retry}
-                  accessibilityState={{ disabled: queryRetryBusy, busy: queryRetryBusy }}
-                  disabled={queryRetryBusy}
-                  onPress={() => void refetch()}
-                  style={({ pressed }) => [
-                    styles.secondaryAction,
-                    queryRetryBusy && styles.disabled,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.secondaryActionText}>{libraryStrings.common.retry}</Text>
-                </Pressable>
-              </View>
+                message={libraryStrings.playlist.localCopy}
+                retry={{
+                  testID: 'playlist-local-copy-retry',
+                  accessibilityLabel: libraryStrings.common.retry,
+                  busy: queryRetryBusy,
+                  onRetry: refetch,
+                }}
+              />
             ) : (
               <PlaylistQueryNotice
                 visual={queryVisual}
                 retryBusy={queryRetryBusy}
-                onRetry={() => void refetch()}
+                onRetry={refetch}
+                // The list's own pull-to-refresh spinner reports a refetch.
+                refreshIndicator={false}
               />
             )}
 
-            {tracks.length > 0 && (!localFallback || firstLocalPlaybackIndex >= 0) ? (
-              <ActionButton
-                testID="playlist-play-all"
-                label={libraryStrings.playlist.playAll}
-                icon="play"
-                onPress={() => playContext(firstLocalPlaybackIndex)}
-                style={styles.playAction}
-              />
+            {showRowControls ? (
+              <View testID="playlist-reorder-bar" style={styles.reorderBar}>
+                <AppText variant="callout" color="accent" style={styles.reorderCopy}>
+                  {libraryStrings.playlist.reorderActive}
+                </AppText>
+                <ActionButton
+                  testID="playlist-reorder-done"
+                  label={libraryStrings.playlist.reorderDone}
+                  icon="check"
+                  variant="secondary"
+                  onPress={() => setReordering(false)}
+                />
+              </View>
             ) : null}
 
-            {canEdit && remoteDetail !== undefined ? (
-              <View testID="playlist-owner-controls" style={styles.ownerPanel}>
-                <View style={styles.visibilityRow}>
-                  <View style={styles.trackMeta}>
-                    <Text style={styles.ownerLabel}>
-                      {remoteDetail.is_public
-                        ? libraryStrings.playlist.public
-                        : libraryStrings.playlist.private}
-                    </Text>
-                    <Text style={styles.status}>
-                      {remoteDetail.is_public
-                        ? libraryStrings.playlist.makePrivate
-                        : libraryStrings.playlist.makePublic}
-                    </Text>
-                  </View>
-                  <Switch
-                    testID="playlist-visibility"
-                    accessibilityLabel={
-                      remoteDetail.is_public
-                        ? libraryStrings.playlist.makePrivate
-                        : libraryStrings.playlist.makePublic
-                    }
-                    accessibilityState={{ disabled: mutationPending }}
-                    disabled={mutationPending}
-                    value={remoteDetail.is_public}
-                    onValueChange={changeVisibility}
-                    trackColor={{ false: colors.border, true: colors.accentSoft }}
-                    thumbColor={remoteDetail.is_public ? colors.accent : colors.textSecondary}
-                  />
-                </View>
-                <View style={styles.ownerActions}>
-                  <ActionButton
-                    testID="playlist-edit"
-                    label={libraryStrings.playlist.edit}
-                    icon="pencil-outline"
-                    variant="secondary"
-                    disabled={mutationPending}
-                    onPress={openEdit}
-                  />
-                  <ActionButton
-                    testID="playlist-delete"
-                    label={libraryStrings.playlist.delete}
-                    icon="delete-outline"
-                    variant="danger"
-                    disabled={mutationPending}
-                    onPress={confirmDelete}
-                  />
-                </View>
-                {mutationPending ? (
-                  <Text
-                    testID="playlist-mutation-pending"
-                    accessibilityLiveRegion="polite"
-                    style={styles.status}
-                  >
-                    {libraryStrings.playlist.mutationInProgress}
-                  </Text>
-                ) : null}
-              </View>
-            ) : props.kind === 'playlist' && remoteDetail !== undefined ? (
-              <Text testID="playlist-viewer-permissions" style={styles.status}>
-                {libraryStrings.playlist.ownerOnly}
-              </Text>
+            {mutations.pending ? (
+              <AppText
+                testID="playlist-mutation-pending"
+                accessibilityLiveRegion="polite"
+                variant="caption"
+                color="muted"
+                align="center"
+              >
+                {libraryStrings.playlist.mutationInProgress}
+              </AppText>
             ) : null}
           </View>
         }
@@ -770,285 +387,120 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
                 ? likedTrackOccurrence(user.id, index)
                 : playlistTrackOccurrence(props.playlistId, index)
             }
-            canEdit={canEdit}
-            controlsDisabled={mutationPending}
+            canEdit={showRowControls}
+            controlsDisabled={mutations.pending}
             onPlay={() => playContext(index)}
             onOpenActions={() => openTrackActions(item)}
             onOpenAlbum={props.onOpenAlbum}
             onOpenArtist={props.onOpenArtist}
             onMove={(direction) => moveTrack(index, direction)}
+            // The rejection is already on the remove mutation and rendered as
+            // `playlist-mutation-error`; only the unhandled promise is settled here.
             onRemove={() => void removeTrack(item).catch(() => undefined)}
           />
         )}
         ListEmptyComponent={
-          <Text
+          <EmptyState
             testID="playlist-empty"
-            accessibilityLiveRegion="polite"
-            style={styles.empty}
-          >
-            {libraryStrings.playlist.noTracks}
-          </Text>
+            icon={props.kind === 'liked' ? 'heart-outline' : 'playlist-plus'}
+            title={
+              props.kind === 'liked'
+                ? libraryStrings.library.noLikes
+                : libraryStrings.playlist.noTracks
+            }
+            message={
+              props.kind === 'liked'
+                ? libraryStrings.library.noLikesHint
+                : libraryStrings.playlist.noTracksHint
+            }
+          />
         }
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={{ paddingBottom: bottomInset }}
       />
 
-      <Modal
-        visible={playlistActionsVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!offlineActionBusy) setPlaylistActionsVisible(false);
-        }}
-      >
-        <View testID="playlist-actions-modal" style={styles.modalBackdrop}>
-          <View accessibilityViewIsModal style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text accessibilityRole="header" style={[styles.modalTitle, styles.modalHeaderTitle]}>
-                {libraryStrings.playlist.menuTitle}
-              </Text>
-              <Pressable
-                testID="playlist-actions-close"
-                accessibilityRole="button"
-                accessibilityLabel={libraryStrings.playlist.closeMenu}
-                accessibilityState={{ disabled: offlineActionBusy }}
-                disabled={offlineActionBusy}
-                onPress={() => setPlaylistActionsVisible(false)}
-                style={({ pressed }) => [
-                  styles.playlistActionsButton,
-                  offlineActionBusy && styles.disabled,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <AppIcon name="close" color={colors.textSecondary} size={22} />
-              </Pressable>
-            </View>
-            {props.kind === 'playlist'
-              && detail !== undefined
-              && offlineControlState !== null ? (
-                <OfflinePlaylistControl
-                  testID="playlist-offline-menu-control"
-                  state={offlineControlState}
-                  copy={offlineControlCopy(offlineActionFailure)}
-                  disabled={tracks.length === 0}
-                  onDownload={startOfflineDownload}
-                  onRetry={offlineRetryAction(
-                    offlineActionFailure,
-                    startOfflineDownload,
-                    removeOfflineDownload,
-                  )}
-                  onRemove={removeOfflineDownload}
-                />
-              ) : null}
-          </View>
-        </View>
-      </Modal>
+      <PlaylistActionsSheet
+        visible={sheet === 'actions'}
+        onClose={() => setSheet(null)}
+        offline={
+          props.kind === 'playlist' && detail !== undefined && offlineControlState !== null
+            ? {
+                state: offlineControlState,
+                copy: offlineControlCopy(offline.failure),
+                disabled: tracks.length === 0,
+                onDownload: offline.download,
+                onRetry: offlineRetryAction(offline.failure, offline.download, offline.remove),
+                onRemove: offline.remove,
+              }
+            : null
+        }
+        owner={
+          props.kind === 'playlist' && canEdit && remoteDetail !== undefined
+            ? {
+                isPublic: remoteDetail.is_public,
+                busy: mutations.pending,
+                canReorder: tracks.length > 0,
+                reordering,
+                onVisibilityChange: changeVisibility,
+                onEdit: () => {
+                  mutations.resetErrors();
+                  setSheet(null);
+                  editForm.open(remoteDetail);
+                },
+                onToggleReorder: () => {
+                  setSheet(null);
+                  setReordering((current) => !current);
+                },
+                onDelete: () => {
+                  mutations.resetErrors();
+                  setSheet('delete');
+                },
+              }
+            : null
+        }
+        showViewerNotice={props.kind === 'playlist' && remoteDetail !== undefined && !canEdit}
+      />
 
-      <Modal
-        visible={editVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          if (!updateMutation.isPending) setEditVisible(false);
+      <PlaylistEditSheet
+        form={editForm}
+        onSubmit={() => {
+          if (props.kind === 'playlist' && canEdit) editForm.submit(props.playlistId);
         }}
-      >
-        <KeyboardAvoidingView
-          testID="playlist-edit-modal"
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalBackdrop}
-        >
-          <View accessibilityViewIsModal style={styles.modalCard}>
-            <Text accessibilityRole="header" style={styles.modalTitle}>
-              {libraryStrings.playlist.editTitle}
-            </Text>
-            <TextInput
-              testID="playlist-edit-name"
-              accessibilityLabel={libraryStrings.library.name}
-              placeholder={libraryStrings.library.name}
-              placeholderTextColor={colors.textSecondary}
-              value={editName}
-              onChangeText={setEditName}
-              editable={!updateMutation.isPending}
-              autoFocus
-              maxLength={120}
-              style={styles.input}
-            />
-            <TextInput
-              testID="playlist-edit-description"
-              accessibilityLabel={libraryStrings.library.description}
-              placeholder={libraryStrings.library.description}
-              placeholderTextColor={colors.textSecondary}
-              value={editDescription}
-              onChangeText={setEditDescription}
-              editable={!updateMutation.isPending}
-              multiline
-              maxLength={500}
-              style={[styles.input, styles.descriptionInput]}
-            />
-            {editValidation !== null || updateMutation.error !== null ? (
-              <Text
-                testID="playlist-edit-error"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="assertive"
-                style={styles.errorText}
-              >
-                {editValidation ?? playlistFailureMessage('mutation', updateMutation.error)}
-              </Text>
-            ) : null}
-            <View style={styles.modalActions}>
-              <ActionButton
-                testID="playlist-edit-cancel"
-                label={libraryStrings.common.cancel}
-                variant="ghost"
-                disabled={updateMutation.isPending}
-                onPress={() => setEditVisible(false)}
-              />
-              <ActionButton
-                testID="playlist-edit-submit"
-                label={
-                  updateMutation.isPending
-                    ? libraryStrings.common.saving
-                    : libraryStrings.common.save
-                }
-                busy={updateMutation.isPending}
-                icon="check"
-                onPress={submitEdit}
-              />
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      />
+
+      <PlaylistDeleteSheet
+        visible={sheet === 'delete'}
+        name={title}
+        busy={mutations.remove.isPending}
+        error={
+          mutations.remove.error !== null
+            ? playlistFailureMessage('mutation', mutations.remove.error)
+            : null
+        }
+        onCancel={() => {
+          if (mutations.remove.isPending) return;
+          mutations.remove.reset();
+          setSheet(null);
+        }}
+        onConfirm={() => {
+          if (props.kind === 'playlist' && canEdit) mutations.remove.mutate(props.playlistId);
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  listContent: { paddingBottom: 144 },
-  header: { gap: 20, padding: 20, paddingTop: 24, alignItems: 'stretch' },
-  heroIdentity: { flexDirection: 'row', alignItems: 'center', gap: 18 },
-  heroArtwork: {
-    width: 112,
-    height: 112,
-    borderRadius: 14,
-    backgroundColor: colors.surfaceElevated,
+  header: {
+    gap: layout.stackGap,
+    paddingHorizontal: layout.pagePadding,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
   },
-  artworkPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  headerCopy: { flex: 1, minWidth: 0, gap: 6 },
-  titleRow: {
-    width: '100%',
-    minHeight: metrics.minimumTouchTarget,
+  reorderBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
-  title: {
-    flexShrink: 1,
-    color: colors.textPrimary,
-    fontSize: 27,
-    lineHeight: 32,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-  },
-  playlistActionsButton: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    borderRadius: 12,
-  },
-  description: { color: colors.textSecondary, fontSize: 14, lineHeight: 21 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  runtimeError: {
-    color: colors.danger,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-  },
-  offlineNotice: {
-    gap: 9,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
-  },
-  offlineNoticeText: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  errorText: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  empty: { color: colors.textSecondary, textAlign: 'center', marginTop: 32, paddingHorizontal: 20 },
-  playAction: { alignSelf: 'flex-start', minWidth: 148 },
-  secondaryAction: {
-    minHeight: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  secondaryActionText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
-  ownerPanel: {
-    gap: 16,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderColor: colors.border,
-  },
-  visibilityRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  ownerLabel: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  ownerActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  trackMeta: { flex: 1, minWidth: 0 },
-  trackControls: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingRight: 8,
-    paddingBottom: 4,
-  },
-  iconAction: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeAction: { marginLeft: 2 },
-  disabled: { opacity: 0.34 },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
-  modalCard: {
-    gap: 14,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 20,
-    backgroundColor: colors.backgroundElevated,
-  },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  modalTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
-  modalHeaderTitle: { flex: 1 },
-  input: {
-    minHeight: metrics.minimumTouchTarget,
-    color: colors.textPrimary,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  descriptionInput: { minHeight: 92, textAlignVertical: 'top' },
-  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
+  reorderCopy: { flex: 1 },
 });

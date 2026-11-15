@@ -3,13 +3,13 @@ import {
   ActivityIndicator,
   PermissionsAndroid,
   Platform,
-  Pressable,
   StyleSheet,
-  Text,
   View,
 } from 'react-native';
 import { getActiveLocale, strings } from '../../localization';
-import { colors, metrics, radii, spacing, typography } from '../../theme';
+import { colors, radii, spacing } from '../../theme';
+import { ActionButton, AppText, RetryButton } from '../ui';
+import { ProfileGroup } from './ProfileGroup';
 import {
   androidUpdater,
   checkForAndroidUpdate,
@@ -61,10 +61,15 @@ function AndroidUpdateProgress({
     >
       {presentation.percent === null ? (
         <View style={styles.statusRow}>
-          <ActivityIndicator color={colors.accent} />
-          <Text testID="android-update-progress-text" style={styles.body}>
+          <ActivityIndicator accessible={false} color={colors.accent} size="small" />
+          <AppText
+            testID="android-update-progress-text"
+            variant="callout"
+            color="secondary"
+            style={styles.statusText}
+          >
             {presentation.visibleText}
-          </Text>
+          </AppText>
         </View>
       ) : (
         <>
@@ -74,9 +79,9 @@ function AndroidUpdateProgress({
               style={[styles.progressFill, { width: `${presentation.percent}%` }]}
             />
           </View>
-          <Text testID="android-update-progress-text" style={styles.progressText}>
+          <AppText testID="android-update-progress-text" variant="caption" color="secondary">
             {presentation.visibleText}
-          </Text>
+          </AppText>
         </>
       )}
     </View>
@@ -190,154 +195,106 @@ export default function AndroidUpdateCard() {
         ? state.result
         : null;
 
+  const installing = state.kind === 'installing';
+  const installLabel = installing
+    ? strings.profile.update.downloading
+    : state.kind === 'permission'
+      ? strings.profile.update.retryInstall
+      : strings.profile.update.install;
+
   return (
-    <View testID="android-update-card" style={styles.card}>
-      <Text accessibilityRole="header" style={styles.title}>
-        {strings.profile.update.title}
-      </Text>
+    <ProfileGroup
+      testID="android-update-card"
+      icon="cellphone-arrow-down"
+      title={strings.profile.update.title}
+    >
       {state.kind === 'checking' ? (
         <View style={styles.statusRow}>
-          <ActivityIndicator color={colors.accent} />
-          <Text accessibilityLiveRegion="polite" style={styles.body}>
+          <ActivityIndicator accessible={false} color={colors.accent} size="small" />
+          <AppText
+            variant="callout"
+            color="secondary"
+            accessibilityLiveRegion="polite"
+            style={styles.statusText}
+          >
             {strings.profile.update.checking}
-          </Text>
+          </AppText>
         </View>
       ) : null}
       {state.kind === 'ready' && state.result.kind === 'up-to-date' ? (
-        <Text testID="android-update-current" style={styles.body}>
+        <AppText testID="android-update-current" variant="callout" color="secondary">
           {strings.profile.update.current(state.result.installedVersion)}
-        </Text>
+        </AppText>
       ) : null}
       {available ? (
         <>
-          <Text testID="android-update-available" style={styles.body}>
+          <AppText testID="android-update-available" variant="bodyStrong" color="accent">
             {strings.profile.update.available(
               available.release.versionName,
               Math.ceil(available.release.apkSize / (1024 * 1024)),
             )}
-          </Text>
+          </AppText>
           {state.kind === 'permission' ? (
-            <Text accessibilityRole="alert" style={styles.permission}>
+            <AppText variant="callout" color="warning" accessibilityRole="alert">
               {strings.profile.update.permission}
-            </Text>
+            </AppText>
           ) : null}
           {state.kind === 'installing' ? (
             <AndroidUpdateProgress progress={state.progress} />
           ) : null}
-          <Pressable
+          <ActionButton
             testID="android-update-install"
-            accessibilityRole="button"
-            accessibilityLabel={state.kind === 'installing'
-              ? strings.profile.update.downloading
-              : state.kind === 'permission'
-                ? strings.profile.update.retryInstall
-                : strings.profile.update.install}
-            accessibilityState={{
-              disabled: state.kind === 'installing',
-              busy: state.kind === 'installing',
-            }}
-            disabled={state.kind === 'installing'}
+            variant="secondary"
+            icon="download"
+            label={installLabel}
+            busy={installing}
+            fullWidth
             onPress={() => void install(available)}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              pressed && styles.pressed,
-              state.kind === 'installing' && styles.disabled,
-            ]}
-          >
-            {state.kind === 'installing' ? (
-              <ActivityIndicator color={colors.onAccent} />
-            ) : null}
-            <Text style={styles.primaryText}>
-              {state.kind === 'installing'
-                ? strings.profile.update.downloading
-                : state.kind === 'permission'
-                  ? strings.profile.update.retryInstall
-                  : strings.profile.update.install}
-            </Text>
-          </Pressable>
+          />
         </>
       ) : null}
       {state.kind === 'submitted' ? (
-        <Text
+        <AppText
           testID="android-update-submitted"
+          variant="callout"
+          color="success"
           accessibilityLiveRegion="assertive"
-          style={styles.success}
         >
           {strings.profile.update.confirm(state.versionName)}
-        </Text>
+        </AppText>
       ) : null}
       {state.kind === 'error' ? (
         <>
-          <Text
+          <AppText
             testID="android-update-error"
+            variant="callout"
+            color="danger"
             accessibilityRole="alert"
             accessibilityLiveRegion="assertive"
-            style={styles.error}
           >
             {state.message}
-          </Text>
-          <Pressable
-            testID="android-update-retry"
-            accessibilityRole="button"
-            onPress={() => void check()}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-          >
-            <Text style={styles.secondaryText}>{strings.common.retry}</Text>
-          </Pressable>
+          </AppText>
+          <RetryButton testID="android-update-retry" onRetry={() => void check()} />
         </>
       ) : null}
-      <Text style={styles.note}>{strings.profile.update.safety}</Text>
-    </View>
+      <AppText variant="caption" color="muted">{strings.profile.update.safety}</AppText>
+    </ProfileGroup>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    gap: 12,
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-  },
-  title: { ...typography.section, color: colors.textPrimary },
-  body: { flex: 1, color: colors.textSecondary, fontSize: 14, lineHeight: 20 },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  progressBox: { gap: 8 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  statusText: { flex: 1 },
+  progressBox: { gap: spacing.xs },
   progressTrack: {
-    height: 10,
+    height: spacing.xs,
     overflow: 'hidden',
-    borderRadius: 999,
-    backgroundColor: colors.border,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fillStrong,
   },
   progressFill: {
     height: '100%',
-    borderRadius: 999,
+    borderRadius: radii.pill,
     backgroundColor: colors.accent,
   },
-  progressText: { color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
-  permission: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  success: { color: colors.success, fontSize: 14, lineHeight: 20 },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  note: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, opacity: 0.82 },
-  primaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 9,
-    paddingHorizontal: 18,
-    borderRadius: radii.md,
-    backgroundColor: colors.accentSolid,
-  },
-  primaryText: { ...typography.label, color: colors.onAccent },
-  secondaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceElevated,
-  },
-  secondaryText: { ...typography.label, color: colors.textPrimary },
-  pressed: { opacity: 0.72 },
-  disabled: { opacity: 0.48 },
 });

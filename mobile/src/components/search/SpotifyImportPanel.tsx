@@ -1,54 +1,34 @@
 import React, { useMemo, useState } from 'react';
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  Image,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PlaylistSummary, ResolveResult } from '../../api/types';
-import { trackArtistLabel } from '../../api/trackArtists';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { showTrackActions } from '../trackActions';
-import {
-  createPlaylistWithTracks,
-  invalidatePlaylistCaches,
-  musicQueries,
-  musicRepository,
-  optimisticallyAddPlaylistTracks,
-  refreshLibraryAutoBrowse,
-  restorePlaylistCache,
-  type PlaylistCacheSnapshot,
-} from '../../data';
-import { resolveRemoteVisualState } from '../../data/remoteState';
+import { useBottomInset } from '../../hooks/useBottomInset';
 import { strings } from '../../localization';
-import { playTracks } from '../../player/controller';
-import { refreshBrowseTree } from '../../player/browseTree';
-import { reportPlayerNotice } from '../../player/notices';
 import {
   normalizeSpotifyImportInput,
   SpotifyImportInputError,
   type SpotifyImportInputErrorCode,
   type SpotifyImportRequest,
 } from '../../share/spotifyImport';
-import { colors, metrics, radii, spacing, typography } from '../../theme';
-import AppIcon from '../AppIcon';
-import { ActionButton } from '../ui';
-import { SearchErrorNotice, SearchRemoteBoundary } from './SearchRemoteStates';
+import { showTrackActions } from '../trackActions';
+import { TrackRowSkeleton } from '../ui';
+import { SearchRemoteBoundary } from './SearchRemoteStates';
 import { SearchTrackResultRow } from './SearchResults';
+import { SpotifyImportForm } from './SpotifyImportForm';
+import { SpotifyImportResultSummary } from './SpotifyImportResultSummary';
+import {
+  SpotifyImportDestinationRow,
+  SpotifyImportSaveControls,
+  SpotifyImportUnmatchedHeader,
+  SpotifyImportUnmatchedRow,
+} from './SpotifyImportRows';
 import {
   SpotifyImportVirtualizedList,
-  spotifyImportContextId,
   spotifyImportTrackOccurrence,
 } from './SpotifyImportVirtualizedList';
 import {
   createSpotifyImportListRows,
   type SpotifyImportListRow,
 } from './spotifyImportListModel';
+import { useSpotifyImportSession } from './useSpotifyImportSession';
 
 interface SpotifyImportPanelProps {
   accountScope: string;
@@ -70,451 +50,11 @@ function inputErrorMessage(code: SpotifyImportInputErrorCode): string {
   }
 }
 
-function autoRefreshNotice(): void {
-  reportPlayerNotice(
-    'bookkeeping',
-    'auto-library-refresh',
-    strings.player.autoLibraryFailed,
-    strings.player.autoLibraryRefreshFailedMessage,
-  );
-}
-
-interface ExistingSaveVariables {
-  playlist: PlaylistSummary;
-  tracks: ResolveResult['tracks'];
-}
-
-interface ResolvedSpotifyImportProps {
-  accountScope: string;
-  link: string | null;
-  ownerHeader: React.ReactElement;
-  submissionId: number | null;
-  rollingDeviceCacheSeconds?: unknown;
-  onOpenAlbum: (params: AlbumRouteParams) => void;
-  onOpenArtist: (params: ArtistRouteParams) => void;
-}
-
-const IDLE_IMPORT_QUERY_URL = 'https://open.spotify.com/track/idle';
-
-interface ResolvedImportUiState {
-  newNameOverride: string | null;
-  playingIndex: number | null;
-  runtimeError: string | null;
-  saveFeedback: string | null;
-  submissionId: number | null;
-}
-
-function emptyResolvedImportUiState(submissionId: number | null): ResolvedImportUiState {
-  return {
-    newNameOverride: null,
-    playingIndex: null,
-    runtimeError: null,
-    saveFeedback: null,
-    submissionId,
-  };
-}
-
-function ResolvedSpotifyImport({
-  link,
-  accountScope,
-  ownerHeader,
-  submissionId,
-  rollingDeviceCacheSeconds,
-  onOpenAlbum,
-  onOpenArtist,
-}: ResolvedSpotifyImportProps) {
-  const queryClient = useQueryClient();
-  const resultQuery = useQuery({
-    ...musicQueries.resolveExternalUrl(link ?? IDLE_IMPORT_QUERY_URL),
-    enabled: link !== null,
-  });
-  const result = link === null ? undefined : resultQuery.data;
-  const [storedUiState, setStoredUiState] = useState<ResolvedImportUiState>(() =>
-    emptyResolvedImportUiState(submissionId));
-  const uiState = storedUiState.submissionId === submissionId
-    ? storedUiState
-    : emptyResolvedImportUiState(submissionId);
-  const updateUiState = (patch: Partial<Omit<ResolvedImportUiState, 'submissionId'>>) => {
-    setStoredUiState((current) => ({
-      ...(current.submissionId === submissionId
-        ? current
-        : emptyResolvedImportUiState(submissionId)),
-      ...patch,
-      submissionId,
-    }));
-  };
-  const setNewName = (newNameOverride: string | null) => {
-    updateUiState({ newNameOverride });
-  };
-  const setRuntimeError = (runtimeError: string | null) => {
-    updateUiState({ runtimeError });
-  };
-  const setSaveFeedback = (saveFeedback: string | null) => {
-    updateUiState({ saveFeedback });
-  };
-  const setPlayingIndex = (playingIndex: number | null) => {
-    updateUiState({ playingIndex });
-  };
-  const {
-    newNameOverride,
-    playingIndex,
-    runtimeError,
-    saveFeedback,
-  } = uiState;
-
-  const newName = newNameOverride ?? (result?.name || strings.search.importTitle);
-
-  const playlistsQuery = useQuery({
-    ...musicQueries.playlists(accountScope),
-    enabled: result !== undefined && result.tracks.length > 0,
-  });
-  const resultState = resolveRemoteVisualState({
-    hasData: result !== undefined,
-    empty: false,
-    pending: resultQuery.isPending,
-    fetching: resultQuery.isFetching,
-    stale: resultQuery.isStale,
-    fetchStatus: resultQuery.fetchStatus,
-    error: resultQuery.error,
-  });
-  const playlistsState = resolveRemoteVisualState({
-    hasData: playlistsQuery.data !== undefined,
-    empty: playlistsQuery.data !== undefined && playlistsQuery.data.length === 0,
-    pending: playlistsQuery.isPending,
-    fetching: playlistsQuery.isFetching,
-    stale: playlistsQuery.isStale,
-    fetchStatus: playlistsQuery.fetchStatus,
-    error: playlistsQuery.error,
-  });
-
-  const refreshAutoBrowse = () =>
-    refreshLibraryAutoBrowse(refreshBrowseTree, autoRefreshNotice);
-
-  const existingSave = useMutation<
-    Awaited<ReturnType<typeof musicRepository.addTracksBulk>>,
-    Error,
-    ExistingSaveVariables,
-    PlaylistCacheSnapshot
-  >({
-    mutationKey: ['music', 'mutation', accountScope, 'playlist', 'spotify-import-existing'],
-    mutationFn: ({ playlist, tracks }) => musicRepository.addTracksBulk(playlist.id, tracks),
-    onMutate: async ({ playlist, tracks }) => {
-      setRuntimeError(null);
-      setSaveFeedback(null);
-      return optimisticallyAddPlaylistTracks(
-        queryClient,
-        accountScope,
-        playlist.id,
-        tracks,
-      );
-    },
-    onError: (_error, { playlist }, snapshot) => {
-      if (snapshot !== undefined) {
-        restorePlaylistCache(queryClient, accountScope, playlist.id, snapshot);
-      }
-      setRuntimeError(strings.search.importSaveFailed);
-    },
-    onSuccess: async ({ added }, { playlist }) => {
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, accountScope, playlist.id),
-        refreshAutoBrowse(),
-      ]);
-      const message = strings.search.importSaved(added, playlist.name);
-      setSaveFeedback(message);
-      AccessibilityInfo.announceForAccessibility(message);
-    },
-    onSettled: async (_data, _error, { playlist }) => {
-      await invalidatePlaylistCaches(queryClient, accountScope, playlist.id);
-    },
-  });
-
-  const newSave = useMutation({
-    mutationKey: ['music', 'mutation', accountScope, 'playlist', 'spotify-import-new'],
-    mutationFn: (name: string) => {
-      if (result === undefined) throw new Error('Import result is no longer available');
-      return createPlaylistWithTracks(
-        musicRepository,
-        { name, description: 'Von Spotify importiert' },
-        result.tracks,
-      );
-    },
-    onMutate: () => {
-      setRuntimeError(null);
-      setSaveFeedback(null);
-    },
-    onError: () => {
-      setRuntimeError(strings.search.importSaveFailed);
-    },
-    onSuccess: async ({ playlist, added }) => {
-      await Promise.all([
-        invalidatePlaylistCaches(queryClient, accountScope, playlist.id),
-        refreshAutoBrowse(),
-      ]);
-      const message = strings.search.importSaved(added, playlist.name);
-      setSaveFeedback(message);
-      AccessibilityInfo.announceForAccessibility(message);
-    },
-    onSettled: async () => {
-      await invalidatePlaylistCaches(queryClient, accountScope);
-    },
-  });
-
-  const saving = existingSave.isPending || newSave.isPending;
-  const existingDestinationId = existingSave.variables?.playlist.id ?? null;
-
-  const play = (index: number) => {
-    if (link === null || result === undefined) {
-      throw new Error('Spotify import playback requires a resolved import');
-    }
-    if (!Number.isInteger(index) || index < 0 || index >= result.tracks.length) {
-      throw new Error(`Spotify import playback index ${index} is outside ${result.tracks.length} matched tracks`);
-    }
-    setRuntimeError(null);
-    setPlayingIndex(index);
-    void playTracks(result.tracks, index, {
-      context: {
-        type: 'collection',
-        id: spotifyImportContextId(link, result),
-        label: result.name || strings.search.importTitle,
-      },
-    })
-      .catch(() =>
-        setRuntimeError(strings.search.playFailed),
-      )
-      .finally(() => setPlayingIndex(null));
-  };
-
-  if (result === undefined || link === null) {
-    return (
-      <SpotifyImportVirtualizedList
-        accessibilityLabel={strings.search.importTitle}
-        rows={[]}
-        renderRow={() => null}
-        header={(
-          <>
-            {ownerHeader}
-            {link !== null ? <SearchRemoteBoundary
-              id="spotify-import-resolve"
-              state={resultState}
-              loadingLabel={strings.search.importResolving}
-              emptyLabel={strings.search.importResolveFailed}
-              offlineLabel={strings.search.remoteOffline(strings.search.importTitle)}
-              errorLabel={strings.search.remoteLoadFailed(strings.search.importTitle)}
-              cachedOfflineLabel={strings.search.remoteCachedOffline(strings.search.importTitle)}
-              cachedErrorLabel={strings.search.remoteCachedRefreshFailed(strings.search.importTitle)}
-              refreshingLabel={strings.search.remoteRefreshing(strings.search.importTitle)}
-              staleLabel={strings.search.remoteStale(strings.search.importTitle)}
-              retryLabel={strings.search.retrySection(strings.search.importTitle)}
-              retryBusy={resultQuery.fetchStatus === 'fetching'}
-              onRetry={() => { void resultQuery.refetch(); }}
-            >
-              {null}
-            </SearchRemoteBoundary> : null}
-          </>
-        )}
-      />
-    );
-  }
-
-  const rows = createSpotifyImportListRows({
-    result,
-    playlists: playlistsQuery.data ?? [],
-    showDestinationRows: playlistsState.body === 'content',
-  });
-
-  const renderRow = ({ item }: { item: SpotifyImportListRow }) => {
-    switch (item.kind) {
-      case 'matched-track':
-        return (
-          <SearchTrackResultRow
-            track={item.track}
-            testID={`spotify-import-track-${item.track.id}-${item.index}`}
-            occurrence={spotifyImportTrackOccurrence(link, result, item.index)}
-            position={item.index + 1}
-            popularity="none"
-            rollingDeviceCacheSeconds={rollingDeviceCacheSeconds}
-            onPlay={() => play(item.index)}
-            onActions={() => showTrackActions(item.track, setRuntimeError)}
-            onOpenAlbum={onOpenAlbum}
-            onOpenArtist={onOpenArtist}
-          />
-        );
-      case 'save-controls':
-        return (
-          <View style={styles.saveBlock}>
-            <Text accessibilityRole="header" style={styles.saveTitle}>
-              {strings.search.importSaveTitle}
-            </Text>
-            <TextInput
-              testID="spotify-import-new-name"
-              accessibilityLabel={strings.search.importNewPlaylistName}
-              value={newName}
-              onChangeText={setNewName}
-              editable={!saving}
-              maxLength={120}
-              placeholder={strings.search.importNewPlaylistName}
-              placeholderTextColor={colors.textSecondary}
-              style={styles.input}
-            />
-            <ActionButton
-              testID="spotify-import-save-new"
-              label={newSave.isPending ? strings.search.importSaving : strings.search.importCreateAndSave}
-              variant="secondary"
-              icon="playlist-plus"
-              busy={newSave.isPending}
-              disabled={saving || newName.trim().length === 0}
-              onPress={() => newSave.mutate(newName.trim())}
-            />
-            <Text style={styles.destinationTitle}>
-              {strings.search.importExistingPlaylists}
-            </Text>
-          </View>
-        );
-      case 'destinations-state':
-        return (
-          <SearchRemoteBoundary
-            id="spotify-import-destinations"
-            state={playlistsState}
-            loadingLabel={strings.search.remoteLoading(strings.search.importExistingPlaylists)}
-            emptyLabel={strings.search.importNoPlaylists}
-            offlineLabel={strings.search.remoteOffline(strings.search.importExistingPlaylists)}
-            errorLabel={strings.search.remoteLoadFailed(strings.search.importExistingPlaylists)}
-            cachedOfflineLabel={strings.search.remoteCachedOffline(strings.search.importExistingPlaylists)}
-            cachedErrorLabel={strings.search.remoteCachedRefreshFailed(strings.search.importExistingPlaylists)}
-            refreshingLabel={strings.search.remoteRefreshing(strings.search.importExistingPlaylists)}
-            staleLabel={strings.search.remoteStale(strings.search.importExistingPlaylists)}
-            retryLabel={strings.search.retrySection(strings.search.importExistingPlaylists)}
-            retryBusy={playlistsQuery.fetchStatus === 'fetching'}
-            onRetry={() => { void playlistsQuery.refetch(); }}
-          >
-            {null}
-          </SearchRemoteBoundary>
-        );
-      case 'destination': {
-        const busy = existingSave.isPending && existingDestinationId === item.playlist.id;
-        return (
-          <Pressable
-            testID={`spotify-import-save-existing-${item.playlist.id}`}
-            accessibilityRole="button"
-            accessibilityLabel={strings.search.importSaveToPlaylist(item.playlist.name)}
-            accessibilityState={{ disabled: saving, busy }}
-            disabled={saving}
-            onPress={() => existingSave.mutate({
-              playlist: item.playlist,
-              tracks: result.tracks,
-            })}
-            style={({ pressed }) => [styles.destinationButton, saving && styles.disabled, pressed && styles.pressed]}
-          >
-            <Text style={styles.destinationName} numberOfLines={1}>
-              {item.playlist.name}
-            </Text>
-            {busy ? (
-              <ActivityIndicator color={colors.accent} size="small" />
-            ) : (
-              <Text style={styles.destinationCount}>
-                {strings.common.trackCount(item.playlist.track_count)}
-              </Text>
-            )}
-          </Pressable>
-        );
-      }
-      case 'unmatched-header':
-        return (
-          <View testID="spotify-import-unmatched" style={styles.unmatchedBlock}>
-            <Text accessibilityRole="header" style={styles.destinationTitle}>
-              {strings.search.importUnmatchedTitle}
-            </Text>
-          </View>
-        );
-      case 'unmatched-track':
-        return (
-          <Text style={[styles.status, styles.unmatchedTrack]} numberOfLines={1}>
-            {item.track.title} — {trackArtistLabel(item.track)}
-          </Text>
-        );
-    }
-  };
-
-  return (
-    <SpotifyImportVirtualizedList
-      accessibilityLabel={strings.search.importTitle}
-      rows={rows}
-      renderRow={renderRow}
-      header={(
-        <>
-          {ownerHeader}
-          <SearchRemoteBoundary
-            id="spotify-import-resolve"
-            state={resultState}
-            loadingLabel={strings.search.importResolving}
-            emptyLabel={strings.search.importResolveFailed}
-            offlineLabel={strings.search.remoteOffline(strings.search.importTitle)}
-            errorLabel={strings.search.remoteLoadFailed(strings.search.importTitle)}
-            cachedOfflineLabel={strings.search.remoteCachedOffline(strings.search.importTitle)}
-            cachedErrorLabel={strings.search.remoteCachedRefreshFailed(strings.search.importTitle)}
-            refreshingLabel={strings.search.remoteRefreshing(strings.search.importTitle)}
-            staleLabel={strings.search.remoteStale(strings.search.importTitle)}
-            retryLabel={strings.search.retrySection(strings.search.importTitle)}
-            retryBusy={resultQuery.fetchStatus === 'fetching'}
-            onRetry={() => { void resultQuery.refetch(); }}
-          >
-            <View testID="spotify-import-result" style={[styles.resultPanel, styles.result]}>
-            <View style={styles.resultHeader}>
-              {result.image ? (
-                <Image accessible={false} source={{ uri: result.image }} style={styles.cover} />
-              ) : (
-                <View style={[styles.cover, styles.coverPlaceholder]}>
-                  <AppIcon name="music-note" color={colors.accentSoft} size={24} />
-                </View>
-              )}
-              <View style={styles.resultHeaderCopy}>
-                <Text style={styles.typeLabel}>{strings.search.importType[result.type]}</Text>
-                <Text accessibilityRole="header" style={styles.resultTitle}>{result.name}</Text>
-                <Text style={styles.status}>
-                  {strings.search.importMatched(result.matched, result.total)}
-                  {result.unmatched.length > 0
-                    ? ` · ${strings.search.importUnmatched(result.unmatched.length)}`
-                    : ''}
-                </Text>
-                {result.source_total > result.total ? (
-                  <Text style={styles.smallStatus}>
-                    {strings.search.importTruncated(result.source_total, result.total)}
-                  </Text>
-                ) : null}
-              </View>
-            </View>
-
-            {runtimeError !== null ? (
-              <SearchErrorNotice testID="spotify-import-runtime-error" message={runtimeError} />
-            ) : null}
-            {saveFeedback !== null ? (
-              <Text
-                testID="spotify-import-save-success"
-                accessibilityRole="alert"
-                accessibilityLiveRegion="polite"
-                style={styles.successText}
-              >
-                {saveFeedback}
-              </Text>
-            ) : null}
-
-            <ActionButton
-              testID="spotify-import-play-all"
-              label={strings.search.importPlayAll}
-              icon="play"
-              busy={playingIndex === 0}
-              disabled={result.tracks.length === 0 || playingIndex !== null}
-              onPress={() => play(0)}
-              style={styles.inlineAction}
-            />
-            </View>
-          </SearchRemoteBoundary>
-        </>
-      )}
-    />
-  );
-}
-
+/**
+ * The Spotify link import: a link form, the resolved matches and the save
+ * destinations, all rows of one vertical list so every control stays
+ * reachable in landscape and with the keyboard open.
+ */
 export default function SpotifyImportPanel({
   accountScope,
   header,
@@ -531,6 +71,14 @@ export default function SpotifyImportPanel({
     sharedRequest?.link ? { id: sharedRequest.id, link: sharedRequest.link } : null,
   );
   const nextSubmissionId = useMemo(() => (submission?.id ?? 0) + 1, [submission?.id]);
+  const bottomInset = useBottomInset();
+  const link = submission?.link ?? null;
+  const session = useSpotifyImportSession({
+    accountScope,
+    link,
+    submissionId: submission?.id ?? null,
+  });
+  const { result } = session;
 
   const updateInput = (value: string) => {
     setInput(value);
@@ -540,10 +88,10 @@ export default function SpotifyImportPanel({
 
   const submit = () => {
     try {
-      const link = normalizeSpotifyImportInput(input);
-      setInput(link);
+      const normalized = normalizeSpotifyImportInput(input);
+      setInput(normalized);
       setInputError(null);
-      setSubmission({ id: nextSubmissionId, link });
+      setSubmission({ id: nextSubmissionId, link: normalized });
     } catch (error) {
       const code = error instanceof SpotifyImportInputError ? error.code : 'invalid';
       setInputError(inputErrorMessage(code));
@@ -551,120 +99,128 @@ export default function SpotifyImportPanel({
     }
   };
 
-  const ownerHeader = (
+  const title = strings.search.importTitle;
+  const destinationsTitle = strings.search.importExistingPlaylists;
+  const listHeader = (
     <>
       {header}
-    <View testID="spotify-import-panel" style={styles.panel}>
-      <Text accessibilityRole="header" style={styles.panelTitle}>{strings.search.importTitle}</Text>
-      <Text style={styles.intro}>{strings.search.importIntro}</Text>
-      <TextInput
-        testID="spotify-import-input"
-        accessibilityLabel={strings.search.importInputLabel}
+      <SpotifyImportForm
         value={input}
+        error={inputError}
         onChangeText={updateInput}
-        placeholder={strings.search.importPlaceholder}
-        placeholderTextColor={colors.textSecondary}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        returnKeyType="go"
-        onSubmitEditing={submit}
-        maxLength={8_192}
-        style={styles.input}
+        onSubmit={submit}
       />
-      <ActionButton
-        testID="spotify-import-resolve"
-        label={strings.search.importResolve}
-        icon="arrow-right"
-        disabled={input.trim().length === 0}
-        onPress={submit}
-        style={styles.inlineAction}
-      />
-      {inputError !== null ? (
-        <SearchErrorNotice testID="spotify-import-input-error" message={inputError} />
+      {link !== null ? (
+        <SearchRemoteBoundary
+          id="spotify-import-resolve"
+          state={session.resultState}
+          loadingLabel={strings.search.importResolving}
+          emptyLabel={strings.search.importResolveFailed}
+          offlineLabel={strings.search.remoteOffline(title)}
+          errorLabel={strings.search.remoteLoadFailed(title)}
+          cachedOfflineLabel={strings.search.remoteCachedOffline(title)}
+          cachedErrorLabel={strings.search.remoteCachedRefreshFailed(title)}
+          refreshingLabel={strings.search.remoteRefreshing(title)}
+          staleLabel={strings.search.remoteStale(title)}
+          retryLabel={strings.search.retrySection(title)}
+          retryBusy={session.resolveBusy}
+          onRetry={session.retryResolve}
+          loadingFallback={(props) => <TrackRowSkeleton {...props} />}
+        >
+          {result !== undefined ? (
+            <SpotifyImportResultSummary
+              result={result}
+              runtimeError={session.runtimeError}
+              saveFeedback={session.saveFeedback}
+              playingIndex={session.playingIndex}
+              onPlayAll={() => session.play(0)}
+            />
+          ) : null}
+        </SearchRemoteBoundary>
       ) : null}
-    </View>
     </>
   );
 
+  const rows = result === undefined || link === null
+    ? []
+    : createSpotifyImportListRows({
+      result,
+      playlists: session.playlists,
+      showDestinationRows: session.playlistsState.body === 'content',
+    });
+
+  const renderRow = ({ item }: { item: SpotifyImportListRow }) => {
+    if (result === undefined || link === null) return null;
+    switch (item.kind) {
+      case 'matched-track':
+        return (
+          <SearchTrackResultRow
+            track={item.track}
+            testID={`spotify-import-track-${item.track.id}-${item.index}`}
+            occurrence={spotifyImportTrackOccurrence(link, result, item.index)}
+            position={item.index + 1}
+            popularity="none"
+            rollingDeviceCacheSeconds={rollingDeviceCacheSeconds}
+            onPlay={() => session.play(item.index)}
+            onActions={() => showTrackActions(item.track, session.setRuntimeError)}
+            onOpenAlbum={onOpenAlbum}
+            onOpenArtist={onOpenArtist}
+          />
+        );
+      case 'save-controls':
+        return (
+          <SpotifyImportSaveControls
+            name={session.newName}
+            saving={session.saving}
+            savingNew={session.savingNew}
+            onChangeName={session.setNewName}
+            onSaveNew={session.saveToNew}
+          />
+        );
+      case 'destinations-state':
+        return (
+          <SearchRemoteBoundary
+            id="spotify-import-destinations"
+            state={session.playlistsState}
+            loadingLabel={strings.search.remoteLoading(destinationsTitle)}
+            emptyLabel={strings.search.importNoPlaylists}
+            offlineLabel={strings.search.remoteOffline(destinationsTitle)}
+            errorLabel={strings.search.remoteLoadFailed(destinationsTitle)}
+            cachedOfflineLabel={strings.search.remoteCachedOffline(destinationsTitle)}
+            cachedErrorLabel={strings.search.remoteCachedRefreshFailed(destinationsTitle)}
+            refreshingLabel={strings.search.remoteRefreshing(destinationsTitle)}
+            staleLabel={strings.search.remoteStale(destinationsTitle)}
+            retryLabel={strings.search.retrySection(destinationsTitle)}
+            retryBusy={session.playlistsBusy}
+            onRetry={session.retryPlaylists}
+            loadingFallback={(props) => <TrackRowSkeleton count={3} {...props} />}
+          >
+            {null}
+          </SearchRemoteBoundary>
+        );
+      case 'destination':
+        return (
+          <SpotifyImportDestinationRow
+            playlist={item.playlist}
+            saving={session.saving}
+            busy={session.savingPlaylistId === item.playlist.id}
+            onPress={() => session.saveToExisting(item.playlist)}
+          />
+        );
+      case 'unmatched-header':
+        return <SpotifyImportUnmatchedHeader />;
+      case 'unmatched-track':
+        return <SpotifyImportUnmatchedRow track={item.track} />;
+    }
+  };
+
   return (
-    <ResolvedSpotifyImport
-      link={submission?.link ?? null}
-      accountScope={accountScope}
-      ownerHeader={ownerHeader}
-      submissionId={submission?.id ?? null}
-      rollingDeviceCacheSeconds={rollingDeviceCacheSeconds}
-      onOpenAlbum={onOpenAlbum}
-      onOpenArtist={onOpenArtist}
+    <SpotifyImportVirtualizedList
+      accessibilityLabel={title}
+      rows={rows}
+      bottomInset={bottomInset}
+      renderRow={renderRow}
+      header={listHeader}
     />
   );
 }
-
-const styles = StyleSheet.create({
-  panel: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.lg,
-    padding: spacing.lg,
-    gap: spacing.sm,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    backgroundColor: colors.surface,
-  },
-  panelTitle: { ...typography.section, color: colors.textPrimary },
-  intro: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  input: {
-    minHeight: metrics.minimumTouchTarget,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.backgroundElevated,
-    color: colors.textPrimary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: 15,
-  },
-  inlineAction: { alignSelf: 'flex-start' },
-  disabled: { opacity: 0.45 },
-  pressed: { backgroundColor: colors.surfacePressed },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  smallStatus: { color: colors.textSecondary, fontSize: 11, lineHeight: 16 },
-  successText: { color: colors.success, fontSize: 13, lineHeight: 19 },
-  resultPanel: {
-    marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-    padding: spacing.lg,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    backgroundColor: colors.surface,
-  },
-  result: { gap: spacing.lg },
-  resultHeader: { flexDirection: 'row', gap: spacing.md, alignItems: 'center' },
-  cover: { width: 88, height: 88, borderRadius: radii.md, backgroundColor: colors.surfaceElevated },
-  coverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  resultHeaderCopy: { flex: 1, minWidth: 0, gap: spacing.xxs },
-  typeLabel: { ...typography.caption, color: colors.accentSoft, fontWeight: '600' },
-  resultTitle: { ...typography.section, color: colors.textPrimary },
-  saveBlock: { gap: spacing.sm, marginHorizontal: spacing.lg, marginTop: spacing.xs, paddingTop: spacing.md },
-  saveTitle: { ...typography.section, color: colors.textPrimary },
-  destinationTitle: { ...typography.label, color: colors.textSecondary, marginTop: spacing.xxs },
-  destinationButton: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.xs,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    backgroundColor: colors.surface,
-  },
-  destinationName: { flex: 1, color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
-  destinationCount: { color: colors.textSecondary, fontSize: 12 },
-  unmatchedBlock: { gap: spacing.xxs, marginHorizontal: spacing.lg, marginTop: spacing.lg, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
-  unmatchedTrack: { paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
-});

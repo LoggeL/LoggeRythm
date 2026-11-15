@@ -31,7 +31,7 @@ import { resolveRemoteVisualState } from '../data/remoteState';
 import { strings } from '../localization';
 import { refreshBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
-import { colors, metrics } from '../theme';
+import { colors, metrics, opacity, radii } from '../theme';
 import AppIcon from './AppIcon';
 
 interface TrackLikeButtonProps {
@@ -48,6 +48,9 @@ interface EpicLikeGlyphProps {
 interface EpicLikeGlyphState {
   reduceMotion: boolean;
 }
+
+/** Same glyph size as IconButton md, so Like lines up with the overflow control. */
+const GLYPH_SIZE = 24;
 
 const burstParticles = [
   { x: 0, y: -26, color: colors.accentSoft },
@@ -202,7 +205,7 @@ class EpicLikeGlyph extends React.PureComponent<EpicLikeGlyphProps, EpicLikeGlyp
           <AppIcon
             name={liked ? 'heart' : 'heart-outline'}
             color={color}
-            size={28}
+            size={GLYPH_SIZE}
           />
         </Animated.View>
       </View>
@@ -334,7 +337,7 @@ export default function TrackLikeButton({ track, testID, style }: TrackLikeButto
         />
       ) : (
         queryRetry && !hasLikeState ? (
-          <AppIcon name="refresh" color={colors.warning} size={28} />
+          <AppIcon name="refresh" color={colors.warning} size={GLYPH_SIZE} />
         ) : (
           <EpicLikeGlyph
             liked={liked}
@@ -358,6 +361,7 @@ const styles = StyleSheet.create({
     height: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: radii.pill,
     overflow: 'visible',
   },
   celebrationFrame: {
@@ -371,7 +375,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 26,
     height: 26,
-    borderRadius: 13,
+    borderRadius: radii.pill,
     borderWidth: 2,
     borderColor: colors.accentSoft,
   },
@@ -382,6 +386,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  busy: { opacity: 0.72 },
-  pressed: { backgroundColor: colors.surfacePressed },
+  busy: { opacity: opacity.pressed },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.94 }] },
 });

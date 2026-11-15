@@ -48,6 +48,7 @@ describe('SearchVirtualizedResults', () => {
       accessibilityLabel: 'Search',
       rows,
       header: React.createElement('SearchChrome'),
+      bottomInset: 96,
       renderRow,
     });
     const props = propsOf(rendered);
@@ -62,6 +63,9 @@ describe('SearchVirtualizedResults', () => {
       windowSize: 9,
       removeClippedSubviews: true,
     });
+    // The mini-player clearance is the owner's bottom inset, not a fixed footer.
+    expect(props.contentContainerStyle).toEqual({ flexGrow: 1, paddingBottom: 96 });
+    expect(props.ListFooterComponent).toBeUndefined();
     const keyExtractor = props.keyExtractor as (row: SearchListRow) => string;
     expect(rows.map(keyExtractor)).toEqual([
       'section:tracks',

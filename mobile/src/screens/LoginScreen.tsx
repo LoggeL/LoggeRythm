@@ -1,15 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,7 +15,11 @@ import { isValidEmail, normalizeEmail } from '../auth/email';
 import { presentError } from '../auth/presentationError';
 import { buildRegisterRequest, RegistrationValidationError } from '../auth/registration';
 import { registrationLinkFromUrl } from '../auth/inviteLink';
+import AppIcon from '../components/AppIcon';
+import AuthBackdrop from '../components/AuthBackdrop';
 import BrandLockup from '../components/BrandLockup';
+import { FormField, PasswordField } from '../components/FormField';
+import { ActionButton, AppText } from '../components/ui';
 import {
   getCurrentApiBase,
   MAX_API_ORIGIN_LENGTH,
@@ -26,11 +27,14 @@ import {
   PRODUCTION_API_BASE,
 } from '../config';
 import { strings } from '../localization';
-import { colors, metrics, radii, spacing, typography } from '../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../theme';
+import { authErrorField } from './authErrorField';
 
 type AuthMode = 'sign-in' | 'create-account';
 
-const formGutter = 24;
+const formGutter = spacing.xl;
+/** The form never grows wider than a phone column on tablets and in landscape. */
+const FORM_MAX_WIDTH = layout.artwork.hero * 2;
 
 export default function LoginScreen() {
   const { login, register } = useAuth();
@@ -189,11 +193,18 @@ export default function LoginScreen() {
   const submitLabel = creatingAccount ? strings.auth.createAccount : strings.auth.signIn;
   const busyLabel = creatingAccount ? strings.auth.creatingAccount : strings.auth.signingIn;
 
+  // A local validation message belongs under its input; anything else
+  // (server responses, link failures) stays in the form-level alert.
+  const errorField = authErrorField(error);
+  const fieldError = (field: NonNullable<typeof errorField>) =>
+    errorField === field ? error : null;
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      <AuthBackdrop />
       <ScrollView
         testID="auth-scroll"
         contentContainerStyle={[
@@ -212,161 +223,157 @@ export default function LoginScreen() {
       >
         <View testID="auth-card" style={styles.card}>
           <BrandLockup style={styles.logo} />
-          <Text accessibilityRole="header" style={styles.title}>{submitLabel}</Text>
-          <Text style={styles.subtitle}>
-            {creatingAccount ? strings.auth.createAccountSubtitle : strings.auth.signInSubtitle}
-          </Text>
+          <View style={styles.heading}>
+            <AppText variant="title" align="center" accessibilityRole="header">{submitLabel}</AppText>
+            <AppText color="secondary" align="center">
+              {creatingAccount ? strings.auth.createAccountSubtitle : strings.auth.signInSubtitle}
+            </AppText>
+          </View>
 
-          <Text style={styles.label}>{strings.auth.server}</Text>
-          <TextInput
-            testID="login-server"
-            accessibilityLabel={strings.auth.server}
-            style={styles.input}
-            placeholder={strings.auth.serverPlaceholder}
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            value={serverUrl}
-            onChangeText={changeServerUrl}
-            maxLength={MAX_API_ORIGIN_LENGTH + 1}
-            returnKeyType="next"
-            editable={!busy}
-          />
-          <Text testID="login-server-hint" style={styles.serverHint}>
-            {strings.auth.serverCredentialNotice}
-          </Text>
-          {serverSwitchNotice ? (
-            <Text testID="login-server-switch-notice" style={styles.serverSwitchNotice}>
-              {serverSwitchNotice}
-            </Text>
-          ) : null}
-
-          {creatingAccount && (
-            <View style={styles.field}>
-            <Text style={styles.label}>{strings.auth.displayName}</Text>
-            <TextInput
-              testID="register-display-name"
-              accessibilityLabel={strings.auth.displayName}
-              style={styles.input}
-              placeholder={strings.auth.displayName}
-              placeholderTextColor={colors.textSecondary}
-              value={displayName}
-              onChangeText={setDisplayName}
-              autoComplete="name"
-              maxLength={120}
+          <View style={styles.fields}>
+            <FormField
+              testID="login-server"
+              label={strings.auth.server}
+              accessibilityLabel={strings.auth.server}
+              placeholder={strings.auth.serverPlaceholder}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              value={serverUrl}
+              onChangeText={changeServerUrl}
+              maxLength={MAX_API_ORIGIN_LENGTH + 1}
               returnKeyType="next"
               editable={!busy}
+              error={fieldError('server')}
             />
-            </View>
-          )}
-          <Text style={styles.label}>{strings.auth.email}</Text>
-          <TextInput
-            testID="login-email"
-            accessibilityLabel={strings.auth.email}
-            style={styles.input}
-            placeholder={strings.auth.email}
-            placeholderTextColor={colors.textSecondary}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            value={email}
-            onChangeText={setEmail}
-            autoComplete="email"
-            returnKeyType="next"
-            editable={!busy}
-          />
-          <Text style={styles.label}>{strings.auth.password}</Text>
-          <TextInput
-            testID="login-password"
-            accessibilityLabel={strings.auth.password}
-            style={styles.input}
-            placeholder={strings.auth.password}
-            placeholderTextColor={colors.textSecondary}
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-            autoComplete={creatingAccount ? 'new-password' : 'current-password'}
-            returnKeyType={creatingAccount ? 'next' : 'done'}
-            onSubmitEditing={creatingAccount ? undefined : () => void onSubmit()}
-            editable={!busy}
-          />
-          {creatingAccount && (
-            <>
-              <Text style={styles.label}>{strings.auth.confirmPassword}</Text>
-              <TextInput
-                testID="register-confirm-password"
-                accessibilityLabel={strings.auth.confirmPassword}
-                style={styles.input}
-                placeholder={strings.auth.confirmPassword}
-                placeholderTextColor={colors.textSecondary}
-                secureTextEntry
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                autoComplete="new-password"
+            <AppText testID="login-server-hint" variant="caption" color="secondary">
+              {strings.auth.serverCredentialNotice}
+            </AppText>
+            {serverSwitchNotice ? (
+              <AppText testID="login-server-switch-notice" variant="callout" color="warning">
+                {serverSwitchNotice}
+              </AppText>
+            ) : null}
+
+            {creatingAccount ? (
+              <FormField
+                testID="register-display-name"
+                label={strings.auth.displayName}
+                accessibilityLabel={strings.auth.displayName}
+                value={displayName}
+                onChangeText={setDisplayName}
+                autoComplete="name"
+                maxLength={120}
                 returnKeyType="next"
                 editable={!busy}
+                error={fieldError('displayName')}
               />
-              <Text style={styles.label}>{strings.auth.inviteOptional}</Text>
-              <TextInput
-                testID="register-invite"
-                accessibilityLabel={strings.auth.inviteOptional}
-                style={styles.input}
-                placeholder={strings.auth.inviteOptional}
-                placeholderTextColor={colors.textSecondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={invite}
-                onChangeText={setInvite}
-                returnKeyType="done"
-                onSubmitEditing={() => void onSubmit()}
-                editable={!busy}
-              />
-            </>
-          )}
+            ) : null}
+            <FormField
+              testID="login-email"
+              label={strings.auth.email}
+              accessibilityLabel={strings.auth.email}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              autoComplete="email"
+              returnKeyType="next"
+              editable={!busy}
+              error={fieldError('email')}
+            />
+            <PasswordField
+              testID="login-password"
+              label={strings.auth.password}
+              accessibilityLabel={strings.auth.password}
+              value={password}
+              onChangeText={setPassword}
+              autoComplete={creatingAccount ? 'new-password' : 'current-password'}
+              returnKeyType={creatingAccount ? 'next' : 'done'}
+              onSubmitEditing={creatingAccount ? undefined : () => void onSubmit()}
+              editable={!busy}
+              error={fieldError('password')}
+            />
+            {creatingAccount ? (
+              <>
+                <PasswordField
+                  testID="register-confirm-password"
+                  label={strings.auth.confirmPassword}
+                  accessibilityLabel={strings.auth.confirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  autoComplete="new-password"
+                  returnKeyType="next"
+                  editable={!busy}
+                  error={fieldError('confirmPassword')}
+                />
+                <FormField
+                  testID="register-invite"
+                  label={strings.auth.inviteOptional}
+                  accessibilityLabel={strings.auth.inviteOptional}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={invite}
+                  onChangeText={setInvite}
+                  returnKeyType="done"
+                  onSubmitEditing={() => void onSubmit()}
+                  editable={!busy}
+                />
+              </>
+            ) : null}
+          </View>
 
-          {error && <Text style={styles.error} accessibilityRole="alert" accessibilityLiveRegion="assertive">{error}</Text>}
-
-          {busy ? (
+          {error !== null && errorField === null ? (
             <View
-              testID="auth-submit-progress"
-              accessibilityRole="progressbar"
-              accessibilityLabel={busyLabel}
-              accessibilityLiveRegion="polite"
-              style={styles.busyStatus}
+              testID="auth-error"
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+              style={styles.error}
             >
-              <Text style={styles.busyText}>{busyLabel}</Text>
+              <AppIcon name="alert-circle-outline" color={colors.danger} size={20} />
+              <AppText variant="callout" color="danger" style={styles.errorText}>{error}</AppText>
             </View>
           ) : null}
 
-          <Pressable
-            testID={creatingAccount ? 'register-submit' : 'login-submit'}
-            accessibilityLabel={busy ? busyLabel : submitLabel}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy || requiredMissing, busy }}
-            style={[styles.button, (busy || requiredMissing) && styles.buttonDisabled]}
-            onPress={onSubmit}
-            disabled={busy || requiredMissing}
-          >
+          <View style={styles.actions}>
             {busy ? (
-              <ActivityIndicator color={colors.onAccent} />
-            ) : (
-              <Text style={styles.buttonText}>{submitLabel}</Text>
-            )}
-          </Pressable>
-
-          <Pressable
-            testID="auth-mode-toggle"
-            accessibilityLabel={creatingAccount ? strings.auth.signInInstead : strings.auth.createAccountInstead}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy }}
-            style={styles.modeToggle}
-            onPress={changeMode}
-            disabled={busy}
-          >
-            <Text style={styles.modeToggleText}>
-              {creatingAccount ? strings.auth.existingAccountPrompt : strings.auth.newAccountPrompt}
-            </Text>
-          </Pressable>
+              <View
+                testID="auth-submit-progress"
+                accessibilityRole="progressbar"
+                accessibilityLabel={busyLabel}
+                accessibilityLiveRegion="polite"
+              >
+                <AppText variant="callout" color="secondary" align="center">{busyLabel}</AppText>
+              </View>
+            ) : null}
+            <ActionButton
+              testID={creatingAccount ? 'register-submit' : 'login-submit'}
+              label={submitLabel}
+              accessibilityLabel={busy ? busyLabel : submitLabel}
+              busy={busy}
+              disabled={requiredMissing}
+              fullWidth
+              onPress={onSubmit}
+            />
+            <Pressable
+              testID="auth-mode-toggle"
+              accessibilityLabel={creatingAccount ? strings.auth.signInInstead : strings.auth.createAccountInstead}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy }}
+              style={({ pressed }) => [
+                styles.modeToggle,
+                pressed ? styles.pressed : null,
+                busy ? styles.disabled : null,
+              ]}
+              onPress={changeMode}
+              disabled={busy}
+            >
+              <AppText variant="label" color="accent" align="center">
+                {creatingAccount ? strings.auth.existingAccountPrompt : strings.auth.newAccountPrompt}
+              </AppText>
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -376,38 +383,26 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { gap: spacing.xs, width: '100%', maxWidth: 440 },
-  logo: { marginBottom: spacing.lg },
-  title: { ...typography.title, color: colors.textPrimary },
-  subtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.md },
-  field: { gap: spacing.xs },
-  label: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', marginTop: spacing.xs },
-  serverHint: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.xxs, marginBottom: spacing.xs },
-  serverSwitchNotice: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  input: {
-    backgroundColor: colors.surface,
-    color: colors.textPrimary,
-    minHeight: metrics.minimumTouchTarget,
+  card: { gap: spacing.xl, width: '100%', maxWidth: FORM_MAX_WIDTH },
+  logo: { alignSelf: 'center' },
+  heading: { gap: spacing.xxs },
+  fields: { gap: layout.stackGap },
+  error: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    padding: spacing.sm,
     borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    fontSize: 16,
+    backgroundColor: colors.dangerSubtle,
   },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19, padding: spacing.sm, borderRadius: radii.md, backgroundColor: colors.dangerSubtle },
-  busyStatus: { minHeight: 28, alignItems: 'center', justifyContent: 'center' },
-  busyText: { color: colors.textSecondary, fontSize: 13 },
-  button: {
-    backgroundColor: colors.accentSolid,
-    borderRadius: radii.md,
+  errorText: { flex: 1 },
+  actions: { gap: spacing.xs },
+  modeToggle: {
     minHeight: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: spacing.md,
+    paddingHorizontal: spacing.sm,
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { ...typography.label, color: colors.onAccent },
-  modeToggle: { minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center' },
-  modeToggleText: { ...typography.label, color: colors.accentSoft },
+  pressed: { opacity: opacity.pressed },
+  disabled: { opacity: opacity.disabled },
 });

@@ -1,12 +1,13 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import {
   resolveRemoteVisualState,
   type RemoteFetchStatus,
 } from '../data/remoteState';
 import { strings } from '../localization';
 import { catalogStrings } from '../screens/catalogStrings';
-import { colors, metrics } from '../theme';
+import { colors, layout, radii, spacing } from '../theme';
+import { AppText, EmptyState, ErrorState, RetryButton, Skeleton } from './ui';
 
 export interface TrackActionsPlaylistPickerProps {
   /** A successful response exists, including a successful empty response. */
@@ -22,31 +23,27 @@ export interface TrackActionsPlaylistPickerProps {
   children: React.ReactNode;
 }
 
-interface RetryProps {
-  busy: boolean;
-  disabled: boolean;
-  onRetry: () => void;
-}
+const SKELETON_ROWS = [0, 1, 2];
 
-function Retry({ busy, disabled, onRetry }: RetryProps) {
+/** Placeholder shaped like the destination rows it stands in for. */
+function PlaylistRowsSkeleton() {
   return (
-    <Pressable
-      testID="track-action-playlists-retry"
-      accessibilityRole="button"
-      accessibilityLabel={catalogStrings.common.retry}
-      accessibilityState={{ disabled, busy }}
-      disabled={disabled}
-      onPress={onRetry}
-      style={({ pressed }) => [
-        styles.retry,
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
-      ]}
+    <View
+      testID="track-action-playlists-loading"
+      accessibilityRole="progressbar"
+      accessibilityLabel={strings.trackActions.loadingPlaylists}
+      accessibilityLiveRegion="polite"
     >
-      <Text style={styles.retryText}>
-        {busy ? catalogStrings.common.retrying : catalogStrings.common.retry}
-      </Text>
-    </Pressable>
+      {SKELETON_ROWS.map((row) => (
+        <View key={row} style={styles.skeletonRow}>
+          <Skeleton width={layout.artwork.sm} height={layout.artwork.sm} />
+          <View style={styles.skeletonCopy}>
+            <Skeleton width={row % 2 === 0 ? '62%' : '48%'} height={14} />
+            <Skeleton width="30%" height={12} />
+          </View>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -73,46 +70,34 @@ export function TrackActionsPlaylistPicker({
     error,
   });
   const retryBusy = fetchStatus === 'fetching';
-  const retryDisabled = actionsDisabled || retryBusy;
+
+  // RetryButton has no separate disabled state: while another sheet command
+  // runs it reports busy, which blocks a duplicate request the same way.
+  const retryBlocked = actionsDisabled || retryBusy;
 
   let body: React.ReactNode;
   if (visual.body === 'loading') {
-    body = (
-      <View
-        testID="track-action-playlists-loading"
-        accessibilityRole="progressbar"
-        accessibilityLabel={strings.trackActions.loadingPlaylists}
-        accessibilityLiveRegion="polite"
-        style={styles.loading}
-      >
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.status}>{strings.trackActions.loadingPlaylists}</Text>
-      </View>
-    );
+    body = <PlaylistRowsSkeleton />;
   } else if (visual.body === 'offline' || visual.body === 'hard-error') {
     const offline = visual.body === 'offline';
     body = (
-      <View
+      <ErrorState
         testID={`track-action-playlists-${offline ? 'offline' : 'error'}`}
-        accessibilityRole="alert"
-        accessibilityLiveRegion="assertive"
-        style={styles.failure}
-      >
-        <Text style={styles.error}>
-          {offline ? catalogStrings.common.offline : catalogStrings.common.loadFailed}
-        </Text>
-        <Retry busy={retryBusy} disabled={retryDisabled} onRetry={onRetry} />
-      </View>
+        retryTestID="track-action-playlists-retry"
+        kind={offline ? 'offline' : 'error'}
+        message={offline ? catalogStrings.common.offline : catalogStrings.common.loadFailed}
+        onRetry={onRetry}
+        retryBusy={retryBlocked}
+        style={styles.inset}
+      />
     );
   } else if (visual.body === 'empty') {
     body = (
-      <Text
+      <EmptyState
         testID="track-action-playlists-empty"
-        accessibilityLiveRegion="polite"
-        style={styles.empty}
-      >
-        {strings.trackActions.noPlaylists}
-      </Text>
+        icon="playlist-plus"
+        title={strings.trackActions.noPlaylists}
+      />
     );
   } else {
     body = children;
@@ -128,12 +113,16 @@ export function TrackActionsPlaylistPicker({
         accessibilityLiveRegion="polite"
         style={styles.notice}
       >
-        <Text style={styles.warning}>
+        <AppText variant="callout" color="warning">
           {offline
             ? catalogStrings.common.cachedOffline
             : catalogStrings.common.cachedRefreshFailed}
-        </Text>
-        <Retry busy={retryBusy} disabled={retryDisabled} onRetry={onRetry} />
+        </AppText>
+        <RetryButton
+          testID="track-action-playlists-retry"
+          busy={retryBlocked}
+          onRetry={onRetry}
+        />
       </View>
     );
   } else if (visual.notice === 'refreshing') {
@@ -145,19 +134,21 @@ export function TrackActionsPlaylistPicker({
         accessibilityLiveRegion="polite"
         style={styles.refreshing}
       >
-        <ActivityIndicator color={colors.accent} />
-        <Text style={styles.status}>{catalogStrings.common.refreshing}</Text>
+        <ActivityIndicator accessible={false} color={colors.accentSoft} size="small" />
+        <AppText variant="callout" color="secondary">{catalogStrings.common.refreshing}</AppText>
       </View>
     );
   } else if (visual.notice === 'stale') {
     notice = (
-      <Text
+      <AppText
         testID="track-action-playlists-stale"
         accessibilityLiveRegion="polite"
-        style={styles.status}
+        variant="callout"
+        color="secondary"
+        style={styles.inset}
       >
         {catalogStrings.common.stale}
-      </Text>
+      </AppText>
     );
   }
 
@@ -170,40 +161,29 @@ export function TrackActionsPlaylistPicker({
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 10 },
-  loading: { minHeight: 100, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  failure: {
-    gap: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
+  container: { flexShrink: 1, gap: spacing.xs },
+  inset: { marginHorizontal: spacing.sm },
+  skeletonRow: {
+    height: layout.rowHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
+  skeletonCopy: { flex: 1, gap: spacing.xs },
   notice: {
-    gap: 9,
-    padding: 10,
+    gap: spacing.xs,
+    marginHorizontal: spacing.sm,
+    padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.warning,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: radii.md,
+    backgroundColor: colors.warningSubtle,
   },
-  refreshing: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  warning: { color: colors.warning, fontSize: 13, lineHeight: 19 },
-  empty: { color: colors.textSecondary, textAlign: 'center', paddingVertical: 26 },
-  retry: {
-    minHeight: metrics.minimumTouchTarget,
+  refreshing: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceElevated,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
   },
-  retryText: { color: colors.textPrimary, fontSize: 14, fontWeight: '700' },
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
 });

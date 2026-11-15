@@ -1,11 +1,11 @@
 import React from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { RecentPlay } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import type { TrackOccurrenceIdentity } from '../../player/trackPresentation';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors, metrics } from '../../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
 import { useTrackPresentation } from '../player/TrackPresentationProvider';
 import TrackStateIndicator from '../TrackStateIndicator';
 import AppIcon from '../AppIcon';
@@ -15,6 +15,7 @@ import {
   trackIdentityCopy,
   trackStateIndicatorCopy,
 } from '../track/trackPresentationCopy';
+import { AppText, Artwork, IconButton } from '../ui';
 
 export interface LibraryRecentRowProps {
   play: RecentPlay;
@@ -29,7 +30,9 @@ export interface LibraryRecentRowProps {
   onOpenArtist: (params: ArtistRouteParams) => void;
 }
 
-function Artwork({
+const PLAY_BADGE_SIZE = 24;
+
+function RecentArtwork({
   play,
   busy,
   playback,
@@ -41,13 +44,7 @@ function Artwork({
   const buffering = busy || playback === 'buffering';
   return (
     <View style={styles.artworkFrame}>
-      {play.cover ? (
-        <Image accessible={false} source={{ uri: play.cover }} style={styles.artwork} />
-      ) : (
-        <View style={[styles.artwork, styles.artworkPlaceholder]}>
-          <AppIcon name="music-note" color={colors.accentSoft} size={21} />
-        </View>
-      )}
+      <Artwork uri={play.cover} size={layout.artwork.sm} />
       <View accessible={false} style={styles.playBadge}>
         {buffering ? (
           <ActivityIndicator color={colors.onAccent} size="small" />
@@ -55,7 +52,7 @@ function Artwork({
           <AppIcon
             name={playback === 'playing' ? 'pause' : 'play'}
             color={colors.onAccent}
-            size={16}
+            size={14}
           />
         )}
       </View>
@@ -81,7 +78,7 @@ export function LibraryRecentRow({
   return (
     <View
       testID={`${testID}-container`}
-      style={[styles.row, presentation.active && styles.activeRow]}
+      style={[styles.row, presentation.active ? styles.activeRow : null]}
     >
       <Pressable
         testID={testID}
@@ -94,10 +91,18 @@ export function LibraryRecentRow({
         }}
         disabled={disabled}
         onPress={onPlay}
-        style={({ pressed }) => [styles.playControl, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.playControl, pressed ? styles.pressed : null]}
       >
-        <Text accessible={false} style={styles.index}>{index + 1}</Text>
-        <Artwork play={play} busy={busy} playback={presentation.playback} />
+        <AppText
+          accessible={false}
+          variant="caption"
+          color={presentation.active ? 'accent' : 'muted'}
+          align="center"
+          style={styles.index}
+        >
+          {index + 1}
+        </AppText>
+        <RecentArtwork play={play} busy={busy} playback={presentation.playback} />
       </Pressable>
       <View style={styles.meta}>
         <TrackIdentityLinks
@@ -114,65 +119,42 @@ export function LibraryRecentRow({
           testID={`${testID}-state`}
         />
       </View>
-      <Pressable
+      <IconButton
         testID={`${testID}-actions`}
-        accessibilityRole="button"
+        icon="dots-vertical"
         accessibilityLabel={`${strings.trackActions.moreActionsLabel}: ${play.title}`}
         onPress={onActions}
-        style={({ pressed }) => [styles.actions, pressed && styles.pressed]}
-      >
-        <AppIcon name="dots-vertical" color={colors.textSecondary} size={25} />
-      </Pressable>
+        style={styles.actions}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   row: {
-    minHeight: 72,
+    minHeight: layout.rowHeight + spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  activeRow: {
-    backgroundColor: colors.surface,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent,
-  },
+  activeRow: { backgroundColor: colors.accentSubtle },
   playControl: {
-    minWidth: 100,
-    minHeight: 72,
+    minWidth: metrics.minimumTouchTarget * 2,
+    minHeight: layout.rowHeight + spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingLeft: 16,
-    paddingRight: 8,
+    gap: spacing.xs,
+    paddingLeft: layout.pagePadding - spacing.xs,
+    paddingRight: spacing.xs,
   },
-  index: {
-    width: 24,
-    color: colors.textSecondary,
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  artworkFrame: { position: 'relative', width: 50, height: 50 },
-  artwork: {
-    width: 50,
-    height: 50,
-    borderRadius: 7,
-    backgroundColor: colors.surfaceElevated,
-  },
-  artworkPlaceholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
+  index: { width: spacing.xl },
+  artworkFrame: { width: layout.artwork.sm, height: layout.artwork.sm },
   playBadge: {
     position: 'absolute',
-    right: -4,
-    bottom: -4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    right: -spacing.xxs,
+    bottom: -spacing.xxs,
+    width: PLAY_BADGE_SIZE,
+    height: PLAY_BADGE_SIZE,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
@@ -182,16 +164,8 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    padding: spacing.xs,
   },
-  actions: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 4,
-  },
-  actionsGlyph: { color: colors.textSecondary, fontSize: 24, lineHeight: 28 },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
+  actions: { marginRight: spacing.xs },
+  pressed: { opacity: opacity.pressed },
 });

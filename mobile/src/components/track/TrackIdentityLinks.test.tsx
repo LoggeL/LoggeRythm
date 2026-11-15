@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
+import { spacing } from '../../theme';
 import TrackIdentityLinks, { type TrackIdentityCopy } from './TrackIdentityLinks';
 import { buildTrackMetadata } from './trackMetadata';
 
@@ -66,7 +67,7 @@ const track: Track = {
 };
 
 describe('TrackIdentityLinks', () => {
-  it('keeps exact album and artist routes inside two bounded text lines', () => {
+  it('keeps exact album and artist routes inside two bounded, separately pressable lines', () => {
     const onOpenAlbum = vi.fn();
     const onOpenArtist = vi.fn();
     const rendered = TrackIdentityLinks({
@@ -93,23 +94,43 @@ describe('TrackIdentityLinks', () => {
     expect(invalid.props.accessibilityRole).toBeUndefined();
     expect(invalid.props.onPress).toBeUndefined();
     expect(invalid.props.children).toBe('Legacy Guest');
-    expect(title.props.numberOfLines).toBe(1);
-    expect(title.props.ellipsizeMode).toBe('tail');
+    // The title link is a block target around the one-line title, not a bare
+    // text run: it reaches into the row's free space above the line.
+    expect(title.type).toBe('Pressable');
+    expect(title.props.hitSlop).toEqual({ top: spacing.xs });
+    expect(byTestId(rendered, 'track-identity-title-text').props).toMatchObject({
+      numberOfLines: 1,
+      ellipsizeMode: 'tail',
+      children: 'Midnight Signal',
+    });
     expect(byTestId(rendered, 'track-identity-details').props).toMatchObject({
       numberOfLines: 1,
       ellipsizeMode: 'tail',
     });
-    expect(elements(rendered).some((element) => element.type === 'Pressable')).toBe(false);
+    // The artist line is one target below the title; it must not swallow the
+    // inline links as a single accessibility element.
+    const artistTarget = byTestId(rendered, 'track-identity-artist-target');
+    expect(artistTarget.type).toBe('Pressable');
+    expect(artistTarget.props.accessible).toBe(false);
+    expect(artistTarget.props.hitSlop).toEqual({ bottom: spacing.xs });
+    expect(elements(artistTarget).some(
+      (element) => element.props.testID === 'track-identity-details',
+    )).toBe(true);
+    expect(elements(rendered).filter((element) => element.type === 'Pressable'))
+      .toHaveLength(2);
 
     (title.props.onPress as () => void)();
     (album.props.onPress as () => void)();
     (primary.props.onPress as () => void)();
     (featured.props.onPress as () => void)();
+    (artistTarget.props.onPress as () => void)();
     expect(onOpenAlbum).toHaveBeenNthCalledWith(1, { albumId: '9', title: 'Parity' });
     expect(onOpenAlbum).toHaveBeenNthCalledWith(2, { albumId: '9', title: 'Parity' });
     expect(onOpenArtist.mock.calls.map(([params]) => params)).toEqual([
       { artistId: '7', name: 'Primary Artist' },
       { artistId: '42', name: 'Featured Artist' },
+      // A tap beside the names opens the first routable artist.
+      { artistId: '7', name: 'Primary Artist' },
     ]);
 
     expect(byTestId(rendered, 'track-identity-duration').props.children).toBe('Duration 3:05');
@@ -140,6 +161,7 @@ describe('TrackIdentityLinks', () => {
     expect(byTestId(rendered, 'legacy-track-album-label-text').props.children).toBe('Parity');
     expect(elements(rendered).some((element) => element.props.accessibilityRole === 'link'))
       .toBe(false);
+    expect(elements(rendered).some((element) => element.type === 'Pressable')).toBe(false);
     expect(elements(rendered).some((element) => element.props.testID === 'legacy-track-duration'))
       .toBe(false);
     expect(onOpenAlbum).not.toHaveBeenCalled();

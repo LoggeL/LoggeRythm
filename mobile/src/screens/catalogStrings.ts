@@ -24,6 +24,8 @@ export interface CatalogScreenStrings {
     openArtist: (name: string) => string;
     openGenre: (name: string) => string;
     playTrack: (title: string, artist: string) => string;
+    refresh: string;
+    refreshingNow: string;
   };
   discover: {
     title: string;
@@ -79,6 +81,9 @@ export interface CatalogScreenStrings {
     followStateFailed: string;
     listeners: (count: number) => string;
     plays: (count: number) => string;
+    clearSongSearch: string;
+    showMoreAbout: string;
+    showLessAbout: string;
   };
 }
 
@@ -107,6 +112,8 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       openArtist: (name) => `Interpret ${name} öffnen`,
       openGenre: (name) => `Genre ${name} öffnen`,
       playTrack: (title, artist) => `${title} von ${artist} abspielen`,
+      refresh: 'Aktualisieren',
+      refreshingNow: 'Wird aktualisiert…',
     },
     discover: {
       title: 'Entdecken',
@@ -167,6 +174,9 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       followStateFailed: 'Folgen-Status konnte nicht geladen werden',
       listeners: (count) => `${count.toLocaleString('de-DE')} Hörer`,
       plays: (count) => `${count.toLocaleString('de-DE')} Wiedergaben`,
+      clearSongSearch: 'Suche leeren',
+      showMoreAbout: 'Mehr anzeigen',
+      showLessAbout: 'Weniger anzeigen',
     },
   },
   en: {
@@ -193,6 +203,8 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       openArtist: (name) => `Open artist ${name}`,
       openGenre: (name) => `Open ${name} genre`,
       playTrack: (title, artist) => `Play ${title} by ${artist}`,
+      refresh: 'Refresh',
+      refreshingNow: 'Refreshing…',
     },
     discover: {
       title: 'Discover',
@@ -254,6 +266,9 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       followStateFailed: 'Could not load follow status',
       listeners: (count) => `${count.toLocaleString('en-US')} listeners`,
       plays: (count) => `${count.toLocaleString('en-US')} plays`,
+      clearSongSearch: 'Clear search',
+      showMoreAbout: 'Show more',
+      showLessAbout: 'Show less',
     },
   },
 };

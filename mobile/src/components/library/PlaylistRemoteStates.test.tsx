@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { libraryStrings } from '../../screens/libraryStrings';
+import { queryByTestId as byTestId, textContent as textLines } from '../../test/render';
 import {
   PlaylistQueryGate,
   PlaylistQueryNotice,
@@ -15,29 +16,15 @@ vi.mock('react-native', () => ({
   Text: 'Text',
   View: 'View',
 }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  if (typeof element.type === 'function') {
-    const rendered = (element.type as (props: ElementProps) => React.ReactNode)(element.props);
-    return [element, ...elements(rendered)];
-  }
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
-}
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
+// Skeleton blocks animate with hooks; the labelled wrapper under test is a host View.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  Skeleton: 'Skeleton',
+}));
 
 function textContent(node: React.ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(textContent).join('');
-  if (node === null || typeof node !== 'object' || !('props' in node)) return '';
-  return textContent((node as React.ReactElement<ElementProps>).props.children);
+  return textLines(node).join(' ');
 }
 
 const base: PlaylistRemoteQueryState = {
@@ -147,6 +134,16 @@ describe('Playlist collection remote states', () => {
     expect(byTestId(refreshTree, 'playlist-refreshing')?.props.accessibilityRole)
       .toBe('progressbar');
     expect(byTestId(refreshTree, 'playlist-stale')).toBeNull();
+    // A list with its own pull-to-refresh spinner renders no extra row.
+    expect(byTestId(
+      PlaylistQueryNotice({
+        visual: refreshing,
+        retryBusy: true,
+        onRetry: vi.fn(),
+        refreshIndicator: false,
+      }),
+      'playlist-refreshing',
+    )).toBeNull();
 
     const failed = resolvePlaylistRemoteVisualState({
       ...base,

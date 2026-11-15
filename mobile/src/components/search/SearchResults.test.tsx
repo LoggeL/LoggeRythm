@@ -1,11 +1,16 @@
+import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
+import { byTestId, byType, textContent } from '../../test/render';
 import {
+  SearchEntityCard,
+  SearchResultRail,
   SearchTrackResultRow,
   searchTrackOccurrence,
 } from './SearchResults';
 
 vi.mock('react-native', () => ({
+  ActivityIndicator: 'ActivityIndicator',
   FlatList: 'FlatList',
   Image: 'Image',
   Pressable: 'Pressable',
@@ -14,6 +19,11 @@ vi.mock('react-native', () => ({
   View: 'View',
 }));
 vi.mock('../track/StandardTrackRow', () => ({ default: 'StandardTrackRow' }));
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  PressableScale: 'PressableScale',
+}));
 
 const track: Track = {
   id: '12',
@@ -98,5 +108,71 @@ describe('Search track rows', () => {
       rollingDeviceCacheSeconds: 45,
     });
     expect(rendered.props.showDuration).not.toBe(false);
+  });
+});
+
+describe('Search entity cards and rails', () => {
+  const card = (overrides: Partial<Parameters<typeof SearchEntityCard>[0]> = {}) =>
+    SearchEntityCard({
+      testID: 'search-album-4-0',
+      accessibilityLabel: 'Open Autobahn by Kraftwerk',
+      title: 'Autobahn',
+      subtitle: 'Kraftwerk',
+      imageUri: 'https://img.example/a.jpg',
+      onPress: vi.fn(),
+      ...overrides,
+    });
+
+  it('is one labelled button with truncating copy over shared artwork', () => {
+    const onPress = vi.fn();
+    const rendered = card({ onPress });
+    const button = byTestId(rendered, 'search-album-4-0');
+
+    expect(button.props).toMatchObject({
+      accessibilityRole: 'button',
+      accessibilityLabel: 'Open Autobahn by Kraftwerk',
+      accessibilityState: { disabled: false, busy: false },
+      disabled: false,
+    });
+    expect(textContent(rendered)).toEqual(['Autobahn', 'Kraftwerk']);
+    expect(byType(rendered, 'Text').map((text) => text.props.numberOfLines)).toEqual([2, 1]);
+    expect(byType(rendered, 'Image')[0].props.source).toEqual({ uri: 'https://img.example/a.jpg' });
+    expect(byType(rendered, 'ActivityIndicator')).toHaveLength(0);
+    (button.props.onPress as () => void)();
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it('shows a placeholder without artwork and reports a busy, locked card', () => {
+    const rendered = card({ imageUri: null, disabled: true, busy: true });
+
+    expect(byType(rendered, 'Image')).toHaveLength(0);
+    expect(byTestId(rendered, 'search-album-4-0').props).toMatchObject({
+      accessibilityState: { disabled: true, busy: true },
+      disabled: true,
+    });
+    expect(byType(rendered, 'ActivityIndicator')).toHaveLength(1);
+  });
+
+  it('keeps rails keyboard-tappable and index-aware', () => {
+    const renderItem = vi.fn((item: string, index: number) =>
+      React.createElement('Card', { item, index }));
+    const rendered = SearchResultRail({
+      id: 'albums',
+      data: ['a', 'b'],
+      keyExtractor: (item, index) => `${item}:${index}`,
+      renderItem,
+    });
+
+    expect(rendered.props).toMatchObject({
+      testID: 'search-rail-albums',
+      horizontal: true,
+      keyboardShouldPersistTaps: 'handled',
+      data: ['a', 'b'],
+    });
+    (rendered.props.renderItem as (info: { item: string; index: number }) => unknown)({
+      item: 'b',
+      index: 1,
+    });
+    expect(renderItem).toHaveBeenCalledWith('b', 1);
   });
 });

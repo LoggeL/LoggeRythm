@@ -1,12 +1,8 @@
 import React from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { colors, metrics } from '../../theme';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { colors, radii, spacing } from '../../theme';
+import AppIcon, { type AppIconName } from '../AppIcon';
+import { ActionButton, AppText, type AppTextColor } from '../ui';
 
 export interface OfflinePlaylistProgress {
   completedTracks: number;
@@ -79,69 +75,37 @@ export function normalizeOfflinePlaylistProgress(
   };
 }
 
-interface ActionButtonProps {
-  testID: string;
-  label: string;
-  tone: 'primary' | 'secondary' | 'danger';
-  disabled: boolean;
-  busy: boolean;
-  onPress(): void;
-}
+const PROGRESS_HEIGHT = 6;
 
-function ActionButton({
-  testID,
-  label,
-  tone,
-  disabled,
-  busy,
-  onPress,
-}: ActionButtonProps) {
-  return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled, busy }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.action,
-        tone === 'primary' && styles.primaryAction,
-        tone === 'secondary' && styles.secondaryAction,
-        tone === 'danger' && styles.dangerAction,
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
-      ]}
-    >
-      {busy ? (
-        <ActivityIndicator
-          accessible={false}
-          color={tone === 'primary' ? colors.onAccent : colors.textSecondary}
-          size="small"
-        />
-      ) : null}
-      <Text
-        accessible={false}
-        style={[
-          styles.actionText,
-          tone === 'primary' && styles.primaryActionText,
-          tone === 'danger' && styles.dangerActionText,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
+type StatusKind = OfflinePlaylistControlState['kind'];
+
+/** Idle/unavailable are neutral; every other state names its outcome by colour and glyph. */
+const statusLook: Record<StatusKind, { icon: AppIconName; glyph: string; text: AppTextColor }> = {
+  unavailable: { icon: 'cloud-off-outline', glyph: colors.textMuted, text: 'secondary' },
+  idle: { icon: 'download-circle-outline', glyph: colors.textSecondary, text: 'secondary' },
+  downloading: { icon: 'download-circle-outline', glyph: colors.accentSoft, text: 'primary' },
+  partial: { icon: 'alert-circle-outline', glyph: colors.warning, text: 'warning' },
+  downloaded: { icon: 'check-circle', glyph: colors.success, text: 'success' },
+  removing: { icon: 'delete-outline', glyph: colors.textSecondary, text: 'secondary' },
+  error: { icon: 'alert-circle-outline', glyph: colors.danger, text: 'danger' },
+};
 
 interface ProgressBarProps {
   percent: number;
+  kind: StatusKind;
 }
 
-function ProgressBar({ percent }: ProgressBarProps) {
+function ProgressBar({ percent, kind }: ProgressBarProps) {
+  const fill = kind === 'downloaded'
+    ? colors.success
+    : kind === 'partial'
+      ? colors.warning
+      : kind === 'error'
+        ? colors.danger
+        : colors.accent;
   return (
     <View accessible={false} style={styles.progressTrack}>
-      <View style={[styles.progressFill, { width: `${percent}%` }]} />
+      <View style={[styles.progressFill, { width: `${percent}%`, backgroundColor: fill }]} />
     </View>
   );
 }
@@ -192,6 +156,11 @@ export default function OfflinePlaylistControl({
     : busy
       ? 'progressbar'
       : 'text';
+  const look = statusLook[state.kind];
+  const removable = state.kind === 'partial'
+    || state.kind === 'downloaded'
+    || state.kind === 'removing'
+    || (state.kind === 'error' && progress !== null && progress.completedTracks > 0);
 
   return (
     <View testID={testID} style={styles.container}>
@@ -207,35 +176,20 @@ export default function OfflinePlaylistControl({
           now: progress.completedTracks,
           text: copy.progress(progress),
         }}
-        style={[
-          styles.status,
-          state.kind === 'error' && styles.errorStatus,
-          state.kind === 'partial' && styles.partialStatus,
-          state.kind === 'downloaded' && styles.downloadedStatus,
-        ]}
+        style={styles.status}
       >
         <View style={styles.statusLine}>
           {busy ? (
-            <ActivityIndicator
-              accessible={false}
-              color={state.kind === 'downloading' ? colors.accent : colors.textSecondary}
-              size="small"
-            />
-          ) : null}
-          <Text
-            accessible={false}
-            style={[
-              styles.statusText,
-              state.kind === 'error' && styles.errorText,
-              state.kind === 'partial' && styles.partialText,
-              state.kind === 'downloaded' && styles.downloadedText,
-            ]}
-          >
+            <ActivityIndicator accessible={false} color={look.glyph} size="small" />
+          ) : (
+            <AppIcon name={look.icon} color={look.glyph} size={22} />
+          )}
+          <AppText accessible={false} variant="callout" color={look.text} style={styles.statusText}>
             {statusText}
-          </Text>
+          </AppText>
         </View>
         {progress !== null && progress.totalTracks > 0 ? (
-          <ProgressBar percent={progress.percent} />
+          <ProgressBar percent={progress.percent} kind={state.kind} />
         ) : null}
       </View>
 
@@ -244,10 +198,10 @@ export default function OfflinePlaylistControl({
           <ActionButton
             testID={`${testID}-download`}
             label={copy.downloadAction}
-            tone="primary"
+            icon="download"
             disabled={disabled}
-            busy={false}
             onPress={onDownload}
+            style={styles.action}
           />
         ) : null}
 
@@ -255,10 +209,10 @@ export default function OfflinePlaylistControl({
           <ActionButton
             testID={`${testID}-download`}
             label={copy.downloadingAction}
-            tone="primary"
-            disabled={actionDisabled}
             busy
+            disabled={actionDisabled}
             onPress={onDownload}
+            style={styles.action}
           />
         ) : null}
 
@@ -266,84 +220,47 @@ export default function OfflinePlaylistControl({
           <ActionButton
             testID={`${testID}-retry`}
             label={copy.retryAction}
-            tone="primary"
+            icon="refresh"
             disabled={actionDisabled}
-            busy={false}
             onPress={onRetry}
+            style={styles.action}
           />
         ) : null}
 
-        {(state.kind === 'partial'
-          || state.kind === 'downloaded'
-          || state.kind === 'removing'
-          || (state.kind === 'error' && progress !== null && progress.completedTracks > 0)) ? (
-            <ActionButton
-              testID={`${testID}-remove`}
-              label={state.kind === 'removing' ? copy.removingAction : copy.removeAction}
-              tone={state.kind === 'removing' ? 'secondary' : 'danger'}
-              disabled={actionDisabled}
-              busy={state.kind === 'removing'}
-              onPress={onRemove}
-            />
-          ) : null}
+        {removable ? (
+          <ActionButton
+            testID={`${testID}-remove`}
+            label={state.kind === 'removing' ? copy.removingAction : copy.removeAction}
+            icon="delete-outline"
+            variant={state.kind === 'removing' ? 'secondary' : 'danger'}
+            disabled={actionDisabled}
+            busy={state.kind === 'removing'}
+            onPress={onRemove}
+            style={styles.action}
+          />
+        ) : null}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    gap: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-  },
+  container: { gap: spacing.sm },
   status: {
-    gap: 9,
-    padding: 11,
-    borderRadius: 10,
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radii.card,
     backgroundColor: colors.surfaceElevated,
   },
-  errorStatus: { borderWidth: 1, borderColor: colors.danger },
-  partialStatus: { borderWidth: 1, borderColor: colors.warning },
-  downloadedStatus: { borderWidth: 1, borderColor: colors.success },
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  statusText: { flex: 1, color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  errorText: { color: colors.danger },
-  partialText: { color: colors.warning },
-  downloadedText: { color: colors.success },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  statusText: { flex: 1 },
   progressTrack: {
-    height: 5,
+    height: PROGRESS_HEIGHT,
     overflow: 'hidden',
-    borderRadius: 3,
-    backgroundColor: colors.border,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fillStrong,
   },
-  progressFill: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: colors.accent,
-  },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
-  action: {
-    minHeight: metrics.minimumTouchTarget,
-    minWidth: metrics.minimumTouchTarget,
-    flexGrow: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderRadius: 24,
-  },
-  primaryAction: { borderColor: colors.accent, backgroundColor: colors.accent },
-  secondaryAction: { borderColor: colors.border, backgroundColor: colors.surfaceElevated },
-  dangerAction: { borderColor: colors.danger, backgroundColor: colors.surfaceElevated },
-  actionText: { color: colors.textPrimary, fontSize: 14, fontWeight: '800' },
-  primaryActionText: { color: colors.onAccent },
-  dangerActionText: { color: colors.danger },
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
+  progressFill: { height: PROGRESS_HEIGHT, borderRadius: radii.pill },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  action: { flexGrow: 1 },
 });

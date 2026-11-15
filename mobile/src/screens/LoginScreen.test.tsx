@@ -1,6 +1,6 @@
-import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { strings } from '../localization';
+import { byTestId, queryByTestId } from '../test/render';
 import LoginScreen from './LoginScreen';
 
 const mocks = vi.hoisted(() => ({
@@ -44,21 +44,11 @@ vi.mock('react-native-safe-area-context', () => ({
 }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
 vi.mock('../components/BrandLockup', () => ({ default: 'BrandLockup' }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`No element has testID ${testID}`);
-  return found;
-}
+// PasswordField owns the visibility state; string mocks keep every input prop.
+vi.mock('../components/FormField', () => ({
+  FormField: 'FormField',
+  PasswordField: 'PasswordField',
+}));
 
 interface RenderOptions {
   mode?: 'sign-in' | 'create-account';
@@ -68,6 +58,7 @@ interface RenderOptions {
   email?: string;
   password?: string;
   serverSwitchNotice?: string | null;
+  error?: string | null;
 }
 
 function render({
@@ -78,10 +69,11 @@ function render({
   email = 'person@example.test',
   password = 'password123',
   serverSwitchNotice = null,
+  error = null,
 }: RenderOptions = {}) {
   const setters = Array.from({ length: 10 }, () => vi.fn());
   const values = mode === 'sign-in'
-    ? [mode, serverUrl, '', email, password, '', '', busy, null, serverSwitchNotice]
+    ? [mode, serverUrl, '', email, password, '', '', busy, error, serverSwitchNotice]
     : [
       mode,
       serverUrl,
@@ -91,7 +83,7 @@ function render({
       password,
       'invite',
       busy,
-      null,
+      error,
       serverSwitchNotice,
     ];
   values.forEach((value, index) => mocks.useState.mockReturnValueOnce([value, setters[index]]));
@@ -443,5 +435,34 @@ describe('LoginScreen action feedback', () => {
 
     expect(byTestId(tree, 'login-server-switch-notice').props.children)
       .toBe(strings.auth.productionLinkServerChanged);
+  });
+
+  it('shows a local validation message under its field instead of the form alert', () => {
+    mocks.useAuth.mockReturnValue({ login: vi.fn(), register: vi.fn() });
+    const tree = render({ error: strings.auth.emailInvalid }).tree;
+
+    expect(byTestId(tree, 'login-email').props.error).toBe(strings.auth.emailInvalid);
+    expect(byTestId(tree, 'login-password').props.error).toBeNull();
+    expect(byTestId(tree, 'login-server').props.error).toBeNull();
+    expect(queryByTestId(tree, 'auth-error')).toBeNull();
+  });
+
+  it('announces a request failure once as the assertive form alert', () => {
+    mocks.useAuth.mockReturnValue({ login: vi.fn(), register: vi.fn() });
+    const tree = render({ error: strings.auth.signInFailed }).tree;
+    const alert = byTestId(tree, 'auth-error');
+
+    expect(alert.props.accessibilityRole).toBe('alert');
+    expect(alert.props.accessibilityLiveRegion).toBe('assertive');
+    expect(byTestId(tree, 'login-email').props.error).toBeNull();
+  });
+
+  it('masks both password inputs through the shared password field', () => {
+    mocks.useAuth.mockReturnValue({ login: vi.fn(), register: vi.fn() });
+    const tree = render({ mode: 'create-account' }).tree;
+
+    expect(byTestId(tree, 'login-password').type).toBe('PasswordField');
+    expect(byTestId(tree, 'register-confirm-password').type).toBe('PasswordField');
+    expect(byTestId(tree, 'login-password').props.autoComplete).toBe('new-password');
   });
 });

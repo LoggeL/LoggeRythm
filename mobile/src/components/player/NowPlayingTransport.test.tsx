@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { strings } from '../../localization';
 import { metrics } from '../../theme';
+import { byTestId } from '../../test/render';
 import NowPlayingTransport from './NowPlayingTransport';
 
 vi.mock('react-native', () => ({
@@ -13,21 +14,9 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('@react-native-community/slider', () => ({ default: 'Slider' }));
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`Missing ${testID}`);
-  return found;
-}
 
 function textContent(node: React.ReactNode): string {
   if (typeof node === 'string' || typeof node === 'number') return String(node);
@@ -130,8 +119,19 @@ describe('NowPlayingTransport', () => {
     expect(textContent(byTestId(rendered, 'lyrics-position'))).toBe('0:09');
     expect(textContent(byTestId(rendered, 'lyrics-duration'))).toBe('0:00');
     expect(playPause.props.accessibilityLabel).toBe(strings.common.pause);
-    expect(playPause.props.accessibilityState).toEqual({ busy: true });
-    expect(byTestId(rendered, 'lyrics-buffering')).toBeDefined();
+    // Buffering is announced by its own progress ring; the button stays
+    // enabled so a stalled buffer can still be paused.
+    expect(playPause.props.disabled).toBe(false);
+    expect(playPause.props.accessibilityState).toEqual({ disabled: false, busy: false });
+    const onTogglePlay = vi.fn();
+    const pausable = compactTransport({ playing: true, buffering: true, onTogglePlay });
+    (byTestId(pausable, 'lyrics-play-pause').props.onPress as () => void)();
+    expect(onTogglePlay).toHaveBeenCalledOnce();
+    expect(byTestId(rendered, 'lyrics-buffering').props).toMatchObject({
+      accessibilityRole: 'progressbar',
+      accessibilityLabel: strings.player.buffering,
+      accessibilityLiveRegion: 'polite',
+    });
   });
 
   it('keeps the full transport extension slots used by shuffle and repeat', () => {

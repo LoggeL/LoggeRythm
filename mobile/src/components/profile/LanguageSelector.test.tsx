@@ -1,6 +1,6 @@
-import type React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { activateLocale } from '../../localization';
+import { byTestId as byTestID, elements, textContent } from '../../test/render';
 import { LanguageSelectorView } from './LanguageSelector';
 
 vi.mock('react-native', () => ({
@@ -13,28 +13,6 @@ vi.mock('react-native', () => ({
 vi.mock('../../localization/LocaleProvider', () => ({
   useLocale: vi.fn(),
 }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestID(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`No element has testID ${testID}`);
-  return found;
-}
-
-function textContent(node: React.ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(textContent).join('');
-  if (node === null || typeof node !== 'object' || !('props' in node)) return '';
-  return textContent((node as React.ReactElement<ElementProps>).props.children);
-}
 
 afterEach(() => {
   activateLocale('de');
@@ -65,7 +43,8 @@ describe('LanguageSelectorView', () => {
     });
 
     expect(textContent(byTestID(rendered, 'profile-language'))).toContain('Language');
-    expect(textContent(byTestID(rendered, 'profile-language-status'))).toBe('Saving language…');
+    expect(textContent(rendered)).toContain('German');
+    expect(textContent(byTestID(rendered, 'profile-language-status'))).toEqual(['Saving language…']);
     expect(byTestID(rendered, 'profile-language-de').props.disabled).toBe(true);
     expect(byTestID(rendered, 'profile-language-en').props.disabled).toBe(true);
   });
@@ -81,6 +60,6 @@ describe('LanguageSelectorView', () => {
       accessibilityRole: 'alert',
       accessibilityLiveRegion: 'assertive',
     });
-    expect(textContent(error)).toBe('The language could not be saved.');
+    expect(textContent(error)).toEqual(['The language could not be saved.']);
   });
 });

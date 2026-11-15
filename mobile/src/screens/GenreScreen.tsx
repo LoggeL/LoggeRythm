@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import {
-  CatalogActionButton,
   CatalogAlbumCard,
   CatalogArtistCard,
   CatalogHeroArtwork,
@@ -18,9 +17,10 @@ import {
   CatalogSection,
 } from '../components/catalog/CatalogStates';
 import { showTrackActions } from '../components/trackActions';
+import { AppText, EmptyState, PlayButton } from '../components/ui';
 import { musicQueries } from '../data';
 import { playTracks } from '../player/controller';
-import { colors } from '../theme';
+import { colors, layout, spacing } from '../theme';
 import {
   assertGenreScreenContract,
   catalogTestIdSegment,
@@ -97,19 +97,26 @@ export default function GenreScreen(props: GenreScreenProps) {
             <CatalogDetailHero
               artwork={<CatalogHeroArtwork uri={detail.picture} compact />}
               actions={
-                <CatalogActionButton
+                <PlayButton
                   testID="genre-play-all"
-                  label={catalogStrings.common.playAll}
-                  icon="play"
+                  size="lg"
+                  accessibilityLabel={catalogStrings.common.playAll}
                   disabled={detail.tracks.length === 0}
                   onPress={() => play(0)}
                 />
               }
             >
-              <Text testID="genre-title" accessibilityRole="header" style={styles.title}>
+              <AppText
+                testID="genre-title"
+                accessibilityRole="header"
+                variant="title"
+                numberOfLines={2}
+              >
                 {detail.name}
-              </Text>
-              <Text style={styles.meta}>{catalogStrings.common.tracks(detail.tracks.length)}</Text>
+              </AppText>
+              <AppText variant="callout" color="secondary">
+                {catalogStrings.common.tracks(detail.tracks.length)}
+              </AppText>
             </CatalogDetailHero>
             <CatalogRuntimeError id="genre" message={runtimeError} />
             <CatalogContentStatus
@@ -123,7 +130,11 @@ export default function GenreScreen(props: GenreScreenProps) {
               onRetry={() => void genre.refetch()}
             />
             {!genreHasContent(detail) ? (
-              <Text testID="genre-empty" style={styles.empty}>{catalogStrings.genre.empty}</Text>
+              <EmptyState
+                testID="genre-empty"
+                icon="music-off"
+                title={catalogStrings.genre.empty}
+              />
             ) : null}
 
             <CatalogSection
@@ -204,9 +215,6 @@ export default function GenreScreen(props: GenreScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  headerContent: { gap: 24, paddingTop: 24 },
-  footerContent: { gap: 32, paddingTop: 32 },
-  title: { color: colors.textPrimary, fontSize: 30, lineHeight: 36, fontWeight: '800', letterSpacing: -0.7 },
-  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
+  headerContent: { gap: layout.sectionGap, paddingTop: spacing.md },
+  footerContent: { gap: layout.sectionGap, paddingTop: layout.sectionGap },
 });

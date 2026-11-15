@@ -5,8 +5,10 @@ import {
   CatalogContentStatus,
   CatalogPageGate,
   CatalogQueryBoundary,
+  CatalogRuntimeError,
   CatalogSection,
 } from './CatalogStates';
+import { catalogQueryFlags, settledCatalogQueryFlags } from './catalogQueryState';
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
@@ -14,6 +16,14 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T): T => styles },
   Text: 'Text',
   View: 'View',
+}));
+// Skeleton blocks own a pulse animation (hooks), so they cannot be called
+// outside a render; as strings they keep the props passed to them.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  CardRailSkeleton: 'CardRailSkeleton',
+  Skeleton: 'Skeleton',
+  TrackRowSkeleton: 'TrackRowSkeleton',
 }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
@@ -68,6 +78,13 @@ describe('Catalog remote-state presentation', () => {
       onRetry: vi.fn(),
     });
     expect(byTestId(loading, 'album-loading')?.props.accessibilityLiveRegion).toBe('polite');
+    expect(byTestId(loading, 'album-loading')?.props).toMatchObject({
+      accessibilityRole: 'progressbar',
+      accessibilityLabel: catalogStrings.album.loading,
+    });
+    // The page is drawn as a skeleton of itself, not a centred spinner.
+    expect(elements(loading).some((element) => element.type === 'Skeleton')).toBe(true);
+    expect(elements(loading).some((element) => element.type === 'ActivityIndicator')).toBe(false);
 
     const onRetry = vi.fn();
     const failed = CatalogPageGate({
@@ -134,6 +151,17 @@ describe('Catalog remote-state presentation', () => {
     expect(byTestId(refreshing, 'catalog-section-charts-refreshing')?.props.accessibilityRole)
       .toBe('progressbar');
     expect(byTestId(refreshing, 'catalog-section-charts-stale')).toBeNull();
+    // The marker sits in the heading row, so the section never grows by an
+    // extra line while it refetches.
+    const [heading, ...body] = React.Children.toArray(
+      (refreshing.props as ElementProps).children,
+    ) as
+      React.ReactElement<ElementProps>[];
+    expect(byTestId(heading, 'catalog-section-charts-refreshing')?.props.accessibilityLabel)
+      .toBe(`${catalogStrings.discover.charts}. ${catalogStrings.common.refreshing}`);
+    expect(byTestId(body, 'catalog-section-charts-refreshing')).toBeNull();
+    expect(byTestId(body, 'chart-rail')).not.toBeNull();
+    expect(byTestId(section(), 'catalog-section-charts-refreshing')).toBeNull();
 
     const failed = section({
       error: new Error('failed'),
@@ -190,5 +218,134 @@ describe('Catalog remote-state presentation', () => {
     expect(elements(content).some(
       (element) => element.props.children === 'raw search diagnostic',
     )).toBe(false);
+  });
+
+  it('shapes the loading placeholder like the content it stands in for', () => {
+    const loading = { hasData: false, isPending: true, isFetching: true, fetchStatus: 'fetching' } as const;
+
+    const rail = byTestId(section(loading), 'catalog-section-charts-loading');
+    expect(rail?.type).toBe('CardRailSkeleton');
+    expect(rail?.props).toMatchObject({
+      accessibilityLabel: catalogStrings.common.sectionLoading(catalogStrings.discover.charts),
+      round: false,
+    });
+    expect(byTestId(section({ ...loading, skeleton: 'artists' }), 'catalog-section-charts-loading')
+      ?.props.round).toBe(true);
+    expect(byTestId(section({ ...loading, skeleton: 'rows' }), 'catalog-section-charts-loading')
+      ?.type).toBe('TrackRowSkeleton');
+
+    const text = byTestId(section({ ...loading, skeleton: 'text' }), 'catalog-section-charts-loading');
+    expect(text?.props).toMatchObject({
+      accessibilityRole: 'progressbar',
+      accessibilityLiveRegion: 'polite',
+    });
+    expect(byTestId(section(loading), 'chart-rail')).toBeNull();
+  });
+
+  it('lets a section name its own empty copy and keeps the retry label specific', () => {
+    const tree = section({ empty: true, emptyLabel: 'No biography is available.' });
+    const empty = byTestId(tree, 'catalog-section-charts-empty');
+
+    expect(empty?.props.accessibilityLiveRegion).toBe('polite');
+    expect(elements(empty).some((element) => element.props.children === 'No biography is available.'))
+      .toBe(true);
+
+    const failed = section({ hasData: false, error: new Error('boom') });
+    expect(byTestId(failed, 'catalog-section-charts-error')?.props.accessibilityRole).toBe('alert');
+    expect(byTestId(failed, 'catalog-section-charts-retry')?.props.accessibilityLabel)
+      .toBe(catalogStrings.common.retrySection(catalogStrings.discover.charts));
+  });
+
+  it('can leave refresh progress to a pull-to-refresh control without hiding failures', () => {
+    const base = {
+      id: 'album',
+      hasData: true,
+      isPending: false,
+      isStale: true,
+      onRetry: vi.fn(),
+      refreshIndicator: false,
+    } as const;
+    const refreshing = CatalogContentStatus({
+      ...base,
+      isFetching: true,
+      fetchStatus: 'fetching',
+      error: null,
+    });
+    expect(byTestId(refreshing, 'album-refreshing')).toBeNull();
+
+    const failed = CatalogContentStatus({
+      ...base,
+      isFetching: false,
+      fetchStatus: 'idle',
+      error: new Error('refresh failed'),
+    });
+    expect(byTestId(failed, 'album-cached-error')).not.toBeNull();
+    expect(byTestId(failed, 'album-retry')).not.toBeNull();
+  });
+
+  it('lets an embedded boundary leave refresh progress to the screen', () => {
+    const render = (refreshIndicator?: boolean) => CatalogQueryBoundary({
+      id: 'artist-follow-state',
+      hasData: true,
+      empty: false,
+      isPending: false,
+      isFetching: true,
+      isStale: true,
+      fetchStatus: 'fetching',
+      error: null,
+      loadingLabel: catalogStrings.artist.followLoading,
+      emptyLabel: catalogStrings.artist.followStateFailed,
+      onRetry: vi.fn(),
+      children: React.createElement('FollowButton', { testID: 'follow' }),
+      ...(refreshIndicator === undefined ? {} : { refreshIndicator }),
+    });
+
+    expect(byTestId(render(), 'artist-follow-state-refreshing')?.props.accessibilityRole)
+      .toBe('progressbar');
+    const quiet = render(false);
+    expect(byTestId(quiet, 'artist-follow-state-refreshing')).toBeNull();
+    expect(byTestId(quiet, 'follow')).not.toBeNull();
+  });
+
+  it('announces a failed action as an alert and renders nothing without one', () => {
+    expect(CatalogRuntimeError({ id: 'album', message: null })).toBeNull();
+
+    const tree = CatalogRuntimeError({ id: 'album', message: 'Playback failed' });
+    const alert = byTestId(tree, 'album-runtime-error');
+    expect(alert?.props).toMatchObject({
+      accessibilityRole: 'alert',
+      accessibilityLiveRegion: 'assertive',
+    });
+    expect(elements(alert).some((element) => element.props.children === 'Playback failed'))
+      .toBe(true);
+    // A failed action is not a failed load: there is nothing to retry here.
+    expect(elements(alert).some((element) => element.type === 'Pressable')).toBe(false);
+  });
+
+  it('picks exactly the remote-state flags of a query', () => {
+    const query = {
+      data: [1],
+      isPending: false,
+      isFetching: true,
+      isStale: true,
+      fetchStatus: 'fetching' as const,
+      error: null,
+      refetch: vi.fn(),
+    };
+
+    expect(catalogQueryFlags(query)).toEqual({
+      isPending: false,
+      isFetching: true,
+      isStale: true,
+      fetchStatus: 'fetching',
+      error: null,
+    });
+    expect(settledCatalogQueryFlags).toEqual({
+      isPending: false,
+      isFetching: false,
+      isStale: false,
+      fetchStatus: 'idle',
+      error: null,
+    });
   });
 });

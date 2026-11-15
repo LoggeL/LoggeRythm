@@ -1,15 +1,5 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import {
-  AccessibilityInfo,
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { AccessibilityInfo, ScrollView, StyleSheet, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
 import { trackArtistLabel } from '../api/trackArtists';
@@ -40,8 +30,16 @@ import {
 } from '../offline/runtime';
 import { refreshBrowseTree, refreshOfflineBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
-import { colors, metrics } from '../theme';
-import AppIcon from './AppIcon';
+import { spacing } from '../theme';
+import {
+  TrackActionRow,
+  TrackActionsCreateForm,
+  TrackActionsHeader,
+  TrackActionsPlaylistRow,
+  useKeyboardHeight,
+  type TrackActionRowProps,
+} from './TrackActionSheetParts';
+import { AppText, BottomSheet, ListSeparator } from './ui';
 import { TrackActionsPlaylistPicker } from './TrackActionsPlaylistPicker';
 import { trackActionFailureMessage } from './trackActionFeedback';
 import {
@@ -82,6 +80,7 @@ export default function TrackActionsHost() {
   const requestId = request?.requestId ?? null;
   const { user } = useAuth();
   const offlineSnapshot = useOfflineDownloads();
+  const keyboardHeight = useKeyboardHeight();
   const queryClient = useQueryClient();
   const scope =
     user === null
@@ -305,10 +304,11 @@ export default function TrackActionsHost() {
     && offlineSnapshot.hydrated
     && offlineSnapshot.scope === accountScope
     && offlineSnapshot.manifest?.tracks[request.track.id]?.individualDownload === true;
-  const actionButtons: Record<TrackActionId, React.ComponentProps<typeof ActionButton>> = {
+  const actionRows: Record<TrackActionId, TrackActionRowProps> = {
     'play-next': {
       testID: 'track-action-play-next',
       label: strings.trackActions.playNext,
+      icon: 'playlist-play',
       disabled: pending,
       busy: activePendingAction === 'play-next',
       onPress: () => runQueueAction('play-next'),
@@ -316,6 +316,7 @@ export default function TrackActionsHost() {
     'add-to-queue': {
       testID: 'track-action-add-queue',
       label: strings.trackActions.addToQueue,
+      icon: 'playlist-plus',
       disabled: pending,
       busy: activePendingAction === 'add-to-queue',
       onPress: () => runQueueAction('add-to-queue'),
@@ -323,6 +324,7 @@ export default function TrackActionsHost() {
     'start-radio': {
       testID: 'track-action-radio',
       label: strings.trackActions.startRadio,
+      icon: 'radio-tower',
       disabled: pending,
       busy: activePendingAction === 'start-radio',
       onPress: () => runQueueAction('start-radio'),
@@ -330,6 +332,7 @@ export default function TrackActionsHost() {
     'add-to-playlist': {
       testID: 'track-action-add-playlist',
       label: strings.trackActions.addToPlaylist,
+      icon: 'playlist-music',
       disabled: pending,
       onPress: openPlaylists,
     },
@@ -344,7 +347,7 @@ export default function TrackActionsHost() {
     'remove-download': {
       testID: 'track-action-remove-download',
       label: strings.trackActions.removeDownload,
-      icon: 'delete',
+      icon: 'download-off',
       disabled: pending || accountScope === null,
       busy: activePendingAction === 'remove-download',
       onPress: () => runOfflineTrackAction('remove-download'),
@@ -354,6 +357,7 @@ export default function TrackActionsHost() {
       label: strings.trackActions.openAlbum(
         albumRoute?.title ?? strings.navigation.album,
       ),
+      icon: 'album',
       disabled: pending || albumRoute === null,
       onPress: () => runNavigationAction(openTrackAlbum),
     },
@@ -362,318 +366,155 @@ export default function TrackActionsHost() {
       label: strings.trackActions.openArtist(
         artistRoute?.name ?? strings.navigation.artist,
       ),
+      icon: 'account-music',
       disabled: pending || artistRoute === null,
       onPress: () => runNavigationAction(openTrackArtist),
     },
     remove: {
       testID: 'track-action-remove',
       label: strings.trackActions.remove,
+      icon: 'delete-outline',
+      destructive: true,
       disabled: pending,
       busy: activePendingAction === 'remove',
       onPress: runRemove,
     },
   };
 
+  const back =
+    mode === 'create'
+      ? {
+          testID: 'track-action-create-back',
+          label: strings.trackActions.backToPlaylists,
+          onPress: () => setMode('playlists'),
+        }
+      : mode === 'playlists'
+        ? {
+            testID: 'track-action-playlists-back',
+            label: strings.trackActions.back,
+            onPress: () => {
+              setRuntimeError(null);
+              setMode('actions');
+            },
+          }
+        : undefined;
+
   return (
-    <Modal
+    <BottomSheet
       visible={request !== null && user !== null}
-      transparent
-      animationType="fade"
-      onRequestClose={close}
+      onClose={close}
+      closeLabel={strings.trackActions.close}
+      testID="track-actions-modal"
+      contentStyle={mode === 'create' ? { paddingBottom: keyboardHeight } : undefined}
     >
-      <View testID="track-actions-modal" style={styles.backdrop}>
-        <View accessibilityViewIsModal style={styles.card}>
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text accessibilityRole="header" style={styles.title} numberOfLines={1}>
-                {mode === 'actions'
-                  ? request?.track.title
-                  : strings.trackActions.addToPlaylistTitle}
-              </Text>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {mode === 'actions' && request !== null
-                  ? trackArtistLabel(request.track)
-                  : request?.track.title}
-              </Text>
-            </View>
-            <Pressable
-              testID="track-actions-close"
-              accessibilityRole="button"
-              accessibilityLabel={strings.trackActions.close}
-              accessibilityState={{ disabled: pending }}
-              disabled={pending}
-              onPress={close}
-              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-            >
-              <AppIcon name="close" color={colors.textSecondary} size={22} />
-            </Pressable>
-          </View>
+      <TrackActionsHeader
+        title={
+          mode === 'actions'
+            ? request?.track.title ?? ''
+            : strings.trackActions.addToPlaylistTitle
+        }
+        subtitle={
+          request === null
+            ? ''
+            : mode === 'actions'
+              ? trackArtistLabel(request.track)
+              : request.track.title
+        }
+        coverUri={request?.track.cover}
+        back={back}
+        closeDisabled={pending}
+        onClose={close}
+      />
 
-          {runtimeError !== null ? (
-            <Text
-              testID="track-actions-error"
-              accessibilityRole="alert"
-              accessibilityLiveRegion="assertive"
-              style={styles.error}
-            >
-              {runtimeError}
-            </Text>
-          ) : null}
+      {runtimeError !== null ? (
+        <AppText
+          testID="track-actions-error"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+          variant="callout"
+          color="danger"
+          style={styles.error}
+        >
+          {runtimeError}
+        </AppText>
+      ) : null}
 
-          {mode === 'actions' ? (
+      {mode === 'actions' ? (
+        <ScrollView
+          testID="track-actions-list"
+          style={styles.scroll}
+          contentContainerStyle={styles.list}
+        >
+          {trackActionIdsForRequest(request, accountScope, individuallyDownloaded).map(
+            (action) => <TrackActionRow key={action} {...actionRows[action]} />,
+          )}
+        </ScrollView>
+      ) : mode === 'create' ? (
+        <TrackActionsCreateForm
+          name={newName}
+          onChangeName={setNewName}
+          disabled={pending}
+          submitting={createMutation.isPending}
+          onSubmit={submitCreate}
+        />
+      ) : (
+        <View style={styles.playlistPanel}>
+          <TrackActionRow
+            testID="track-action-new-playlist"
+            label={strings.trackActions.newPlaylist}
+            icon="plus"
+            disabled={pending}
+            onPress={() => {
+              setRuntimeError(null);
+              setMode('create');
+            }}
+          />
+          <ListSeparator />
+          <TrackActionsPlaylistPicker
+            hasData={playlists.data !== undefined}
+            empty={(playlists.data?.length ?? 0) === 0}
+            isPending={playlists.isPending}
+            isFetching={playlists.isFetching}
+            isStale={playlists.isStale}
+            fetchStatus={playlists.fetchStatus}
+            error={playlists.error}
+            actionsDisabled={pending}
+            onRetry={() => void playlists.refetch()}
+          >
             <ScrollView
-              testID="track-actions-list"
-              style={styles.actionScroll}
-              contentContainerStyle={styles.actionList}
+              testID="track-action-playlists-list"
+              style={styles.scroll}
+              contentContainerStyle={styles.list}
             >
-              {trackActionIdsForRequest(
-                request,
-                accountScope,
-                individuallyDownloaded,
-              ).map((action) => (
-                <ActionButton key={action} {...actionButtons[action]} />
+              {(playlists.data ?? []).map((playlist) => (
+                <TrackActionsPlaylistRow
+                  key={playlist.id}
+                  testID={`track-action-playlist-${playlist.id}`}
+                  name={playlist.name}
+                  detail={strings.trackActions.playlistTrackCount(playlist.track_count)}
+                  accessibilityLabel={strings.trackActions.addToNamedPlaylist(
+                    request?.track.title ?? '',
+                    playlist.name,
+                  )}
+                  disabled={pending}
+                  busy={addMutation.isPending && addMutation.variables?.id === playlist.id}
+                  onPress={() => {
+                    if (request === null) return;
+                    addMutation.mutate({ id: playlist.id, track: request.track });
+                  }}
+                />
               ))}
             </ScrollView>
-          ) : mode === 'create' ? (
-            <View style={styles.createForm}>
-              <TextInput
-                testID="track-action-new-playlist-name"
-                accessibilityLabel={strings.trackActions.newPlaylistName}
-                placeholder={strings.trackActions.newPlaylistName}
-                placeholderTextColor={colors.textSecondary}
-                value={newName}
-                onChangeText={setNewName}
-                editable={!pending}
-                autoFocus
-                maxLength={120}
-                onSubmitEditing={submitCreate}
-                style={styles.input}
-              />
-              <View style={styles.formActions}>
-                <Pressable
-                  testID="track-action-create-back"
-                  accessibilityRole="button"
-                  accessibilityLabel={strings.trackActions.backToPlaylists}
-                  disabled={pending}
-                  onPress={() => setMode('playlists')}
-                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-                >
-                  <Text style={styles.secondaryText}>{strings.trackActions.back}</Text>
-                </Pressable>
-                <Pressable
-                  testID="track-action-create-submit"
-                  accessibilityRole="button"
-                  accessibilityLabel={strings.trackActions.createAndAdd}
-                  accessibilityState={{
-                    disabled: pending || newName.trim().length === 0,
-                    busy: createMutation.isPending,
-                  }}
-                  disabled={pending || newName.trim().length === 0}
-                  onPress={submitCreate}
-                  style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-                >
-                  {createMutation.isPending ? (
-                    <ActivityIndicator color={colors.onAccent} />
-                  ) : (
-                    <Text style={styles.primaryText}>{strings.trackActions.createAndAdd}</Text>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.playlistPanel}>
-              <ActionButton
-                testID="track-action-new-playlist"
-                label={strings.trackActions.newPlaylist}
-                icon="plus"
-                disabled={pending}
-                onPress={() => {
-                  setRuntimeError(null);
-                  setMode('create');
-                }}
-              />
-              <TrackActionsPlaylistPicker
-                hasData={playlists.data !== undefined}
-                empty={(playlists.data?.length ?? 0) === 0}
-                isPending={playlists.isPending}
-                isFetching={playlists.isFetching}
-                isStale={playlists.isStale}
-                fetchStatus={playlists.fetchStatus}
-                error={playlists.error}
-                actionsDisabled={pending}
-                onRetry={() => void playlists.refetch()}
-              >
-                <ScrollView
-                  testID="track-action-playlists-list"
-                  style={styles.playlistList}
-                  contentContainerStyle={styles.playlistListContent}
-                >
-                  {(playlists.data ?? []).map((playlist) => (
-                    <Pressable
-                      key={playlist.id}
-                      testID={`track-action-playlist-${playlist.id}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={strings.trackActions.addToNamedPlaylist(
-                        request?.track.title ?? '',
-                        playlist.name,
-                      )}
-                      accessibilityState={{ disabled: pending }}
-                      disabled={pending}
-                      onPress={() => {
-                        if (request === null) return;
-                        addMutation.mutate({ id: playlist.id, track: request.track });
-                      }}
-                      style={({ pressed }) => [styles.playlistRow, pressed && styles.pressed]}
-                    >
-                      <View style={styles.playlistGlyph}>
-                        <AppIcon name="music-note" color={colors.accentSoft} size={20} />
-                      </View>
-                      <View style={styles.headerCopy}>
-                        <Text style={styles.playlistName} numberOfLines={1}>{playlist.name}</Text>
-                        <Text style={styles.subtitle}>
-                          {strings.trackActions.playlistTrackCount(playlist.track_count)}
-                        </Text>
-                      </View>
-                      {addMutation.isPending && addMutation.variables?.id === playlist.id ? (
-                        <ActivityIndicator color={colors.accent} />
-                      ) : null}
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </TrackActionsPlaylistPicker>
-            </View>
-          )}
+          </TrackActionsPlaylistPicker>
         </View>
-      </View>
-    </Modal>
-  );
-}
-
-function ActionButton({
-  testID,
-  label,
-  icon,
-  disabled,
-  busy = false,
-  onPress,
-}: {
-  testID: string;
-  label: string;
-  icon?: React.ComponentProps<typeof AppIcon>['name'];
-  disabled: boolean;
-  busy?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      testID={testID}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled, busy }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.actionButton, disabled && styles.disabled, pressed && styles.pressed]}
-    >
-      {icon === undefined ? null : (
-        <AppIcon name={icon} color={colors.textPrimary} size={20} />
       )}
-      <Text style={styles.actionText}>{label}</Text>
-      {busy ? <ActivityIndicator color={colors.accent} /> : null}
-    </Pressable>
+    </BottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 20,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-  },
-  card: {
-    maxHeight: '82%',
-    gap: 12,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 18,
-    backgroundColor: colors.backgroundElevated,
-  },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerCopy: { flex: 1, minWidth: 0 },
-  title: { color: colors.textPrimary, fontSize: 21, lineHeight: 27, fontWeight: '900' },
-  subtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  closeButton: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeGlyph: { color: colors.textSecondary, fontSize: 29, lineHeight: 32 },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
-  actionList: { gap: 8 },
-  actionScroll: { maxHeight: 460 },
-  actionButton: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceElevated,
-  },
-  actionText: { flex: 1, color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  playlistPanel: { minHeight: 160, gap: 10 },
-  playlistList: { maxHeight: 360 },
-  playlistListContent: { gap: 6, paddingBottom: 4 },
-  playlistRow: {
-    minHeight: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-  },
-  playlistGlyph: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    backgroundColor: colors.surfaceElevated,
-  },
-  playlistGlyphText: { color: colors.accentSoft, fontSize: 22 },
-  playlistName: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  createForm: { gap: 14 },
-  input: {
-    minHeight: metrics.minimumTouchTarget,
-    color: colors.textPrimary,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-  },
-  formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  primaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    minWidth: 126,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-  },
-  primaryText: { color: colors.onAccent, fontSize: 14, fontWeight: '800' },
-  secondaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  secondaryText: { color: colors.textSecondary, fontSize: 14, fontWeight: '700' },
-  disabled: { opacity: 0.5 },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
+  error: { paddingHorizontal: spacing.sm, paddingBottom: spacing.xs },
+  scroll: { flexGrow: 0 },
+  list: { paddingBottom: spacing.xs },
+  playlistPanel: { flexShrink: 1, gap: spacing.xxs },
 });

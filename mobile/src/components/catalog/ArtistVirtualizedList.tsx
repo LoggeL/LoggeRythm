@@ -11,7 +11,8 @@ import {
   createArtistTrackListSections,
   type ArtistTrackListItem,
 } from '../../screens/artistTrackListModel';
-import { colors } from '../../theme';
+import { useBottomInset } from '../../hooks/useBottomInset';
+import { colors, layout, spacing } from '../../theme';
 
 export interface ArtistVirtualizedListProps {
   artistName: string;
@@ -28,7 +29,7 @@ export interface ArtistVirtualizedListProps {
   renderTrackItem: (item: ArtistTrackListItem) => React.ReactElement;
 }
 
-/** The Artist page's only vertical scroll owner. */
+/** The Artist page's only vertical scroll owner. Its content clears the mini player. */
 export function ArtistVirtualizedList({
   artistName,
   popularTracks,
@@ -43,6 +44,7 @@ export function ArtistVirtualizedList({
   footer,
   renderTrackItem,
 }: ArtistVirtualizedListProps) {
+  const bottom = useBottomInset();
   const sections = createArtistTrackListSections({
     popularTracks,
     searchTracks,
@@ -80,12 +82,12 @@ export function ArtistVirtualizedList({
       initialNumToRender={12}
       maxToRenderPerBatch={10}
       windowSize={9}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  content: { paddingTop: 22, paddingBottom: 144 },
-  sectionHeader: { paddingTop: 28 },
+  content: { paddingTop: spacing.md },
+  sectionHeader: { paddingTop: layout.sectionGap, paddingBottom: spacing.xs },
 });

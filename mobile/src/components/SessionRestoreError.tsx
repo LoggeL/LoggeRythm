@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { presentError, type UserFacingError } from '../auth/presentationError';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, layout, radii, spacing } from '../theme';
+import AppIcon from './AppIcon';
+import AuthBackdrop from './AuthBackdrop';
 import BrandLockup from './BrandLockup';
+import { ActionButton, AppText, RetryButton } from './ui';
 
 interface SessionRestoreErrorProps {
   error: UserFacingError;
@@ -32,66 +35,66 @@ export default function SessionRestoreError({
   };
 
   return (
-    <View testID="session-restore-error" style={styles.errorScreen} accessibilityViewIsModal>
+    <View testID="session-restore-error" style={styles.screen} accessibilityViewIsModal>
+      <AuthBackdrop />
       <BrandLockup compact />
-      <Text accessibilityRole="header" style={styles.errorTitle}>
-        {strings.auth.restoreFailedTitle}
-      </Text>
-      <Text accessibilityRole="alert" accessibilityLiveRegion="assertive" style={styles.errorMessage}>
-        {actionError?.message ?? error.message}
-      </Text>
-      <Pressable
-        testID="session-retry"
-        accessibilityRole="button"
-        accessibilityLabel={strings.common.retry}
-        accessibilityState={{ disabled: busy, busy }}
-        style={styles.primaryButton}
-        disabled={busy}
-        onPress={() => void run(onRetry, strings.auth.retryRestoreFailed)}
-      >
-        <Text style={styles.primaryButtonText}>
-          {busy ? strings.common.working : strings.common.retry}
-        </Text>
-      </Pressable>
-      <Pressable
-        testID="session-forget"
-        accessibilityRole="button"
-        accessibilityLabel={strings.auth.forgetSession}
-        accessibilityState={{ disabled: busy }}
-        style={styles.secondaryButton}
-        disabled={busy}
-        onPress={() => void run(onForget, strings.auth.forgetSessionFailed)}
-      >
-        <Text style={styles.secondaryButtonText}>{strings.auth.forgetSession}</Text>
-      </Pressable>
+      <View style={styles.message}>
+        <View accessible={false} style={styles.glyph}>
+          <AppIcon name="alert-circle-outline" color={colors.danger} size={28} />
+        </View>
+        <AppText variant="title" align="center" accessibilityRole="header">
+          {strings.auth.restoreFailedTitle}
+        </AppText>
+        <AppText
+          testID="session-restore-message"
+          color="danger"
+          align="center"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+        >
+          {actionError?.message ?? error.message}
+        </AppText>
+      </View>
+      <View style={styles.actions}>
+        <RetryButton
+          testID="session-retry"
+          label={busy ? strings.common.working : strings.common.retry}
+          accessibilityLabel={strings.common.retry}
+          busy={busy}
+          onRetry={() => void run(onRetry, strings.auth.retryRestoreFailed)}
+          style={styles.action}
+        />
+        <ActionButton
+          testID="session-forget"
+          variant="ghost"
+          label={strings.auth.forgetSession}
+          disabled={busy}
+          onPress={() => void run(onForget, strings.auth.forgetSessionFailed)}
+          style={styles.action}
+        />
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  errorScreen: {
+  screen: {
     flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xl,
+    padding: spacing.xl,
     backgroundColor: colors.background,
+  },
+  message: { alignItems: 'center', gap: spacing.sm },
+  glyph: {
+    width: layout.artwork.md,
+    height: layout.artwork.md,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 28,
-    gap: 14,
+    backgroundColor: colors.dangerSubtle,
   },
-  errorTitle: { color: colors.textPrimary, fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  errorMessage: { color: colors.danger, fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  primaryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 24,
-    paddingHorizontal: 28,
-    minHeight: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryButtonText: { color: colors.onAccent, fontSize: 15, fontWeight: '700' },
-  secondaryButton: {
-    minHeight: metrics.minimumTouchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-  },
-  secondaryButtonText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
+  actions: { alignItems: 'center', gap: spacing.xxs },
+  action: { alignSelf: 'center' },
 });

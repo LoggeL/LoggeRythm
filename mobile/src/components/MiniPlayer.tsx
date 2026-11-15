@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
-  Image,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -28,15 +27,23 @@ import {
 import type { RootStackParams } from '../navigation';
 import { trackArtistLabel } from '../api/trackArtists';
 import { strings } from '../localization';
-import { colors, metrics, radii, spacing, typography } from '../theme';
+import { colors, elevation, metrics, opacity, radii, spacing, typography } from '../theme';
 import TrackLikeButton from './TrackLikeButton';
 import PlayerNoticeBanner from './PlayerNoticeBanner';
 import AppIcon from './AppIcon';
+import { Artwork } from './ui/Artwork';
 
 export const TAB_BAR_HEIGHT = metrics.tabBarHeight;
 /** Content reserves the surface and the gap above the tab bar or safe area. */
 export const MINI_PLAYER_HEIGHT = metrics.miniPlayerSurfaceHeight + metrics.miniPlayerGap;
 
+/**
+ * The floating playback card above the tab bar (or the safe area outside the
+ * tabs): artwork, title/artist, like, play/pause, next and a thin progress
+ * line along its bottom edge. Tap opens Now Playing; horizontal swipes skip,
+ * an upward swipe expands. Renders nothing while no track is loaded — pair
+ * scroll views with `useBottomInset()` so content clears it.
+ */
 export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParams>>();
@@ -78,7 +85,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
   return (
     <>
       <PlayerNoticeBanner
-        bottom={(hasTabBar ? TAB_BAR_HEIGHT : 0) + insets.bottom + MINI_PLAYER_HEIGHT + 8}
+        bottom={(hasTabBar ? TAB_BAR_HEIGHT : 0) + insets.bottom + MINI_PLAYER_HEIGHT + spacing.xs}
       />
       <View
         testID="mini-player"
@@ -94,13 +101,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
           style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
           onPress={openNowPlaying}
         >
-          {track.cover ? (
-            <Image accessible={false} source={{ uri: track.cover }} style={styles.cover} />
-          ) : (
-            <View style={[styles.cover, styles.coverPlaceholder]}>
-              <AppIcon name="music-note" color={colors.textSecondary} size={22} />
-            </View>
-          )}
+          <Artwork uri={track.cover} size={ARTWORK_SIZE} />
           <View style={styles.meta}>
             <Text style={styles.title} numberOfLines={1}>{track.title}</Text>
             <Text style={styles.artist} numberOfLines={1}>{artistLabel}</Text>
@@ -113,28 +114,26 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
           accessibilityLabel={playing ? strings.common.pause : strings.common.play}
           accessibilityState={{ busy: buffering }}
           onPress={() => run(strings.player.playPauseFailed, togglePlay)}
-          style={({ pressed }) => [styles.btn, styles.playButton, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.btn, pressed && styles.pressedControl]}
         >
-          {buffering ? (
-            <ActivityIndicator color={colors.onAccent} size="small" />
-          ) : (
-            <AppIcon
-              name={playing ? 'pause' : 'play'}
-              color={colors.onAccent}
-              size={24}
-            />
-          )}
+          <View style={styles.playDisc}>
+            {buffering ? (
+              <ActivityIndicator color={colors.onLight} size="small" />
+            ) : (
+              <AppIcon name={playing ? 'pause' : 'play'} color={colors.onLight} size={24} />
+            )}
+          </View>
         </Pressable>
         <Pressable
           testID="mini-player-next"
           accessibilityRole="button"
           accessibilityLabel={strings.common.nextTrack}
           onPress={() => run(strings.player.nextFailed, next)}
-          style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+          style={({ pressed }) => [styles.btn, pressed && styles.pressedControl]}
         >
-          <AppIcon name="skip-next" color={colors.textPrimary} size={26} />
+          <AppIcon name="skip-next" color={colors.textPrimary} size={28} />
         </Pressable>
-        <View style={styles.progressTrack}>
+        <View accessible={false} pointerEvents="none" style={styles.progressTrack}>
           <View style={[styles.progressFill, { width: `${pct}%` }]} />
         </View>
       </View>
@@ -142,41 +141,62 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
   );
 }
 
+const ARTWORK_SIZE = 44;
+const PLAY_DISC_SIZE = 40;
+
 const styles = StyleSheet.create({
   bar: {
     position: 'absolute',
-    left: spacing.sm,
-    right: spacing.sm,
+    left: spacing.xs,
+    right: spacing.xs,
     height: metrics.miniPlayerSurfaceHeight,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xxs,
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.lg,
-    paddingHorizontal: spacing.xs,
+    borderColor: colors.hairline,
+    borderRadius: radii.panel,
+    paddingLeft: spacing.xs + 1,
+    paddingRight: spacing.xxs,
+    overflow: 'hidden',
     zIndex: 2,
-    elevation: 4,
+    ...elevation.floating,
   },
-  trackButton: { minWidth: 0, minHeight: metrics.minimumTouchTarget, flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, borderRadius: radii.sm },
-  cover: { width: 44, height: 44, borderRadius: radii.sm, backgroundColor: colors.surface },
-  coverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  trackButton: {
+    minWidth: 0,
+    minHeight: metrics.minimumTouchTarget,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingRight: spacing.xs,
+  },
   meta: { minWidth: 0, flex: 1 },
   title: { ...typography.label, color: colors.textPrimary },
   artist: { ...typography.caption, color: colors.textSecondary },
-  btn: { minWidth: metrics.minimumTouchTarget, minHeight: metrics.minimumTouchTarget, alignItems: 'center', justifyContent: 'center', borderRadius: radii.md },
-  playButton: { backgroundColor: colors.accent },
-  pressed: { opacity: 0.75 },
+  btn: {
+    width: metrics.minimumTouchTarget,
+    height: metrics.minimumTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playDisc: {
+    width: PLAY_DISC_SIZE,
+    height: PLAY_DISC_SIZE,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.textPrimary,
+  },
+  pressed: { opacity: opacity.pressed },
+  pressedControl: { opacity: opacity.pressed, transform: [{ scale: 0.92 }] },
   progressTrack: {
     position: 'absolute',
-    left: radii.lg,
-    right: radii.lg,
-    bottom: 3,
+    left: 0,
+    right: 0,
+    bottom: 0,
     height: 2,
-    borderRadius: 1,
-    backgroundColor: colors.border,
-    overflow: 'hidden',
+    backgroundColor: colors.fill,
   },
   progressFill: { height: 2, backgroundColor: colors.accent },
 });

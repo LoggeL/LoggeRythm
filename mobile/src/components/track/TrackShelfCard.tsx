@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { Track } from '../../api/types';
 import { trackArtistLabel } from '../../api/trackArtists';
 import { strings } from '../../localization';
@@ -7,8 +7,9 @@ import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogM
 import { useTrackPresentation } from '../player/TrackPresentationProvider';
 import TrackLikeButton from '../TrackLikeButton';
 import TrackStateIndicator from '../TrackStateIndicator';
-import AppIcon from '../AppIcon';
-import { colors, metrics, radii, spacing } from '../../theme';
+import { colors, layout, radii, spacing } from '../../theme';
+import { IconButton, PressableScale } from '../ui';
+import { TrackArtworkOverlay } from './TrackArtworkOverlay';
 import TrackIdentityLinks from './TrackIdentityLinks';
 import { buildTrackMetadata } from './trackMetadata';
 import type { TrackOccurrenceTarget } from './StandardTrackRow';
@@ -28,7 +29,11 @@ export interface TrackShelfCardProps {
   onOpenArtist: (params: ArtistRouteParams) => void;
 }
 
-/** Production-style rail card with non-overlapping Play, identity, Like, More. */
+/**
+ * The rail card of a track: the cover is the springy play target, identity
+ * links sit below it and Like / More are sibling controls, so no action
+ * overlaps another. The active occurrence is tinted like the active row.
+ */
 export default function TrackShelfCard({
   track,
   testID,
@@ -46,7 +51,7 @@ export default function TrackShelfCard({
       testID={`${testID}-container`}
       style={[styles.card, presentation.active && styles.activeCard]}
     >
-      <Pressable
+      <PressableScale
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={strings.common.trackBy(track.title, trackArtistLabel(track))}
@@ -64,28 +69,16 @@ export default function TrackShelfCard({
         }}
         onPress={onPlay}
         onLongPress={onActions}
-        style={({ pressed }) => [styles.artworkButton, pressed && styles.pressed]}
+        style={styles.artworkButton}
       >
-        {track.cover ? (
-          <Image accessible={false} source={{ uri: track.cover }} style={styles.artwork} />
-        ) : (
-          <View style={[styles.artwork, styles.placeholder]}>
-            <AppIcon name="music-note" color={colors.accentSoft} size={29} />
-          </View>
-        )}
-        {rank !== undefined ? <Text style={styles.rankBadge}>{rank}</Text> : null}
-        <View accessible={false} style={styles.playBadge}>
-          {buffering ? (
-            <ActivityIndicator color={colors.textPrimary} size="small" />
-          ) : (
-            <AppIcon
-              name={presentation.playback === 'playing' ? 'pause' : 'play'}
-              color={colors.textPrimary}
-              size={20}
-            />
-          )}
-        </View>
-      </Pressable>
+        <TrackArtworkOverlay
+          cover={track.cover}
+          size={layout.artwork.card}
+          presentation={presentation}
+          badge={rank}
+          badgeTone="accent"
+        />
+      </PressableScale>
       <View style={styles.identityRow}>
         <TrackIdentityLinks
           metadata={buildTrackMetadata(track)}
@@ -96,6 +89,7 @@ export default function TrackShelfCard({
           showAlbumLabel={false}
           showDuration={false}
           showPopularity={false}
+          active={presentation.active}
         />
         <TrackStateIndicator
           presentation={presentation}
@@ -106,15 +100,12 @@ export default function TrackShelfCard({
       <View style={styles.actionsRow}>
         <TrackLikeButton track={track} testID={`${testID}-like`} />
         {onActions === undefined ? null : (
-          <Pressable
+          <IconButton
             testID={`${testID}-actions`}
-            accessibilityRole="button"
+            icon="dots-vertical"
             accessibilityLabel={`${strings.trackActions.moreActionsLabel}: ${track.title}`}
             onPress={onActions}
-            style={({ pressed }) => [styles.action, pressed && styles.pressed]}
-          >
-            <AppIcon name="dots-vertical" color={colors.textSecondary} size={25} />
-          </Pressable>
+          />
         )}
       </View>
     </View>
@@ -122,45 +113,12 @@ export default function TrackShelfCard({
 }
 
 const styles = StyleSheet.create({
-  card: { width: 160, minHeight: 256, borderRadius: radii.md },
-  activeCard: {
-    backgroundColor: colors.accentSubtle,
-  },
-  artworkButton: { width: 160, height: 160, borderRadius: radii.md },
-  artwork: {
-    width: 160,
-    height: 160,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceElevated,
-  },
-  placeholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rankBadge: {
-    position: 'absolute',
-    left: 8,
-    bottom: 8,
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
-    textAlign: 'center',
-    lineHeight: 28,
-    overflow: 'hidden',
-    color: colors.onAccent,
-    backgroundColor: colors.accent,
-    fontWeight: '600',
-  },
-  playBadge: {
-    position: 'absolute',
-    right: 8,
-    bottom: 8,
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    borderRadius: metrics.minimumTouchTarget / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(11,12,16,0.86)',
+  card: { width: layout.artwork.card, borderRadius: radii.card },
+  activeCard: { backgroundColor: colors.accentSubtle },
+  artworkButton: {
+    width: layout.artwork.card,
+    height: layout.artwork.card,
+    borderRadius: radii.card,
   },
   identityRow: {
     minWidth: 0,
@@ -168,12 +126,5 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     marginTop: spacing.xs,
   },
-  actionsRow: { flexDirection: 'row', justifyContent: 'flex-end' },
-  action: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressed: { opacity: 0.72, backgroundColor: colors.surfacePressed },
+  actionsRow: { flexDirection: 'row', justifyContent: 'space-between' },
 });

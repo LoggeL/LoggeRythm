@@ -4,6 +4,8 @@ export interface StringCatalog {
   common: {
     appName: string;
     retry: string;
+    retrying: string;
+    showAll: string;
     working: string;
     dismiss: string;
     cancel: string;
@@ -162,6 +164,11 @@ export interface StringCatalog {
     openGenre: (name: string) => string;
     albumBy: (artist: string) => string;
     playFailed: string;
+    continueListening: string;
+    continueEmptyTitle: string;
+    continueEmptyMessage: string;
+    continueEmptyAction: string;
+    radarEmptyTitle: string;
   };
   radio: {
     badge: string;
@@ -483,6 +490,8 @@ export interface StringCatalog {
     openArtist: (name: string) => string;
     openPlaylist: (title: string, count: number) => string;
     openGenre: (name: string) => string;
+    topResult: string;
+    noResultsHint: string;
   };
   library: {
     openLikedSongs: string;
@@ -579,6 +588,8 @@ export interface StringCatalog {
     cannotRemoveCurrent: (title: string) => string;
     removeFailed: (title: string) => string;
     removed: (title: string) => string;
+    nowPlayingSection: string;
+    upNextSection: string;
   };
 }
 
@@ -586,6 +597,8 @@ export const de: StringCatalog = {
   common: {
     appName: 'LoggeRythm',
     retry: 'Erneut versuchen',
+    retrying: 'Wird erneut versucht…',
+    showAll: 'Alle anzeigen',
     working: 'Wird ausgeführt…',
     dismiss: 'Schließen',
     cancel: 'Abbrechen',
@@ -749,6 +762,11 @@ export const de: StringCatalog = {
     openGenre: (name) => `Genre ${name} öffnen`,
     albumBy: (artist) => `von ${artist}`,
     playFailed: 'Wiedergabe der Startseite fehlgeschlagen',
+    continueListening: 'Weiterhören',
+    continueEmptyTitle: 'Noch nichts gehört',
+    continueEmptyMessage: 'Starte einen Titel – hier geht es danach direkt weiter.',
+    continueEmptyAction: 'Musik suchen',
+    radarEmptyTitle: 'Dein Radar ist noch leer',
   },
   radio: {
     badge: 'RADIO',
@@ -1083,6 +1101,8 @@ export const de: StringCatalog = {
     openArtist: (name) => `Künstlerprofil von ${name} öffnen`,
     openPlaylist: (title, count) => `Playlist „${title}“ öffnen, ${count} Titel`,
     openGenre: (name) => `Genre ${name} öffnen`,
+    topResult: 'Top-Ergebnis',
+    noResultsHint: 'Prüfe die Schreibweise oder versuche es mit einem anderen Begriff.',
   },
   library: {
     openLikedSongs: 'Lieblingstitel öffnen',
@@ -1196,12 +1216,14 @@ export const de: StringCatalog = {
       `Der aktuell wiedergegebene Titel „${title}“ kann nicht entfernt werden`,
     removeFailed: (title) => `„${title}“ konnte nicht entfernt werden`,
     removed: (title) => `„${title}“ wurde aus der Warteschlange entfernt.`,
+    nowPlayingSection: 'Jetzt läuft',
+    upNextSection: 'Als Nächstes',
   },
 };
 
 export const en: StringCatalog = {
   common: {
-    appName: 'LoggeRythm', retry: 'Retry', working: 'Working…', dismiss: 'Dismiss', cancel: 'Cancel',
+    appName: 'LoggeRythm', retry: 'Retry', retrying: 'Retrying…', showAll: 'Show all', working: 'Working…', dismiss: 'Dismiss', cancel: 'Cancel',
     play: 'Play', pause: 'Pause', nextTrack: 'Next track', previousTrack: 'Previous track',
     loading: 'Loading…', trackBy: (title, artist) => `${title} by ${artist}`,
     trackCount: (count) => `${count} ${count === 1 ? 'track' : 'tracks'}`,
@@ -1308,6 +1330,11 @@ export const en: StringCatalog = {
     openArtist: (name) => `Open artist ${name}`,
     openGenre: (name) => `Open ${name} genre`, albumBy: (artist) => `by ${artist}`,
     playFailed: 'Home playback failed',
+    continueListening: 'Jump back in',
+    continueEmptyTitle: 'Nothing played yet',
+    continueEmptyMessage: 'Play a track and pick up right here afterwards.',
+    continueEmptyAction: 'Find music',
+    radarEmptyTitle: 'Your radar is still empty',
   },
   radio: {
     badge: 'RADIO',
@@ -1577,6 +1604,8 @@ export const en: StringCatalog = {
     openArtist: (name) => `Open artist ${name}`,
     openPlaylist: (title, count) => `Open playlist ${title}, ${count} tracks`,
     openGenre: (name) => `Open ${name} genre`,
+    topResult: 'Top result',
+    noResultsHint: 'Check the spelling or try a different term.',
   },
   library: {
     openLikedSongs: 'Open Liked Songs', noPlaylists: 'No playlists yet.',
@@ -1650,5 +1679,7 @@ export const en: StringCatalog = {
     cannotRemoveCurrent: (title) => `Cannot remove currently playing track ${title}`,
     removeFailed: (title) => `Removing ${title} failed`,
     removed: (title) => `${title} was removed from the queue.`,
+    nowPlayingSection: 'Now playing',
+    upNextSection: 'Up next',
   },
 };

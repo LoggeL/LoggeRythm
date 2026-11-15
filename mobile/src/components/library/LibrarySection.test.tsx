@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { libraryStrings } from '../../screens/libraryStrings';
+import { elements, queryByTestId as byTestId } from '../../test/render';
 import { LibrarySection } from './LibrarySection';
 import {
   LIBRARY_POLICY_SECTION_STATE,
@@ -14,19 +15,12 @@ vi.mock('react-native', () => ({
   Text: 'Text',
   View: 'View',
 }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
-}
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
+// The skeleton group animates with hooks; its own test owns role and live region.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  TrackRowSkeleton: 'TrackRowSkeleton',
+}));
 
 function queryState(
   overrides: Partial<LibraryQuerySectionState> = {},
@@ -61,8 +55,8 @@ function querySection(
 describe('LibrarySection', () => {
   it('renders loading, known-empty, and hard-error bodies exclusively', () => {
     const loading = querySection(queryState({ hasData: false, pending: true, fetching: true }));
-    expect(byTestId(loading, 'library-section-following-loading')?.props.accessibilityLiveRegion)
-      .toBe('polite');
+    expect(byTestId(loading, 'library-section-following-loading')?.props.accessibilityLabel)
+      .toBe(libraryStrings.library.loadingSection(libraryStrings.library.following));
     expect(byTestId(loading, 'library-section-following-empty')).toBeNull();
     expect(byTestId(loading, 'artist-rows')).toBeNull();
 

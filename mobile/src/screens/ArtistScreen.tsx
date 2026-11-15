@@ -1,72 +1,44 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Track } from '../api/types';
-import {
-  CatalogActionButton,
-  CatalogAlbumCard,
-  CatalogArtistCard,
-  CatalogHeroArtwork,
-  CatalogTrackRow,
-  HorizontalCatalogRail,
-} from '../components/catalog/CatalogCards';
+import React, { useMemo } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { useQuery } from '@tanstack/react-query';
+import { ArtistFooter } from '../components/catalog/ArtistFooter';
+import { ArtistHero } from '../components/catalog/ArtistHero';
+import { ArtistSongSearchHeader } from '../components/catalog/ArtistSongSearchHeader';
 import { ArtistVirtualizedList } from '../components/catalog/ArtistVirtualizedList';
-import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
-import AppIcon from '../components/AppIcon';
+import { CatalogTrackRow } from '../components/catalog/CatalogCards';
 import {
   CatalogContentStatus,
   CatalogPageGate,
-  CatalogQueryBoundary,
   CatalogRuntimeError,
   CatalogSection,
 } from '../components/catalog/CatalogStates';
+import {
+  catalogQueryFlags,
+  settledCatalogQueryFlags,
+} from '../components/catalog/catalogQueryState';
 import { showTrackActions } from '../components/trackActions';
+import { EmptyState } from '../components/ui';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
-import {
-  createArtistFollowMutationOptions,
-  musicCacheScope,
-  musicQueries,
-} from '../data';
-import { strings } from '../localization';
-import { refreshBrowseTree } from '../player/browseTree';
-import { playTracks } from '../player/controller';
-import { reportPlayerNotice } from '../player/notices';
-import { colors } from '../theme';
+import { musicCacheScope, musicQueries } from '../data';
+import { colors, layout } from '../theme';
 import {
   artistHasContent,
   artistPopularTracks,
-  artistSongSearchQuery,
   artistSummary,
   artistTrackPlaybackContextId,
   assertArtistScreenContract,
-  catalogTestIdSegment,
-  filterArtistTracks,
-  followingValue,
-  playbackSelection,
   requireCatalogId,
   trackContextKey,
   type ArtistScreenContract,
 } from './catalogModel';
-import { catalogFailureMessage } from './catalogFeedback';
 import { catalogStrings } from './catalogStrings';
+import { useArtistFollow } from './useArtistFollow';
+import { useArtistSongSearch } from './useArtistSongSearch';
+import { useCatalogPlayback } from './useCatalogPlayback';
 
 export type ArtistScreenProps = ArtistScreenContract;
 export type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
-
-const settledSectionState = {
-  hasData: true,
-  isPending: false,
-  isFetching: false,
-  isStale: false,
-  fetchStatus: 'idle',
-  error: null,
-} as const;
 
 export default function ArtistScreen(props: ArtistScreenProps) {
   assertArtistScreenContract(props);
@@ -74,7 +46,6 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   const { user } = useAuth();
   if (user === null) throw new Error('ArtistScreen requires an authenticated user');
 
-  const queryClient = useQueryClient();
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const artist = useQuery(musicQueries.artist(artistId));
   const artistName = artist.data?.name.trim() ?? '';
@@ -83,21 +54,16 @@ export default function ArtistScreen(props: ArtistScreenProps) {
     ...musicQueries.artistAbout(artistName || '__artist_pending__'),
     enabled: aboutEnabled,
   });
-  const followOptions = musicQueries.followingContains(scope, [artistId]);
-  const followState = useQuery(followOptions);
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
-  const [songInputState, setSongInputState] = useState({ artistId, value: '' });
-  const [songQueryState, setSongQueryState] = useState({ artistId, value: '' });
-  const songInput = songInputState.artistId === artistId ? songInputState.value : '';
-  const songQuery = songQueryState.artistId === artistId ? songQueryState.value : '';
-
-  useEffect(() => {
-    const timer = setTimeout(
-      () => setSongQueryState({ artistId, value: songInput.trim() }),
-      300,
-    );
-    return () => clearTimeout(timer);
-  }, [artistId, songInput]);
+  const { runtimeError, setRuntimeError, play } = useCatalogPlayback();
+  const follow = useArtistFollow({
+    scope,
+    artist:
+      artist.data === undefined
+        ? { id: artistId, name: '', picture: '' }
+        : artistSummary(artist.data),
+    onResult: setRuntimeError,
+  });
+  const songSearch = useArtistSongSearch(artistId, artistName);
 
   const popularTracks = useMemo(
     () => artistPopularTracks(artist.data?.top ?? []),
@@ -111,50 +77,19 @@ export default function ArtistScreen(props: ArtistScreenProps) {
     })),
     [popularTracks],
   );
+  const hasPopularTracks = trackPlayRequest.length > 0;
   const trackPlays = useQuery({
     ...musicQueries.trackPlayCounts(trackPlayRequest),
-    enabled: trackPlayRequest.length > 0,
+    enabled: hasPopularTracks,
   });
-  const songSearchRequest = artistSongSearchQuery(artistName, songQuery);
-  const songSearch = useQuery({
-    ...musicQueries.searchTracks(songSearchRequest ?? ''),
-    enabled: songSearchRequest !== null,
-    staleTime: 5 * 60_000,
-  });
-  const songResults = filterArtistTracks(songSearch.data ?? [], artistId, artistName);
-
-  const detailSummary = artist.data === undefined ? null : artistSummary(artist.data);
-  const followMutation = useMutation(
-    createArtistFollowMutationOptions({
-      queryClient,
-      scope,
-      artist: detailSummary ?? { id: artistId, name: '', picture: '' },
-      refreshAutoBrowse: refreshBrowseTree,
-      onMutationSuccess: () => setRuntimeError(null),
-      onMutationError: (error) => {
-        setRuntimeError(catalogFailureMessage('artist-follow', error));
-      },
-      onAutoBrowseError: () => {
-        reportPlayerNotice(
-          'bookkeeping',
-          'auto-library-refresh',
-          strings.player.autoLibraryFailed,
-          strings.player.autoLibraryRefreshFailedMessage,
-        );
-      },
-    }),
-  );
 
   if (artist.data === undefined) {
     return (
       <CatalogPageGate
         id="artist"
+        variant="artist"
         hasData={false}
-        isPending={artist.isPending}
-        isFetching={artist.isFetching}
-        isStale={artist.isStale}
-        fetchStatus={artist.fetchStatus}
-        error={artist.error}
+        {...catalogQueryFlags(artist)}
         loadingLabel={catalogStrings.artist.loading}
         onRetry={() => void artist.refetch()}
       />
@@ -162,136 +97,60 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   }
 
   const detail = artist.data;
-  const following = followingValue(followState.data, artistId);
-  const followDisabled = followMutation.isPending;
-  const followLabel = followMutation.isPending
-      ? catalogStrings.artist.followUpdating
-      : following
-        ? catalogStrings.artist.following
-        : catalogStrings.artist.follow;
-  const followAccessibilityLabel = following
-    ? catalogStrings.artist.unfollowArtist(detail.name)
-    : catalogStrings.artist.followArtist(detail.name);
-
-  const play = (tracks: Track[], index: number, contextId: string) => {
-    let selected: ReturnType<typeof playbackSelection>;
-    try {
-      selected = playbackSelection(tracks, index);
-    } catch (error) {
-      setRuntimeError(catalogFailureMessage('playback', error));
-      return;
-    }
-    setRuntimeError(null);
-    void playTracks(selected.tracks, selected.startIndex, {
-      context: { type: 'artist', id: contextId, label: detail.name },
-    }).catch((error) =>
-      setRuntimeError(catalogFailureMessage('playback', error)),
-    );
-  };
+  const playArtist = (tracks: typeof detail.top, index: number, contextId: string) =>
+    play(tracks, index, { type: 'artist', id: contextId, label: detail.name });
 
   const refresh = () => {
     void Promise.allSettled([
       artist.refetch(),
-      followState.refetch(),
+      follow.state.refetch(),
       ...(aboutEnabled ? [about.refetch()] : []),
-      ...(trackPlayRequest.length > 0 ? [trackPlays.refetch()] : []),
-      ...(songSearchRequest !== null ? [songSearch.refetch()] : []),
+      ...(hasPopularTracks ? [trackPlays.refetch()] : []),
+      ...(songSearch.enabled ? [songSearch.search.refetch()] : []),
     ]);
   };
-  const refreshing = [artist, followState, about, trackPlays, songSearch].some(
+  const refreshing = [artist, follow.state, about, trackPlays, songSearch.search].some(
     (query) => query.isFetching && !query.isPending,
   );
-  const aboutHasContent =
-    about.data !== undefined &&
-    (about.data.bio.trim().length > 0 ||
-      about.data.tags.length > 0 ||
-      about.data.listeners > 0 ||
-      about.data.playcount > 0);
 
   return (
     <View testID="artist-screen" style={styles.container}>
       <ArtistVirtualizedList
         artistName={detail.name}
         popularTracks={popularTracks}
-        searchTracks={songResults}
-        searchActive={songQuery.length > 0}
+        searchTracks={songSearch.results}
+        searchActive={songSearch.active}
         refreshing={refreshing}
         refreshAccessibilityLabel={catalogStrings.common.refreshing}
         onRefresh={refresh}
         header={
           <View style={styles.listHeader}>
-            <CatalogDetailHero
-              artwork={<CatalogHeroArtwork uri={detail.picture} round compact />}
-              actions={
-                <>
-                  <CatalogActionButton
-                    testID="artist-play-all"
-                    label={catalogStrings.common.play}
-                    icon="play"
-                    disabled={detail.top.length === 0}
-                    onPress={() => play(
-                      detail.top,
-                      0,
-                      artistTrackPlaybackContextId(artistId, 'popular'),
-                    )}
-                  />
-                  <CatalogQueryBoundary
-                    id="artist-follow-state"
-                    hasData={followState.data !== undefined}
-                    empty={false}
-                    isPending={followState.isPending}
-                    isFetching={followState.isFetching}
-                    isStale={followState.isStale}
-                    fetchStatus={followState.fetchStatus}
-                    error={followState.error}
-                    loadingLabel={catalogStrings.artist.followLoading}
-                    emptyLabel={catalogStrings.artist.followStateFailed}
-                    errorLabel={catalogStrings.artist.followStateFailed}
-                    retryLabel={catalogStrings.common.retry}
-                    onRetry={() => void followState.refetch()}
-                  >
-                    <CatalogActionButton
-                      testID="artist-follow-toggle"
-                      label={followLabel}
-                      accessibilityLabel={followAccessibilityLabel}
-                      disabled={followDisabled}
-                      busy={followMutation.isPending}
-                      secondary
-                      icon={following ? 'check' : 'plus'}
-                      onPress={() => followMutation.mutate(!following)}
-                    />
-                  </CatalogQueryBoundary>
-                </>
-              }
-            >
-              <Text testID="artist-type-label" style={styles.typeLabel}>
-                {catalogStrings.artist.typeLabel}
-              </Text>
-              <Text testID="artist-title" accessibilityRole="header" style={styles.title}>
-                {detail.name}
-              </Text>
-              {detail.fans > 0 ? (
-                <Text testID="artist-fans" style={styles.meta}>
-                  {catalogStrings.artist.fans(detail.fans)}
-                </Text>
-              ) : null}
-            </CatalogDetailHero>
-
+            <ArtistHero
+              artist={detail}
+              followState={follow.state}
+              following={follow.following}
+              followUpdating={follow.updating}
+              onToggleFollow={follow.toggle}
+              onPlay={() => playArtist(
+                detail.top,
+                0,
+                artistTrackPlaybackContextId(artistId, 'popular'),
+              )}
+            />
             <CatalogRuntimeError id="artist" message={runtimeError} />
             <CatalogContentStatus
               id="artist"
               hasData
-              isPending={artist.isPending}
-              isFetching={artist.isFetching}
-              isStale={artist.isStale}
-              fetchStatus={artist.fetchStatus}
-              error={artist.error}
+              {...catalogQueryFlags(artist)}
+              refreshIndicator={false}
               onRetry={() => void artist.refetch()}
             />
             {!artistHasContent(detail) ? (
-              <Text testID="artist-empty" style={styles.empty}>
-                {catalogStrings.artist.empty}
-              </Text>
+              <EmptyState
+                testID="artist-empty"
+                icon="account-music-outline"
+                title={catalogStrings.artist.empty}
+              />
             ) : null}
           </View>
         }
@@ -301,165 +160,61 @@ export default function ArtistScreen(props: ArtistScreenProps) {
             title={catalogStrings.artist.topTracks}
             hasData
             empty={popularTracks.length === 0}
-            isPending={popularTracks.length > 0 && trackPlays.isPending}
-            isFetching={popularTracks.length > 0 && trackPlays.isFetching}
-            isStale={popularTracks.length > 0 && trackPlays.isStale}
-            fetchStatus={popularTracks.length > 0 ? trackPlays.fetchStatus : 'idle'}
-            error={popularTracks.length > 0 ? trackPlays.error : null}
+            emptyIcon="music-off"
+            {...(hasPopularTracks ? catalogQueryFlags(trackPlays) : settledCatalogQueryFlags)}
             onRetry={() => void trackPlays.refetch()}
+            skeleton="rows"
           >
             <View testID="artist-track-list" />
           </CatalogSection>
         }
         searchHeader={
-          <View testID="artist-song-search" style={styles.songSearch}>
-            <Text accessibilityRole="header" style={styles.sectionTitle}>
-              {catalogStrings.artist.searchSongs}
-            </Text>
-            <View style={styles.songSearchField}>
-              <AppIcon name="magnify" color={colors.textSecondary} size={21} />
-              <TextInput
-                testID="artist-song-search-input"
-                accessibilityLabel={catalogStrings.artist.searchSongsLabel(detail.name)}
-                value={songInput}
-                onChangeText={(value) => setSongInputState({ artistId, value })}
-                placeholder={catalogStrings.artist.searchSongsPlaceholder(detail.name)}
-                placeholderTextColor={colors.textSecondary}
-                returnKeyType="search"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.songSearchInput}
-              />
-            </View>
-            {songQuery.length === 0 ? null : (
-              <CatalogQueryBoundary
-                id="artist-song-search-state"
-                hasData={songSearch.data !== undefined}
-                empty={songSearch.data !== undefined && songResults.length === 0}
-                isPending={songSearch.isPending}
-                isFetching={songSearch.isFetching}
-                isStale={songSearch.isStale}
-                fetchStatus={songSearch.fetchStatus}
-                error={songSearch.error}
-                loadingLabel={catalogStrings.artist.searchSongsLoading}
-                emptyLabel={catalogStrings.artist.searchSongsEmpty(songQuery)}
-                errorLabel={catalogStrings.artist.searchSongsFailed}
-                retryLabel={catalogStrings.common.retry}
-                onRetry={() => void songSearch.refetch()}
-              >
-                <View testID="artist-song-search-results" />
-              </CatalogQueryBoundary>
-            )}
-          </View>
+          <ArtistSongSearchHeader
+            artistName={detail.name}
+            input={songSearch.input}
+            onChangeInput={songSearch.setInput}
+            query={songSearch.query}
+            search={songSearch.search}
+            resultCount={songSearch.results.length}
+          />
         }
         footer={
-          <View style={styles.listFooter}>
-            <CatalogSection
-              id="artist-albums"
-              title={catalogStrings.artist.albums}
-              empty={detail.albums.length === 0}
-              onRetry={() => undefined}
-              {...settledSectionState}
-            >
-              <HorizontalCatalogRail
-                id="artist-albums"
-                data={detail.albums}
-                keyExtractor={(album) => album.id}
-                renderItem={(album) => (
-                  <CatalogAlbumCard
-                    album={album}
-                    testID={`artist-album-${catalogTestIdSegment(album.id)}`}
-                    onPress={() => props.onOpenAlbum({ albumId: album.id, title: album.title })}
-                  />
-                )}
-              />
-            </CatalogSection>
-
-            <CatalogSection
-              id="artist-related"
-              title={catalogStrings.artist.relatedArtists}
-              empty={detail.related.length === 0}
-              onRetry={() => undefined}
-              {...settledSectionState}
-            >
-              <HorizontalCatalogRail
-                id="artist-related"
-                data={detail.related}
-                keyExtractor={(related) => related.id}
-                renderItem={(related) => (
-                  <CatalogArtistCard
-                    artist={related}
-                    testID={`artist-related-${catalogTestIdSegment(related.id)}`}
-                    onPress={() => props.onOpenArtist({
-                      artistId: related.id,
-                      name: related.name,
-                    })}
-                  />
-                )}
-              />
-            </CatalogSection>
-
-            <CatalogSection
-              id="artist-about"
-              title={catalogStrings.artist.about}
-              hasData={!aboutEnabled || about.data !== undefined}
-              empty={!aboutEnabled || !aboutHasContent}
-              isPending={aboutEnabled && about.isPending}
-              isFetching={aboutEnabled && about.isFetching}
-              isStale={aboutEnabled && about.isStale}
-              fetchStatus={aboutEnabled ? about.fetchStatus : 'idle'}
-              error={aboutEnabled ? about.error : null}
-              onRetry={() => void about.refetch()}
-            >
-              {about.data !== undefined ? (
-                <View testID="artist-about-content" style={styles.about}>
-                  {about.data.bio.trim().length > 0 ? (
-                    <Text style={styles.bio}>{about.data.bio.trim()}</Text>
-                  ) : null}
-                  <View style={styles.metaLine}>
-                    <Text style={styles.meta}>
-                      {catalogStrings.artist.listeners(about.data.listeners)}
-                    </Text>
-                    <Text style={styles.meta}>
-                      {catalogStrings.artist.plays(about.data.playcount)}
-                    </Text>
-                  </View>
-                  {about.data.tags.length > 0 ? (
-                    <View style={styles.tags}>
-                      {about.data.tags.map((tag) => (
-                        <Text key={tag} style={styles.tag}>{tag}</Text>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
-            </CatalogSection>
-          </View>
+          <ArtistFooter
+            albums={detail.albums}
+            related={detail.related}
+            about={about}
+            aboutEnabled={aboutEnabled}
+            onOpenAlbum={props.onOpenAlbum}
+            onOpenArtist={props.onOpenArtist}
+          />
         }
         renderTrackItem={({ kind, track, index }) => {
           const isPopular = kind === 'popular';
-          const playCount = isPopular ? trackPlays.data?.[track.id] : undefined;
-          const context = isPopular ? popularTracks : songResults;
           const playbackContextId = artistTrackPlaybackContextId(
             artistId,
             isPopular ? 'popular' : 'search',
-            songQuery,
+            songSearch.query,
           );
-          const testID = isPopular
-            ? `artist-track-${trackContextKey(track, index)}`
-            : `artist-song-search-track-${trackContextKey(track, index)}`;
           return (
             <CatalogTrackRow
               track={track}
               index={index}
-              testID={testID}
+              testID={
+                isPopular
+                  ? `artist-track-${trackContextKey(track, index)}`
+                  : `artist-song-search-track-${trackContextKey(track, index)}`
+              }
               occurrence={{
                 queueContext: { type: 'artist', id: playbackContextId },
                 originalContextOrder: index,
               }}
               popularity={isPopular ? 'artist-popular' : 'none'}
-              plays={playCount}
-              onPress={() => play(context, index, playbackContextId)}
+              plays={isPopular ? trackPlays.data?.[track.id] : undefined}
+              onPress={() => playArtist(
+                isPopular ? popularTracks : songSearch.results,
+                index,
+                playbackContextId,
+              )}
               onLongPress={() => showTrackActions(track, setRuntimeError)}
               onOpenAlbum={props.onOpenAlbum}
               onOpenArtist={props.onOpenArtist}
@@ -473,62 +228,5 @@ export default function ArtistScreen(props: ArtistScreenProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  listHeader: { gap: 24 },
-  listFooter: { gap: 32, paddingTop: 32 },
-  typeLabel: {
-    color: colors.accentSoft,
-    fontSize: 11,
-    lineHeight: 17,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 27,
-    lineHeight: 32,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-  },
-  metaLine: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  meta: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
-  songSearch: { gap: 12 },
-  sectionTitle: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    lineHeight: 26,
-    fontWeight: '700',
-    paddingHorizontal: 20,
-  },
-  songSearchField: {
-    minHeight: 48,
-    marginHorizontal: 20,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  songSearchInput: {
-    flex: 1,
-    minWidth: 0,
-    minHeight: 48,
-    color: colors.textPrimary,
-    fontSize: 15,
-  },
-  about: { gap: 16, paddingHorizontal: 20 },
-  bio: { color: colors.textSecondary, fontSize: 14, lineHeight: 23 },
-  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  tag: {
-    color: colors.textPrimary,
-    fontSize: 12,
-    lineHeight: 18,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceElevated,
-  },
+  listHeader: { gap: layout.stackGap },
 });

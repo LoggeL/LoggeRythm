@@ -1,6 +1,7 @@
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
+import { byTestId as byTestID } from '../test/render';
 import {
   offlineControlCopy,
   PlaylistTrackRow,
@@ -31,6 +32,14 @@ vi.mock('react-native', () => ({
   TextInput: 'TextInput',
   View: 'View',
 }));
+vi.mock('../components/AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../components/ui', async (original) => ({
+  ...(await original<typeof import('../components/ui')>()),
+  BottomSheet: 'BottomSheet',
+  PressableScale: 'PressableScale',
+  Skeleton: 'Skeleton',
+}));
+vi.mock('../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
 
 vi.mock('../components/track/StandardTrackRow', () => ({
   default: 'StandardTrackRow',
@@ -55,7 +64,7 @@ vi.mock('../player/browseTree', () => ({
   refreshBrowseTree: mocks.refreshBrowseTree,
   refreshOfflineBrowseTree: mocks.refreshOfflineBrowseTree,
 }));
-vi.mock('../player/controller', () => ({ playTracks: vi.fn() }));
+vi.mock('../player/controller', () => ({ playTracks: vi.fn(), toggleShuffle: vi.fn() }));
 vi.mock('../player/notices', () => ({ reportPlayerNotice: vi.fn() }));
 vi.mock('../offline/hooks', () => ({ useOfflineDownloads: vi.fn() }));
 vi.mock('../offline/runtime', () => ({
@@ -72,18 +81,6 @@ function propsOf(node: React.ReactNode): ElementProps {
   return (node as React.ReactElement<ElementProps>).props;
 }
 
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestID(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`Missing ${testID}`);
-  return found;
-}
 
 const track: Track = {
   id: '42',

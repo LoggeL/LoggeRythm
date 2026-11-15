@@ -1,33 +1,30 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import {
-  CatalogActionButton,
-  CatalogHeroArtwork,
-  CatalogTrackRow,
-} from '../components/catalog/CatalogCards';
-import { CatalogTrackList } from '../components/catalog/CatalogTrackList';
+import { CatalogHeroArtwork, CatalogTrackRow } from '../components/catalog/CatalogCards';
+import { CatalogCollectionPage } from '../components/catalog/CatalogCollectionPage';
 import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
 import {
   CatalogContentStatus,
   CatalogPageGate,
   CatalogRuntimeError,
 } from '../components/catalog/CatalogStates';
+import { catalogQueryFlags } from '../components/catalog/catalogQueryState';
 import { showTrackActions } from '../components/trackActions';
+import { AppText, EmptyState, ErrorState, RetryButton } from '../components/ui';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
 import { strings } from '../localization';
-import { playTracks } from '../player/controller';
 import { colors } from '../theme';
-import { catalogFailureMessage } from './catalogFeedback';
 import {
   assertTrackCatalogRouteCallbacks,
-  playbackSelection,
   trackContextKey,
   type TrackCatalogRouteCallbacks,
 } from './catalogModel';
+import { catalogStrings } from './catalogStrings';
 import { findHomeMix, type HomeMixRouteParams } from './homeModel';
+import { useCatalogPlayback } from './useCatalogPlayback';
 
 export type MixScreenProps = HomeMixRouteParams & TrackCatalogRouteCallbacks;
 
@@ -44,14 +41,13 @@ export default function MixScreen(props: MixScreenProps) {
     ...musicQueries.homeMixes(scope),
     enabled: validRoute,
   });
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  // Hook order (useAuth → useQuery → one useState inside this hook) is pinned by MixScreen.test.
+  const { runtimeError, setRuntimeError, play } = useCatalogPlayback('home-playback');
+  const refetch = () => void mixes.refetch();
 
   if (!validRoute) {
-    return (
-      <View testID="mix-invalid" accessibilityRole="alert" style={styles.pageState}>
-        <Text style={styles.errorText}>{strings.home.mixNotFound}</Text>
-      </View>
-    );
+    // A malformed route cannot be retried; the stack header's back button is the way out.
+    return <ErrorState testID="mix-invalid" layout="page" message={strings.home.mixNotFound} />;
   }
 
   if (mixes.data === undefined) {
@@ -59,155 +55,110 @@ export default function MixScreen(props: MixScreenProps) {
       <CatalogPageGate
         id="mix"
         hasData={false}
-        isPending={mixes.isPending}
-        isFetching={mixes.isFetching}
-        isStale={mixes.isStale}
-        fetchStatus={mixes.fetchStatus}
-        error={mixes.error}
+        {...catalogQueryFlags(mixes)}
         loadingLabel={strings.home.sectionLoading(strings.home.mixes)}
-        onRetry={() => void mixes.refetch()}
+        onRetry={refetch}
       />
     );
   }
 
-  const queryStatus = (
-    <CatalogContentStatus
-      id="mix"
-      hasData
-      isPending={mixes.isPending}
-      isFetching={mixes.isFetching}
-      isStale={mixes.isStale}
-      fetchStatus={mixes.fetchStatus}
-      error={mixes.error}
-      onRetry={() => void mixes.refetch()}
-    />
-  );
+  const refreshing = mixes.isFetching && !mixes.isPending;
   const mix = findHomeMix(mixes.data, mixKey);
   if (mix === null) {
     return (
       <View testID="mix-not-found" style={styles.container}>
-        {queryStatus}
-        <View style={styles.pageState}>
-          <Text accessibilityLiveRegion="polite" style={styles.empty}>
-            {strings.home.mixNotFound}
-          </Text>
-          <CatalogActionButton
-            testID="mix-not-found-retry"
-            label={strings.common.retry}
-            onPress={() => void mixes.refetch()}
-          />
-        </View>
+        <CatalogContentStatus id="mix" hasData {...catalogQueryFlags(mixes)} onRetry={refetch} />
+        <EmptyState
+          layout="page"
+          icon="playlist-remove"
+          title={strings.home.mixNotFound}
+          action={
+            <RetryButton testID="mix-not-found-retry" busy={mixes.isFetching} onRetry={refetch} />
+          }
+        />
       </View>
     );
   }
 
-  const play = (index: number) => {
-    let selected: ReturnType<typeof playbackSelection>;
-    try {
-      selected = playbackSelection(mix.tracks, index);
-    } catch (error) {
-      setRuntimeError(catalogFailureMessage('home-playback', error));
-      return;
-    }
-    setRuntimeError(null);
-    void playTracks(selected.tracks, selected.startIndex, {
-      context: { type: 'home', id: `mix:${mix.key}`, label: mix.title },
-    }).catch((error) =>
-      setRuntimeError(catalogFailureMessage('home-playback', error)),
-    );
-  };
+  const playFrom = (index: number) =>
+    play(mix.tracks, index, { type: 'home', id: `mix:${mix.key}`, label: mix.title });
 
-  const refreshing = mixes.isFetching && !mixes.isPending;
   return (
-    <View testID="mix-screen" style={styles.container}>
-      <CatalogTrackList
-        id="mix"
-        tracks={mix.tracks}
-        refreshing={refreshing}
-        refreshAccessibilityLabel={strings.home.sectionRefreshing}
-        onRefresh={() => void mixes.refetch()}
-        header={
-          <View style={styles.headerContent}>
-            <CatalogDetailHero
-              artwork={<CatalogHeroArtwork uri={mix.cover} compact />}
-              actions={
-                <CatalogActionButton
-                  testID="mix-play-all"
-                  label={strings.common.play}
-                  icon="play"
-                  disabled={mix.tracks.length === 0}
-                  onPress={() => play(0)}
-                />
-              }
-            >
-              <Text style={styles.typeLabel}>{strings.navigation.playlists}</Text>
-              <Text testID="mix-title" accessibilityRole="header" style={styles.title}>
-                {mix.title}
-              </Text>
-              {mix.subtitle.trim().length > 0 ? (
-                <Text style={styles.subtitle}>{mix.subtitle}</Text>
-              ) : null}
-              <Text style={styles.meta}>{strings.common.trackCount(mix.tracks.length)}</Text>
-            </CatalogDetailHero>
-
-            <CatalogRuntimeError id="mix" message={runtimeError} />
-            {queryStatus}
-            {mix.tracks.length > 0 ? <View testID="mix-track-list" /> : null}
-          </View>
-        }
-        empty={
-          <Text testID="mix-empty" style={styles.empty}>
-            {strings.home.sectionEmpty(mix.title)}
-          </Text>
-        }
-        renderTrack={(track, index) => (
-          <CatalogTrackRow
-            track={track}
-            index={index}
-            testID={`mix-track-${trackContextKey(track, index)}`}
-            occurrence={{
-              queueContext: { type: 'home', id: `mix:${mix.key}` },
-              originalContextOrder: index,
-            }}
-            onPress={() => play(index)}
-            onLongPress={() => showTrackActions(track, setRuntimeError)}
-            onOpenAlbum={props.onOpenAlbum}
-            onOpenArtist={props.onOpenArtist}
+    <CatalogCollectionPage
+      id="mix"
+      tracks={mix.tracks}
+      refreshing={refreshing}
+      refreshAccessibilityLabel={strings.home.sectionRefreshing}
+      onRefresh={refetch}
+      hero={
+        <CatalogDetailHero
+          artwork={<CatalogHeroArtwork uri={mix.cover} />}
+          eyebrow={strings.navigation.playlists}
+          title={mix.title}
+          titleTestID="mix-title"
+          play={{
+            testID: 'mix-play-all',
+            accessibilityLabel: strings.common.play,
+            disabled: mix.tracks.length === 0,
+            onPress: () => playFrom(0),
+          }}
+        >
+          {mix.subtitle.trim().length > 0 ? (
+            <AppText variant="callout" color="secondary" numberOfLines={3}>
+              {mix.subtitle}
+            </AppText>
+          ) : null}
+          <AppText variant="caption" color="muted">
+            {strings.common.trackCount(mix.tracks.length)}
+          </AppText>
+        </CatalogDetailHero>
+      }
+      status={
+        <>
+          <CatalogRuntimeError id="mix" message={runtimeError} />
+          <CatalogContentStatus
+            id="mix"
+            hasData
+            {...catalogQueryFlags(mixes)}
+            refreshIndicator={false}
+            onRetry={refetch}
           />
-        )}
-      />
-    </View>
+        </>
+      }
+      empty={
+        <EmptyState
+          testID="mix-empty"
+          icon="playlist-music"
+          title={strings.home.sectionEmpty(mix.title)}
+          action={
+            <RetryButton
+              testID="mix-empty-refresh"
+              label={refreshing ? catalogStrings.common.refreshingNow : catalogStrings.common.refresh}
+              busy={refreshing}
+              onRetry={refetch}
+            />
+          }
+        />
+      }
+      renderTrack={(track, index) => (
+        <CatalogTrackRow
+          track={track}
+          index={index}
+          testID={`mix-track-${trackContextKey(track, index)}`}
+          occurrence={{
+            queueContext: { type: 'home', id: `mix:${mix.key}` },
+            originalContextOrder: index,
+          }}
+          onPress={() => playFrom(index)}
+          onLongPress={() => showTrackActions(track, setRuntimeError)}
+          onOpenAlbum={props.onOpenAlbum}
+          onOpenArtist={props.onOpenArtist}
+        />
+      )}
+    />
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  headerContent: { gap: 24, paddingTop: 24 },
-  typeLabel: {
-    color: colors.accentSoft,
-    fontSize: 11,
-    lineHeight: 17,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 27,
-    lineHeight: 32,
-    fontWeight: '800',
-    letterSpacing: -0.6,
-  },
-  subtitle: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
-  meta: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
-  empty: { color: colors.textSecondary, fontSize: 14, lineHeight: 20, paddingHorizontal: 20 },
-  pageState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    padding: 24,
-    backgroundColor: colors.background,
-  },
-  errorText: { color: colors.danger, fontSize: 14, lineHeight: 20, textAlign: 'center' },
 });

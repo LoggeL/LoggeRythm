@@ -1,6 +1,6 @@
-import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { strings } from '../localization';
+import { elements, queryByTestId as byTestId } from '../test/render';
 import QueueScreen, {
   QueueSurface,
   QueueSurfaceGlobalFeedback,
@@ -37,6 +37,11 @@ vi.mock('../player/player', async () => {
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn() }));
 vi.mock('../components/PlayerNoticeBanner', () => ({ default: 'PlayerNoticeBanner' }));
+vi.mock('../components/AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../components/ui', async (original) => ({
+  ...(await original<typeof import('../components/ui')>()),
+  TrackRowSkeleton: 'TrackRowSkeleton',
+}));
 vi.mock('../data', () => ({ musicQueries: { cachedTrackIds: vi.fn(() => ({})) } }));
 vi.mock('../player/controller', () => ({
   clearUpcomingQueue: vi.fn(),
@@ -59,18 +64,6 @@ vi.mock('../player/queueContract', () => ({
   queueStableIdOf: vi.fn(),
 }));
 
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
-}
 
 describe('Queue surface standalone and embedded contracts', () => {
   it('keeps the navigation route as a thin standalone QueueSurface wrapper', () => {

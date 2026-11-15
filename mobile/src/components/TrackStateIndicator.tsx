@@ -4,7 +4,7 @@ import type {
   TrackPlaybackPhase,
   TrackPresentationState,
 } from '../player/trackPresentation';
-import { colors } from '../theme';
+import { colors, radii, spacing, typography } from '../theme';
 import AppIcon from './AppIcon';
 
 export interface TrackStateIndicatorCopy {
@@ -22,6 +22,9 @@ export interface TrackStateIndicatorProps {
   copy: TrackStateIndicatorCopy;
   testID?: string;
 }
+
+const GLYPH_SIZE = typography.callout.fontSize;
+const FACT_SIZE = typography.callout.lineHeight;
 
 function phaseLabel(
   phase: TrackPlaybackPhase,
@@ -95,7 +98,7 @@ export default function TrackStateIndicator({
           accessible={false}
           style={styles.iconFact}
         >
-          <AppIcon name="download-circle" color={colors.success} size={15} />
+          <AppIcon name="download-circle" color={colors.success} size={GLYPH_SIZE} />
         </View>
       ) : null}
       {server !== null ? (
@@ -104,7 +107,7 @@ export default function TrackStateIndicator({
           accessible={false}
           style={styles.iconFact}
         >
-          <AppIcon name="cloud-check-outline" color={colors.textSecondary} size={15} />
+          <AppIcon name="cloud-check-outline" color={colors.textSecondary} size={GLYPH_SIZE} />
         </View>
       ) : null}
       {rolling !== null ? (
@@ -113,7 +116,7 @@ export default function TrackStateIndicator({
           accessible={false}
           style={styles.rollingFact}
         >
-          <AppIcon name="cached" color={colors.warning} size={13} />
+          <AppIcon name="cached" color={colors.warning} size={GLYPH_SIZE} />
           <Text accessible={false} style={styles.rollingText}>
             {Math.round(rollingSeconds as number)}s
           </Text>
@@ -129,26 +132,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'nowrap',
-    gap: 3,
-    marginLeft: 4,
+    gap: spacing.xxs,
+    marginLeft: spacing.xxs,
   },
   iconFact: {
-    width: 21,
-    height: 21,
+    width: FACT_SIZE,
+    height: FACT_SIZE,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 7,
-    backgroundColor: colors.surfaceElevated,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
   },
   rollingFact: {
-    height: 21,
+    height: FACT_SIZE,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 1,
-    borderRadius: 7,
-    backgroundColor: colors.surfaceElevated,
-    paddingHorizontal: 4,
+    gap: spacing.xxs / 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
+    paddingHorizontal: spacing.xxs,
   },
-  rollingText: { color: colors.warning, fontSize: 9, fontWeight: '700' },
+  rollingText: { ...typography.micro, color: colors.warning },
 });

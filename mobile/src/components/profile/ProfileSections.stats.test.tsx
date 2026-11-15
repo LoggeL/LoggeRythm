@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { UserStats } from '../../domain/listeningStats';
 import { strings } from '../../localization';
+import { elements, queryByTestId as byTestId } from '../../test/render';
 import { ListeningStatsPanel } from './ProfileSections';
 
 vi.mock('react-native', () => ({
@@ -13,6 +14,12 @@ vi.mock('react-native', () => ({
   TextInput: 'TextInput',
   View: 'View',
 }));
+// Skeleton animates and StatsPeriods owns the period state; string mocks keep their props.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  Skeleton: 'Skeleton',
+}));
+vi.mock('./StatsPeriods', () => ({ StatsPeriods: 'StatsPeriods' }));
 vi.mock('../../player/setup', () => ({
   ensurePlayer: vi.fn(),
   isPlayerReady: vi.fn(() => false),
@@ -25,19 +32,6 @@ vi.mock('../../screens/profileSleepTimer', () => ({
   setEndOfTrackSleepTimer: vi.fn(),
   setPresetSleepTimer: vi.fn(),
 }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
-}
 
 const emptyStats: UserStats = {
   total_plays: 0,
@@ -81,6 +75,7 @@ describe('ListeningStatsPanel remote-state contract', () => {
     expect(loading?.props.accessibilityLiveRegion).toBe('polite');
     expect(byTestId(tree, 'profile-stats-empty')).toBeNull();
     expect(byTestId(tree, 'profile-stats-periods')).toBeNull();
+    expect(elements(loading).some((element) => element.type === 'Skeleton')).toBe(true);
   });
 
   it('renders a safe retryable offline body instead of raw transport diagnostics', () => {
@@ -117,7 +112,7 @@ describe('ListeningStatsPanel remote-state contract', () => {
       fetching: true,
     });
 
-    expect(byTestId(tree, 'profile-stats-periods')).not.toBeNull();
+    expect(byTestId(tree, 'profile-stats-periods')?.props.data).toBe(populatedStats);
     expect(byTestId(tree, 'profile-stats-cached-offline')).not.toBeNull();
     expect(byTestId(tree, 'profile-stats-refreshing')).toBeNull();
     expect(byTestId(tree, 'profile-stats-stale')).toBeNull();

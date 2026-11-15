@@ -1,48 +1,37 @@
-import React, {
-  useEffect,
-  useMemo,
-  useReducer,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
-import {
-  Keyboard,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import React, { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
+import { Keyboard, StyleSheet, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Genre } from '../api/types';
 import { useProgress } from '../player/player';
-import AppIcon from '../components/AppIcon';
-import { FilterChip, ScreenHeader } from '../components/ui';
+import { ActionButton, EmptyState, ScreenHeader, SectionHeader, TrackRowSkeleton } from '../components/ui';
+import { SearchBar } from '../components/search/SearchBar';
 import {
-  SearchEntityCard,
-  SearchResultRail,
-  SearchTrackResultRow,
-  searchTrackOccurrence,
-} from '../components/search/SearchResults';
+  SearchMetadataFeedback,
+  SearchResultsFeedback,
+  showsPrimaryStaleNotice,
+} from '../components/search/SearchFeedback';
+import { SearchSortControls, SearchTabs } from '../components/search/SearchFilters';
+import { SearchGenreBrowse } from '../components/search/SearchGenreBrowse';
 import { SearchImportMode } from '../components/search/SearchImportMode';
+import { SearchErrorNotice, SearchLoadingStatus } from '../components/search/SearchRemoteStates';
+import {
+  SearchAlbumSection,
+  SearchArtistSection,
+  SearchPlaylistSection,
+} from '../components/search/SearchResultSections';
+import { SearchTrackResultRow, searchTrackOccurrence } from '../components/search/SearchResults';
+import { SearchTopResultCard } from '../components/search/SearchTopResult';
 import { SearchVirtualizedResults } from '../components/search/SearchVirtualizedResults';
+import { SpotifyImportToggle } from '../components/search/SpotifyImportToggle';
 import {
   createSearchListRows,
   type SearchListRow,
 } from '../components/search/searchListModel';
-import {
-  SearchErrorNotice,
-  SearchLoadingStatus,
-  SearchPoliteStatus,
-  SearchRemoteBoundary,
-} from '../components/search/SearchRemoteStates';
 import { showTrackActions } from '../components/trackActions';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, queryKeys } from '../data';
-import { resolveRemoteVisualState, type RemoteVisualState } from '../data/remoteState';
+import { resolveRemoteVisualState } from '../data/remoteState';
 import { useAuth } from '../auth/AuthContext';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { useLocaleRevision } from '../localization/LocaleProvider';
 import { playTrackRow, playTracks } from '../player/controller';
@@ -51,30 +40,23 @@ import {
   getSpotifyImportRequestForScope,
   subscribeSpotifyImportRequests,
 } from '../share/spotifyImport';
-import { colors, metrics, radii, spacing, typography } from '../theme';
+import { colors, layout, spacing } from '../theme';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import {
-  SEARCH_SORTS,
-  SEARCH_TABS,
   assertSearchRouteCallbacks,
   isCurrentSearchQuery,
   isSearchableQuery,
   normalizeSearchInput,
   orderedPlaylistTrackIds,
-  resultLimit,
+  pickSearchTopResult,
   scheduleSearchDebounce,
   searchInputReducer,
-  sortSearchTracks,
-  wantedSearchEntities,
   type SearchRouteCallbacks,
-  type SearchEntity,
   type SearchSort,
   type SearchTab,
+  type SearchTopResult,
 } from './searchModel';
-import {
-  resolveSearchAggregateRemoteState,
-  searchRemoteEntry,
-} from './searchRemoteState';
+import { useSearchResults } from './useSearchResults';
 
 export type SearchScreenProps = SearchRouteCallbacks;
 export type {
@@ -82,69 +64,6 @@ export type {
   SearchArtistRouteParams,
   SearchGenreRouteParams,
 } from './searchModel';
-
-function SearchResultSection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
-  return (
-    <View testID={`search-section-${id}`} style={styles.section}>
-      <Text accessibilityRole="header" style={styles.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
-
-interface SearchBrowseContentProps {
-  genres: readonly Genre[];
-  genresState: RemoteVisualState;
-  retryBusy: boolean;
-  onRetry: () => void;
-  onOpenGenre: (params: { genreId: Genre['id']; name: string }) => void;
-}
-
-export function SearchBrowseContent({
-  genres,
-  genresState,
-  retryBusy,
-  onRetry,
-  onOpenGenre,
-}: SearchBrowseContentProps) {
-  return (
-    <View testID="search-genre-browse" style={styles.browse}>
-      <Text accessibilityRole="header" style={styles.sectionTitle}>{strings.search.browseTitle}</Text>
-      <SearchRemoteBoundary
-        id="search-genres"
-        state={genresState}
-        loadingLabel={strings.search.browseLoading}
-        emptyLabel={strings.search.browsePrompt}
-        offlineLabel={strings.search.remoteOffline(strings.search.browseTitle)}
-        errorLabel={strings.search.remoteLoadFailed(strings.search.browseTitle)}
-        cachedOfflineLabel={strings.search.remoteCachedOffline(strings.search.browseTitle)}
-        cachedErrorLabel={strings.search.remoteCachedRefreshFailed(strings.search.browseTitle)}
-        refreshingLabel={strings.search.remoteRefreshing(strings.search.browseTitle)}
-        staleLabel={strings.search.remoteStale(strings.search.browseTitle)}
-        retryLabel={strings.search.retrySection(strings.search.browseTitle)}
-        retryBusy={retryBusy}
-        onRetry={onRetry}
-      >
-        <SearchResultRail
-          id="genres"
-          data={genres}
-          keyExtractor={(genre, index) => `${genre.id}:${index}`}
-          renderItem={(genre) => (
-            <SearchEntityCard
-              testID={`search-genre-${genre.id}`}
-              accessibilityLabel={strings.search.openGenre(genre.name)}
-              title={genre.name}
-              subtitle={strings.search.browseTitle}
-              imageUri={genre.picture}
-              landscape
-              onPress={() => onOpenGenre({ genreId: genre.id, name: genre.name })}
-            />
-          )}
-        />
-      </SearchRemoteBoundary>
-    </View>
-  );
-}
 
 export default function SearchScreen(props: Partial<SearchScreenProps>) {
   assertSearchRouteCallbacks(props);
@@ -155,6 +74,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
   const queryClient = useQueryClient();
   const activeProgress = useProgress(1);
+  const bottomInset = useBottomInset();
   const accountScope = musicCacheScope(getCurrentApiBase(), user.id);
   const [{ input, publishedQuery: debouncedQuery }, dispatchSearchInput] = useReducer(
     searchInputReducer,
@@ -177,7 +97,6 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const inputIsSearchable = isSearchableQuery(normalizedInput);
   const ready = isCurrentSearchQuery(normalizedInput, debouncedQuery);
   const browsing = normalizedInput.length === 0;
-  const wanted = wantedSearchEntities(tab);
 
   useEffect(() => {
     if (ready) return;
@@ -193,131 +112,9 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     [queryClient],
   );
 
-
-  const tracksQuery = useQuery({
-    ...musicQueries.searchTracks(debouncedQuery),
-    enabled: ready && wanted.track,
-  });
-  const albumsQuery = useQuery({
-    ...musicQueries.searchAlbums(debouncedQuery),
-    enabled: ready && wanted.album,
-  });
-  const artistsQuery = useQuery({
-    ...musicQueries.searchArtists(debouncedQuery),
-    enabled: ready && wanted.artist,
-  });
-  const playlistsQuery = useQuery({
-    ...musicQueries.searchPlaylists(debouncedQuery),
-    enabled: ready && wanted.playlist,
-  });
+  const results = useSearchResults({ query: debouncedQuery, ready, tab, sort, locale });
+  const { wanted, tracks, state: searchState } = results;
   const genresQuery = useQuery({ ...musicQueries.genres(), enabled: browsing });
-
-  const tracks = useMemo(
-    () => sortSearchTracks(tracksQuery.data ?? [], sort, locale),
-    [locale, sort, tracksQuery.data],
-  );
-  const albums = albumsQuery.data ?? [];
-  const shownTracks = useMemo(
-    () => tracks.slice(0, resultLimit(tab, 'track') ?? tracks.length),
-    [tab, tracks],
-  );
-  const shownAlbums = albums.slice(0, resultLimit(tab, 'album') ?? albums.length);
-  const shownArtists = (artistsQuery.data ?? []).slice(
-    0,
-    resultLimit(tab, 'artist') ?? artistsQuery.data?.length ?? 0,
-  );
-  const shownPlaylists = (playlistsQuery.data ?? []).slice(
-    0,
-    resultLimit(tab, 'playlist') ?? playlistsQuery.data?.length ?? 0,
-  );
-  const trackPlayRequest = useMemo(
-    () => shownTracks.map(({ id, artist, title }) => ({ id, artist, title })),
-    [shownTracks],
-  );
-  const trackMetadataEnabled = ready && wanted.track && trackPlayRequest.length > 0;
-  const trackPlaysQuery = useQuery({
-    ...musicQueries.trackPlayCounts(trackPlayRequest),
-    enabled: trackMetadataEnabled,
-  });
-  const cachedTracksQuery = useQuery({
-    ...musicQueries.cachedTrackIds(),
-    enabled: trackMetadataEnabled,
-  });
-  const openTrackAlbum = (params: AlbumRouteParams) => onOpenAlbum({
-    albumId: params.albumId,
-    title: params.title ?? strings.navigation.album,
-  });
-  const openTrackArtist = (params: ArtistRouteParams) => onOpenArtist({
-    artistId: params.artistId,
-    name: params.name ?? strings.navigation.artist,
-  });
-
-  const entityLabels: Record<SearchEntity, string> = {
-    track: strings.search.tabs.track,
-    album: strings.search.tabs.album,
-    artist: strings.search.tabs.artist,
-    playlist: strings.search.tabs.playlist,
-  };
-  const activeSearchQueries = [
-    ...(wanted.track ? [{
-      key: 'track' as const,
-      query: tracksQuery,
-      itemCount: tracks.length,
-      retry: () => { void tracksQuery.refetch(); },
-    }] : []),
-    ...(wanted.album ? [{
-      key: 'album' as const,
-      query: albumsQuery,
-      itemCount: albums.length,
-      retry: () => { void albumsQuery.refetch(); },
-    }] : []),
-    ...(wanted.artist ? [{
-      key: 'artist' as const,
-      query: artistsQuery,
-      itemCount: artistsQuery.data?.length ?? 0,
-      retry: () => { void artistsQuery.refetch(); },
-    }] : []),
-    ...(wanted.playlist ? [{
-      key: 'playlist' as const,
-      query: playlistsQuery,
-      itemCount: playlistsQuery.data?.length ?? 0,
-      retry: () => { void playlistsQuery.refetch(); },
-    }] : []),
-  ];
-  const searchState = resolveSearchAggregateRemoteState(
-    activeSearchQueries.map(({ key, query, itemCount }) =>
-      searchRemoteEntry(key, query, itemCount)),
-  );
-  const activeSearchQuery = (key: string) =>
-    activeSearchQueries.find((candidate) => candidate.key === key);
-
-  const metadataQueries = trackMetadataEnabled ? [
-    {
-      key: 'track-plays',
-      query: trackPlaysQuery,
-      retry: () => { void trackPlaysQuery.refetch(); },
-    },
-    {
-      key: 'cache-membership',
-      query: cachedTracksQuery,
-      retry: () => { void cachedTracksQuery.refetch(); },
-    },
-  ] : [];
-  const metadataEntries = metadataQueries.map(({ key, query }) =>
-    searchRemoteEntry(key, query, 0));
-  const metadataState = metadataEntries.length > 0
-    ? resolveSearchAggregateRemoteState(metadataEntries)
-    : null;
-  const metadataIssueKeys = new Set(metadataState?.issues.map(({ key }) => key) ?? []);
-  const metadataRetryBusy = metadataQueries.some(
-    ({ key, query }) => metadataIssueKeys.has(key) && query.fetchStatus === 'fetching',
-  );
-  const retryMetadata = () => {
-    for (const candidate of metadataQueries) {
-      if (metadataIssueKeys.has(candidate.key)) candidate.retry();
-    }
-  };
-
   const genresState = resolveRemoteVisualState({
     hasData: genresQuery.data !== undefined,
     empty: genresQuery.data !== undefined && genresQuery.data.length === 0,
@@ -328,11 +125,29 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     error: genresQuery.error,
   });
 
+  const openTrackAlbum = (params: AlbumRouteParams) => onOpenAlbum({
+    albumId: params.albumId,
+    title: params.title ?? strings.navigation.album,
+  });
+  const openTrackArtist = (params: ArtistRouteParams) => onOpenArtist({
+    artistId: params.artistId,
+    name: params.name ?? strings.navigation.artist,
+  });
+
   const updateInput = (value: string) => {
     dispatchSearchInput({ type: 'edit', value });
     setActionError(null);
     if (normalizeSearchInput(value) !== normalizedInput) {
       void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+    }
+  };
+
+  const toggleImport = () => {
+    if (importing) {
+      setManualImporting(false);
+      dismissSpotifyImportRequest(sharedImportRequest?.id);
+    } else {
+      setManualImporting(true);
     }
   };
 
@@ -377,287 +192,142 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     }
   };
 
-
-  const sortLabels: Record<SearchSort, string> = {
-    relevance: strings.search.sorts.relevance,
-    title: strings.search.sorts.title,
-    'dur-asc': strings.search.sorts.durationAscending,
-    'dur-desc': strings.search.sorts.durationDescending,
+  const openTopResult = (result: SearchTopResult) => {
+    switch (result.kind) {
+      case 'artist':
+        return onOpenArtist({ artistId: result.artist.id, name: result.artist.name });
+      case 'album':
+        return onOpenAlbum({ albumId: result.album.id, title: result.album.title });
+      case 'track':
+        return play(result.index);
+    }
   };
-  const primaryIssuesPresent = searchState.issues.length > 0;
-  const primaryLoadingPresent = searchState.loadingKeys.length > 0;
-  const primaryStaleNotice =
-    !primaryIssuesPresent
-    && !primaryLoadingPresent
-    && searchState.refreshingKeys.length === 0
-    && searchState.staleKeys.length > 0;
-  const searchFeedback = ready ? (
-    <>
-      {searchState.issues.map((issue) => {
-        const owner = activeSearchQuery(issue.key);
-        if (owner === undefined) return null;
-        const label = entityLabels[owner.key];
-        const offline = issue.kind === 'offline' || issue.kind === 'cached-offline';
-        const cached = issue.kind === 'cached-offline' || issue.kind === 'cached-refresh-error';
-        const message = offline
-          ? cached
-            ? strings.search.remoteCachedOffline(label)
-            : strings.search.remoteOffline(label)
-          : cached
-            ? strings.search.remoteCachedRefreshFailed(label)
-            : strings.search.remoteLoadFailed(label);
-        return (
-          <SearchErrorNotice
-            key={`${owner.key}:${issue.kind}`}
-            testID={`search-results-${owner.key}-${issue.kind}`}
-            message={message}
-            actionLabel={strings.search.retrySection(label)}
-            actionBusy={owner.query.fetchStatus === 'fetching'}
-            onAction={owner.retry}
-            liveRegion={cached ? 'polite' : 'assertive'}
-          />
-        );
-      })}
-      {primaryLoadingPresent ? (
-        <SearchLoadingStatus testID="search-results-loading" label={strings.search.searching} />
-      ) : null}
-      {!primaryIssuesPresent && !primaryLoadingPresent && searchState.refreshingKeys.length > 0 ? (
-        <SearchLoadingStatus
-          testID="search-results-refreshing"
-          label={strings.search.remoteRefreshing(strings.search.tabs.all)}
-        />
-      ) : null}
-      {primaryStaleNotice ? (
-          <SearchPoliteStatus
-            testID="search-results-stale"
-            message={strings.search.remoteStale(strings.search.tabs.all)}
-            compact
-          />
-        ) : null}
-    </>
-  ) : null;
-
-  const metadataFeedback = metadataState === null ? null : metadataState.issues.length > 0 ? (() => {
-    const anyBlocking = metadataState.issues.some(
-      ({ kind }) => kind === 'offline' || kind === 'hard-error',
-    );
-    const anyOffline = metadataState.issues.some(
-      ({ kind }) => kind === 'offline' || kind === 'cached-offline',
-    );
-    const message = anyBlocking
-      ? anyOffline
-        ? strings.search.remoteOffline(strings.search.metadataTitle)
-        : strings.search.remoteLoadFailed(strings.search.metadataTitle)
-      : anyOffline
-        ? strings.search.remoteCachedOffline(strings.search.metadataTitle)
-        : strings.search.remoteCachedRefreshFailed(strings.search.metadataTitle);
-    return (
-      <SearchErrorNotice
-        testID="search-metadata-error"
-        message={message}
-        actionLabel={strings.search.retrySection(strings.search.metadataTitle)}
-        actionBusy={metadataRetryBusy}
-        onAction={retryMetadata}
-        liveRegion="polite"
-      />
-    );
-  })() : metadataState.loadingKeys.length > 0 || metadataState.refreshingKeys.length > 0 ? (
-    <SearchPoliteStatus
-      testID="search-metadata-refreshing"
-      message={metadataState.loadingKeys.length > 0
-        ? strings.search.remoteLoading(strings.search.metadataTitle)
-        : strings.search.remoteRefreshing(strings.search.metadataTitle)}
-    />
-  ) : metadataState.staleKeys.length > 0 && !primaryStaleNotice ? (
-    <SearchPoliteStatus
-      testID="search-metadata-stale"
-      message={strings.search.remoteStale(strings.search.metadataTitle)}
-      compact
-    />
-  ) : null;
 
   const searchChrome = (
-    <>
-        <ScreenHeader title={strings.navigation.search} style={styles.screenHeader} />
-        {!importing ? <View style={styles.searchBar}>
-          <AppIcon name="magnify" color={colors.textSecondary} size={23} />
-          <TextInput
-            testID="search-input"
-            accessibilityLabel={strings.search.inputLabel}
-            style={styles.input}
-            placeholder={strings.search.placeholder}
-            placeholderTextColor={colors.textSecondary}
-            value={input}
-            onChangeText={updateInput}
-            onSubmitEditing={() => {
-              dispatchSearchInput({ type: 'submit' });
-              Keyboard.dismiss();
-            }}
-            returnKeyType="search"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          {input.length > 0 ? (
-            <Pressable
-              testID="search-clear"
-              accessibilityRole="button"
-              accessibilityLabel={strings.search.clear}
-              onPress={() => updateInput('')}
-              style={({ pressed }) => [styles.clearButton, pressed && styles.pressed]}
-            >
-              <AppIcon name="close" color={colors.textSecondary} size={20} />
-            </Pressable>
-          ) : null}
-        </View> : null}
-
-        <View style={styles.importToggleRow}>
-          <Pressable
-            testID="spotify-import-toggle"
-            accessibilityRole="button"
-            accessibilityLabel={
-              importing ? strings.search.importClose : strings.search.importOpen
-            }
-            accessibilityState={{ expanded: importing }}
-            onPress={() => {
-              if (importing) {
-                setManualImporting(false);
-                dismissSpotifyImportRequest(sharedImportRequest?.id);
-              } else {
-                setManualImporting(true);
-              }
-            }}
-            style={({ pressed }) => [
-              styles.importToggle,
-              importing && styles.importToggleSelected,
-              pressed && styles.pressed,
-            ]}
-          >
-            <AppIcon name={importing ? 'close' : 'link-variant'} color={importing ? colors.accentSoft : colors.textSecondary} size={18} />
-            <Text style={[styles.importToggleText, importing && styles.importToggleTextSelected]}>
-              {importing ? strings.search.importClose : strings.search.importOpen}
-            </Text>
-          </Pressable>
-        </View>
-
-        {!importing && inputIsSearchable ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tabs}
-            accessibilityRole="tablist"
-          >
-            {SEARCH_TABS.map((candidate) => {
-              const selected = candidate === tab;
-              return (
-                <FilterChip
-                  key={candidate}
-                  testID={`search-tab-${candidate}`}
-                  accessibilityRole="tab"
-                  label={strings.search.tabs[candidate]}
-                  selected={selected}
-                  onPress={() => setTab(candidate)}
-                />
-              );
-            })}
-          </ScrollView>
-        ) : null}
-
-        {!importing && inputIsSearchable && (tab === 'all' || tab === 'track') ? (
-          <View testID="search-sort-controls" style={styles.sortBlock}>
-            <View style={styles.sortHeading}>
-              <AppIcon name="sort" color={colors.textSecondary} size={16} />
-              <Text style={styles.sortLabel}>{strings.search.sortLabel}</Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sorts}>
-              {SEARCH_SORTS.map((candidate) => {
-                const selected = candidate === sort;
-                return (
-                  <FilterChip
-                    key={candidate}
-                    testID={`search-sort-${candidate}`}
-                    label={sortLabels[candidate]}
-                    selected={selected}
-                    onPress={() => setSort(candidate)}
-                  />
-                );
-              })}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {!importing && actionError !== null ? (
-          <SearchErrorNotice testID="search-action-error" message={actionError} />
-        ) : null}
-    </>
+    <View style={styles.chrome}>
+      <ScreenHeader title={strings.navigation.search} style={styles.gutter} />
+      {!importing ? (
+        <SearchBar
+          value={input}
+          onChangeText={updateInput}
+          onSubmit={() => {
+            dispatchSearchInput({ type: 'submit' });
+            Keyboard.dismiss();
+          }}
+        />
+      ) : null}
+      <SpotifyImportToggle expanded={importing} onToggle={toggleImport} />
+      {!importing && inputIsSearchable ? <SearchTabs tab={tab} onSelect={setTab} /> : null}
+      {!importing && inputIsSearchable && wanted.track ? (
+        <SearchSortControls sort={sort} onSelect={setSort} />
+      ) : null}
+      {!importing && actionError !== null ? (
+        <SearchErrorNotice testID="search-action-error" message={actionError} />
+      ) : null}
+    </View>
   );
 
   const searchBody = browsing ? (
-          <SearchBrowseContent
-            genres={genresQuery.data ?? []}
-            genresState={genresState}
-            retryBusy={genresQuery.fetchStatus === 'fetching'}
-            onRetry={() => { void genresQuery.refetch(); }}
-            onOpenGenre={onOpenGenre}
+    <SearchGenreBrowse
+      testID="search-genre-browse"
+      id="search-genres"
+      genres={genresQuery.data ?? []}
+      genresState={genresState}
+      retryBusy={genresQuery.fetchStatus === 'fetching'}
+      onRetry={() => { void genresQuery.refetch(); }}
+      onOpenGenre={onOpenGenre}
+    />
+  ) : !inputIsSearchable ? (
+    <EmptyState
+      testID="search-minimum-hint"
+      icon="text-search"
+      title={strings.search.minimumQueryHint}
+    />
+  ) : !ready ? (
+    <TrackRowSkeleton
+      testID="search-debounce-status"
+      accessibilityLabel={strings.search.preparing}
+      style={styles.bodyGap}
+    />
+  ) : (
+    <View style={styles.bodyGap}>
+      <SearchResultsFeedback
+        state={searchState}
+        owners={results.owners}
+        renderLoading={({ testID, accessibilityLabel }) =>
+          searchState.body === 'loading' ? (
+            <TrackRowSkeleton testID={testID} accessibilityLabel={accessibilityLabel} />
+          ) : (
+            <SearchLoadingStatus testID={testID} label={accessibilityLabel} />
+          )}
+      />
+      {searchState.body === 'empty' ? (
+        <EmptyState
+          testID="search-results-empty"
+          icon="magnify-close"
+          title={strings.search.noResultsFor(debouncedQuery)}
+          message={strings.search.noResultsHint}
+          action={(
+            <ActionButton
+              testID="search-results-empty-clear"
+              variant="secondary"
+              icon="close"
+              label={strings.search.clear}
+              onPress={() => updateInput('')}
+            />
+          )}
+        />
+      ) : null}
+      {searchState.body === 'content' ? (
+        <View testID="search-results">
+          <SearchMetadataFeedback
+            state={results.metadata.state}
+            retryBusy={results.metadata.retryBusy}
+            onRetry={results.metadata.retry}
+            primaryStale={showsPrimaryStaleNotice(searchState)}
           />
-        ) : !inputIsSearchable ? (
-          <Text testID="search-minimum-hint" style={styles.hint}>{strings.search.minimumQueryHint}</Text>
-        ) : !ready ? (
-          <Text testID="search-debounce-status" accessibilityLiveRegion="polite" style={styles.status}>{strings.search.preparing}</Text>
-        ) : (
-          <>
-            {searchFeedback}
-            {searchState.body === 'empty' ? (
-              <SearchPoliteStatus
-                testID="search-results-empty"
-                message={strings.search.noResultsFor(debouncedQuery)}
-              />
-            ) : null}
-            {searchState.body === 'content' ? (
-              <View testID="search-results">
-                {metadataFeedback}
-              </View>
-            ) : null}
-          </>
-        );
+        </View>
+      ) : null}
+    </View>
+  );
 
   const searchRows = ready && searchState.body === 'content'
     ? createSearchListRows({
-      artists: wanted.artist ? shownArtists : [],
-      tracks: wanted.track ? shownTracks : [],
-      albums: wanted.album ? shownAlbums : [],
-      playlists: wanted.playlist ? shownPlaylists : [],
+      artists: wanted.artist ? results.shownArtists : [],
+      tracks: wanted.track ? results.shownTracks : [],
+      albums: wanted.album ? results.shownAlbums : [],
+      playlists: wanted.playlist ? results.shownPlaylists : [],
+      topResult: tab === 'all' && sort === 'relevance'
+        ? pickSearchTopResult({
+          query: debouncedQuery,
+          artists: results.shownArtists,
+          tracks: results.shownTracks,
+          albums: results.shownAlbums,
+        })
+        : null,
     })
     : [];
 
   const renderSearchRow = (row: SearchListRow) => {
     switch (row.kind) {
-      case 'artist-section':
+      case 'top-result': {
+        const { result } = row;
         return (
-          <SearchResultSection id="artists" title={strings.search.sections.artists}>
-            <SearchResultRail
-              id="artists"
-              data={row.artists}
-              keyExtractor={(artist, index) => `${artist.id}:${index}`}
-              renderItem={(artist) => (
-                <SearchEntityCard
-                  testID={`search-artist-${artist.id}`}
-                  accessibilityLabel={strings.search.openArtist(artist.name)}
-                  title={artist.name}
-                  subtitle={strings.search.sections.artists}
-                  imageUri={artist.picture}
-                  round
-                  onPress={() => onOpenArtist({ artistId: artist.id, name: artist.name })}
-                />
-              )}
-            />
-          </SearchResultSection>
+          <SearchTopResultCard
+            result={result}
+            onPress={() => openTopResult(result)}
+            onLongPress={result.kind === 'track'
+              ? () => showTrackActions(result.track, setActionError)
+              : undefined}
+          />
         );
+      }
+      case 'artist-section':
+        return <SearchArtistSection artists={row.artists} onOpenArtist={onOpenArtist} />;
       case 'track-header':
         return (
           <View testID="search-section-tracks" style={styles.trackSectionHeader}>
-            <Text accessibilityRole="header" style={styles.sectionTitle}>
-              {strings.search.sections.tracks}
-            </Text>
+            <SectionHeader title={strings.search.sections.tracks} />
           </View>
         );
       case 'track': {
@@ -668,7 +338,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             testID={`search-track-${track.id}-${index}`}
             occurrence={searchTrackOccurrence(debouncedQuery, index)}
             position={index + 1}
-            plays={trackPlaysQuery.data?.[track.id]}
+            plays={results.trackPlays?.[track.id]}
             rollingDeviceCacheSeconds={activeProgress.cached}
             onPlay={() => play(index)}
             onActions={() => showTrackActions(track, setActionError)}
@@ -678,49 +348,14 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         );
       }
       case 'album-section':
-        return (
-          <SearchResultSection id="albums" title={strings.search.sections.albums}>
-            <SearchResultRail
-              id="albums"
-              data={row.albums}
-              keyExtractor={(album, index) => `${album.id}:${index}`}
-              renderItem={(album, index) => (
-                <SearchEntityCard
-                  testID={`search-album-${album.id}-${index}`}
-                  accessibilityLabel={strings.search.openAlbum(album.title, album.artistName)}
-                  title={album.title}
-                  subtitle={album.artistName}
-                  imageUri={album.artworkUrl ?? ''}
-                  onPress={() => onOpenAlbum({ albumId: album.id, title: album.title })}
-                />
-              )}
-            />
-          </SearchResultSection>
-        );
+        return <SearchAlbumSection albums={row.albums} onOpenAlbum={onOpenAlbum} />;
       case 'playlist-section':
         return (
-          <SearchResultSection id="playlists" title={strings.search.sections.playlists}>
-            <SearchResultRail
-              id="playlists"
-              data={row.playlists}
-              keyExtractor={(playlist, index) => `${playlist.id}:${index}`}
-              renderItem={(playlist) => {
-                const busy = startingPlaylist === playlist.id;
-                return (
-                  <SearchEntityCard
-                    testID={`search-playlist-${playlist.id}`}
-                    accessibilityLabel={strings.search.openPlaylist(playlist.title, playlist.track_count)}
-                    title={playlist.title}
-                    subtitle={busy ? strings.search.playlistLoading : strings.common.trackCount(playlist.track_count)}
-                    imageUri={playlist.cover}
-                    disabled={startingPlaylist !== null}
-                    busy={busy}
-                    onPress={() => void startDeezerPlaylist(playlist.id)}
-                  />
-                );
-              }}
-            />
-          </SearchResultSection>
+          <SearchPlaylistSection
+            playlists={row.playlists}
+            startingPlaylistId={startingPlaylist}
+            onStartPlaylist={(playlistId) => void startDeezerPlaylist(playlistId)}
+          />
         );
     }
   };
@@ -740,6 +375,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         <SearchVirtualizedResults
           accessibilityLabel={strings.navigation.search}
           rows={searchRows}
+          bottomInset={bottomInset}
           header={(
             <>
               {searchChrome}
@@ -755,57 +391,8 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  screenHeader: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.lg },
-  searchBar: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginHorizontal: spacing.lg,
-    paddingLeft: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surfaceElevated,
-  },
-  input: {
-    minHeight: metrics.minimumTouchTarget,
-    flex: 1,
-    color: colors.textPrimary,
-    paddingRight: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  clearButton: {
-    width: metrics.minimumTouchTarget,
-    height: metrics.minimumTouchTarget,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  importToggleRow: { alignItems: 'flex-start', paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
-  importToggle: {
-    minHeight: metrics.minimumTouchTarget,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    borderRadius: radii.md,
-  },
-  importToggleSelected: { backgroundColor: colors.accentSubtle },
-  importToggleText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  importToggleTextSelected: { color: colors.accentSoft },
-  tabs: { gap: spacing.xs, paddingHorizontal: spacing.lg, paddingBottom: spacing.sm },
-  sortBlock: { gap: spacing.xs, paddingBottom: spacing.lg },
-  sortHeading: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: spacing.lg },
-  sortLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '600' },
-  sorts: { gap: spacing.xs, paddingHorizontal: spacing.lg },
-  browse: { gap: spacing.md, paddingTop: spacing.sm },
-  pressed: { opacity: 0.72 },
-  section: { gap: spacing.md, paddingTop: spacing.xxl },
-  trackSectionHeader: { paddingTop: spacing.xxl, paddingBottom: spacing.sm },
-  sectionTitle: { ...typography.section, color: colors.textPrimary, paddingHorizontal: spacing.lg },
-  status: { color: colors.textSecondary, fontSize: 13, lineHeight: 19, paddingHorizontal: spacing.lg },
-  hint: { color: colors.textSecondary, textAlign: 'center', marginTop: 38, paddingHorizontal: 32 },
+  chrome: { gap: spacing.sm, paddingTop: spacing.md },
+  gutter: { paddingHorizontal: layout.pagePadding },
+  bodyGap: { paddingTop: spacing.md },
+  trackSectionHeader: { paddingTop: spacing.xl, paddingBottom: spacing.xs },
 });

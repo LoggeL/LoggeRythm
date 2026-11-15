@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -7,7 +7,9 @@ import {
   subscribeConnectivity,
 } from '../connectivity/store';
 import { strings } from '../localization';
-import { colors } from '../theme';
+import { colors, elevation, layout, spacing } from '../theme';
+import AppIcon from './AppIcon';
+import { AppText } from './ui';
 
 export interface ConnectivityBannerViewProps {
   kind: 'offline' | 'restored';
@@ -30,15 +32,22 @@ export function ConnectivityBannerView({
       style={[
         styles.banner,
         offline ? styles.offline : styles.restored,
-        { paddingTop: Math.max(topInset, 8) },
+        { paddingTop: Math.max(topInset, spacing.xs) },
       ]}
     >
-      <Text style={styles.title}>
-        {offline ? strings.shell.offlineTitle : strings.shell.backOnlineTitle}
-      </Text>
-      <Text style={styles.body}>
-        {offline ? strings.shell.offlineBody : strings.shell.backOnlineBody}
-      </Text>
+      <AppIcon
+        name={offline ? 'wifi-off' : 'wifi-check'}
+        color={offline ? colors.warning : colors.success}
+        size={20}
+      />
+      <View style={styles.copy}>
+        <AppText variant="label">
+          {offline ? strings.shell.offlineTitle : strings.shell.backOnlineTitle}
+        </AppText>
+        <AppText variant="caption" color="secondary">
+          {offline ? strings.shell.offlineBody : strings.shell.backOnlineBody}
+        </AppText>
+      </View>
     </View>
   );
 }
@@ -77,29 +86,17 @@ export default function ConnectivityBanner() {
 
 const styles = StyleSheet.create({
   banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
+    paddingHorizontal: layout.pagePadding,
     borderBottomWidth: 1,
-    paddingBottom: 8,
-    paddingHorizontal: 16,
-    zIndex: 10,
-    elevation: 10,
+    borderBottomColor: colors.hairline,
+    zIndex: 1,
+    ...elevation.floating,
   },
-  offline: {
-    backgroundColor: '#31270f',
-    borderBottomColor: colors.warning,
-  },
-  restored: {
-    backgroundColor: '#103025',
-    borderBottomColor: colors.success,
-  },
-  title: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  body: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 1,
-  },
+  offline: { backgroundColor: colors.warningSubtle },
+  restored: { backgroundColor: colors.successSubtle },
+  copy: { flex: 1, minWidth: 0 },
 });

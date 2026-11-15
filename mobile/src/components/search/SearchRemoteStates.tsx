@@ -1,14 +1,20 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { RemoteVisualState } from '../../data/remoteState';
-import { colors, metrics, radii, spacing, typography } from '../../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
+import { AppText, EmptyState } from '../ui';
 
 interface SearchLoadingStatusProps {
   testID: string;
   label: string;
 }
 
+/**
+ * Inline progress line for short refreshes of content that is already on
+ * screen. A first load of a list or rail uses a skeleton instead (see
+ * `SearchRemoteBoundary.loadingFallback`).
+ */
 export function SearchLoadingStatus({ testID, label }: SearchLoadingStatusProps) {
   return (
     <View
@@ -18,8 +24,8 @@ export function SearchLoadingStatus({ testID, label }: SearchLoadingStatusProps)
       accessibilityLiveRegion="polite"
       style={styles.loading}
     >
-      <ActivityIndicator color={colors.accent} />
-      <Text style={styles.status}>{label}</Text>
+      <ActivityIndicator color={colors.accent} size="small" />
+      <AppText variant="caption" color="secondary" style={styles.loadingLabel}>{label}</AppText>
     </View>
   );
 }
@@ -33,6 +39,11 @@ interface SearchErrorNoticeProps {
   liveRegion?: 'assertive' | 'polite';
 }
 
+/**
+ * One failure notice: an alert with the localized message and, when the
+ * failure is retryable, a retry pill. Assertive notices (nothing to show)
+ * are tinted red, polite ones (cached content stays visible) are neutral.
+ */
 export function SearchErrorNotice({
   testID,
   message,
@@ -44,14 +55,28 @@ export function SearchErrorNotice({
   if ((actionLabel === undefined) !== (onAction === undefined)) {
     throw new Error('Search error actions require both a label and callback');
   }
+  const blocking = liveRegion === 'assertive';
   return (
     <View
       testID={testID}
       accessibilityRole="alert"
       accessibilityLiveRegion={liveRegion}
-      style={styles.errorBox}
+      style={[styles.notice, blocking ? styles.noticeBlocking : styles.noticeCached]}
     >
-      <Text style={styles.error}>{message}</Text>
+      <View style={styles.noticeCopy}>
+        <AppIcon
+          name={blocking ? 'alert-circle-outline' : 'cloud-off-outline'}
+          color={blocking ? colors.danger : colors.textSecondary}
+          size={20}
+        />
+        <AppText
+          variant="callout"
+          color={blocking ? 'danger' : 'secondary'}
+          style={styles.noticeMessage}
+        >
+          {message}
+        </AppText>
+      </View>
       {actionLabel !== undefined && onAction !== undefined ? (
         <Pressable
           testID={`${testID}-action`}
@@ -66,7 +91,14 @@ export function SearchErrorNotice({
             pressed && !actionBusy && styles.pressed,
           ]}
         >
-          <Text style={styles.actionText}>{actionLabel}</Text>
+          {actionBusy ? (
+            <ActivityIndicator accessible={false} color={colors.textPrimary} size="small" />
+          ) : (
+            <AppIcon name="refresh" color={colors.textPrimary} size={20} />
+          )}
+          <AppText variant="label" numberOfLines={2} style={styles.actionLabel}>
+            {actionLabel}
+          </AppText>
         </Pressable>
       ) : null}
     </View>
@@ -93,14 +125,20 @@ export function SearchPoliteStatus({
         accessibilityLiveRegion="polite"
         style={styles.compactStatus}
       >
-        <AppIcon name="database-check-outline" color={colors.textSecondary} size={14} />
+        <AppIcon name="database-check-outline" color={colors.textMuted} size={14} />
       </View>
     );
   }
   return (
-    <Text testID={testID} accessibilityLiveRegion="polite" style={styles.statusText}>
+    <AppText
+      testID={testID}
+      accessibilityLiveRegion="polite"
+      variant="callout"
+      color="secondary"
+      style={styles.statusText}
+    >
       {message}
-    </Text>
+    </AppText>
   );
 }
 
@@ -118,6 +156,12 @@ interface SearchRemoteBoundaryProps {
   retryLabel: string;
   retryBusy: boolean;
   onRetry: () => void;
+  /**
+   * Content-shaped placeholder for the first load. It must put `testID` and
+   * `accessibilityLabel` on its labelled progressbar group. Without it the
+   * boundary shows the inline progress line.
+   */
+  loadingFallback?: (props: { testID: string; accessibilityLabel: string }) => React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -139,6 +183,7 @@ export function SearchRemoteBoundary({
   retryLabel,
   retryBusy,
   onRetry,
+  loadingFallback,
   children,
 }: SearchRemoteBoundaryProps) {
   const retry = (testID: string, message: string, liveRegion: 'assertive' | 'polite') => (
@@ -151,12 +196,16 @@ export function SearchRemoteBoundary({
       liveRegion={liveRegion}
     />
   );
+  const loading = () =>
+    loadingFallback === undefined ? (
+      <SearchLoadingStatus testID={`${id}-loading`} label={loadingLabel} />
+    ) : (
+      loadingFallback({ testID: `${id}-loading`, accessibilityLabel: loadingLabel })
+    );
 
   return (
     <>
-      {state.body === 'loading' ? (
-        <SearchLoadingStatus testID={`${id}-loading`} label={loadingLabel} />
-      ) : null}
+      {state.body === 'loading' ? loading() : null}
       {state.body === 'offline'
         ? retry(`${id}-offline`, offlineLabel, 'assertive')
         : null}
@@ -164,7 +213,7 @@ export function SearchRemoteBoundary({
         ? retry(`${id}-error`, errorLabel, 'assertive')
         : null}
       {state.body === 'empty' ? (
-        <SearchPoliteStatus testID={`${id}-empty`} message={emptyLabel} />
+        <EmptyState testID={`${id}-empty`} title={emptyLabel} />
       ) : null}
       {state.body === 'content' ? children : null}
 
@@ -186,42 +235,50 @@ export function SearchRemoteBoundary({
 
 const styles = StyleSheet.create({
   loading: {
-    minHeight: 72,
+    minHeight: metrics.minimumTouchTarget,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    padding: 18,
+    gap: spacing.xs,
+    paddingHorizontal: layout.pagePadding,
   },
-  status: { ...typography.caption, color: colors.textSecondary },
-  statusText: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg },
+  loadingLabel: { flexShrink: 1 },
+  statusText: { paddingHorizontal: layout.pagePadding },
   compactStatus: {
-    width: 24,
-    height: 24,
-    marginHorizontal: spacing.lg,
+    width: spacing.xl,
+    height: spacing.xl,
+    marginHorizontal: layout.pagePadding,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.sm,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.fill,
   },
-  errorBox: {
-    marginHorizontal: spacing.lg,
+  notice: {
+    marginHorizontal: layout.pagePadding,
     marginBottom: spacing.sm,
     padding: spacing.md,
-    gap: spacing.xs,
-    borderRadius: radii.md,
-    backgroundColor: colors.dangerSubtle,
+    gap: spacing.sm,
+    borderRadius: radii.panel,
+    borderWidth: 1,
+    borderColor: colors.hairline,
   },
-  error: { color: colors.danger, fontSize: 13, lineHeight: 19 },
+  noticeBlocking: { backgroundColor: colors.dangerSubtle },
+  noticeCached: { backgroundColor: colors.surface },
+  noticeCopy: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
+  noticeMessage: { flex: 1 },
   action: {
     minHeight: metrics.minimumTouchTarget,
     alignSelf: 'flex-start',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceElevated,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.fill,
   },
-  actionText: { ...typography.label, color: colors.textPrimary },
-  disabled: { opacity: 0.54 },
-  pressed: { opacity: 0.72 },
+  actionLabel: { flexShrink: 1 },
+  disabled: { opacity: opacity.disabled },
+  pressed: { opacity: opacity.pressed },
 });

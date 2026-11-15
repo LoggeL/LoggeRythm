@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { HomeShelf } from '../api/types';
 import type { RecentPlay } from '../domain/listeningStats';
 import {
+  HOME_QUICK_GRID_LIMIT,
   assertHomeRouteCallbacks,
   findHomeMix,
   formatRadarReleaseDate,
@@ -13,6 +14,7 @@ import {
   homePlaylistRoute,
   homeQueueContext,
   homeRecentShelf,
+  playableHomeShelves,
   recentCatalogRoutes,
   testIdSegment,
 } from './homeModel';
@@ -185,6 +187,24 @@ describe('home model', () => {
     expect(fullHistory).toHaveLength(9);
     expect(fullHistory[8].id).toBe('duplicate');
     expect(() => homeRecentShelf(fullHistory, -1)).toThrow('non-negative integer');
+  });
+
+  it('fills the two-column quick grid with whole rows from the newest history events', () => {
+    const fullHistory = Array.from({ length: 9 }, (_, index) => recent({ id: String(index) }));
+
+    expect(HOME_QUICK_GRID_LIMIT % 2).toBe(0);
+    expect(homeRecentShelf(fullHistory, HOME_QUICK_GRID_LIMIT)).toEqual(
+      fullHistory.slice(0, HOME_QUICK_GRID_LIMIT),
+    );
+    expect(homeRecentShelf(fullHistory.slice(0, 3), HOME_QUICK_GRID_LIMIT)).toHaveLength(3);
+  });
+
+  it('lists only shelves that have tracks and tolerates a response that has not arrived', () => {
+    const filled = { key: 'a', title: 'A', tracks: [{ id: '1' }] } as unknown as HomeShelf;
+    const hollow = { key: 'b', title: 'B', tracks: [] } as unknown as HomeShelf;
+
+    expect(playableHomeShelves([hollow, filled])).toEqual([filled]);
+    expect(playableHomeShelves(undefined)).toEqual([]);
   });
 
   it('omits invalid legacy routes and labels fallback artist identities correctly', () => {

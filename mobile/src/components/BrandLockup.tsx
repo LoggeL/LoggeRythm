@@ -8,7 +8,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { colors } from '../theme';
+import { colors, layout, spacing, typography } from '../theme';
 
 type BrandLockupProps = {
   compact?: boolean;
@@ -29,7 +29,7 @@ export default function BrandLockup({
   accessibilityRole = 'image',
   style,
 }: BrandLockupProps) {
-  const markSize = horizontal ? 32 : compact ? 42 : 72;
+  const markSize = horizontal ? spacing.xxl : compact ? layout.artwork.xs : layout.artwork.lg;
   return (
     <View
       accessible
@@ -45,7 +45,7 @@ export default function BrandLockup({
       />
       <View accessible={false} style={styles.wordmark}>
         <Text style={[styles.word, compact && styles.wordCompact]}>Logge</Text>
-        <View style={[styles.divider, compact && styles.dividerCompact]} />
+        <View style={styles.divider} />
         <Text style={[styles.word, styles.rythm, compact && styles.wordCompact]}>Rythm</Text>
       </View>
     </View>
@@ -53,17 +53,16 @@ export default function BrandLockup({
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: 'center', gap: 2 },
-  horizontal: { flexDirection: 'row', gap: 7 },
-  wordmark: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  word: {
-    color: colors.textPrimary,
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.7,
-  },
-  wordCompact: { fontSize: 21 },
+  container: { alignItems: 'center', gap: spacing.xxs / 2 },
+  horizontal: { flexDirection: 'row', gap: spacing.xs },
+  wordmark: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  word: { ...typography.hero, color: colors.textPrimary },
+  wordCompact: { ...typography.section, fontWeight: typography.hero.fontWeight },
   rythm: { color: colors.accent },
-  divider: { width: StyleSheet.hairlineWidth, height: 28, backgroundColor: '#ffffff59' },
-  dividerCompact: { height: 21 },
+  divider: {
+    alignSelf: 'stretch',
+    width: StyleSheet.hairlineWidth,
+    marginVertical: spacing.xxs,
+    backgroundColor: colors.textMuted,
+  },
 });

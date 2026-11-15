@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type React from 'react';
 import type { RecentPlay } from '../../domain/listeningStats';
 import type { TrackPresentationState } from '../../player/trackPresentation';
 import { libraryStrings } from '../../screens/libraryStrings';
+import { byTestId as byTestID } from '../../test/render';
 import { metrics } from '../../theme';
 import { LibraryRecentRow } from './LibraryRecentRow';
 
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('react-native', () => ({
+  ActivityIndicator: 'ActivityIndicator',
   Image: 'Image',
   Pressable: 'Pressable',
   StyleSheet: { create: <T,>(styles: T): T => styles },
@@ -32,23 +33,9 @@ vi.mock('../player/TrackPresentationProvider', () => ({
   },
 }));
 
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../TrackStateIndicator', () => ({ default: 'TrackStateIndicator' }));
 vi.mock('../track/TrackIdentityLinks', () => ({ default: 'TrackIdentityLinks' }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestID(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`Missing ${testID}`);
-  return found;
-}
 
 const recent: RecentPlay = {
   id: 'track-1',

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 import type {
   AlbumSummary,
   ArtistSummary,
@@ -10,25 +10,24 @@ import type {
 } from '../../api/types';
 import { catalogStrings } from '../../screens/catalogStrings';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { colors, metrics } from '../../theme';
-import AppIcon, { type AppIconName } from '../AppIcon';
-import { ActionButton } from '../ui/ActionButton';
+import { colors, layout, radii, spacing } from '../../theme';
+import type { AppIconName } from '../AppIcon';
+import { ActionButton, AppText, Artwork, PressableScale } from '../ui';
 import StandardTrackRow, {
   type TrackOccurrenceTarget,
 } from '../track/StandardTrackRow';
 import TrackShelfCard from '../track/TrackShelfCard';
 import type { TrackPopularityPolicy } from '../track/trackMetadata';
 
-function Artwork({ uri, style }: { uri: string | null; style: object }) {
-  return uri ? (
-    <Image accessible={false} source={{ uri }} style={style} />
-  ) : (
-    <View style={[style, styles.placeholder]}>
-      <AppIcon name="music-note" color={colors.accentSoft} size={22} />
-    </View>
-  );
-}
+/** Genre tiles are landscape: card width, large-artwork height. */
+const GENRE_TILE_HEIGHT = layout.artwork.lg;
+/** A playlist card holds a large cover plus one card width of copy. */
+const PLAYLIST_CARD_WIDTH = layout.artwork.lg + layout.artwork.card + spacing.xxl;
 
+/**
+ * The cover of a detail hero. `compact` is the small variant used next to
+ * copy in a row; the default is the full hero size. `round` is for artists.
+ */
 export function CatalogHeroArtwork({
   uri,
   round = false,
@@ -36,13 +35,11 @@ export function CatalogHeroArtwork({
 }: { uri: string; round?: boolean; compact?: boolean }) {
   return (
     <Artwork
-      uri={uri || null}
-      style={[
-        styles.heroArtwork,
-        round && styles.heroArtworkRound,
-        compact && styles.compactArtwork,
-        compact && round && styles.compactArtworkRound,
-      ]}
+      uri={uri}
+      size={compact ? layout.artwork.lg : layout.artwork.hero}
+      shape={round ? 'round' : 'square'}
+      radius="panel"
+      icon={round ? 'account-music' : 'music-note'}
     />
   );
 }
@@ -54,6 +51,7 @@ interface HorizontalCatalogRailProps<T> {
   renderItem: (item: T, index: number) => React.ReactElement;
 }
 
+/** A full-bleed horizontal shelf on the page gutter. */
 export function HorizontalCatalogRail<T>({
   id,
   data,
@@ -116,17 +114,19 @@ export function CatalogAlbumCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.common.openAlbum(album.title, album.artist)}
       onPress={onPress}
-      style={({ pressed }) => [styles.albumCard, pressed && styles.pressed]}
+      style={styles.tileCard}
     >
-      <Artwork uri={album.cover || null} style={styles.squareArtwork} />
-      <Text style={styles.cardTitle} numberOfLines={1}>{album.title}</Text>
-      <Text style={styles.cardSubtitle} numberOfLines={1}>{album.artist}</Text>
-    </Pressable>
+      <Artwork uri={album.cover} size={layout.artwork.card} icon="album" />
+      <View>
+        <AppText variant="bodyStrong" numberOfLines={1}>{album.title}</AppText>
+        <AppText variant="callout" color="secondary" numberOfLines={1}>{album.artist}</AppText>
+      </View>
+    </PressableScale>
   );
 }
 
@@ -140,18 +140,23 @@ export function CatalogGenreCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.common.openGenre(genre.name)}
       onPress={onPress}
-      style={({ pressed }) => [styles.genreCard, pressed && styles.pressed]}
+      style={styles.genreCard}
     >
-      <Artwork uri={genre.picture || null} style={styles.genreArtwork} />
+      <Artwork
+        uri={genre.picture}
+        size={layout.artwork.card}
+        icon="shape-outline"
+        style={styles.genreArtwork}
+      />
       <View style={styles.genreOverlay}>
-        <Text style={styles.genreTitle} numberOfLines={2}>{genre.name}</Text>
+        <AppText variant="section" numberOfLines={2}>{genre.name}</AppText>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -165,16 +170,21 @@ export function CatalogArtistCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.common.openArtist(artist.name)}
       onPress={onPress}
-      style={({ pressed }) => [styles.artistCard, pressed && styles.pressed]}
+      style={styles.tileCard}
     >
-      <Artwork uri={artist.picture || null} style={styles.artistArtwork} />
-      <Text style={styles.artistTitle} numberOfLines={2}>{artist.name}</Text>
-    </Pressable>
+      <Artwork
+        uri={artist.picture}
+        size={layout.artwork.card}
+        shape="round"
+        icon="account-music"
+      />
+      <AppText variant="bodyStrong" align="center" numberOfLines={2}>{artist.name}</AppText>
+    </PressableScale>
   );
 }
 
@@ -190,7 +200,7 @@ export function CatalogPlaylistCard({
   onPress: () => void;
 }) {
   return (
-    <Pressable
+    <PressableScale
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.discover.openPlaylist(
@@ -199,19 +209,22 @@ export function CatalogPlaylistCard({
         playlist.track_count,
       )}
       onPress={onPress}
-      style={({ pressed }) => [styles.playlistCard, pressed && styles.pressed]}
+      scaleTo={0.98}
+      style={styles.playlistCard}
     >
-      <Artwork uri={coverUrl} style={styles.playlistArtwork} />
+      <Artwork uri={coverUrl} size={layout.artwork.lg} icon="playlist-music" />
       <View style={styles.playlistMeta}>
-        <Text style={styles.cardTitle} numberOfLines={2}>{playlist.name}</Text>
+        <AppText variant="bodyStrong" numberOfLines={2}>{playlist.name}</AppText>
         {playlist.owner_name ? (
-          <Text style={styles.cardSubtitle} numberOfLines={1}>
+          <AppText variant="callout" color="secondary" numberOfLines={1}>
             {catalogStrings.discover.byOwner(playlist.owner_name)}
-          </Text>
+          </AppText>
         ) : null}
-        <Text style={styles.cardSubtitle}>{catalogStrings.common.tracks(playlist.track_count)}</Text>
+        <AppText variant="caption" color="muted" numberOfLines={1}>
+          {catalogStrings.common.tracks(playlist.track_count)}
+        </AppText>
       </View>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -223,6 +236,7 @@ export function CatalogTrackRow({
   metadata,
   popularity = 'none',
   plays,
+  showAlbumLabel,
   onPress,
   onLongPress,
   onOpenAlbum,
@@ -237,6 +251,8 @@ export function CatalogTrackRow({
   metadata?: string;
   popularity?: TrackPopularityPolicy;
   plays?: TrackPlayCount;
+  /** false where the album is the page itself. Defaults to the shared row's policy. */
+  showAlbumLabel?: boolean;
   onPress: () => void;
   onLongPress?: () => void;
   onOpenAlbum: (params: AlbumRouteParams) => void;
@@ -244,31 +260,21 @@ export function CatalogTrackRow({
   highlighted?: boolean;
 }) {
   return (
-    <View>
-      <StandardTrackRow
-        track={track}
-        testID={testID}
-        occurrence={occurrence}
-        position={index + 1}
-        popularity={popularity}
-        plays={plays}
-        onPlay={onPress}
-        onActions={onLongPress}
-        onOpenAlbum={onOpenAlbum}
-        onOpenArtist={onOpenArtist}
-        highlighted={highlighted}
-      />
-      {metadata === undefined ? null : (
-        <Text
-          testID={`${testID}-metadata`}
-          accessibilityLabel={metadata}
-          style={styles.rowSupplementalMetadata}
-          numberOfLines={2}
-        >
-          {metadata}
-        </Text>
-      )}
-    </View>
+    <StandardTrackRow
+      track={track}
+      testID={testID}
+      occurrence={occurrence}
+      position={index + 1}
+      popularity={popularity}
+      plays={plays}
+      showAlbumLabel={showAlbumLabel}
+      caption={metadata}
+      onPlay={onPress}
+      onActions={onLongPress}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
+      highlighted={highlighted}
+    />
   );
 }
 
@@ -306,34 +312,15 @@ export function CatalogActionButton({
 }
 
 const styles = StyleSheet.create({
-  rail: { gap: 16, paddingHorizontal: 20 },
-  albumCard: { width: 156, minHeight: 214, gap: 7 },
-  squareArtwork: {
-    width: 156,
-    height: 156,
-    borderRadius: 10,
-    backgroundColor: colors.surfaceElevated,
-  },
-  heroArtwork: {
-    width: 196,
-    height: 196,
-    borderRadius: 18,
-    backgroundColor: colors.surfaceElevated,
-  },
-  heroArtworkRound: { borderRadius: 98 },
-  compactArtwork: { width: 112, height: 112, borderRadius: 14 },
-  compactArtworkRound: { borderRadius: 56 },
-  cardTitle: { color: colors.textPrimary, fontSize: 15, lineHeight: 20, fontWeight: '700' },
-  cardSubtitle: { color: colors.textSecondary, fontSize: 12, lineHeight: 17 },
+  rail: { gap: layout.railGap, paddingHorizontal: layout.pagePadding },
+  tileCard: { width: layout.artwork.card, gap: spacing.xs },
   genreCard: {
-    width: 156,
-    height: 108,
-    minHeight: metrics.minimumTouchTarget,
-    borderRadius: 10,
+    width: layout.artwork.card,
+    height: GENRE_TILE_HEIGHT,
+    borderRadius: radii.card,
     overflow: 'hidden',
-    backgroundColor: colors.surfaceElevated,
   },
-  genreArtwork: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+  genreArtwork: { height: GENRE_TILE_HEIGHT },
   genreOverlay: {
     position: 'absolute',
     top: 0,
@@ -341,42 +328,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     justifyContent: 'flex-end',
-    padding: 14,
-    backgroundColor: 'rgba(10,10,20,0.58)',
+    padding: spacing.sm,
+    backgroundColor: colors.scrim,
   },
-  genreTitle: { color: colors.textPrimary, fontSize: 19, lineHeight: 24, fontWeight: '700' },
-  artistCard: { width: 128, minHeight: 176, alignItems: 'center', gap: 10 },
-  artistArtwork: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    backgroundColor: colors.surfaceElevated,
-  },
-  artistTitle: { color: colors.textPrimary, fontSize: 14, lineHeight: 18, fontWeight: '700', textAlign: 'center' },
   playlistCard: {
-    width: 272,
-    minHeight: 112,
+    width: PLAYLIST_CARD_WIDTH,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 10,
-    borderRadius: 12,
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radii.panel,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     backgroundColor: colors.surface,
   },
-  playlistArtwork: { width: 88, height: 88, borderRadius: 8, backgroundColor: colors.surfaceElevated },
-  playlistMeta: { flex: 1, minWidth: 0, gap: 5 },
-  rowSupplementalMetadata: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 15,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
-  placeholder: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pressed: { opacity: 0.74, backgroundColor: colors.surfacePressed },
+  playlistMeta: { flex: 1, minWidth: 0, gap: spacing.xxs / 2 },
 });

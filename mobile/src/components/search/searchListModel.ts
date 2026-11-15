@@ -4,8 +4,10 @@ import type {
   Track,
 } from '../../api/types';
 import type { AlbumCard } from '../../domain/catalog';
+import type { SearchTopResult } from '../../screens/searchModel';
 
 export type SearchListRow =
+  | { kind: 'top-result'; result: SearchTopResult }
   | { kind: 'artist-section'; artists: readonly ArtistSummary[] }
   | { kind: 'track-header' }
   | { kind: 'track'; track: Track; index: number }
@@ -17,6 +19,8 @@ export interface SearchListCollections {
   tracks: readonly Track[];
   albums: readonly AlbumCard[];
   playlists: readonly PlaylistSearchResult[];
+  /** Promoted hit shown above every section; omitted outside the "all" tab. */
+  topResult?: SearchTopResult | null;
 }
 
 /**
@@ -29,8 +33,10 @@ export function createSearchListRows({
   tracks,
   albums,
   playlists,
+  topResult = null,
 }: SearchListCollections): SearchListRow[] {
   const rows: SearchListRow[] = [];
+  if (topResult !== null) rows.push({ kind: 'top-result', result: topResult });
   if (artists.length > 0) rows.push({ kind: 'artist-section', artists });
   if (tracks.length > 0) {
     rows.push({ kind: 'track-header' });
@@ -43,6 +49,8 @@ export function createSearchListRows({
 
 export function searchListRowKey(row: SearchListRow): string {
   switch (row.kind) {
+    case 'top-result':
+      return 'section:top-result';
     case 'artist-section':
       return 'section:artists';
     case 'track-header':

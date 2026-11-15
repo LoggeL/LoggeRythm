@@ -20,6 +20,8 @@ export const HOME_MOODS = [
 export type HomeMoodKey = (typeof HOME_MOODS)[number]['key'];
 export type GreetingKey = 'greetingNight' | 'greetingMorning' | 'greetingDay' | 'greetingEvening';
 export const HOME_RECENT_SHELF_LIMIT = 7;
+/** The two-column quick grid shows whole rows only. */
+export const HOME_QUICK_GRID_LIMIT = 6;
 
 export interface HomeAlbumRouteParams {
   albumId: DeezerId;
@@ -173,6 +175,11 @@ export function findHomeMix(
 ): HomeShelf | null {
   const key = requireHomeMixKey(mixKey);
   return shelves.find((shelf) => shelf.key === key) ?? null;
+}
+
+/** A shelf without tracks can neither be played nor opened, so Home never lists it. */
+export function playableHomeShelves(shelves: readonly HomeShelf[] | undefined): HomeShelf[] {
+  return (shelves ?? []).filter((shelf) => shelf.tracks.length > 0);
 }
 
 /** Match the compact web Home shelf without changing the full playback context. */

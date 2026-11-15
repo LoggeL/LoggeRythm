@@ -1,9 +1,10 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { clearPlayerNotice, usePlayerNotice } from '../player/notices';
 import { usePlayerError } from '../player/errors';
 import { strings } from '../localization';
-import { colors, metrics } from '../theme';
+import { colors, elevation, metrics, opacity, radii, spacing } from '../theme';
+import { AppText } from './ui';
 
 export default function PlayerNoticeBanner({ bottom }: { bottom?: number }) {
   const notice = usePlayerNotice();
@@ -19,17 +20,17 @@ export default function PlayerNoticeBanner({ bottom }: { bottom?: number }) {
       style={[styles.notice, bottom === undefined ? styles.inline : styles.overlay, { bottom }]}
     >
       <View style={styles.copy}>
-        <Text style={styles.title}>{notice.title}</Text>
-        <Text style={styles.message}>{notice.message}</Text>
+        <AppText variant="label" color="warning">{notice.title}</AppText>
+        <AppText variant="caption" color="secondary">{notice.message}</AppText>
       </View>
       <Pressable
         testID="player-nonfatal-notice-dismiss"
         accessibilityRole="button"
         accessibilityLabel={strings.common.dismiss}
         onPress={() => clearPlayerNotice(notice.id)}
-        style={styles.dismissButton}
+        style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
       >
-        <Text style={styles.dismiss}>{strings.common.dismiss}</Text>
+        <AppText variant="label">{strings.common.dismiss}</AppText>
       </Pressable>
     </View>
   );
@@ -39,32 +40,30 @@ const styles = StyleSheet.create({
   notice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
+    gap: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.warning,
-    borderRadius: 10,
+    borderRadius: radii.md,
     backgroundColor: colors.surfaceElevated,
-    paddingLeft: 12,
-    paddingRight: 4,
-    paddingVertical: 6,
+    paddingLeft: spacing.sm,
+    paddingRight: spacing.xxs,
+    paddingVertical: spacing.xxs,
   },
-  inline: { marginHorizontal: 16, marginBottom: 10 },
+  inline: { marginHorizontal: spacing.md, marginBottom: spacing.sm },
   overlay: {
     position: 'absolute',
-    left: 8,
-    right: 8,
+    left: spacing.xs,
+    right: spacing.xs,
     zIndex: 1,
-    elevation: 5,
+    ...elevation.floating,
   },
   copy: { minWidth: 0, flex: 1 },
-  title: { color: colors.warning, fontSize: 13, fontWeight: '800' },
-  message: { color: colors.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 1 },
   dismissButton: {
     minHeight: metrics.minimumTouchTarget,
     minWidth: metrics.minimumTouchTarget,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: spacing.xs,
   },
-  dismiss: { color: colors.textPrimary, fontSize: 12, fontWeight: '700' },
+  pressed: { opacity: opacity.pressed },
 });

@@ -1,7 +1,7 @@
-import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { strings } from '../../localization';
+import { activateLocale, catalogs, getActiveLocale, strings } from '../../localization';
 import { metrics } from '../../theme';
+import { byTestId, elements, flatStyle, textContent } from '../../test/render';
 import {
   DEFAULT_NOW_PLAYING_TAB,
   NowPlayingTabs,
@@ -12,22 +12,10 @@ vi.mock('react-native', () => ({
   ScrollView: 'ScrollView',
   StyleSheet: { create: <T,>(styles: T): T => styles },
   Text: 'Text',
+  View: 'View',
 }));
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`Missing ${testID}`);
-  return found;
-}
 
 describe('NowPlayingTabs', () => {
   it('defaults the web-equivalent fullscreen surface to Lyrics', () => {
@@ -48,20 +36,20 @@ describe('NowPlayingTabs', () => {
     expect(tabList.props.horizontal).toBe(true);
     expect(tabList.props.showsHorizontalScrollIndicator).toBe(false);
     expect(playing.props.accessibilityRole).toBe('tab');
-    expect(playing.props.accessibilityState).toEqual({ selected: false });
+    expect(playing.props.accessibilityState).toEqual({ selected: false, disabled: false });
     expect(playing.props.accessibilityLabel).toBe(strings.player.nowPlayingTabs.playing);
     expect(lyrics.props.accessibilityRole).toBe('tab');
-    expect(lyrics.props.accessibilityState).toEqual({ selected: true });
+    expect(lyrics.props.accessibilityState).toEqual({ selected: true, disabled: false });
     expect(lyrics.props.accessibilityLabel).toBe(strings.player.nowPlayingTabs.lyrics);
     expect(similar.props.accessibilityRole).toBe('tab');
-    expect(similar.props.accessibilityState).toEqual({ selected: false });
+    expect(similar.props.accessibilityState).toEqual({ selected: false, disabled: false });
     expect(similar.props.accessibilityLabel).toBe(strings.player.nowPlayingTabs.similar);
     expect(queue.props.accessibilityRole).toBe('tab');
-    expect(queue.props.accessibilityState).toEqual({ selected: false });
+    expect(queue.props.accessibilityState).toEqual({ selected: false, disabled: false });
     expect(queue.props.accessibilityLabel).toBe(strings.queue.title);
 
     const orderedTabs = elements(rendered)
-      .filter((element) => element.props.accessibilityRole === 'tab')
+      .filter((element) => element.type === 'Pressable' && element.props.accessibilityRole === 'tab')
       .map((element) => element.props.testID);
     expect(orderedTabs).toEqual([
       'now-playing-tab-playing',
@@ -78,8 +66,7 @@ describe('NowPlayingTabs', () => {
       flexGrow: 1,
       flexDirection: 'row',
     }));
-    const style = playing.props.style as (state: { pressed: boolean }) => unknown[];
-    expect(style({ pressed: false })).toContainEqual(
+    expect(flatStyle(playing.props.style)).toEqual(
       expect.objectContaining({
         flexGrow: 1,
         flexShrink: 0,
@@ -94,12 +81,31 @@ describe('NowPlayingTabs', () => {
     const rendered = NowPlayingTabs({ selected: 'queue', onSelect });
     const queue = byTestId(rendered, 'now-playing-tab-queue');
 
-    expect(queue.props.accessibilityState).toEqual({ selected: true });
+    expect(queue.props.accessibilityState).toEqual({ selected: true, disabled: false });
     expect(byTestId(rendered, 'now-playing-tab-lyrics').props.accessibilityState)
-      .toEqual({ selected: false });
+      .toEqual({ selected: false, disabled: false });
 
     (queue.props.onPress as () => void)();
     expect(onSelect).toHaveBeenCalledWith('queue');
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it('follows a locale switch instead of freezing the labels at module load', () => {
+    const initial = getActiveLocale();
+    try {
+      for (const locale of ['en', 'de'] as const) {
+        activateLocale(locale);
+        const rendered = NowPlayingTabs({ selected: 'lyrics', onSelect: vi.fn() });
+        expect(byTestId(rendered, 'now-playing-tab-playing').props.accessibilityLabel)
+          .toBe(catalogs[locale].player.nowPlayingTabs.playing);
+        expect(byTestId(rendered, 'now-playing-tab-queue').props.accessibilityLabel)
+          .toBe(catalogs[locale].queue.title);
+        expect(textContent(byTestId(rendered, 'now-playing-tab-lyrics')))
+          .toEqual([catalogs[locale].player.nowPlayingTabs.lyrics]);
+      }
+      expect(catalogs.en.queue.title).not.toBe(catalogs.de.queue.title);
+    } finally {
+      activateLocale(initial);
+    }
   });
 });

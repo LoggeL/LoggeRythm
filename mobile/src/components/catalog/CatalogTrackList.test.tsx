@@ -13,6 +13,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T): T => styles },
 }));
 
+vi.mock('../../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
 vi.mock('../../theme', () => ({
   colors: { accent: '#7c5cff', surfaceElevated: '#181824' },
 }));
@@ -83,6 +84,8 @@ describe('CatalogTrackList', () => {
       windowSize: 9,
       removeClippedSubviews: true,
     });
+    // The last row clears the floating mini player instead of a hardcoded 144dp.
+    expect(props.contentContainerStyle).toEqual({ paddingBottom: 96 });
     expect(props.ListHeaderComponent).toEqual(expect.objectContaining({ type: 'CatalogHeader' }));
     expect(props.ListFooterComponent).toEqual(expect.objectContaining({ type: 'CatalogFooter' }));
     expect(props.ListEmptyComponent).toEqual(expect.objectContaining({ type: 'CatalogEmpty' }));

@@ -1,6 +1,6 @@
-import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { strings } from '../localization';
+import { byTestId } from '../test/render';
 import PendingApprovalScreen from './PendingApprovalScreen';
 
 const mocks = vi.hoisted(() => ({
@@ -17,27 +17,13 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: mocks.announce },
   ActivityIndicator: 'ActivityIndicator',
   Pressable: 'Pressable',
+  ScrollView: 'ScrollView',
   StyleSheet: { create: <T,>(styles: T): T => styles },
   Text: 'Text',
   View: 'View',
 }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
 vi.mock('../components/BrandLockup', () => ({ default: 'BrandLockup' }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`No element has testID ${testID}`);
-  return found;
-}
 
 function render({ busy = null, status = null }: { busy?: 'refresh' | 'logout' | null; status?: string | null } = {}) {
   const setBusy = vi.fn();
@@ -140,5 +126,34 @@ describe('PendingApprovalScreen transition feedback', () => {
       .toBe(strings.auth.signingOut);
     expect(byTestId(signingOut, 'approval-logout').props.accessibilityLabel)
       .toBe(strings.auth.signingOut);
+  });
+
+  it('locks both actions while one is running and reports which one is busy', () => {
+    mocks.useAuth.mockReturnValue({
+      user: { email: 'pending@example.test' },
+      refreshUser: vi.fn(),
+      logout: vi.fn(),
+    });
+    const checking = render({ busy: 'refresh' }).tree;
+
+    expect(byTestId(checking, 'approval-recheck').props.accessibilityState)
+      .toEqual({ disabled: true, busy: true });
+    expect(byTestId(checking, 'approval-logout').props.accessibilityState)
+      .toEqual({ disabled: true, busy: false });
+    expect(byTestId(checking, 'approval-logout').props.disabled).toBe(true);
+  });
+
+  it('renders the full server origin and a still-pending status', () => {
+    mocks.useAuth.mockReturnValue({
+      user: { email: 'pending@example.test' },
+      refreshUser: vi.fn(),
+      logout: vi.fn(),
+    });
+    const tree = render({ status: strings.auth.approvalStillPending }).tree;
+
+    expect(byTestId(tree, 'approval-server-origin').props.numberOfLines).toBeUndefined();
+    expect(byTestId(tree, 'approval-status').props.children)
+      .toBe(strings.auth.approvalStillPending);
+    expect(byTestId(tree, 'approval-status').props.accessibilityLiveRegion).toBe('polite');
   });
 });

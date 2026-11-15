@@ -3,7 +3,6 @@ import {
   AccessibilityInfo,
   FlatList,
   StyleSheet,
-  Text,
   View,
   type ListRenderItemInfo,
 } from 'react-native';
@@ -14,7 +13,8 @@ import { resolveRemoteVisualState, type RemoteVisualState } from '../../data/rem
 import { strings } from '../../localization';
 import { playTracks } from '../../player/controller';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { colors } from '../../theme';
+import { layout, spacing } from '../../theme';
+import { AppText } from '../ui';
 import TrackRow from '../TrackRow';
 import { showTrackActions } from '../trackActions';
 import { SearchErrorNotice, SearchRemoteBoundary } from '../search/SearchRemoteStates';
@@ -70,9 +70,9 @@ export function SimilarPanelView({
 
   return (
     <View testID="similar-panel" style={styles.container}>
-      <Text accessibilityRole="header" style={styles.heading}>
+      <AppText accessibilityRole="header" variant="section" style={styles.heading}>
         {strings.player.similar.title}
-      </Text>
+      </AppText>
       {runtimeError !== null ? (
         <SearchErrorNotice
           testID="similar-runtime-error"
@@ -205,16 +205,8 @@ export default function SimilarPanel(props: SimilarPanelProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, minHeight: 0, paddingTop: 20 },
-  heading: {
-    color: colors.textPrimary,
-    fontSize: 20,
-    lineHeight: 28,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    paddingHorizontal: 4,
-    marginBottom: 16,
-  },
+  container: { flex: 1, minHeight: 0, paddingTop: spacing.md },
+  heading: { marginBottom: spacing.sm },
   virtualList: { flex: 1, minHeight: 0 },
-  list: { paddingBottom: 24 },
+  list: { paddingBottom: layout.scrollEndGap },
 });

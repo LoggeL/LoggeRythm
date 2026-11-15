@@ -5,7 +5,7 @@ import LyricsPanel from './LyricsPanel';
 import { NowPlayingArtwork } from './NowPlayingArtwork';
 import NowPlayingMetadata from './NowPlayingMetadata';
 import NowPlayingTransport from './NowPlayingTransport';
-import { colors } from '../../theme';
+import { colors, layout, spacing } from '../../theme';
 
 export interface NowPlayingLyricsSurfaceProps {
   track: Track;
@@ -84,11 +84,11 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingTop: 16,
-    paddingBottom: 10,
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomColor: colors.hairline,
   },
-  artwork: { width: 64, height: 64 },
+  artwork: { width: layout.artwork.md, height: layout.artwork.md },
 });

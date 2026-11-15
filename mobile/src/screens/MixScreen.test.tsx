@@ -53,15 +53,19 @@ vi.mock('../localization', () => ({
   },
 }));
 vi.mock('../player/controller', () => ({ playTracks: vi.fn() }));
-vi.mock('../theme', () => ({
-  colors: {
-    accent: '#7c5cff',
-    background: '#000',
-    danger: '#f00',
-    surfaceElevated: '#111',
-    textPrimary: '#fff',
-    textSecondary: '#aaa',
-  },
+// The screen is built from the shared scaffold and primitives now. They are
+// only instantiated here, never called, so they stay opaque host elements.
+vi.mock('../components/catalog/CatalogCollectionPage', () => ({
+  CatalogCollectionPage: 'CatalogCollectionPage',
+}));
+vi.mock('../components/catalog/CatalogDetailHero', () => ({
+  CatalogDetailHero: 'CatalogDetailHero',
+}));
+vi.mock('../components/ui', () => ({
+  AppText: 'AppText',
+  EmptyState: 'EmptyState',
+  ErrorState: 'ErrorState',
+  RetryButton: 'RetryButton',
 }));
 vi.mock('./catalogModel', () => ({
   assertTrackCatalogRouteCallbacks: vi.fn(),
@@ -117,5 +121,37 @@ describe('MixScreen missing-route query state', () => {
     });
     (status?.props.onRetry as () => void)();
     expect(mocks.refetch).toHaveBeenCalledOnce();
+
+    // The missing mix is an empty result with a next step, not a dead end.
+    const empty = elements(tree).find((element) => element.type === 'EmptyState');
+    expect(empty?.props.title).toBe('Mix not found');
+    const retry = empty?.props.action as React.ReactElement<ElementProps>;
+    expect(retry.type).toBe('RetryButton');
+    expect(retry.props.testID).toBe('mix-not-found-retry');
+    (retry.props.onRetry as () => void)();
+    expect(mocks.refetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a malformed route as an alert without querying or offering a pointless retry', () => {
+    mocks.useQuery.mockReturnValue({
+      data: undefined,
+      error: null,
+      isPending: true,
+      isFetching: false,
+      isStale: true,
+      fetchStatus: 'idle',
+      refetch: mocks.refetch,
+    });
+
+    const tree = MixScreen({ mixKey: '   ', onOpenAlbum: vi.fn(), onOpenArtist: vi.fn() });
+
+    expect(tree.type).toBe('ErrorState');
+    expect(tree.props).toMatchObject({
+      testID: 'mix-invalid',
+      layout: 'page',
+      message: 'Mix not found',
+    });
+    expect(tree.props.onRetry).toBeUndefined();
+    expect(mocks.useQuery).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
   });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet } from 'react-native';
 import type { ResolveResult } from '../../api/types';
 import type { TrackOccurrenceTarget } from '../track/StandardTrackRow';
 import {
@@ -11,6 +11,8 @@ interface SpotifyImportVirtualizedListProps {
   accessibilityLabel: string;
   rows: readonly SpotifyImportListRow[];
   header: React.ReactElement;
+  /** Space below the last row: `useBottomInset()` of the owning panel. */
+  bottomInset: number;
   renderRow: (info: { item: SpotifyImportListRow }) => React.ReactElement | null;
 }
 
@@ -43,6 +45,7 @@ export function SpotifyImportVirtualizedList({
   accessibilityLabel,
   rows,
   header,
+  bottomInset,
   renderRow,
 }: SpotifyImportVirtualizedListProps) {
   return (
@@ -53,7 +56,6 @@ export function SpotifyImportVirtualizedList({
       keyExtractor={spotifyImportListRowKey}
       renderItem={renderRow}
       ListHeaderComponent={header}
-      ListFooterComponent={<View style={styles.footer} />}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       showsVerticalScrollIndicator={false}
@@ -62,13 +64,11 @@ export function SpotifyImportVirtualizedList({
       windowSize={9}
       removeClippedSubviews
       style={styles.list}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomInset }}
     />
   );
 }
 
 const styles = StyleSheet.create({
   list: { flex: 1 },
-  content: { flexGrow: 1 },
-  footer: { height: 24 },
 });

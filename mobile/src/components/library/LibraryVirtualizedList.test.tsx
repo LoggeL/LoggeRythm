@@ -7,6 +7,7 @@ import type {
 } from '../../api/types';
 import type { RecentPlay } from '../../domain/listeningStats';
 import { libraryStrings } from '../../screens/libraryStrings';
+import { flatStyle } from '../../test/render';
 import {
   LIBRARY_POLICY_SECTION_STATE,
   type LibraryQuerySectionState,
@@ -188,6 +189,61 @@ describe('Library virtualized presentation', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  it('focuses one section and lists it completely when a filter chip is selected', () => {
+    const sections = createLibraryListSections(collections(), presentations(), {
+      filter: 'recent',
+      previewCount: 1,
+    });
+
+    expect(sections.map((section) => section.id)).toEqual(['recent']);
+    expect(sections[0].data.map(libraryListItemKey)).toEqual([
+      'recent:duplicate:0',
+      'recent:duplicate:1',
+    ]);
+    expect(sections[0].truncated).toBe(false);
+  });
+
+  it('previews tracks in the overview without renumbering occurrences', () => {
+    const sections = createLibraryListSections(collections(), presentations({
+      recent: queryState({ hasData: false, error: new Error('unavailable') }),
+    }), { previewCount: 1 });
+    const liked = sections.find((section) => section.id === 'liked');
+    const recentSection = sections.find((section) => section.id === 'recent');
+
+    expect(liked?.data.map(libraryListItemKey)).toEqual(['liked:collection', 'liked:duplicate:0']);
+    expect(liked?.truncated).toBe(true);
+    // A failed section has no rows, so there is nothing to "show all" of.
+    expect(recentSection?.truncated).toBe(false);
+    expect(sections.find((section) => section.id === 'playlists')?.truncated).toBe(false);
+    expect(() => createLibraryListSections(collections(), presentations(), { previewCount: 0 }))
+      .toThrow('previewCount');
+  });
+
+  it('offers "show all" only for a previewed section and focuses it', () => {
+    const onShowSection = vi.fn();
+    const rendered = LibraryVirtualizedList({
+      collections: collections(),
+      presentations: presentations(),
+      refreshing: false,
+      onRefresh: vi.fn(),
+      header: React.createElement('LibraryHero'),
+      renderItem: () => React.createElement('LibraryRow'),
+      bottomInset: 0,
+      previewCount: 1,
+      onShowSection,
+    });
+    const props = propsOf(rendered);
+    const header = (section: unknown) => propsOf(propsOf(
+      (props.renderSectionHeader as (info: { section: unknown }) => React.ReactElement)({ section }),
+    ).children as React.ReactNode);
+    const sections = props.sections as { id: string }[];
+
+    expect(header(sections.find((section) => section.id === 'playlists')).onShowAll)
+      .toBeUndefined();
+    (header(sections.find((section) => section.id === 'liked')).onShowAll as () => void)();
+    expect(onShowSection).toHaveBeenCalledExactlyOnceWith('liked');
+  });
+
   it('renders one bounded SectionList owner with the shared refresh and section presenters', () => {
     const onRefresh = vi.fn();
     const renderItem = vi.fn((item: LibraryListItem) =>
@@ -200,6 +256,7 @@ describe('Library virtualized presentation', () => {
       onRefresh,
       header: React.createElement('LibraryHero'),
       renderItem,
+      bottomInset: 96,
     });
     const props = propsOf(rendered);
 
@@ -214,6 +271,7 @@ describe('Library virtualized presentation', () => {
     });
     expect((props.sections as { id: string }[]).map((section) => section.id))
       .toEqual(LIBRARY_SECTION_ORDER);
+    expect(flatStyle(props.contentContainerStyle).paddingBottom).toBe(96);
 
     const refresh = propsOf(props.refreshControl as React.ReactNode);
     expect(refresh).toMatchObject({

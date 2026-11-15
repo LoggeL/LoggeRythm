@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
 import type { ArtistTrackListItem } from '../../screens/artistTrackListModel';
+import { flatStyle } from '../../test/render';
 import { ArtistVirtualizedList } from './ArtistVirtualizedList';
 
 vi.mock('react-native', () => ({
@@ -10,6 +11,7 @@ vi.mock('react-native', () => ({
   StyleSheet: { create: <T,>(styles: T): T => styles },
   View: 'View',
 }));
+vi.mock('../../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
 
 function track(id: string): Track {
   return {
@@ -64,6 +66,8 @@ describe('ArtistVirtualizedList', () => {
       maxToRenderPerBatch: 10,
       windowSize: 9,
     });
+    // The last row clears the floating mini player instead of a hardcoded 144dp.
+    expect(flatStyle(rendered.props.contentContainerStyle).paddingBottom).toBe(96);
     expect(rendered.props.ListHeaderComponent).toBe(header);
     expect(rendered.props.ListFooterComponent).toBe(footer);
 

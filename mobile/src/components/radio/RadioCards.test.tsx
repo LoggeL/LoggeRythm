@@ -1,6 +1,8 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { activateLocale, strings } from '../../localization';
+import { accountStrings } from '../../screens/accountStrings';
+import { elements, queryByTestId as byTestId } from '../../test/render';
 import { RadioQueryStation, RadioSection, RadioStationCard } from './RadioCards';
 
 vi.mock('react-native', () => ({
@@ -11,19 +13,12 @@ vi.mock('react-native', () => ({
   Text: 'Text',
   View: 'View',
 }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> | null {
-  return elements(node).find((element) => element.props.testID === testID) ?? null;
-}
+// Skeleton and PressableScale own Animated state; a string mock keeps their props.
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  PressableScale: 'PressableScale',
+  Skeleton: 'Skeleton',
+}));
 
 function section(
   state: Parameters<typeof RadioSection>[0]['state'],
@@ -114,6 +109,52 @@ describe('Radio query-state presentation', () => {
     expect(loading?.props.accessibilityLabel).toBe(strings.radio.genresLoading);
     expect(loading?.props.accessibilityLiveRegion).toBe('polite');
     expect(byTestId(tree, 'genre-rail')).toBeNull();
+    expect(elements(loading).some((element) => element.type === 'Skeleton')).toBe(true);
+    expect(elements(loading).some((element) => element.type === 'ActivityIndicator')).toBe(false);
+  });
+
+  it('marks the station that feeds the current queue as on air without changing its action', () => {
+    const onPress = vi.fn();
+    const tree = RadioStationCard({
+      testID: 'radio-genre-7',
+      title: 'Rock radio',
+      subtitle: 'Rock',
+      cover: '',
+      variant: 'genre',
+      busy: false,
+      blocked: false,
+      onAir: true,
+      onPress,
+    });
+    const card = byTestId(tree, 'radio-genre-7');
+
+    expect(card?.props.accessibilityLabel).toBe(strings.radio.startStation('Rock radio'));
+    expect(card?.props.accessibilityState).toEqual({ disabled: false, busy: false, selected: true });
+    expect(elements(tree).some((element) => element.props.children === accountStrings.radio.onAir))
+      .toBe(true);
+    expect(elements(tree).some((element) => element.props.children === strings.radio.badge))
+      .toBe(false);
+    (card?.props.onPress as () => void)();
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it('reports a starting station as busy and ignores further presses', () => {
+    const onPress = vi.fn();
+    const tree = RadioStationCard({
+      testID: 'radio-personal-1',
+      title: 'Seed track',
+      subtitle: 'Seed artist',
+      cover: '',
+      variant: 'personal',
+      busy: true,
+      blocked: false,
+      onPress,
+    });
+    const card = byTestId(tree, 'radio-personal-1');
+
+    expect(card?.props.accessibilityState).toEqual({ disabled: true, busy: true, selected: false });
+    expect(card?.props.onPress).toBeUndefined();
+    expect(elements(tree).some((element) => element.type === 'ActivityIndicator')).toBe(true);
   });
 
   it('keeps a known-empty section visible under a retryable refresh failure', () => {

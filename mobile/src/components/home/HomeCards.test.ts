@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type React from 'react';
-import type { HomeShelf, Track } from '../../api/types';
-import type { RecentPlay } from '../../domain/listeningStats';
+import type { AlbumSummary, Genre, HomeShelf, Track } from '../../api/types';
 import { strings } from '../../localization';
-import { HomeRecentCard, HomeShelfCard, HomeTrackCard } from './HomeCards';
+import { layout } from '../../theme';
+import { byTestId, byType, flatStyle, queryByTestId, textContent } from '../../test/render';
+import { HomeAlbumCard, HomeGenreCard, HomeShelfCard, HomeTrackCard } from './HomeCards';
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
@@ -13,34 +13,12 @@ vi.mock('react-native', () => ({
   Text: 'Text',
   View: 'View',
 }));
-vi.mock('../player/TrackPresentationProvider', () => ({
-  useTrackPresentation: () => ({
-    active: false,
-    playback: 'inactive',
-    serverCache: 'not-cached',
-    rollingDeviceCache: null,
-    explicitDownload: { kind: 'unknown' },
-  }),
-}));
-vi.mock('../TrackStateIndicator', () => ({ default: 'TrackStateIndicator' }));
-vi.mock('../track/TrackIdentityLinks', () => ({ default: 'TrackIdentityLinks' }));
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../track/TrackShelfCard', () => ({ default: 'TrackShelfCard' }));
-
-type ElementProps = Record<string, unknown> & {
-  children?: React.ReactNode;
-};
-
-function propsOf(node: React.ReactNode): ElementProps {
-  if (node === null || typeof node !== 'object' || !('props' in node)) {
-    throw new Error('Expected a React element');
-  }
-  return (node as React.ReactElement<ElementProps>).props;
-}
-
-function childrenOf(node: React.ReactNode): React.ReactNode[] {
-  const children = propsOf(node).children;
-  return Array.isArray(children) ? children : [children];
-}
+vi.mock('../ui', async (original) => ({
+  ...(await original<typeof import('../ui')>()),
+  PressableScale: 'PressableScale',
+}));
 
 const track: Track = {
   id: 'track-1',
@@ -58,18 +36,6 @@ const track: Track = {
   preview_url: 'https://example.test/preview.mp3',
   rank: 1,
   release_date: '2026-07-16',
-};
-
-const recent: RecentPlay = {
-  id: track.id,
-  title: track.title,
-  artist: track.artist,
-  artist_id: String(track.artist_id),
-  artists: track.artists,
-  album: track.album,
-  album_id: String(track.album_id),
-  cover: track.cover,
-  duration_sec: track.duration_sec,
 };
 
 const shelf: HomeShelf = {
@@ -119,136 +85,91 @@ describe('HomeTrackCard', () => {
   });
 });
 
-describe('HomeRecentCard', () => {
-  const occurrence = {
-    queueContext: { type: 'recent' as const, id: '7' },
-    originalContextOrder: 0,
-  };
-
-  it('keeps play and all route-safe identity credits as distinct controls', () => {
-    const onPlay = vi.fn();
-    const onOpenAlbum = vi.fn();
-    const onOpenArtist = vi.fn();
-    const card = HomeRecentCard({
-      play: recent,
-      testID: 'home-track-recent-track-1-0',
-      occurrence,
-      busy: false,
-      disabled: false,
-      onPlay,
-      onOpenAlbum,
-      onOpenArtist,
-    });
-    const [playControl, identityRow] = childrenOf(card);
-    const [identity, state] = childrenOf(identityRow);
-    const playProps = propsOf(playControl);
-    const identityProps = propsOf(identity);
-
-    expect(playProps.testID).toBe('home-track-recent-track-1-0');
-    expect(playProps.accessibilityRole).toBe('button');
-    expect(playProps.accessibilityLabel).toBe(strings.home.playTrack(recent.title, recent.artist));
-    expect(playProps.accessibilityState).toEqual({
-      disabled: false,
-      busy: false,
-      selected: false,
-    });
-    expect((identity as React.ReactElement).type).toBe('TrackIdentityLinks');
-    expect(identityProps.testID).toBe('home-track-recent-track-1-0-identity');
-    expect(identityProps.showAlbumLabel).toBe(false);
-    expect(identityProps.showDuration).toBe(false);
-    expect(identityProps.showPopularity).toBe(false);
-    expect(identityProps.metadata).toMatchObject({
-      albumRoute: { albumId: '9', title: 'Parity' },
-      artists: [
-        { name: 'LoggeRythm', route: { artistId: '7', name: 'LoggeRythm' } },
-        { name: 'Guest Artist', route: { artistId: '8', name: 'Guest Artist' } },
-      ],
-    });
-    expect((state as React.ReactElement).type).toBe('TrackStateIndicator');
-
-    (playProps.onPress as () => void)();
-    expect(onPlay).toHaveBeenCalledOnce();
-    expect(onOpenAlbum).not.toHaveBeenCalled();
-    expect(onOpenArtist).not.toHaveBeenCalled();
-    (identityProps.onOpenAlbum as (params: unknown) => void)({ albumId: '9' });
-    (identityProps.onOpenArtist as (params: unknown) => void)({ artistId: '8' });
-    expect(onOpenAlbum).toHaveBeenCalledOnce();
-    expect(onOpenArtist).toHaveBeenCalledOnce();
-    expect(onPlay).toHaveBeenCalledOnce();
-  });
-
-  it('keeps hydration busy state on the dedicated playback target', () => {
-    const card = HomeRecentCard({
-      play: recent,
-      testID: 'home-track-recent-track-1-0',
-      occurrence,
-      busy: true,
-      disabled: true,
-      onPlay: vi.fn(),
-      onOpenAlbum: vi.fn(),
-      onOpenArtist: vi.fn(),
-    });
-    const [playControl] = childrenOf(card);
-    const playProps = propsOf(playControl);
-
-    expect(playProps.disabled).toBe(true);
-    expect(playProps.accessibilityState).toEqual({
-      disabled: true,
-      busy: true,
-      selected: false,
-    });
-  });
-});
-
 describe('HomeShelfCard', () => {
   it('announces direct playback and detail navigation as different actions', () => {
     const onPlay = vi.fn();
-    const playCard = HomeShelfCard({ shelf, testID: 'home-shelf-play', onPress: onPlay });
-    expect(propsOf(playCard).accessibilityRole).toBe('button');
-    expect(propsOf(playCard).accessibilityLabel).toBe(
+    const playCard = byTestId(
+      HomeShelfCard({ shelf, testID: 'home-shelf-play', onPress: onPlay }),
+      'home-shelf-play',
+    );
+    expect(playCard.props.accessibilityRole).toBe('button');
+    expect(playCard.props.accessibilityLabel).toBe(
       strings.home.playShelf(shelf.title, shelf.tracks.length),
     );
-    (propsOf(playCard).onPress as () => void)();
+    (playCard.props.onPress as () => void)();
     expect(onPlay).toHaveBeenCalledOnce();
 
     const onOpen = vi.fn();
+    const openCard = byTestId(
+      HomeShelfCard({ shelf, testID: 'home-shelf-open', action: 'open', onPress: onOpen }),
+      'home-shelf-open',
+    );
+    expect(openCard.props.accessibilityRole).toBe('link');
+    expect(openCard.props.accessibilityLabel).toBe(
+      strings.home.openShelf(shelf.title, shelf.tracks.length),
+    );
+    (openCard.props.onPress as () => void)();
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('shows the play disc only on directly playable shelves', () => {
+    const playCard = HomeShelfCard({ shelf, testID: 'home-shelf-play', onPress: vi.fn() });
     const openCard = HomeShelfCard({
       shelf,
       testID: 'home-shelf-open',
       action: 'open',
-      onPress: onOpen,
-    });
-    expect(propsOf(openCard).accessibilityRole).toBe('link');
-    expect(propsOf(openCard).accessibilityLabel).toBe(
-      strings.home.openShelf(shelf.title, shelf.tracks.length),
-    );
-    (propsOf(openCard).onPress as () => void)();
-    expect(onOpen).toHaveBeenCalledOnce();
-  });
-
-  it('renders and announces the radar unseen badge without changing open semantics', () => {
-    const card = HomeShelfCard({
-      shelf,
-      testID: 'home-shelf-radar',
-      action: 'open',
-      highlighted: true,
-      statusBadge: '3 neu',
       onPress: vi.fn(),
     });
-    const cardProps = propsOf(card);
-    const style = (cardProps.style as (state: { pressed: boolean }) => unknown[])({
-      pressed: false,
-    });
-    const meta = childrenOf(card)[1];
-    const badge = childrenOf(meta)[0];
 
-    expect(cardProps.accessibilityRole).toBe('link');
-    expect(cardProps.accessibilityLabel).toBe(
-      `${strings.home.openShelf(shelf.title, shelf.tracks.length)}. 3 neu`,
-    );
-    expect(style).toHaveLength(3);
-    expect(style[1]).toBeDefined();
-    expect(propsOf(badge).testID).toBe('home-shelf-radar-status');
-    expect(propsOf(badge).children).toBe('3 neu');
+    expect(byTestId(playCard, 'home-shelf-play-play').props.accessible).toBe(false);
+    expect(queryByTestId(openCard, 'home-shelf-open-play')).toBeNull();
+  });
+
+  it('truncates long copy and falls back to the first track cover and the track count', () => {
+    const bare = HomeShelfCard({
+      shelf: { ...shelf, cover: '', subtitle: '' },
+      testID: 'home-shelf-bare',
+      onPress: vi.fn(),
+    });
+    const [title, subtitle] = byType(bare, 'Text');
+
+    expect(byType(bare, 'Image')[0].props.source).toEqual({ uri: track.cover });
+    expect(textContent(bare)).toEqual([shelf.title, strings.common.trackCount(1)]);
+    expect(title.props.numberOfLines).toBe(2);
+    expect(subtitle.props.numberOfLines).toBe(1);
+    expect(flatStyle(byTestId(bare, 'home-shelf-bare').props.style).width).toBe(layout.artwork.card);
+  });
+});
+
+describe('HomeAlbumCard', () => {
+  it('opens the album as one labelled button and renders the placeholder without a cover', () => {
+    const album = { id: '12', title: 'Parity', artist: 'LoggeRythm', cover: '' } as AlbumSummary;
+    const onPress = vi.fn();
+    const tree = HomeAlbumCard({ album, testID: 'home-album-12', onPress });
+    const card = byTestId(tree, 'home-album-12');
+
+    expect(card.props.accessibilityRole).toBe('button');
+    expect(card.props.accessibilityLabel).toBe(strings.home.openAlbum('Parity', 'LoggeRythm'));
+    expect(byType(tree, 'Image')).toHaveLength(0);
+    expect(textContent(tree)).toEqual(['Parity', strings.home.albumBy('LoggeRythm')]);
+    (card.props.onPress as () => void)();
+    expect(onPress).toHaveBeenCalledOnce();
+  });
+});
+
+describe('HomeGenreCard', () => {
+  it('opens the genre as one labelled button with a one-line name', () => {
+    const genre = { id: '152', name: 'Rock', picture: 'https://example.test/rock.jpg' } as Genre;
+    const onPress = vi.fn();
+    const tree = HomeGenreCard({ genre, testID: 'home-genre-152', onPress });
+    const card = byTestId(tree, 'home-genre-152');
+
+    expect(card.props.accessibilityRole).toBe('button');
+    expect(card.props.accessibilityLabel).toBe(strings.home.openGenre('Rock'));
+    expect(flatStyle(card.props.style).height).toBeGreaterThanOrEqual(48);
+    expect(byType(tree, 'Image')[0].props.source).toEqual({ uri: genre.picture });
+    expect(byType(tree, 'Text')[0].props.numberOfLines).toBe(1);
+    (card.props.onPress as () => void)();
+    expect(onPress).toHaveBeenCalledOnce();
   });
 });

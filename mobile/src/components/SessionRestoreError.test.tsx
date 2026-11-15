@@ -1,5 +1,5 @@
-import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { byTestId } from '../test/render';
 import SessionRestoreError from './SessionRestoreError';
 
 const mocks = vi.hoisted(() => ({ useState: vi.fn() }));
@@ -9,6 +9,7 @@ vi.mock('react', async (importOriginal) => {
   return { ...actual, default: actual, useState: mocks.useState };
 });
 vi.mock('react-native', () => ({
+  ActivityIndicator: 'ActivityIndicator',
   Pressable: 'Pressable',
   StyleSheet: { create: <T,>(styles: T): T => styles },
   Text: 'Text',
@@ -27,46 +28,24 @@ vi.mock('../localization', () => ({
     common: { retry: 'Retry', working: 'Working' },
   },
 }));
-vi.mock('../theme', () => ({
-  colors: {
-    accent: '#f00',
-    background: '#000',
-    danger: '#f00',
-    onAccent: '#fff',
-    textPrimary: '#fff',
-    textSecondary: '#aaa',
-  },
-  metrics: { minimumTouchTarget: 48 },
-}));
 vi.mock('./BrandLockup', () => ({ default: 'BrandLockup' }));
-
-type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
-
-function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
-  if (Array.isArray(node)) return node.flatMap(elements);
-  if (node === null || typeof node !== 'object' || !('props' in node)) return [];
-  const element = node as React.ReactElement<ElementProps>;
-  return [element, ...elements(element.props.children)];
-}
-
-function byTestId(node: React.ReactNode, testID: string): React.ReactElement<ElementProps> {
-  const found = elements(node).find((element) => element.props.testID === testID);
-  if (found === undefined) throw new Error(`No element has testID ${testID}`);
-  return found;
-}
 
 function renderReady({
   onRetry = vi.fn(async () => undefined),
   onForget = vi.fn(async () => undefined),
+  busy = false,
+  actionError = null,
 }: {
   onRetry?: () => Promise<void>;
   onForget?: () => Promise<void>;
+  busy?: boolean;
+  actionError?: { kind: 'generic'; message: string } | null;
 } = {}) {
   const setBusy = vi.fn();
   const setActionError = vi.fn();
   mocks.useState
-    .mockReturnValueOnce([false, setBusy])
-    .mockReturnValueOnce([null, setActionError]);
+    .mockReturnValueOnce([busy, setBusy])
+    .mockReturnValueOnce([actionError, setActionError]);
   return {
     tree: SessionRestoreError({
       error: { kind: 'generic', message: 'Could not safely restore the session' },
@@ -135,5 +114,26 @@ describe('SessionRestoreError', () => {
       });
     });
     expect(JSON.stringify(rendered.setActionError.mock.calls)).not.toContain(privateDetail);
+  });
+
+  it('locks both actions and reports the retry as busy while one is running', () => {
+    const rendered = renderReady({ busy: true });
+    const retry = byTestId(rendered.tree, 'session-retry');
+
+    expect(retry.props.accessibilityLabel).toBe('Retry');
+    expect(retry.props.accessibilityState).toEqual({ disabled: true, busy: true });
+    expect(byTestId(rendered.tree, 'session-forget').props.disabled).toBe(true);
+  });
+
+  it('announces the latest action failure instead of the stale restore error', () => {
+    const rendered = renderReady({
+      actionError: { kind: 'generic', message: 'Could not retry session restore' },
+    });
+    const message = byTestId(rendered.tree, 'session-restore-message');
+
+    expect(message.props.accessibilityRole).toBe('alert');
+    expect(message.props.accessibilityLiveRegion).toBe('assertive');
+    expect(message.props.children).toBe('Could not retry session restore');
+    expect(byTestId(rendered.tree, 'session-restore-error').props.accessibilityViewIsModal).toBe(true);
   });
 });
