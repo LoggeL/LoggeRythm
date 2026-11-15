@@ -25,6 +25,8 @@ const styleUrl = moduleUrl(
     tracks: "tracks",
     trackHeading: "track-heading",
     trackCount: "track-count",
+    wash: "wash",
+    coverEdit: "cover-edit",
   })};`,
 );
 
@@ -44,10 +46,49 @@ async function compileRoute(path, imports) {
   return moduleUrl(compiled);
 }
 
-const collectionImports = {
+const nextLinkUrl = moduleUrl(
+  `import {createElement} from ${JSON.stringify(reactUrl)}; export default function Link({href, children, ...props}) { return createElement("a", {...props, href}, children); }`,
+);
+const skeletonUrl = moduleUrl(
+  `import {createElement} from ${JSON.stringify(reactUrl)}; export const DetailHeaderSkeleton = () => createElement("span", {"data-testid": "header-loading"}); export const RowListSkeleton = () => createElement("span", {"data-testid": "tracks-loading"});`,
+);
+const playerStoreUrl = moduleUrl(
+  `export const usePlayerStore = selector => selector({playQueue() {}});`,
+);
+const iconsUrl = moduleUrl(
+  `export const PlayIcon = () => null; export const PauseIcon = PlayIcon; export const ShuffleIcon = PlayIcon; export const MoreIcon = PlayIcon; export const QueueIcon = PlayIcon; export const RefreshIcon = PlayIcon;`,
+);
+// Shared primitives render for real so the pages' error and empty states are
+// asserted on their actual markup.
+const queryErrorUrl = await compileRoute("../src/components/ui/QueryError.tsx", {
   "react/jsx-runtime": jsxUrl,
+});
+const emptyStateUrl = await compileRoute("../src/components/ui/EmptyState.tsx", {
+  "react/jsx-runtime": jsxUrl,
+});
+const collectionImports = {
+  react: reactUrl,
+  "react/jsx-runtime": jsxUrl,
+  "next/link": nextLinkUrl,
   "./collection.module.css": styleUrl,
+  "@/hooks/useCoverColors": moduleUrl(`export const useCoverColors = () => null;`),
+  "@/components/TrackList": moduleUrl(
+    `export function TrackListHeader() { return null; }`,
+  ),
+  "@/components/Skeleton": skeletonUrl,
+  "@/components/ui/QueryError": queryErrorUrl,
+  "@/components/ui/EmptyState": emptyStateUrl,
+  "@/components/ContextMenu": moduleUrl(
+    `export default function ContextMenu() { return null; }`,
+  ),
+  "@/components/icons": iconsUrl,
+  "@/store/player": playerStoreUrl,
+  "@/store/toast": moduleUrl(`export const toast = {info() {}};`),
 };
+collectionImports["./collectionPlayback"] = await compileRoute(
+  "../src/app/playlist/_components/collectionPlayback.ts",
+  {},
+);
 const heroUrl = await compileRoute(
   "../src/app/playlist/_components/CollectionHero.tsx",
   collectionImports,
@@ -56,14 +97,24 @@ const tracksUrl = await compileRoute(
   "../src/app/playlist/_components/CollectionTracks.tsx",
   collectionImports,
 );
+const pageStateUrl = await compileRoute(
+  "../src/app/playlist/_components/CollectionPageState.tsx",
+  collectionImports,
+);
+const actionsUrl = await compileRoute(
+  "../src/app/playlist/_components/CollectionActions.tsx",
+  collectionImports,
+);
+const metaUrl = await compileRoute(
+  "../src/app/playlist/_components/collectionMeta.ts",
+  {},
+);
 const imports = {
   react: moduleUrl(
     `export const use = value => value; export const useEffect = () => {};`,
   ),
   "react/jsx-runtime": jsxUrl,
-  "next/link": moduleUrl(
-    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function Link({href, children, ...props}) { return createElement("a", {...props, href}, children); }`,
-  ),
+  "next/link": nextLinkUrl,
   "@tanstack/react-query": moduleUrl(
     `export const useQuery = () => globalThis.__musicDetailsFixture.mixes;`,
   ),
@@ -73,24 +124,23 @@ const imports = {
   "@/hooks/useReleaseRadar": moduleUrl(
     `export const RADAR_TITLE = "Dein Release Radar"; export const useReleaseRadar = () => globalThis.__musicDetailsFixture.radar; export const useRefreshReleaseRadar = () => ({mutate() {}, isPending: false, isSuccess: false, error: null}); export const useReleaseRadarSeen = () => ({markVisibleTracksSeen() {}});`,
   ),
-  "@/store/player": moduleUrl(
-    `export const usePlayerStore = selector => selector({playQueue() {}});`,
-  ),
+  "@/store/player": playerStoreUrl,
   "@/lib/api": moduleUrl(`export const api = {};`),
   "@/components/TrackRow": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function TrackRow({track}) { return createElement("div", {"data-testid": "track"}, track.title); }`,
   ),
-  "@/components/CoverPlaceholder": moduleUrl(
-    `export default function CoverPlaceholder() { return null; }`,
+  "@/components/ui/Cover": moduleUrl(
+    `export default function Cover() { return null; }`,
   ),
-  "@/components/Skeleton": moduleUrl(
-    `import {createElement} from ${JSON.stringify(reactUrl)}; export const DetailHeaderSkeleton = () => createElement("span", {"data-testid": "header-loading"}); export const RowListSkeleton = () => createElement("span", {"data-testid": "tracks-loading"});`,
-  ),
-  "@/components/icons": moduleUrl(
-    `export const PlayIcon = () => null; export const RefreshIcon = () => null;`,
-  ),
+  "@/components/ui/QueryError": queryErrorUrl,
+  "@/components/ui/EmptyState": emptyStateUrl,
+  "@/components/Skeleton": skeletonUrl,
+  "@/components/icons": iconsUrl,
   "@/app/playlist/_components/CollectionHero": heroUrl,
   "@/app/playlist/_components/CollectionTracks": tracksUrl,
+  "@/app/playlist/_components/CollectionPageState": pageStateUrl,
+  "@/app/playlist/_components/CollectionActions": actionsUrl,
+  "@/app/playlist/_components/collectionMeta": metaUrl,
 };
 
 const { default: MixPage } = await import(

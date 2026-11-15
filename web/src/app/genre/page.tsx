@@ -5,32 +5,24 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { playlistPath } from "@/lib/slugs";
 import AlbumCard from "@/components/AlbumCard";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
 import ShelfCard from "@/components/ShelfCard";
-import { CardGridSkeleton } from "@/components/Skeleton";
+import Shelf, { ShelfSkeleton } from "@/components/browse/Shelf";
+import BrowseTile from "@/components/browse/BrowseTile";
+import QueryState from "@/components/browse/QueryState";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
+import SectionHeader from "@/components/ui/SectionHeader";
 import { CompassIcon } from "@/components/icons";
 import type { AlbumSummary, Genre, HomeShelf, PlaylistSummary } from "@/types";
 
-function SectionError({ title, error, hasData, isFetching, onRetry }: {
-  title: string;
-  error: Error | null;
-  hasData: boolean;
-  isFetching: boolean;
-  onRetry: () => void;
-}) {
-  if (!error) return null;
+const GENRE_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 2xl:grid-cols-6";
+
+function GenreGridSkeleton() {
   return (
-    <div role="alert" className="error-panel mb-4 flex flex-wrap items-center justify-between gap-3">
-      <div className="min-w-0">
-        <p className="font-medium">{title} konnten nicht geladen werden.</p>
-        <p className="mt-1 text-sm break-words">
-          {error.message}
-          {hasData && " Der zuletzt geladene Stand bleibt sichtbar."}
-        </p>
-      </div>
-      <button type="button" disabled={isFetching} onClick={onRetry} className="action-secondary shrink-0">
-        {isFetching ? "Wird geladen…" : "Erneut versuchen"}
-      </button>
+    <div aria-hidden="true" className={GENRE_GRID}>
+      {Array.from({ length: 12 }, (_, index) => (
+        <div key={index} className="skeleton h-24 rounded-[var(--radius-card)] sm:h-32" />
+      ))}
     </div>
   );
 }
@@ -42,122 +34,115 @@ export default function DiscoverPage() {
   const community = useQuery<PlaylistSummary[]>({ queryKey: ["public-playlists"], queryFn: () => api.publicPlaylists() });
 
   return (
-    <div className="flex flex-col gap-9 animate-in">
-      <header className="page-header">
-        <div>
-          <p className="page-eyebrow">Dein nächster Lieblingssong</p>
-          <h1 className="page-title">Entdecken</h1>
-          <p className="page-description">Neue Alben, aktuelle Charts und Musik abseits deiner täglichen Rotation.</p>
-        </div>
-        <span aria-hidden="true" className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-accent-soft sm:flex">
-          <CompassIcon width={24} height={24} />
-        </span>
+    <div className="flex flex-col gap-9 md:gap-11">
+      <header>
+        <p className="page-eyebrow">Dein nächster Lieblingssong</p>
+        <h1 className="page-title">Entdecken</h1>
+        <p className="page-description">Neue Alben, aktuelle Charts und Musik abseits deiner täglichen Rotation.</p>
+        <nav aria-label="Bereiche auf dieser Seite" className="no-scrollbar -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:px-0">
+          <a href="#genres" className="filter-chip shrink-0 max-sm:min-h-11">Genres</a>
+          <a href="#charts" className="filter-chip shrink-0 max-sm:min-h-11">Charts</a>
+          <a href="#new-releases" className="filter-chip shrink-0 max-sm:min-h-11">Neue Alben</a>
+          <a href="#community" className="filter-chip shrink-0 max-sm:min-h-11">Community</a>
+        </nav>
       </header>
 
-      <nav aria-label="Bereiche auf dieser Seite" className="flex flex-wrap gap-2">
-        <a href="#charts" className="filter-chip">Charts</a>
-        <a href="#new-releases" className="filter-chip">Neue Alben</a>
-        <a href="#genres" className="filter-chip">Genres</a>
-        <a href="#community" className="filter-chip">Community</a>
-      </nav>
-
-      <section id="charts" aria-labelledby="charts-title" aria-busy={collections.isLoading} className="scroll-mt-8">
-        <div className="section-heading">
-          <div>
-            <h2 id="charts-title">Charts</h2>
-            <p className="mt-1 text-sm text-muted">Was gerade gehört wird. Ein Klick startet die Wiedergabe.</p>
-          </div>
-        </div>
-        <SectionError title="Charts" error={collections.error} hasData={collections.data !== undefined} isFetching={collections.isFetching} onRetry={() => { void collections.refetch(); }} />
-        {collections.isLoading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6">
-            {Array.from({ length: 5 }).map((_, index) => <div key={index} className="skeleton aspect-[4/3] rounded-xl" />)}
-          </div>
-        ) : collections.data?.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-6">
-            {collections.data.map((shelf, index) => <ShelfCard key={shelf.key} shelf={shelf} index={index} variant="collection" />)}
-          </div>
-        ) : !collections.error ? (
-          <div className="empty-panel">Zurzeit sind keine Charts verfügbar.</div>
-        ) : null}
+      <section id="genres" aria-labelledby="genres-title" aria-busy={genres.isLoading} className="scroll-mt-20">
+        <SectionHeader id="genres-title" title="Nach Genre stöbern" description="Finde deinen Sound oder probiere etwas Neues." />
+        <QueryState
+          query={genres}
+          label="Genres"
+          skeleton={<GenreGridSkeleton />}
+          empty={
+            <EmptyState icon={<CompassIcon width={24} height={24} />} title="Zurzeit sind keine Genres verfügbar." action={<Link href="/search" className="action-secondary">Musik suchen</Link>}>
+              Über die Suche findest du trotzdem jeden Titel.
+            </EmptyState>
+          }
+        >
+          {(items) => (
+            <ul className={GENRE_GRID}>
+              {items.map((genre, index) => (
+                <li key={String(genre.id)}>
+                  <BrowseTile href={`/genre/${genre.id}`} title={genre.name} image={genre.picture} icon={<CompassIcon width={64} height={64} />} tone={index} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </QueryState>
       </section>
 
-      <section id="new-releases" aria-labelledby="releases-title" aria-busy={releases.isLoading} className="scroll-mt-8">
-        <div className="section-heading">
-          <div>
-            <h2 id="releases-title">Neue Veröffentlichungen</h2>
-            <p className="mt-1 text-sm text-muted">Frische Alben für deine Bibliothek.</p>
-          </div>
-        </div>
-        <SectionError title="Neue Veröffentlichungen" error={releases.error} hasData={releases.data !== undefined} isFetching={releases.isFetching} onRetry={() => { void releases.refetch(); }} />
-        {releases.isLoading ? (
-          <CardGridSkeleton count={10} />
-        ) : releases.data?.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {releases.data.map((album) => <AlbumCard key={String(album.id)} album={album} />)}
-          </div>
-        ) : !releases.error ? (
-          <div className="empty-panel">Zurzeit sind keine neuen Veröffentlichungen verfügbar.</div>
-        ) : null}
+      <section id="charts" aria-labelledby="charts-title" aria-busy={collections.isLoading} className="scroll-mt-20">
+        <SectionHeader id="charts-title" title="Charts" description="Was gerade gehört wird. Ein Klick startet die Wiedergabe." />
+        <QueryState
+          query={collections}
+          label="Charts"
+          skeleton={<ShelfSkeleton />}
+          empty={
+            <EmptyState title="Zurzeit sind keine Charts verfügbar." action={<Link href="/radio" className="action-secondary">Radio starten</Link>}>
+              Ein Radio spielt dir in der Zwischenzeit passende Musik.
+            </EmptyState>
+          }
+        >
+          {(shelves) => (
+            <Shelf label="Charts">
+              {shelves.map((shelf, index) => (
+                <ShelfCard key={shelf.key} shelf={shelf} index={index} variant="collection" />
+              ))}
+            </Shelf>
+          )}
+        </QueryState>
       </section>
 
-      <section id="genres" aria-labelledby="genres-title" aria-busy={genres.isLoading} className="scroll-mt-8">
-        <div className="section-heading">
-          <div>
-            <h2 id="genres-title">Nach Genre stöbern</h2>
-            <p className="mt-1 text-sm text-muted">Finde deinen Sound oder probiere etwas Neues.</p>
-          </div>
-        </div>
-        <SectionError title="Genres" error={genres.error} hasData={genres.data !== undefined} isFetching={genres.isFetching} onRetry={() => { void genres.refetch(); }} />
-        {genres.isLoading ? (
-          <CardGridSkeleton count={12} />
-        ) : genres.data?.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {genres.data.map((genre) => (
-              <Link key={String(genre.id)} href={`/genre/${genre.id}`} className="music-card group flex min-w-0 items-center gap-3 p-3">
-                {genre.picture ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={genre.picture} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
-                ) : (
-                  <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted"><CompassIcon width={20} height={20} /></span>
-                )}
-                <span className="truncate text-sm font-semibold group-hover:text-accent-soft">{genre.name}</span>
-              </Link>
-            ))}
-          </div>
-        ) : !genres.error ? (
-          <div className="empty-panel">Zurzeit sind keine Genres verfügbar.</div>
-        ) : null}
+      <section id="new-releases" aria-labelledby="releases-title" aria-busy={releases.isLoading} className="scroll-mt-20">
+        <SectionHeader id="releases-title" title="Neue Veröffentlichungen" description="Frische Alben für deine Bibliothek." />
+        <QueryState
+          query={releases}
+          label="Neue Veröffentlichungen"
+          skeleton={<ShelfSkeleton />}
+          empty={
+            <EmptyState title="Zurzeit sind keine neuen Veröffentlichungen verfügbar." action={<Link href="/radar" className="action-secondary">Release Radar öffnen</Link>}>
+              Neue Titel deiner Künstler findest du im Release Radar.
+            </EmptyState>
+          }
+        >
+          {(albums) => (
+            <Shelf label="Neue Veröffentlichungen">
+              {albums.map((album) => (
+                <AlbumCard key={String(album.id)} album={album} />
+              ))}
+            </Shelf>
+          )}
+        </QueryState>
       </section>
 
-      <section id="community" aria-labelledby="community-title" aria-busy={community.isLoading} className="scroll-mt-8">
-        <div className="section-heading">
-          <div>
-            <h2 id="community-title">Playlists der Community</h2>
-            <p className="mt-1 text-sm text-muted">Musik, die andere für dich zusammengestellt haben.</p>
-          </div>
-        </div>
-        <SectionError title="Community-Playlists" error={community.error} hasData={community.data !== undefined} isFetching={community.isFetching} onRetry={() => { void community.refetch(); }} />
-        {community.isLoading ? (
-          <CardGridSkeleton count={5} />
-        ) : community.data?.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {community.data.map((playlist) => (
-              <Link key={String(playlist.id)} href={playlistPath(playlist)} className="music-card block min-w-0 p-3">
-                {playlist.cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={playlist.cover_url} alt="" className="mb-3 aspect-square w-full rounded-lg object-cover" />
-                ) : (
-                  <CoverPlaceholder className="mb-3 aspect-square w-full rounded-lg" />
-                )}
-                <div className="truncate text-sm font-semibold">{playlist.name}</div>
-                <div className="mt-1 truncate text-xs text-muted">{playlist.owner_name ? `von ${playlist.owner_name}` : "Playlist"} · {playlist.track_count} Titel</div>
-              </Link>
-            ))}
-          </div>
-        ) : !community.error ? (
-          <div className="empty-panel">Es wurden noch keine öffentlichen Playlists geteilt.</div>
-        ) : null}
+      <section id="community" aria-labelledby="community-title" aria-busy={community.isLoading} className="scroll-mt-20">
+        <SectionHeader id="community-title" title="Playlists der Community" description="Musik, die andere für dich zusammengestellt haben." />
+        <QueryState
+          query={community}
+          label="Community-Playlists"
+          skeleton={<ShelfSkeleton />}
+          empty={
+            <EmptyState title="Es wurden noch keine öffentlichen Playlists geteilt." action={<Link href="/library" className="action-secondary">Eigene Playlist teilen</Link>}>
+              Stelle eine deiner Playlists auf öffentlich, dann erscheint sie hier.
+            </EmptyState>
+          }
+        >
+          {(playlists) => (
+            <Shelf label="Playlists der Community">
+              {playlists.map((playlist) => (
+                <Link key={String(playlist.id)} href={playlistPath(playlist)} className="music-card group block min-w-0 p-1.5 sm:p-2">
+                  <div className="mb-3 aspect-square overflow-hidden rounded-art bg-panel shadow-[0_10px_26px_rgb(0_0_0/0.4),0_0_0_1px_rgb(244_240_230/0.05)] transition-transform duration-[250ms] ease-out group-hover:-translate-y-1 group-focus-visible:-translate-y-1 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-focus-visible:translate-y-0">
+                    <Cover src={playlist.cover_url} className="h-full w-full" />
+                  </div>
+                  <div className="truncate text-[0.9375rem] font-[650] leading-[1.35] tracking-[-0.01em]">{playlist.name}</div>
+                  <div className="mt-[0.2rem] truncate text-[0.8125rem] leading-[1.35] text-muted">
+                    {playlist.owner_name ? `von ${playlist.owner_name}` : "Playlist"} · {playlist.track_count} Titel
+                  </div>
+                </Link>
+              ))}
+            </Shelf>
+          )}
+        </QueryState>
       </section>
     </div>
   );

@@ -33,6 +33,7 @@ const { readLocalJsonSnapshot } = await import("../src/hooks/useLocalJson.ts");
 const { api } = await import("../src/lib/api.ts");
 const { startTrackRadio } = await import("../src/lib/radio.ts");
 const { useToastStore } = await import("../src/store/toast.ts");
+const { clearQueueForUndo, restoreClearedQueue } = await import("../src/components/queue/clearedQueue.ts");
 resolver.deregister();
 
 const track = (id) => ({
@@ -217,4 +218,50 @@ test("invalid party snapshots fail before changing the player", () => {
   assert.throws(() => state().setPartyQueue([track(2)], 0, []), /entry IDs/);
   assert.throws(() => state().setPartyQueue([track(2)], 2, [100]), /index/);
   assert.deepEqual(ids(), ["1"]);
+});
+
+test("undoing a cleared queue brings back the shuffle mode its order belongs to", () => {
+  state().toggleShuffle();
+  state().playQueue([track(1), track(2), track(3), track(4)], 0, "Mix");
+  const before = { ids: ids(), original: state().originalQueue.map((item) => item.id) };
+  assert.equal(state().shuffle, true);
+
+  const cleared = clearQueueForUndo();
+  assert.equal(state().shuffle, false);
+  assert.equal(ids().length, 1);
+
+  restoreClearedQueue(cleared);
+  assert.deepEqual(ids(), before.ids);
+  assert.deepEqual(state().originalQueue.map((item) => item.id), before.original);
+  assert.equal(state().queueContext, "Mix");
+  assert.equal(state().shuffle, true);
+  // Switching shuffle off again restores the canonical order instead of reshuffling.
+  state().toggleShuffle();
+  assert.deepEqual(ids().toSorted(), ["1", "2", "3", "4"]);
+  assert.deepEqual(ids(), state().originalQueue.map((item) => item.id));
+});
+
+test("undoing a cleared queue resumes a running radio station in a fresh session", () => {
+  state().playQueue([track(1), track(2), track(3)], 0, "Radio – Track 1");
+  state().setRadioActive(true);
+  const cleared = clearQueueForUndo();
+  assert.equal(state().radioActive, false);
+  const sessionAfterClear = state().radioSession;
+
+  restoreClearedQueue(cleared);
+  assert.deepEqual(ids(), ["1", "2", "3"]);
+  assert.equal(state().radioActive, true);
+  assert.ok(state().radioSession > sessionAfterClear);
+});
+
+test("clearing offers no undo without upcoming tracks, and a stale undo fails loudly", () => {
+  state().playQueue([track(1)]);
+  assert.equal(clearQueueForUndo(), null);
+
+  state().playQueue([track(1), track(2)], 0, "Mix");
+  const cleared = clearQueueForUndo();
+  assert.equal(cleared.radioActive, false);
+  state().addToQueue(track(9));
+  assert.throws(() => restoreClearedQueue(cleared), /kann nicht wiederhergestellt werden/);
+  assert.deepEqual(ids(), ["1", "9"]);
 });

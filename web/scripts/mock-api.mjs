@@ -341,7 +341,7 @@ async function handle(req, res) {
   if (is("GET", "/me/stats")) {
     const entry = (track, count) => ({ key: track.id, label: track.title, sublabel: track.artist, cover: track.cover, count });
     const artistEntry = (artist, count) => ({ key: artist.id, label: artist.name, sublabel: "", cover: cover("artist", artist.id), count });
-    return send(res, 200, { total_plays: 1284, total_plays_month: 173,
+    return send(res, 200, { total_plays: 1284, total_plays_month: 320,
       top_tracks: pick(3, 8, 9).map((track, i) => entry(track, 64 - i * 6)), top_artists: ARTISTS.slice(0, 8).map((artist, i) => artistEntry(artist, 210 - i * 22)),
       top_tracks_month: pick(9, 8, 4).map((track, i) => entry(track, 19 - i * 2)), top_artists_month: ARTISTS.slice(3, 11).map((artist, i) => artistEntry(artist, 41 - i * 4)),
       recent: plays.slice(0, 20).map(({ id, title, artist, artist_id, artists, album, album_id, cover: art, duration_sec }) => ({ id, title, artist, artist_id, artists, album, album_id, cover: art, duration_sec })) });

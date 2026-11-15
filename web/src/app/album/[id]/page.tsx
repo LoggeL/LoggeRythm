@@ -2,126 +2,115 @@
 
 import { use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
-import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
-import { PlayIcon } from "@/components/icons";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
+import { UserIcon } from "@/components/icons";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
+import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
+import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem } from "@/app/playlist/_components/CollectionActions";
+import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 import type { Album } from "@/types";
 
-function totalRuntime(seconds: number): string {
-  const m = Math.round(seconds / 60);
-  if (m < 60) return `${m} Min.`;
-  const h = Math.floor(m / 60);
-  return `${h} Std. ${m % 60} Min.`;
-}
-
-export default function AlbumPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function AlbumPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, isLoading, isError, error } = useQuery<Album>({
+  const album = useQuery<Album>({
     queryKey: ["album", id],
     queryFn: () => api.album(id),
     enabled: !!id,
   });
-  const playQueue = usePlayerStore((s) => s.playQueue);
-
-  if (isLoading)
-    return (
-      <div>
-        <DetailHeaderSkeleton />
-        <RowListSkeleton />
-      </div>
-    );
-  if (!data) {
-    return (
-      <p role="alert" className="error-panel">
-        {isError
-          ? `Album konnte nicht geladen werden: ${error.message}`
-          : "Album nicht gefunden."}
-      </p>
-    );
-  }
-
-  const tracks = data.tracks ?? [];
-  const year = data.release_date ? data.release_date.slice(0, 4) : "";
-  const runtime = tracks.reduce((s, t) => s + (t.duration_sec || 0), 0);
-  const meta = [
-    year,
-    `${tracks.length} Titel`,
-    runtime > 0 ? totalRuntime(runtime) : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
 
   return (
-    <div className="animate-in">
-      {isError && (
-        <div role="alert" className="error-panel mb-4">
-          Albumdaten konnten nicht aktualisiert werden. Der zuletzt geladene
-          Stand bleibt sichtbar. {error.message}
-        </div>
-      )}
+    <CollectionPageState query={album} label="Die Albumdaten" missing="Album nicht gefunden">
+      {(data) => <AlbumView album={data} />}
+    </CollectionPageState>
+  );
+}
+
+const releaseDateFormatter = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+
+/** "12. März 2021" for a full ISO date; anything else is shown as delivered. */
+function releaseDateLabel(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return value;
+  return releaseDateFormatter.format(date);
+}
+
+function AlbumView({ album }: { album: Album }) {
+  const router = useRouter();
+  const playQueue = usePlayerStore((state) => state.playQueue);
+  const tracks = album.tracks ?? [];
+  const year = album.release_date ? album.release_date.slice(0, 4) : "";
+  const queueAll = useQueueAllItem(tracks);
+  const menu = [queueAll];
+  if (album.artist_id) {
+    menu.push({ label: "Zum Künstler", icon: <UserIcon width={18} height={18} />, separated: true, onClick: () => router.push(`/artist/${album.artist_id}`) });
+  }
+
+  return (
+    <>
       <CollectionHero
         eyebrow="Album"
-        title={data.title}
-        artwork={
-          data.cover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.cover}
-              alt={data.title}
-              className="h-full w-full rounded-2xl object-cover"
-            />
-          ) : (
-            <CoverPlaceholder className="h-full w-full rounded-2xl" />
-          )
+        title={album.title}
+        coverUrl={album.cover}
+        artwork={<Cover src={album.cover} alt={`Cover von ${album.title}`} eager />}
+        metadata={
+          <>
+            {album.artist_id ? <Link href={`/artist/${album.artist_id}`}>{album.artist}</Link> : <strong>{album.artist}</strong>}
+            {" · "}
+            {[year, tracksSummary(tracks)].filter(Boolean).join(" · ")}
+          </>
         }
-        description={
-          data.artist_id ? (
-            <Link
-              href={`/artist/${data.artist_id}`}
-              className="font-semibold text-foreground hover:underline"
-            >
-              {data.artist}
-            </Link>
-          ) : (
-            <span className="font-semibold text-foreground">{data.artist}</span>
-          )
-        }
-        metadata={meta}
         actions={
-          <button
-            type="button"
-            onClick={() => playQueue(tracks, 0, data.title)}
-            disabled={tracks.length === 0}
-            className="action-primary"
-          >
-            <PlayIcon /> Alle abspielen
-          </button>
+          <>
+            <PlayCollectionButton tracks={tracks} context={album.title} />
+            <ShuffleCollectionButton tracks={tracks} context={album.title} />
+            <CollectionMenu label="Weitere Optionen für dieses Album" items={menu} />
+          </>
         }
       />
-      <CollectionTracks count={tracks.length}>
-        {tracks.length === 0 && (
-          <p className="empty-panel">Dieses Album enthält keine Titel.</p>
+      <CollectionTracks count={tracks.length} showAlbum={false}>
+        {tracks.length === 0 ? (
+          <EmptyState
+            title="Dieses Album enthält keine Titel"
+            action={
+              album.artist_id && (
+                <Link href={`/artist/${album.artist_id}`} className="action-secondary">
+                  Mehr von {album.artist}
+                </Link>
+              )
+            }
+          >
+            Für diese Veröffentlichung sind keine abspielbaren Titel hinterlegt.
+          </EmptyState>
+        ) : (
+          tracks.map((track, index) => (
+            <TrackRow key={track.id} track={track} index={index} showAlbum={false} showCover={false} onPlay={() => playQueue(tracks, index, album.title)} />
+          ))
         )}
-        {tracks.map((track, i) => (
-          <TrackRow
-            key={track.id}
-            track={track}
-            index={i}
-            showAlbum={false}
-            onPlay={() => playQueue(tracks, i, data.title)}
-          />
-        ))}
       </CollectionTracks>
-    </div>
+      {tracks.length > 0 && (album.release_date || album.artist_id) && (
+        <footer className="mt-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-hairline pt-4">
+          {album.release_date && (
+            <p className="label-mono tabular-nums">
+              Veröffentlicht <time dateTime={album.release_date} className="text-foreground">{releaseDateLabel(album.release_date)}</time>
+            </p>
+          )}
+          {album.artist_id && (
+            <Link href={`/artist/${album.artist_id}`} className="section-link ml-auto inline-flex min-h-11 items-center gap-1.5 whitespace-normal text-right">
+              Mehr von {album.artist}
+            </Link>
+          )}
+        </footer>
+      )}
+    </>
   );
 }

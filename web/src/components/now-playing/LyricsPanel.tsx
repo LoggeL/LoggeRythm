@@ -1,87 +1,57 @@
 "use client";
 
-import { useLayoutEffect, useRef } from "react";
 import { usePlayerStore } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
-import { MusicNoteIcon } from "@/components/icons";
 import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import type { Track } from "@/types";
 import LyricsStatus from "./LyricsStatus";
+import { useActiveLineScroll } from "./useActiveLineScroll";
 
 /**
- * Roomy desktop lyrics column: large centered lines, the active one
- * highlighted in the cover accent, neighbours progressively dimmed. Mobile
- * uses {@link CompactLyrics} instead.
+ * Karaoke-style lyrics: large lines, the active one in full white and centred,
+ * everything else dimmed. Tapping a timed line seeks to it.
  */
 export default function LyricsPanel({ track }: { track: Track }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const activeRef = useRef<HTMLButtonElement>(null);
-  const hasPositionedRef = useRef(false);
   const currentTime = usePlayerStore((s) => s.currentTime);
   const seek = usePlayerStore((s) => s.seek);
   const lyrics = useLyrics(track.artist, track.title, track.id, currentTime);
   const { lines, active, hasTimedLines } = lyrics;
-
-  useLayoutEffect(() => {
-    const el = activeRef.current;
-    const container = scrollRef.current;
-    if (!el || !container) return;
-
-    const positionActiveLine = () => {
-      if (container.clientHeight === 0) return false;
-      const top = el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
-      if (hasPositionedRef.current) {
-        container.scrollTo({ top, behavior: "smooth" });
-      } else {
-        // Opening fullscreen must start on the current lyric, before paint.
-        container.scrollTop = top;
-        hasPositionedRef.current = true;
-      }
-      return true;
-    };
-
-    if (positionActiveLine()) return;
-    const observer = new ResizeObserver(() => {
-      if (positionActiveLine()) observer.disconnect();
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [active, lines.length]);
+  const { scrollRef, activeRef } = useActiveLineScroll(active, lines.length);
+  const showLines = lines.length > 0 && !lyrics.isError;
 
   return (
-    <div className="hidden min-h-0 flex-col lg:flex">
-      <span className="mb-4 flex flex-shrink-0 items-center gap-2 text-foreground/90">
-        <MusicNoteIcon width={16} height={16} />
-        <span className="text-xs font-medium">
-          Songtext
-        </span>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-7 flex-shrink-0 items-center gap-2">
+        <h2 className="sr-only">Songtext</h2>
         <LyricsVariantToggle lyrics={lyrics} />
-      </span>
-      {lines.length > 0 && !lyrics.isError ? (
+        {showLines && !hasTimedLines && <span className="label-mono">Nicht synchronisiert</span>}
+      </div>
+      {showLines ? (
         <div
           ref={scrollRef}
           data-np-scroll
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar py-[35vh] pr-2 text-center"
+          className={`no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,transparent,black_14%,black_84%,transparent)] ${
+            hasTimedLines ? "py-[38vh]" : "py-10"
+          }`}
         >
           {lines.map((line, i) => {
             const isActive = i === active;
-            const dist = Math.abs(i - active);
             return (
               <button
                 key={i}
                 type="button"
                 ref={isActive ? activeRef : undefined}
-                onClick={() => hasTimedLines && seek(line.t)}
+                onClick={() => seek(line.t)}
                 disabled={!hasTimedLines}
-                style={
-                  isActive
-                    ? undefined
-                    : hasTimedLines ? { opacity: dist === 1 ? 0.85 : dist === 2 ? 0.7 : 0.55 } : undefined
-                }
-                className={`block w-full py-3 text-2xl font-semibold leading-snug transition-colors duration-200 xl:text-3xl ${
-                  isActive
-                    ? "text-[color:var(--accent-soft)]"
-                    : "text-foreground hover:opacity-90"
+                aria-current={isActive ? "true" : undefined}
+                className={`block w-full origin-left rounded-lg py-2 text-left font-display text-[1.7rem] font-extrabold leading-[1.12] tracking-[-0.03em] transition-[color,transform] duration-300 motion-reduce:transition-none lg:py-3 lg:text-[clamp(2rem,3.1vw,3.25rem)] ${
+                  !hasTimedLines
+                    ? "text-foreground/90"
+                    : isActive
+                      ? "text-foreground lg:scale-[1.03]"
+                      : i < active
+                        ? "text-foreground/30 hover:text-foreground/70"
+                        : "text-foreground/45 hover:text-foreground/80"
                 }`}
               >
                 {line.text || "♪"}

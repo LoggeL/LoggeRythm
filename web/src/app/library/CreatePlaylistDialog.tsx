@@ -16,8 +16,29 @@ export default function CreatePlaylistDialog({
   const createPlaylist = useCreatePlaylist();
 
   return (
-    <Modal open={open} title="Playlist erstellen" onClose={onClose}>
+    <Modal
+      open={open}
+      title="Playlist erstellen"
+      description="Gib ihr einen Namen – Titel fügst du danach hinzu."
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="action-secondary" onClick={onClose}>
+            Abbrechen
+          </button>
+          <button
+            type="submit"
+            form="library-playlist-form"
+            className="action-primary"
+            disabled={!name.trim() || createPlaylist.isPending}
+          >
+            {createPlaylist.isPending ? "Wird erstellt…" : "Playlist erstellen"}
+          </button>
+        </>
+      }
+    >
       <form
+        id="library-playlist-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (!name.trim() || createPlaylist.isPending) return;
@@ -32,52 +53,45 @@ export default function CreatePlaylistDialog({
             },
           );
         }}
-        className="flex flex-col gap-4"
+        className="flex flex-col gap-5"
       >
-        <label className="text-sm font-medium" htmlFor="library-playlist-name">
-          Name
+        <div className="flex flex-col gap-2">
+          <label className="label-mono flex items-baseline justify-between gap-3" htmlFor="library-playlist-name">
+            <span>Name</span>
+            <span aria-hidden="true" className="tabular-nums">
+              {name.length}/200
+            </span>
+          </label>
           <input
             id="library-playlist-name"
-            className="field-input mt-2 w-full"
+            className="field-input font-display text-lg font-bold tracking-tight placeholder:font-semibold"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder="Meine neue Playlist"
             maxLength={200}
+            autoComplete="off"
             required
-            autoFocus
+            data-dialog-autofocus
           />
-        </label>
-        <label
-          className="text-sm font-medium"
-          htmlFor="library-playlist-description"
-        >
-          Beschreibung{" "}
-          <span className="text-muted font-normal">(optional)</span>
+        </div>
+        <div className="flex flex-col gap-2">
+          <label className="label-mono flex items-baseline justify-between gap-3" htmlFor="library-playlist-description">
+            <span>Beschreibung</span>
+            <span>Optional</span>
+          </label>
           <textarea
             id="library-playlist-description"
-            className="field-input mt-2 w-full min-h-24 resize-y"
+            className="field-input min-h-24 resize-y text-sm leading-relaxed"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
-        </label>
+        </div>
         {createPlaylist.isError && (
           <p role="alert" className="error-panel">
             Die Playlist konnte nicht erstellt werden:{" "}
             {createPlaylist.error.message}
           </p>
         )}
-        <div className="flex justify-end gap-2 mt-2">
-          <button type="button" className="action-secondary" onClick={onClose}>
-            Abbrechen
-          </button>
-          <button
-            type="submit"
-            className="action-primary"
-            disabled={!name.trim() || createPlaylist.isPending}
-          >
-            {createPlaylist.isPending ? "Wird erstellt…" : "Playlist erstellen"}
-          </button>
-        </div>
       </form>
     </Modal>
   );

@@ -8,7 +8,7 @@ import { NAV_ITEMS, isNavItemActive } from "@/components/shell/navigation";
 export default function MobileNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Hauptnavigation" className="z-40 flex shrink-0 justify-around border-t border-hairline bg-background px-1 pt-1.5 pb-[calc(.375rem+env(safe-area-inset-bottom))] lg:hidden">
+    <nav aria-label="Hauptnavigation" className="z-40 flex shrink-0 justify-around border-t border-hairline bg-backdrop px-1 pt-1 pb-[calc(.25rem+env(safe-area-inset-bottom))] lg:hidden">
       {NAV_ITEMS.map((item) => {
         const active = isNavItemActive(item, pathname);
         const Icon = item.icon;
@@ -17,10 +17,11 @@ export default function MobileNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[10.5px] font-semibold transition-colors ${active ? "text-foreground" : "text-subtle"}`}
+            className={`relative flex min-h-13 min-w-0 flex-1 flex-col items-center justify-center gap-1 text-[10.5px] font-semibold transition-colors ${active ? "text-foreground" : "text-subtle"}`}
           >
-            <span className={`grid h-7 w-14 place-items-center rounded-full transition-colors ${active ? "bg-white/10 text-accent-soft" : ""}`}>
-              <Icon width={21} height={21} />
+            {active && <span aria-hidden="true" className="absolute -top-1 h-[3px] w-8 rounded-b-full bg-accent" />}
+            <span className={`grid h-7 place-items-center ${active ? "text-accent" : ""}`}>
+              <Icon width={22} height={22} />
             </span>
             {item.label}
           </Link>

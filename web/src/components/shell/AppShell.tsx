@@ -14,6 +14,8 @@ import CommandPalette from "@/components/CommandPalette";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
 import Lyrics from "@/components/Lyrics";
 import Logo from "@/components/Logo";
+import { AuthShell } from "@/components/AuthCard";
+import { SpinnerIcon } from "@/components/icons";
 import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
 import { useAmbientColor } from "@/hooks/useAmbientColor";
@@ -21,23 +23,34 @@ import { SearchProvider } from "@/hooks/useSearchNavigation";
 
 function SplashScreen() {
   return (
-    <div role="status" aria-label="LoggeRythm wird geladen" className="grid h-full place-items-center bg-backdrop">
-      <Logo size={56} className="animate-pulse" />
+    <div role="status" aria-label="LoggeRythm wird geladen" className="grid h-full place-items-center bg-background">
+      <Logo size={48} className="animate-pulse motion-reduce:animate-none" />
     </div>
   );
 }
 
 function SessionError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-5 bg-backdrop p-6 text-center">
-      <Logo size={48} />
-      <div role="alert" className="max-w-md">
-        <h1 className="mb-2 text-xl font-bold">Sitzung konnte nicht geladen werden</h1>
-        <p className="text-sm leading-relaxed text-danger">{message}</p>
-      </div>
-      <button type="button" disabled={retrying} onClick={onRetry} className="action-primary">
-        {retrying ? "Lädt…" : "Erneut versuchen"}
-      </button>
+    <div className="h-full overflow-y-auto bg-background">
+      <AuthShell compact>
+        <section role="alert" aria-labelledby="session-error-title">
+          <p className="page-eyebrow">Sitzungsfehler</p>
+          <h1 id="session-error-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [text-wrap:balance]">
+            Sitzung konnte nicht geladen werden
+          </h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">Die Anmeldung ließ sich nicht prüfen. Die App bleibt gesperrt, bis das klappt.</p>
+          <div className="error-panel mt-8">
+            <p className="label-mono mb-1.5 text-danger">Fehlermeldung</p>
+            <p className="text-[15px] font-semibold [overflow-wrap:anywhere]">{message}</p>
+          </div>
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button type="button" disabled={retrying} aria-busy={retrying} onClick={onRetry} className="action-primary min-h-12 flex-1 text-[15px]">
+              {retrying && <SpinnerIcon width={18} height={18} aria-hidden className="animate-spin motion-reduce:animate-none" />}
+              {retrying ? "Lädt…" : "Erneut versuchen"}
+            </button>
+          </div>
+        </section>
+      </AuthShell>
     </div>
   );
 }
@@ -61,12 +74,12 @@ function Workspace({ children }: { children: React.ReactNode }) {
             Zum Inhalt
           </a>
           <PwaBanner />
-          <div className="flex min-h-0 flex-1 gap-2 lg:p-2 lg:pb-0">
+          <div className="flex min-h-0 flex-1">
             <Sidebar />
-            <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden max-lg:rounded-none">
+            <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
               <main ref={mainRef} id="main-content" tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto outline-none">
                 <TopBar />
-                <div key={pathname} className="animate-in mx-auto max-w-[92rem] px-4 pb-12 pt-2 sm:px-6 lg:px-8">
+                <div key={pathname} className="animate-in mx-auto max-w-[96rem] px-4 pb-16 pt-3 sm:px-6 lg:px-10 lg:pt-6">
                   {children}
                 </div>
               </main>
@@ -97,7 +110,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   if (pathname === "/login" || pathname === "/register") {
     return (
-      <div className="h-full overflow-y-auto bg-backdrop">
+      <div className="h-full overflow-y-auto bg-background">
         {children}
         <Toaster />
       </div>

@@ -10,7 +10,8 @@ import { useMe } from "@/hooks/useAuth";
 import { useCreatePlaylist } from "@/hooks/useLibrary";
 import { toast } from "@/store/toast";
 import TrackRow from "@/components/TrackRow";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
 import { PlayIcon, PlusIcon } from "@/components/icons";
 import type { PlaylistSummary, ResolveResult, Track } from "@/types";
 
@@ -229,162 +230,155 @@ export default function ImportPanel() {
     }
   }
 
-  return (
-    <div className="animate-in">
-      <p className="page-description mb-6">
-        Füge einen Spotify-Link (Playlist, Album oder Titel) ein. Die Titel
-        werden über Deezer abgespielt.
-      </p>
+  const matchShare = result && result.total > 0 ? `${Math.round((result.matched / result.total) * 100)} %` : "–";
 
-      <form onSubmit={submit} className="mb-8 max-w-3xl">
-        <label
-          htmlFor="spotify-import-url"
-          className="mb-2 block text-sm font-medium"
-        >
-          Spotify-Link
+  return (
+    <div className="flex flex-col gap-8 border-t border-hairline pt-6">
+      <form onSubmit={submit} className="max-w-3xl">
+        <p className="page-eyebrow">Spotify → Deezer</p>
+        <label htmlFor="spotify-import-url" className="font-display block text-2xl font-extrabold leading-tight tracking-[-0.035em] sm:text-3xl">
+          Spotify-Link importieren
         </label>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <p id="spotify-import-hint" className="mb-5 mt-2 text-sm leading-relaxed text-muted">
+          Füge den Link zu einer Playlist, einem Album oder einem Titel ein. Die Titel werden über Deezer abgespielt.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input
             id="spotify-import-url"
             value={url}
             onChange={(e) => editUrl(e.target.value)}
             placeholder="https://open.spotify.com/playlist/…"
-            className="field-input min-w-0 flex-1"
-          type="text"
-          inputMode="url"
+            className="field-input min-w-0 flex-1 font-mono text-[13px]"
+            type="text"
+            inputMode="url"
             autoComplete="off"
             disabled={saving}
             aria-invalid={resolveError ? true : undefined}
-            aria-describedby={resolveError ? "spotify-import-error" : undefined}
+            aria-describedby={resolveError ? "spotify-import-error spotify-import-hint" : "spotify-import-hint"}
           />
-          <button
-            type="submit"
-            disabled={resolving || saving || !url.trim()}
-            className="action-primary w-full sm:w-auto"
-          >
+          <button type="submit" disabled={resolving || saving || !url.trim()} className="action-primary min-h-11 w-full sm:w-auto">
             {resolving ? "Lädt…" : "Auflösen"}
           </button>
         </div>
       </form>
 
       {resolveError && (
-        <p id="spotify-import-error" role="alert" className="error-panel mb-6">
+        <p id="spotify-import-error" role="alert" className="error-panel max-w-3xl [overflow-wrap:anywhere]">
           {resolveError}
         </p>
       )}
       {account.isError && (
-        <p role="alert" className="error-panel mb-6">
+        <p role="alert" className="error-panel max-w-3xl">
           Dein Konto konnte nicht geladen werden: {account.error.message}
         </p>
       )}
       {resolving && (
-        <p role="status" className="text-muted">
-          Spotify-Link wird aufgelöst und mit Deezer abgeglichen…
-        </p>
+        <div role="status">
+          <p className="label-mono mb-5">Spotify-Link wird aufgelöst und mit Deezer abgeglichen…</p>
+          <div aria-hidden="true" className="flex items-end gap-4 sm:gap-6">
+            <div className="skeleton h-24 w-24 shrink-0 rounded-art sm:h-40 sm:w-40" />
+            <div className="min-w-0 flex-1">
+              <div className="skeleton mb-3 h-3 w-20 rounded" />
+              <div className="skeleton mb-4 h-8 w-2/3 rounded" />
+              <div className="skeleton h-3 w-1/3 rounded" />
+            </div>
+          </div>
+        </div>
       )}
 
       {result && (
         <div>
-          <header className="mb-6 flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-7">
-            {result.image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={result.image}
-                alt={result.name}
-                className="h-44 w-44 shrink-0 rounded-2xl object-cover sm:h-52 sm:w-52"
-              />
-            ) : (
-              <CoverPlaceholder className="h-44 w-44 shrink-0 rounded-2xl sm:h-52 sm:w-52" />
-            )}
-            <div className="min-w-0">
-              <p className="page-eyebrow">
-                {TYPE_LABEL[result.type] ?? "Import"}
-              </p>
-              <h2 className="page-title mb-3">{result.name}</h2>
-              <p className="text-sm leading-relaxed text-muted">
-                {result.matched} von {result.total} Titeln über Deezer gefunden
-                {result.unmatched.length > 0 &&
-                  ` · ${result.unmatched.length} nicht verfügbar`}
-              </p>
-              {result.source_total > result.total && (
-                <p className="text-xs text-muted mt-1">
-                  Große Playlist: {result.source_total} Titel insgesamt, die
-                  ersten {result.total} wurden verarbeitet.
-                </p>
-              )}
+          <header className="mb-6 flex items-end gap-4 sm:gap-6">
+            <Cover src={result.image} alt={result.name} className="cover-shadow h-24 w-24 rounded-art sm:h-40 sm:w-40" eager />
+            <div className="min-w-0 flex-1">
+              <p className="label-mono mb-2">{TYPE_LABEL[result.type] ?? result.type}</p>
+              <h2 className="font-display line-clamp-3 text-2xl font-extrabold leading-[1.05] tracking-[-0.04em] [overflow-wrap:anywhere] sm:text-4xl">{result.name}</h2>
             </div>
           </header>
+
+          <dl className="mb-6 flex flex-wrap border-y border-hairline">
+            <div className="py-3 pr-4 sm:pr-8">
+              <dt className="label-mono">Gefunden</dt>
+              <dd className="font-display mt-1 text-xl font-extrabold tabular-nums tracking-tight">
+                {result.matched}
+                <span className="text-subtle">/{result.total}</span>
+              </dd>
+            </div>
+            <div className="border-l border-hairline px-4 py-3 sm:px-8">
+              <dt className="label-mono">Trefferquote</dt>
+              <dd className="font-display mt-1 text-xl font-extrabold tabular-nums tracking-tight">{matchShare}</dd>
+            </div>
+            <div className="border-l border-hairline py-3 pl-4 sm:px-8">
+              <dt className="label-mono">Fehlen</dt>
+              <dd className={`font-display mt-1 text-xl font-extrabold tabular-nums tracking-tight ${result.unmatched.length > 0 ? "text-danger" : ""}`}>{result.unmatched.length}</dd>
+            </div>
+          </dl>
+          {result.source_total > result.total && (
+            <p className="-mt-2 mb-6 text-[13px] leading-relaxed text-muted">
+              Große Playlist: {result.source_total} Titel insgesamt, die ersten {result.total} wurden verarbeitet.
+            </p>
+          )}
 
           <div className="mb-6 flex flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => playQueue(result.tracks, 0)}
+              onClick={() => playQueue(result.tracks, 0, result.name)}
               disabled={result.tracks.length === 0}
-              className="action-primary"
+              aria-label="Alle abspielen"
+              title="Alle abspielen"
+              className="play-fab h-12 w-12"
             >
-              <PlayIcon /> Alle abspielen
+              <PlayIcon width={20} height={20} />
             </button>
             <button
               type="button"
               onClick={saveAsPlaylist}
-              disabled={
-                result.tracks.length === 0 ||
-                saving ||
-                account.isLoading ||
-                account.isError
-              }
-              className="action-secondary"
+              disabled={result.tracks.length === 0 || saving || account.isLoading || account.isError}
+              className="action-secondary min-h-11"
             >
-              <PlusIcon />{" "}
-              {saving
-                ? "Speichert…"
-                : createdPlaylist
-                  ? "Titel erneut speichern"
-                  : "Als Playlist speichern"}
+              <PlusIcon width={18} height={18} />
+              {saving ? "Speichert…" : createdPlaylist ? "Titel erneut speichern" : "Als Playlist speichern"}
             </button>
           </div>
 
           {saveError && (
-            <p role="alert" className="error-panel mb-4">
+            <p role="alert" className="error-panel mb-4 [overflow-wrap:anywhere]">
               {saveError}
             </p>
           )}
           {createdPlaylist && (
             <p className="mb-6 text-sm leading-relaxed text-muted">
-              Die Playlist wurde bereits angelegt. Ein erneuter Versuch
-              speichert die Titel dort.{" "}
-              <Link
-                href={playlistPath(createdPlaylist)}
-                className="text-foreground underline"
-              >
+              Die Playlist wurde bereits angelegt. Ein erneuter Versuch speichert die Titel dort.{" "}
+              <Link href={playlistPath(createdPlaylist)} className="font-semibold text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground">
                 Playlist öffnen
               </Link>
             </p>
           )}
 
-          <div className="flex flex-col">
-            {result.tracks.map((track, i) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={i}
-                onPlay={() => playQueue(result.tracks, i)}
-              />
-            ))}
-          </div>
+          {result.tracks.length === 0 ? (
+            <EmptyState title="Keiner dieser Titel ist über Deezer verfügbar">Prüfe den Link oder versuche es mit einer anderen Playlist.</EmptyState>
+          ) : (
+            <div className="flex flex-col">
+              {result.tracks.map((track, i) => (
+                <TrackRow key={track.id} track={track} index={i} onPlay={() => playQueue(result.tracks, i, result.name)} />
+              ))}
+            </div>
+          )}
 
           {result.unmatched.length > 0 && (
-            <details className="surface-card mt-8 p-4 sm:p-5">
-              <summary className="cursor-pointer text-sm font-semibold">
-                Nicht auf Deezer gefunden
-                <span className="ml-2 text-muted">
+            <details className="group mt-8 border-t border-hairline">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
+                <span className="font-display text-lg font-bold tracking-tight">Nicht auf Deezer gefunden</span>
+                <span className="label-mono flex items-center gap-3 tabular-nums">
                   {result.unmatched.length}
+                  <span aria-hidden="true" className="text-base leading-none transition-transform group-open:rotate-45 motion-reduce:transition-none">+</span>
                 </span>
               </summary>
-              <ul className="mt-4 flex flex-col gap-2 text-sm text-muted">
+              <ul className="flex flex-col pb-2 text-sm">
                 {result.unmatched.map((u, i) => (
-                  <li key={i} className="break-words">
-                    {u.title} · {u.artist}
+                  <li key={i} className="flex flex-col gap-0.5 border-t border-hairline py-2.5 [overflow-wrap:anywhere] sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+                    <span className="min-w-0 font-medium">{u.title}</span>
+                    <span className="min-w-0 text-muted sm:text-right">{u.artist}</span>
                   </li>
                 ))}
               </ul>

@@ -34,7 +34,7 @@ export function Wordmark({ className }: { className?: string }) {
       <span className="text-lg font-bold tracking-tight text-foreground">
         Logge
       </span>
-      <span className="text-lg font-bold tracking-tight text-accent-soft">
+      <span className="text-lg font-bold tracking-tight text-brand">
         Rythm
       </span>
     </span>

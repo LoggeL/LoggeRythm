@@ -1,73 +1,97 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useMe, useLogout } from "@/hooks/useAuth";
-import Logo from "@/components/Logo";
-
-function Shell({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="h-full w-full flex flex-col items-center justify-center bg-background px-6 text-center">
-      <div className="animate-in flex flex-col items-center gap-6 max-w-md">
-        <div className="flex items-center gap-3">
-          <Logo size={44} />
-          <span className="text-3xl font-black tracking-tight">
-            <span className="text-foreground">Logge</span>
-            <span className="mx-1 text-white/35">|</span>
-            <span className="text-accent">Rythm</span>
-          </span>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
+import { AuthShell } from "@/components/AuthCard";
+import { ClockIcon, SpinnerIcon } from "@/components/icons";
+import { CheckCircleIcon } from "@/components/feedbackIcons";
+import { toast } from "@/store/toast";
 
 /** Shown to logged-out visitors — the app is otherwise fully locked. */
 export function LandingScreen() {
   return (
-    <Shell>
-      <p className="text-muted text-lg">
-        Dein privater Musik-Stream. Melde dich an, um loszulegen.
-      </p>
-      <div className="flex items-center gap-3">
-        <Link
-          href="/login"
-          className="px-6 py-2.5 rounded-full border border-white/20 font-semibold hover:border-white/60 transition press"
-        >
-          Anmelden
-        </Link>
-        <Link
-          href="/register"
-          className="px-6 py-2.5 rounded-full bg-accent text-white font-semibold hover:bg-accent-hover transition press"
-        >
-          Registrieren
-        </Link>
-      </div>
-      <p className="text-xs text-muted">
-        Ohne Konto ist die App gesperrt – kein Abspielen, keine Inhalte.
-      </p>
-    </Shell>
+    <div className="h-full overflow-y-auto bg-background">
+      <AuthShell claimHeading>
+        <section aria-labelledby="landing-access">
+          <p className="page-eyebrow">Zugang</p>
+          <h2 id="landing-access" className="text-[clamp(1.75rem,4vw,2.25rem)] font-extrabold leading-none tracking-[-0.04em]">
+            Einsteigen
+          </h2>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">Melde dich an oder lege ein Konto an. Neue Konten gibt ein Admin frei.</p>
+          <div className="mt-8 flex flex-col gap-3">
+            <Link href="/login" className="action-primary min-h-12 w-full text-[15px]">
+              Anmelden
+            </Link>
+            <Link href="/register" className="action-secondary min-h-12 w-full text-[15px]">
+              Konto erstellen
+            </Link>
+          </div>
+          <p className="label-mono mt-8 border-t border-hairline pt-5 leading-relaxed">Nur für eingeladene und freigegebene Konten.</p>
+        </section>
+      </AuthShell>
+    </div>
   );
 }
 
 /** Shown to logged-in but not-yet-approved users. */
 export function PendingScreen() {
-  const { data: me } = useMe();
+  const me = useMe();
   const logout = useLogout();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const name = me.data?.display_name;
+
+  async function signOut() {
+    setLoggingOut(true);
+    try {
+      await logout();
+    } catch (error) {
+      toast.error(`Abmelden fehlgeschlagen: ${error instanceof Error ? error.message : String(error)}`);
+      setLoggingOut(false);
+    }
+  }
+
   return (
-    <Shell>
-      <h1 className="text-2xl font-bold">Konto wartet auf Freigabe</h1>
-      <p className="text-muted">
-        Hallo {me?.display_name || ""}! Dein Konto muss erst von einem Admin
-        freigegeben werden. Schau später nochmal vorbei.
-      </p>
-      <button
-        type="button"
-        onClick={logout}
-        className="px-6 py-2.5 rounded-full border border-white/20 font-semibold hover:border-white/60 transition press"
-      >
-        Abmelden
-      </button>
-    </Shell>
+    <div className="h-full overflow-y-auto bg-background">
+      <AuthShell compact>
+        <section aria-labelledby="pending-title">
+          <p className="page-eyebrow">Wartet auf Freigabe</p>
+          <h1 id="pending-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [overflow-wrap:anywhere] [text-wrap:balance]">
+            Fast geschafft{name ? `, ${name}` : ""}
+          </h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">Dein Konto ist angelegt und wartet auf die Freigabe durch einen Admin. Sobald das erledigt ist, kannst du loshören.</p>
+          <dl className="mt-8 border-t border-hairline">
+            <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline">
+              <dt className="label-mono">Konto</dt>
+              <dd className="flex items-center gap-2 text-sm font-semibold">
+                <CheckCircleIcon width={16} height={16} aria-hidden className="shrink-0 text-success" />
+                Angelegt
+              </dd>
+            </div>
+            <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline">
+              <dt className="label-mono">Freigabe</dt>
+              <dd className="flex items-center gap-2 text-sm font-semibold">
+                <ClockIcon width={16} height={16} aria-hidden className="shrink-0 text-muted" />
+                Ausstehend
+              </dd>
+            </div>
+          </dl>
+          {me.isError && (
+            <p role="alert" className="error-panel mt-5">
+              Status konnte nicht geprüft werden: {me.error.message}
+            </p>
+          )}
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={() => void me.refetch()} disabled={me.isFetching} aria-busy={me.isFetching} className="action-primary min-h-12 flex-1 text-[15px]">
+              {me.isFetching && <SpinnerIcon width={18} height={18} aria-hidden className="animate-spin motion-reduce:animate-none" />}
+              {me.isFetching ? "Wird geprüft…" : "Erneut prüfen"}
+            </button>
+            <button type="button" onClick={signOut} disabled={loggingOut} className="action-secondary min-h-12 flex-1 text-[15px]">
+              {loggingOut ? "Wird abgemeldet…" : "Abmelden"}
+            </button>
+          </div>
+        </section>
+      </AuthShell>
+    </div>
   );
 }

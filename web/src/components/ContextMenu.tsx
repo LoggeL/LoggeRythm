@@ -9,11 +9,23 @@ export interface ContextMenuItem {
   icon?: React.ReactNode;
   onClick: () => void;
   danger?: boolean;
+  disabled?: boolean;
+  /** Draw a divider above this item to set a group apart. */
+  separated?: boolean;
+  /** Render the item as a link (e.g. a file download) instead of a button. */
+  href?: string;
+  download?: boolean;
 }
 
-const MENU_WIDTH = 224; // w-56
+const MENU_WIDTH = 264;
 const VIEWPORT_PADDING = 8;
+const ITEM_SELECTOR = '[role="menuitem"]:not(:disabled)';
 
+/**
+ * Floating menu anchored at a viewport point. Arrow keys / Home / End move
+ * between items, Escape, Tab, outside clicks, scrolling and resizing close it,
+ * and focus returns to whatever opened it.
+ */
 export default function ContextMenu({
   x,
   y,
@@ -34,24 +46,16 @@ export default function ContextMenu({
     const el = ref.current;
     if (!el) return;
     const { width, height } = el.getBoundingClientRect();
-    let left = x;
-    let top = y;
-    if (left + width > window.innerWidth - VIEWPORT_PADDING) {
-      left = Math.max(VIEWPORT_PADDING, window.innerWidth - width - VIEWPORT_PADDING);
-    }
-    if (top + height > window.innerHeight - VIEWPORT_PADDING) {
-      top = Math.max(VIEWPORT_PADDING, window.innerHeight - height - VIEWPORT_PADDING);
-    }
-    if (left < VIEWPORT_PADDING) left = VIEWPORT_PADDING;
-    if (top < VIEWPORT_PADDING) top = VIEWPORT_PADDING;
-    setPos({ left, top });
+    const maxLeft = window.innerWidth - width - VIEWPORT_PADDING;
+    const maxTop = window.innerHeight - height - VIEWPORT_PADDING;
+    setPos({
+      left: Math.max(VIEWPORT_PADDING, Math.min(x, maxLeft)),
+      top: Math.max(VIEWPORT_PADDING, Math.min(y, maxTop)),
+    });
   }, [x, y]);
 
   useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    function onCtx(e: MouseEvent) {
+    function onOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
     }
     function onKey(e: KeyboardEvent) {
@@ -60,24 +64,25 @@ export default function ContextMenu({
         onClose();
         return;
       }
-      const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') ?? []);
-      if (!buttons.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
+      const entries = Array.from(ref.current?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? []);
+      if (!entries.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) return;
       e.preventDefault();
-      const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      const next = e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (current + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
-      buttons[next].focus();
+      const current = entries.indexOf(document.activeElement as HTMLElement);
+      const last = entries.length - 1;
+      const next = e.key === "Home" ? 0 : e.key === "End" ? last : e.key === "ArrowDown" ? (current + 1) % entries.length : current <= 0 ? last : current - 1;
+      entries[next].focus();
     }
     function onScroll(event: Event) {
       if (!ref.current?.contains(event.target as Node)) onClose();
     }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("contextmenu", onCtx);
+    document.addEventListener("mousedown", onOutside);
+    document.addEventListener("contextmenu", onOutside);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onClose);
     window.addEventListener("scroll", onScroll, true);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("contextmenu", onCtx);
+      document.removeEventListener("mousedown", onOutside);
+      document.removeEventListener("contextmenu", onOutside);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onClose);
       window.removeEventListener("scroll", onScroll, true);
@@ -86,34 +91,49 @@ export default function ContextMenu({
 
   if (typeof document === "undefined") return null;
 
+  const hasIcons = items.some((it) => it.icon);
+
   return createPortal(
     <div
       ref={ref}
       role="menu"
       style={{ left: pos.left, top: pos.top, width: MENU_WIDTH }}
-      className="pop-in fixed z-[130] max-h-[80dvh] overflow-y-auto rounded-xl bg-panel border border-border shadow-xl py-1.5 text-sm"
+      className="pop-in scroll-area fixed z-[130] max-h-[80dvh] max-w-[calc(100vw-1rem)] overflow-y-auto rounded-[var(--radius-panel)] border border-hairline bg-panel p-1.5 text-sm shadow-[0_18px_44px_rgb(0_0_0/0.55)]"
     >
-      {items.map((it) => (
-        <button
-          key={it.label}
-          type="button"
-          role="menuitem"
-          onClick={() => {
-            onClose();
-            it.onClick();
-          }}
-          className={`w-full text-left px-3 py-2 flex items-center gap-2.5 truncate transition hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none ${
-            it.danger ? "text-red-400" : "text-foreground"
-          }`}
-        >
-          {it.icon && (
-            <span className="flex-shrink-0 flex items-center justify-center w-4 h-4">
-              {it.icon}
-            </span>
-          )}
-          <span className="truncate">{it.label}</span>
-        </button>
-      ))}
+      {items.map((it) => {
+        const className = `relative flex min-h-10 w-full items-center gap-3 rounded-lg px-3 py-2 text-left font-medium transition-colors before:absolute before:left-0 before:top-1/2 before:h-4 before:w-[2px] before:-translate-y-1/2 before:rounded-full before:opacity-0 focus-visible:outline-none focus-visible:before:opacity-100 disabled:text-subtle disabled:hover:bg-transparent [@media(pointer:coarse)]:min-h-11 ${
+          it.danger
+            ? "text-danger before:bg-danger hover:bg-danger/10 focus-visible:bg-danger/10"
+            : "text-foreground before:bg-accent hover:bg-foreground/[0.07] focus-visible:bg-foreground/[0.07]"
+        }`;
+        const content = (
+          <>
+            {hasIcons && (
+              <span aria-hidden="true" className={`grid h-[18px] w-[18px] shrink-0 place-items-center ${it.danger ? "" : "text-muted"}`}>
+                {it.icon}
+              </span>
+            )}
+            <span className="min-w-0 flex-1 truncate">{it.label}</span>
+          </>
+        );
+        const activate = () => {
+          onClose();
+          it.onClick();
+        };
+        return (
+          <div key={it.label} role="none" className={it.separated ? "mt-1.5 border-t border-hairline pt-1.5" : undefined}>
+            {it.href && !it.disabled ? (
+              <a role="menuitem" href={it.href} download={it.download} onClick={activate} className={className}>
+                {content}
+              </a>
+            ) : (
+              <button type="button" role="menuitem" disabled={it.disabled} onClick={activate} className={className}>
+                {content}
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>,
     document.body,
   );

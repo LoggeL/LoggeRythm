@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { rememberSearch } from "../src/app/search/history.ts";
-import { sortSearchTracks } from "../src/app/search/results.ts";
+import { pickTopHit, sortSearchTracks } from "../src/app/search/results.ts";
 
 test("search history uses the submitted text and moves repeated terms to the front", () => {
   const history = ["old query", "artist", "album"];
@@ -50,4 +50,13 @@ test("cleared search does not repopulate history and recent entries stay bounded
     "new term",
     ...history.slice(0, 7),
   ]);
+});
+
+test("the top hit prefers an artist the query names and otherwise the most relevant track", () => {
+  const tracks = [{ id: "one", title: "Bohemian Rhapsody" }];
+  const artists = [{ id: "queen", name: "Queen" }];
+  assert.deepEqual(pickTopHit(" que ", tracks, artists), { kind: "artist", artist: artists[0] });
+  assert.deepEqual(pickTopHit("bohemian", tracks, artists), { kind: "track", track: tracks[0], index: 0 });
+  assert.deepEqual(pickTopHit("bohemian", [], artists), { kind: "artist", artist: artists[0] });
+  assert.equal(pickTopHit("bohemian", [], []), null);
 });

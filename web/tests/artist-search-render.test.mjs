@@ -14,6 +14,7 @@ const stubs = {
   "@/components/SearchField": moduleUrl("export default function SearchField() {return null;}"),
   "@/components/PopularTrackTable": moduleUrl("export default function PopularTrackTable() {return null;}"),
   "@/components/Skeleton": moduleUrl("export function RowListSkeleton() {return null;}"),
+  "@/components/ui/SectionHeader": moduleUrl("export default function SectionHeader() {return null;}"),
   "./artistSearchModel": new URL("../src/components/artistSearchModel.ts", import.meta.url).href,
 };
 const source = await readFile(new URL("../src/components/ArtistSongSearch.tsx", import.meta.url), "utf8");

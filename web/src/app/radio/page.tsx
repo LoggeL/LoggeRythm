@@ -6,30 +6,58 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { startTrackRadio, startTrackListRadio } from "@/lib/radio";
 import { trackArtistLabel } from "@/lib/trackArtists";
-import { useLocalJson } from "@/hooks/useLocalJson";
+import { useRecentTracks } from "@/hooks/useRecentTracks";
 import { toast } from "@/store/toast";
 import { usePlayerStore } from "@/store/player";
-import { CardGridSkeleton } from "@/components/Skeleton";
 import { PlayIcon, RadioIcon, SpinnerIcon } from "@/components/icons";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
-import type { Track, Genre } from "@/types";
-
-const EMPTY_TRACKS: Track[] = [];
+import Shelf from "@/components/browse/Shelf";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
+import QueryError from "@/components/ui/QueryError";
+import SectionHeader from "@/components/ui/SectionHeader";
+import type { Genre } from "@/types";
 
 const MOOD_STATIONS = [
-  { tag: "chill", title: "Chill-Radio", subtitle: "Entspannte Töne für ruhige Momente", label: "Zur Ruhe kommen" },
-  { tag: "focus", title: "Fokus-Radio", subtitle: "Konzentriert bleiben, ohne Ablenkung", label: "Im Flow bleiben" },
-  { tag: "workout", title: "Workout-Radio", subtitle: "Energie für dein Training", label: "In Bewegung" },
-  { tag: "party", title: "Party-Radio", subtitle: "Voller Beats für die Nacht", label: "Zusammen feiern" },
+  { tag: "chill", title: "Chill-Radio", subtitle: "Entspannte Töne für ruhige Momente", label: "Zur Ruhe kommen", tone: "gradient-teal" },
+  { tag: "focus", title: "Fokus-Radio", subtitle: "Konzentriert bleiben, ohne Ablenkung", label: "Im Flow bleiben", tone: "gradient-blue" },
+  { tag: "workout", title: "Workout-Radio", subtitle: "Energie für dein Training", label: "In Bewegung", tone: "gradient-orange" },
+  { tag: "party", title: "Party-Radio", subtitle: "Voller Beats für die Nacht", label: "Zusammen feiern", tone: "gradient-pink" },
 ] as const;
 
+const GENRE_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6";
+
+/** The round state indicator of a station: play, starting, or on air. */
+function StationSignal({ busy, live, className = "" }: { busy: boolean; live: boolean; className?: string }) {
+  return (
+    <span aria-hidden="true" className={`play-fab ${className}`}>
+      {busy ? (
+        <SpinnerIcon className="animate-spin" width={18} height={18} />
+      ) : live ? (
+        <span className="flex h-4 items-end gap-[3px]">
+          {[0, 1, 2].map((bar) => (
+            <span key={bar} className="eq-bar h-full w-[3px] rounded-full bg-current" style={{ animationDelay: `${bar * 0.18}s` }} />
+          ))}
+        </span>
+      ) : (
+        <PlayIcon width={18} height={18} />
+      )}
+    </span>
+  );
+}
+
+function LiveBadge() {
+  return <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em] text-backdrop">Läuft gerade</span>;
+}
+
 export default function RadioPage() {
-  const [recent] = useLocalJson<Track[]>("sf_recent_tracks", EMPTY_TRACKS);
+  const recent = useRecentTracks();
   const [startingKey, setStartingKey] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   // A ref reserves the request immediately, including clicks before React rerenders.
   const startingRef = useRef<string | null>(null);
   const genres = useQuery<Genre[]>({ queryKey: ["genres"], queryFn: () => api.genres() });
+  // Stations name the queue they start, which identifies the one on air.
+  const liveStation = usePlayerStore((state) => (state.radioActive ? state.queueContext : null));
 
   async function startStation(key: string, title: string, start: (session: number) => void | Promise<void>) {
     if (startingRef.current !== null) return;
@@ -65,87 +93,64 @@ export default function RadioPage() {
     startTrackListRadio(tracks, title);
   }
 
-  if (!Array.isArray(recent)) {
-    throw new Error('Der gespeicherte Hörverlauf in localStorage "sf_recent_tracks" enthält keine gültige Titelliste.');
-  }
   const personal = recent.slice(0, 12);
   const starting = startingKey !== null;
 
   return (
-    <div className="flex flex-col gap-9 animate-in">
-      <header className="page-header">
-        <div>
-          <p className="page-eyebrow">Ein Start, immer neue Musik</p>
-          <h1 className="page-title">Radio</h1>
-          <p className="page-description">Wähle einen Song, eine Stimmung oder ein Genre. Wir spielen passende Musik weiter.</p>
-        </div>
-        <span aria-hidden="true" className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-accent-soft sm:flex">
-          <RadioIcon width={24} height={24} />
-        </span>
+    <div className="flex flex-col gap-10">
+      <header>
+        <p className="page-eyebrow">Ein Start, immer neue Musik</p>
+        <h1 className="page-title">Radio</h1>
+        <p className="page-description">Wähle einen Song, eine Stimmung oder ein Genre. Wir spielen passende Musik weiter.</p>
+        {liveStation && (
+          <p className="mt-5 inline-flex max-w-full items-center gap-3 rounded-full bg-white/[0.06] py-1.5 pl-1.5 pr-4 text-sm">
+            <StationSignal busy={false} live className="h-8 w-8 shadow-none" />
+            <span className="min-w-0 truncate">
+              <span className="text-muted">Läuft gerade:</span> <span className="font-semibold">{liveStation}</span>
+            </span>
+          </p>
+        )}
       </header>
 
-      {startError && <div role="alert" className="error-panel">{startError}</div>}
-      <div className="sr-only" role="status" aria-live="polite">{starting ? "Radio wird gestartet. Bitte einen Moment warten." : ""}</div>
-
-      <section aria-labelledby="personal-radio-title">
-        <div className="section-heading">
-          <div>
-            <h2 id="personal-radio-title">Von deinen letzten Songs inspiriert</h2>
-            <p className="mt-1 text-sm text-muted">Starte mit einem vertrauten Titel und entdecke mehr davon.</p>
-          </div>
+      {startError && (
+        <div role="alert" className="error-panel">
+          {startError}
         </div>
-        {personal.length === 0 ? (
-          <div className="empty-panel flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="font-medium text-foreground">Dein persönliches Radio beginnt mit einem Song.</p>
-              <p className="mt-1 text-sm text-muted">Sobald du Musik hörst, findest du hier passende Stationen.</p>
-            </div>
-            <Link href="/search" className="action-secondary shrink-0">Musik suchen</Link>
-          </div>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {personal.map((track) => {
-              const busy = startingKey === `track:${track.id}`;
-              return (
-                <button key={track.id} type="button" disabled={starting} aria-label={`Radio mit ${track.title} von ${trackArtistLabel(track)} starten`} aria-busy={busy} onClick={() => { void startStation(`track:${track.id}`, `${track.title}-Radio`, () => startTrackRadio(track)); }} className="music-card group flex min-w-0 items-center gap-3 p-3 text-left disabled:cursor-wait disabled:opacity-60">
-                  {track.cover ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={track.cover} alt="" className="h-14 w-14 shrink-0 rounded-lg object-cover" />
-                  ) : (
-                    <CoverPlaceholder className="h-14 w-14 shrink-0 rounded-lg" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{track.title}</p>
-                    <p className="mt-1 truncate text-xs text-muted">{trackArtistLabel(track)}</p>
-                  </div>
-                  <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/5 text-accent-soft transition group-hover:bg-accent/15">
-                    {busy ? <SpinnerIcon className="animate-spin" width={17} height={17} /> : <PlayIcon width={17} height={17} />}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
+      )}
+      <div className="sr-only" role="status" aria-live="polite">
+        {starting ? "Radio wird gestartet. Bitte einen Moment warten." : ""}
+      </div>
 
       <section aria-labelledby="mood-radio-title">
-        <div className="section-heading">
-          <div>
-            <h2 id="mood-radio-title">Was passt gerade?</h2>
-            <p className="mt-1 text-sm text-muted">Stimmungs-Radios für deinen Tag.</p>
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SectionHeader id="mood-radio-title" title="Was passt gerade?" description="Stimmungs-Radios für deinen Tag." />
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
           {MOOD_STATIONS.map((station) => {
             const busy = startingKey === `mood:${station.tag}`;
+            const live = liveStation === station.title;
             return (
-              <button key={station.tag} type="button" disabled={starting} aria-busy={busy} onClick={() => { void startStation(`mood:${station.tag}`, station.title, async (session) => { const tracks = await api.homeMood(station.tag); playFetchedStation(tracks, station.title, session); }); }} className="surface-card group flex min-h-[180px] flex-col items-start p-5 text-left transition hover:border-accent/35 disabled:cursor-wait disabled:opacity-60">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-soft">{station.label}</p>
-                <h3 className="mt-3 text-lg font-semibold">{station.title}</h3>
-                <p className="mt-1 text-sm text-muted">{station.subtitle}</p>
-                <span className="mt-auto inline-flex items-center gap-2 pt-5 text-xs font-medium text-foreground">
-                  <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-full bg-white/5 text-accent-soft">{busy ? <SpinnerIcon className="animate-spin" width={14} height={14} /> : <PlayIcon width={14} height={14} />}</span>
-                  {busy ? "Wird gestartet…" : "Radio starten"}
+              <button
+                key={station.tag}
+                type="button"
+                disabled={starting}
+                aria-busy={busy}
+                aria-pressed={live}
+                onClick={() => {
+                  void startStation(`mood:${station.tag}`, station.title, async (session) => {
+                    const tracks = await api.homeMood(station.tag);
+                    playFetchedStation(tracks, station.title, session);
+                  });
+                }}
+                className={`group press relative flex min-h-36 flex-col items-start overflow-hidden rounded-xl p-4 text-left disabled:cursor-wait sm:min-h-44 sm:p-5 ${station.tone} ${starting && !busy ? "opacity-60" : ""} ${live ? "ring-2 ring-accent-soft" : ""}`}
+              >
+                <span className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/70">
+                  {station.label}
+                  {live && <LiveBadge />}
+                </span>
+                <h3 className="mt-2 text-xl font-bold tracking-tight">{station.title}</h3>
+                <span className="mt-1 max-w-[80%] text-sm text-foreground/75">{station.subtitle}</span>
+                <span className="mt-auto flex w-full items-center justify-between gap-3 pt-4">
+                  <span className="text-xs font-semibold text-foreground/85">{busy ? "Wird gestartet…" : live ? "Neu starten" : "Radio starten"}</span>
+                  <StationSignal busy={busy} live={live} className="h-11 w-11 transition-transform group-hover:scale-105" />
                 </span>
               </button>
             );
@@ -153,44 +158,116 @@ export default function RadioPage() {
         </div>
       </section>
 
-      <section aria-labelledby="genre-radio-title" aria-busy={genres.isLoading}>
-        <div className="section-heading">
-          <div>
-            <h2 id="genre-radio-title">Genre-Radios</h2>
-            <p className="mt-1 text-sm text-muted">Ein Sound, viele Entdeckungen.</p>
-          </div>
-        </div>
-        {genres.error && (
-          <div role="alert" className="error-panel mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="font-medium">Genre-Radios konnten nicht geladen werden.</p>
-              <p className="mt-1 text-sm break-words">{genres.error.message}{genres.data !== undefined && " Der zuletzt geladene Stand bleibt sichtbar."}</p>
-            </div>
-            <button type="button" disabled={genres.isFetching} onClick={() => { void genres.refetch(); }} className="action-secondary shrink-0">{genres.isFetching ? "Wird geladen…" : "Erneut versuchen"}</button>
-          </div>
+      <section aria-labelledby="personal-radio-title">
+        <SectionHeader id="personal-radio-title" title="Von deinen letzten Songs inspiriert" description="Starte mit einem vertrauten Titel und entdecke mehr davon." />
+        {personal.length === 0 ? (
+          <EmptyState
+            icon={<RadioIcon width={24} height={24} />}
+            title="Dein persönliches Radio beginnt mit einem Song."
+            action={
+              <Link href="/search" className="action-secondary">
+                Musik suchen
+              </Link>
+            }
+          >
+            Sobald du Musik hörst, findest du hier passende Stationen.
+          </EmptyState>
+        ) : (
+          <Shelf label="Radios zu deinen letzten Songs">
+            {personal.map((track) => {
+              const busy = startingKey === `track:${track.id}`;
+              const live = liveStation === `Radio – ${track.title}`;
+              return (
+                <button
+                  key={track.id}
+                  type="button"
+                  disabled={starting}
+                  aria-label={`Radio mit ${track.title} von ${trackArtistLabel(track)} starten`}
+                  aria-busy={busy}
+                  aria-pressed={live}
+                  onClick={() => {
+                    void startStation(`track:${track.id}`, `${track.title}-Radio`, () => startTrackRadio(track));
+                  }}
+                  className={`music-card group block w-full p-2.5 text-left disabled:cursor-wait sm:p-3 ${starting && !busy ? "opacity-60" : ""}`}
+                >
+                  <span className="relative mb-3 block">
+                    <Cover src={track.cover} className={`aspect-square w-full rounded-xl ${live ? "ring-2 ring-accent-soft" : ""}`} />
+                    <StationSignal
+                      busy={busy}
+                      live={live}
+                      className={`absolute bottom-2 right-2 h-10 w-10 transition-opacity ${busy || live ? "" : "opacity-0 group-hover:opacity-100"}`}
+                    />
+                  </span>
+                  <span className="block truncate text-sm font-semibold">{track.title}</span>
+                  <span className="mt-1 block truncate text-xs text-muted">{live ? "Läuft gerade" : `Radio · ${trackArtistLabel(track)}`}</span>
+                </button>
+              );
+            })}
+          </Shelf>
         )}
+      </section>
+
+      <section aria-labelledby="genre-radio-title" aria-busy={genres.isLoading}>
+        <SectionHeader id="genre-radio-title" title="Genre-Radios" description="Ein Sound, viele Entdeckungen." />
+        <QueryError label="Genre-Radios" query={genres} className="mb-4" />
+        {genres.isError && genres.data !== undefined && <p className="mb-4 text-xs text-subtle">Der zuletzt geladene Stand bleibt sichtbar.</p>}
         {genres.isLoading ? (
-          <CardGridSkeleton count={12} />
+          <div role="status" aria-label="Genre-Radios werden geladen" className={GENRE_GRID}>
+            {Array.from({ length: 12 }, (_, index) => (
+              <div key={index} className="skeleton h-16 rounded-xl" />
+            ))}
+          </div>
         ) : genres.data?.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <div className={GENRE_GRID}>
             {genres.data.map((genre) => {
               const busy = startingKey === `genre:${genre.id}`;
+              const live = liveStation === `${genre.name}-Radio`;
               return (
-                <button key={String(genre.id)} type="button" disabled={starting} aria-label={`${genre.name}-Radio starten`} aria-busy={busy} onClick={() => { void startStation(`genre:${genre.id}`, `${genre.name}-Radio`, async (session) => { const detail = await api.genre(String(genre.id)); playFetchedStation(detail?.tracks, `${genre.name}-Radio`, session); }); }} className="music-card group flex min-w-0 items-center gap-3 p-3 text-left disabled:cursor-wait disabled:opacity-60">
+                <button
+                  key={String(genre.id)}
+                  type="button"
+                  disabled={starting}
+                  aria-label={`${genre.name}-Radio starten`}
+                  aria-busy={busy}
+                  aria-pressed={live}
+                  onClick={() => {
+                    void startStation(`genre:${genre.id}`, `${genre.name}-Radio`, async (session) => {
+                      const detail = await api.genre(String(genre.id));
+                      playFetchedStation(detail?.tracks, `${genre.name}-Radio`, session);
+                    });
+                  }}
+                  className={`group press flex h-16 min-w-0 items-center gap-3 overflow-hidden rounded-xl bg-white/[0.06] pr-3 text-left hover:bg-white/[0.11] disabled:cursor-wait ${starting && !busy ? "opacity-60" : ""} ${live ? "ring-2 ring-accent-soft" : ""}`}
+                >
                   {genre.picture ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={genre.picture} alt="" className="h-10 w-10 shrink-0 rounded-lg object-cover" />
+                    <Cover src={genre.picture} className="h-16 w-16" />
                   ) : (
-                    <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-muted"><RadioIcon width={18} height={18} /></span>
+                    <span aria-hidden="true" className="grid h-16 w-16 shrink-0 place-items-center bg-white/[0.06] text-muted">
+                      <RadioIcon width={20} height={20} />
+                    </span>
                   )}
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{genre.name}</span>
-                  <span aria-hidden="true" className="shrink-0 text-accent-soft">{busy ? <SpinnerIcon className="animate-spin" width={15} height={15} /> : <PlayIcon width={15} height={15} />}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{genre.name}</span>
+                    {live && <span className="block truncate text-xs text-accent-soft">Läuft gerade</span>}
+                  </span>
+                  <span aria-hidden="true" className={`shrink-0 ${live ? "text-accent-soft" : "text-muted group-hover:text-foreground"}`}>
+                    {busy ? <SpinnerIcon className="animate-spin" width={16} height={16} /> : <PlayIcon width={16} height={16} />}
+                  </span>
                 </button>
               );
             })}
           </div>
-        ) : !genres.error ? (
-          <div className="empty-panel">Zurzeit sind keine Genres verfügbar.</div>
+        ) : genres.data !== undefined ? (
+          <EmptyState
+            icon={<RadioIcon width={24} height={24} />}
+            title="Zurzeit sind keine Genres verfügbar."
+            action={
+              <Link href="/genre" className="action-secondary">
+                Musik entdecken
+              </Link>
+            }
+          >
+            Die Stimmungs-Radios oben funktionieren trotzdem.
+          </EmptyState>
         ) : null}
       </section>
     </div>

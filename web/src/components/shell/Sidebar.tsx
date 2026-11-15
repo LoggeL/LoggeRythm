@@ -18,14 +18,19 @@ import type { PlaylistSummary } from "@/types";
 const FILTER_THRESHOLD = 8;
 
 const rowClass = (active: boolean) =>
-  `flex min-h-11 items-center gap-3 rounded-xl px-2 py-1.5 transition-colors ${active ? "bg-white/[0.08]" : "hover:bg-white/[0.05]"}`;
+  `group/row relative flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-2 py-1.5 transition-colors ${active ? "bg-foreground/[0.08]" : "hover:bg-foreground/[0.05]"}`;
+
+/** Signal marker on the active destination. */
+function ActiveMarker() {
+  return <span aria-hidden="true" className="absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />;
+}
 
 function PrimaryNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Hauptnavigation" className="app-panel flex flex-col gap-0.5 p-2">
-      <Link href="/" className="mb-1 flex items-center gap-2.5 px-3 pb-2 pt-3 transition-opacity hover:opacity-80">
-        <Logo size={28} />
+    <nav aria-label="Hauptnavigation" className="flex flex-col px-3">
+      <Link href="/" className="mb-5 flex items-center gap-2.5 px-2 pt-5 transition-opacity hover:opacity-80">
+        <Logo size={30} />
         <Wordmark />
       </Link>
       {NAV_ITEMS.filter((item) => !item.mobileOnly).map((item) => {
@@ -36,9 +41,10 @@ function PrimaryNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`flex min-h-11 items-center gap-3.5 rounded-xl px-3 text-[15px] font-semibold transition-colors ${active ? "bg-white/[0.08] text-foreground" : "text-muted hover:text-foreground"}`}
+            className={`font-display relative flex min-h-11 items-center gap-3.5 rounded-[var(--radius-control)] px-2 text-[17px] font-bold tracking-tight transition-colors ${active ? "text-foreground" : "text-muted hover:text-foreground"}`}
           >
-            <Icon width={22} height={22} className={active ? "text-accent-soft" : ""} />
+            {active && <ActiveMarker />}
+            <Icon width={21} height={21} className={active ? "text-accent" : ""} />
             {item.label}
           </Link>
         );
@@ -47,14 +53,16 @@ function PrimaryNav() {
   );
 }
 
-function Shortcut({ href, label, hint, tile, active }: { href: string; label: string; hint: string; tile: React.ReactNode; active: boolean }) {
+/** One of the three fixed collections, as a square key under the library label. */
+function Shortcut({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
   return (
-    <Link href={href} aria-current={active ? "page" : undefined} className={rowClass(active)}>
-      {tile}
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold">{label}</span>
-        <span className="block truncate text-xs text-muted">{hint}</span>
-      </span>
+    <Link
+      href={href}
+      title={label}
+      className="flex min-w-0 flex-1 flex-col gap-2 rounded-[var(--radius-control)] border border-hairline px-2.5 py-2.5 text-muted transition-colors hover:border-foreground/25 hover:text-foreground"
+    >
+      {icon}
+      <span className="truncate text-[11.5px] font-semibold leading-none">{label}</span>
     </Link>
   );
 }
@@ -64,16 +72,17 @@ function PlaylistRow({ playlist, active, playing, onMenu }: { playlist: Playlist
   return (
     <li onContextMenu={(event) => onMenu(event, path)}>
       <Link href={path} aria-current={active ? "page" : undefined} className={rowClass(active)}>
+        {active && <ActiveMarker />}
         {playlist.cover_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={playlist.cover_url} alt="" loading="lazy" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+          <img src={playlist.cover_url} alt="" loading="lazy" className="h-10 w-10 shrink-0 rounded-[var(--radius-art)] object-cover" />
         ) : (
-          <CoverPlaceholder className="h-11 w-11 shrink-0 rounded-lg" />
+          <CoverPlaceholder className="h-10 w-10 shrink-0 rounded-[var(--radius-art)]" />
         )}
         <span className="min-w-0 flex-1">
-          <span className={`block truncate text-sm font-semibold ${playing ? "text-accent-soft" : ""}`}>{playlist.name}</span>
-          <span className="block truncate text-xs text-muted">
-            Playlist · {playlist.track_count} Titel
+          <span className={`block truncate text-sm font-semibold ${playing ? "text-accent" : ""}`}>{playlist.name}</span>
+          <span className="mt-0.5 block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle">
+            {playlist.track_count} Titel
           </span>
         </span>
         {playing && <EqualizerBars height={12} isPlaying />}
@@ -97,10 +106,10 @@ function LibrarySection() {
   const visible = needle ? playlists.filter((playlist) => playlist.name.toLowerCase().includes(needle)) : playlists;
 
   return (
-    <section aria-label="Bibliothek" className="app-panel flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between gap-2 px-3 pb-1 pt-3">
-        <Link href="/library" className={`flex min-h-10 items-center gap-3 rounded-xl px-2 text-[15px] font-semibold transition-colors ${pathname === "/library" ? "text-foreground" : "text-muted hover:text-foreground"}`}>
-          <LibraryIcon width={22} height={22} />
+    <section aria-label="Bibliothek" className="mt-6 flex min-h-0 flex-1 flex-col border-t border-hairline pt-4">
+      <div className="flex items-center justify-between gap-2 pl-5 pr-3">
+        <Link href="/library" className={`label-mono flex min-h-9 items-center gap-2 transition-colors hover:text-foreground ${pathname === "/library" ? "text-foreground" : ""}`}>
+          <LibraryIcon width={15} height={15} />
           Bibliothek
         </Link>
         <button type="button" onClick={() => setCreating(true)} aria-label="Playlist erstellen" title="Playlist erstellen" className="action-icon h-9 min-h-0 w-9">
@@ -108,31 +117,13 @@ function LibrarySection() {
         </button>
       </div>
 
-      <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        <Shortcut
-          href="/library?tab=liked"
-          label="Lieblingssongs"
-          hint="Deine Favoriten"
-          active={false}
-          tile={<span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-accent-solid to-[#3b2a8c] text-white"><HeartIcon width={18} height={18} fill="currentColor" /></span>}
-        />
-        <Shortcut
-          href="/library?tab=recent"
-          label="Zuletzt gehört"
-          hint="Dein Verlauf"
-          active={false}
-          tile={<span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/[0.07] text-muted"><ClockIcon width={18} height={18} /></span>}
-        />
-        <Shortcut
-          href="/library?tab=downloads"
-          label="Downloads"
-          hint="Offline verfügbar"
-          active={false}
-          tile={<span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-white/[0.07] text-success"><DownloadedIcon width={18} height={18} /></span>}
-        />
+      <div className="flex gap-1.5 px-3 pb-3 pt-1">
+        <Shortcut href="/library?tab=liked" label="Favoriten" icon={<HeartIcon width={17} height={17} fill="currentColor" className="text-like" />} />
+        <Shortcut href="/library?tab=recent" label="Verlauf" icon={<ClockIcon width={17} height={17} />} />
+        <Shortcut href="/library?tab=downloads" label="Offline" icon={<DownloadedIcon width={17} height={17} className="text-success" />} />
+      </div>
 
-        <div className="mx-2 my-2 border-t border-hairline" />
-
+      <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-3 pb-3">
         {playlists.length > FILTER_THRESHOLD && (
           <input
             type="search"
@@ -140,7 +131,7 @@ function LibrarySection() {
             onChange={(event) => setFilter(event.target.value)}
             placeholder="Playlists filtern"
             aria-label="Playlists filtern"
-            className="field-input mb-2 min-h-9 rounded-lg px-3 py-1.5 text-sm"
+            className="field-input mb-2 min-h-9 px-3 py-1.5 text-sm"
           />
         )}
         {playlistQuery.isError && (
@@ -155,14 +146,14 @@ function LibrarySection() {
           <div role="status" aria-label="Playlists werden geladen" className="flex flex-col gap-2 px-2 py-1">
             {Array.from({ length: 4 }, (_, index) => (
               <div key={index} className="flex items-center gap-3">
-                <div className="skeleton h-11 w-11 rounded-lg" />
+                <div className="skeleton h-10 w-10 rounded-[var(--radius-art)]" />
                 <div className="skeleton h-3 flex-1 rounded" />
               </div>
             ))}
           </div>
         )}
         {playlistQuery.isSuccess && playlists.length === 0 && (
-          <div className="mx-1 rounded-xl bg-white/[0.04] p-4">
+          <div className="rounded-[var(--radius-control)] border border-dashed border-border p-4">
             <p className="text-sm font-semibold">Erstelle deine erste Playlist</p>
             <p className="mt-1 text-xs leading-relaxed text-muted">Sammle Titel, die zusammengehören.</p>
             <button type="button" onClick={() => setCreating(true)} className="action-primary mt-3 min-h-9 px-4 text-xs">
@@ -205,10 +196,10 @@ function LibrarySection() {
   );
 }
 
-/** Desktop sidebar: primary navigation above the user's library. */
+/** Desktop sidebar: primary navigation above the user's library, one flat column. */
 export default function Sidebar() {
   return (
-    <aside aria-label="Navigation und Bibliothek" className="hidden w-[280px] shrink-0 flex-col gap-2 lg:flex">
+    <aside aria-label="Navigation und Bibliothek" className="hidden w-[264px] shrink-0 flex-col border-r border-hairline bg-backdrop lg:flex">
       <PrimaryNav />
       <LibrarySection />
     </aside>

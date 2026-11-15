@@ -1,43 +1,81 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { useCoverColors } from "@/hooks/useCoverColors";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
+import { useLocalJson } from "@/hooks/useLocalJson";
 import { hiResCover } from "@/lib/cover";
 import { fullscreenTheme } from "@/lib/fullscreenTheme";
+import { INITIAL_VISUALIZER_PREFERENCES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerScene";
 import { ChevronDownIcon } from "@/components/icons";
-import CoverColumn from "./CoverColumn";
-import PlayingPanel from "./PlayingPanel";
+import LikeButton from "@/components/LikeButton";
+import Scrubber from "@/components/player/Scrubber";
+import type { VisualizerStatus } from "@/components/FullscreenVisualizer";
+import Stage, { VisualizerControls } from "./Stage";
 import QueuePanel from "./QueuePanel";
 import SimilarPanel from "./SimilarPanel";
 import LyricsPanel from "./LyricsPanel";
-import CompactLyrics from "./CompactLyrics";
-import { SeekBar, TransportRow } from "./Controls";
+import { TrackHeading } from "./TrackMeta";
+import { TransportRow, VolumeRow } from "./Controls";
 import { useSwipeToClose } from "./useSwipeToClose";
 import styles from "./fullscreen.module.css";
 
-type NowPlayingTab = "playing" | "lyrics" | "similar" | "queue";
+/** The content beside (wide) or instead of (narrow) the artwork stage. */
+type PanelKey = "lyrics" | "queue" | "similar";
+/** `stage` only exists on narrow screens, where one view shows at a time. */
+type ViewKey = "stage" | PanelKey;
 
-const TABS: [NowPlayingTab, string, boolean?][] = [
-  ["playing", "Jetzt läuft"],
-  ["lyrics", "Songtext"],
-  ["similar", "Ähnliche Titel"],
-  // Queue has its own column on desktop, so it's a mobile-only tab.
-  ["queue", "Warteschlange", true],
+const PANELS: { key: PanelKey; label: string }[] = [
+  { key: "lyrics", label: "Songtext" },
+  { key: "queue", label: "Warteschlange" },
+  { key: "similar", label: "Ähnliche Titel" },
 ];
+const PANEL_KEYS = PANELS.map((panel) => panel.key);
+
+/** From this width the stage and a panel sit side by side. */
+const SPLIT_QUERY = "(min-width: 1024px)";
+
+function subscribeSplit(listener: () => void) {
+  const media = window.matchMedia(SPLIT_QUERY);
+  media.addEventListener("change", listener);
+  return () => media.removeEventListener("change", listener);
+}
+const splitSnapshot = () => window.matchMedia(SPLIT_QUERY).matches;
+const serverSplitSnapshot = () => false;
+
+function validatePanel(value: unknown): PanelKey {
+  if (!PANEL_KEYS.includes(value as PanelKey)) {
+    throw new Error(`Gespeicherte Vollbild-Ansicht ist ungültig: ${JSON.stringify(value)}. Erwartet: ${PANEL_KEYS.join(", ")}.`);
+  }
+  return value as PanelKey;
+}
 
 /**
- * Fullscreen now-playing view. Layout is a single column on mobile (tabbed)
- * and a 2–3 column grid on lg+ (cover | content | queue). The view
- * uses a subtle cover-art backdrop; on touch devices it
- * closes with a swipe-down, on desktop with Escape or the chevron.
+ * Fullscreen now-playing view, laid out as three bands that together use the
+ * whole screen: a slim header, the body, and a full-width transport console.
+ *
+ * Wide screens split the body: the artwork stage with the track heading on
+ * the left, and one panel (lyrics, queue or similar tracks) on the right —
+ * the choice is remembered. Narrow screens are a sheet (slides up, swipe down
+ * to close) showing either the stage or one panel, with the heading folded
+ * into the console. Backdrop and accents follow the cover art.
  */
 export default function NowPlaying({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<NowPlayingTab>("playing");
   const track = usePlayerStore(currentTrack);
   const error = usePlayerStore((s) => s.error);
+  const queueContext = usePlayerStore((s) => s.queueContext);
   const palette = useCoverColors(track?.cover);
+  const split = useSyncExternalStore(subscribeSplit, splitSnapshot, serverSplitSnapshot);
+
+  const [storedPanel, setStoredPanel] = useLocalJson<PanelKey>("player:fullscreen-panel", "lyrics");
+  const panel = validatePanel(storedPanel);
+  const [stageOnNarrow, setStageOnNarrow] = useState(true);
+  const view: ViewKey = !split && stageOnNarrow ? "stage" : panel;
+
+  const [storedPreferences, setStoredPreferences] = useLocalJson<VisualizerPreferences>("player:visualizer", INITIAL_VISUALIZER_PREFERENCES);
+  const preferences = validateVisualizerPreferences(storedPreferences);
+  const [signalStatus, setSignalStatus] = useState<VisualizerStatus>("waiting");
 
   const rootRef = useRef<HTMLDivElement>(null);
   const swipeHandlers = useSwipeToClose(rootRef, onClose);
@@ -51,36 +89,67 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
     };
   }, []);
 
-  // The queue tab is mobile-only (desktop shows the queue column); if the
-  // viewport grows to lg while it's active, fall back to the playing tab.
-  useEffect(() => {
-    if (tab !== "queue") return;
-    const mq = window.matchMedia("(min-width: 1024px)");
-    const onChange = (e: MediaQueryListEvent) => e.matches && setTab("playing");
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [tab]);
+  const tabs: { key: ViewKey; label: string }[] = split ? PANELS : [{ key: "stage", label: "Jetzt läuft" }, ...PANELS];
+
+  const select = (key: ViewKey) => {
+    if (key === "stage") {
+      setStageOnNarrow(true);
+      return;
+    }
+    setStageOnNarrow(false);
+    setStoredPanel(key);
+  };
 
   const moveTab = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
-    const visibleTabs = TABS.filter(([, , mobileOnly]) =>
-      !mobileOnly || !window.matchMedia("(min-width: 1024px)").matches,
-    );
-    const current = visibleTabs.findIndex(([key]) => key === tab);
-    const next = event.key === "Home" ? 0 : event.key === "End" ? visibleTabs.length - 1
-      : (current + (event.key === "ArrowRight" ? 1 : -1) + visibleTabs.length) % visibleTabs.length;
-    const key = visibleTabs[next][0];
-    setTab(key);
+    const current = tabs.findIndex((item) => item.key === view);
+    const next =
+      event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
+    const key = tabs[next].key;
+    select(key);
     rootRef.current?.querySelector<HTMLButtonElement>(`#now-playing-tab-${key}`)?.focus();
   };
 
   if (!track) return null;
-  const isPlayingView = tab === "playing";
 
-  const [br, bg, bb] = palette?.rgb ?? [124, 92, 255];
-  const backdropBg = `radial-gradient(100% 80% at 40% 0%, rgba(${br}, ${bg}, ${bb}, 0.1), transparent 60%), linear-gradient(to bottom, rgba(11,12,16,0.84), rgba(11,12,16,0.98))`;
+  const tablist = (
+    <div data-np-scroll role="tablist" aria-label="Playeransicht" className="no-scrollbar flex flex-shrink-0 gap-6 overflow-x-auto border-b border-hairline max-lg:-mx-5 max-lg:px-5">
+      {tabs.map(({ key, label }) => {
+        const active = view === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            id={`now-playing-tab-${key}`}
+            aria-controls="now-playing-panel"
+            aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            onClick={() => select(key)}
+            onKeyDown={moveTab}
+            className={`font-display relative -mb-px min-h-11 whitespace-nowrap border-b-2 pb-2 text-[17px] font-bold tracking-tight transition-colors lg:text-xl ${
+              active ? "border-[var(--accent-soft)] text-foreground" : "border-transparent text-foreground/45 hover:text-foreground/80"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const panelContent = (
+    <>
+      {view === "lyrics" && <LyricsPanel track={track} />}
+      {view === "queue" && <QueuePanel onClose={onClose} />}
+      {view === "similar" && <SimilarPanel seedId={track.id} onClose={onClose} />}
+    </>
+  );
+
+  const visualizerControls = <VisualizerControls preferences={preferences} signalStatus={signalStatus} onChange={setStoredPreferences} />;
+  const stage = <Stage track={track} palette={palette} preferences={preferences} onStatusChange={setSignalStatus} footer={split ? undefined : visualizerControls} />;
 
   return (
     <div
@@ -90,124 +159,80 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       aria-label="Vollbildplayer"
       {...swipeHandlers}
       style={fullscreenTheme(palette) as CSSProperties}
-      className={`${styles.scope} animate-in fixed inset-0 z-[80] flex h-dvh flex-col overflow-hidden bg-background px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(0.5rem+env(safe-area-inset-top))] md:p-6 lg:p-8`}
+      className={`${styles.scope} fixed inset-0 z-[80] flex h-dvh animate-[sheetUp_.34s_var(--ease-out)] flex-col overflow-hidden bg-backdrop pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] motion-reduce:animate-none lg:animate-[fadeIn_.28s_var(--ease-out)]`}
     >
-      {/* Ambient backdrop from the cover art */}
       {track.cover && (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={hiResCover(track.cover)}
-            alt=""
-            aria-hidden
-            className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-15 blur-3xl"
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{ background: backdropBg }}
-          />
-        </>
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={hiResCover(track.cover)} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-3xl saturate-150" />
       )}
+      <div aria-hidden className={`${styles.backdrop} pointer-events-none absolute inset-0`} />
 
       {/* Drag affordance for the swipe-down gesture (touch layouts) */}
-      <div
-        aria-hidden
-        className="relative mx-auto mb-1.5 h-1 w-9 flex-shrink-0 rounded-full bg-white/25 md:hidden"
-      />
+      <div aria-hidden className="relative mx-auto mt-2 h-1 w-9 flex-shrink-0 rounded-full bg-white/30 lg:hidden" />
 
-      <div className="relative mb-3 flex flex-shrink-0 items-center justify-between md:mb-6">
-        <button
-          data-dialog-autofocus
-          type="button"
-          onClick={onClose}
-          aria-label="Schließen"
-          className="action-icon h-11 w-11"
-        >
-          <ChevronDownIcon width={24} height={24} />
+      <header className="relative flex h-14 flex-shrink-0 items-center gap-3 px-3 lg:h-16 lg:px-6">
+        <button data-dialog-autofocus type="button" onClick={onClose} aria-label="Schließen" title="Schließen (Esc)" className="action-icon h-11 w-11 text-foreground">
+          <ChevronDownIcon width={26} height={26} />
         </button>
-        <span className="w-11" />
-      </div>
-
-      {/* Tab pills — scrollable on narrow screens instead of clipping */}
-      <div
-        data-np-scroll
-        role="tablist"
-        aria-label="Playeransicht"
-        className="relative mx-auto mb-4 flex max-w-full flex-shrink-0 overflow-x-auto rounded-xl border border-border bg-panel p-1 no-scrollbar md:mb-6"
-      >
-        {TABS.map(([key, label, mobileOnly]) => {
-          const active = tab === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              id={`now-playing-tab-${key}`}
-              aria-controls="now-playing-panel"
-              aria-selected={active}
-              tabIndex={active ? 0 : -1}
-              onClick={() => setTab(key)}
-              onKeyDown={moveTab}
-              className={`${mobileOnly ? "lg:hidden " : ""}min-h-10 whitespace-nowrap rounded-lg px-3 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:px-4 sm:text-sm ${
-                active
-                  ? "bg-accent/15 text-accent"
-                  : "text-muted hover:bg-white/5 hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
+        <p className="flex min-w-0 flex-1 items-baseline gap-2.5 max-lg:flex-col max-lg:items-center max-lg:gap-0 max-lg:pr-11 max-lg:text-center">
+          <span className="label-mono flex-shrink-0">{queueContext ? "Wiedergabe aus" : "Jetzt läuft"}</span>
+          {queueContext && <span className="max-w-full truncate text-sm font-semibold">{queueContext}</span>}
+        </p>
+      </header>
 
       {error && (
-        <p role="alert" className="error-panel relative mb-4 max-h-28 flex-shrink-0 overflow-y-auto">
+        <p role="alert" className="error-panel relative mx-5 mb-3 max-h-28 flex-shrink-0 overflow-y-auto lg:mx-10">
           {error}
         </p>
       )}
 
-      <div
-        role="tabpanel"
-        id="now-playing-panel"
-        aria-labelledby={`now-playing-tab-${tab}`}
-        className={`relative flex min-h-0 flex-1 flex-col lg:grid lg:gap-6 xl:gap-8 ${
-          isPlayingView
-            ? "lg:grid-cols-[minmax(0,2.2fr)_0.9fr]"
-            : "lg:grid-cols-[1.05fr_1.2fr_0.9fr]"
-        }`}
-      >
-        {/* Left grid column (desktop, lyrics/similar tabs) — the playing tab
-            uses the full-width PlayingPanel instead. */}
-        {!isPlayingView && (
-          <CoverColumn track={track} onClose={onClose} />
-        )}
-
-        {tab === "queue" ? (
-          <QueuePanel
-            onClose={onClose}
-            className="flex min-h-0 flex-1 flex-col lg:hidden"
-          />
-        ) : tab === "similar" ? (
-          <SimilarPanel seedId={track.id} onClose={onClose} />
-        ) : tab === "playing" ? (
-          <PlayingPanel track={track} palette={palette} onClose={onClose} />
-        ) : (
-          <>
-            <CompactLyrics track={track} onNavigate={onClose} />
-            <LyricsPanel track={track} />
-          </>
-        )}
-
-        {/* Right: queue (desktop only — third column) */}
-        <QueuePanel onClose={onClose} />
-      </div>
-      {(tab === "queue" || tab === "similar") && (
-        <div className="relative mt-3 flex-shrink-0 border-t border-border pt-3 lg:hidden">
-          <SeekBar />
-          <TransportRow />
+      {split ? (
+        <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-10 px-10 pb-2 xl:gap-16 xl:px-14">
+          <div className="flex min-h-0 flex-col gap-6">
+            {stage}
+            <div className="flex-shrink-0">
+              <TrackHeading track={track} onNavigate={onClose} variant="display" />
+            </div>
+          </div>
+          <div className="flex min-h-0 flex-col">
+            {tablist}
+            <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
+              {panelContent}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="relative flex min-h-0 flex-1 flex-col px-5">
+          {tablist}
+          <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
+            {view === "stage" ? stage : panelContent}
+          </div>
         </div>
       )}
+
+      {/* Console: seek across the full width, transport centred beneath it. */}
+      <div className={`${styles.console} like-celebration-surface relative flex-shrink-0 px-5 pb-4 pt-3 lg:px-10 lg:pb-6 lg:pt-4 xl:px-14`}>
+        {!split && (
+          <div className="mb-3">
+            <TrackHeading track={track} onNavigate={onClose} variant="row" thumbnail={view !== "stage"} />
+          </div>
+        )}
+        <Scrubber />
+        {split ? (
+          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6">
+            <div className="flex min-w-0 items-center gap-1">
+              <LikeButton key={track.id} track={track} />
+              {visualizerControls}
+            </div>
+            <TransportRow />
+            <div className="flex justify-end">
+              <VolumeRow />
+            </div>
+          </div>
+        ) : (
+          <TransportRow className="mt-1" />
+        )}
+      </div>
     </div>
   );
 }

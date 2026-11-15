@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test, { beforeEach } from "node:test";
-import ts from "typescript";
+import { compileInto, compileSource, moduleUrl } from "./support/compile.mjs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const fixture = { results: {} };
 globalThis.__discoverRouteFixture = fixture;
-const moduleUrl = (source) =>
-  `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 const reactUrl = import.meta.resolve("react");
 const empty = moduleUrl("export default function Component() { return null; }");
 const imports = {
+  react: reactUrl,
   "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"),
   "next/link": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export default function Link({href, children, ...props}) { return createElement('a', {...props, href}, children); }`),
   "@tanstack/react-query": moduleUrl(`export function useQuery(options) {
@@ -24,19 +22,21 @@ const imports = {
   "@/components/AlbumCard": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export default function AlbumCard({album}) { return createElement('p', null, album.title); }`),
   "@/components/ShelfCard": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export default function ShelfCard({shelf}) { return createElement('p', null, shelf.title); }`),
   "@/components/CoverPlaceholder": empty,
-  "@/components/Skeleton": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export const CardGridSkeleton = () => createElement('span', {'data-testid': 'loading'});`),
+  // Shelves need a browser to measure; the stub keeps their content and loading marker.
+  "@/components/browse/Shelf": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export default function Shelf({label, children}) { return createElement('div', {'data-shelf': label}, children); } export const ShelfSkeleton = () => createElement('span', {'data-testid': 'loading'});`),
   "@/components/icons": moduleUrl("export const CompassIcon = () => null;"),
 };
-const source = await readFile(new URL("../src/app/genre/page.tsx", import.meta.url), "utf8");
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext },
-}).outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-  assert.ok(imports[name], `Unmocked Discover route import: ${name}`);
-  return `from ${JSON.stringify(imports[name])}`;
-});
-const { default: DiscoverPage } = await import(moduleUrl(compiled));
-const success = (data) => ({ data, error: null, isLoading: false, isFetching: false, refetch: async () => {} });
-const failure = (message) => ({ ...success(undefined), error: new Error(message) });
+await compileInto(imports, [
+  ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
+  ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
+  ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
+  ["@/components/ui/SectionHeader", "src/components/ui/SectionHeader.tsx"],
+  ["@/components/browse/BrowseTile", "src/components/browse/BrowseTile.tsx"],
+  ["@/components/browse/QueryState", "src/components/browse/QueryState.tsx"],
+], "Discover route");
+const { default: DiscoverPage } = await import(await compileSource("src/app/genre/page.tsx", imports, "Discover route"));
+const success = (data) => ({ data, error: null, isError: false, isLoading: false, isFetching: false, refetch: async () => {} });
+const failure = (message) => ({ ...success(undefined), error: new Error(message), isError: true });
 const screen = () => renderToStaticMarkup(createElement(DiscoverPage));
 
 beforeEach(() => {
@@ -93,4 +93,16 @@ test("community playlists have a loading state before an empty response arrives"
   assert.match(community, /aria-busy="true"/);
   assert.match(community, /data-testid="loading"/);
   assert.doesNotMatch(community, /Es wurden noch keine öffentlichen Playlists geteilt/);
+});
+
+test("genres render as tiles linking to their pages and charts, releases and playlists as shelves", () => {
+  fixture.results.genres = success([{ id: 152, name: "Rock", picture: "rock.jpg" }]);
+  fixture.results["home-collections"] = success([{ key: "chart", title: "Aktuelle Charts" }]);
+  fixture.results["public-playlists"] = success([{ id: "playlist", name: "Community-Mix", track_count: 3, owner_name: "Sam" }]);
+  const html = screen();
+  assert.match(html, /<a[^>]*href="\/genre\/152"[^>]*>.*?Rock/);
+  assert.match(html, /data-shelf="Charts"/);
+  assert.match(html, /data-shelf="Playlists der Community"/);
+  assert.match(html, /href="\/playlist\/playlist"/);
+  assert.match(html, /von Sam · 3 Titel/);
 });

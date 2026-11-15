@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test, { beforeEach } from "node:test";
-import ts from "typescript";
+import { compileInto, compileSource } from "./support/compile.mjs";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const fixture = {
@@ -62,23 +61,24 @@ const imports = {
   `),
   "@/lib/trackArtists": moduleUrl("export const trackArtistLabel = (track) => track.artist;"),
   "@/hooks/useLocalJson": moduleUrl("export const useLocalJson = () => [globalThis.__radioRouteFixture.recent];"),
-  "@/store/player": moduleUrl("export const usePlayerStore = {getState: () => globalThis.__radioRouteFixture.player};"),
+  "@/store/player": moduleUrl("export const usePlayerStore = (selector) => selector(globalThis.__radioRouteFixture.player); usePlayerStore.getState = () => globalThis.__radioRouteFixture.player;"),
   "@/store/toast": moduleUrl("export const toast = {error: (message) => globalThis.__radioRouteFixture.errors.push(message)};"),
-  "@/components/Skeleton": moduleUrl("export function CardGridSkeleton() { return null; }"),
+  // A shelf needs a browser to measure; the stub keeps the station buttons as children.
+  "@/components/browse/Shelf": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export default function Shelf({children}) { return createElement('div', null, children); }`),
   "@/components/icons": moduleUrl("export const PlayIcon = () => null; export const RadioIcon = PlayIcon; export const SpinnerIcon = PlayIcon;"),
   "@/components/CoverPlaceholder": empty,
 };
 
 // Compile the real route and capture its actual JSX callbacks. Hook state and
 // refs persist between manual renders, so rapid clicks share the real lock.
-const source = await readFile(new URL("../src/app/radio/page.tsx", import.meta.url), "utf8");
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext },
-}).outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-  assert.ok(imports[name], `Unmocked Radio route import: ${name}`);
-  return `from ${JSON.stringify(imports[name])}`;
-});
-const { default: RadioPage } = await import(moduleUrl(compiled));
+await compileInto(imports, [
+  ["@/hooks/useRecentTracks", "src/hooks/useRecentTracks.ts"],
+  ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
+  ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
+  ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
+  ["@/components/ui/SectionHeader", "src/components/ui/SectionHeader.tsx"],
+], "Radio route");
+const { default: RadioPage } = await import(await compileSource("src/app/radio/page.tsx", imports, "Radio route"));
 const track = (id) => ({ id, title: `Song ${id}`, artist: "Artist", cover: "" });
 
 function deferred() {
@@ -235,4 +235,26 @@ for (const kind of ["mood", "genre"]) {
 test("malformed saved recent tracks name the localStorage key before rendering", () => {
   fixture.recent = { unexpected: [] };
   assert.throws(render, /localStorage "sf_recent_tracks".*keine gültige Titelliste/);
+});
+
+test("the station on air is marked while other stations keep their play affordance", () => {
+  assert.doesNotMatch(screen(), /Läuft gerade/);
+  fixture.player.radioActive = true;
+  fixture.player.queueContext = "Chill-Radio";
+  const tree = render();
+  assert.equal(station(tree, "Chill-Radio").props["aria-pressed"], true);
+  assert.equal(station(tree, "Fokus-Radio").props["aria-pressed"], false);
+  assert.equal(station(tree, "Rock").props["aria-pressed"], false);
+  assert.match(screen(), /Läuft gerade:<\/span> <span[^>]*>Chill-Radio/);
+  fixture.player.queueContext = "Rock-Radio";
+  assert.equal(station(render(), "Rock").props["aria-pressed"], true);
+  fixture.player.radioActive = false;
+  assert.doesNotMatch(screen(), /Läuft gerade/);
+});
+
+test("without listening history the personal stations explain the next step", () => {
+  fixture.recent = [];
+  const html = screen();
+  assert.match(html, /Dein persönliches Radio beginnt mit einem Song/);
+  assert.match(html, /href="\/search"/);
 });

@@ -10,12 +10,13 @@
   color: var(--muted);
   transition: background .16s ease, color .16s ease;
 }
-.button:hover { background: var(--panel-hover); color: var(--foreground); }
+.button:hover { background: rgb(255 255 255 / 0.08); color: var(--foreground); }
+@media (hover: none), (pointer: coarse) { .button { width: 44px; height: 44px; } }
 .button:active:not(:disabled) .heart { transform: scale(.82); }
 .button:disabled { cursor: wait; opacity: .65; }
-.button.liked { color: #f084cf; }
+.button.liked { color: var(--like); }
 .heart { overflow: visible; transition: transform .12s ease; }
-.liked .heart { filter: drop-shadow(0 0 5px #ff72c333); }
+.liked .heart { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--like-glow) 20%, transparent)); }
 .gradient { position: absolute; pointer-events: none; }
 .celebrating .heart { animation: heartBeat 1.15s cubic-bezier(.2,.8,.2,1) both; }
 
@@ -80,17 +81,17 @@
 }
 .heartEcho {
   color: #ffa6db;
-  filter: drop-shadow(0 0 12px #ff72c3);
+  filter: drop-shadow(0 0 12px var(--like-glow));
   animation: heartAscend 1150ms cubic-bezier(.16,1,.3,1) 85ms both;
 }
 .motionlessFeedback { display: none; }
 
 @keyframes heartBeat {
-  0% { transform: scale(.8); filter: drop-shadow(0 0 0 #ff72c3); }
-  24% { transform: scale(1.5) rotate(-12deg); filter: drop-shadow(0 0 8px #ff72c3b3); }
+  0% { transform: scale(.8); filter: drop-shadow(0 0 0 var(--like-glow)); }
+  24% { transform: scale(1.5) rotate(-12deg); filter: drop-shadow(0 0 8px color-mix(in srgb, var(--like-glow) 70%, transparent)); }
   43% { transform: scale(.94) rotate(6deg); }
   63% { transform: scale(1.15) rotate(-3deg); }
-  100% { transform: scale(1); filter: drop-shadow(0 0 5px #ff72c333); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 5px color-mix(in srgb, var(--like-glow) 20%, transparent)); }
 }
 @keyframes surfaceFlare { 0% { opacity: 0; } 14% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes bloom {
@@ -124,7 +125,7 @@
 @media (prefers-reduced-motion: reduce) {
   .button, .heart { transition: none; }
   .button:active:not(:disabled) .heart { transform: none; }
-  .celebrating .heart { animation: none; filter: drop-shadow(0 0 7px #ff72c380); }
+  .celebrating .heart { animation: none; filter: drop-shadow(0 0 7px color-mix(in srgb, var(--like-glow) 50%, transparent)); }
   .surface, .origin > :not(.motionlessFeedback) { display: none; animation: none; }
   .motionlessFeedback {
     display: grid;
@@ -136,6 +137,6 @@
     border-radius: 50%;
     background: #382137;
     color: #ff9ed7;
-    box-shadow: 0 0 16px #ff72c344;
+    box-shadow: 0 0 16px color-mix(in srgb, var(--like-glow) 27%, transparent);
   }
 }

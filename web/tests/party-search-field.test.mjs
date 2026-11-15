@@ -14,7 +14,8 @@ const reactStub = moduleUrl(`
   export function useRef(value) { const f = globalThis.__partySearchFixture; const index = f.cursor++; return f.hooks[index] ??= {current: value}; }
   export function useState(initial) { const f = globalThis.__partySearchFixture; const index = f.cursor++; if (!(index in f.hooks)) f.hooks[index] = typeof initial === 'function' ? initial() : initial; return [f.hooks[index], (value) => {f.hooks[index] = typeof value === 'function' ? value(f.hooks[index]) : value;}]; }
 `);
-const iconStub = moduleUrl("export function PlayIcon() {return null;} export const SearchIcon = PlayIcon; export const CloseIcon = PlayIcon;");
+const iconStub = moduleUrl("export function PlayIcon() {return null;} export const SearchIcon = PlayIcon; export const CloseIcon = PlayIcon; export const PlusIcon = PlayIcon; export const ChevronDownIcon = PlayIcon; export const QueueIcon = PlayIcon;");
+const feedbackIconStub = moduleUrl("export function CopyIcon() {return null;} export const CheckCircleIcon = CopyIcon; export const InfoCircleIcon = CopyIcon;");
 const nullStub = moduleUrl("export default function Placeholder() { return null; }");
 
 async function compile(path, substitutions) {
@@ -34,32 +35,96 @@ const fieldUrl = await compile("../src/components/SearchField.tsx", {
   "@/components/icons": iconStub,
 });
 const { default: SearchField } = await import(fieldUrl);
-const pageUrl = await compile("../src/app/party/[code]/page.tsx", {
+// The page is split into hooks and presentational components that live next
+// to it. Each local module is compiled through the same strict import map so
+// an unexpected dependency in any of them fails the suite.
+const party = (file) => `../src/app/party/[code]/${file}`;
+const jsxRuntime = import.meta.resolve("react/jsx-runtime");
+const requestsUrl = new URL("../src/app/party/requests.ts", import.meta.url).href;
+const toastStub = moduleUrl("export const toast = {error() {}, success() {}};");
+const playerStub = moduleUrl("export const usePlayerStore = (selector) => selector({followHostPlayback() {}});");
+const formatStub = moduleUrl("export const formatTime = (value) => String(value);");
+const artistsStub = moduleUrl("export const trackArtistLabel = (track) => track.artist;");
+
+const playbackSyncUrl = await compile(party("usePartyPlaybackSync.ts"), {
   react: reactStub,
-  "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"),
+  "@/store/player": playerStub,
+  "@/store/party": moduleUrl("export const usePartyStore = (selector) => selector({isPlaying: false, positionSec: 0, playbackUpdatedAt: null});"),
+  "@/store/toast": toastStub,
+  "../requests": requestsUrl,
+});
+const sessionUrl = await compile(party("usePartySession.ts"), {
+  react: reactStub,
   "next/navigation": moduleUrl("export function useRouter() { return {push() {}}; }"),
-  "qrcode.react": moduleUrl("export function QRCodeSVG() { return null; }"),
   "@/hooks/useParty": moduleUrl(`export function useParty() { return {
     party: {code: 'SEARCH', name: 'Party', is_host: false, host_name: 'Host', tracks: [], members: [], current_index: -1},
     add: async (track) => {globalThis.__partySearchFixture.added.push(track);},
     join: async () => {}, leave: async () => {},
   }; }`),
-  "@/store/player": moduleUrl("export const usePlayerStore = (selector) => selector({followHostPlayback() {}});"),
-  "@/store/party": moduleUrl("export const usePartyStore = (selector) => selector({isPlaying: false, positionSec: 0, playbackUpdatedAt: null});"),
+  "@/store/toast": toastStub,
+  "../requests": requestsUrl,
+  "./usePartyPlaybackSync": playbackSyncUrl,
+});
+const searchUrl = await compile(party("usePartySearch.ts"), {
+  react: reactStub,
   "@/lib/api": moduleUrl(`export const api = { search(term, kind, signal) {
     let resolve, reject;
     const promise = new Promise((complete, fail) => {resolve = complete; reject = fail;});
     globalThis.__partySearchFixture.requests.push({term, kind, signal, resolve, reject});
     return promise;
   }};`),
-  "@/store/toast": moduleUrl("export const toast = {error() {}, success() {}};"),
-  "@/lib/format": moduleUrl("export const formatTime = (value) => String(value);"),
-  "@/lib/trackArtists": moduleUrl("export const trackArtistLabel = (track) => track.artist;"),
-  "@/components/icons": iconStub,
-  "@/components/Avatar": nullStub,
-  "@/components/CoverPlaceholder": nullStub,
+  "../requests": requestsUrl,
+});
+const shareLinkUrl = await compile(party("useShareLink.ts"), {
+  react: reactStub,
+  "@/store/toast": toastStub,
+  "../requests": requestsUrl,
+});
+const trackRowUrl = await compile(party("PartyTrackRow.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+  "@/components/ui/Cover": nullStub,
+});
+const searchPanelUrl = await compile(party("PartySearch.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
   "@/components/SearchField": fieldUrl,
-  "../requests": new URL("../src/app/party/requests.ts", import.meta.url).href,
+  "@/components/ui/EmptyState": nullStub,
+  "@/components/icons": iconStub,
+  "@/lib/trackArtists": artistsStub,
+  "./PartyTrackRow": trackRowUrl,
+});
+const queueUrl = await compile(party("PartyQueue.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+  "@/components/ui/EmptyState": nullStub,
+  "@/components/icons": iconStub,
+  "@/lib/format": formatStub,
+  "@/lib/trackArtists": artistsStub,
+  "./PartyTrackRow": trackRowUrl,
+});
+const shareCardUrl = await compile(party("ShareCard.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+  "qrcode.react": moduleUrl("export function QRCodeSVG() { return null; }"),
+  "@/components/feedbackIcons": feedbackIconStub,
+});
+const membersUrl = await compile(party("MembersCard.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+  "@/components/Avatar": nullStub,
+});
+const statesUrl = await compile(party("PartyStates.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+});
+const pageUrl = await compile(party("page.tsx"), {
+  react: reactStub,
+  "react/jsx-runtime": jsxRuntime,
+  "@/components/ConfirmDialog": nullStub,
+  "@/components/feedbackIcons": feedbackIconStub,
+  "./MembersCard": membersUrl,
+  "./PartyQueue": queueUrl,
+  "./PartySearch": searchPanelUrl,
+  "./PartyStates": statesUrl,
+  "./ShareCard": shareCardUrl,
+  "./usePartySearch": searchUrl,
+  "./usePartySession": sessionUrl,
+  "./useShareLink": shareLinkUrl,
 });
 const { default: PartyPage } = await import(pageUrl);
 
@@ -70,6 +135,9 @@ function nodes(node, predicate, found = []) {
   if (!node || typeof node !== "object") return found;
   if (Array.isArray(node)) {for (const child of node) nodes(child, predicate, found); return found;}
   if (predicate(node)) found.push(node);
+  // The page composes hook-free section components; expand them the way React
+  // would. SearchField keeps its own refs and is rendered explicitly by render().
+  if (typeof node.type === "function" && node.type !== SearchField) return nodes(node.type(node.props), predicate, found);
   nodes(node.props?.children, predicate, found);
   return found;
 }

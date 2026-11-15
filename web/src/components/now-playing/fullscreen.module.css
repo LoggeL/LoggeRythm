@@ -1,38 +1,38 @@
-.scope :global(.action-primary) {
-  background: var(--accent-solid);
-  color: var(--on-accent, #fff);
-}
-
-.scope :global(.action-primary:hover) {
-  background: var(--accent-hover);
-}
-
+/* Inside the fullscreen player the accent follows the cover (see
+   fullscreenTheme): the play button, progress and pressed toggles take its colour. */
 .scope :global(.text-accent) {
   color: var(--accent-soft);
 }
 
-.scope :global(.action-icon[aria-pressed="true"]),
-.scope :global(.filter-chip[aria-pressed="true"]),
-.scope :global(button[role="tab"][aria-selected="true"]) {
+.scope :global(.action-icon[aria-pressed="true"]) {
   color: var(--accent-soft);
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 48%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 14%, transparent);
 }
 
-.scope :global(input[type="range"]) {
-  accent-color: var(--accent);
+/* Backdrop: the cover, heavily blurred, lit from the stage side and falling
+   off into ink towards the reading side and the console. */
+.backdrop {
+  background:
+    radial-gradient(70% 80% at 18% 30%, rgb(var(--cover-primary-rgb, var(--ambient)) / 0.38), transparent 70%),
+    linear-gradient(to right, rgb(9 9 11 / 0.35), rgb(9 9 11 / 0.82) 62%),
+    linear-gradient(to bottom, transparent 55%, rgb(9 9 11 / 0.85));
 }
 
-.scope :global(input[type="range"]::-webkit-slider-thumb) {
-  background: var(--accent);
-  outline: 1px solid var(--accent-soft);
-  outline-offset: 1px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+/* The console sits on a hairline, like the deck in the main shell. */
+.console {
+  border-top: 1px solid var(--hairline);
+  background: rgb(9 9 11 / 0.35);
 }
 
-.scope :global(input[type="range"]::-moz-range-thumb) {
-  background: var(--accent);
-  outline: 1px solid var(--accent-soft);
-  outline-offset: 1px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+@media (max-width: 1023px) {
+  .backdrop {
+    background:
+      radial-gradient(120% 60% at 50% 0%, rgb(var(--cover-primary-rgb, var(--ambient)) / 0.42), transparent 70%),
+      linear-gradient(to bottom, rgb(9 9 11 / 0.4), rgb(9 9 11 / 0.9) 70%, var(--backdrop));
+  }
+
+  .console {
+    border-top: 0;
+    background: none;
+  }
 }

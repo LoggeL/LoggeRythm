@@ -21,11 +21,11 @@ export default function CacheMarker({
   if (!state && !error) return null;
   const local = state === "local";
   return (
-    <span className={`inline-flex items-center gap-1 flex-shrink-0 ${className}`}>
+    <span className={`inline-flex shrink-0 items-center gap-1 ${className}`}>
       {state && (
         <span
           title={local ? "Offline auf diesem Gerät verfügbar" : "Auf dem Server gespeichert"}
-          className={`inline-flex ${local ? "text-green-500" : "text-muted"}`}
+          className={`inline-flex ${local ? "text-success" : "text-subtle"}`}
         >
           <DownloadedIcon aria-label={local ? "Offline verfügbar" : "Auf dem Server gespeichert"} />
         </span>
@@ -34,7 +34,7 @@ export default function CacheMarker({
         type="button"
         title={`${error} Erneut versuchen.`}
         aria-label={`Cache-Status fehlgeschlagen: ${error}. Erneut versuchen.`}
-        className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border border-amber-400/40 text-xs font-semibold text-amber-300"
+        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-danger/40 text-xs font-semibold text-danger"
         onClick={(event) => {
           event.stopPropagation();
           void retryTrackCacheStatus().catch(reportTrackCacheFailure);

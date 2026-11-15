@@ -66,5 +66,4 @@ export const RefreshIcon = icon(
     <path d="M20 5v6h-6" />
   </>,
 );
-export const ArrowIcon = icon(<path d="m9 18 6-6-6-6" />);
 export const BackIcon = icon(<path d="m15 18-6-6 6-6" />);

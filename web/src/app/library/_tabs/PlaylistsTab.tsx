@@ -1,0 +1,110 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import QueryState, { type StatefulQuery } from "@/components/browse/QueryState";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
+import { CardGridSkeleton } from "@/components/Skeleton";
+import { HeartIcon, LibraryIcon, PlusIcon } from "@/components/icons";
+import { playlistPath } from "@/lib/slugs";
+import type { PlaylistSummary } from "@/types";
+import ListFilter, { NoFilterMatch } from "./ListFilter";
+import TabHeader from "./TabHeader";
+import { FILTER_THRESHOLD, matchesFilter } from "./filter";
+
+const GRID = "grid grid-cols-2 gap-1 sm:grid-cols-3 sm:gap-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6";
+const CARD = "music-card group block w-full min-w-0 p-2.5 text-left sm:p-3";
+
+type SortKey = "recent" | "name";
+
+export default function PlaylistsTab({ query, likedHref, onCreate }: { query: StatefulQuery<PlaylistSummary[]>; likedHref: string; onCreate: () => void }) {
+  const [term, setTerm] = useState("");
+  const [sort, setSort] = useState<SortKey>("recent");
+  const count = query.data?.length;
+
+  return (
+    <section aria-labelledby="playlist-heading">
+      <TabHeader id="playlist-heading" title="Deine Playlists" meta={count === undefined ? undefined : `${count} ${count === 1 ? "Playlist" : "Playlists"}`} />
+      <QueryState
+        query={query}
+        label="Deine Playlists"
+        skeleton={<CardGridSkeleton count={5} />}
+        empty={
+          <EmptyState
+            icon={<LibraryIcon width={24} height={24} />}
+            title="Hier ist Platz für deine erste Playlist."
+            action={
+              <button type="button" className="action-secondary" onClick={onCreate}>
+                Playlist erstellen
+              </button>
+            }
+          >
+            Sammle Titel, die zusammengehören, oder importiere eine Playlist über die Suche.
+          </EmptyState>
+        }
+      >
+        {(playlists) => {
+          const filtered = playlists.filter((playlist) => matchesFilter(term, playlist.name, playlist.description));
+          const listed = sort === "name" ? [...filtered].sort((a, b) => a.name.localeCompare(b.name, "de")) : filtered;
+          const filtering = term.trim().length > 0;
+          return (
+            <>
+              {playlists.length > FILTER_THRESHOLD && (
+                <div className="mb-4 flex items-center gap-2">
+                  <ListFilter label="Playlists filtern" value={term} onChange={setTerm} className="flex-1 sm:max-w-64" />
+                  <select
+                    aria-label="Playlists sortieren"
+                    value={sort}
+                    onChange={(event) => setSort(event.target.value as SortKey)}
+                    className="field-input w-auto shrink-0 rounded-full py-2 pl-4 pr-3 text-xs font-semibold sm:min-h-10"
+                  >
+                    <option value="recent">Zuletzt erstellt</option>
+                    <option value="name">Name A bis Z</option>
+                  </select>
+                </div>
+              )}
+              {listed.length === 0 ? (
+                <NoFilterMatch term={term} onReset={() => setTerm("")} />
+              ) : (
+                <ul className={GRID}>
+                  {!filtering && (
+                    <li>
+                      <Link href={likedHref} scroll={false} className={CARD}>
+                        <span className="mb-3 grid aspect-square w-full place-items-center rounded-xl bg-gradient-to-br from-brand to-like text-on-light">
+                          <HeartIcon filled width={44} height={44} />
+                        </span>
+                        <span className="block truncate text-sm font-semibold">Gelikte Titel</span>
+                        <span className="mt-1 block truncate text-xs text-muted">Deine Lieblingstitel</span>
+                      </Link>
+                    </li>
+                  )}
+                  {listed.map((playlist) => (
+                    <li key={String(playlist.id)}>
+                      <Link href={playlistPath(playlist)} className={CARD}>
+                        <Cover src={playlist.cover_url} className="mb-3 aspect-square w-full rounded-xl" />
+                        <span className="block truncate text-sm font-semibold">{playlist.name}</span>
+                        <span className="mt-1 block truncate text-xs text-muted">Playlist · {playlist.track_count} Titel</span>
+                      </Link>
+                    </li>
+                  ))}
+                  {!filtering && (
+                    <li>
+                      <button type="button" onClick={onCreate} className={CARD}>
+                        <span className="mb-3 grid aspect-square w-full place-items-center rounded-xl border border-dashed border-border text-muted transition-colors group-hover:border-muted group-hover:text-foreground">
+                          <PlusIcon width={36} height={36} />
+                        </span>
+                        <span className="block truncate text-sm font-semibold">Neue Playlist</span>
+                        <span className="mt-1 block truncate text-xs text-muted">Leer starten</span>
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </>
+          );
+        }}
+      </QueryState>
+    </section>
+  );
+}

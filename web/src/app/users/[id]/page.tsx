@@ -1,151 +1,155 @@
 "use client";
 
-import { use } from "react";
+import { use, type CSSProperties } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { playlistPath } from "@/lib/slugs";
 import ArtistCard from "@/components/ArtistCard";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
+import PlaylistCard from "@/components/PlaylistCard";
 import Avatar from "@/components/Avatar";
-import { DetailHeaderSkeleton } from "@/components/Skeleton";
-import CollectionHero from "@/app/playlist/_components/CollectionHero";
+import EmptyState from "@/components/ui/EmptyState";
+import SectionHeader from "@/components/ui/SectionHeader";
+import { CARD_GRID } from "@/components/cardGrid";
+import { CardGridSkeleton } from "@/components/Skeleton";
+import Shelf from "@/components/browse/Shelf";
+import { useCoverColors } from "@/hooks/useCoverColors";
+import collection from "@/app/playlist/_components/collection.module.css";
+import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
 import type { PublicProfile } from "@/types";
 
-export default function UserProfilePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, isLoading, isError, error, refetch, isFetching } =
-    useQuery<PublicProfile>({
-      queryKey: ["public-profile", id],
-      queryFn: () => api.publicProfile(id),
-      enabled: !!id,
-    });
-
-  if (isLoading) return <DetailHeaderSkeleton />;
-  if (!data) {
-    return (
-      <div role="alert" className="error-panel">
-        {isError
-          ? `Profil konnte nicht geladen werden: ${error.message}`
-          : "Profil nicht gefunden."}
-        {isError && (
-          <button
-            type="button"
-            onClick={() => void refetch()}
-            disabled={isFetching}
-            className="ml-3 underline disabled:opacity-50"
-          >
-            Erneut versuchen
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  const playlists = data.playlists ?? [];
-  const artists = data.top_artists ?? [];
-  const name = data.display_name || "Unbekannt";
-  const totalTracks = playlists.reduce((n, p) => n + (p.track_count || 0), 0);
+  const profile = useQuery<PublicProfile>({
+    queryKey: ["public-profile", id],
+    queryFn: () => api.publicProfile(id),
+    enabled: !!id,
+  });
 
   return (
-    <div className="animate-in">
-      {isError && (
-        <p role="alert" className="error-panel mb-4">
-          Profil konnte nicht aktualisiert werden: {error.message}
-        </p>
-      )}
-      <CollectionHero
-        eyebrow="Profil"
-        title={name}
-        roundArtwork
-        artwork={
-          <Avatar
-            src={data.avatar_url}
-            name={name}
-            size={224}
-            className="h-full! w-full!"
-          />
-        }
-        metadata={
-          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Stat n={playlists.length} label="Playlists" />
-            <Dot />
-            <Stat n={artists.length} label="Künstler" />
-            <Dot />
-            <Stat n={totalTracks} label="Titel" />
-          </span>
-        }
-      />
+    <CollectionPageState query={profile} label="Die Profildaten" missing="Profil nicht gefunden" skeleton={<ProfileSkeleton />}>
+      {(data) => <ProfileView profile={data} />}
+    </CollectionPageState>
+  );
+}
 
-      {/* Public playlists */}
-      <section className="mb-10">
-        <h2 className="section-heading mb-4">Öffentliche Playlists</h2>
-        {playlists.length === 0 ? (
-          <EmptyCard>Keine öffentlichen Playlists.</EmptyCard>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {playlists.map((pl) => (
-              <Link
-                key={String(pl.id)}
-                href={playlistPath(pl)}
-                className="music-card group block p-3"
-              >
-                {pl.cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={pl.cover_url}
-                    alt={pl.name}
-                    className="w-full aspect-square object-cover rounded-xl mb-3 shadow-lg shadow-black/30"
-                  />
-                ) : (
-                  <CoverPlaceholder className="w-full aspect-square rounded-xl mb-3" />
-                )}
-                <div className="truncate font-semibold">{pl.name}</div>
-                <div className="text-sm text-muted">{pl.track_count} Titel</div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+const countFormatter = new Intl.NumberFormat("de-DE");
 
-      {/* Followed artists */}
-      <section>
-        <h2 className="section-heading mb-4">Künstler</h2>
-        {artists.length === 0 ? (
-          <EmptyCard>Keine gefolgten Künstler.</EmptyCard>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {artists.map((a) => (
-              <ArtistCard key={String(a.id)} artist={a} />
-            ))}
-          </div>
-        )}
-      </section>
+function Figure({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-col-reverse gap-1.5 border-l border-hairline px-3 py-1 first:border-l-0 first:pl-0 sm:px-7">
+      <dt className="label-mono truncate">{label}</dt>
+      <dd className="font-display text-[clamp(1.5rem,6.4vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] tabular-nums">{countFormatter.format(value)}</dd>
     </div>
   );
 }
 
-function Stat({ n, label }: { n: number; label: string }) {
+function FigureSkeleton() {
   return (
-    <span>
-      <span className="font-bold text-foreground tabular-nums">{n}</span>{" "}
-      {label}
-    </span>
+    <div className="flex min-w-0 flex-col-reverse gap-1.5 border-l border-hairline px-3 py-1 first:border-l-0 first:pl-0 sm:px-7">
+      <div className="skeleton h-4 w-16 max-w-full rounded" />
+      <div className="skeleton h-[clamp(1.5rem,6.4vw,2.75rem)] w-10 rounded" />
+    </div>
   );
 }
 
-function Dot() {
+/** Loading placeholder with the geometry of the profile header and the playlist grid below it. */
+function ProfileSkeleton() {
   return (
-    <span aria-hidden className="text-white/25">
-      •
-    </span>
+    <div>
+      <div role="status" aria-label="Wird geladen" className="pb-9 pt-2">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-8">
+          <div className="skeleton h-28 w-28 shrink-0 rounded-full sm:h-40 sm:w-40" />
+          <div className="min-w-0 flex-1 sm:pb-1">
+            <div className="skeleton mb-3 h-4 w-16 rounded" />
+            <div className="page-title skeleton w-1/2 rounded-[var(--radius-card)]" aria-hidden="true">
+              &nbsp;
+            </div>
+          </div>
+        </div>
+        <div className="mt-8 grid grid-cols-3 border-y border-hairline py-4 sm:inline-grid sm:grid-cols-[repeat(3,auto)]">
+          <FigureSkeleton />
+          <FigureSkeleton />
+          <FigureSkeleton />
+        </div>
+      </div>
+      <div className="section-heading">
+        <div className="skeleton h-7 w-48 rounded" />
+      </div>
+      <CardGridSkeleton count={6} grid={CARD_GRID} />
+    </div>
   );
 }
 
-function EmptyCard({ children }: { children: React.ReactNode }) {
-  return <div className="empty-panel">{children}</div>;
+function Count({ value }: { value: number }) {
+  return <span className="label-mono shrink-0 tabular-nums">{countFormatter.format(value)}</span>;
+}
+
+function ProfileView({ profile }: { profile: PublicProfile }) {
+  const playlists = profile.playlists ?? [];
+  const artists = profile.top_artists ?? [];
+  const name = profile.display_name || "Unbekannt";
+  const totalTracks = playlists.reduce((sum, playlist) => sum + (playlist.track_count || 0), 0);
+  const palette = useCoverColors(profile.avatar_url);
+  const tint = palette ? ({ "--hero-tint": palette.rgb.join(" ") } as CSSProperties) : undefined;
+
+  return (
+    <>
+      <header className="relative isolate pb-9 pt-2" style={tint}>
+        <div className={collection.wash} data-tinted={palette !== null} aria-hidden="true" />
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:gap-8">
+          <div className="cover-shadow h-28 w-28 shrink-0 overflow-hidden rounded-full sm:h-40 sm:w-40">
+            <Avatar src={profile.avatar_url} name={name} size={160} className="h-full! w-full!" />
+          </div>
+          <div className="min-w-0 flex-1 sm:pb-1">
+            <p className="page-eyebrow">Profil</p>
+            <h1 className={`page-title ${name.trim().length > 18 ? "text-[clamp(1.75rem,4.2vw,3rem)] leading-none" : ""}`} title={name}>
+              {name}
+            </h1>
+          </div>
+        </div>
+        <dl aria-label="Kennzahlen" className="mt-8 grid grid-cols-3 border-y border-hairline py-4 sm:inline-grid sm:grid-cols-[repeat(3,auto)]">
+          <Figure value={playlists.length} label="Playlists" />
+          <Figure value={artists.length} label="Künstler" />
+          <Figure value={totalTracks} label="Titel" />
+        </dl>
+      </header>
+
+      <div className="flex flex-col gap-9 md:gap-11">
+        <section aria-labelledby="profile-playlists">
+          <SectionHeader id="profile-playlists" title="Öffentliche Playlists" action={playlists.length > 0 ? <Count value={playlists.length} /> : undefined} />
+          {playlists.length === 0 ? (
+            <EmptyState
+              title="Keine öffentlichen Playlists"
+              action={
+                <Link href="/search" className="action-secondary">
+                  Musik entdecken
+                </Link>
+              }
+            >
+              {name} hat noch keine Playlist veröffentlicht.
+            </EmptyState>
+          ) : (
+            <div className={CARD_GRID}>
+              {playlists.map((playlist) => (
+                <PlaylistCard key={String(playlist.id)} playlist={playlist} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section aria-labelledby="profile-artists">
+          <SectionHeader id="profile-artists" title="Gefolgte Künstler" action={artists.length > 0 ? <Count value={artists.length} /> : undefined} />
+          {artists.length === 0 ? (
+            <EmptyState title="Keine gefolgten Künstler">{name} folgt noch niemandem.</EmptyState>
+          ) : (
+            <Shelf label={`Künstler, denen ${name} folgt`}>
+              {artists.map((artist) => (
+                <ArtistCard key={String(artist.id)} artist={artist} />
+              ))}
+            </Shelf>
+          )}
+        </section>
+      </div>
+    </>
+  );
 }

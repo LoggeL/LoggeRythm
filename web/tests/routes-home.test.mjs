@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { compileInto, compileSource, moduleUrl } from "./support/compile.mjs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -11,10 +10,9 @@ const fixture = {
   requests: [],
   results: {},
   radarEnabled: false,
+  radar: [],
 };
 globalThis.__homeScreenFixture = fixture;
-const moduleUrl = (source) =>
-  `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 const reactUrl = import.meta.resolve("react");
 const empty = moduleUrl("export default function Component() {return null;}");
 const stubs = {
@@ -37,32 +35,34 @@ const stubs = {
     "export const useMe = () => ({data: globalThis.__homeScreenFixture.me, isError: false, isFetching: false, error: null, refetch: async () => {}});",
   ),
   "@/hooks/useReleaseRadar": moduleUrl(
-    "export const useReleaseRadar = (me) => {globalThis.__homeScreenFixture.radarEnabled = !!me; return {data: [], isSuccess: true};}; export const useReleaseRadarSeen = () => ({unseenCount: 0});",
+    "export const useReleaseRadar = (me) => {globalThis.__homeScreenFixture.radarEnabled = !!me; return {data: globalThis.__homeScreenFixture.radar, isSuccess: true};}; export const useReleaseRadarSeen = (_id, tracks) => ({unseenCount: tracks.length});",
   ),
   "@/lib/trackArtists": moduleUrl(
     "export const trackArtistLabel = (track) => track.artist;",
   ),
   "@/components/icons": moduleUrl(
-    "export function PlayIcon() {return null;} export const RadioIcon = PlayIcon; export const CompassIcon = PlayIcon;",
+    "export function PlayIcon() {return null;} export const RadioIcon = PlayIcon; export const CompassIcon = PlayIcon; export const ChevronLeftIcon = PlayIcon; export const ChevronRightIcon = PlayIcon;",
   ),
   "@/components/CoverPlaceholder": empty,
   "@/components/ShelfCard": moduleUrl(
-    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function ShelfCard({shelf}) {return createElement('p', null, shelf.title);}`,
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function ShelfCard({shelf, statusBadge}) {return createElement('p', null, shelf.title, statusBadge ? ' [' + statusBadge + ']' : '');}`,
   ),
 };
-const source = await readFile(
-  new URL("../src/app/page.tsx", import.meta.url),
-  "utf8",
+// The shared primitives and the history hook are the real implementations.
+await compileInto(stubs, [
+  ["@/hooks/useRecentTracks", "src/hooks/useRecentTracks.ts"],
+  ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
+  ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
+  ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
+  ["@/components/ui/SectionHeader", "src/components/ui/SectionHeader.tsx"],
+  ["@/components/browse/Shelf", "src/components/browse/Shelf.tsx"],
+  ["@/components/browse/QuickTile", "src/components/browse/QuickTile.tsx"],
+  ["@/components/browse/BrowseTile", "src/components/browse/BrowseTile.tsx"],
+  ["@/components/browse/QueryState", "src/components/browse/QueryState.tsx"],
+]);
+const { default: HomePage } = await import(
+  await compileSource("src/app/page.tsx", stubs)
 );
-const compiled = ts
-  .transpileModule(source, {
-    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext },
-  })
-  .outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-    assert.ok(stubs[name], `Unmocked route import: ${name}`);
-    return `from ${JSON.stringify(stubs[name])}`;
-  });
-const { default: HomePage } = await import(moduleUrl(compiled));
 function screen() {
   fixture.requests = [];
   return renderToStaticMarkup(createElement(HomePage));
@@ -121,4 +121,43 @@ test("a failed personal mix remains explicit while real local history stays avai
   assert.match(html, /Mein letzter Titel/);
   assert.match(html, /Weiterhören/);
   assert.match(html, /Zuletzt gehört/);
+});
+
+test("recent tiles, shelves and the release radar badge render without the old hero card", () => {
+  fixture.me = { id: "user", display_name: "Alex" };
+  fixture.recent = Array.from({ length: 8 }, (_, index) => ({
+    id: `track-${index}`,
+    title: `Titel ${index}`,
+    artist: "Künstler",
+    cover: "",
+  }));
+  fixture.radar = [{ id: "new", title: "Neu", artist: "Künstler", cover: "" }];
+  fixture.results = {
+    "home-mixes": {
+      data: [{ key: "weekly", title: "Mix der Woche", tracks: [] }],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    },
+  };
+  const html = screen();
+  fixture.radar = [];
+  assert.equal(html.match(/aria-label="Titel \d von Künstler abspielen"/g).length, 6);
+  assert.match(html, /Dein Release Radar \[1 neu\]/);
+  assert.match(html, /Mix der Woche/);
+  assert.match(html, /<ul aria-label="Für dich zusammengestellt"/);
+  assert.match(html, /href="\/library\?tab=recent"/);
+});
+
+test("personal shelves show a skeleton while loading and a next step when empty", () => {
+  fixture.me = { id: "user", display_name: "Alex" };
+  fixture.recent = [];
+  fixture.results = {
+    "home-mixes": { data: undefined, isLoading: true, isError: false },
+  };
+  const loading = screen();
+  assert.match(loading, /role="status" aria-label="Persönliche Musik wird geladen"/);
+  assert.doesNotMatch(loading, /Deine Mixe entstehen beim Hören/);
+  fixture.results = {};
+  assert.match(screen(), /Deine Mixe entstehen beim Hören/);
 });

@@ -7,142 +7,112 @@ import { api } from "@/lib/api";
 import { useMe } from "@/hooks/useAuth";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
-import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
-import { PlayIcon } from "@/components/icons";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
+import QueryError from "@/components/ui/QueryError";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
+import { CollectionSkeleton } from "@/app/playlist/_components/CollectionPageState";
+import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem } from "@/app/playlist/_components/CollectionActions";
+import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 import type { HomeShelf } from "@/types";
 
-export default function MixPage({
-  params,
-}: {
-  params: Promise<{ key: string }>;
-}) {
+export default function MixPage({ params }: { params: Promise<{ key: string }> }) {
   const { key } = use(params);
   const account = useMe();
   const me = account.data;
   const userId = me ? String(me.id) : null;
-  const playQueue = usePlayerStore((state) => state.playQueue);
   const mixes = useQuery<HomeShelf[]>({
     queryKey: ["home-mixes", userId],
     queryFn: () => api.homeMixes(),
     enabled: userId !== null,
   });
 
-  if (account.isLoading || mixes.isLoading) {
-    return (
-      <div>
-        <DetailHeaderSkeleton />
-        <RowListSkeleton />
-      </div>
-    );
-  }
-
-  if (account.isError && !me) {
-    return (
-      <p role="alert" className="error-panel">
-        Dein Konto konnte nicht geladen werden: {account.error.message}
-        <button
-          type="button"
-          onClick={() => void account.refetch()}
-          disabled={account.isFetching}
-          className="ml-3 underline disabled:opacity-50"
-        >
-          Erneut versuchen
-        </button>
-      </p>
-    );
-  }
+  if (account.isLoading || mixes.isLoading) return <CollectionSkeleton />;
 
   if (!me) {
+    // A failed account lookup is not the same as being signed out.
+    if (account.isError) return <QueryError label="Deine Kontodaten" query={account} />;
     return (
-      <div className="empty-panel">
-        <p className="mb-4">Melde dich an, um deine Mixe zu hören.</p>
-        <Link href="/login" className="action-primary">
-          Anmelden
-        </Link>
-      </div>
+      <EmptyState
+        title="Melde dich an, um deine Mixe zu hören"
+        action={
+          <Link href="/login" className="action-primary">
+            Anmelden
+          </Link>
+        }
+      >
+        Mixe werden aus der Musik zusammengestellt, die du hörst.
+      </EmptyState>
     );
   }
 
-  if (mixes.isError && mixes.data === undefined) {
-    return (
-      <p role="alert" className="error-panel">
-        Die generierte Playlist konnte nicht geladen werden:{" "}
-        {mixes.error.message}
-      </p>
-    );
-  }
+  if (mixes.data === undefined) return <QueryError label="Deine Mixe" query={mixes} />;
 
-  const mix = mixes.data?.find((candidate) => candidate.key === key);
+  const mix = mixes.data.find((candidate) => candidate.key === key);
   if (!mix) {
     return (
-      <p role="alert" className="error-panel">
-        Playlist nicht gefunden.
-      </p>
+      <EmptyState
+        title="Playlist nicht gefunden"
+        action={
+          <Link href="/" className="action-secondary">
+            Zur Startseite
+          </Link>
+        }
+      >
+        Dieser Mix gehört nicht mehr zu deinen aktuellen Empfehlungen.
+      </EmptyState>
     );
   }
 
+  return (
+    <div>
+      <QueryError label="Deine Kontodaten" query={account} className="mb-4" />
+      <QueryError label="Deine Mixe" query={mixes} className="mb-4" />
+      <MixView mix={mix} />
+    </div>
+  );
+}
+
+function MixView({ mix }: { mix: HomeShelf }) {
+  const playQueue = usePlayerStore((state) => state.playQueue);
   const tracks = mix.tracks;
+  const cover = mix.cover || tracks.find((track) => track.cover)?.cover;
+  const queueAll = useQueueAllItem(tracks);
 
   return (
-    <div className="animate-in">
-      {account.isError && (
-        <p role="alert" className="error-panel mb-4">
-          Dein Konto konnte nicht aktualisiert werden: {account.error.message}
-        </p>
-      )}
-      {mixes.isError && (
-        <div role="alert" className="error-panel mb-4">
-          Die Playlist konnte nicht aktualisiert werden. Der zuletzt geladene
-          Stand bleibt sichtbar. {mixes.error.message}
-        </div>
-      )}
+    <>
       <CollectionHero
-        eyebrow="Playlist"
+        eyebrow="Für dich gemixt"
         title={mix.title}
         description={mix.subtitle}
-        metadata={`${tracks.length} Titel`}
-        artwork={
-          mix.cover ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={mix.cover}
-              alt={mix.title}
-              className="h-full w-full rounded-2xl object-cover"
-            />
-          ) : (
-            <CoverPlaceholder className="h-full w-full rounded-2xl" />
-          )
-        }
+        metadata={tracksSummary(tracks)}
+        coverUrl={cover}
+        artwork={<Cover src={cover} eager />}
         actions={
-          <button
-            type="button"
-            onClick={() => playQueue(tracks, 0, mix.title)}
-            disabled={tracks.length === 0}
-            className="action-primary"
-          >
-            <PlayIcon width={18} height={18} /> Alle abspielen
-          </button>
+          <>
+            <PlayCollectionButton tracks={tracks} context={mix.title} />
+            <ShuffleCollectionButton tracks={tracks} context={mix.title} />
+            {tracks.length > 0 && <CollectionMenu label="Weitere Optionen für diesen Mix" items={[queueAll]} />}
+          </>
         }
       />
       <CollectionTracks count={tracks.length}>
         {tracks.length === 0 ? (
-          <p className="empty-panel">Diese Playlist ist leer.</p>
+          <EmptyState
+            title="Diese Playlist ist leer"
+            action={
+              <Link href="/search" className="action-secondary">
+                Musik entdecken
+              </Link>
+            }
+          >
+            Höre mehr Musik, damit dieser Mix gefüllt werden kann.
+          </EmptyState>
         ) : (
-          <div className="flex flex-col">
-            {tracks.map((track, index) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={index}
-                onPlay={() => playQueue(tracks, index, mix.title)}
-              />
-            ))}
-          </div>
+          tracks.map((track, index) => <TrackRow key={track.id} track={track} index={index} onPlay={() => playQueue(tracks, index, mix.title)} />)
         )}
       </CollectionTracks>
-    </div>
+    </>
   );
 }

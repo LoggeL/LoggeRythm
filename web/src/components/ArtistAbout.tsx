@@ -4,15 +4,28 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { formatCompact } from "@/lib/format";
+import QueryError from "@/components/ui/QueryError";
+import SectionHeader from "@/components/ui/SectionHeader";
+
+const BIO_PREVIEW_LENGTH = 360;
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-col-reverse gap-1 @3xl:flex-row-reverse @3xl:items-baseline @3xl:justify-between @3xl:gap-4 @3xl:border-b @3xl:border-hairline @3xl:py-3 @3xl:first:pt-0">
+      <dt className="label-mono">{label}</dt>
+      <dd className="font-display text-2xl font-extrabold leading-none tracking-[-0.03em] tabular-nums">{value}</dd>
+    </div>
+  );
+}
 
 /**
  * "About" section for an artist: a Last.fm biography plus genre tags and
- * listen stats. Lazy-loaded (its own query) so it never blocks the page, and
- * it simply renders nothing when no biography is available.
+ * listen stats. Lazy-loaded (its own query) so it never blocks the page. It
+ * renders nothing while loading or when Last.fm knows nothing about the
+ * artist; a failed lookup is reported with a retry.
  */
 export default function ArtistAbout({
   name,
-  picture,
   albumsCount = 0,
 }: {
   name: string;
@@ -20,92 +33,67 @@ export default function ArtistAbout({
   albumsCount?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const { data } = useQuery({
+  const about = useQuery({
     queryKey: ["artist-about", name],
     queryFn: () => api.artistAbout(name),
     enabled: !!name,
     staleTime: 60 * 60_000,
   });
+  const data = about.data;
 
-  if (!data || (!data.bio && !data.listeners && !albumsCount)) return null;
+  if (!data) {
+    if (!about.isError) return null;
+    return (
+      <section>
+        <SectionHeader title={`Über ${name}`} />
+        <QueryError label="Die Künstlerinfos" query={about} />
+      </section>
+    );
+  }
+  if (!data.bio && !data.listeners && !albumsCount) return null;
 
-  const long = data.bio.length > 360;
-  const text = expanded || !long ? data.bio : `${data.bio.slice(0, 360).trim()}…`;
+  const long = data.bio.length > BIO_PREVIEW_LENGTH;
+  const text = expanded || !long ? data.bio : `${data.bio.slice(0, BIO_PREVIEW_LENGTH).trim()}…`;
+  const hasStats = data.listeners > 0 || data.playcount > 0 || albumsCount > 0;
 
   return (
-    <section className="mb-10">
-      <h2 className="text-2xl font-bold mb-4">Über {name}</h2>
-      <div className="rounded-2xl bg-white/[0.035] ring-1 ring-white/10 p-6 flex flex-col sm:flex-row gap-6">
-        {picture && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={picture}
-            alt={name}
-            className="w-28 h-28 rounded-xl object-cover flex-shrink-0 ring-1 ring-white/10"
-          />
+    <section className="@container">
+      <SectionHeader title={`Über ${name}`} />
+      <QueryError label="Die Künstlerinfos" query={about} className="mb-4" />
+      <div className={hasStats ? "grid gap-x-14 gap-y-7 @3xl:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]" : undefined}>
+        {hasStats && (
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-x-6 gap-y-5 self-start @3xl:block">
+            {data.listeners > 0 && <Stat value={formatCompact(data.listeners)} label="Hörer*innen" />}
+            {data.playcount > 0 && <Stat value={formatCompact(data.playcount)} label="Wiedergaben" />}
+            {albumsCount > 0 && <Stat value={String(albumsCount)} label="Releases" />}
+          </dl>
         )}
-        <div className="min-w-0">
-          {(data.listeners > 0 || data.playcount > 0 || albumsCount > 0) && (
-            <div className="flex flex-wrap gap-8 mb-4">
-              {data.listeners > 0 && (
-                <div>
-                  <div className="text-xl font-bold">
-                    {formatCompact(data.listeners)}
-                  </div>
-                  <div className="text-xs text-muted uppercase tracking-wide">
-                    Hörer*innen
-                  </div>
-                </div>
-              )}
-              {data.playcount > 0 && (
-                <div>
-                  <div className="text-xl font-bold">
-                    {formatCompact(data.playcount)}
-                  </div>
-                  <div className="text-xs text-muted uppercase tracking-wide">
-                    Wiedergaben
-                  </div>
-                </div>
-              )}
-              {albumsCount > 0 && (
-                <div>
-                  <div className="text-xl font-bold">{albumsCount}</div>
-                  <div className="text-xs text-muted uppercase tracking-wide">
-                    Releases
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
-          {data.bio && (
-            <p className="text-sm leading-relaxed text-foreground/80 whitespace-pre-line">
-              {text}
-              {long && (
-                <button
-                  type="button"
-                  onClick={() => setExpanded((v) => !v)}
-                  className="ml-1 text-accent hover:underline font-medium"
-                >
-                  {expanded ? "weniger" : "mehr"}
-                </button>
-              )}
-            </p>
-          )}
+        {(data.bio || data.tags.length > 0) && (
+          <div className="min-w-0">
+            {data.bio && <p className="max-w-[68ch] whitespace-pre-line text-[0.9375rem] leading-7 text-muted [overflow-wrap:anywhere]">{text}</p>}
+            {long && (
+              <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                aria-expanded={expanded}
+                className="label-mono mt-1 inline-flex min-h-11 items-center text-foreground underline-offset-4 hover:underline"
+              >
+                {expanded ? "Weniger anzeigen" : "Mehr anzeigen"}
+              </button>
+            )}
 
-          {data.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              {data.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="px-3 py-1 rounded-full bg-white/[0.06] text-xs text-muted capitalize"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+            {data.tags.length > 0 && (
+              <ul className={`flex flex-wrap gap-1.5 ${data.bio ? "mt-4" : ""}`} aria-label="Genres">
+                {data.tags.map((tag) => (
+                  <li key={tag} className="label-mono rounded-art border border-hairline px-2 py-1">
+                    {tag}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

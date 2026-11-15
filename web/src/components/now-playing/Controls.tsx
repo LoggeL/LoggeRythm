@@ -1,7 +1,7 @@
 "use client";
 
 import { usePlayerStore } from "@/store/player";
-import { formatTime } from "@/lib/format";
+import { rangeFill } from "@/components/player/Scrubber";
 import {
   PlayIcon,
   PauseIcon,
@@ -15,51 +15,13 @@ import {
   SpinnerIcon,
 } from "@/components/icons";
 
-/** A filled track for range inputs (accent up to `pct` percent). */
-function rangeFill(pct: number): string {
-  const p = Math.max(0, Math.min(100, pct));
-  return `linear-gradient(to right, var(--accent) 0%, var(--accent) ${p}%, var(--border) ${p}%, var(--border) 100%)`;
-}
-
 /**
  * Store-connected transport controls for the fullscreen player. Each control
- * subscribes to exactly the store slices it renders, so the ~4×/second
- * `currentTime` ticks only re-render the seek bar — not the whole fullscreen
- * tree.
+ * subscribes to exactly the store slices it renders; seeking is handled by the
+ * shared drag-safe {@link Scrubber}.
  */
 
-export function SeekBar() {
-  const currentTime = usePlayerStore((s) => s.currentTime);
-  const duration = usePlayerStore((s) => s.duration);
-  const seek = usePlayerStore((s) => s.seek);
-  return (
-    <div className="flex w-full items-center gap-2">
-      <span className="w-10 text-right text-xs tabular-nums text-muted">
-        {formatTime(currentTime)}
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={duration || 0}
-        step={0.1}
-        value={Math.min(currentTime, duration || 0)}
-        onChange={(e) => seek(Number(e.target.value))}
-        disabled={!duration}
-        className="flex-1"
-        style={{
-          background: rangeFill(duration ? (currentTime / duration) * 100 : 0),
-        }}
-        aria-label="Fortschritt"
-        aria-valuetext={`${formatTime(currentTime)} von ${formatTime(duration)}`}
-      />
-      <span className="w-10 text-xs tabular-nums text-muted">
-        {formatTime(duration)}
-      </span>
-    </div>
-  );
-}
-
-export function TransportRow() {
+export function TransportRow({ className = "" }: { className?: string }) {
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isBuffering = usePlayerStore((s) => s.isBuffering);
   const shuffle = usePlayerStore((s) => s.shuffle);
@@ -72,14 +34,14 @@ export function TransportRow() {
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
 
   return (
-    <div className="mt-3 flex items-center justify-center gap-2 sm:gap-4">
+    <div className={`flex items-center justify-between gap-1 sm:justify-center sm:gap-4 ${className}`}>
       <button
         type="button"
         onClick={toggleShuffle}
         aria-label="Zufallswiedergabe"
         aria-pressed={shuffle}
         title={shuffle ? "Zufallswiedergabe ausschalten" : "Zufallswiedergabe einschalten"}
-        className={`action-icon h-11 w-11 ${shuffle ? "bg-accent/10 text-accent-soft" : ""}`}
+        className="action-icon h-11 w-11"
       >
         <ShuffleIcon width={22} height={22} />
       </button>
@@ -87,9 +49,9 @@ export function TransportRow() {
         type="button"
         onClick={prev}
         aria-label="Vorheriger Titel"
-        className="action-icon h-11 w-11"
+        className="action-icon h-12 w-12 text-foreground"
       >
-        <PrevIcon width={24} height={24} />
+        <PrevIcon width={30} height={30} />
       </button>
       <button
         type="button"
@@ -97,30 +59,30 @@ export function TransportRow() {
         aria-label={isPlaying ? "Pause" : "Abspielen"}
         aria-busy={isBuffering}
         title={isBuffering ? "Wiedergabe wird geladen" : isPlaying ? "Pause" : "Abspielen"}
-        className="action-primary grid h-14 w-14 place-items-center rounded-full p-0"
+        className="play-fab h-16 w-16"
       >
         {isBuffering ? (
-          <SpinnerIcon width={26} height={26} aria-hidden />
+          <SpinnerIcon width={28} height={28} aria-hidden className="animate-spin motion-reduce:animate-none" />
         ) : isPlaying ? (
-          <PauseIcon width={26} height={26} />
+          <PauseIcon width={28} height={28} />
         ) : (
-          <PlayIcon width={26} height={26} />
+          <PlayIcon width={28} height={28} />
         )}
       </button>
       <button
         type="button"
         onClick={next}
         aria-label="Nächster Titel"
-        className="action-icon h-11 w-11"
+        className="action-icon h-12 w-12 text-foreground"
       >
-        <NextIcon width={24} height={24} />
+        <NextIcon width={30} height={30} />
       </button>
       <button
         type="button"
         onClick={cycleRepeat}
         aria-label={repeat === "one" ? "Wiederholen: ein Titel" : repeat === "all" ? "Wiederholen: alle Titel" : "Wiederholen: aus"}
         aria-pressed={repeat !== "off"}
-        className={`action-icon h-11 w-11 ${repeat !== "off" ? "bg-accent/10 text-accent-soft" : ""}`}
+        className="action-icon h-11 w-11"
       >
         <RepeatGlyph width={22} height={22} />
       </button>
@@ -134,7 +96,7 @@ export function VolumeRow() {
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
   return (
-    <div className="mt-2 flex items-center justify-center gap-2">
+    <div className="flex w-full max-w-60 items-center gap-1">
       <button
         type="button"
         onClick={toggleMute}
@@ -151,7 +113,7 @@ export function VolumeRow() {
         step={0.01}
         value={muted ? 0 : volume}
         onChange={(e) => setVolume(Number(e.target.value))}
-        className="w-36 sm:w-40"
+        className="min-w-0 flex-1"
         style={{ background: rangeFill((muted ? 0 : volume) * 100) }}
         aria-label="Lautstärke"
         aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)} Prozent`}

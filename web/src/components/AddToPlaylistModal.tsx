@@ -1,7 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState, useRef } from "react";
 import { useAddToPlaylistStore } from "@/store/addToPlaylist";
 import {
   usePlaylists,
@@ -11,8 +10,9 @@ import {
 import { useMe } from "@/hooks/useAuth";
 import { toast } from "@/store/toast";
 import { PlusIcon } from "@/components/icons";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
-import { useDialogFocus } from "@/hooks/useDialogFocus";
+import Cover from "@/components/ui/Cover";
+import QueryError from "@/components/ui/QueryError";
+import Modal from "@/components/Modal";
 
 export default function AddToPlaylistModal() {
   const track = useAddToPlaylistStore((s) => s.track);
@@ -25,10 +25,8 @@ export default function AddToPlaylistModal() {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const submitting = useRef(false);
   const busy = createPlaylist.isPending || addToPlaylist.isPending;
-  useDialogFocus(!!track, panelRef, close);
 
   // Reset the inline create form whenever the modal opens for a new track
   // ("adjust state during render" — avoids a setState-in-effect cascade).
@@ -40,7 +38,7 @@ export default function AddToPlaylistModal() {
     setActionError(null);
   }
 
-  if (typeof document === "undefined" || !track) return null;
+  if (!track) return null;
 
   function addTo(id: string, name: string) {
     if (submitting.current || busy) return;
@@ -87,124 +85,85 @@ export default function AddToPlaylistModal() {
     });
   }
 
-  const list = playlistQuery.data ?? [];
+  const list = playlistQuery.data;
 
-  return createPortal(
-    <div
-      className="fixed inset-0 z-[110] flex items-center justify-center p-4"
-    >
-      {/* Backdrop */}
-      <button
-        type="button"
-        aria-label="Schließen"
-        onClick={close}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-[fadeIn_0.15s_ease-out]"
-      />
-
-      {/* Panel */}
-      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Zu Playlist hinzufügen" aria-busy={busy} tabIndex={-1} className="pop-in surface-card relative flex max-h-[80dvh] w-full max-w-md flex-col overflow-hidden shadow-2xl">
-        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-3">
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold text-foreground">
-              Zu Playlist hinzufügen
-            </h2>
-            <p className="mt-0.5 truncate text-sm text-muted">{track.title}</p>
-          </div>
-          <button
-            type="button"
-            onClick={close}
-            aria-label="Schließen"
-            className="-mr-1 -mt-1 flex-shrink-0 rounded-full p-2 text-muted transition hover:bg-panel-hover hover:text-foreground"
-          >
-            ✕
-          </button>
-        </div>
-
+  return (
+    <Modal open onClose={close} title="Zu Playlist hinzufügen" description={<span className="block truncate">{track.title} · {track.artist}</span>}>
+      <div aria-busy={busy} className="flex flex-col">
         {creating ? (
-          <form
-            onSubmit={createAndAdd}
-            className="mx-3 mb-1 flex items-center gap-2 rounded-lg px-2 py-2"
-          >
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Name der neuen Playlist"
-              aria-label="Name der neuen Playlist"
-              disabled={busy}
-              autoFocus
-              required
-              className="min-w-0 flex-1 rounded bg-background border border-white/15 px-3 py-2 text-sm outline-none focus:border-accent"
-            />
-            <button
-              type="submit"
-              disabled={busy || !newName.trim()}
-              className="flex-shrink-0 rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white hover:bg-accent-hover disabled:opacity-60"
-            >
-              {busy ? "Speichert…" : "Erstellen"}
-            </button>
+          <form onSubmit={createAndAdd} className="flex flex-col gap-2 border-y border-hairline py-3">
+            <label htmlFor="add-to-playlist-name" className="label-mono">
+              Neue Playlist
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                id="add-to-playlist-name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Name der neuen Playlist"
+                aria-label="Name der neuen Playlist"
+                maxLength={120}
+                disabled={busy}
+                autoFocus
+                required
+                className="field-input min-w-0 flex-1"
+              />
+              <button type="submit" disabled={busy || !newName.trim()} className="action-primary shrink-0">
+                {busy ? "Speichert…" : "Erstellen"}
+              </button>
+            </div>
           </form>
         ) : (
-          <button
-            type="button"
-            onClick={() => setCreating(true)}
-            disabled={busy}
-            className="mx-3 mb-1 flex items-center gap-3 rounded-lg px-2 py-2.5 text-left transition hover:bg-white/10"
-          >
-            <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded bg-panel-hover text-foreground">
-              <PlusIcon />
-            </span>
-            <span className="font-medium text-foreground">Neue Playlist</span>
-          </button>
+          <div className="border-y border-hairline py-1">
+            <button type="button" onClick={() => setCreating(true)} disabled={busy} className={ROW}>
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-art border border-dashed border-border text-muted transition-colors group-hover:border-foreground/40 group-hover:text-foreground">
+                <PlusIcon width={18} height={18} />
+              </span>
+              <span className="font-display text-[15px] font-bold tracking-tight">Neue Playlist</span>
+            </button>
+          </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-area px-3 pb-3">
-          {actionError && <p role="alert" className="px-2 py-3 text-sm text-red-300">{actionError}</p>}
-          {playlistQuery.isError ? (
-            <div role="alert" className="px-2 py-4 text-sm text-red-300">
-              Playlists konnten nicht geladen werden: {playlistQuery.error.message}
-              <button type="button" disabled={playlistQuery.isFetching} onClick={() => void playlistQuery.refetch()} className="mt-2 block underline">Erneut versuchen</button>
-            </div>
-          ) : playlistQuery.isPending ? (
-            <p role="status" className="px-2 py-6 text-center text-sm text-muted">Playlists werden geladen…</p>
-          ) : list.length === 0 ? (
-            <p className="px-2 py-6 text-center text-sm text-muted">
-              Noch keine Playlists. Erstelle oben eine neue.
-            </p>
-          ) : (
-            list.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => addTo(String(p.id), p.name)}
-                disabled={busy}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left transition hover:bg-white/10"
-              >
-                {p.cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={p.cover_url}
-                    alt=""
-                    width={44}
-                    height={44}
-                    className="h-11 w-11 flex-shrink-0 rounded object-cover"
-                  />
-                ) : (
-                  <CoverPlaceholder className="h-11 w-11 flex-shrink-0 rounded" />
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-foreground">
-                    {p.name}
-                  </span>
-                  <span className="block text-xs text-muted">
-                    {p.track_count} Titel
-                  </span>
+        {actionError && (
+          <p role="alert" className="error-panel mt-3">
+            Titel konnte nicht hinzugefügt werden: {actionError}
+          </p>
+        )}
+        <QueryError label="Playlists" query={playlistQuery} className="mt-3" />
+        {playlistQuery.isPending && (
+          <div role="status" aria-label="Playlists werden geladen" className="pt-2">
+            {[0, 1, 2, 3].map((row) => (
+              <div key={row} className="flex items-center gap-3 py-2">
+                <span className="skeleton h-11 w-11 shrink-0 rounded-art" />
+                <span className="flex min-w-0 flex-1 flex-col gap-2">
+                  <span className="skeleton h-3.5 w-1/2 rounded" />
+                  <span className="skeleton h-3 w-1/4 rounded" />
                 </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {list && !playlistQuery.isError && list.length === 0 && (
+          <p className="py-8 text-center text-sm leading-relaxed text-muted">Du hast noch keine Playlist. Lege oben mit „Neue Playlist“ deine erste an.</p>
+        )}
+        {list && !playlistQuery.isError && list.length > 0 && (
+          <>
+            <p className="label-mono flex items-center justify-between pb-1 pt-4">
+              <span>Deine Playlists</span>
+              <span className="tabular-nums">{list.length}</span>
+            </p>
+            {list.map((p) => (
+              <button key={p.id} type="button" onClick={() => addTo(String(p.id), p.name)} disabled={busy} className={ROW}>
+                <Cover src={p.cover_url} className="h-11 w-11 rounded-art" />
+                <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{p.name}</span>
+                <span className="label-mono shrink-0 tabular-nums">{p.track_count} Titel</span>
               </button>
-            ))
-          )}
-        </div>
+            ))}
+          </>
+        )}
       </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }
+
+const ROW = "group -mx-2 flex min-h-14 w-[calc(100%+1rem)] items-center gap-3 rounded-[var(--radius-control)] px-2 py-1.5 text-left transition-colors hover:bg-foreground/[0.06] focus-visible:bg-foreground/[0.06] disabled:opacity-50 disabled:hover:bg-transparent";

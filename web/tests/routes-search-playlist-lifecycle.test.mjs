@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { compileSource } from "./support/compile.mjs";
 
 const fixture = { owner: null, route: null, playlist: null };
 globalThis.__searchPlaylistLifecycleFixture = fixture;
@@ -59,15 +58,23 @@ const stubs = {
   "@/components/Skeleton": moduleUrl("export function CardGridSkeleton() {return null;} export function RowListSkeleton() {return null;}"),
   "@/components/icons": moduleUrl("export function SearchIcon() {return null;} export const ImportIcon = SearchIcon; export const PlayIcon = SearchIcon; export const CompassIcon = SearchIcon; export const RadioIcon = SearchIcon;"),
   "./results": new URL("../src/app/search/results.ts", import.meta.url).href,
+  // Presentational sections are opaque here: the lifecycle under test lives in
+  // the page and in PlaylistSearchResults, whose buttons stay plain children.
+  "@/components/ui/Cover": nullComponent,
+  "@/components/ui/EmptyState": nullComponent,
+  "@/components/ui/QueryError": nullComponent,
+  "./_components/SearchFilters": nullComponent,
+  "./_components/SearchIdle": nullComponent,
+  "./_components/ResultSection": nullComponent,
+  "./_components/ResultCards": nullComponent,
+  "./_components/TopHit": nullComponent,
+  "./_components/TrackResults": nullComponent,
+  "./_components/ArtistResults": nullComponent,
+  "./_components/AlbumResults": nullComponent,
 };
-const source = await readFile(new URL("../src/app/search/page.tsx", import.meta.url), "utf8");
-const compiled = ts.transpileModule(source, {
-  compilerOptions: {jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext},
-}).outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-  assert.ok(stubs[name], `Unmocked search route import: ${name}`);
-  return `from ${JSON.stringify(stubs[name])}`;
-});
-const { default: SearchPage, PlaylistSearchResults } = await import(moduleUrl(compiled));
+const { default: SearchPage, PlaylistSearchResults } = await import(
+  await compileSource("src/app/search/page.tsx", stubs, "search route"),
+);
 
 function owner(key) {return {key, hooks: [], effects: [], nextEffects: [], cursor: 0};}
 function unmountOwner(instance) {

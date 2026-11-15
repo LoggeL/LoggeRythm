@@ -10,6 +10,7 @@ import CacheMarker from "@/components/CacheMarker";
 import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Scrubber, { ProgressLine, rangeFill } from "@/components/player/Scrubber";
+import { formatTime } from "@/lib/format";
 import { setNowPlayingOpen } from "@/components/player/usePlayerSideEffects";
 import {
   PlayIcon,
@@ -68,21 +69,22 @@ function Transport() {
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
   const repeatLabel = repeat === "one" ? "Titel wiederholen" : repeat === "all" ? "Alle wiederholen" : "Wiederholen aus";
+
   return (
-    <div className="flex items-center justify-center gap-2">
-      <button type="button" onClick={toggleShuffle} disabled={!hasTrack} aria-label="Zufallswiedergabe" aria-pressed={shuffle} title="Zufallswiedergabe" className="action-icon relative h-9 w-9">
-        <ShuffleIcon width={17} height={17} />
+    <div className="flex items-center justify-center gap-1.5">
+      <button type="button" onClick={toggleShuffle} disabled={!hasTrack} aria-label="Zufallswiedergabe" aria-pressed={shuffle} title="Zufallswiedergabe" className="action-icon relative h-10 w-10">
+        <ShuffleIcon width={18} height={18} />
         {shuffle && <ActiveDot />}
       </button>
-      <button type="button" onClick={prev} disabled={!hasTrack} aria-label="Vorheriger Titel" title="Vorheriger Titel (Shift+P)" className="action-icon h-9 w-9 text-foreground">
-        <PrevIcon width={22} height={22} />
+      <button type="button" onClick={prev} disabled={!hasTrack} aria-label="Vorheriger Titel" title="Vorheriger Titel (Shift+P)" className="action-icon h-11 w-11 text-foreground">
+        <PrevIcon width={24} height={24} />
       </button>
-      <PlayPauseButton iconSize={22} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-foreground text-background transition hover:scale-105 active:scale-95 disabled:opacity-40" />
-      <button type="button" onClick={next} disabled={!hasTrack} aria-label="Nächster Titel" title="Nächster Titel (Shift+N)" className="action-icon h-9 w-9 text-foreground">
-        <NextIcon width={22} height={22} />
+      <PlayPauseButton iconSize={24} className="play-fab mx-1.5 h-12 w-12" />
+      <button type="button" onClick={next} disabled={!hasTrack} aria-label="Nächster Titel" title="Nächster Titel (Shift+N)" className="action-icon h-11 w-11 text-foreground">
+        <NextIcon width={24} height={24} />
       </button>
-      <button type="button" onClick={cycleRepeat} disabled={!hasTrack} aria-label="Wiederholen" aria-pressed={repeat !== "off"} title={repeatLabel} className="action-icon relative h-9 w-9">
-        <RepeatGlyph width={17} height={17} />
+      <button type="button" onClick={cycleRepeat} disabled={!hasTrack} aria-label="Wiederholen" aria-pressed={repeat !== "off"} title={repeatLabel} className="action-icon relative h-10 w-10">
+        <RepeatGlyph width={18} height={18} />
         {repeat !== "off" && <ActiveDot />}
       </button>
     </div>
@@ -90,7 +92,18 @@ function Transport() {
 }
 
 function ActiveDot() {
-  return <span aria-hidden="true" className="absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-accent-soft" />;
+  return <span aria-hidden="true" className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-accent-soft" />;
+}
+
+/** Elapsed / total, read out next to the transport; the seek bar itself is the deck's top edge. */
+function TimeReadout() {
+  const currentTime = usePlayerStore((s) => Math.floor(s.currentTime));
+  const duration = usePlayerStore((s) => s.duration);
+  return (
+    <p aria-hidden="true" className="font-mono text-[11.5px] tabular-nums text-subtle">
+      <span className="text-foreground">{formatTime(currentTime)}</span> / {formatTime(duration || 0)}
+    </p>
+  );
 }
 
 function VolumeControl() {
@@ -111,7 +124,7 @@ function VolumeControl() {
         step={0.01}
         value={level}
         onChange={(e) => setVolume(Number(e.target.value))}
-        className="w-20 xl:w-24"
+        className="w-20 xl:w-28"
         style={{ background: rangeFill(level * 100) }}
         aria-label="Lautstärke"
         aria-valuetext={`${Math.round(level * 100)} Prozent`}
@@ -147,23 +160,23 @@ function PanelToggles() {
 function TrackSummary({ track }: { track: Track }) {
   const playing = usePlayerStore((s) => s.isPlaying && !s.isBuffering);
   return (
-    <TrackContext track={track} className="flex min-w-0 items-center gap-3">
-      <button type="button" onClick={openNowPlaying} aria-label="Jetzt läuft öffnen" title="Jetzt läuft öffnen" className="group/cover relative shrink-0 overflow-hidden rounded-lg">
-        <Cover track={track} className="h-14 w-14 rounded-lg" />
-        <span className="absolute inset-0 grid place-items-center bg-black/55 opacity-0 transition group-hover/cover:opacity-100">
+    <TrackContext track={track} className="flex min-w-0 items-center gap-3.5">
+      <button type="button" onClick={openNowPlaying} aria-label="Jetzt läuft öffnen" title="Jetzt läuft öffnen (F)" className="group/cover relative shrink-0 overflow-hidden rounded-[var(--radius-art)] shadow-[0_6px_18px_rgb(0_0_0/0.5)]">
+        <Cover track={track} className="h-[60px] w-[60px]" />
+        <span className="absolute inset-0 grid place-items-center bg-black/60 opacity-0 transition group-hover/cover:opacity-100 group-focus-visible/cover:opacity-100">
           <ExpandIcon width={18} height={18} />
         </span>
       </button>
       <div className="min-w-0">
         {track.album_id ? (
-          <Link href={`/album/${track.album_id}`} className="block truncate text-sm font-semibold hover:underline">{track.title}</Link>
+          <Link href={`/album/${track.album_id}`} className="font-display block truncate text-[15px] font-bold tracking-tight hover:underline">{track.title}</Link>
         ) : (
-          <p className="truncate text-sm font-semibold">{track.title}</p>
+          <p className="font-display truncate text-[15px] font-bold tracking-tight">{track.title}</p>
         )}
         <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           <EqualizerBars height={12} isPlaying={playing} />
           <CacheMarker trackId={track.id} />
-          <ArtistLinks track={track} className="truncate text-xs text-muted" linkClassName="hover:underline hover:text-foreground" />
+          <ArtistLinks track={track} className="truncate text-[13px] text-muted" linkClassName="hover:underline hover:text-foreground" />
         </div>
       </div>
       <LikeButton key={track.id} track={track} />
@@ -183,17 +196,25 @@ function PlayerErrors() {
   );
 }
 
-/** Desktop transport bar: track · transport + seek · panels + volume. */
+/**
+ * Desktop deck: the seek bar is its full-width top edge; below it sit the
+ * track, the transport with a time readout, and the panel toggles.
+ */
 function DesktopBar({ track }: { track: Track | null }) {
   return (
-    <div className="hidden h-[76px] grid-cols-[minmax(0,1fr)_minmax(20rem,1.3fr)_minmax(0,1fr)] items-center gap-6 px-3 lg:grid">
-      {track ? <TrackSummary track={track} /> : <p className="px-2 text-sm text-muted">Wähle einen Titel zum Abspielen.</p>}
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <Transport />
-        <Scrubber />
+    <div className="relative hidden border-t border-hairline bg-backdrop lg:block">
+      <div className="seek-edge absolute inset-x-0 top-0 z-10 -translate-y-1/2">
+        <Scrubber showTimes={false} />
       </div>
-      <div className="flex items-center justify-end gap-1">
-        <PanelToggles />
+      <div className="grid h-[84px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-5">
+        {track ? <TrackSummary track={track} /> : <p className="label-mono">Wähle einen Titel zum Abspielen.</p>}
+        <div className="flex items-center gap-5">
+          <Transport />
+          <TimeReadout />
+        </div>
+        <div className="flex items-center justify-end gap-1">
+          <PanelToggles />
+        </div>
       </div>
     </div>
   );
@@ -203,16 +224,16 @@ function DesktopBar({ track }: { track: Track | null }) {
 function MiniPlayer({ track }: { track: Track }) {
   const next = usePlayerStore((s) => s.next);
   return (
-    <div className="glass relative mx-2 mb-2 flex items-center gap-3 overflow-hidden rounded-2xl border border-hairline p-2 shadow-[0_10px_30px_rgb(0_0_0/0.5)] lg:hidden" style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.28), rgb(var(--ambient) / 0.08))" }}>
+    <div className="relative mx-2 mb-2 flex items-center gap-3 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-panel p-1.5 pr-2 shadow-[0_10px_30px_rgb(0_0_0/0.55)] lg:hidden" style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.3), rgb(var(--ambient) / 0.06))" }}>
       <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <Cover track={track} className="h-11 w-11 shrink-0 rounded-lg" />
+        <Cover track={track} className="h-12 w-12 shrink-0 rounded-[var(--radius-art)]" />
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{track.title}</span>
+          <span className="font-display block truncate text-sm font-bold tracking-tight">{track.title}</span>
           <span className="block truncate text-xs text-muted">{track.artist}</span>
         </span>
       </button>
       <LikeButton key={track.id} track={track} />
-      <PlayPauseButton iconSize={24} className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-foreground disabled:opacity-40" />
+      <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
       <button type="button" onClick={next} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground">
         <NextIcon width={22} height={22} />
       </button>
@@ -231,7 +252,7 @@ export default function PlayerBar() {
   return (
     <>
       {nowPlayingOpen && track && <NowPlaying onClose={closeNowPlaying} />}
-      <footer aria-label="Musikplayer" className="like-celebration-surface relative z-20 shrink-0">
+      <footer aria-label="Musikplayer" className="like-celebration-surface relative z-20 shrink-0 bg-backdrop">
         <PlayerErrors />
         <DesktopBar track={track} />
         {track && <MiniPlayer track={track} />}

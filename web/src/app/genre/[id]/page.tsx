@@ -1,124 +1,117 @@
 "use client";
 
 import { use } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { usePlayerStore } from "@/store/player";
 import TrackRow from "@/components/TrackRow";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
-import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
-import { PlayIcon } from "@/components/icons";
+import Cover from "@/components/ui/Cover";
+import EmptyState from "@/components/ui/EmptyState";
+import SectionHeader from "@/components/ui/SectionHeader";
+import Shelf from "@/components/browse/Shelf";
+import CollectionHero from "@/app/playlist/_components/CollectionHero";
+import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
+import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
+import { PlayCollectionButton, ShuffleCollectionButton } from "@/app/playlist/_components/CollectionActions";
 import type { GenreDetail } from "@/types";
 
-export default function GenrePage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+const TOP_TRACK_LIMIT = 10;
+
+export default function GenrePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, isLoading, isError, error } = useQuery<GenreDetail>({
+  const genre = useQuery<GenreDetail>({
     queryKey: ["genre", id],
     queryFn: () => api.genre(id),
     enabled: !!id,
   });
-  const playQueue = usePlayerStore((s) => s.playQueue);
-
-  if (isLoading)
-    return (
-      <div>
-        <DetailHeaderSkeleton />
-        <RowListSkeleton />
-      </div>
-    );
-  if (!data) {
-    return (
-      <p className="text-red-400">
-        {isError
-          ? `Genre konnte nicht geladen werden: ${error.message}`
-          : "Genre nicht gefunden."}
-      </p>
-    );
-  }
-
-  const tracks = data.tracks ?? [];
-  const albums = data.albums ?? [];
-  const artists = data.artists ?? [];
 
   return (
-    <div className="animate-in">
-      {isError && (
-        <div
-          role="alert"
-          className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200"
+    <CollectionPageState query={genre} label="Die Genredaten" missing="Genre nicht gefunden">
+      {(data) => <GenreView genre={data} />}
+    </CollectionPageState>
+  );
+}
+
+function Count({ value }: { value: number }) {
+  return <span className="label-mono shrink-0 tabular-nums">{value}</span>;
+}
+
+function GenreView({ genre }: { genre: GenreDetail }) {
+  const playQueue = usePlayerStore((state) => state.playQueue);
+  const tracks = genre.tracks ?? [];
+  const albums = genre.albums ?? [];
+  const artists = genre.artists ?? [];
+  const topTracks = tracks.slice(0, TOP_TRACK_LIMIT);
+  const metadata = [tracks.length > 0 ? `${tracks.length} Top-Titel` : "", artists.length > 0 ? `${artists.length} Künstler` : "", albums.length > 0 ? `${albums.length} Alben` : ""]
+    .filter(Boolean)
+    .join(" · ");
+  const empty = tracks.length === 0 && albums.length === 0 && artists.length === 0;
+
+  return (
+    <>
+      <CollectionHero
+        eyebrow="Genre"
+        title={genre.name}
+        coverUrl={genre.picture}
+        artwork={<Cover src={genre.picture} eager />}
+        metadata={metadata || undefined}
+        actions={
+          tracks.length > 0 && (
+            <>
+              <PlayCollectionButton tracks={tracks} context={genre.name} />
+              <ShuffleCollectionButton tracks={tracks} context={genre.name} />
+            </>
+          )
+        }
+      />
+
+      {empty && (
+        <EmptyState
+          title="Für dieses Genre gibt es gerade nichts zu hören"
+          action={
+            <Link href="/genre" className="action-secondary">
+              Alle Genres
+            </Link>
+          }
         >
-          Genredaten konnten nicht aktualisiert werden. Der zuletzt geladene
-          Stand bleibt sichtbar. {error.message}
-        </div>
+          Es sind weder Titel noch Alben oder Künstler hinterlegt.
+        </EmptyState>
       )}
-      <header className="relative flex items-end gap-6 mb-6 rounded-xl overflow-hidden p-6 min-h-44 isolate">
-        {data.picture && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.picture}
-            alt=""
-            aria-hidden
-            className="absolute inset-0 -z-10 w-full h-full object-cover opacity-40"
-          />
+
+      <div className="flex flex-col gap-9 md:gap-11">
+        {topTracks.length > 0 && (
+          <CollectionTracks count={topTracks.length} title="Top-Titel">
+            {topTracks.map((track, index) => (
+              <TrackRow key={track.id} track={track} index={index} onPlay={() => playQueue(tracks, index, genre.name)} />
+            ))}
+          </CollectionTracks>
         )}
-        <div className="absolute inset-0 -z-10 bg-black/50" />
-        <div>
-          <p className="text-xs uppercase tracking-wide text-muted">Genre</p>
-          <h1 className="text-5xl font-extrabold">{data.name}</h1>
-        </div>
-      </header>
 
-      {tracks.length > 0 && (
-        <section className="mb-10">
-          <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-2xl font-bold">Top-Titel</h2>
-            <button
-              type="button"
-              onClick={() => playQueue(tracks, 0, data.name)}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition press"
-            >
-              <PlayIcon width={16} height={16} /> Abspielen
-            </button>
-          </div>
-          <div className="flex flex-col">
-            {tracks.slice(0, 10).map((track, i) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={i}
-                onPlay={() => playQueue(tracks, i, data.name)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
+        {artists.length > 0 && (
+          <section aria-labelledby="genre-artists">
+            <SectionHeader id="genre-artists" title="Künstler" action={<Count value={artists.length} />} />
+            <Shelf label={`Künstler aus ${genre.name}`}>
+              {artists.map((artist) => (
+                <ArtistCard key={String(artist.id)} artist={artist} />
+              ))}
+            </Shelf>
+          </section>
+        )}
 
-      {artists.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-4">Künstler</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {artists.map((a) => (
-              <ArtistCard key={String(a.id)} artist={a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {albums.length > 0 && (
-        <section className="mb-10">
-          <h2 className="text-2xl font-bold mb-4">Alben</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {albums.map((al) => (
-              <AlbumCard key={String(al.id)} album={al} />
-            ))}
-          </div>
-        </section>
-      )}
-    </div>
+        {albums.length > 0 && (
+          <section aria-labelledby="genre-albums">
+            <SectionHeader id="genre-albums" title="Alben" action={<Count value={albums.length} />} />
+            <Shelf label={`Alben aus ${genre.name}`}>
+              {albums.map((album) => (
+                <AlbumCard key={String(album.id)} album={album} />
+              ))}
+            </Shelf>
+          </section>
+        )}
+      </div>
+    </>
   );
 }

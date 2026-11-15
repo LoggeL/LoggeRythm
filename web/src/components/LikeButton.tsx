@@ -136,9 +136,9 @@ export default function LikeButton({ track }: { track: Track }) {
         <svg width={0} height={0} className={styles.gradient} aria-hidden="true">
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#ff84cc" />
-              <stop offset="55%" stopColor="#ed64bd" />
-              <stop offset="100%" stopColor="#9d7bff" />
+              <stop offset="0%" style={{ stopColor: "var(--like-from)" }} />
+              <stop offset="55%" style={{ stopColor: "var(--like-via)" }} />
+              <stop offset="100%" style={{ stopColor: "var(--like-to)" }} />
             </linearGradient>
           </defs>
         </svg>
@@ -146,7 +146,7 @@ export default function LikeButton({ track }: { track: Track }) {
           key={burst?.id ?? "rest"}
           filled={liked}
           className={styles.heart}
-          {...(liked ? { fill: `url(#${gradientId})`, stroke: "#ef81d0", strokeWidth: 1.2 } : {})}
+          {...(liked ? { fill: `url(#${gradientId})`, stroke: "var(--like-stroke)", strokeWidth: 1.2 } : {})}
         />
       </button>
       {burst && <LikeCelebration key={burst.id} burst={burst} />}

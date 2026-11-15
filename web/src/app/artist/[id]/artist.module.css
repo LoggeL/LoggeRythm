@@ -1,0 +1,163 @@
+/* Artist header: the portrait is the loudest thing on the page after the name.
+   Narrow: portrait on top, fading into the page, with the name set over the
+   fade. Wide: name and actions on the left, the portrait as a sleeve on the
+   right. Sizes follow the header's own width, not the viewport, because the
+   sidebar and queue take a varying share of the window. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  container-type: inline-size;
+  padding: 0.5rem 0 1.75rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.portrait {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  max-height: 24rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--panel);
+  -webkit-mask-image: linear-gradient(to bottom, black 42%, rgb(0 0 0 / 0.35) 78%, transparent);
+  mask-image: linear-gradient(to bottom, black 42%, rgb(0 0 0 / 0.35) 78%, transparent);
+}
+
+.portrait > * {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 24%;
+}
+
+.info {
+  position: relative;
+  min-width: 0;
+  margin-top: -3.5rem;
+}
+
+.name {
+  display: -webkit-box;
+  /* The tight line height would cut Ä/Ö/Ü off at the clamp's top edge. */
+  margin: -0.14em 0 0;
+  overflow: hidden;
+  padding-top: 0.14em;
+  padding-bottom: 0.08em;
+  font-size: clamp(2.75rem, 15cqi, 4.75rem);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.055em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.name[data-size="md"] {
+  font-size: clamp(2.25rem, 11cqi, 3.75rem);
+}
+
+.name[data-size="sm"] {
+  font-size: clamp(1.875rem, 8cqi, 2.75rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+/* Mono figures under the name: fans, releases. */
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 0;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.meta li + li {
+  margin-left: 0.875rem;
+  padding-left: 0.875rem;
+  border-left: 1px solid var(--border);
+}
+
+.meta strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-height: 3.5rem;
+  margin-top: 1.5rem;
+}
+
+.actions > * {
+  max-width: 100%;
+}
+
+@container (min-width: 44rem) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) clamp(15rem, 31cqi, 24rem);
+    grid-template-areas: "info portrait";
+    align-items: end;
+    column-gap: clamp(1.5rem, 4cqi, 3.5rem);
+  }
+
+  .portrait {
+    grid-area: portrait;
+    aspect-ratio: 1;
+    max-height: none;
+    border-radius: var(--radius-card);
+    -webkit-mask-image: none;
+    mask-image: none;
+    box-shadow:
+      0 22px 56px rgb(0 0 0 / 0.5),
+      0 4px 14px rgb(0 0 0 / 0.3);
+  }
+
+  .portrait > * {
+    object-position: center;
+  }
+
+  .info {
+    grid-area: info;
+    margin-top: 0;
+    padding-bottom: 0.25rem;
+  }
+
+  .name {
+    font-size: clamp(3.5rem, 10.5cqi, 9rem);
+    line-height: 0.88;
+  }
+
+  .name[data-size="md"] {
+    font-size: clamp(2.75rem, 7.4cqi, 6rem);
+    line-height: 0.92;
+  }
+
+  .name[data-size="sm"] {
+    font-size: clamp(2.25rem, 5cqi, 3.75rem);
+  }
+
+  .meta {
+    margin-top: 1.25rem;
+  }
+
+  .actions {
+    margin-top: 1.75rem;
+  }
+}

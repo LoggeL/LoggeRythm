@@ -4,7 +4,9 @@ import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { useTrackPlays } from "@/hooks/usePlays";
 import TrackRow from "@/components/TrackRow";
+import { TrackListHeader } from "@/components/TrackList";
 
+/** Ranked track table with an optional Last.fm play-count column. */
 export default function PopularTrackTable({
   tracks,
   context,
@@ -19,12 +21,7 @@ export default function PopularTrackTable({
 
   return (
     <div>
-      <div className="hidden sm:grid grid-cols-[2rem_minmax(0,4fr)_minmax(0,3fr)_auto] gap-3 border-b border-border px-3 pb-3 text-xs text-muted">
-        <span className="text-center">#</span>
-        <span>Titel</span>
-        <span>Album</span>
-        <span className="w-36" />
-      </div>
+      <TrackListHeader showPopularity={showPlays} />
       {tracks.map((track, index) => (
         <TrackRow
           key={track.id}

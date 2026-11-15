@@ -2,23 +2,13 @@
 
 // Deterministic solid color from a name (no gradients) — every user gets a
 // distinct colored avatar even without an uploaded picture.
-const COLORS = [
-  "#7c5cff",
-  "#e0507a",
-  "#3aa0ff",
-  "#2bbf7a",
-  "#ff8c42",
-  "#b14bff",
-  "#1fb8c4",
-  "#d9486e",
-  "#5a8dee",
-  "#e8a13a",
-];
+/** Number of `--avatar-N` tokens in globals.css. */
+const COLOR_COUNT = 10;
 
 function colorFor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return COLORS[h % COLORS.length];
+  return `var(--avatar-${(h % COLOR_COUNT) + 1})`;
 }
 
 export default function Avatar({
@@ -53,7 +43,7 @@ export default function Avatar({
         background: colorFor(name),
         fontSize: Math.round(size * 0.42),
       }}
-      className={`rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${className}`}
+      className={`rounded-full flex items-center justify-center font-bold text-foreground flex-shrink-0 ${className}`}
     >
       {initial}
     </div>

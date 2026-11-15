@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { compileInto, compileSource } from "./support/compile.mjs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import {
@@ -57,10 +56,10 @@ const stubs = {
   ),
   "@/store/toast": moduleUrl(`export const toast = {};`),
   "@/components/TrackRow": moduleUrl(
-    `export default function TrackRow() { return null; }`,
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function TrackRow({track}) { return createElement("p", {"data-track": track.id}, track.title); }`,
   ),
   "@/components/ArtistCard": moduleUrl(
-    `export default function ArtistCard() { return null; }`,
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function ArtistCard({artist}) { return createElement("p", null, artist.name); }`,
   ),
   "@/components/CoverPlaceholder": moduleUrl(
     `export default function CoverPlaceholder() { return null; }`,
@@ -72,7 +71,7 @@ const stubs = {
     `import {createElement} from ${JSON.stringify(reactUrl)}; export function RowListSkeleton() { return createElement("span", {"data-testid": "loading"}); } export const CardGridSkeleton = RowListSkeleton;`,
   ),
   "@/components/icons": moduleUrl(
-    `export function HeartIcon() { return null; } export function DownloadIcon() { return null; } export function PlayIcon() { return null; } export function PlusIcon() { return null; }`,
+    `export function HeartIcon() { return null; } export const DownloadIcon = HeartIcon; export const DownloadedIcon = HeartIcon; export const PlayIcon = HeartIcon; export const PlusIcon = HeartIcon; export const LibraryIcon = HeartIcon; export const ShuffleIcon = HeartIcon; export const SearchIcon = HeartIcon; export const ClockIcon = HeartIcon; export const UserIcon = HeartIcon;`,
   ),
   "./CreatePlaylistDialog": moduleUrl(
     `export default function CreatePlaylistDialog() { return null; }`,
@@ -81,21 +80,28 @@ const stubs = {
     .href,
 };
 
-// Compile the real route with its data hooks and Next navigation stubbed. React
-// still renders the actual screen, so errors and empty states are exercised.
-const source = await readFile(
-  new URL("../src/app/library/page.tsx", import.meta.url),
-  "utf8",
+// Compile the real route, its tabs and the shared primitives with the data
+// hooks and Next navigation stubbed. React still renders the actual screen,
+// so errors and empty states are exercised.
+await compileInto(stubs, [
+  ["@/hooks/useRecentTracks", "src/hooks/useRecentTracks.ts"],
+  ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
+  ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
+  ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
+  ["@/components/browse/QueryState", "src/components/browse/QueryState.tsx"],
+  ["./filter", "src/app/library/_tabs/filter.ts"],
+  ["./TabHeader", "src/app/library/_tabs/TabHeader.tsx"],
+  ["./ListFilter", "src/app/library/_tabs/ListFilter.tsx"],
+  ["./TrackCollection", "src/app/library/_tabs/TrackCollection.tsx"],
+  ["./_tabs/PlaylistsTab", "src/app/library/_tabs/PlaylistsTab.tsx"],
+  ["./_tabs/LikedTab", "src/app/library/_tabs/LikedTab.tsx"],
+  ["./_tabs/FollowingTab", "src/app/library/_tabs/FollowingTab.tsx"],
+  ["./_tabs/RecentTab", "src/app/library/_tabs/RecentTab.tsx"],
+  ["./_tabs/DownloadsTab", "src/app/library/_tabs/DownloadsTab.tsx"],
+]);
+const { default: LibraryPage } = await import(
+  await compileSource("src/app/library/page.tsx", stubs),
 );
-const compiled = ts
-  .transpileModule(source, {
-    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext },
-  })
-  .outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-    assert.ok(stubs[name], `Unmocked route import: ${name}`);
-    return `from ${JSON.stringify(stubs[name])}`;
-  });
-const { default: LibraryPage } = await import(moduleUrl(compiled));
 
 const success = (data) => ({
   data,
@@ -277,4 +283,55 @@ test("saved downloads keep their names and provide an explicit whole-device clea
   assert.match(html, /5 Titel offline/);
   assert.match(html, /Alle Offline-Downloads löschen/);
   assert.match(html, /href="\/playlist\/legacy"/);
+});
+
+const songs = (count) =>
+  Array.from({ length: count }, (_, index) => ({
+    id: `song-${index}`,
+    title: `Lied ${index}`,
+    artist: "Band",
+    album: "Album",
+  }));
+
+test("playlists form a grid with the liked-songs tile, covers and a create tile", () => {
+  reset();
+  fixture.playlists = success([
+    { id: "road", name: "Roadtrip", track_count: 12, cover_url: "road.jpg" },
+  ]);
+  const html = screen();
+  assert.match(html, /1 Playlist</);
+  assert.match(html, /<a[^>]*href="\/playlist\/road"[^>]*><img src="road.jpg"/);
+  assert.match(html, /<a[^>]*href="\/library\?tab=liked"[^>]*>.*?Gelikte Titel/);
+  assert.match(html, /Neue Playlist/);
+  assert.doesNotMatch(html, /Playlists filtern/);
+  fixture.playlists = success([]);
+  const empty = screen();
+  assert.match(empty, /Hier ist Platz für deine erste Playlist/);
+  assert.doesNotMatch(empty, /Neue Playlist/);
+});
+
+test("liked songs offer play-all and shuffle, and long lists add a filter and sort order", () => {
+  reset();
+  fixture.likes = success(songs(3));
+  let html = screen("tab=liked");
+  assert.match(html, /<button[^>]*class="play-fab[^"]*"[^>]*aria-label="Gelikte Titel abspielen"/);
+  assert.match(html, /aria-label="Gelikte Titel zufällig abspielen"/);
+  assert.equal(html.match(/data-track=/g).length, 3);
+  assert.doesNotMatch(html, /In gelikten Titeln suchen/);
+  fixture.likes = success(songs(11));
+  html = screen("tab=liked");
+  assert.match(html, /aria-label="In gelikten Titeln suchen"/);
+  assert.match(html, /aria-label="Titel sortieren"/);
+  fixture.likes = success([]);
+  assert.doesNotMatch(screen("tab=liked"), /class="play-fab/);
+});
+
+test("the history tab lists the titles kept on this device and explains an empty history", () => {
+  reset();
+  assert.match(screen("tab=recent"), /Hier erscheinen die Titel, die du auf diesem Gerät hörst/);
+  fixture.recent = songs(2);
+  const html = screen("tab=recent");
+  assert.match(html, /2 Titel auf diesem Gerät/);
+  assert.match(html, /aria-label="Zuletzt gehört abspielen"/);
+  assert.equal(html.match(/data-track=/g).length, 2);
 });

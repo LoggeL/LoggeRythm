@@ -1,7 +1,8 @@
 import type { MetadataRoute } from "next";
 
-// Matches --background from globals.css (#0a0a14).
-const BACKGROUND = "#0a0a14";
+// Matches --backdrop from globals.css: the colour behind the app panels,
+// so the splash screen and system bars blend into the shell.
+const BACKGROUND = "#050608";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {

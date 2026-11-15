@@ -23,7 +23,7 @@ export default function SearchField({ value, onValueChange, onSubmit, onClear, l
     return localRef.current;
   });
   return (
-    <form role="search" className={`flex min-h-11 min-w-0 items-center gap-3 rounded-full border border-transparent bg-white/[0.07] px-4 transition hover:bg-white/[0.1] focus-within:border-white/25 focus-within:bg-white/[0.1] ${className}`}
+    <form role="search" className={`flex min-h-11 min-w-0 items-center gap-3 rounded-[var(--radius-control)] border border-hairline bg-foreground/[0.05] px-4 transition hover:border-foreground/20 focus-within:border-foreground focus-within:bg-foreground/[0.08] ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
         if (!localRef.current?.dataset.composing) onSubmit();

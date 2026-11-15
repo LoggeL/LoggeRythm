@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import ts from "typescript";
+import { compileInto, compileSource } from "./support/compile.mjs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -86,23 +85,38 @@ const stubs = {
     "export function CardGridSkeleton() { return null; } export function RowListSkeleton() { return null; }",
   ),
   "@/components/icons": moduleUrl(
-    "export function SearchIcon() {return null;} export const ImportIcon = SearchIcon; export const PlayIcon = SearchIcon; export const CompassIcon = SearchIcon; export const RadioIcon = SearchIcon;",
+    "export function SearchIcon() {return null;} export const ImportIcon = SearchIcon; export const PlayIcon = SearchIcon; export const CompassIcon = SearchIcon; export const RadioIcon = SearchIcon; export const BellIcon = SearchIcon; export const CloseIcon = SearchIcon; export const HeartIcon = SearchIcon;",
+  ),
+  "@/lib/trackArtists": moduleUrl(
+    "export const trackArtistLabel = (track) => track.artist;",
+  ),
+  // A shelf needs a browser to measure; the stub keeps its cards as children.
+  "@/components/browse/Shelf": moduleUrl(
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function Shelf({label, children}) { return createElement('div', {'data-shelf': label}, children); } export function ShelfSkeleton() { return null; }`,
   ),
   "./results": new URL("../src/app/search/results.ts", import.meta.url).href,
+  "../results": new URL("../src/app/search/results.ts", import.meta.url).href,
 };
-const source = await readFile(
-  new URL("../src/app/search/page.tsx", import.meta.url),
-  "utf8",
+// The page's own sections and the shared primitives are the real components,
+// compiled against the same stubs so their buttons and handlers are captured.
+await compileInto(stubs, [
+  ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
+  ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
+  ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
+  ["@/components/browse/BrowseTile", "src/components/browse/BrowseTile.tsx"],
+  ["./ResultCards", "src/app/search/_components/ResultCards.tsx"],
+  ["./_components/ResultCards", "src/app/search/_components/ResultCards.tsx"],
+  ["./_components/SearchFilters", "src/app/search/_components/SearchFilters.tsx"],
+  ["./_components/SearchIdle", "src/app/search/_components/SearchIdle.tsx"],
+  ["./_components/ResultSection", "src/app/search/_components/ResultSection.tsx"],
+  ["./_components/TopHit", "src/app/search/_components/TopHit.tsx"],
+  ["./_components/TrackResults", "src/app/search/_components/TrackResults.tsx"],
+  ["./_components/ArtistResults", "src/app/search/_components/ArtistResults.tsx"],
+  ["./_components/AlbumResults", "src/app/search/_components/AlbumResults.tsx"],
+]);
+const { default: SearchPage } = await import(
+  await compileSource("src/app/search/page.tsx", stubs),
 );
-const compiled = ts
-  .transpileModule(source, {
-    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext },
-  })
-  .outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-    assert.ok(stubs[name], `Unmocked route import: ${name}`);
-    return `from ${JSON.stringify(stubs[name])}`;
-  });
-const { default: SearchPage } = await import(moduleUrl(compiled));
 
 function screen({
   input,
@@ -320,7 +334,7 @@ test("recent terms reopen shared search and can be removed individually", () => 
 });
 
 test("only actual result links or playback add the settled search to history", () => {
-  screen({ query: "Artist", data: { track: songs, artist: [{ id: "artist", name: "Artist" }], album: [{ id: "album", title: "Album" }] } });
+  screen({ query: "Songs", data: { track: songs, artist: [{ id: "artist", name: "Artist" }], album: [{ id: "album", title: "Album" }] } });
   assert.deepEqual(fixture.historyCalls, []);
   const click = (matches) => ({ button: 0, target: { closest: () => matches ? { tagName: "A" } : null } });
   fixture.activations[0](click(false));
@@ -328,7 +342,21 @@ test("only actual result links or playback add the settled search to history", (
   fixture.activations[0](click(true));
   fixture.activations[2](click(true));
   fixture.activations[3](click(true));
-  assert.deepEqual(fixture.historyCalls, [["remember", "Artist"], ["remember", "Artist"], ["remember", "Artist"]]);
+  assert.deepEqual(fixture.historyCalls, [["remember", "Songs"], ["remember", "Songs"], ["remember", "Songs"]]);
+});
+
+test("starting a result records the search however playback was triggered", () => {
+  // Row play button, desktop double-click and the top-hit card all go through
+  // the row's/card's play callback rather than a recognisable click target.
+  screen({ query: "Zulu", data: { track: songs } });
+  fixture.trackRows[0].onPlay();
+  assert.deepEqual(fixture.played.map(({ index, title }) => [index, title]), [[0, "Suche: Zulu"]]);
+  assert.deepEqual(fixture.historyCalls, [["remember", "Zulu"]]);
+  const topHit = fixture.buttons.find((button) => button["aria-label"] === "Zulu von undefined abspielen");
+  assert.ok(topHit, "the top-hit track card is rendered");
+  topHit.onClick();
+  assert.equal(fixture.played.length, 2);
+  assert.deepEqual(fixture.historyCalls, [["remember", "Zulu"], ["remember", "Zulu"]]);
 });
 
 test("failed search can retry while the empty state only follows successful empty requests", async () => {
@@ -358,4 +386,42 @@ test("result history includes menu selection and middle-click links, while right
   fixture.auxActivations[0](click(1, "BUTTON"));
   fixture.auxActivations[0](click(2, "A"));
   assert.deepEqual(fixture.historyCalls, [["remember", "Songs"], ["remember", "Songs"]]);
+});
+
+test("the combined view features a top hit beside the best tracks and previews other types as shelves", () => {
+  const html = screen({
+    query: "Zulu",
+    data: {
+      track: Array.from({ length: 6 }, (_, index) => ({ id: `t${index}`, title: `Zulu ${index}`, artist: "Band", duration_sec: 100 })),
+      artist: [{ id: "artist", name: "Andere Band" }],
+      playlist: [{ id: "mix", title: "Zulu Mix", cover: "", track_count: 2 }],
+    },
+  });
+  assert.match(html, /<h2>Top-Treffer<\/h2>/);
+  assert.equal(fixture.trackRows.length, 4);
+  assert.match(html, /aria-label="Zulu 0 von Band abspielen"/);
+  assert.match(html, /data-shelf="Künstler"/);
+  assert.match(html, /data-shelf="Playlists"/);
+  fixture.buttons.find((button) => button["aria-label"] === "Zulu 0 von Band abspielen").onClick();
+  assert.equal(fixture.played[0].index, 0);
+  assert.equal(fixture.played[0].title, "Suche: Zulu");
+  buttonWithText("Alle anzeigen").onClick();
+  assert.deepEqual(fixture.navigationCalls, [["tab", "track"]]);
+});
+
+test("an artist whose name starts with the query becomes the top hit and counts as a used result", () => {
+  const html = screen({ query: "Que", data: { track: songs, artist: [{ id: "queen", name: "Queen" }] } });
+  assert.match(html, /<a[^>]*href="\/artist\/queen"[^>]*>.*?Queen/);
+  assert.doesNotMatch(html, /data-shelf="Künstler"/, "the featured artist is not listed a second time");
+  assert.equal(fixture.activations.length, 2, "only the two track rows remain as result wrappers");
+  assert.doesNotMatch(screen({ query: "Songs", tab: "track", data: { track: songs } }), /Top-Treffer/);
+});
+
+test("the empty search shows its heading, browsing tiles and the Spotify import entry", () => {
+  const html = screen();
+  assert.match(html, /<h1 class="page-title[^"]*">Suche<\/h1>/);
+  assert.doesNotMatch(html, /aria-label="Suchbereiche"/);
+  for (const href of ["/genre", "/radio", "/radar"]) assert.ok(html.includes(`href="${href}"`));
+  assert.equal(fixture.buttons.filter((button) => button["aria-controls"] === "search-import").length, 1);
+  assert.match(html, /Playlist per Link übernehmen/);
 });

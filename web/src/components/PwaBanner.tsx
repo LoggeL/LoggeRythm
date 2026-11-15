@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { DownloadIcon } from "@/components/icons";
+import { CloseIcon, DownloadIcon } from "@/components/icons";
+import { WifiOffIcon } from "@/components/feedbackIcons";
 
 // `beforeinstallprompt` is not in the standard lib.dom typings.
 interface BeforeInstallPromptEvent extends Event {
@@ -57,31 +58,33 @@ export default function PwaBanner() {
   return (
     <>
       {offline && (
-        <div
-          role="status"
-          className="flex-shrink-0 bg-amber-500/15 border-b border-amber-500/30 text-amber-200 text-sm text-center px-4 py-1.5"
-        >
-          Du bist offline — nur heruntergeladene Titel sind verfügbar.
+        <div role="status" className="flex flex-shrink-0 items-center justify-center gap-x-3 gap-y-0.5 border-b border-hairline bg-backdrop px-4 py-2 pt-[calc(.5rem+env(safe-area-inset-top))] text-[13px] leading-snug text-muted max-sm:flex-wrap">
+          <span aria-hidden="true" className="label-mono flex shrink-0 items-center gap-2 text-danger">
+            <WifiOffIcon width={14} height={14} className="shrink-0" />
+            Offline
+          </span>
+          <span className="text-center">
+            <span className="sr-only">Du bist offline.</span> Nur heruntergeladene Titel sind verfügbar.
+          </span>
         </div>
       )}
       {installEvent && (
-        <div className="fixed bottom-28 right-4 z-[90] flex items-center gap-2 rounded-full border border-white/10 bg-background-elevated/95 shadow-xl backdrop-blur-xl pl-4 pr-2 py-2 animate-in">
-          <DownloadIcon width={16} height={16} className="text-accent" />
-          <span className="text-sm font-medium">Als App installieren?</span>
-          <button
-            type="button"
-            onClick={install}
-            className="press rounded-full bg-accent px-3 py-1 text-sm font-semibold text-white hover:bg-accent-hover"
-          >
+        <div
+          role="region"
+          aria-label="App installieren"
+          data-install-hint=""
+          className="animate-in fixed inset-x-3 bottom-[calc(9.75rem+env(safe-area-inset-bottom))] z-[90] flex items-center gap-3 rounded-[var(--radius-panel)] border border-hairline bg-panel py-2 pl-4 pr-2 shadow-[0_18px_44px_rgb(0_0_0/0.55)] sm:inset-x-auto sm:right-5 sm:max-w-md lg:bottom-28"
+        >
+          <DownloadIcon width={18} height={18} className="shrink-0 text-muted" />
+          <p className="min-w-0 flex-1">
+            <span className="font-display block text-[15px] font-bold leading-tight tracking-tight sm:truncate">LoggeRythm installieren</span>
+            <span className="block text-xs leading-snug text-muted max-sm:hidden">Schneller Start, eigener Platz auf dem Homescreen.</span>
+          </p>
+          <button type="button" onClick={install} className="action-primary min-h-10 shrink-0 px-4 text-[13px]">
             Installieren
           </button>
-          <button
-            type="button"
-            onClick={dismissInstall}
-            aria-label="Nicht mehr anzeigen"
-            className="rounded-full p-1.5 text-muted hover:text-foreground hover:bg-white/10"
-          >
-            ✕
+          <button type="button" onClick={dismissInstall} aria-label="Nicht mehr anzeigen" className="action-icon h-10 min-h-10 w-10">
+            <CloseIcon width={16} height={16} />
           </button>
         </div>
       )}

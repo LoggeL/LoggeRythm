@@ -1,216 +1,138 @@
 "use client";
 
 import { use } from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { usePlayerStore } from "@/store/player";
-import { useMe } from "@/hooks/useAuth";
-import { useFollowing, useToggleFollow } from "@/hooks/useFollows";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
 import PopularTrackTable from "@/components/PopularTrackTable";
 import ArtistSongSearch from "@/components/ArtistSongSearch";
 import ArtistAbout from "@/components/ArtistAbout";
-import CoverPlaceholder from "@/components/CoverPlaceholder";
-import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
-import { PlayIcon } from "@/components/icons";
-import CollectionHero from "@/app/playlist/_components/CollectionHero";
+import SectionHeader from "@/components/ui/SectionHeader";
+import Shelf from "@/components/browse/Shelf";
+import { RowListSkeleton } from "@/components/Skeleton";
+import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
+import { PlayCollectionButton, ShuffleCollectionButton } from "@/app/playlist/_components/CollectionActions";
 import { formatCompact } from "@/lib/format";
 import type { Artist } from "@/types";
+import ArtistHero, { type ArtistFigure } from "./ArtistHero";
+import { FollowButton, FollowErrors } from "./FollowButton";
+import styles from "./artist.module.css";
 
-export default function ArtistPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+const POPULAR_LIMIT = 10;
+
+export default function ArtistPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, isLoading, isError, error } = useQuery<Artist>({
+  const artist = useQuery<Artist>({
     queryKey: ["artist", id],
     queryFn: () => api.artist(id),
     enabled: !!id,
   });
-  const playQueue = usePlayerStore((s) => s.playQueue);
-  const account = useMe();
-  const me = account.data;
-  const follows = useFollowing(!!me);
-  const toggleFollow = useToggleFollow();
-
-  if (isLoading)
-    return (
-      <div>
-        <DetailHeaderSkeleton />
-        <RowListSkeleton />
-      </div>
-    );
-  if (!data) {
-    return (
-      <p role="alert" className="error-panel">
-        {isError
-          ? `Künstler konnte nicht geladen werden: ${error.message}`
-          : "Künstler nicht gefunden."}
-      </p>
-    );
-  }
-
-  const tracks = data.top ?? [];
-  const albums = data.albums ?? [];
-  const related = data.related ?? [];
-  const following =
-    follows.data?.some((artist) => String(artist.id) === String(data.id)) ??
-    false;
-
-  const fans = data.fans ?? 0;
 
   return (
-    <div className="animate-in">
-      {isError && (
-        <div role="alert" className="error-panel mb-4">
-          Künstlerdaten konnten nicht aktualisiert werden. Der zuletzt geladene
-          Stand bleibt sichtbar. {error.message}
+    <CollectionPageState query={artist} label="Die Künstlerdaten" missing="Künstler nicht gefunden" skeleton={<ArtistSkeleton />}>
+      {(data) => <ArtistView artist={data} />}
+    </CollectionPageState>
+  );
+}
+
+/** Loading placeholder with the geometry of `ArtistHero` and the track table below it. */
+function ArtistSkeleton() {
+  return (
+    <div>
+      <div role="status" aria-label="Wird geladen" className={styles.hero}>
+        <div className={styles.layout}>
+          <div className={styles.portrait}>
+            <div className="skeleton" />
+          </div>
+          <div className={styles.info}>
+            <div className="skeleton mb-3 h-4 w-20 rounded" />
+            <div className={`${styles.name} skeleton w-3/5 rounded-[var(--radius-card)]`} data-size="md" aria-hidden="true">
+              &nbsp;
+            </div>
+            <div className={styles.meta}>
+              <div className="skeleton h-4 w-44 rounded" />
+            </div>
+            <div className={styles.actions}>
+              <div className="skeleton h-14 w-14 rounded-full" />
+              <div className="skeleton h-11 w-11 rounded-[var(--radius-control)]" />
+              <div className="skeleton h-[42px] w-[7.75rem] rounded-[var(--radius-control)]" />
+            </div>
+          </div>
         </div>
-      )}
-      <CollectionHero
-        eyebrow="Künstler"
-        title={data.name}
-        roundArtwork
-        artwork={
-          data.picture ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.picture}
-              alt={data.name}
-              className="h-full w-full rounded-full object-cover"
-            />
-          ) : (
-            <CoverPlaceholder className="h-full w-full rounded-full" />
-          )
-        }
-        metadata={fans > 0 ? `${formatCompact(fans)} Fans` : undefined}
+      </div>
+      <div className="section-heading">
+        <div className="skeleton h-7 w-28 rounded" />
+      </div>
+      <RowListSkeleton count={POPULAR_LIMIT} />
+    </div>
+  );
+}
+
+function Count({ children }: { children: string }) {
+  return <span className="label-mono shrink-0 tabular-nums">{children}</span>;
+}
+
+function ArtistView({ artist }: { artist: Artist }) {
+  const tracks = artist.top ?? [];
+  const albums = artist.albums ?? [];
+  const related = artist.related ?? [];
+  const fans = artist.fans ?? 0;
+  const popular = tracks.slice(0, POPULAR_LIMIT);
+  const figures: ArtistFigure[] = [];
+  if (fans > 0) figures.push({ value: formatCompact(fans), label: "Fans" });
+  if (artist.albums_count) figures.push({ value: String(artist.albums_count), label: "Releases" });
+
+  return (
+    <>
+      <ArtistHero
+        name={artist.name}
+        picture={artist.picture}
+        figures={figures}
         actions={
           <>
-            <button
-              type="button"
-              onClick={() => playQueue(tracks, 0, data.name)}
-              disabled={tracks.length === 0}
-              className="action-primary"
-            >
-              <PlayIcon width={18} height={18} /> Abspielen
-            </button>
-            {account.isLoading ? (
-              <button type="button" disabled className="action-secondary">
-                Wird geladen…
-              </button>
-            ) : me ? (
-              <button
-                type="button"
-                onClick={() =>
-                  toggleFollow.mutate({
-                    artist: {
-                      id: data.id,
-                      name: data.name,
-                      picture: data.picture,
-                    },
-                    following,
-                  })
-                }
-                disabled={
-                  follows.isLoading ||
-                  follows.isError ||
-                  account.isError ||
-                  toggleFollow.isPending
-                }
-                aria-pressed={following}
-                className="action-secondary"
-              >
-                {follows.isLoading
-                  ? "Wird geladen…"
-                  : follows.isError
-                    ? "Folgestatus unbekannt"
-                    : toggleFollow.isPending
-                      ? "Wird geändert…"
-                      : following
-                        ? "Gefolgt"
-                        : "Folgen"}
-              </button>
-            ) : account.isError ? (
-              <button type="button" disabled className="action-secondary">
-                Folgen
-              </button>
-            ) : (
-              <Link
-                href="/login"
-                className="action-secondary"
-                title="Melde dich an, um Künstlern zu folgen."
-              >
-                Folgen
-              </Link>
-            )}
+            <PlayCollectionButton tracks={tracks} context={artist.name} />
+            <ShuffleCollectionButton tracks={tracks} context={artist.name} />
+            <FollowButton artist={{ id: artist.id, name: artist.name, picture: artist.picture }} />
           </>
         }
       />
-      {account.isError && (
-        <p role="alert" className="error-panel mb-4">
-          Dein Konto konnte nicht geladen werden: {account.error.message}
-        </p>
-      )}
-      {me && follows.isError && (
-        <p role="alert" className="error-panel mb-4">
-          Gefolgte Künstler konnten nicht geladen werden:{" "}
-          {follows.error.message}
-          <button
-            type="button"
-            onClick={() => void follows.refetch()}
-            disabled={follows.isFetching}
-            className="ml-3 underline disabled:opacity-50"
-          >
-            Erneut versuchen
-          </button>
-        </p>
-      )}
+      <FollowErrors />
 
-      <div className="border-t border-border pt-6">
-        {tracks.length > 0 && (
-          <section className="mb-10">
-            <h2 className="section-heading mb-4">Beliebt</h2>
-            <PopularTrackTable
-              tracks={tracks.slice(0, 10)}
-              context={data.name}
-              showPlays
-            />
+      <div className="flex flex-col gap-9 md:gap-11">
+        {popular.length > 0 && (
+          <section aria-labelledby="artist-popular">
+            <SectionHeader id="artist-popular" title="Beliebt" action={<Count>{`Top ${popular.length}`}</Count>} />
+            <PopularTrackTable tracks={popular} context={artist.name} showPlays />
           </section>
         )}
 
-        <ArtistSongSearch artistId={String(data.id)} artistName={data.name} />
+        <ArtistSongSearch artistId={String(artist.id)} artistName={artist.name} />
+
+        {albums.length > 0 && (
+          <section aria-labelledby="artist-discography">
+            <SectionHeader id="artist-discography" title="Diskografie" action={<Count>{`${albums.length} ${albums.length === 1 ? "Release" : "Releases"}`}</Count>} />
+            <Shelf label={`Diskografie von ${artist.name}`}>
+              {albums.map((album) => (
+                <AlbumCard key={String(album.id)} album={album} />
+              ))}
+            </Shelf>
+          </section>
+        )}
+
+        {related.length > 0 && (
+          <section aria-labelledby="artist-related">
+            <SectionHeader id="artist-related" title="Ähnliche Künstler" />
+            <Shelf label={`Ähnliche Künstler wie ${artist.name}`}>
+              {related.map((other) => (
+                <ArtistCard key={String(other.id)} artist={other} />
+              ))}
+            </Shelf>
+          </section>
+        )}
+
+        <ArtistAbout name={artist.name} picture={artist.picture} albumsCount={artist.albums_count} />
       </div>
-
-      {albums.length > 0 && (
-        <section className="mb-10">
-          <h2 className="section-heading mb-4">Diskografie</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {albums.map((al) => (
-              <AlbumCard key={String(al.id)} album={al} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {related.length > 0 && (
-        <section className="mb-10">
-          <h2 className="section-heading mb-4">Ähnliche Künstler</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            {related.map((a) => (
-              <ArtistCard key={String(a.id)} artist={a} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      <ArtistAbout
-        name={data.name}
-        picture={data.picture}
-        albumsCount={data.albums_count}
-      />
-    </div>
+    </>
   );
 }
