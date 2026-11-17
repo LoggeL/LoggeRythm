@@ -27,9 +27,10 @@ const RECENT_KEY = "sf_recent_tracks";
 const RECENT_MAX = 30;
 const EMPTY_RECENT: Track[] = [];
 
-export function assertRecentTracks(value: unknown): asserts value is Track[] {
+/** Validates a track list read back from localStorage; `source` names the stored value in the error. */
+export function assertStoredTracks(source: string, value: unknown, expected: string): asserts value is Track[] {
   if (!Array.isArray(value)) {
-    throw new Error(`Lokale Daten "${RECENT_KEY}": Eine Liste zuletzt gehörter Titel wurde erwartet.`);
+    throw new Error(`Lokale Daten "${source}": ${expected} wurde erwartet.`);
   }
   for (const [index, track] of value.entries()) {
     if (
@@ -45,9 +46,13 @@ export function assertRecentTracks(value: unknown): asserts value is Track[] {
         (typeof artist.id !== "string" && typeof artist.id !== "number") ||
         !("name" in artist) || typeof artist.name !== "string")))
     ) {
-      throw new Error(`Lokale Daten "${RECENT_KEY}": Titel an Position ${index + 1} hat ein ungültiges Format.`);
+      throw new Error(`Lokale Daten "${source}": Titel an Position ${index + 1} hat ein ungültiges Format.`);
     }
   }
+}
+
+export function assertRecentTracks(value: unknown): asserts value is Track[] {
+  assertStoredTracks(RECENT_KEY, value, "Eine Liste zuletzt gehörter Titel");
 }
 
 function pushRecent(track: Track) {
@@ -593,6 +598,7 @@ export const usePlayerStore = create<PlayerState>()(
         shuffle: s.shuffle,
         repeat: s.repeat,
         lyricsOpen: s.lyricsOpen,
+        queueOpen: s.queueOpen,
       }),
     },
   ),

@@ -2,12 +2,88 @@
 
 import { useEffect, useRef } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
+import {
+  PLAYER_SESSION_KEY,
+  capturePlayerSession,
+  parsePlayerSession,
+  restoredPlayerState,
+} from "@/store/playerSession";
 import { api } from "@/lib/api";
 import { useMe } from "@/hooks/useAuth";
+import { readLocalJsonSnapshot, writeLocalJsonValue } from "@/hooks/useLocalJson";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { toast } from "@/store/toast";
 
 const APP_TITLE = "LoggeRythm";
+
+// A session is brought back once per page load; a later remount of the player
+// (sign-out and sign-in without a reload) must not overwrite the live queue.
+let playerSessionRestored = false;
+// The restored entry was already counted as a play before the reload.
+let restoredTrackId: string | null = null;
+
+function removePlayerSession(): void {
+  try {
+    window.localStorage.removeItem(PLAYER_SESSION_KEY);
+  } catch (cause) {
+    throw new Error(
+      `Lokale Daten "${PLAYER_SESSION_KEY}" konnten nicht entfernt werden: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+  }
+}
+
+function savePlayerSession(userId: string): void {
+  const snapshot = capturePlayerSession(usePlayerStore.getState(), userId);
+  if (snapshot) writeLocalJsonValue(PLAYER_SESSION_KEY, snapshot);
+  else removePlayerSession();
+}
+
+function restorePlayerSession(userId: string): void {
+  const stored = readLocalJsonSnapshot<unknown>(PLAYER_SESSION_KEY, null);
+  if (stored === null) return;
+  const snapshot = parsePlayerSession(stored);
+  if (snapshot.userId !== userId) {
+    // Left behind by another account on this browser.
+    removePlayerSession();
+    return;
+  }
+  const live = usePlayerStore.getState();
+  // A party or a queue started before the player mounted owns playback.
+  if (live.partyBridge || live.queue.length > 0) return;
+  restoredTrackId = snapshot.index >= 0 ? snapshot.queue[snapshot.index].id : null;
+  usePlayerStore.setState((state) => ({
+    ...restoredPlayerState(snapshot),
+    radioSession: state.radioSession + 1,
+  }));
+}
+
+/**
+ * Keeps the listening session across reloads: restored when the player
+ * mounts, written when the page is left. `visibilitychange` covers mobile
+ * browsers that discard a hidden tab without firing `pagehide`.
+ */
+function usePlayerSession() {
+  const { data: me } = useMe();
+  const userId = me ? String(me.id) : null;
+  useEffect(() => {
+    if (userId === null) return;
+    if (!playerSessionRestored) {
+      playerSessionRestored = true;
+      restorePlayerSession(userId);
+    }
+    const save = () => savePlayerSession(userId);
+    const saveWhenHidden = () => {
+      if (document.visibilityState === "hidden") save();
+    };
+    window.addEventListener("pagehide", save);
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    return () => {
+      window.removeEventListener("pagehide", save);
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+    };
+  }, [userId]);
+}
 
 /** Record a play once per (new) track for approved, logged-in users. */
 function usePlayRecorder() {
@@ -19,6 +95,10 @@ function usePlayRecorder() {
     if (!track || !trackId || !me?.is_approved) return;
     if (recorded.current === trackId) return;
     recorded.current = trackId;
+    // Only the first entry after a restore can be the one already counted.
+    const alreadyCounted = restoredTrackId === trackId;
+    restoredTrackId = null;
+    if (alreadyCounted) return;
     api.recordPlay(track).catch((error: unknown) => {
       if (recorded.current === trackId) recorded.current = null;
       toast.error(`Hörverlauf konnte nicht gespeichert werden: ${error instanceof Error ? error.message : String(error)}`);
@@ -245,6 +325,7 @@ function useNowPlayingBridge() {
 
 /** Everything the player does besides driving the audio decks. */
 export function usePlayerSideEffects(): void {
+  usePlayerSession();
   usePlayRecorder();
   useTabTitle();
   useRadioTopUp();

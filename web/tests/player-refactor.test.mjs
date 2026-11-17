@@ -11,6 +11,9 @@ const resolver = registerHooks({
     if (specifier === "./queuePolicy" && context.parentURL?.endsWith("/store/player.ts")) {
       return nextResolve(new URL("../src/store/queuePolicy.ts", import.meta.url).href, context);
     }
+    if (specifier === "./player" && context.parentURL?.endsWith("/store/playerSession.ts")) {
+      return nextResolve(new URL("../src/store/player.ts", import.meta.url).href, context);
+    }
     return nextResolve(specifier, context);
   },
 });
@@ -34,6 +37,7 @@ const { api } = await import("../src/lib/api.ts");
 const { startTrackRadio } = await import("../src/lib/radio.ts");
 const { useToastStore } = await import("../src/store/toast.ts");
 const { clearQueueForUndo, restoreClearedQueue } = await import("../src/components/queue/clearedQueue.ts");
+const { capturePlayerSession, parsePlayerSession, restoredPlayerState } = await import("../src/store/playerSession.ts");
 resolver.deregister();
 
 const track = (id) => ({
@@ -264,4 +268,52 @@ test("clearing offers no undo without upcoming tracks, and a stale undo fails lo
   state().addToQueue(track(9));
   assert.throws(() => restoreClearedQueue(cleared), /kann nicht wiederhergestellt werden/);
   assert.deepEqual(ids(), ["1", "9"]);
+});
+
+test("a listening session survives a reload paused at its playhead", () => {
+  state().playQueue([track(1), track(2), track(3)], 0, "Mix");
+  state().addToQueue(track(9));
+  state().jumpTo(1);
+  state()._clearSeek();
+  state()._setCurrentTime(73.5);
+  const stored = JSON.parse(JSON.stringify(capturePlayerSession(state(), "7")));
+
+  usePlayerStore.setState(usePlayerStore.getInitialState(), true);
+  usePlayerStore.setState(restoredPlayerState(parsePlayerSession(stored)));
+
+  assert.deepEqual(ids(), ["1", "9", "2", "3"]);
+  assert.deepEqual(state().origins, ["context", "manual", "context", "context"]);
+  assert.deepEqual(state().originalQueue.map((item) => item.id), ["1", "9", "2", "3"]);
+  assert.equal(state().queueContext, "Mix");
+  assert.equal(state().index, 1);
+  assert.equal(state().currentTime, 73.5);
+  assert.equal(state().seekTo, 73.5);
+  assert.equal(state().duration, 180);
+  assert.equal(state().isPlaying, false);
+});
+
+test("an idle player restores to an idle player, and a party queue is never captured", () => {
+  const idle = restoredPlayerState(parsePlayerSession(JSON.parse(JSON.stringify(capturePlayerSession(state(), "7")))));
+  assert.equal(idle.index, -1);
+  assert.equal(idle.seekTo, null);
+  assert.equal(idle.duration, 0);
+
+  state().playQueue([track(1)]);
+  state().setPartyBridge({ addToQueue() {}, removeAt() {}, reorder() {}, setCurrent() {} });
+  assert.equal(capturePlayerSession(state(), "7"), null);
+});
+
+test("a corrupt stored session fails loudly and names what is wrong", () => {
+  state().playQueue([track(1), track(2)]);
+  const valid = () => JSON.parse(JSON.stringify(capturePlayerSession(state(), "7")));
+
+  assert.throws(() => parsePlayerSession(null), /sf_player_session.*Sitzungsobjekt/);
+  assert.throws(() => parsePlayerSession({ ...valid(), version: 2 }), /sf_player_session.*Version 1/);
+  assert.throws(() => parsePlayerSession({ ...valid(), userId: "" }), /sf_player_session.*userId/);
+  assert.throws(() => parsePlayerSession({ ...valid(), queue: [{ id: "bad" }] }), /sf_player_session\.queue.*ungültiges Format/);
+  assert.throws(() => parsePlayerSession({ ...valid(), originalQueue: "x" }), /sf_player_session\.originalQueue.*Titelliste/);
+  assert.throws(() => parsePlayerSession({ ...valid(), origins: ["context"] }), /sf_player_session.*"origins"/);
+  assert.throws(() => parsePlayerSession({ ...valid(), index: 2 }), /sf_player_session.*"index" 2/);
+  assert.throws(() => parsePlayerSession({ ...valid(), currentTime: -1 }), /sf_player_session.*"currentTime"/);
+  assert.throws(() => parsePlayerSession({ ...valid(), shuffle: "yes" }), /sf_player_session.*Wahrheitswerte/);
 });

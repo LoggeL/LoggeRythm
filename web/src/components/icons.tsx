@@ -271,13 +271,10 @@ export function QueueIcon(props: IconProps) {
       strokeLinejoin="round"
       {...props}
     >
-      <path d="M4 6h9" />
-      <path d="M4 12h7" />
-      <path d="M4 18h8" />
-      <path d="M16 7.5v8.25" />
-      <path d="M16 7.5l4 1.2v8.05" />
-      <circle cx="14.5" cy="18" r="2" />
-      <circle cx="18.5" cy="19" r="2" />
+      <path d="M4 3.8v6.4l5.2-3.2z" fill="currentColor" />
+      <path d="M13 7h7" />
+      <path d="M4 13h16" />
+      <path d="M4 18.5h16" />
     </svg>
   );
 }
@@ -399,13 +396,9 @@ export function LyricsIcon(props: IconProps) {
       strokeLinejoin="round"
       {...props}
     >
-      <path d="M5 5h10" />
-      <path d="M5 9h8" />
-      <path d="M5 13h11" />
-      <path d="M5 17h7" />
-      <path d="M18 6v8.5" />
-      <path d="M18 6l2.5.8" />
-      <circle cx="16.5" cy="17" r="2" />
+      <path d="M5.5 4h13A2.5 2.5 0 0121 6.5v8a2.5 2.5 0 01-2.5 2.5H12l-4.5 3.5V17h-2A2.5 2.5 0 013 14.5v-8A2.5 2.5 0 015.5 4z" />
+      <path d="M9.7 8.3l-1.1 4.2" />
+      <path d="M14.7 8.3l-1.1 4.2" />
     </svg>
   );
 }
