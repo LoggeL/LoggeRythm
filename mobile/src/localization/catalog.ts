@@ -584,6 +584,8 @@ export interface StringCatalog {
     moveDownFailed: (title: string) => string;
     movedUp: (title: string) => string;
     movedDown: (title: string) => string;
+    reorder: (title: string) => string;
+    reorderHint: string;
     remove: (title: string) => string;
     cannotRemoveCurrent: (title: string) => string;
     removeFailed: (title: string) => string;
@@ -1211,6 +1213,8 @@ export const de: StringCatalog = {
     moveDownFailed: (title) => `„${title}“ konnte nicht nach unten verschoben werden`,
     movedUp: (title) => `„${title}“ wurde nach oben verschoben.`,
     movedDown: (title) => `„${title}“ wurde nach unten verschoben.`,
+    reorder: (title) => `„${title}“ verschieben`,
+    reorderHint: 'Ziehen, um den Titel umzusortieren. Tippen blendet die Schaltflächen zum Verschieben ein.',
     remove: (title) => `„${title}“ aus der Warteschlange entfernen`,
     cannotRemoveCurrent: (title) =>
       `Der aktuell wiedergegebene Titel „${title}“ kann nicht entfernt werden`,
@@ -1675,6 +1679,8 @@ export const en: StringCatalog = {
     moveDown: (title) => `Move ${title} down`, moveUpFailed: (title) => `Moving ${title} up failed`,
     moveDownFailed: (title) => `Moving ${title} down failed`,
     movedUp: (title) => `${title} moved up.`, movedDown: (title) => `${title} moved down.`,
+    reorder: (title) => `Reorder ${title}`,
+    reorderHint: 'Drag to reorder the track. Tap to show the move buttons.',
     remove: (title) => `Remove ${title} from queue`,
     cannotRemoveCurrent: (title) => `Cannot remove currently playing track ${title}`,
     removeFailed: (title) => `Removing ${title} failed`,

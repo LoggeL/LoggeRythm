@@ -11,6 +11,7 @@ import QueueScreen, {
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   ActivityIndicator: 'ActivityIndicator',
+  Animated: { Value: vi.fn(), View: 'Animated.View' },
   Image: 'Image',
   Pressable: 'Pressable',
   SectionList: 'SectionList',

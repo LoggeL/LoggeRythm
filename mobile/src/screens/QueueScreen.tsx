@@ -1,5 +1,12 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Pressable, SectionList, StyleSheet, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Animated,
+  Pressable,
+  SectionList,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProgress } from '../player/player';
 import { useQuery } from '@tanstack/react-query';
@@ -33,7 +40,7 @@ import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/e
 import type { RootStackParams } from '../navigation';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import { strings } from '../localization';
-import { colors, layout, metrics, opacity, radii, spacing } from '../theme';
+import { colors, elevation, layout, metrics, opacity, radii, spacing } from '../theme';
 import {
   authoritativeQueueTrackPresentation,
   resolveQueueMetadataVisualState,
@@ -44,7 +51,9 @@ import {
   type QueuePresentationSection,
   type QueueSectionKind,
 } from './queuePresentation';
+import { moveRow, queueDragRange } from './queueDragModel';
 import { resolveQueueSnapshotVisualState } from './queueSnapshotState';
+import { useQueueDrag } from './useQueueDrag';
 import { useQueueSnapshot, type QueueSnapshotRow } from './useQueueSnapshot';
 
 type ScreenProps = NativeStackScreenProps<RootStackParams, 'Queue'>;
@@ -224,18 +233,26 @@ export function QueueSurface({
     useQueueSnapshot();
   const [mutationPending, setMutationPending] = useState(false);
   const mutationLock = useRef(false);
-  const metadataEnabled = snapshotStatus.hasSnapshot && queue.rows.length > 0;
+  // A dropped row is shown at its new place while the native move is being
+  // confirmed. The override belongs to one snapshot: the next read replaces it.
+  const [droppedOrder, setDroppedOrder] = useState<{
+    snapshot: QueueSnapshotRow[];
+    rows: QueueSnapshotRow[];
+  } | null>(null);
+  const rows =
+    droppedOrder !== null && droppedOrder.snapshot === queue.rows ? droppedOrder.rows : queue.rows;
+  /** The row whose move-up/move-down buttons are revealed. */
+  const [moveControlsFor, setMoveControlsFor] = useState<string | null>(null);
+  const metadataEnabled = snapshotStatus.hasSnapshot && rows.length > 0;
   const cachedTracksQuery = useQuery({
     ...musicQueries.cachedTrackIds(),
     enabled: metadataEnabled,
   });
-  const expectedStableIds = useMemo(
-    () => queue.rows.map((candidate) => candidate.stableId),
-    [queue.rows],
-  );
+  const expectedStableIds = useMemo(() => rows.map((candidate) => candidate.stableId), [rows]);
+  const origins = useMemo(() => rows.map((candidate) => candidate.origin), [rows]);
   const presentation = useMemo(
-    () => buildQueuePresentation(queue.rows, queue.activeIndex),
-    [queue.activeIndex, queue.rows],
+    () => buildQueuePresentation(rows, queue.activeIndex),
+    [queue.activeIndex, rows],
   );
   // Titles are resolved per render so they follow a locale switch.
   const sections: QueueUiSection[] = presentation.sections.map((section) => ({
@@ -244,7 +261,7 @@ export function QueueSurface({
   }));
   const snapshotVisual = resolveQueueSnapshotVisualState({
     hasSnapshot: snapshotStatus.hasSnapshot,
-    empty: queue.rows.length === 0,
+    empty: rows.length === 0,
     refreshing: snapshotStatus.refreshing,
     error: snapshotStatus.error,
   });
@@ -277,6 +294,100 @@ export function QueueSurface({
       setMutationPending(false);
     }
   };
+
+  // The two view refs are taken out of the controller: passing a member of an
+  // object to `ref` would mark the whole object as a ref for the hooks linter.
+  const { attachFrame, attachList, ...drag } = useQueueDrag({
+    rows,
+    activeIndex: queue.activeIndex,
+    disabled: mutationPending,
+    onTap: (stableId) =>
+      setMoveControlsFor((current) => (current === stableId ? null : stableId)),
+    onDrop: (fromIndex, toIndex) => {
+      const title = rows[fromIndex].track.title;
+      const up = toIndex < fromIndex;
+      void runMutation(
+        up ? strings.queue.moveUpFailed(title) : strings.queue.moveDownFailed(title),
+        async () => {
+          setDroppedOrder({ snapshot: queue.rows, rows: moveRow(rows, fromIndex, toIndex) });
+          try {
+            await moveQueueItem(fromIndex, toIndex, expectedStableIds);
+          } catch (cause) {
+            setDroppedOrder(null);
+            throw cause;
+          }
+          return up ? strings.queue.movedUp(title) : strings.queue.movedDown(title);
+        },
+      );
+    },
+  });
+
+  /** One queue row; `floating` is the copy that follows the finger during a drag. */
+  const renderRow = (row: QueueSnapshotRow, nativeIndex: number, floating: boolean) => {
+    const active = nativeIndex === queue.activeIndex;
+    const range = queueDragRange(origins, queue.activeIndex, nativeIndex);
+    const title = row.track.title;
+    const resolvedPresentation = presentationFor(
+      {
+        trackId: row.track.id,
+        queueContext:
+          row.context === null ? null : { type: row.context.type, id: row.context.id },
+        originalContextOrder: row.originalContextOrder,
+      },
+      active ? { rollingDeviceCacheSeconds: activeProgress.cached } : undefined,
+    );
+    return (
+      <QueueRow
+        track={row.track}
+        testID={floating ? 'queue-drag-ghost-row' : `queue-row-${testIdPart(row.stableId)}`}
+        active={active}
+        // Queue-native index is authoritative even for duplicate manual or legacy ids.
+        presentation={authoritativeQueueTrackPresentation(resolvedPresentation, active)}
+        disabled={mutationPending}
+        canMoveUp={range !== null && nativeIndex > range.min}
+        canMoveDown={range !== null && nativeIndex < range.max}
+        rowRef={floating ? undefined : drag.attachRow(row.stableId)}
+        dragHandlers={
+          floating ? {} : drag.canDrag(nativeIndex) ? drag.handlersFor(row.stableId) : undefined
+        }
+        dragging={!floating && drag.draggingId === row.stableId}
+        moveControlsOpen={!floating && moveControlsFor === row.stableId}
+        onToggleMoveControls={() =>
+          setMoveControlsFor((current) => (current === row.stableId ? null : row.stableId))
+        }
+        onOpenAlbum={onOpenAlbum}
+        onOpenArtist={onOpenArtist}
+        onSkip={() =>
+          void runMutation(strings.queue.skipFailed(title), async () => {
+            await skipToQueueItem(nativeIndex, expectedStableIds);
+            return strings.queue.skippedTo(title);
+          })
+        }
+        onMoveUp={() =>
+          void runMutation(strings.queue.moveUpFailed(title), async () => {
+            await moveQueueItem(nativeIndex, nativeIndex - 1, expectedStableIds);
+            return strings.queue.movedUp(title);
+          })
+        }
+        onMoveDown={() =>
+          void runMutation(strings.queue.moveDownFailed(title), async () => {
+            await moveQueueItem(nativeIndex, nativeIndex + 1, expectedStableIds);
+            return strings.queue.movedDown(title);
+          })
+        }
+        onRemove={() =>
+          void runMutation(strings.queue.removeFailed(title), async () => {
+            await removeQueueItem(nativeIndex, expectedStableIds);
+            return strings.queue.removed(title);
+          })
+        }
+      />
+    );
+  };
+  const draggedIndex =
+    drag.draggingId === null
+      ? -1
+      : rows.findIndex((candidate) => candidate.stableId === drag.draggingId);
 
   const upcomingCount = presentation.upcomingCount;
   const upcomingContextCount =
@@ -364,110 +475,78 @@ export function QueueSurface({
             onRetry={() => void cachedTracksQuery.refetch()}
           />
 
-          <SectionList
-            testID="queue-list"
-            sections={sections}
-            keyExtractor={(entry) => entry.row.stableId}
-            stickySectionHeadersEnabled={false}
-            contentContainerStyle={queue.rows.length === 0 ? styles.emptyList : styles.list}
-            ListEmptyComponent={
-              <EmptyState
-                layout="page"
-                testID="queue-empty"
-                icon="playlist-music-outline"
-                title={strings.queue.emptyTitle}
-                message={strings.queue.emptyDetail}
-                style={transparent}
-              />
-            }
-            renderSectionHeader={({ section }) => (
-              <View testID={`queue-section-${section.kind}`} style={styles.sectionHeader}>
-                <AppText
-                  accessibilityRole="header"
-                  variant="overline"
-                  color={section.kind === 'current' ? 'accent' : 'secondary'}
-                  numberOfLines={1}
-                  style={styles.sectionTitle}
-                >
-                  {section.title}
-                </AppText>
-                <AppText variant="caption" color="muted">
-                  {strings.common.trackCount(section.data.length)}
-                </AppText>
-              </View>
-            )}
-            renderItem={({ item: { row, nativeIndex } }) => {
-              const active = nativeIndex === queue.activeIndex;
-              const first = nativeIndex === 0;
-              const last = nativeIndex === queue.rows.length - 1;
-              const previous = queue.rows[nativeIndex - 1];
-              const following = queue.rows[nativeIndex + 1];
-              const canMoveUp =
-                !active &&
-                !first &&
-                nativeIndex - 1 !== queue.activeIndex &&
-                (queue.activeIndex === null ||
-                  nativeIndex <= queue.activeIndex ||
-                  previous?.origin === row.origin);
-              const canMoveDown =
-                !active &&
-                !last &&
-                nativeIndex + 1 !== queue.activeIndex &&
-                (queue.activeIndex === null ||
-                  nativeIndex <= queue.activeIndex ||
-                  following?.origin === row.origin);
-              const title = row.track.title;
-              const resolvedPresentation = presentationFor(
-                {
-                  trackId: row.track.id,
-                  queueContext:
-                    row.context === null
-                      ? null
-                      : { type: row.context.type, id: row.context.id },
-                  originalContextOrder: row.originalContextOrder,
-                },
-                active ? { rollingDeviceCacheSeconds: activeProgress.cached } : undefined,
-              );
-              return (
-                <QueueRow
-                  track={row.track}
-                  testID={`queue-row-${testIdPart(row.stableId)}`}
-                  active={active}
-                  // Queue-native index is authoritative even for duplicate manual or legacy ids.
-                  presentation={authoritativeQueueTrackPresentation(resolvedPresentation, active)}
-                  disabled={mutationPending}
-                  canMoveUp={canMoveUp}
-                  canMoveDown={canMoveDown}
-                  onOpenAlbum={onOpenAlbum}
-                  onOpenArtist={onOpenArtist}
-                  onSkip={() =>
-                    void runMutation(strings.queue.skipFailed(title), async () => {
-                      await skipToQueueItem(nativeIndex, expectedStableIds);
-                      return strings.queue.skippedTo(title);
-                    })
-                  }
-                  onMoveUp={() =>
-                    void runMutation(strings.queue.moveUpFailed(title), async () => {
-                      await moveQueueItem(nativeIndex, nativeIndex - 1, expectedStableIds);
-                      return strings.queue.movedUp(title);
-                    })
-                  }
-                  onMoveDown={() =>
-                    void runMutation(strings.queue.moveDownFailed(title), async () => {
-                      await moveQueueItem(nativeIndex, nativeIndex + 1, expectedStableIds);
-                      return strings.queue.movedDown(title);
-                    })
-                  }
-                  onRemove={() =>
-                    void runMutation(strings.queue.removeFailed(title), async () => {
-                      await removeQueueItem(nativeIndex, expectedStableIds);
-                      return strings.queue.removed(title);
-                    })
-                  }
+          <View
+            ref={attachFrame}
+            // Measured for drag-and-drop: Android must not flatten this view away.
+            collapsable={false}
+            onLayout={drag.onFrameLayout}
+            style={styles.listFrame}
+          >
+            <SectionList
+              ref={attachList}
+              testID="queue-list"
+              sections={sections}
+              keyExtractor={(entry) => entry.row.stableId}
+              stickySectionHeadersEnabled={false}
+              onScroll={drag.onScroll}
+              scrollEventThrottle={16}
+              onContentSizeChange={drag.onContentSizeChange}
+              contentContainerStyle={rows.length === 0 ? styles.emptyList : styles.list}
+              ListEmptyComponent={
+                <EmptyState
+                  layout="page"
+                  testID="queue-empty"
+                  icon="playlist-music-outline"
+                  title={strings.queue.emptyTitle}
+                  message={strings.queue.emptyDetail}
+                  style={transparent}
                 />
-              );
-            }}
-          />
+              }
+              renderSectionHeader={({ section }) => (
+                <View testID={`queue-section-${section.kind}`} style={styles.sectionHeader}>
+                  <AppText
+                    accessibilityRole="header"
+                    variant="overline"
+                    color={section.kind === 'current' ? 'accent' : 'secondary'}
+                    numberOfLines={1}
+                    style={styles.sectionTitle}
+                  >
+                    {section.title}
+                  </AppText>
+                  <AppText variant="caption" color="muted">
+                    {strings.common.trackCount(section.data.length)}
+                  </AppText>
+                </View>
+              )}
+              renderItem={({ item: { row, nativeIndex } }) => renderRow(row, nativeIndex, false)}
+            />
+            <View
+              testID="queue-drag-layer"
+              accessible={false}
+              importantForAccessibility="no-hide-descendants"
+              pointerEvents="none"
+              style={styles.dragLayer}
+            >
+              <Animated.View
+                testID="queue-drop-indicator"
+                style={[
+                  styles.dropIndicator,
+                  {
+                    opacity: drag.indicatorOpacity,
+                    transform: [{ translateY: drag.indicatorTop }],
+                  },
+                ]}
+              />
+              {draggedIndex >= 0 ? (
+                <Animated.View
+                  testID="queue-drag-ghost"
+                  style={[styles.ghost, { transform: [{ translateY: drag.ghostTop }] }]}
+                >
+                  {renderRow(rows[draggedIndex], draggedIndex, true)}
+                </Animated.View>
+              ) : null}
+            </View>
+          </View>
         </>
       )}
     </View>
@@ -525,7 +604,34 @@ const styles = StyleSheet.create({
   pressed: { opacity: opacity.pressed },
   disabled: { opacity: opacity.disabled },
   errorBanner: { marginHorizontal: layout.pagePadding, marginBottom: spacing.xs },
+  listFrame: { flex: 1 },
   list: { paddingHorizontal: spacing.sm, paddingBottom: layout.scrollEndGap },
+  dragLayer: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+  },
+  ghost: {
+    position: 'absolute',
+    top: 0,
+    right: spacing.sm,
+    left: spacing.sm,
+    borderRadius: radii.card,
+    backgroundColor: colors.surfaceElevated,
+    ...elevation.floating,
+  },
+  dropIndicator: {
+    position: 'absolute',
+    top: -spacing.xxs / 4,
+    right: spacing.md,
+    left: spacing.md,
+    height: spacing.xxs / 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+  },
   emptyList: { flexGrow: 1 },
   sectionHeader: {
     flexDirection: 'row',
