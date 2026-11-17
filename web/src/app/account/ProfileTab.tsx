@@ -1,18 +1,80 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLogout } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Modal from "@/components/Modal";
 import { EyeIcon, EyeOffIcon } from "@/components/feedbackIcons";
-import { EditIcon, UserIcon } from "@/components/icons";
+import { DownloadIcon, EditIcon, UserIcon } from "@/components/icons";
 import type { User } from "@/types";
 import { errorMessage, SettingsCard, SettingsRow } from "./presentation";
 
 const FORM_ID = "edit-profile-form";
+const LATEST_RELEASE_API = "https://api.github.com/repos/LoggeL/LoggeRythm/releases/latest";
+
+type AndroidApk = { version: string; url: string; sizeBytes: number };
+
+/** Resolve the APK attached to the newest GitHub release. Throws with the cause
+ *  when GitHub is unreachable or the release carries no APK. */
+async function fetchLatestApk(): Promise<AndroidApk> {
+  const response = await fetch(LATEST_RELEASE_API, { headers: { Accept: "application/vnd.github+json" } });
+  if (!response.ok) {
+    throw new Error(`GitHub antwortet mit HTTP ${response.status} auf die Release-Abfrage.`);
+  }
+  const release = (await response.json()) as {
+    tag_name?: unknown;
+    assets?: { name?: unknown; browser_download_url?: unknown; size?: unknown }[];
+  };
+  if (typeof release.tag_name !== "string" || !Array.isArray(release.assets)) {
+    throw new Error("Die Release-Antwort von GitHub hat ein unerwartetes Format.");
+  }
+  const apks = release.assets.filter((asset) => typeof asset.name === "string" && asset.name.endsWith(".apk"));
+  if (apks.length !== 1) {
+    throw new Error(`Release ${release.tag_name} enthält ${apks.length} APK-Dateien statt genau einer.`);
+  }
+  const [apk] = apks;
+  if (typeof apk.browser_download_url !== "string" || typeof apk.size !== "number") {
+    throw new Error(`Die APK in Release ${release.tag_name} hat keine gültige Download-Adresse.`);
+  }
+  return { version: release.tag_name.replace(/^v/, ""), url: apk.browser_download_url, sizeBytes: apk.size };
+}
+
+function AndroidAppCard() {
+  const apk = useQuery({ queryKey: ["android-apk"], queryFn: fetchLatestApk, staleTime: 60 * 60 * 1000, retry: 1 });
+
+  return (
+    <SettingsCard
+      title="Android-App"
+      description="Installiere LoggeRythm auf deinem Android-Gerät. Beim ersten Mal musst du die Installation aus unbekannten Quellen erlauben."
+      icon={<DownloadIcon width={18} height={18} />}
+      action={
+        apk.data ? (
+          <a href={apk.data.url} download className="action-primary">
+            <DownloadIcon width={16} height={16} /> APK herunterladen
+          </a>
+        ) : (
+          <button type="button" disabled className="action-primary">
+            <DownloadIcon width={16} height={16} /> {apk.isPending ? "Lädt…" : "APK herunterladen"}
+          </button>
+        )
+      }
+    >
+      {apk.data && (
+        <p className="text-sm text-muted tabular-nums">
+          Version {apk.data.version} · {(apk.data.sizeBytes / (1024 * 1024)).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB
+        </p>
+      )}
+      {apk.error && (
+        <p role="alert" className="error-panel">
+          APK-Download nicht verfügbar: {errorMessage(apk.error)}
+        </p>
+      )}
+    </SettingsCard>
+  );
+}
 
 function EditProfileDialog({ me, onClose }: { me: User; onClose: () => void }) {
   const qc = useQueryClient();
@@ -135,7 +197,7 @@ function EditProfileDialog({ me, onClose }: { me: User; onClose: () => void }) {
   );
 }
 
-/** "Profil" tab: personal data, session and account deletion. */
+/** "Profil" tab: personal data, Android app download, session and account deletion. */
 export default function ProfileTab({ me }: { me: User }) {
   const logout = useLogout();
   const qc = useQueryClient();
@@ -195,6 +257,8 @@ export default function ProfileTab({ me }: { me: User }) {
           </span>
         </SettingsRow>
       </SettingsCard>
+
+      <AndroidAppCard />
 
       <SettingsCard title="Sitzung & Konto">
         <SettingsRow label="Abmelden" description="Beendet die Sitzung auf diesem Gerät.">
