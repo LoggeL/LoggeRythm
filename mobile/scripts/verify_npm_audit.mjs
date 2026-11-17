@@ -10,17 +10,11 @@
 // or a bumped override then resolves them and the stale entry is reported.
 import { execFileSync } from 'node:child_process';
 
-// Reviewed 2026-10-22 against the GitHub advisories and installed dependency paths.
-// Both upstream advisories still have first_patched_version=null. These packages
-// are Expo/Metro CLI tooling and are not Android playback/runtime dependencies:
-// braces receives this trusted checkout's build globs; node-forge is used by
-// Expo's development/certificate tooling, not native HTTPS or APK verification.
-// Keep arbitrary projects/unsigned remote updates out of this release build.
-// See docs/ANDROID_AUTO_RELEASE_1.0.14.md for the exact exposure and evidence.
-const ALLOWLISTED_ADVISORIES = new Map([
-  ['GHSA-vfj7-8cjw-p6xm', 'braces'],
-  ['GHSA-86w9-cpqp-85rv', 'node-forge'],
-]);
+// Empty since 2026-11-17: `npm audit fix` plus the @expo/fingerprint minimatch
+// override resolved every production advisory, including the previously
+// reviewed braces (GHSA-vfj7-8cjw-p6xm) and node-forge (GHSA-86w9-cpqp-85rv).
+// Add entries here as [advisoryId, packageName] only under the rules above.
+const ALLOWLISTED_ADVISORIES = new Map();
 
 const FAIL_SEVERITIES = new Set(['moderate', 'high', 'critical']);
 
