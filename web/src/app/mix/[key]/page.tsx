@@ -17,14 +17,28 @@ import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueue
 import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 import type { HomeShelf } from "@/types";
 
+// Home links to mixes from two feeds. The API prefixes every
+// "because you listened" shelf key with "byl-" (routers/home.py); all other
+// keys belong to the personal mixes. Query keys match the home page so the
+// shelves the user just clicked come straight from the cache.
+const BECAUSE_YOU_LISTENED_PREFIX = "byl-";
+
+function mixSource(key: string, userId: string | null) {
+  return key.startsWith(BECAUSE_YOU_LISTENED_PREFIX)
+    ? { queryKey: ["because-you-listened", userId], queryFn: () => api.becauseYouListened(), label: "Empfehlungen zu deiner Musik" }
+    : { queryKey: ["home-mixes", userId], queryFn: () => api.homeMixes(), label: "Deine Mixe" };
+}
+
 export default function MixPage({ params }: { params: Promise<{ key: string }> }) {
-  const { key } = use(params);
+  const { key: rawKey } = use(params);
+  const key = decodeURIComponent(rawKey);
   const account = useMe();
   const me = account.data;
   const userId = me ? String(me.id) : null;
+  const source = mixSource(key, userId);
   const mixes = useQuery<HomeShelf[]>({
-    queryKey: ["home-mixes", userId],
-    queryFn: () => api.homeMixes(),
+    queryKey: source.queryKey,
+    queryFn: source.queryFn,
     enabled: userId !== null,
   });
 
@@ -47,7 +61,7 @@ export default function MixPage({ params }: { params: Promise<{ key: string }> }
     );
   }
 
-  if (mixes.data === undefined) return <QueryError label="Deine Mixe" query={mixes} />;
+  if (mixes.data === undefined) return <QueryError label={source.label} query={mixes} />;
 
   const mix = mixes.data.find((candidate) => candidate.key === key);
   if (!mix) {
@@ -68,7 +82,7 @@ export default function MixPage({ params }: { params: Promise<{ key: string }> }
   return (
     <div>
       <QueryError label="Deine Kontodaten" query={account} className="mb-4" />
-      <QueryError label="Deine Mixe" query={mixes} className="mb-4" />
+      <QueryError label={source.label} query={mixes} className="mb-4" />
       <MixView mix={mix} />
     </div>
   );

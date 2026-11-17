@@ -94,7 +94,8 @@ const SHELVES = [
 ].map((shelf) => ({ ...shelf, cover: shelf.tracks[0].cover }));
 
 const BECAUSE = ARTISTS.slice(0, 3).map((artist, index) => ({
-  key: `because-${artist.id}`, title: `Mehr wie ${artist.name}`,
+  // Same key shape as routers/home.py: "byl-" + lowercased artist, spaces -> "-".
+  key: `byl-${artist.name.toLowerCase().replaceAll(" ", "-")}`, title: `Mehr wie ${artist.name}`,
   subtitle: `Weil du ${artist.name} oft hörst`, tracks: pick(index * 17 + 2, 20, 9),
   cover: cover("artist", artist.id),
 }));
