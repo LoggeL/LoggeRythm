@@ -264,6 +264,9 @@ export interface SystemStatus {
     disk_used: number;
     disk_free: number;
     retention_days: number;
+    /** Set when the automatic cleanup daemon crashed; stays stopped until the API restarts. */
+    cleanup_stopped_at: string | null;
+    cleanup_error: string | null;
   };
   users: {
     total: number;

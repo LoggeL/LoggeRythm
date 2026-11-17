@@ -13,7 +13,7 @@ from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.models import StoredTrack
+from app.db.models import Like, PlaylistTrack, StoredTrack
 from app.services import storage
 
 
@@ -27,6 +27,9 @@ class StorageIntegrityTests(unittest.TestCase):
         )
         self.addCleanup(self.engine.dispose)
         StoredTrack.__table__.create(self.engine)
+        Like.__table__.create(self.engine)
+        PlaylistTrack.__table__.create(self.engine)
+        self.enterContext(patch.object(storage, "_daemon_failure", None))
         self.sessions = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.enterContext(patch.object(storage, "SessionLocal", self.sessions))
         self.enterContext(patch.dict(os.environ, {"STORAGE_DIR": f"{self.directory.name}/audio"}))
@@ -203,6 +206,47 @@ class StorageIntegrityTests(unittest.TestCase):
         self.assertTrue(storage.is_ready("112"))
         self.assertIsNotNone(self.row("112"))
 
+    def like(self, track_id: str) -> None:
+        with self.sessions() as db:
+            db.add(Like(user_id=1, deezer_id=track_id, title="Liked"))
+            db.commit()
+
+    def add_to_playlist(self, track_id: str) -> None:
+        with self.sessions() as db:
+            db.add(PlaylistTrack(playlist_id=1, deezer_id=track_id, title="Listed"))
+            db.commit()
+
+    def test_cleanup_keeps_stale_tracks_that_are_liked_or_in_a_playlist(self) -> None:
+        self.store_old_track("120")
+        self.store_old_track("121")
+        expected_bytes = self.store_old_track("122")
+        self.like("120")
+        self.add_to_playlist("121")
+        self.assertEqual(storage.cleanup_old(30), {"removed": 1, "freed_bytes": expected_bytes})
+        for kept in ("120", "121"):
+            self.assertTrue(storage.is_ready(kept))
+            self.assertIsNotNone(self.row(kept))
+        self.assertFalse(storage.is_ready("122"))
+        self.assertIsNone(self.row("122"))
+
+    def test_cleanup_rechecks_likes_and_playlists_after_candidate_scan(self) -> None:
+        self.store_old_track("123")
+        self.store_old_track("124")
+        original_lock_for = storage._lock_for
+
+        def protect_before_lock(track_id: str) -> threading.Lock:
+            if track_id == "123":
+                self.like(track_id)
+            else:
+                self.add_to_playlist(track_id)
+            return original_lock_for(track_id)
+
+        with patch.object(storage, "_lock_for", side_effect=protect_before_lock):
+            self.assertEqual(storage.cleanup_old(30), {"removed": 0, "freed_bytes": 0})
+        for kept in ("123", "124"):
+            self.assertTrue(storage.is_ready(kept))
+            self.assertIsNotNone(self.row(kept))
+
     def test_cleanup_reports_deletion_failures_and_keeps_failed_db_row(self) -> None:
         self.store_old_track("113")
         self.store_old_track("114")
@@ -234,6 +278,9 @@ class StorageIntegrityTests(unittest.TestCase):
             _cleanup_loop()
         sleep.assert_called_once_with(6 * 3600)
         cleanup.assert_called_once_with()
+        stopped_at, cause = storage.cleanup_daemon_failure()
+        self.assertEqual(cause, "RuntimeError: cleanup denied")
+        self.assertLessEqual(stopped_at, storage._now())
 
     def test_retention_zero_keeps_forever_and_negative_retention_is_rejected(self) -> None:
         self.store_old_track("115")

@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "5af38e8d9ea180d8105036b5d27611d754c88c715d1c7294f6a96fb925623089" as const;
+export const GENERATED_OPENAPI_SHA256 = "ab384d2894efecd6e012999afbca292e22ac71eb97ed3dfec282c1a935320af8" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -349,6 +349,8 @@ export interface StorageItemWire {
   title: string;
 }
 export interface StorageStatusWire {
+  cleanup_error?: string | null;
+  cleanup_stopped_at?: string | null;
   disk_free: number;
   disk_total: number;
   disk_used: number;

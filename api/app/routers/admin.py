@@ -78,6 +78,10 @@ class StorageStatus(BaseModel):
     disk_used: int
     disk_free: int
     retention_days: int
+    # Set when the periodic cleanup daemon crashed; it stays stopped until the
+    # API restarts.
+    cleanup_stopped_at: datetime | None = None
+    cleanup_error: str | None = None
 
 
 class UsersStatus(BaseModel):
@@ -250,6 +254,8 @@ def system_status(
     approved_users = db.scalar(
         select(func.count()).select_from(User).where(User.is_approved.is_(True))
     ) or 0
+    cleanup_failure = storage.cleanup_daemon_failure()
+
     admin_users = db.scalar(
         select(func.count()).select_from(User).where(User.is_admin.is_(True))
     ) or 0
@@ -267,6 +273,8 @@ def system_status(
             disk_used=usage.used,
             disk_free=usage.free,
             retention_days=STORAGE_RETENTION_DAYS,
+            cleanup_stopped_at=cleanup_failure[0] if cleanup_failure else None,
+            cleanup_error=cleanup_failure[1] if cleanup_failure else None,
         ),
         users=UsersStatus(
             total=total_users,

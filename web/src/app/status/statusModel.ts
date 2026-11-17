@@ -62,6 +62,20 @@ function assertSystemStatus(value: unknown): asserts value is SystemStatus {
     requireCount(storage[field], `storage.${field}`);
   }
   requireCount(storage.disk_total, "storage.disk_total", true);
+  if (storage.cleanup_stopped_at === null || storage.cleanup_error === null) {
+    if (storage.cleanup_stopped_at !== null || storage.cleanup_error !== null) {
+      statusContractError(
+        "storage.cleanup_stopped_at",
+        "zusammen mit „storage.cleanup_error“ gesetzt oder null",
+      );
+    }
+  } else {
+    requireText(storage.cleanup_stopped_at, "storage.cleanup_stopped_at");
+    if (Number.isNaN(Date.parse(storage.cleanup_stopped_at as string))) {
+      statusContractError("storage.cleanup_stopped_at", "ein ISO-Zeitstempel");
+    }
+    requireText(storage.cleanup_error, "storage.cleanup_error");
+  }
   if ((storage.disk_used as number) > (storage.disk_total as number)) {
     statusContractError(
       "storage.disk_used",

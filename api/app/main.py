@@ -198,12 +198,26 @@ def _bootstrap_admin() -> None:
 
 
 def _cleanup_loop() -> None:
-    """Daemon: evict tracks past the retention window every few hours."""
+    """Daemon: evict tracks past the retention window every few hours.
+
+    A failure stops the daemon (no silent retry loop). The failure is recorded
+    so ``/api/admin/status`` reports that automatic cleanup is down until the
+    next restart, and re-raised so the thread's traceback lands in the log.
+    """
     import time
 
     while True:
         time.sleep(6 * 3600)
-        result = storage.cleanup_old()
+        try:
+            result = storage.cleanup_old()
+        except BaseException as exc:
+            storage.record_cleanup_daemon_failure(exc)
+            print(
+                "Storage cleanup daemon STOPPED: automatic eviction is disabled "
+                f"until restart. Cause: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            raise
         if result.get("removed"):
             print(f"Storage cleanup: removed {result['removed']} stale tracks.")
 

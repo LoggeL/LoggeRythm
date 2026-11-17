@@ -140,7 +140,7 @@ function StorageSection() {
       description={
         data
           ? data.retention_days > 0
-            ? `Titel, die ${data.retention_days} Tage nicht gespielt wurden, werden automatisch gelöscht.`
+            ? `Titel, die ${data.retention_days} Tage nicht gespielt wurden, werden automatisch gelöscht. Gelikte Titel und Titel in Playlists bleiben erhalten.`
             : "Es ist keine automatische Löschung eingerichtet."
           : "Belegung des Titel-Caches auf dem Server."
       }

@@ -1946,6 +1946,29 @@
       },
       "StorageStatus": {
         "properties": {
+          "cleanup_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup Error"
+          },
+          "cleanup_stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cleanup Stopped At"
+          },
           "disk_free": {
             "title": "Disk Free",
             "type": "integer"

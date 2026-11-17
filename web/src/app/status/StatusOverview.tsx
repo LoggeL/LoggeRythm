@@ -13,6 +13,13 @@ export function StatusBody({ status }: { status: SystemStatus }) {
   const diskPct = (status.storage.disk_used / status.storage.disk_total) * 100;
   const diskShown = Math.floor(diskPct);
   const diskTone: StatusTone = diskPct >= DISK_CRITICAL_PCT ? "critical" : "ok";
+  const cleanupStopped =
+    status.storage.cleanup_stopped_at !== null && status.storage.cleanup_error !== null
+      ? {
+          at: new Date(status.storage.cleanup_stopped_at).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" }),
+          error: status.storage.cleanup_error,
+        }
+      : null;
   const environmentIsProduction = status.system.app_env === "production" || status.system.app_env === "prod";
   const cookiesAreCritical = environmentIsProduction && !status.system.cookie_secure;
   const systemNeedsCheck = !status.system.jwt_secure || cookiesAreCritical;
@@ -30,6 +37,13 @@ export function StatusBody({ status }: { status: SystemStatus }) {
   }
   if (diskTone === "critical") {
     faults.push({ target: "status-storage", area: "Speicher", message: `Der Datenträger ist zu ${diskShown} % belegt.` });
+  }
+  if (cleanupStopped) {
+    faults.push({
+      target: "status-storage",
+      area: "Speicher",
+      message: `Die automatische Löschung ist seit ${cleanupStopped.at} gestoppt und läuft erst nach einem Neustart der API wieder.`,
+    });
   }
   if (!status.system.jwt_secure) {
     faults.push({ target: "status-system", area: "System", message: "Das JWT-Secret steht noch auf dem Standardwert." });
@@ -121,7 +135,7 @@ export function StatusBody({ status }: { status: SystemStatus }) {
           </Row>
         </Panel>
 
-        <Panel id="status-storage" index="03" title="Speicher" Icon={DiskIcon} wide summary={<Pill tone={diskTone}>{diskShown} % belegt</Pill>}>
+        <Panel id="status-storage" index="03" title="Speicher" Icon={DiskIcon} wide summary={cleanupStopped ? <Pill tone="critical">Löschung gestoppt</Pill> : <Pill tone={diskTone}>{diskShown} % belegt</Pill>}>
           <div className="grid gap-x-12 gap-y-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-end">
             <div className="min-w-0">
               <p className="flex items-baseline gap-3">
@@ -157,9 +171,16 @@ export function StatusBody({ status }: { status: SystemStatus }) {
               <Metric value={formatBytes(status.storage.disk_total)} label="Gesamt" />
             </dl>
           </div>
+          {cleanupStopped ? (
+            <p role="alert" className="mt-4 border-t border-hairline pt-2 text-sm text-danger [overflow-wrap:anywhere]">
+              Automatische Löschung seit {cleanupStopped.at} gestoppt (bis zum Neustart der API): {cleanupStopped.error}
+            </p>
+          ) : null}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-1 border-t border-hairline pt-2">
             <span className="text-sm text-muted">
-              {status.storage.retention_days > 0 ? `Automatische Löschung nach ${status.storage.retention_days} inaktiven Tagen` : "Keine automatische Löschung"}
+              {status.storage.retention_days > 0
+                ? `Automatische Löschung nach ${status.storage.retention_days} inaktiven Tagen, außer gelikten Titeln und Titeln in Playlists`
+                : "Keine automatische Löschung"}
             </span>
             <Link href="/account?tab=admin" className={linkClass}>
               Speicher verwalten

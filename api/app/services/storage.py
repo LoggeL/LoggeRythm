@@ -3,7 +3,8 @@
 Each Deezer track is downloaded + decrypted exactly once via MelodAI's deezer.py
 and stored on disk. A StoredTrack DB row mirrors each file and carries a
 ``last_accessed`` timestamp that is bumped on every play. A periodic cleanup
-evicts tracks not played within ``STORAGE_RETENTION_DAYS`` days.
+evicts tracks not played within ``STORAGE_RETENTION_DAYS`` days, except tracks
+that any user has liked or put into a playlist.
 
 Correctness guarantees:
 - per-track lock -> no concurrent double-download of the same id
@@ -14,13 +15,33 @@ import os
 import threading
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import exists
+
 from ..config import STORAGE_RETENTION_DAYS
-from ..db.models import StoredTrack
+from ..db.models import Like, PlaylistTrack, StoredTrack
 from ..db.session import SessionLocal
 from . import deezer
 
 _locks_guard = threading.Lock()
 _locks: dict[str, threading.Lock] = {}
+
+# Set once when the periodic cleanup daemon dies, so admins see that automatic
+# eviction has stopped until the next restart (the thread does not retry).
+_daemon_failure_guard = threading.Lock()
+_daemon_failure: tuple[datetime, str] | None = None
+
+
+def record_cleanup_daemon_failure(exc: BaseException) -> None:
+    """Remember why the periodic cleanup daemon stopped."""
+    global _daemon_failure
+    with _daemon_failure_guard:
+        _daemon_failure = (_now(), f"{type(exc).__name__}: {exc}")
+
+
+def cleanup_daemon_failure() -> tuple[datetime, str] | None:
+    """When and why the periodic cleanup daemon stopped, or None if running."""
+    with _daemon_failure_guard:
+        return _daemon_failure
 
 
 def _now() -> datetime:
@@ -271,8 +292,19 @@ def _remove_files(deezer_id: str) -> int:
     return _remove_paths(deezer_id, (path_for(deezer_id), meta_path_for(deezer_id)))
 
 
+def _evictable(cutoff: datetime) -> tuple:
+    """Filter for stored tracks that may be evicted: stale and neither liked
+    nor in any playlist."""
+    return (
+        StoredTrack.last_accessed < cutoff,
+        ~exists().where(Like.deezer_id == StoredTrack.deezer_id),
+        ~exists().where(PlaylistTrack.deezer_id == StoredTrack.deezer_id),
+    )
+
+
 def cleanup_old(days: int | None = None) -> dict:
-    """Evict tracks not played within the retention window. Returns a summary."""
+    """Evict tracks not played within the retention window that are neither
+    liked nor in a playlist. Returns a summary."""
     retention = STORAGE_RETENTION_DAYS if days is None else days
     if retention < 0:
         raise ValueError("Storage retention days must be zero or positive")
@@ -284,17 +316,18 @@ def cleanup_old(days: int | None = None) -> dict:
     with SessionLocal() as db:
         candidates = (
             db.query(StoredTrack.deezer_id)
-            .filter(StoredTrack.last_accessed < cutoff)
+            .filter(*_evictable(cutoff))
             .all()
         )
     failures = []
     for (deezer_id,) in candidates:
         try:
             with _lock_for(deezer_id), SessionLocal() as db:
-                # A play may have refreshed retention since the candidate scan.
+                # A play, like or playlist add may have happened since the
+                # candidate scan.
                 row = db.query(StoredTrack).filter(
                     StoredTrack.deezer_id == deezer_id,
-                    StoredTrack.last_accessed < cutoff,
+                    *_evictable(cutoff),
                 ).first()
                 if row is None:
                     continue
