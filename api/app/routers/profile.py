@@ -15,6 +15,7 @@ from ..db.models import (
     InviteCode,
     PartyMember,
     PartySession,
+    PasswordResetToken,
     Play,
     Playlist,
     PlaylistTrack,
@@ -171,6 +172,7 @@ def purge_user_account(db: Session, user: User) -> None:
     )
 
     db.execute(delete(Play).where(Play.user_id == user_id))
+    db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
     db.execute(delete(PartyMember).where(PartyMember.user_id == user_id))
     # Hosted parties die with their host (ORM cascade removes tracks/members).
     for session in db.scalars(

@@ -80,6 +80,11 @@ export default function LoginPage() {
         />
         <PasswordField
           label="Passwort"
+          hint={
+            <Link href="/forgot-password" className="inline-flex min-h-11 items-center underline underline-offset-2">
+              Passwort vergessen?
+            </Link>
+          }
           name="password"
           autoComplete="current-password"
           enterKeyHint="go"

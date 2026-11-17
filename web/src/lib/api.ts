@@ -166,6 +166,10 @@ export const api = {
       body: JSON.stringify({ email, password, display_name, invite }),
     }),
   logout: () => req<void>(`/auth/logout`, { method: "POST" }),
+  forgotPassword: (email: string) =>
+    req<void>(`/auth/password/forgot`, { method: "POST", body: JSON.stringify({ email }) }),
+  resetPassword: (token: string, password: string) =>
+    req<User>(`/auth/password/reset`, { method: "POST", body: JSON.stringify({ token, password }) }),
   updateMe: (patch: {
     display_name?: string;
     email?: string;

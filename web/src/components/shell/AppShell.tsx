@@ -100,15 +100,17 @@ function Workspace({ children }: { children: React.ReactNode }) {
   );
 }
 
+const PUBLIC_AUTH_PATHS = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
+
 /**
- * Session gate. Login and registration are always reachable; everything else
- * requires an approved account.
+ * Session gate. Login, registration and password reset are always reachable;
+ * everything else requires an approved account.
  */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: me, isPending, isError, error, refetch, isFetching } = useMe();
 
-  if (pathname === "/login" || pathname === "/register") {
+  if (PUBLIC_AUTH_PATHS.has(pathname)) {
     return (
       <div className="h-full overflow-y-auto bg-background">
         {children}

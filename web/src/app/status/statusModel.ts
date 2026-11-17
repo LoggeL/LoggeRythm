@@ -123,6 +123,7 @@ function assertSystemStatus(value: unknown): asserts value is SystemStatus {
     integrations.lastfm_configured,
     "integrations.lastfm_configured",
   );
+  requireBoolean(integrations.mail_configured, "integrations.mail_configured");
   requireText(system.app_env, "system.app_env");
   requireText(system.database, "system.database");
   requireBoolean(system.jwt_secure, "system.jwt_secure");

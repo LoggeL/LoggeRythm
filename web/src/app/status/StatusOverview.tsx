@@ -25,7 +25,8 @@ export function StatusBody({ status }: { status: SystemStatus }) {
   const systemNeedsCheck = !status.system.jwt_secure || cookiesAreCritical;
   const deezerLabel = status.deezer.arl_ok ? "Angemeldet" : status.deezer.arl_configured ? "ARL ungültig" : "Kein ARL";
   const diskUsage = `${formatBytes(status.storage.disk_used)} von ${formatBytes(status.storage.disk_total)} belegt`;
-  const integrationsConfigured = Number(status.integrations.spotify_configured) + Number(status.integrations.lastfm_configured);
+  const integrationsConfigured =
+    Number(status.integrations.spotify_configured) + Number(status.integrations.lastfm_configured) + Number(status.integrations.mail_configured);
 
   const faults: Fault[] = [];
   if (!status.deezer.arl_ok) {
@@ -204,12 +205,15 @@ export function StatusBody({ status }: { status: SystemStatus }) {
           )}
         </Panel>
 
-        <Panel id="status-integrations" index="05" title="Integrationen" Icon={PlugIcon} summary={<Pill tone="neutral">{integrationsConfigured} / 2 konfiguriert</Pill>}>
+        <Panel id="status-integrations" index="05" title="Integrationen" Icon={PlugIcon} summary={<Pill tone="neutral">{integrationsConfigured} / 3 konfiguriert</Pill>}>
           <Row label="Spotify · Link-Import">
             <Pill tone={status.integrations.spotify_configured ? "ok" : "neutral"}>{status.integrations.spotify_configured ? "Konfiguriert" : "Nicht konfiguriert"}</Pill>
           </Row>
           <Row label="Last.fm · Empfehlungen">
             <Pill tone={status.integrations.lastfm_configured ? "ok" : "neutral"}>{status.integrations.lastfm_configured ? "Konfiguriert" : "Nicht konfiguriert"}</Pill>
+          </Row>
+          <Row label="Resend · Mail">
+            <Pill tone={status.integrations.mail_configured ? "ok" : "neutral"}>{status.integrations.mail_configured ? "Konfiguriert" : "Nicht konfiguriert"}</Pill>
           </Row>
         </Panel>
 

@@ -22,3 +22,12 @@ class UserOut(BaseModel):
     is_admin: bool = False
     is_approved: bool = False
     avatar_url: str | None = None
+
+
+class PasswordForgotRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=8, max_length=128)

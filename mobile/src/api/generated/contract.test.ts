@@ -14,7 +14,7 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(83);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(85);
     expect(GENERATED_API_OPERATIONS.get_agent_manifest_api_agent_get).toEqual({
       method: 'GET',
       path: '/api/agent',

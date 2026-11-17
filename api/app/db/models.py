@@ -262,3 +262,18 @@ class StoredTrack(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     # Updated on every play; tracks not accessed within the retention window are evicted.
     last_accessed: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class PasswordResetToken(Base):
+    """Single-use password reset link. Only the SHA-256 of the token is stored."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

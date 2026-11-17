@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "ab384d2894efecd6e012999afbca292e22ac71eb97ed3dfec282c1a935320af8" as const;
+export const GENERATED_OPENAPI_SHA256 = "3681bfbf67d31577cc592c51e2df5d39caa2d76e7f8a5cac43207fb107c472a6" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -143,6 +143,7 @@ export interface HTTPValidationErrorWire {
 }
 export interface IntegrationsStatusWire {
   lastfm_configured: boolean;
+  mail_configured: boolean;
   spotify_configured: boolean;
 }
 export interface InviteInfoWire {
@@ -194,6 +195,13 @@ export interface PartyTrackOutWire {
   duration_sec?: number;
   id: number;
   title?: string;
+}
+export interface PasswordForgotRequestWire {
+  email: string;
+}
+export interface PasswordResetRequestWire {
+  password: string;
+  token: string;
 }
 export interface PlayQueryWire {
   artist?: string;
@@ -448,6 +456,8 @@ export interface GeneratedApiSchemas {
   "PartyMemberOut": PartyMemberOutWire;
   "PartyState": PartyStateWire;
   "PartyTrackOut": PartyTrackOutWire;
+  "PasswordForgotRequest": PasswordForgotRequestWire;
+  "PasswordResetRequest": PasswordResetRequestWire;
   "PlayQuery": PlayQueryWire;
   "PlaybackSettings": PlaybackSettingsWire;
   "PlaybackSettingsUpdate": PlaybackSettingsUpdateWire;
@@ -752,6 +762,18 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: Record<string, boolean>;
+  };
+  "forgot_password_api_auth_password_forgot_post": {
+    request: {
+      body: PasswordForgotRequestWire;
+    };
+    responses: {
+      "204": undefined;
+      "422": HTTPValidationErrorWire;
+      "502": undefined;
+      "503": undefined;
+    };
+    response: undefined;
   };
   "genre_api_genres__genre_id__get": {
     request: {
@@ -1242,6 +1264,16 @@ export interface GeneratedApiOperations {
     };
     response: undefined;
   };
+  "reset_password_api_auth_password_reset_post": {
+    request: {
+      body: PasswordResetRequestWire;
+    };
+    responses: {
+      "200": UserOutWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: UserOutWire;
+  };
   "resolve_api_resolve_get": {
     request: {
       query: {
@@ -1668,6 +1700,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "forgot_password_api_auth_password_forgot_post": {
+    method: "POST",
+    path: "/api/auth/password/forgot",
+    auth: "none",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [204],
+  },
   "genre_api_genres__genre_id__get": {
     method: "GET",
     path: "/api/genres/{genre_id}",
@@ -1961,6 +2000,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "required",
     requestMediaTypes: ["application/json"],
     successStatuses: [204],
+  },
+  "reset_password_api_auth_password_reset_post": {
+    method: "POST",
+    path: "/api/auth/password/reset",
+    auth: "none",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
   },
   "resolve_api_resolve_get": {
     method: "GET",

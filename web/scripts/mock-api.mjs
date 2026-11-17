@@ -228,6 +228,14 @@ async function handle(req, res) {
   // Auth
   if (is("POST", "/auth/login") || is("POST", "/auth/register")) { loggedIn = true; return send(res, 200, me); }
   if (is("POST", "/auth/logout")) { loggedIn = false; return send(res, 204); }
+  if (is("POST", "/auth/password/forgot")) return send(res, 204);
+  // Any token except "expired" is accepted, like a fresh link from the mail.
+  if (is("POST", "/auth/password/reset")) {
+    const { token } = await readJson(req);
+    if (token === "expired") return fail(res, 400, "Der Link ist ungültig, abgelaufen oder wurde schon benutzt.");
+    loggedIn = true;
+    return send(res, 200, me);
+  }
   if (is("GET", "/auth/me")) return loggedIn ? send(res, 200, me) : fail(res, 401, "Nicht angemeldet");
   if (!loggedIn) return fail(res, 401, "Nicht angemeldet");
 
@@ -439,10 +447,10 @@ async function handle(req, res) {
   if (is("GET", "/admin/invites")) return send(res, 200, [{ code: "abc123", url: "http://localhost:3000/register?invite=abc123", used_by_name: "Jule", created_at: "2026-03-10T12:00:00Z" }]);
   if (is("POST", "/admin/invites")) return send(res, 200, { code: "new456", url: "http://localhost:3000/register?invite=new456", used_by_name: null, created_at: new Date().toISOString() });
   if (is("GET", "/admin/status")) {
-    return send(res, 200, { deezer: { arl_configured: true, arl_ok: true, quality: "mp3" }, storage,
+    return send(res, 200, { deezer: { arl_configured: true, arl_ok: true, quality: "mp3" }, storage: { ...storage, cleanup_stopped_at: null, cleanup_error: null },
       users: { total: 3, approved: 2, pending: 1, admins: 1 },
       content: { playlists: playlists.size, likes: likes.size, follows: follows.size, plays: 1284, stored_lyrics: 96, parties: parties.size, invites_total: 2, invites_used: 1 },
-      integrations: { spotify_configured: true, lastfm_configured: false },
+      integrations: { spotify_configured: true, lastfm_configured: false, mail_configured: true },
       system: { app_env: "mock", database: "memory", jwt_secure: false, cookie_secure: false } });
   }
 

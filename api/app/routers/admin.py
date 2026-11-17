@@ -24,7 +24,7 @@ from ..db.models import (
     User,
 )
 from ..db.session import engine, get_db
-from ..services import deezer_client, storage
+from ..services import deezer_client, mail, storage
 from .profile import purge_user_account
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -105,6 +105,7 @@ class ContentStatus(BaseModel):
 class IntegrationsStatus(BaseModel):
     spotify_configured: bool
     lastfm_configured: bool
+    mail_configured: bool
 
 
 class SystemStatus(BaseModel):
@@ -297,6 +298,7 @@ def system_status(
                 cfg.SPOTIFY_CLIENT_ID and cfg.SPOTIFY_CLIENT_SECRET
             ),
             lastfm_configured=bool(cfg.LASTFM_API_KEY),
+            mail_configured=mail.configured(),
         ),
         system=SystemStatus(
             app_env=cfg.APP_ENV,

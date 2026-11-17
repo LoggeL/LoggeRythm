@@ -287,6 +287,7 @@ export interface SystemStatus {
   integrations: {
     spotify_configured: boolean;
     lastfm_configured: boolean;
+    mail_configured: boolean;
   };
   system: {
     app_env: string;

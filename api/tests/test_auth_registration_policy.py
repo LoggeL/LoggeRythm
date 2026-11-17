@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from fastapi import HTTPException, Response
+from fastapi import BackgroundTasks, HTTPException, Response
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
@@ -23,7 +23,13 @@ class AuthRegistrationPolicyTests(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
-    def register(self, email: str, *, invite: str | None = None):
+    def register(
+        self,
+        email: str,
+        *,
+        invite: str | None = None,
+        background_tasks: BackgroundTasks | None = None,
+    ):
         response = Response()
         with (
             patch.object(auth_router, "hash_password", return_value="deterministic-hash"),
@@ -37,6 +43,7 @@ class AuthRegistrationPolicyTests(unittest.TestCase):
                     invite=invite,
                 ),
                 response=response,
+                background_tasks=background_tasks or BackgroundTasks(),
                 db=self.db,
             )
         self.assertIn("sf_session=deterministic-token", response.headers["set-cookie"])

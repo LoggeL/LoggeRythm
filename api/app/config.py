@@ -56,9 +56,34 @@ GROQ_TRANSCRIPTION_MODEL: str = os.getenv(
     "GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo"
 )
 
+# --- Resend (optional transactional mail: password reset, admin notices) ---
+# Without RESEND_API_KEY mail features are off: password reset answers 503 and
+# the admin status page reports mail as not configured.
+RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "").strip()
+# Sender on a domain verified in Resend, e.g. "LoggeRythm <loggerythm@example.com>"
+# (Resend advises against "no-reply" addresses).
+MAIL_FROM: str = os.getenv("MAIL_FROM", "").strip()
+# Public web origin used for links inside mails, e.g. "https://music.example.com".
+PUBLIC_APP_URL: str = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+
 
 def validate_runtime_config() -> None:
     if APP_ENV in {"prod", "production"} and JWT_SECRET in _DEV_JWT_SECRETS:
         raise RuntimeError(
             "JWT_SECRET must be set to a strong unique value when APP_ENV=production."
         )
+    if RESEND_API_KEY:
+        missing = [
+            name
+            for name, value in (("MAIL_FROM", MAIL_FROM), ("PUBLIC_APP_URL", PUBLIC_APP_URL))
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                f"RESEND_API_KEY is set but {', '.join(missing)} is missing; "
+                "mail needs a verified sender and the public web URL for links."
+            )
+        if not PUBLIC_APP_URL.startswith(("https://", "http://")):
+            raise RuntimeError(
+                f"PUBLIC_APP_URL must be an absolute http(s) URL, got {PUBLIC_APP_URL!r}."
+            )
