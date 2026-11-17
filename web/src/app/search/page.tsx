@@ -1,10 +1,8 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState, type MouseEvent } from "react";
+import { useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@/lib/api";
-import type { PlaylistSearchResult } from "@/types";
 import {
   SEARCH_MIN_LENGTH,
   searchTracksOptions,
@@ -13,15 +11,13 @@ import {
   searchPlaylistsOptions,
 } from "@/lib/catalogQueries";
 import { usePlayerStore } from "@/store/player";
-import { toast } from "@/store/toast";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { CardGridSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import ImportPanel from "@/components/ImportPanel";
-import Cover from "@/components/ui/Cover";
 import EmptyState from "@/components/ui/EmptyState";
 import QueryError from "@/components/ui/QueryError";
-import { SearchIcon, ImportIcon, PlayIcon } from "@/components/icons";
+import { SearchIcon, ImportIcon } from "@/components/icons";
 import SearchFilters from "./_components/SearchFilters";
 import SearchIdle from "./_components/SearchIdle";
 import ResultSection from "./_components/ResultSection";
@@ -30,6 +26,7 @@ import TopHit from "./_components/TopHit";
 import TrackResults from "./_components/TrackResults";
 import ArtistResults from "./_components/ArtistResults";
 import AlbumResults from "./_components/AlbumResults";
+import PlaylistResults from "./_components/PlaylistResults";
 import { pickTopHit, sortSearchTracks, type SearchTab } from "./results";
 
 /** How many results of each type the combined view previews. */
@@ -226,102 +223,12 @@ export default function SearchPage() {
               {playlistsQ.isLoading ? (
                 <ResultCards label="Playlists" layout={layout} loading />
               ) : (
-                <PlaylistSearchResults
-                  key={JSON.stringify([input, query, tab, sort])}
-                  query={query}
-                  layout={layout}
-                  playlists={combined ? playlists.slice(0, PREVIEW_CARDS) : playlists}
-                />
+                <PlaylistResults playlists={combined ? playlists.slice(0, PREVIEW_CARDS) : playlists} layout={layout} onActivate={rememberResult} onPlayed={rememberQuery} />
               )}
             </ResultSection>
           )}
         </div>
       )}
     </div>
-  );
-}
-
-/** A changed search or route removes the owner of any pending playlist start. */
-export function PlaylistSearchResults({
-  query,
-  playlists,
-  layout,
-}: {
-  query: string;
-  playlists: PlaylistSearchResult[];
-  layout: ResultLayout;
-}) {
-  const [startingPlaylist, setStartingPlaylist] = useState<string | null>(null);
-  const playlistRequest = useRef<symbol | null>(null);
-  const mounted = useRef(true);
-  const playQueue = usePlayerStore((state) => state.playQueue);
-  const { remember } = useRecentSearches();
-
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      playlistRequest.current = null;
-    };
-  }, []);
-
-  async function startPlaylist(id: string, title: string) {
-    if (!mounted.current || playlistRequest.current !== null) return;
-    const token = Symbol("search-playlist");
-    playlistRequest.current = token;
-    setStartingPlaylist(id);
-    usePlayerStore.getState().setRadioActive(false);
-    const playbackSession = usePlayerStore.getState().radioSession;
-    const currentRequest = () =>
-      mounted.current && playlistRequest.current === token;
-    let applyingPlaylist = false;
-    try {
-      const playlist = await api.deezerPlaylist(id);
-      if (!currentRequest() || usePlayerStore.getState().radioSession !== playbackSession) return;
-      applyingPlaylist = true;
-      if (!Array.isArray(playlist.tracks) || playlist.tracks.length === 0)
-        throw new Error("Diese Playlist enthält keine abspielbaren Titel.");
-      playQueue(playlist.tracks, 0, title);
-      remember(query);
-    } catch (error) {
-      if (
-        currentRequest() &&
-        (applyingPlaylist || usePlayerStore.getState().radioSession === playbackSession)
-      ) {
-        toast.error(
-          `Playlist konnte nicht geladen werden: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    } finally {
-      if (playlistRequest.current === token) {
-        playlistRequest.current = null;
-        if (mounted.current) setStartingPlaylist(null);
-      }
-    }
-  }
-
-  return (
-    <ResultCards label="Playlists" layout={layout}>
-      {playlists.map((playlist) => (
-        <button
-          key={String(playlist.id)}
-          type="button"
-          disabled={startingPlaylist !== null}
-          onClick={() => void startPlaylist(String(playlist.id), playlist.title)}
-          className="music-card group block w-full p-2.5 text-left disabled:cursor-wait disabled:opacity-60 sm:p-3"
-        >
-          <span className="relative mb-3 block">
-            <Cover src={playlist.cover} className="aspect-square w-full rounded-xl" />
-            <span aria-hidden="true" className="play-fab absolute bottom-2 right-2 h-10 w-10 opacity-0 transition-opacity group-hover:opacity-100">
-              <PlayIcon width={18} height={18} />
-            </span>
-          </span>
-          <span className="block truncate text-sm font-semibold">{playlist.title}</span>
-          <span className="mt-1 block truncate text-xs text-muted">
-            {startingPlaylist === String(playlist.id) ? "Wird geladen…" : `Playlist · ${playlist.track_count} Titel`}
-          </span>
-        </button>
-      ))}
-    </ResultCards>
   );
 }

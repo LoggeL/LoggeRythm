@@ -26,3 +26,8 @@ export function playlistPath(playlist: SluggablePlaylist) {
 export function playlistIdFromParam(param: string) {
   return decodeURIComponent(param).split("-")[0] || param;
 }
+
+/** Detail page of a Deezer catalog playlist (search results, command palette). */
+export function deezerPlaylistPath(id: string | number) {
+  return `/deezer-playlist/${encodeURIComponent(String(id))}`;
+}

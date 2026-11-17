@@ -27,7 +27,7 @@ const stubs = {
     export const searchTracksOptions = options('track'); export const searchArtistsOptions = options('artist');
     export const searchAlbumsOptions = options('album'); export const searchPlaylistsOptions = options('playlist');
   `),
-  "@/lib/api": moduleUrl("export const api = {deezerPlaylist(id) {const f = globalThis.__paletteFixture; f.playlistCalls.push(id); return f.pendingPlaylist;}};"),
+  "@/lib/slugs": new URL("../src/lib/slugs.ts", import.meta.url).href,
   "@/lib/trackArtists": new URL("../src/lib/trackArtists.ts", import.meta.url).href,
   "@/store/player": moduleUrl("export const usePlayerStore = (selector) => selector(globalThis.__paletteFixture.player); usePlayerStore.getState = () => globalThis.__paletteFixture.player;"),
   "@/components/icons": moduleUrl("export function SearchIcon() {return null;} export const CloseIcon = SearchIcon; export const PlayIcon = SearchIcon;"),
@@ -54,8 +54,7 @@ function setup({ input = "Queen", query = input.trim(), preparing = false, data 
   unmount();
   Object.assign(fixture, {
     hooks: [], effects: [], cursor: 0, nextEffects: [], data, errors, fetching,
-    requests: [], retries: [], played: [], routes: [], playlistCalls: [], remembered: [], fullSearches: [], closed: 0, seeds: [],
-    pendingPlaylist: null,
+    requests: [], retries: [], played: [], routes: [], remembered: [], fullSearches: [], closed: 0, seeds: [],
   });
   fixture.search = {
     input, query, preparing,
@@ -164,62 +163,14 @@ test("clear is immediate and no one-character query starts providers", () => {
   render();
   assert.ok(fixture.requests.every((request) => !request.enabled));
 });
-function playlistScreen() {
-  setup({data: {playlist: [{id: "mix", title: "Mix", cover: "", track_count: 1}]}});
-  let resolve;
-  fixture.pendingPlaylist = new Promise((complete) => {resolve = complete;});
-  return {screen: render(), resolve};
-}
-test("playlist activation takes a synchronous lock before a rerender", async () => {
-  const {screen, resolve} = playlistScreen();
+test("a playlist opens its detail page instead of starting playback", () => {
+  setup({data: {playlist: [{id: "908622995", title: "Rap Bangers", cover: "", track_count: 50}]}});
+  const screen = render();
   screen.rows[0].onClick();
-  screen.rows[0].onClick();
-  assert.deepEqual(fixture.playlistCalls, ["mix"]);
-  assert.deepEqual(fixture.remembered, []);
-  resolve({tracks: [track]});
-  await new Promise(setImmediate);
-  assert.deepEqual(fixture.played, [{tracks: [track], index: 0, context: "Mix"}]);
+  assert.deepEqual(fixture.routes, ["/deezer-playlist/908622995"]);
+  assert.deepEqual(fixture.played, []);
   assert.deepEqual(fixture.remembered, ["Queen"]);
-});
-test("new playback, changed input and dialog close each discard a late playlist", async () => {
-  for (const cancel of [() => {fixture.player.radioSession += 1;}, (screen) => screen.field.onValueChange("new query"), () => unmount()]) {
-    const {screen, resolve} = playlistScreen();
-    screen.rows[0].onClick();
-    cancel(screen);
-    resolve({tracks: [track]});
-    await new Promise(setImmediate);
-    assert.deepEqual(fixture.played, []);
-    assert.deepEqual(fixture.remembered, []);
-  }
-});
-test("editing a query away and back cannot revive its cancelled playlist", async () => {
-  const {screen, resolve} = playlistScreen();
-  screen.rows[0].onClick();
-  screen.field.onValueChange("Daft Punk");
-  screen.field.onValueChange("Queen");
-  resolve({tracks: [track]});
-  await new Promise(setImmediate);
-  assert.deepEqual(fixture.played, []);
-  assert.deepEqual(fixture.remembered, []);
-});
-test("closing cancels pending playlist synchronously before component cleanup", async () => {
-  const {screen, resolve} = playlistScreen();
-  screen.rows[0].onClick();
-  screen.tree.props.onClick();
-  resolve({tracks: [track]});
-  await new Promise(setImmediate);
   assert.equal(fixture.closed, 1);
-  assert.deepEqual(fixture.played, []);
-});
-test("empty playlists fail visibly and leave their next explicit retry unlocked", async () => {
-  const {screen, resolve} = playlistScreen();
-  screen.rows[0].onClick();
-  resolve({tracks: []});
-  await new Promise(setImmediate);
-  const failed = render();
-  assert.match(failed.alerts[0].props.children, /keine abspielbaren Titel/);
-  assert.deepEqual(fixture.played, []);
-  assert.equal(failed.rows[0].disabled, false);
 });
 test("source errors expose details and retry only the failed source", () => {
   setup({errors: {artist: "HTTP 503: upstream unavailable"}, data: {track: [track]}});

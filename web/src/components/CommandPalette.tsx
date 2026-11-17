@@ -7,7 +7,7 @@ import {
   normalizeCatalogQuery, SEARCH_MIN_LENGTH,
   searchAlbumsOptions, searchArtistsOptions, searchPlaylistsOptions, searchTracksOptions,
 } from "@/lib/catalogQueries";
-import { api } from "@/lib/api";
+import { deezerPlaylistPath } from "@/lib/slugs";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { usePlayerStore } from "@/store/player";
 import { SearchIcon, PlayIcon, CloseIcon } from "@/components/icons";
@@ -47,9 +47,6 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
   const search = useSearchInput(initialQuery);
   const history = useRecentSearches();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [startingPlaylist, setStartingPlaylist] = useState<string | null>(null);
-  const [playlistError, setPlaylistError] = useState<string | null>(null);
-  const playlistRequest = useRef<symbol | null>(null);
   const mounted = useRef(false);
   const inputSnapshot = useRef(search.input);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -60,7 +57,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; playlistRequest.current = null; };
+    return () => { mounted.current = false; };
   }, []);
 
   const enabled = !search.preparing && search.query.length >= SEARCH_MIN_LENGTH;
@@ -88,23 +85,16 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
   }, [selected, rows.length]);
 
   function changeInput(value: string) {
-    playlistRequest.current = null;
-    setStartingPlaylist(null);
     inputSnapshot.current = value;
     search.setInput(value);
     setSelectedKey(null);
-    setPlaylistError(null);
   }
   function clearInput() {
-    playlistRequest.current = null;
-    setStartingPlaylist(null);
     inputSnapshot.current = "";
     search.clear();
     setSelectedKey(null);
-    setPlaylistError(null);
   }
   function closeDialog() {
-    playlistRequest.current = null;
     onClose();
   }
   function fullResults(value = inputSnapshot.current) {
@@ -113,37 +103,10 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     closeDialog();
   }
 
-  async function activate(row: PaletteRow) {
+  function activate(row: PaletteRow) {
     // Event handlers from a previous render must never activate an old term.
     if (!mounted.current || !enabled || normalizeCatalogQuery(inputSnapshot.current) !== search.query) return;
     if (!rows.some((current) => paletteRowKey(current) === paletteRowKey(row))) return;
-    if (row.kind === "playlist") {
-      if (playlistRequest.current !== null) return;
-      const token = Symbol("palette-playlist");
-      playlistRequest.current = token;
-      const ownerQuery = search.query;
-      setStartingPlaylist(String(row.playlist.id));
-      setPlaylistError(null);
-      usePlayerStore.getState().setRadioActive(false);
-      const ownerSession = usePlayerStore.getState().radioSession;
-      const currentRequest = () => mounted.current && playlistRequest.current === token && normalizeCatalogQuery(inputSnapshot.current) === ownerQuery;
-      try {
-        const playlist = await api.deezerPlaylist(String(row.playlist.id));
-        if (!currentRequest() || usePlayerStore.getState().radioSession !== ownerSession) return;
-        if (!Array.isArray(playlist.tracks) || playlist.tracks.length === 0) throw new Error("Diese Playlist enthält keine abspielbaren Titel.");
-        playQueue(playlist.tracks, 0, row.playlist.title);
-        history.remember(ownerQuery);
-        closeDialog();
-      } catch (error) {
-        if (currentRequest()) setPlaylistError(`Playlist konnte nicht geladen werden: ${error instanceof Error ? error.message : String(error)}`);
-      } finally {
-        if (playlistRequest.current === token) {
-          playlistRequest.current = null;
-          if (mounted.current) setStartingPlaylist(null);
-        }
-      }
-      return;
-    }
     if (row.kind === "track") {
       if (!tracks.data || tracks.isError) throw new Error("Suche: Die ausgewählten Titel sind nicht verfügbar.");
       const index = tracks.data.findIndex((track) => String(track.id) === String(row.track.id));
@@ -151,6 +114,8 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
       playQueue(tracks.data, index, `Suche: ${search.query}`);
     } else if (row.kind === "artist") {
       router.push(`/artist/${encodeURIComponent(String(row.artist.id))}`);
+    } else if (row.kind === "playlist") {
+      router.push(deezerPlaylistPath(row.playlist.id));
     } else {
       router.push(`/album/${encodeURIComponent(String(row.album.album_id || row.album.id))}`);
     }
@@ -158,7 +123,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     closeDialog();
   }
   function submitSelection() {
-    if (!search.preparing && rows[selected]) void activate(rows[selected]);
+    if (!search.preparing && rows[selected]) activate(rows[selected]);
     else fullResults();
   }
   function onInputKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -223,7 +188,6 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
             <p className="min-w-0 [overflow-wrap:anywhere]">{label} konnten nicht geladen werden: {result.error?.message}</p>
             <button type="button" className="action-secondary min-h-9 px-4 text-xs max-sm:min-h-11" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
           </div>)}
-          {playlistError && <div role="alert" className="error-panel mx-3 mt-3">{playlistError}</div>}
           <div id={listId} role="listbox" aria-label="Suchergebnisse" aria-busy={search.preparing || fetching} className="px-2">
             {rows.map((row, index) => {
               const active = index === selected;
@@ -233,16 +197,16 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
               const detail = row.kind === "artist" ? "Künstler" : row.kind === "playlist" ? `${row.playlist.track_count} Titel` : row.kind === "album" ? row.album.artist : trackArtistLabel(row.track);
               const shape = row.kind === "artist" ? "rounded-full" : "rounded-art";
               const startsGroup = index === 0 || rows[index - 1].kind !== row.kind;
-              const plays = row.kind === "track" || row.kind === "playlist";
+              const plays = row.kind === "track";
               return <div key={key} role="presentation">
                 {startsGroup && <div role="presentation" className="label-mono flex items-center gap-3 px-3 pb-1.5 pt-4"><span>{GROUP_LABELS[row.kind]}</span><span aria-hidden="true" className="h-px flex-1 bg-hairline" /></div>}
-                <button id={`${listId}-${key}`} role="option" aria-selected={active} tabIndex={-1} type="button" disabled={row.kind === "playlist" && startingPlaylist !== null} onMouseEnter={() => setSelectedKey(key)} onClick={() => void activate(row)} className={`relative flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors disabled:opacity-60 ${active ? "bg-foreground/[0.06]" : ""}`}>
+                <button id={`${listId}-${key}`} role="option" aria-selected={active} tabIndex={-1} type="button" onMouseEnter={() => setSelectedKey(key)} onClick={() => activate(row)} className={`relative flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors ${active ? "bg-foreground/[0.06]" : ""}`}>
                   {active && <span aria-hidden="true" className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-accent" />}
                   {image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={image} alt="" className={`h-10 w-10 ${shape} shrink-0 object-cover`} />
                   ) : <CoverPlaceholder className={`h-10 w-10 ${shape} shrink-0`} />}
-                  <div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold tracking-tight">{title}</div><div className="truncate text-[13px] text-muted">{row.kind === "playlist" && startingPlaylist === String(row.playlist.id) ? "Wird geladen…" : detail}</div></div>
+                  <div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold tracking-tight">{title}</div><div className="truncate text-[13px] text-muted">{detail}</div></div>
                   {active && <span className="label-mono flex shrink-0 items-center gap-2 text-foreground">
                     {plays ? <PlayIcon width={13} height={13} className="text-accent" /> : null}
                     <span className="max-sm:hidden">{plays ? "Abspielen" : "Öffnen"}</span>

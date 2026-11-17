@@ -12,11 +12,9 @@ const fixture = {
   data: {},
   errors: {},
   buttons: [],
-  playlistCalls: [],
   played: [],
   toasts: [],
   player: null,
-  pendingPlaylist: null,
   navigation: null,
   history: null,
   navigationCalls: [],
@@ -47,9 +45,6 @@ const stubs = {
   "@tanstack/react-query": moduleUrl(
     `export function useQuery(options) { const fixture = globalThis.__searchScreenFixture; fixture.requests.push(options); const entity = options.queryKey[1]; const error = fixture.errors[entity]; const loading = fixture.loading.includes(entity); return {data: fixture.data[entity] ?? [], isError: !!error, error: error ? new Error(error) : null, isLoading: loading, isFetching: loading, isSuccess: options.enabled && !error && !loading, refetch: async () => {fixture.retries.push(entity);}}; }`,
   ),
-  "@/lib/api": moduleUrl(
-    "export const api = {deezerPlaylist(id) {const fixture = globalThis.__searchScreenFixture; fixture.playlistCalls.push(id); return fixture.pendingPlaylist;}};",
-  ),
   "@/lib/catalogQueries": moduleUrl(
     `export const SEARCH_MIN_LENGTH = 2; const options = (entity) => (query) => ({queryKey: ['search', entity, query.trim()]}); export const searchTracksOptions = options('track'); export const searchAlbumsOptions = options('album'); export const searchArtistsOptions = options('artist'); export const searchPlaylistsOptions = options('playlist');`,
   ),
@@ -73,6 +68,9 @@ const stubs = {
   ),
   "@/components/AlbumCard": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function AlbumCard({album}) {return createElement('a', {href: '/album/' + album.id}, album.title);}`,
+  ),
+  "@/components/DeezerPlaylistCard": moduleUrl(
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function DeezerPlaylistCard({playlist}) {return createElement('article', null, createElement('a', {href: '/deezer-playlist/' + playlist.id}, playlist.title), createElement('button', {type: 'button', 'aria-label': playlist.title + ' abspielen'}), createElement('p', null, 'Playlist · ' + playlist.track_count + ' Titel'));}`,
   ),
   "@/components/ArtistCard": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function ArtistCard({artist}) {return createElement('a', {href: '/artist/' + artist.id}, artist.name);}`,
@@ -113,6 +111,7 @@ await compileInto(stubs, [
   ["./_components/TrackResults", "src/app/search/_components/TrackResults.tsx"],
   ["./_components/ArtistResults", "src/app/search/_components/ArtistResults.tsx"],
   ["./_components/AlbumResults", "src/app/search/_components/AlbumResults.tsx"],
+  ["./_components/PlaylistResults", "src/app/search/_components/PlaylistResults.tsx"],
 ]);
 const { default: SearchPage } = await import(
   await compileSource("src/app/search/page.tsx", stubs),
@@ -137,7 +136,6 @@ function screen({
   fixture.errors = errors;
   fixture.plays = [];
   fixture.buttons = [];
-  fixture.playlistCalls = [];
   fixture.played = [];
   fixture.toasts = [];
   fixture.loading = loading;
@@ -223,56 +221,19 @@ test("failed search displays the actual cause instead of a no-results state", ()
   assert.doesNotMatch(html, /Keine Ergebnisse/);
 });
 
-function playlistScreen() {
-  screen({
+test("playlist results open their detail page and only the play button starts them", () => {
+  const html = screen({
     query: "Mix",
     tab: "playlist",
     data: {
       playlist: [{ id: "mix", title: "Mein Mix", cover: "", track_count: 2 }],
     },
   });
-  let resolve;
-  fixture.pendingPlaylist = new Promise((complete) => {
-    resolve = complete;
-  });
-  const buttons = fixture.buttons.filter((button) => button.className?.includes("music-card"));
-  assert.equal(buttons.length, 1);
-  return { click: buttons[0].onClick, resolve };
-}
-
-test("playlist starts reserve one request before React rerenders", async () => {
-  const { click, resolve } = playlistScreen();
-  click();
-  click();
-  assert.deepEqual(fixture.playlistCalls, ["mix"]);
-  assert.deepEqual(fixture.historyCalls, []);
-  const tracks = [{ id: "song", title: "Song" }];
-  resolve({ tracks });
-  await new Promise(setImmediate);
-  assert.deepEqual(fixture.played, [{ tracks, index: 0, title: "Mein Mix" }]);
-  assert.deepEqual(fixture.historyCalls, [["remember", "Mix"]]);
-});
-
-test("a pending search playlist cannot replace a newer explicit playback choice", async () => {
-  const { click, resolve } = playlistScreen();
-  click();
-  fixture.player.radioSession += 1;
-  resolve({ tracks: [{ id: "old-playlist-song" }] });
-  await new Promise(setImmediate);
+  assert.match(html, /href="\/deezer-playlist\/mix"/);
+  assert.match(html, /Mein Mix abspielen/);
+  assert.match(html, /Playlist · 2 Titel/);
   assert.deepEqual(fixture.played, []);
-});
-
-test("empty playlist responses stay loud and never start an empty queue", async () => {
-  const { click, resolve } = playlistScreen();
-  click();
-  resolve({ tracks: [] });
-  await new Promise(setImmediate);
-  assert.deepEqual(fixture.played, []);
-  assert.deepEqual(fixture.historyCalls, []);
-  assert.match(
-    fixture.toasts[0],
-    /Diese Playlist enthält keine abspielbaren Titel/,
-  );
+  assert.equal(fixture.activations.length, 1, "the card records the search once it is used");
 });
 
 
