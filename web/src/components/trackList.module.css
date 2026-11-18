@@ -110,6 +110,23 @@
   display: none;
 }
 
+/* A row's note (e.g. why a radar track is listed): a third line under the
+   artists here, its own column in a wide list. */
+.note,
+.headerNote {
+  display: none;
+}
+
+.noteLine {
+  margin-top: 0.125rem;
+}
+
+/* Like the title and artist links: above the phone's row-wide play target. */
+.noteLine a {
+  position: relative;
+  z-index: 2;
+}
+
 .trailing {
   position: relative;
   z-index: 2;
@@ -233,6 +250,30 @@
 
   .popularity {
     display: flex;
+  }
+}
+
+/* The note column follows the list's own width, not the viewport, because the
+   sidebar and queue take a varying share of the window. The list must sit in
+   a size container (see CollectionTracks); without one the note stays a line. */
+@container (min-width: 56rem) {
+  .row[data-note="true"],
+  .header[data-note="true"] {
+    grid-template-columns: 2.25rem minmax(0, 5fr) minmax(0, 3fr) var(--trail);
+  }
+
+  .row[data-album="true"][data-note="true"],
+  .header[data-album="true"][data-note="true"] {
+    grid-template-columns: 2.25rem minmax(0, 5fr) minmax(0, 3fr) minmax(0, 3fr) var(--trail);
+  }
+
+  .note,
+  .headerNote {
+    display: block;
+  }
+
+  .noteLine {
+    display: none;
   }
 }
 

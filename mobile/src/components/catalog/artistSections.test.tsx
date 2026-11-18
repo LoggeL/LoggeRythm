@@ -2,10 +2,12 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtistDetail } from '../../api/types';
 import { catalogStrings } from '../../screens/catalogStrings';
+import { strings } from '../../localization';
 import { byTestId, byType, elements, queryByTestId, textContent } from '../../test/render';
 import { ArtistAbout, artistAboutHasContent } from './ArtistAbout';
 import { ArtistFooter } from './ArtistFooter';
 import { ArtistHero } from './ArtistHero';
+import { ArtistLikedTracksHeader } from './ArtistLikedTracksHeader';
 import { ArtistSongSearchHeader } from './ArtistSongSearchHeader';
 
 const mocks = vi.hoisted(() => ({ setExpanded: vi.fn(), useState: vi.fn() }));
@@ -181,6 +183,105 @@ describe('ArtistSongSearchHeader', () => {
     });
     expect(textContent(byTestId(failed, 'artist-song-search-state-error')))
       .toEqual([catalogStrings.artist.searchSongsFailed, catalogStrings.common.retry]);
+  });
+});
+
+describe('ArtistLikedTracksHeader', () => {
+  function header(overrides: Partial<Parameters<typeof ArtistLikedTracksHeader>[0]> = {}) {
+    return ArtistLikedTracksHeader({
+      artistName: 'LoggeRythm',
+      likes: { ...settled, data: [] },
+      trackCount: 2,
+      expanded: false,
+      onToggleExpanded: vi.fn(),
+      ...overrides,
+    });
+  }
+
+  it('titles the block and names the artist, with no toggle for a short list', () => {
+    const rendered = header({ trackCount: 5 });
+    const heading = byType(rendered, 'Text').find(
+      (text) => text.props.accessibilityRole === 'header',
+    );
+
+    expect(heading?.props.children).toBe(catalogStrings.artist.likedTracks);
+    expect(textContent(rendered)).toEqual([
+      catalogStrings.artist.likedTracks,
+      catalogStrings.artist.likedTracksBy('LoggeRythm'),
+    ]);
+    expect(byTestId(rendered, 'artist-liked-track-list')).toBeDefined();
+    expect(queryByTestId(rendered, 'artist-liked-tracks-toggle')).toBeNull();
+    expect(queryByTestId(rendered, 'artist-liked-tracks-state-loading')).toBeNull();
+    expect(queryByTestId(rendered, 'artist-liked-tracks-state-error')).toBeNull();
+  });
+
+  it('offers "show all" beyond the preview and the reverse once expanded', () => {
+    const onToggleExpanded = vi.fn();
+    const collapsed = byTestId(
+      header({ trackCount: 6, onToggleExpanded }),
+      'artist-liked-tracks-toggle',
+    );
+
+    expect(collapsed.props.accessibilityRole).toBe('button');
+    expect(collapsed.props.accessibilityLabel)
+      .toBe(catalogStrings.artist.showAllLikedTracks('LoggeRythm', 6));
+    expect(textContent(collapsed)).toEqual([strings.common.showAll]);
+    (collapsed.props.onPress as () => void)();
+    expect(onToggleExpanded).toHaveBeenCalledOnce();
+
+    const expanded = byTestId(
+      header({ trackCount: 6, expanded: true, onToggleExpanded }),
+      'artist-liked-tracks-toggle',
+    );
+    expect(expanded.props.accessibilityLabel)
+      .toBe(catalogStrings.artist.showFewerLikedTracksOf('LoggeRythm'));
+    expect(textContent(expanded)).toEqual([catalogStrings.artist.showFewerLikedTracks]);
+    (expanded.props.onPress as () => void)();
+    expect(onToggleExpanded).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports likes that could not be loaded with a retry instead of hiding them', () => {
+    const refetch = vi.fn();
+    const failed = header({
+      trackCount: 0,
+      likes: { ...settled, data: undefined, isPending: true, error: new Error('raw diagnostic'), refetch },
+    });
+
+    expect(textContent(byTestId(failed, 'artist-liked-tracks-state-error')))
+      .toEqual([catalogStrings.artist.likedTracksFailed, catalogStrings.common.retry]);
+    const retry = byTestId(failed, 'artist-liked-tracks-state-retry');
+    expect(retry.props.accessibilityLabel)
+      .toBe(catalogStrings.common.retrySection(catalogStrings.artist.likedTracks));
+    (retry.props.onPress as () => void)();
+    expect(refetch).toHaveBeenCalledOnce();
+    expect(queryByTestId(failed, 'artist-liked-track-list')).toBeNull();
+    expect(queryByTestId(failed, 'artist-liked-tracks-toggle')).toBeNull();
+
+    const offline = header({
+      trackCount: 0,
+      likes: { ...settled, data: undefined, isPending: true, fetchStatus: 'paused' },
+    });
+    expect(textContent(byTestId(offline, 'artist-liked-tracks-state-offline')))
+      .toContain(catalogStrings.common.offline);
+  });
+
+  it('keeps cached liked rows visible when only the refresh failed', () => {
+    const refetch = vi.fn();
+    const rendered = header({
+      likes: { ...settled, data: [], error: new Error('refresh'), refetch },
+    });
+
+    expect(byTestId(rendered, 'artist-liked-track-list')).toBeDefined();
+    expect(textContent(byTestId(rendered, 'artist-liked-tracks-state-cached-error')))
+      .toContain(catalogStrings.common.cachedRefreshFailed);
+    (byTestId(rendered, 'artist-liked-tracks-state-retry').props.onPress as () => void)();
+    expect(refetch).toHaveBeenCalledOnce();
+
+    // A background refetch after a like/unlike adds no line that would shift the rows.
+    const refreshing = header({
+      likes: { ...settled, data: [], isFetching: true, fetchStatus: 'fetching' },
+    });
+    expect(queryByTestId(refreshing, 'artist-liked-tracks-state-refreshing')).toBeNull();
   });
 });
 

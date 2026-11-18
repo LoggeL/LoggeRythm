@@ -263,7 +263,24 @@ async function handle(req, res) {
   if (is("GET", "/home/because-you-listened")) return send(res, 200, BECAUSE);
   if (is("GET", "/home/charts-collections")) return send(res, 200, CHART_COLLECTIONS);
   if (is("GET", "/home/release-radar")) {
-    return send(res, 200, pick(2, 18, 6).map((track, index) => ({ ...track, release_date: new Date(Date.now() - index * 3 * 864e5).toISOString().slice(0, 10) })));
+    return send(res, 200, pick(2, 18, 6).map((track, index) => {
+      // Every third track comes from a watched artist who is not its primary artist.
+      const contributor = index % 3 === 2
+        ? track.artists[1] ?? ARTISTS.find((artist) => artist.id !== track.artist_id)
+        : null;
+      const source = contributor ?? { id: track.artist_id, name: track.artist };
+      const followed = index % 3 === 0;
+      return {
+        ...track,
+        release_date: new Date(Date.now() - index * 3 * 864e5).toISOString().slice(0, 10),
+        radar_reason: {
+          kind: followed ? "followed" : "played",
+          artist_id: source.id,
+          artist_name: source.name,
+          play_count: followed ? index % 2 : 2 + index,
+        },
+      };
+    }));
   }
   if (is("GET", "/home/mood/[^/]+")) return send(res, 200, pick(hash(seg[2]) % TRACKS.length, 30, 5));
   if (is("GET", "/genres")) return send(res, 200, GENRES);

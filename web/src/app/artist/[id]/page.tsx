@@ -14,9 +14,12 @@ import { RowListSkeleton } from "@/components/Skeleton";
 import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
 import { PlayCollectionButton, ShuffleCollectionButton } from "@/app/playlist/_components/CollectionActions";
 import { formatCompact } from "@/lib/format";
+import { useMe } from "@/hooks/useAuth";
+import { useLikes } from "@/hooks/useLibrary";
 import type { Artist } from "@/types";
-import ArtistHero, { type ArtistFigure } from "./ArtistHero";
+import ArtistHero, { ArtistNamePlaceholder, ArtistPortraitPlaceholder, type ArtistFigure } from "./ArtistHero";
 import { FollowButton, FollowErrors } from "./FollowButton";
+import LikedByArtist from "./LikedByArtist";
 import styles from "./artist.module.css";
 
 const POPULAR_LIMIT = 10;
@@ -28,6 +31,9 @@ export default function ArtistPage({ params }: { params: Promise<{ id: string }>
     queryFn: () => api.artist(id),
     enabled: !!id,
   });
+  // Request the likes alongside the artist, so the liked block is usually
+  // known when the page first renders instead of pushing the sections down.
+  useLikes(!!useMe().data);
 
   return (
     <CollectionPageState query={artist} label="Die Künstlerdaten" missing="Künstler nicht gefunden" skeleton={<ArtistSkeleton />}>
@@ -42,14 +48,10 @@ function ArtistSkeleton() {
     <div>
       <div role="status" aria-label="Wird geladen" className={styles.hero}>
         <div className={styles.layout}>
-          <div className={styles.portrait}>
-            <div className="skeleton" />
-          </div>
+          <ArtistPortraitPlaceholder />
           <div className={styles.info}>
             <div className="skeleton mb-3 h-4 w-20 rounded" />
-            <div className={`${styles.name} skeleton w-3/5 rounded-[var(--radius-card)]`} data-size="md" aria-hidden="true">
-              &nbsp;
-            </div>
+            <ArtistNamePlaceholder />
             <div className={styles.meta}>
               <div className="skeleton h-4 w-44 rounded" />
             </div>
@@ -100,6 +102,8 @@ function ArtistView({ artist }: { artist: Artist }) {
       <FollowErrors />
 
       <div className="flex flex-col gap-9 md:gap-11">
+        <LikedByArtist key={String(artist.id)} artistId={artist.id} artistName={artist.name} />
+
         {popular.length > 0 && (
           <section aria-labelledby="artist-popular">
             <SectionHeader id="artist-popular" title="Beliebt" action={<Count>{`Top ${popular.length}`}</Count>} />

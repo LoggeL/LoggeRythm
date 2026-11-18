@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { deezerPlaylistPath } from "@/lib/slugs";
 import Cover from "@/components/ui/Cover";
 import CardPlayButton from "@/components/CardPlayButton";
+import { Morph, useMorphSource } from "@/components/motion/Morph";
 import type { PlaylistSearchResult } from "@/types";
 import styles from "./cards.module.css";
 
@@ -22,6 +23,8 @@ export default function DeezerPlaylistCard({
 }) {
   const queryClient = useQueryClient();
   const id = String(playlist.id);
+  const href = deezerPlaylistPath(id);
+  const morph = useMorphSource(href, { title: playlist.title, cover: playlist.cover });
 
   async function load() {
     const full = await queryClient.fetchQuery({
@@ -35,12 +38,16 @@ export default function DeezerPlaylistCard({
   return (
     <article className={`music-card group ${styles.tile}`}>
       <div className={styles.art}>
-        <Cover src={playlist.cover} className="transition-transform duration-300 group-hover:scale-[1.03]" />
+        <Morph name={morph.art} part="art">
+          <Cover src={playlist.cover} className="transition-transform duration-300 group-hover:scale-[1.03]" />
+        </Morph>
         <CardPlayButton label={`${playlist.title} abspielen`} load={load} onPlayed={onPlayed} />
       </div>
-      <Link href={deezerPlaylistPath(id)} className={`${styles.link} ${styles.title} block`}>
-        {playlist.title}
-      </Link>
+      <Morph name={morph.title} part="title">
+        <Link href={href} onClick={morph.arm} className={`${styles.link} ${styles.title} block`}>
+          {playlist.title}
+        </Link>
+      </Morph>
       <p className={styles.subtitle}>Playlist · {playlist.track_count} Titel</p>
     </article>
   );

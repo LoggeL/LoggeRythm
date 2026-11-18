@@ -48,6 +48,40 @@ export function showsPrimaryStaleNotice(state: SearchAggregateRemoteState): bool
   );
 }
 
+interface SearchLibraryLikesNoticeProps {
+  kind: SearchRemoteIssueKind;
+  retryBusy: boolean;
+  onRetry: () => void;
+}
+
+/**
+ * The library section could not (re)load the liked songs: without this notice
+ * their absence from the instant matches would be indistinguishable from "no
+ * liked song matches". Other sources and last-good likes stay searchable.
+ */
+export function SearchLibraryLikesNotice({
+  kind,
+  retryBusy,
+  onRetry,
+}: SearchLibraryLikesNoticeProps) {
+  const label = strings.navigation.likedSongs;
+  const message = isCached(kind)
+    ? searchIssueMessage(kind, label)
+    : isOffline(kind)
+      ? strings.search.libraryLikesOffline
+      : strings.search.libraryLikesLoadFailed;
+  return (
+    <SearchErrorNotice
+      testID={`search-library-likes-${kind}`}
+      message={message}
+      actionLabel={strings.search.retrySection(label)}
+      actionBusy={retryBusy}
+      onAction={onRetry}
+      liveRegion={isCached(kind) ? 'polite' : 'assertive'}
+    />
+  );
+}
+
 interface SearchResultsFeedbackProps {
   state: SearchAggregateRemoteState;
   owners: readonly SearchIssueOwner[];

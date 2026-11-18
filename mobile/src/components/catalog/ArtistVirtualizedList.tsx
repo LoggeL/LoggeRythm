@@ -9,13 +9,17 @@ import type { Track } from '../../api/types';
 import {
   artistTrackListItemKey,
   createArtistTrackListSections,
+  type ArtistLikedTrackCollection,
   type ArtistTrackListItem,
+  type ArtistTrackSectionId,
 } from '../../screens/artistTrackListModel';
 import { useBottomInset } from '../../hooks/useBottomInset';
 import { colors, layout, spacing } from '../../theme';
 
 export interface ArtistVirtualizedListProps {
   artistName: string;
+  /** The user's liked tracks by this artist, or null while the page has no such block. */
+  liked: ArtistLikedTrackCollection | null;
   popularTracks: readonly Track[];
   searchTracks: readonly Track[];
   searchActive: boolean;
@@ -23,6 +27,8 @@ export interface ArtistVirtualizedListProps {
   refreshAccessibilityLabel: string;
   onRefresh: () => void;
   header: React.ReactElement;
+  /** Heading and remote state of the liked block. Only rendered while `liked` is not null. */
+  likedHeader: React.ReactElement;
   popularHeader: React.ReactElement;
   searchHeader: React.ReactElement;
   footer: React.ReactElement;
@@ -32,6 +38,7 @@ export interface ArtistVirtualizedListProps {
 /** The Artist page's only vertical scroll owner. Its content clears the mini player. */
 export function ArtistVirtualizedList({
   artistName,
+  liked,
   popularTracks,
   searchTracks,
   searchActive,
@@ -39,13 +46,20 @@ export function ArtistVirtualizedList({
   refreshAccessibilityLabel,
   onRefresh,
   header,
+  likedHeader,
   popularHeader,
   searchHeader,
   footer,
   renderTrackItem,
 }: ArtistVirtualizedListProps) {
   const bottom = useBottomInset();
+  const sectionHeaders: Record<ArtistTrackSectionId, React.ReactElement> = {
+    liked: likedHeader,
+    popular: popularHeader,
+    search: searchHeader,
+  };
   const sections = createArtistTrackListSections({
+    liked,
     popularTracks,
     searchTracks,
     searchActive,
@@ -60,7 +74,7 @@ export function ArtistVirtualizedList({
       renderItem={({ item }) => renderTrackItem(item)}
       renderSectionHeader={({ section }) => (
         <View style={styles.sectionHeader}>
-          {section.id === 'popular' ? popularHeader : searchHeader}
+          {sectionHeaders[section.id]}
         </View>
       )}
       ListHeaderComponent={header}

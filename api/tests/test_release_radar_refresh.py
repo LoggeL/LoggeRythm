@@ -10,6 +10,20 @@ from app.routers import home
 from app.services import deezer_client as dc
 
 
+def _watched(artist_id: str) -> home.RadarArtist:
+    return home.RadarArtist(
+        artist_id=artist_id, name=f"Artist {artist_id}", play_count=2, followed=False
+    )
+
+
+def setUpModule() -> None:
+    # Serving a radar also queues its newest tracks for server pre-caching
+    # (covered by test_release_radar_preload); these tests are about refresh.
+    patcher = patch.object(home.radar_preload, "schedule")
+    patcher.start()
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class ReleaseRadarRefreshTests(unittest.TestCase):
     def setUp(self) -> None:
         with dc._artist_albums_lock:
@@ -119,7 +133,7 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
 
     def test_radar_forwards_manual_refresh_to_every_artist_lookup(self) -> None:
         with (
-            patch.object(home, "_radar_artist_ids", return_value=["42"]),
+            patch.object(home, "_radar_artists", return_value=[_watched("42")]),
             patch.object(home, "_artist_new_tracks", return_value=[]) as new_tracks,
         ):
             tracks = home.release_radar(
@@ -139,7 +153,9 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
             return [{"id": "99", "title": "Partial result"}]
 
         with (
-            patch.object(home, "_radar_artist_ids", return_value=["42", "43"]),
+            patch.object(
+                home, "_radar_artists", return_value=[_watched("42"), _watched("43")]
+            ),
             patch.object(home, "_artist_new_tracks", side_effect=artist_tracks),
         ):
             with self.assertRaises(HTTPException) as caught:
@@ -162,7 +178,9 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
             return [{"id": "99", "title": "Partial result"}]
 
         with (
-            patch.object(home, "_radar_artist_ids", return_value=["42", "43"]),
+            patch.object(
+                home, "_radar_artists", return_value=[_watched("42"), _watched("43")]
+            ),
             patch.object(home, "_artist_new_tracks", side_effect=artist_tracks),
         ):
             with self.assertRaises(HTTPException) as caught:

@@ -6,6 +6,7 @@ import QueryState, { type StatefulQuery } from "@/components/browse/QueryState";
 import Cover from "@/components/ui/Cover";
 import EmptyState from "@/components/ui/EmptyState";
 import { CardGridSkeleton } from "@/components/Skeleton";
+import { Morph, useMorphSource } from "@/components/motion/Morph";
 import { HeartIcon, LibraryIcon, PlusIcon } from "@/components/icons";
 import { playlistPath } from "@/lib/slugs";
 import type { PlaylistSummary } from "@/types";
@@ -17,6 +18,23 @@ const GRID = "grid grid-cols-2 gap-1 sm:grid-cols-3 sm:gap-2 lg:grid-cols-4 xl:g
 const CARD = "music-card group block w-full min-w-0 p-2.5 text-left sm:p-3";
 
 type SortKey = "recent" | "name";
+
+/** One playlist; its cover and name travel into the header of the playlist page. */
+function PlaylistTile({ playlist }: { playlist: PlaylistSummary }) {
+  const href = playlistPath(playlist);
+  const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url });
+  return (
+    <Link href={href} onClick={morph.arm} className={CARD}>
+      <Morph name={morph.art} part="art">
+        <Cover src={playlist.cover_url} className="mb-3 aspect-square w-full rounded-xl" />
+      </Morph>
+      <Morph name={morph.title} part="title">
+        <span className="block truncate text-sm font-semibold">{playlist.name}</span>
+      </Morph>
+      <span className="mt-1 block truncate text-xs text-muted">Playlist · {playlist.track_count} Titel</span>
+    </Link>
+  );
+}
 
 export default function PlaylistsTab({ query, likedHref, onCreate }: { query: StatefulQuery<PlaylistSummary[]>; likedHref: string; onCreate: () => void }) {
   const [term, setTerm] = useState("");
@@ -81,11 +99,7 @@ export default function PlaylistsTab({ query, likedHref, onCreate }: { query: St
                   )}
                   {listed.map((playlist) => (
                     <li key={String(playlist.id)}>
-                      <Link href={playlistPath(playlist)} className={CARD}>
-                        <Cover src={playlist.cover_url} className="mb-3 aspect-square w-full rounded-xl" />
-                        <span className="block truncate text-sm font-semibold">{playlist.name}</span>
-                        <span className="mt-1 block truncate text-xs text-muted">Playlist · {playlist.track_count} Titel</span>
-                      </Link>
+                      <PlaylistTile playlist={playlist} />
                     </li>
                   ))}
                   {!filtering && (

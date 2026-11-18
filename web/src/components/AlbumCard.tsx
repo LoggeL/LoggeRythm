@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import Cover from "@/components/ui/Cover";
 import CardPlayButton from "@/components/CardPlayButton";
+import { Morph, useMorphSource } from "@/components/motion/Morph";
 import type { AlbumSummary } from "@/types";
 import styles from "./cards.module.css";
 
@@ -15,6 +16,8 @@ export default function AlbumCard({ album, onPlayed }: { album: AlbumSummary; /*
   const queryClient = useQueryClient();
   const id = String(album.id);
   const year = album.release_date ? album.release_date.slice(0, 4) : "";
+  const href = `/album/${id}`;
+  const morph = useMorphSource(href, { title: album.title, cover: album.cover });
 
   async function load() {
     const full = await queryClient.fetchQuery({ queryKey: ["album", id], queryFn: () => api.album(id), staleTime: FIVE_MINUTES });
@@ -24,12 +27,16 @@ export default function AlbumCard({ album, onPlayed }: { album: AlbumSummary; /*
   return (
     <article className={`music-card group ${styles.tile}`}>
       <div className={styles.art}>
-        <Cover src={album.cover} className="transition-transform duration-300 group-hover:scale-[1.03]" />
+        <Morph name={morph.art} part="art">
+          <Cover src={album.cover} className="transition-transform duration-300 group-hover:scale-[1.03]" />
+        </Morph>
         <CardPlayButton label={`${album.title} abspielen`} load={load} onPlayed={onPlayed} />
       </div>
-      <Link href={`/album/${id}`} className={`${styles.link} ${styles.title} block`}>
-        {album.title}
-      </Link>
+      <Morph name={morph.title} part="title">
+        <Link href={href} onClick={morph.arm} className={`${styles.link} ${styles.title} block`}>
+          {album.title}
+        </Link>
+      </Morph>
       <p className={styles.subtitle}>{[year, album.artist].filter(Boolean).join(" · ")}</p>
     </article>
   );

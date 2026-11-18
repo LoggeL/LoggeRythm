@@ -6,6 +6,7 @@ import {
   SearchEntityCard,
   SearchResultRail,
   SearchTrackResultRow,
+  searchLibraryTrackOccurrence,
   searchTrackOccurrence,
 } from './SearchResults';
 
@@ -49,6 +50,18 @@ describe('Search track rows', () => {
     expect(() => searchTrackOccurrence(' ', 0)).toThrow('query identity');
     expect(() => searchTrackOccurrence('Kraftwerk', -1)).toThrow('non-negative');
     expect(() => searchTrackOccurrence('Kraftwerk', 1.5)).toThrow('non-negative');
+  });
+
+  it('gives library matches a queue context separate from the remote search', () => {
+    expect(searchLibraryTrackOccurrence('  Kraftwerk  ', 2)).toEqual({
+      queueContext: { type: 'collection', id: 'search-library:Kraftwerk' },
+      originalContextOrder: 2,
+    });
+    expect(searchLibraryTrackOccurrence('Kraftwerk', 2).queueContext)
+      .not.toEqual(searchTrackOccurrence('Kraftwerk', 2).queueContext);
+    expect(() => searchLibraryTrackOccurrence('K', 0)).toThrow('searchable query');
+    expect(() => searchLibraryTrackOccurrence('Kraftwerk', -1)).toThrow('non-negative');
+    expect(() => searchLibraryTrackOccurrence('Kraftwerk', 1.5)).toThrow('non-negative');
   });
 
   it('delegates duration, Search popularity, provider state, routes, and exact index', () => {

@@ -28,6 +28,29 @@ export interface Track {
   loudness_peak?: number | null;
 }
 
+/** `followed` wins when the source artist is both followed and played. */
+export type RadarReasonKind = "followed" | "played";
+
+/**
+ * Why a track is in the Release Radar (`RadarReason` in `api/app/schemas/track.py`).
+ * Names the watched *source* artist whose release list produced the track, which
+ * is not necessarily the track's primary artist.
+ */
+export interface RadarReason {
+  kind: RadarReasonKind;
+  /** The watched source artist; compare with `track.artist_id` to spot a contribution. */
+  artist_id: string;
+  /** From the account's own follow/play rows; "" when none of them stored a name. */
+  artist_name: string;
+  /** The account's plays of the source artist in the last 90 days; 0 if none. */
+  play_count: number;
+}
+
+/** A Release Radar track: a normal `Track` plus the reason it is in the radar. */
+export interface RadarTrack extends Track {
+  radar_reason: RadarReason;
+}
+
 export interface User {
   id: string | number;
   email: string;

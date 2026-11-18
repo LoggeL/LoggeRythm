@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { decodeTrack } from '../api/decoders';
 import type { Playlist, Track } from '../api/types';
 import {
   OFFLINE_MANIFEST_VERSION,
@@ -421,5 +422,239 @@ describe('offline download manifest', () => {
       'canonical ISO timestamp',
     );
     expect(() => decodeOfflineManifest('{broken', scope)).toThrow('not valid JSON');
+  });
+});
+
+/**
+ * The API serialises the three loudness fields on every track, usually as
+ * null. These fixtures mirror what a live response looks like after
+ * `decodeTrack`, which is the only shape a real download ever receives.
+ */
+const loudnessWireShapes = [
+  {
+    shape: 'three nulls',
+    loudness: { loudness_gain_db: null, loudness_lufs: null, loudness_peak: null },
+  },
+  {
+    shape: 'all numeric',
+    loudness: { loudness_gain_db: -6.5, loudness_lufs: -9.25, loudness_peak: 0.98 },
+  },
+  {
+    shape: 'mixed null and numeric',
+    loudness: { loudness_gain_db: null, loudness_lufs: -14.3, loudness_peak: 1 },
+  },
+  { shape: 'absent keys', loudness: {} },
+] as const;
+
+function wireTrack(id: string, loudness: Record<string, number | null>): Track {
+  return decodeTrack({ ...track(id), ...loudness });
+}
+
+describe.each(loudnessWireShapes)(
+  'offline manifest with $shape loudness metadata from the wire',
+  ({ loudness }) => {
+    it('attaches an individually downloaded track and round-trips the manifest', () => {
+      const source = wireTrack('42', loudness);
+      const manifest = attachIndividualDownloadedTrack(
+        createEmptyOfflineManifest(scope),
+        source,
+        4_096,
+        firstTime,
+      );
+
+      expect(manifest.tracks['42'].track).toEqual({ ...track('42'), ...loudness });
+      expect(Object.keys(manifest.tracks['42'].track).sort()).toEqual(
+        Object.keys({ ...track('42'), ...loudness }).sort(),
+      );
+      const decoded = decodeOfflineManifest(JSON.stringify(manifest), scope);
+      expect(decoded).toEqual(manifest);
+      expect(JSON.stringify(decoded)).toBe(JSON.stringify(manifest));
+    });
+
+    it('snapshots, attaches, settles and round-trips a playlist download', () => {
+      const source = playlist(7, 'Wire shaped', [
+        wireTrack('70', loudness),
+        wireTrack('71', loudness),
+        wireTrack('70', loudness),
+      ]);
+      let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+      manifest = attachDownloadedTrack(manifest, source.id, source.tracks[0], 700, firstTime);
+      manifest = attachDownloadedTrack(manifest, source.id, source.tracks[1], 710, firstTime);
+      manifest = settlePlaylistDownload(manifest, source, secondTime);
+
+      expect(manifest.playlists['7'].status).toBe('complete');
+      expect(manifest.playlists['7'].sourceTracks.map(({ track: value }) => value)).toEqual([
+        { ...track('70'), ...loudness },
+        { ...track('71'), ...loudness },
+        { ...track('70'), ...loudness },
+      ]);
+      expect(manifest.tracks['70'].track).toEqual({ ...track('70'), ...loudness });
+      const decoded = decodeOfflineManifest(JSON.stringify(manifest), scope);
+      expect(decoded).toEqual(manifest);
+      expect(JSON.stringify(decoded)).toBe(JSON.stringify(manifest));
+
+      const reconciled = reconcileOfflineManifest(
+        decoded,
+        { '70.mp3': 700, '71.mp3': 710 },
+        thirdTime,
+      );
+      expect(reconciled).toEqual(manifest);
+    });
+
+    it('keeps playlist entry identity next to the loudness metadata', () => {
+      const entry = decodeTrack({ ...track('70'), ...loudness, playlist_entry_id: 5 });
+      const source = playlist(7, 'Entry identity', [entry]);
+      let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+      manifest = attachDownloadedTrack(manifest, source.id, entry, 700, firstTime);
+      manifest = settlePlaylistDownload(manifest, source, firstTime);
+
+      expect(manifest.playlists['7'].sourceTracks[0].track).toEqual({
+        ...track('70'),
+        ...loudness,
+        playlist_entry_id: 5,
+      });
+      expect(decodeOfflineManifest(JSON.stringify(manifest), scope)).toEqual(manifest);
+    });
+  },
+);
+
+describe('offline manifest loudness compatibility', () => {
+  const nulls = { loudness_gain_db: null, loudness_lufs: null, loudness_peak: null };
+
+  /** Hand-written to pin the persisted shape from before loudness keys were accepted. */
+  function legacyManifestJson(): string {
+    const legacyTrack = {
+      id: '42',
+      title: 'Track 42',
+      artist: 'Artist',
+      artist_id: '9',
+      artists: [{ id: '9', name: 'Artist' }],
+      album: 'Album',
+      album_id: '8',
+      cover: 'https://img.test/cover.jpg',
+      duration_sec: 180,
+      preview_url: null,
+      rank: 7,
+      release_date: '2026-01-01',
+    };
+    return JSON.stringify({
+      version: 2,
+      scope,
+      tracks: {
+        '42': {
+          track: legacyTrack,
+          fileName: '42.mp3',
+          sizeBytes: 1_000,
+          ownerPlaylistIds: ['1'],
+          individualDownload: true,
+          downloadedAt: firstTime,
+        },
+      },
+      playlists: {
+        '1': {
+          id: '1',
+          name: 'Legacy',
+          description: null,
+          cover_url: null,
+          is_public: false,
+          is_owner: true,
+          owner_name: null,
+          sourceTrackIds: ['42', '43'],
+          sourceTracks: [
+            { position: 0, track: legacyTrack },
+            { position: 1, track: { ...legacyTrack, id: '43', title: 'Track 43' } },
+          ],
+          status: 'partial',
+          failures: [{ trackId: '43', code: 'network', retryable: true, failedAt: firstTime }],
+          completedAt: null,
+          updatedAt: firstTime,
+        },
+      },
+    });
+  }
+
+  it('still decodes a manifest persisted without loudness keys, byte for byte', () => {
+    const raw = legacyManifestJson();
+    expect(raw).not.toContain('loudness');
+
+    const decoded = decodeOfflineManifest(raw, scope);
+
+    expect(JSON.stringify(decoded)).toBe(raw);
+    expect(decoded.tracks['42'].track).toEqual(track('42'));
+    expect(Object.keys(decoded.tracks['42'].track)).not.toContain('loudness_gain_db');
+    expect(reconcileOfflineManifest(decoded, { '42.mp3': 1_000 }, secondTime)).toEqual(decoded);
+  });
+
+  it('retries an old snapshot with wire-shaped tracks and adds new downloads beside it', () => {
+    const old = decodeOfflineManifest(legacyManifestJson(), scope);
+    const source = { id: 1, name: 'Legacy', tracks: [wireTrack('42', nulls), wireTrack('43', nulls)] };
+
+    let manifest = beginPlaylistDownload(old, source, secondTime);
+    manifest = attachDownloadedTrack(manifest, 1, source.tracks[1], 2_000, secondTime);
+    manifest = settlePlaylistDownload(manifest, source, secondTime);
+    manifest = attachIndividualDownloadedTrack(manifest, wireTrack('44', nulls), 3_000, secondTime);
+
+    expect(manifest.playlists['1'].status).toBe('complete');
+    expect(manifest.playlists['1'].sourceTracks[0].track).toEqual({ ...track('42'), ...nulls });
+    expect(manifest.tracks['43'].track).toEqual({ ...track('43'), ...nulls });
+    // The deduplicated file entry keeps the metadata it was downloaded with.
+    expect(manifest.tracks['42'].track).toEqual(track('42'));
+    expect(decodeOfflineManifest(JSON.stringify(manifest), scope)).toEqual(manifest);
+  });
+
+  it('matches a downloaded track against its snapshot regardless of key order', () => {
+    const numeric = { loudness_gain_db: -6.5, loudness_lufs: -9.25, loudness_peak: 0.98 };
+    const source = playlist(7, 'Reordered', [wireTrack('70', numeric)]);
+    const manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    // A track recovered from the native queue arrives with its keys in another order.
+    const { loudness_peak: peak, ...rest } = wireTrack('70', numeric);
+    const reordered: Track = { loudness_peak: peak, ...rest };
+
+    expect(Object.keys(reordered)[0]).toBe('loudness_peak');
+    expect(() => attachDownloadedTrack(manifest, 7, reordered, 700, firstTime)).not.toThrow();
+    expect(() => attachDownloadedTrack(
+      manifest,
+      7,
+      { ...reordered, loudness_gain_db: -1 },
+      700,
+      firstTime,
+    )).toThrow('metadata does not match');
+  });
+
+  it('still rejects unknown track fields and malformed loudness values', () => {
+    const empty = createEmptyOfflineManifest(scope);
+    const source = wireTrack('42', nulls);
+
+    expect(() => attachIndividualDownloadedTrack(
+      empty,
+      { ...source, loudness_extra: 1 } as Track,
+      4_096,
+      firstTime,
+    )).toThrow('Individually downloaded track has unexpected fields');
+    expect(() => beginPlaylistDownload(
+      empty,
+      { id: 4, name: 'Unknown field', tracks: [{ ...source, token: 'x' } as Track] },
+      firstTime,
+    )).toThrow('Offline source track 0 has unexpected fields');
+    expect(() => attachIndividualDownloadedTrack(
+      empty,
+      { ...source, loudness_lufs: '-9' } as unknown as Track,
+      4_096,
+      firstTime,
+    )).toThrow('loudness_lufs must be a finite number');
+
+    const stored = attachIndividualDownloadedTrack(empty, source, 4_096, firstTime);
+    const malformed = JSON.parse(JSON.stringify(stored)) as {
+      tracks: Record<string, { track: Record<string, unknown> }>;
+    };
+    malformed.tracks['42'].track.loudness_peak = 'loud';
+    expect(() => decodeOfflineManifest(JSON.stringify(malformed), scope)).toThrow(
+      'loudness_peak must be a finite number',
+    );
+    const unknown = JSON.parse(JSON.stringify(stored)) as typeof malformed;
+    unknown.tracks['42'].track.radar_reason = null;
+    expect(() => decodeOfflineManifest(JSON.stringify(unknown), scope)).toThrow(
+      'Offline track 42 metadata has unexpected fields',
+    );
   });
 });

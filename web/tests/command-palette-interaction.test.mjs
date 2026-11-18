@@ -37,6 +37,9 @@ const stubs = {
   "@/hooks/useSearchInput": moduleUrl("export function useSearchInput(seed) {const f = globalThis.__paletteFixture; f.seeds.push(seed); return f.search;}"),
   "@/hooks/useSearchNavigation": moduleUrl("export function useSearchNavigation() {return globalThis.__paletteFixture.navigation;}"),
   "@/hooks/useRecentSearches": moduleUrl("export function useRecentSearches() {return globalThis.__paletteFixture.history;}"),
+  // The library index is the real one, built from the fixture's saved songs.
+  "@/lib/libraryMatch": new URL("../src/lib/libraryMatch.ts", import.meta.url).href,
+  "@/hooks/useLibraryTracks": moduleUrl(`import {indexLibraryTracks} from ${JSON.stringify(new URL("../src/lib/libraryMatch.ts", import.meta.url).href)}; export function useLibraryTracks() {const f = globalThis.__paletteFixture; return {index: indexLibraryTracks(f.library), likes: f.likes};}`),
   "./commandPaletteModel": new URL("../src/components/commandPaletteModel.ts", import.meta.url).href,
 };
 const source = await readFile(new URL("../src/components/CommandPalette.tsx", import.meta.url), "utf8");
@@ -50,7 +53,7 @@ function unmount() {
   for (const effect of fixture.effects) effect?.cleanup?.();
   fixture.effects = [];
 }
-function setup({ input = "Queen", query = input.trim(), preparing = false, data = {}, errors = {}, fetching = {}, recent = [] } = {}) {
+function setup({ input = "Queen", query = input.trim(), preparing = false, data = {}, errors = {}, fetching = {}, recent = [], library = [], likesError = null } = {}) {
   unmount();
   Object.assign(fixture, {
     hooks: [], effects: [], cursor: 0, nextEffects: [], data, errors, fetching,
@@ -62,6 +65,8 @@ function setup({ input = "Queen", query = input.trim(), preparing = false, data 
     clear() { this.input = ""; this.query = ""; this.preparing = false; },
     setComposing(value) { this.preparing = value; },
   };
+  fixture.library = library;
+  fixture.likes = { isError: !!likesError, error: likesError ? new Error(likesError) : null, isFetching: false, refetch: () => {fixture.retries.push("likes");} };
   fixture.history = {
     recent, remember: (value) => fixture.remembered.push(value), remove: (value) => { fixture.history.recent = fixture.history.recent.filter((entry) => entry !== value); }, clear: () => { fixture.history.recent = []; },
   };
@@ -189,4 +194,55 @@ test("IME Enter does not play or navigate and the palette seed remains fixed", (
   assert.deepEqual(fixture.seeds, ["Queen", "Queen"]);
   assert.deepEqual(fixture.played, []);
   assert.deepEqual(fixture.fullSearches, []);
+});
+
+const liked = {id: "7", title: "Killer Queen", artist: "Queen", cover: "", album: "Sheer Heart Attack", duration_sec: 180};
+const likedToo = {id: "8", title: "Radio Ga Ga", artist: "Queen", cover: "", album: "The Works", duration_sec: 340};
+
+test("saved songs matching the draft are listed and playable before the query settles", () => {
+  setup({ input: "queen", query: "", preparing: true, library: [liked, likedToo, track] });
+  const screen = render();
+  assert.ok(fixture.requests.every((request) => !request.enabled), "no catalog request yet");
+  assert.deepEqual(screen.rows.map((row) => row.id), ["palette-list-library-7", "palette-list-library-8"]);
+  assert.equal(screen.rows[0]["aria-selected"], true);
+  const status = nodes(screen.tree, (node) => node.props?.role === "status" || node.props?.role === "listbox").map((node) => node.props.role);
+  assert.deepEqual(status, ["listbox", "status"], "the loading placeholder follows the saved songs");
+  key(screen.field, "Enter");
+  assert.deepEqual(fixture.played, [{tracks: [liked, likedToo], index: 0, context: "Bibliothek: queen"}]);
+  assert.deepEqual(fixture.remembered, ["queen"]);
+  assert.deepEqual(fixture.fullSearches, []);
+  assert.equal(fixture.closed, 1);
+});
+test("a catalog track already listed from the library appears once and each group plays its own queue", () => {
+  const other = {id: "9", title: "Queen of Hearts", artist: "Juice Newton", cover: "", album: "", duration_sec: 200};
+  setup({ library: [liked], data: {track: [liked, other]} });
+  const screen = render();
+  assert.deepEqual(screen.rows.map((row) => row.id), ["palette-list-library-7", "palette-list-track-9"]);
+  screen.rows[1].onClick();
+  assert.deepEqual(fixture.played, [{tracks: [liked, other], index: 1, context: "Suche: Queen"}]);
+});
+test("a saved song stays when the catalog fails or finds nothing, and a stale row only plays if it still matches", () => {
+  setup({ library: [liked], errors: {track: "HTTP 503"} });
+  let screen = render();
+  assert.equal(screen.rows.length, 1);
+  assert.equal(screen.alerts.length, 1);
+  setup({ library: [liked], data: {track: [], artist: [], album: [], playlist: []} });
+  screen = render();
+  assert.equal(screen.rows.length, 1);
+  assert.equal(nodes(screen.tree, (node) => node.props?.role === "status").length, 0, "no empty state next to a library match");
+  screen.field.onValueChange("Radio");
+  screen.rows[0].onClick();
+  assert.deepEqual(fixture.played, []);
+  screen.field.onValueChange("killer");
+  screen.rows[0].onClick();
+  assert.deepEqual(fixture.played, [{tracks: [liked], index: 0, context: "Bibliothek: killer"}]);
+});
+test("a failed liked-songs request is reported with its cause and can be retried", () => {
+  setup({ input: "queen", query: "", preparing: true, likesError: "HTTP 500" });
+  const screen = render();
+  assert.match(screen.alerts[0].props.children[0].props.children.join(""), /Lieblingssongs konnten nicht geladen werden: HTTP 500/);
+  screen.buttons.find((button) => button.children === "Erneut versuchen").onClick();
+  assert.deepEqual(fixture.retries, ["likes"]);
+  setup({ input: "q", likesError: "HTTP 500" });
+  assert.equal(render().alerts.length, 0);
 });

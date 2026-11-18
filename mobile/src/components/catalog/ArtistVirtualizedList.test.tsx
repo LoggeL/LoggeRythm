@@ -37,11 +37,13 @@ describe('ArtistVirtualizedList', () => {
       React.createElement('MockTrack', { testID: `${item.kind}-${item.index}` }),
     );
     const header = React.createElement('MockHeader', { testID: 'header' });
+    const likedHeader = React.createElement('MockHeader', { testID: 'liked-header' });
     const popularHeader = React.createElement('MockHeader', { testID: 'popular-header' });
     const searchHeader = React.createElement('MockHeader', { testID: 'search-header' });
     const footer = React.createElement('MockFooter', { testID: 'footer' });
     const rendered = ArtistVirtualizedList({
       artistName: 'Artist',
+      liked: null,
       popularTracks: [track('same'), track('same')],
       searchTracks: [track('same')],
       searchActive: true,
@@ -49,6 +51,7 @@ describe('ArtistVirtualizedList', () => {
       refreshAccessibilityLabel: 'Refreshing content',
       onRefresh,
       header,
+      likedHeader,
       popularHeader,
       searchHeader,
       footer,
@@ -112,6 +115,7 @@ describe('ArtistVirtualizedList', () => {
   it('keeps the Search section mounted but row-empty when the query is inactive', () => {
     const rendered = ArtistVirtualizedList({
       artistName: 'Artist',
+      liked: null,
       popularTracks: [],
       searchTracks: [track('retained')],
       searchActive: false,
@@ -119,6 +123,7 @@ describe('ArtistVirtualizedList', () => {
       refreshAccessibilityLabel: 'Refresh',
       onRefresh: vi.fn(),
       header: React.createElement('MockHeader'),
+      likedHeader: React.createElement('MockHeader'),
       popularHeader: React.createElement('MockHeader'),
       searchHeader: React.createElement('MockHeader'),
       footer: React.createElement('MockFooter'),
@@ -128,5 +133,68 @@ describe('ArtistVirtualizedList', () => {
 
     expect(sections).toHaveLength(2);
     expect(sections[1]?.data).toEqual([]);
+  });
+
+  function likedList(liked: Parameters<typeof ArtistVirtualizedList>[0]['liked']) {
+    const likedHeader = React.createElement('MockHeader', { testID: 'liked-header' });
+    const popularHeader = React.createElement('MockHeader', { testID: 'popular-header' });
+    const rendered = ArtistVirtualizedList({
+      artistName: 'Artist',
+      liked,
+      popularTracks: [track('1')],
+      searchTracks: [],
+      searchActive: false,
+      refreshing: false,
+      refreshAccessibilityLabel: 'Refresh',
+      onRefresh: vi.fn(),
+      header: React.createElement('MockHeader'),
+      likedHeader,
+      popularHeader,
+      searchHeader: React.createElement('MockHeader'),
+      footer: React.createElement('MockFooter'),
+      renderTrackItem: (item) =>
+        React.createElement('MockTrack', { testID: `${item.kind}-${item.index}` }),
+    });
+    const sections = rendered.props.sections as {
+      id: 'liked' | 'popular' | 'search';
+      data: ArtistTrackListItem[];
+    }[];
+    return { rendered, sections, likedHeader, popularHeader };
+  }
+
+  it('lists the liked block above Popular as rows of the same SectionList', () => {
+    const likedTracks = Array.from({ length: 7 }, (_, index) => track(`liked-${index}`));
+    const { rendered, sections, likedHeader, popularHeader } = likedList({
+      tracks: likedTracks,
+      expanded: false,
+    });
+
+    expect(rendered.type).toBe('SectionList');
+    expect(sections.map((section) => [section.id, section.data.length])).toEqual([
+      ['liked', 5],
+      ['popular', 1],
+      ['search', 0],
+    ]);
+    expect(rendered.props.renderSectionHeader({ section: sections[0] }).props.children)
+      .toBe(likedHeader);
+    expect(rendered.props.renderSectionHeader({ section: sections[1] }).props.children)
+      .toBe(popularHeader);
+
+    const row = rendered.props.renderItem({ item: sections[0]!.data[4]! });
+    expect(row.props.testID).toBe('liked-4');
+    expect(sections[0]!.data[4]!.track).toBe(likedTracks[4]);
+
+    const expanded = likedList({ tracks: likedTracks, expanded: true });
+    expect(expanded.sections[0]?.data).toHaveLength(7);
+  });
+
+  it('mounts neither liked rows nor the liked heading while the page has no liked block', () => {
+    const { rendered, sections, likedHeader } = likedList(null);
+
+    expect(sections.map((section) => section.id)).toEqual(['popular', 'search']);
+    const headings = sections.map(
+      (section) => rendered.props.renderSectionHeader({ section }).props.children as unknown,
+    );
+    expect(headings).not.toContain(likedHeader);
   });
 });

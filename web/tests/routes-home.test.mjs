@@ -83,7 +83,7 @@ test("Home fetches only personalized content and keeps discovery features reacha
     "Charts",
     "Veröffentlichungen",
     "Genres",
-    "Community-Playlists",
+    "Playlists",
   ])
     assert.match(html, new RegExp(feature));
   assert.match(html, /href="\/genre"/);

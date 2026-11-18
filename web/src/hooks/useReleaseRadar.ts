@@ -12,7 +12,7 @@ import {
   mergeSeenRadarTrackIds,
   radarTrackIds,
 } from "@/lib/releaseRadar";
-import type { Track, User } from "@/types";
+import type { RadarTrack, Track, User } from "@/types";
 
 export const RADAR_TITLE = "Dein Release Radar";
 
@@ -88,7 +88,7 @@ export function releaseRadarQueryKey(userId: User["id"] | undefined) {
 }
 
 export function useReleaseRadar(user: User | null | undefined) {
-  return useQuery<Track[]>({
+  return useQuery<RadarTrack[]>({
     queryKey: releaseRadarQueryKey(user?.id),
     queryFn: () => api.releaseRadar(),
     enabled: user !== null && user !== undefined,
@@ -100,7 +100,7 @@ export function useReleaseRadar(user: User | null | undefined) {
 export function useRefreshReleaseRadar(user: User | null | undefined) {
   const queryClient = useQueryClient();
 
-  return useMutation<Track[], Error>({
+  return useMutation<RadarTrack[], Error>({
     mutationFn: () => {
       if (user === null || user === undefined) {
         throw new Error(

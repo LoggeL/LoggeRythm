@@ -200,4 +200,20 @@ describe('search model', () => {
     expect(pickSearchTopResult({ query: 'autobahn', artists: [], tracks: [], albums: [] }))
       .toBeNull();
   });
+
+  it('promotes nothing in place of a leading track the library section already shows', () => {
+    const artist = { id: '3', name: 'Kraftwerk', picture: '' };
+    const album = { id: '4', title: 'Autobahn', artistName: 'Kraftwerk', artworkUrl: null };
+    const tracks = [track('1', 'First', 180), track('2', 'Second', 180)];
+    const input = { artists: [artist], tracks, albums: [album] };
+
+    expect(pickSearchTopResult({ ...input, query: 'autobahn', libraryTrackIds: new Set(['1']) }))
+      .toBeNull();
+    // A library track further down does not affect the promoted leading track.
+    expect(pickSearchTopResult({ ...input, query: 'autobahn', libraryTrackIds: new Set(['2']) }))
+      .toEqual({ kind: 'track', track: tracks[0], index: 0 });
+    // An artist the query names still wins over any track.
+    expect(pickSearchTopResult({ ...input, query: 'kraft', libraryTrackIds: new Set(['1']) }))
+      .toEqual({ kind: 'artist', artist });
+  });
 });

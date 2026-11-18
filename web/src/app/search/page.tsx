@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type MouseEvent } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -13,6 +13,8 @@ import {
 import { usePlayerStore } from "@/store/player";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
+import { useLibraryTracks } from "@/hooks/useLibraryTracks";
+import { matchLibraryTracks, withoutTracks } from "@/lib/libraryMatch";
 import { CardGridSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import ImportPanel from "@/components/ImportPanel";
 import EmptyState from "@/components/ui/EmptyState";
@@ -24,6 +26,7 @@ import ResultSection from "./_components/ResultSection";
 import ResultCards, { type ResultLayout } from "./_components/ResultCards";
 import TopHit from "./_components/TopHit";
 import TrackResults from "./_components/TrackResults";
+import LibraryResults from "./_components/LibraryResults";
 import ArtistResults from "./_components/ArtistResults";
 import AlbumResults from "./_components/AlbumResults";
 import PlaylistResults from "./_components/PlaylistResults";
@@ -32,6 +35,9 @@ import { pickTopHit, sortSearchTracks, type SearchTab } from "./results";
 /** How many results of each type the combined view previews. */
 const PREVIEW_TRACKS = 4;
 const PREVIEW_CARDS = 12;
+/** How many saved songs "In deiner Bibliothek" lists: combined view / songs filter. */
+const PREVIEW_LIBRARY = 5;
+const LIBRARY_TRACKS = 10;
 
 export default function SearchPage() {
   const { input, query, tab, sort, preparing, setTab, setSort, openResults } = useSearchNavigation();
@@ -49,12 +55,17 @@ export default function SearchPage() {
    * reports itself (`playTrack`, `onPlayed`); this covers the remaining ways to
    * use a result: following its links and choosing an action from its menu.
    */
-  function rememberResult(event: MouseEvent<HTMLDivElement>) {
+  function usesResult(event: MouseEvent<HTMLDivElement>): boolean {
     const target = event.target as Element;
     const activation = target.closest("a[href], button[role=menuitem]");
-    if (activation && (event.button === 0 || (event.button === 1 && activation.tagName === "A"))) {
-      remember(query);
-    }
+    return !!activation && (event.button === 0 || (event.button === 1 && activation.tagName === "A"));
+  }
+  function rememberResult(event: MouseEvent<HTMLDivElement>) {
+    if (usesResult(event)) remember(query);
+  }
+  // Library matches belong to the typed text, which may be ahead of `query`.
+  function rememberLibraryResult(event: MouseEvent<HTMLDivElement>) {
+    if (usesResult(event)) remember(input);
   }
 
   const wantTracks = combined || tab === "track";
@@ -66,8 +77,20 @@ export default function SearchPage() {
   const artistsQ = useQuery({ ...searchArtistsOptions(query), enabled: enabled && wantArtists });
   const playlistsQ = useQuery({ ...searchPlaylistsOptions(query), enabled: enabled && wantPlaylists });
 
+  /**
+   * Saved songs matching the typed text. They follow `input`, not the debounced
+   * `query`, and need no request, so they show before, while and even if the
+   * catalog search fails.
+   */
+  const { index: libraryIndex, likes } = useLibraryTracks();
+  const libraryActive = !importing && wantTracks && input.trim().length >= SEARCH_MIN_LENGTH;
+  const libraryMatches = useMemo(() => (libraryActive ? matchLibraryTracks(libraryIndex, input) : []), [libraryActive, libraryIndex, input]);
+  const libraryShown = libraryMatches.slice(0, combined ? PREVIEW_LIBRARY : LIBRARY_TRACKS);
+
   // The combined view keeps relevance order: its first track is the top hit.
-  const tracks = combined ? (tracksQ.data ?? []) : sortSearchTracks(tracksQ.data ?? [], sort);
+  const foundTracks = combined ? (tracksQ.data ?? []) : sortSearchTracks(tracksQ.data ?? [], sort);
+  // A song listed under "In deiner Bibliothek" is not repeated in the list below it.
+  const tracks = withoutTracks(foundTracks, libraryShown);
   const albums = albumsQ.data ?? [];
   const artists = artistsQ.data ?? [];
   const playlists = playlistsQ.data ?? [];
@@ -77,12 +100,12 @@ export default function SearchPage() {
     ...(wantArtists ? [{ label: "Künstler", result: artistsQ }] : []),
     ...(wantPlaylists ? [{ label: "Playlists", result: playlistsQ }] : []),
   ];
-  const nothing = enabled && activeQueries.every(({ result }) => result.isSuccess && result.data.length === 0);
+  const nothing = enabled && libraryShown.length === 0 && activeQueries.every(({ result }) => result.isSuccess && result.data.length === 0);
   const fetching = activeQueries.some(({ result }) => result.isFetching);
   const loadedCount = activeQueries.reduce((count, { result }) => (result.isSuccess ? count + result.data.length : count), 0);
 
   const topHitLoading = tracksQ.isLoading || artistsQ.isLoading;
-  const topHit = combined && enabled && !topHitLoading ? pickTopHit(query, tracks, artists) : null;
+  const topHit = combined && enabled && !topHitLoading ? pickTopHit(query, foundTracks, artists) : null;
   // The featured artist is not repeated in the row right below it.
   const featuredArtist = topHit?.kind === "artist" ? topHit.artist : null;
   const listedArtists = combined ? artists.filter((artist) => artist !== featuredArtist).slice(0, PREVIEW_CARDS) : artists;
@@ -90,6 +113,15 @@ export default function SearchPage() {
   const playTrack = (index: number) => {
     playQueue(tracks, index, `Suche: ${query}`);
     rememberQuery();
+  };
+  // The top hit is the best catalog match even when the library lists it too.
+  const playTopHit = (index: number) => {
+    playQueue(foundTracks, index, `Suche: ${query}`);
+    rememberQuery();
+  };
+  const playLibraryTrack = (index: number) => {
+    playQueue(libraryMatches, index, `Bibliothek: ${input.trim()}`);
+    remember(input);
   };
   const showAll = (next: SearchTab) => (combined ? () => setTab(next) : undefined);
 
@@ -128,6 +160,13 @@ export default function SearchPage() {
           onClear={clearRecent}
           onImport={() => setImporting(true)}
         />
+      )}
+
+      {libraryActive && <QueryError label="Lieblingssongs" query={likes} />}
+      {libraryShown.length > 0 && (
+        <ResultSection label="In deiner Bibliothek" heading>
+          <LibraryResults tracks={libraryShown} onPlay={playLibraryTrack} onActivate={rememberLibraryResult} />
+        </ResultSection>
       )}
 
       {!importing && preparing && (
@@ -177,7 +216,7 @@ export default function SearchPage() {
             <div className="grid gap-9 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-6">
               {(topHitLoading || topHit) && (
                 <ResultSection label="Top-Treffer" heading className="flex flex-col">
-                  {topHit ? <TopHit hit={topHit} onPlay={playTrack} onOpen={rememberQuery} /> : <div className="skeleton h-48 rounded-xl" />}
+                  {topHit ? <TopHit hit={topHit} onPlay={playTopHit} onOpen={rememberQuery} /> : <div className="skeleton h-48 rounded-xl" />}
                 </ResultSection>
               )}
               {(tracksQ.isLoading || tracks.length > 0) && (
@@ -193,7 +232,7 @@ export default function SearchPage() {
           )}
 
           {tab === "track" && (tracksQ.isLoading || tracks.length > 0) && (
-            <ResultSection label="Titel" heading={false}>
+            <ResultSection label={libraryShown.length > 0 ? "Weitere Titel" : "Titel"} heading={libraryShown.length > 0}>
               {tracksQ.isLoading ? <RowListSkeleton /> : <TrackResults tracks={tracks} onPlay={playTrack} onActivate={rememberResult} />}
             </ResultSection>
           )}

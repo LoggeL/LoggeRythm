@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useCoverColors } from "@/hooks/useCoverColors";
+import { HeroMorph } from "@/components/motion/Morph";
 import styles from "./collection.module.css";
 
 /** Steps the display title down as it gets longer, so it never dominates. */
@@ -28,6 +29,7 @@ export default function CollectionHero({
   metadata,
   actions,
   roundArtwork = false,
+  clampDescription = true,
 }: {
   artwork: ReactNode;
   /** Image the colour wash is derived from (usually the artwork's source). */
@@ -39,6 +41,8 @@ export default function CollectionHero({
   /** Play button first, then icon actions, overflow menu last. */
   actions?: ReactNode;
   roundArtwork?: boolean;
+  /** Cut the description after two lines. Off for text that must be read in full. */
+  clampDescription?: boolean;
 }) {
   const palette = useCoverColors(coverUrl);
   const tint = palette ? ({ "--hero-tint": palette.rgb.join(" ") } as CSSProperties) : undefined;
@@ -46,13 +50,18 @@ export default function CollectionHero({
   return (
     <header className={styles.hero} style={tint}>
       <div className={styles.wash} data-tinted={palette !== null} aria-hidden="true" />
-      <div className={`${styles.artwork} group ${roundArtwork ? styles.roundArtwork : ""}`}>{artwork}</div>
+      {/* Artwork and title continue from the card this page was opened from. */}
+      <HeroMorph part="art">
+        <div className={`${styles.artwork} group ${roundArtwork ? styles.roundArtwork : ""}`}>{artwork}</div>
+      </HeroMorph>
       <div className={styles.info}>
         <p className="page-eyebrow">{eyebrow}</p>
-        <h1 className={styles.title} data-size={titleSize(title)} title={title}>
-          {title}
-        </h1>
-        {description && <div className={styles.description}>{description}</div>}
+        <HeroMorph part="title">
+          <h1 className={styles.title} data-size={titleSize(title)} title={title}>
+            {title}
+          </h1>
+        </HeroMorph>
+        {description && <div className={styles.description} data-clamp={clampDescription}>{description}</div>}
         {metadata && <p className={styles.metadata}>{metadata}</p>}
       </div>
       {actions && <div className={styles.actions}>{actions}</div>}

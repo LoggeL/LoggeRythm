@@ -12,7 +12,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import QueryError from "@/components/ui/QueryError";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
-import { CollectionSkeleton } from "@/app/playlist/_components/CollectionPageState";
+import { CollectionSkeleton, useLoadingPlaceholder } from "@/app/playlist/_components/CollectionPageState";
 import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem } from "@/app/playlist/_components/CollectionActions";
 import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 import type { HomeShelf } from "@/types";
@@ -42,7 +42,8 @@ export default function MixPage({ params }: { params: Promise<{ key: string }> }
     enabled: userId !== null,
   });
 
-  if (account.isLoading || mixes.isLoading) return <CollectionSkeleton />;
+  const loading = useLoadingPlaceholder(account.isLoading || mixes.isLoading);
+  if (loading) return <CollectionSkeleton />;
 
   if (!me) {
     // A failed account lookup is not the same as being signed out.

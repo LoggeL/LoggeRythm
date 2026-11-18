@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { HomeShelf } from '../api/types';
+import type { HomeShelf, RadarReason, ReleaseRadarEntry, Track } from '../api/types';
 import type { RecentPlay } from '../domain/listeningStats';
+import { catalogs } from '../localization';
 import {
   HOME_QUICK_GRID_LIMIT,
   assertHomeRouteCallbacks,
   findHomeMix,
+  formatRadarReason,
   formatRadarReleaseDate,
   greetingKeyForHour,
   homeAlbumRoute,
@@ -14,7 +16,9 @@ import {
   homePlaylistRoute,
   homeQueueContext,
   homeRecentShelf,
+  joinRadarFacts,
   playableHomeShelves,
+  radarSourceArtist,
   recentCatalogRoutes,
   testIdSegment,
 } from './homeModel';
@@ -31,6 +35,36 @@ function recent(overrides: Partial<RecentPlay> = {}): RecentPlay {
     cover: '',
     duration_sec: 180,
     ...overrides,
+  };
+}
+
+function radarEntry(
+  reason: Partial<RadarReason> = {},
+  track: Partial<Track> = {},
+): ReleaseRadarEntry {
+  return {
+    track: {
+      id: '900',
+      title: 'Blaue Stunde',
+      artist: 'Nina Chuba',
+      artist_id: '42',
+      artists: [{ id: '42', name: 'Nina Chuba' }],
+      album: 'Blaue Stunde',
+      album_id: '17',
+      cover: '',
+      duration_sec: 161,
+      preview_url: null,
+      rank: 0,
+      release_date: '2026-07-16',
+      ...track,
+    },
+    radar_reason: {
+      kind: 'played',
+      artist_id: '42',
+      artist_name: 'Nina Chuba',
+      play_count: 3,
+      ...reason,
+    },
   };
 }
 
@@ -172,6 +206,117 @@ describe('home model', () => {
     expect(formatRadarReleaseDate('2026-05-16', now, copy)).toBe('2 months ago');
     expect(formatRadarReleaseDate('2026-02-30', now, copy)).toBe('');
     expect(formatRadarReleaseDate('not-a-date', now, copy)).toBe('');
+  });
+
+  it('resolves the watched radar artist without guessing a name', () => {
+    expect(radarSourceArtist(radarEntry())).toEqual({ name: 'Nina Chuba', isPrimary: true });
+    // Numeric and string ids name the same artist.
+    expect(radarSourceArtist(radarEntry({}, { artist_id: 42 })).isPrimary).toBe(true);
+    // A contributor that put the track into the radar is not the primary artist.
+    const feature = radarEntry(
+      { artist_id: '7', artist_name: ' Kraftklub ' },
+      { artists: [{ id: '42', name: 'Nina Chuba' }, { id: 7, name: 'KRAFTKLUB' }] },
+    );
+    expect(radarSourceArtist(feature)).toEqual({ name: 'Kraftklub', isPrimary: false });
+    // A legacy reason without a name takes it from the track's own credit of that id.
+    expect(radarSourceArtist({
+      ...feature,
+      radar_reason: { ...feature.radar_reason, artist_name: '' },
+    })).toEqual({ name: 'KRAFTKLUB', isPrimary: false });
+    expect(radarSourceArtist(radarEntry({ artist_name: ' ' }, { artists: [] }))).toEqual({
+      name: 'Nina Chuba',
+      isPrimary: true,
+    });
+    // Neither the reason nor the credits know the artist: no name is invented.
+    expect(radarSourceArtist(radarEntry({ artist_id: '7', artist_name: '' }))).toEqual({
+      name: null,
+      isPrimary: false,
+    });
+    expect(() => radarSourceArtist(radarEntry({ artist_id: ' ' }))).toThrow(
+      'track 900 has no source artist id',
+    );
+  });
+
+  it('explains in German and English why a track is in the radar', () => {
+    const { de, en } = catalogs;
+    const ownPlayed = radarEntry();
+    const ownFollowed = radarEntry({ kind: 'followed', play_count: 5 });
+    const otherPlayed = radarEntry({ artist_id: '7', artist_name: 'Kraftklub', play_count: 2 });
+    const otherFollowed = radarEntry({
+      kind: 'followed',
+      artist_id: '7',
+      artist_name: 'Kraftklub',
+      play_count: 0,
+    });
+    const unknownPlayed = radarEntry({ artist_id: '7', artist_name: '', play_count: 4 });
+    const unknownFollowed = radarEntry({ kind: 'followed', artist_id: '7', artist_name: '' });
+
+    // The row never repeats the artist shown directly above it.
+    expect(formatRadarReason(ownPlayed, de.home.radarReason, 'row')).toBe('Artist 3× gehört');
+    expect(formatRadarReason(ownFollowed, de.home.radarReason, 'row')).toBe('Gefolgt');
+    expect(formatRadarReason(otherPlayed, de.home.radarReason, 'row')).toBe(
+      '2× gehört: Kraftklub',
+    );
+    expect(formatRadarReason(otherFollowed, de.home.radarReason, 'row')).toBe(
+      'Du folgst Kraftklub',
+    );
+    expect(formatRadarReason(unknownPlayed, de.home.radarReason, 'row')).toBe('Artist 4× gehört');
+    expect(formatRadarReason(unknownFollowed, de.home.radarReason, 'row')).toBe('Gefolgt');
+
+    expect(formatRadarReason(ownPlayed, en.home.radarReason, 'row')).toBe('Artist played 3×');
+    expect(formatRadarReason(ownFollowed, en.home.radarReason, 'row')).toBe('Following');
+    expect(formatRadarReason(otherPlayed, en.home.radarReason, 'row')).toBe(
+      'Played 2×: Kraftklub',
+    );
+    expect(formatRadarReason(otherFollowed, en.home.radarReason, 'row')).toBe(
+      'You follow Kraftklub',
+    );
+
+    // Screen readers get a full sentence that names the artist whenever it is known.
+    expect(formatRadarReason(ownPlayed, de.home.radarReasonSpoken, 'spoken')).toBe(
+      'Im Radar, weil du Nina Chuba 3-mal gehört hast',
+    );
+    expect(formatRadarReason(ownFollowed, de.home.radarReasonSpoken, 'spoken')).toBe(
+      'Im Radar, weil du Nina Chuba folgst',
+    );
+    expect(formatRadarReason(unknownPlayed, de.home.radarReasonSpoken, 'spoken')).toBe(
+      'Im Radar, weil du einen Artist dieses Titels 4-mal gehört hast',
+    );
+    expect(formatRadarReason(unknownFollowed, de.home.radarReasonSpoken, 'spoken')).toBe(
+      'Im Radar, weil du einem Artist dieses Titels folgst',
+    );
+    expect(formatRadarReason(otherPlayed, en.home.radarReasonSpoken, 'spoken')).toBe(
+      'In your radar because you played Kraftklub 2 times',
+    );
+    expect(formatRadarReason(otherFollowed, en.home.radarReasonSpoken, 'spoken')).toBe(
+      'In your radar because you follow Kraftklub',
+    );
+    expect(formatRadarReason(unknownPlayed, en.home.radarReasonSpoken, 'spoken')).toBe(
+      'In your radar because you played an artist on this track 4 times',
+    );
+    expect(formatRadarReason(unknownFollowed, en.home.radarReasonSpoken, 'spoken')).toBe(
+      'In your radar because you follow an artist on this track',
+    );
+  });
+
+  it('rejects a radar reason the server can never send', () => {
+    const copy = catalogs.en.home.radarReason;
+
+    expect(() => formatRadarReason(radarEntry({ play_count: 0 }), copy, 'row')).toThrow(
+      'reason "played" for artist 42 needs a positive play count; received 0',
+    );
+    expect(() =>
+      formatRadarReason(radarEntry({ kind: 'liked' as RadarReason['kind'] }), copy, 'row'),
+    ).toThrow('Unknown Release Radar reason kind: liked');
+  });
+
+  it('joins radar facts into one line and leaves blank ones out', () => {
+    expect(joinRadarFacts(['Neu', 'heute', 'Gefolgt'], ' · ')).toBe('Neu · heute · Gefolgt');
+    // An unparseable release date yields no date; the reason still stands alone.
+    expect(joinRadarFacts(['', '', 'Artist 3× gehört'], ' · ')).toBe('Artist 3× gehört');
+    expect(joinRadarFacts(['Neu', ' ', 'Du folgst Kraftklub'], ', ')).toBe(
+      'Neu, Du folgst Kraftklub',
+    );
   });
 
   it('shows the first seven history events without mutating or deduplicating full context', () => {

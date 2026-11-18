@@ -131,6 +131,22 @@ export interface StringCatalog {
     radarEmpty: string;
     radarNewCount: (count: number) => string;
     radarNewTrack: string;
+    /** The rule that fills the radar, stated once in the Radar hero. */
+    radarRule: string;
+    /** Why one track is in the radar: the bounded line under its row. */
+    radarReason: {
+      followed: (artist: string) => string;
+      played: (plays: number, artist: string) => string;
+      followedUnnamed: string;
+      playedUnnamed: (plays: number) => string;
+    };
+    /** The same reason as a full sentence for screen readers. */
+    radarReasonSpoken: {
+      followed: (artist: string) => string;
+      played: (plays: number, artist: string) => string;
+      followedUnnamed: string;
+      playedUnnamed: (plays: number) => string;
+    };
     radarSeenStateFailed: string;
     radarRelativeDate: {
       today: string;
@@ -419,6 +435,8 @@ export interface StringCatalog {
     noResults: string;
     noResultsFor: (query: string) => string;
     partialError: string;
+    libraryLikesOffline: string;
+    libraryLikesLoadFailed: string;
     remoteOffline: (section: string) => string;
     remoteLoadFailed: (section: string) => string;
     remoteCachedOffline: (section: string) => string;
@@ -481,6 +499,7 @@ export interface StringCatalog {
     importSaveFailed: string;
     importUnmatchedTitle: string;
     sections: {
+      library: string;
       tracks: string;
       albums: string;
       artists: string;
@@ -568,6 +587,7 @@ export interface StringCatalog {
     unknownContext: string;
     legacyContextLabel: (type: QueueContextType) => string;
     searchContext: (query: string) => string;
+    searchLibraryContext: (query: string) => string;
     recentContext: string;
     trackRadioContext: (title: string) => string;
     manualPriority: string;
@@ -731,6 +751,21 @@ export const de: StringCatalog = {
       'Noch keine frischen Releases von deinen Künstler:innen. Folge Artists oder höre mehr, dann füllt sich dein Radar.',
     radarNewCount: (count) => `${count} neu`,
     radarNewTrack: 'Neu',
+    radarRule:
+      'Neue Releases von Künstler:innen, denen du folgst oder die du in den letzten 90 Tagen mindestens zweimal gehört hast.',
+    radarReason: {
+      followed: (artist) => `Du folgst ${artist}`,
+      played: (plays, artist) => `${plays}× gehört: ${artist}`,
+      followedUnnamed: 'Gefolgt',
+      playedUnnamed: (plays) => `Artist ${plays}× gehört`,
+    },
+    radarReasonSpoken: {
+      followed: (artist) => `Im Radar, weil du ${artist} folgst`,
+      played: (plays, artist) => `Im Radar, weil du ${artist} ${plays}-mal gehört hast`,
+      followedUnnamed: 'Im Radar, weil du einem Artist dieses Titels folgst',
+      playedUnnamed: (plays) =>
+        `Im Radar, weil du einen Artist dieses Titels ${plays}-mal gehört hast`,
+    },
     radarSeenStateFailed: 'Der Gesehen-Status des Release Radars konnte nicht geladen werden.',
     radarRelativeDate: {
       today: 'heute',
@@ -1039,6 +1074,10 @@ export const de: StringCatalog = {
     noResults: 'Keine Ergebnisse gefunden.',
     noResultsFor: (query) => `Keine Ergebnisse für „${query}“ gefunden.`,
     partialError: 'Einige Suchergebnisse konnten nicht geladen werden.',
+    libraryLikesOffline:
+      'Lieblingstitel sind offline nicht verfügbar. Stelle eine Verbindung her und versuche es erneut.',
+    libraryLikesLoadFailed:
+      'Lieblingstitel konnten nicht geladen werden und fehlen in diesen Treffern.',
     remoteOffline: (section) => `${section} ist offline nicht verfügbar. Stelle eine Verbindung her und versuche es erneut.`,
     remoteLoadFailed: (section) => `${section} konnte nicht geladen werden.`,
     remoteCachedOffline: (section) => `${section}: Du bist offline. Gespeicherte Daten bleiben sichtbar.`,
@@ -1098,7 +1137,10 @@ export const de: StringCatalog = {
       `${added} ${added === 1 ? 'Titel wurde' : 'Titel wurden'} in „${name}“ gespeichert.`,
     importSaveFailed: 'Import konnte nicht gespeichert werden',
     importUnmatchedTitle: 'Nicht auf Deezer gefunden',
-    sections: { tracks: 'Titel', albums: 'Alben', artists: 'Künstler', playlists: 'Playlists' },
+    sections: {
+      library: 'In deiner Bibliothek',
+      tracks: 'Titel', albums: 'Alben', artists: 'Künstler', playlists: 'Playlists',
+    },
     openAlbum: (title, artist) => `Album „${title}“ von ${artist} öffnen`,
     openArtist: (name) => `Künstlerprofil von ${name} öffnen`,
     openPlaylist: (title, count) => `Playlist „${title}“ öffnen, ${count} Titel`,
@@ -1196,6 +1238,7 @@ export const de: StringCatalog = {
       search: 'Suche',
     })[type],
     searchContext: (query) => `Suche: „${query}“`,
+    searchLibraryContext: (query) => `In deiner Bibliothek: „${query}“`,
     recentContext: 'Zuletzt gehört',
     trackRadioContext: (title) => `Titelradio: „${title}“`,
     manualPriority: 'MANUELL EINGEREIHT',
@@ -1311,6 +1354,21 @@ export const en: StringCatalog = {
     radarEmpty: 'No fresh releases from your artists yet. Follow artists or listen more to fill your radar.',
     radarNewCount: (count) => `${count} new`,
     radarNewTrack: 'New',
+    radarRule:
+      'New releases from artists you follow or have played at least twice in the last 90 days.',
+    radarReason: {
+      followed: (artist) => `You follow ${artist}`,
+      played: (plays, artist) => `Played ${plays}×: ${artist}`,
+      followedUnnamed: 'Following',
+      playedUnnamed: (plays) => `Artist played ${plays}×`,
+    },
+    radarReasonSpoken: {
+      followed: (artist) => `In your radar because you follow ${artist}`,
+      played: (plays, artist) => `In your radar because you played ${artist} ${plays} times`,
+      followedUnnamed: 'In your radar because you follow an artist on this track',
+      playedUnnamed: (plays) =>
+        `In your radar because you played an artist on this track ${plays} times`,
+    },
     radarSeenStateFailed: 'The Release Radar seen state could not be loaded.',
     radarRelativeDate: {
       today: 'today', yesterday: 'yesterday', daysAgo: (days) => `${days} days ago`,
@@ -1553,6 +1611,8 @@ export const en: StringCatalog = {
     minimumQueryHint: 'Type at least two characters to search.', noResults: 'No results found.',
     noResultsFor: (query) => `No results found for “${query}”.`,
     partialError: 'Some search results could not be loaded.',
+    libraryLikesOffline: 'Liked Songs are unavailable offline. Connect and try again.',
+    libraryLikesLoadFailed: 'Liked Songs could not be loaded and are missing from these matches.',
     remoteOffline: (section) => `${section} is unavailable offline. Connect and try again.`,
     remoteLoadFailed: (section) => `${section} could not be loaded.`,
     remoteCachedOffline: (section) => `${section}: You are offline. Saved data remains visible.`,
@@ -1603,7 +1663,10 @@ export const en: StringCatalog = {
       `${added} ${added === 1 ? 'track was' : 'tracks were'} saved to ${name}.`,
     importSaveFailed: 'Import could not be saved',
     importUnmatchedTitle: 'Not found on Deezer',
-    sections: { tracks: 'Tracks', albums: 'Albums', artists: 'Artists', playlists: 'Playlists' },
+    sections: {
+      library: 'In your library',
+      tracks: 'Tracks', albums: 'Albums', artists: 'Artists', playlists: 'Playlists',
+    },
     openAlbum: (title, artist) => `Open album ${title} by ${artist}`,
     openArtist: (name) => `Open artist ${name}`,
     openPlaylist: (title, count) => `Open playlist ${title}, ${count} tracks`,
@@ -1670,6 +1733,7 @@ export const en: StringCatalog = {
       playlist: 'Playlist', radio: 'Radio', recent: 'Recently played', search: 'Search',
     })[type],
     searchContext: (query) => `Search: “${query}”`, recentContext: 'Recently played',
+    searchLibraryContext: (query) => `In your library: “${query}”`,
     trackRadioContext: (title) => `Track radio: “${title}”`,
     currentlyPlaying: 'PLAYING', currentTrackSuffix: ', currently playing', skipHint: 'Skip to this track',
     loadFailed: 'Loading queue failed',

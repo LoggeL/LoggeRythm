@@ -73,7 +73,7 @@ const collectionImports = {
   "./collection.module.css": styleUrl,
   "@/hooks/useCoverColors": moduleUrl(`export const useCoverColors = () => null;`),
   "@/components/TrackList": moduleUrl(
-    `export function TrackListHeader() { return null; }`,
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export function TrackListHeader({noteLabel}) { return noteLabel === undefined ? null : createElement("span", {"data-testid": "note-heading"}, noteLabel); }`,
   ),
   "@/components/Skeleton": skeletonUrl,
   "@/components/ui/QueryError": queryErrorUrl,
@@ -84,6 +84,14 @@ const collectionImports = {
   "@/components/icons": iconsUrl,
   "@/store/player": playerStoreUrl,
   "@/store/toast": moduleUrl(`export const toast = {info() {}};`),
+  // View transitions need a browser; the hero renders its content unwrapped
+  // and no card has handed over artwork for the loading header.
+  "@/components/motion/Morph": moduleUrl(
+    `export const HeroMorph = ({children}) => children; export const useMorphSeed = () => null;`,
+  ),
+  "@/components/ui/Cover": moduleUrl(
+    `export default function Cover() { return null; }`,
+  ),
 };
 collectionImports["./collectionPlayback"] = await compileRoute(
   "../src/app/playlist/_components/collectionPlayback.ts",
@@ -93,6 +101,7 @@ const heroUrl = await compileRoute(
   "../src/app/playlist/_components/CollectionHero.tsx",
   collectionImports,
 );
+collectionImports["./CollectionHero"] = heroUrl;
 const tracksUrl = await compileRoute(
   "../src/app/playlist/_components/CollectionTracks.tsx",
   collectionImports,
@@ -126,8 +135,10 @@ const imports = {
   ),
   "@/store/player": playerStoreUrl,
   "@/lib/api": moduleUrl(`export const api = {};`),
+  // The radar's reason wording is the real formatter.
+  "@/lib/radarReason": await compileRoute("../src/lib/radarReason.ts", {}),
   "@/components/TrackRow": moduleUrl(
-    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function TrackRow({track}) { return createElement("div", {"data-testid": "track"}, track.title); }`,
+    `import {createElement} from ${JSON.stringify(reactUrl)}; export default function TrackRow({track, note}) { return createElement("div", {"data-testid": "track"}, track.title, note === undefined ? null : createElement("div", {"data-testid": "note"}, note)); }`,
   ),
   "@/components/ui/Cover": moduleUrl(
     `export default function Cover() { return null; }`,
@@ -232,11 +243,52 @@ test("an account refresh error leaves cached music visible and reports the failu
   };
   const track = { id: "1", title: "Cached song" };
   fixture.mixes.data[0].tracks = [track];
-  fixture.radar = success([track]);
+  // Every radar track carries the reason it is listed.
+  fixture.radar = success([
+    { ...track, radar_reason: { kind: "followed", artist_id: "7", artist_name: "Bekannte Künstlerin", play_count: 0 } },
+  ]);
   for (const screen of [mixScreen, radarScreen]) {
     const html = screen();
     assert.match(html, /Profilaktualisierung: HTTP 503/);
     assert.match(html, /Cached song/);
     assert.doesNotMatch(html, /href="\/login"/);
   }
+});
+
+test("the release radar states its rule and why each track is listed", () => {
+  reset();
+  const radarTrack = (id, radar_reason) => ({ id, title: `Song ${id}`, artist: "Fremder", artist_id: "999", radar_reason });
+  fixture.radar = success([
+    radarTrack("1", { kind: "followed", artist_id: "7", artist_name: "Bekannte Künstlerin", play_count: 0 }),
+    radarTrack("2", { kind: "played", artist_id: "8", artist_name: "Oft Gehört", play_count: 4 }),
+    radarTrack("3", { kind: "followed", artist_id: "9", artist_name: "", play_count: 3 }),
+    radarTrack("4", { kind: "played", artist_id: "10", artist_name: "", play_count: 2 }),
+  ]);
+
+  const html = radarScreen();
+
+  assert.match(
+    html,
+    /Neue Releases von Künstler:innen, denen du folgst oder die du in den letzten 90 Tagen mindestens zweimal gehört hast\./,
+  );
+  assert.match(html, /data-testid="note-heading">Warum im Radar</);
+  const notes = [...html.matchAll(/<div data-testid="note">(.*?)<\/div>/g)].map((match) => match[1]);
+  // The reason is real text in the row; the watched source artist (not the
+  // track's own artist) is named and linked.
+  assert.deepEqual(notes, [
+    '<span title="Du folgst Bekannte Künstlerin">Du folgst <a class="hover:text-foreground hover:underline" href="/artist/7">Bekannte Künstlerin</a></span>',
+    '<span title="4× gehört: Oft Gehört">4× gehört: <a class="hover:text-foreground hover:underline" href="/artist/8">Oft Gehört</a></span>',
+    // No name from the server: no invented name and no link.
+    '<span title="Von dir gefolgt">Von dir gefolgt</span>',
+    '<span title="2× gehört">2× gehört</span>',
+  ]);
+  assert.doesNotMatch(html, /href="\/artist\/(9|10|999)"/);
+});
+
+test("the mix page keeps its rows free of radar reasons", () => {
+  reset();
+  fixture.mixes.data[0].tracks = [{ id: "1", title: "Mix song" }];
+  const html = mixScreen();
+  assert.match(html, /Mix song/);
+  assert.doesNotMatch(html, /data-testid="note|Warum im Radar/);
 });

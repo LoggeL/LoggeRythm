@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query';
 import { canonicalDeezerIds, normalizeSearchQuery, queryKeys, type QueryScope } from './queryKeys';
+import { releaseRadarTracks } from './releaseRadar';
 import { musicRepository, type MusicRepository } from './repositories';
 import type { DeezerId, TrackPlayQuery } from '../api/types';
 
@@ -68,7 +69,19 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         queryFn: ({ signal }) => repository.getHomeChartCollections(signal),
       });
     },
+    /**
+     * The radar as plain tracks. Shares its cache entry and request with
+     * `releaseRadarEntries`; use that one wherever the reason is shown.
+     */
     releaseRadar(scope: QueryScope) {
+      return queryOptions({
+        queryKey: queryKeys.home.releaseRadar(scope),
+        queryFn: ({ signal }) => repository.getReleaseRadar(signal),
+        select: releaseRadarTracks,
+      });
+    },
+    /** The radar with, per track, the watched artist and reason that put it there. */
+    releaseRadarEntries(scope: QueryScope) {
       return queryOptions({
         queryKey: queryKeys.home.releaseRadar(scope),
         queryFn: ({ signal }) => repository.getReleaseRadar(signal),

@@ -5,6 +5,7 @@ import type { HomeShelf } from "@/types";
 import { usePlayerStore } from "@/store/player";
 import { PlayIcon, ChevronRightIcon, MusicNoteIcon } from "@/components/icons";
 import CardPlayButton from "@/components/CardPlayButton";
+import { Morph, useMorphSource } from "@/components/motion/Morph";
 import styles from "./cards.module.css";
 
 const THEMES = ["gradient-violet", "gradient-blue", "gradient-teal", "gradient-orange"];
@@ -26,12 +27,18 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
   const playQueue = usePlayerStore((state) => state.playQueue);
   const cover = shelf.cover || shelf.tracks.find((track) => track.cover)?.cover;
   const empty = shelf.tracks.length === 0;
+  const morph = useMorphSource(href, { title: shelf.title, cover });
   const play = () => playQueue(shelf.tracks, 0, shelf.title);
-  const art = cover ? (
+  const artwork = cover ? (
     // eslint-disable-next-line @next/next/no-img-element
     <img src={cover} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
   ) : (
     <div className={`grid h-full w-full place-items-center ${THEMES[index % THEMES.length]}`}><MusicNoteIcon width={44} height={44} className="text-foreground/50" aria-hidden="true" /></div>
+  );
+  const art = (
+    <Morph name={morph.art} part="art">
+      {artwork}
+    </Morph>
   );
   const badge = statusBadge && <span className="absolute left-2 top-2 z-[1] rounded-[3px] bg-accent px-1.5 py-0.5 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-on-accent">{statusBadge}</span>;
   const linkLabel = statusBadge ? `${shelf.title}, ${statusBadge}` : shelf.title;
@@ -43,7 +50,9 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
       <>
         <div className="min-w-0 flex-1">
           <p className="page-eyebrow mb-2">{TAGS[shelf.key] || "Für dich"}</p>
-          <h3 className="text-lg font-semibold leading-tight tracking-tight">{shelf.title}</h3>
+          <Morph name={morph.title} part="title">
+            <h3 className="text-lg font-semibold leading-tight tracking-tight">{shelf.title}</h3>
+          </Morph>
           {shelf.subtitle && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted">{shelf.subtitle}</p>}
           <span className="mt-3 inline-flex items-center gap-2 text-xs text-muted">{shelf.tracks.length} Titel {href ? <ChevronRightIcon width={14} height={14} /> : <PlayIcon width={14} height={14} />}</span>
         </div>
@@ -52,7 +61,7 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
       </>
     );
     return href ? (
-      <Link href={href} className={className} aria-label={linkLabel}>{contents}</Link>
+      <Link href={href} onClick={morph.arm} className={className} aria-label={linkLabel}>{contents}</Link>
     ) : (
       <button type="button" onClick={play} disabled={empty} className={`${className} disabled:opacity-50`} aria-label={`${shelf.title} abspielen`}>{contents}</button>
     );
@@ -72,7 +81,9 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
         )}
       </div>
       {href ? (
-        <Link href={href} aria-label={linkLabel} className={`${styles.link} ${styles.title} block`}>{shelf.title}</Link>
+        <Morph name={morph.title} part="title">
+          <Link href={href} onClick={morph.arm} aria-label={linkLabel} className={`${styles.link} ${styles.title} block`}>{shelf.title}</Link>
+        </Morph>
       ) : (
         <button type="button" onClick={play} disabled={empty} aria-label={`${shelf.title} abspielen`} className={`${styles.link} ${styles.title} block w-full text-left`}>{shelf.title}</button>
       )}

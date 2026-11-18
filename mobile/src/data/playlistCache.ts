@@ -261,6 +261,44 @@ export function optimisticallyAddPlaylistTracks(
   );
 }
 
+/** Playlist details that are already cached for this account; never starts a request. */
+export function cachedPlaylistDetails(client: QueryClient, scope: QueryScope): Playlist[] {
+  return client
+    .getQueriesData<Playlist>({ queryKey: queryKeys.playlists.details(scope) })
+    .flatMap(([, playlist]) => (playlist === undefined ? [] : [playlist]));
+}
+
+export interface CachedPlaylistDetailsStore {
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => readonly Playlist[];
+}
+
+/**
+ * `useSyncExternalStore` source over the cached playlist details. It observes
+ * the cache without mounting query observers, so reading it neither fetches
+ * nor keeps a playlist alive. The snapshot keeps its identity until a detail
+ * is added, replaced or removed.
+ */
+export function createCachedPlaylistDetailsStore(
+  client: QueryClient,
+  scope: QueryScope,
+): CachedPlaylistDetailsStore {
+  let snapshot: readonly Playlist[] = [];
+  return {
+    subscribe: (listener) => client.getQueryCache().subscribe(listener),
+    getSnapshot: () => {
+      const next = cachedPlaylistDetails(client, scope);
+      if (
+        next.length !== snapshot.length
+        || next.some((playlist, index) => playlist !== snapshot[index])
+      ) {
+        snapshot = next;
+      }
+      return snapshot;
+    },
+  };
+}
+
 export function removeDeletedPlaylistFromCache(
   client: QueryClient,
   scope: QueryScope,

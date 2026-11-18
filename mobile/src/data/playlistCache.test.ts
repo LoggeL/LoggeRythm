@@ -4,6 +4,8 @@ import type { Playlist, PlaylistSummary, Track } from '../api/types';
 import { refreshLibraryAutoBrowse } from './autoBrowseRefresh';
 import { queryKeys } from './queryKeys';
 import {
+  cachedPlaylistDetails,
+  createCachedPlaylistDetailsStore,
   createPlaylistWithTrack,
   createPlaylistWithTracks,
   optimisticallyAddPlaylistTrack,
@@ -56,6 +58,50 @@ function clientWithPlaylist(): QueryClient {
   client.setQueryData(queryKeys.playlists.public(scope), [summary()]);
   return client;
 }
+
+describe('cached playlist details', () => {
+  it('reads only this account\'s loaded details and never starts a request', () => {
+    const client = clientWithPlaylist();
+    const fetchQuery = vi.spyOn(client, 'fetchQuery');
+    client.setQueryData(queryKeys.playlists.detail('account-8', 9), { ...detail(), id: 9 });
+    // A detail that is known to the cache but has no data yet.
+    client.getQueryCache().build(client, { queryKey: queryKeys.playlists.detail(scope, 5) });
+
+    expect(cachedPlaylistDetails(client, scope)).toEqual([detail()]);
+    expect(cachedPlaylistDetails(client, 'account-9')).toEqual([]);
+    expect(fetchQuery).not.toHaveBeenCalled();
+    expect(client.isFetching()).toBe(0);
+  });
+
+  it('keeps one snapshot identity until a playlist detail changes', () => {
+    const client = clientWithPlaylist();
+    const store = createCachedPlaylistDetailsStore(client, scope);
+    const listener = vi.fn();
+    const unsubscribe = store.subscribe(listener);
+    const first = store.getSnapshot();
+
+    expect(first).toEqual([detail()]);
+    expect(store.getSnapshot()).toBe(first);
+
+    // Unrelated cache traffic notifies, but the snapshot stays the same object.
+    client.setQueryData(queryKeys.playlists.owned(scope), [summary(), summary(5)]);
+    expect(listener).toHaveBeenCalled();
+    expect(store.getSnapshot()).toBe(first);
+
+    client.setQueryData(queryKeys.playlists.detail(scope, 6), { ...detail(), id: 6 });
+    const second = store.getSnapshot();
+    expect(second).not.toBe(first);
+    expect(second.map(({ id }) => id)).toEqual([4, 6]);
+
+    removeDeletedPlaylistFromCache(client, scope, 6);
+    expect(store.getSnapshot().map(({ id }) => id)).toEqual([4]);
+
+    listener.mockClear();
+    unsubscribe();
+    client.setQueryData(queryKeys.playlists.detail(scope, 7), { ...detail(), id: 7 });
+    expect(listener).not.toHaveBeenCalled();
+  });
+});
 
 describe('playlist cache parity contract', () => {
   it('optimistically edits name/description and restores every scoped cache on failure', async () => {

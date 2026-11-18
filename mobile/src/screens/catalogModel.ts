@@ -115,9 +115,12 @@ export interface PlaybackSelection {
 
 export const ARTIST_POPULAR_TRACK_LIMIT = 10;
 
-export type ArtistTrackPlaybackSurface = 'popular' | 'search';
+/** Liked rows the Artist page lists before its "show all" link expands the block. */
+export const ARTIST_LIKED_TRACK_PREVIEW = 5;
 
-/** Keep Popular and query-result occurrences from claiming the same queue identity. */
+export type ArtistTrackPlaybackSurface = 'popular' | 'liked' | 'search';
+
+/** Keep Popular, Liked and query-result occurrences from claiming the same queue identity. */
 export function artistTrackPlaybackContextId(
   artistId: DeezerId,
   surface: ArtistTrackPlaybackSurface,
@@ -125,6 +128,7 @@ export function artistTrackPlaybackContextId(
 ): string {
   const id = requireCatalogId(artistId, 'artist id');
   if (surface === 'popular') return id;
+  if (surface === 'liked') return `${id}:liked`;
   const normalizedQuery = query.trim();
   if (normalizedQuery.length === 0) {
     throw new Error('Artist search playback context requires a query');
@@ -135,6 +139,21 @@ export function artistTrackPlaybackContextId(
 /** Match the production Artist page's visible/row-playback "Popular" context. */
 export function artistPopularTracks(tracks: readonly Track[]): Track[] {
   return tracks.slice(0, ARTIST_POPULAR_TRACK_LIMIT);
+}
+
+/**
+ * The user's liked tracks that credit this artist, as the primary artist or
+ * as any listed contributor, in the likes list's own order (most recently
+ * liked first). Ids are the only evidence: unlike `filterArtistTracks` there
+ * is no name matching, so a namesake never lands in "your liked songs".
+ */
+export function artistLikedTracks(likes: readonly Track[], artistId: DeezerId): Track[] {
+  const normalizedId = requireCatalogId(artistId, 'artist id');
+  return likes.filter(
+    (track) =>
+      String(track.artist_id) === normalizedId ||
+      track.artists.some((artist) => String(artist.id) === normalizedId),
+  );
 }
 
 /** Match the production Artist search's Deezer advanced-query syntax. */

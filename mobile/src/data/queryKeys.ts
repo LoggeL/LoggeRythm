@@ -85,8 +85,9 @@ export const queryKeys = {
       [...queryKeys.playlists.root(), 'scope', scalar(scope, 'playlist scope')] as const,
     owned: (scope: QueryScope) => [...queryKeys.playlists.scoped(scope), 'owned'] as const,
     public: (scope: QueryScope) => [...queryKeys.playlists.scoped(scope), 'public'] as const,
+    details: (scope: QueryScope) => [...queryKeys.playlists.scoped(scope), 'detail'] as const,
     detail: (scope: QueryScope, id: number) =>
-      [...queryKeys.playlists.scoped(scope), 'detail', scalar(id, 'playlist id')] as const,
+      [...queryKeys.playlists.details(scope), scalar(id, 'playlist id')] as const,
   },
   library: {
     root: (scope: QueryScope) =>

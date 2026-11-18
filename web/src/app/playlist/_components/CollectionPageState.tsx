@@ -1,19 +1,57 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useDeferredValue, type ReactNode } from "react";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
+import Cover from "@/components/ui/Cover";
+import { useMorphSeed } from "@/components/motion/Morph";
+import CollectionHero from "./CollectionHero";
 import QueryError, { type RetryableQuery } from "@/components/ui/QueryError";
 import EmptyState from "@/components/ui/EmptyState";
 
-/** Loading placeholder with the shape of a collection page. */
+/**
+ * Loading placeholder with the shape of a collection page. Opened from a card,
+ * it already shows that card's artwork and title in the real header, so both
+ * can travel over from the card and stay in place once the data arrives.
+ */
 export function CollectionSkeleton({ round = false }: { round?: boolean }) {
+  const seed = useMorphSeed();
   return (
     <div>
-      <DetailHeaderSkeleton round={round} />
+      {seed ? (
+        <div role="status" aria-label="Wird geladen">
+          <CollectionHero
+            eyebrow={<span className="skeleton inline-block h-3 w-16 rounded" />}
+            title={seed.title}
+            coverUrl={seed.cover}
+            artwork={<Cover src={seed.cover} eager />}
+            metadata={<span className="skeleton inline-block h-4 w-44 max-w-full rounded align-middle" />}
+            actions={
+              <>
+                <div className="skeleton h-14 w-14 rounded-full" />
+                <div className="skeleton h-11 w-11 rounded-[var(--radius-control)]" />
+                <div className="skeleton h-11 w-11 rounded-[var(--radius-control)]" />
+              </>
+            }
+          />
+        </div>
+      ) : (
+        <DetailHeaderSkeleton round={round} />
+      )}
       <RowListSkeleton />
     </div>
   );
+}
+
+/**
+ * Keeps a loading placeholder up until React can swap it for the loaded
+ * content in a transition. Query results arrive as urgent updates, which would
+ * replace the placeholder in a single frame; deferred, the swap cross-fades
+ * (and waits for a route transition that is still running).
+ */
+export function useLoadingPlaceholder(loading: boolean): boolean {
+  const deferred = useDeferredValue(loading);
+  return loading || deferred;
 }
 
 /** The slice of a TanStack query a detail page needs to pick its state. */
@@ -48,7 +86,8 @@ export default function CollectionPageState<T>({
   skeleton?: ReactNode;
   children: (data: T) => ReactNode;
 }) {
-  if (query.isLoading) return skeleton === undefined ? <CollectionSkeleton round={round} /> : skeleton;
+  const loading = useLoadingPlaceholder(query.isLoading);
+  if (loading) return skeleton === undefined ? <CollectionSkeleton round={round} /> : skeleton;
   if (query.data === undefined) {
     if (query.isError) return <QueryError label={label} query={query} />;
     if (query.fetchStatus === "paused") {

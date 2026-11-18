@@ -72,6 +72,19 @@ export function searchRemoteEntry(
 }
 
 /**
+ * The failure one supporting query has to report, by the same precedence as
+ * the result queries: null while it is healthy or merely still loading.
+ */
+export function searchRemoteIssueKind(query: SearchRemoteQueryLike): SearchRemoteIssueKind | null {
+  const { visual } = searchRemoteEntry('supporting-query', query, 0);
+  if (visual.body === 'offline' || visual.body === 'hard-error') return visual.body;
+  if (visual.notice === 'cached-offline' || visual.notice === 'cached-refresh-error') {
+    return visual.notice;
+  }
+  return null;
+}
+
+/**
  * Compose heterogeneous entity queries while preserving every last-good response.
  * `empty` is only safe when every active entity has returned successfully at least once.
  */

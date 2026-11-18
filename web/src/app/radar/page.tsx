@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useMe } from "@/hooks/useAuth";
 import { RADAR_TITLE, useRefreshReleaseRadar, useReleaseRadar, useReleaseRadarSeen } from "@/hooks/useReleaseRadar";
 import { usePlayerStore } from "@/store/player";
+import { RADAR_RULE, radarReasonLabel } from "@/lib/radarReason";
+import type { RadarReason } from "@/types";
 import TrackRow from "@/components/TrackRow";
 import { RowListSkeleton } from "@/components/Skeleton";
 import { RefreshIcon } from "@/components/icons";
@@ -13,8 +15,27 @@ import EmptyState from "@/components/ui/EmptyState";
 import QueryError from "@/components/ui/QueryError";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
+import { useLoadingPlaceholder } from "@/app/playlist/_components/CollectionPageState";
 import { PlayCollectionButton, ShuffleCollectionButton } from "@/app/playlist/_components/CollectionActions";
 import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
+
+/**
+ * Why a track is in the radar, with the watched artist linked. That artist is
+ * the source of the release and may differ from the track's own artists.
+ */
+function RadarReasonNote({ reason }: { reason: RadarReason }) {
+  const label = radarReasonLabel(reason);
+  return (
+    <span title={label.text}>
+      {label.lead}
+      {label.artistName !== null && (
+        <Link href={`/artist/${reason.artist_id}`} className="hover:text-foreground hover:underline">
+          {label.artistName}
+        </Link>
+      )}
+    </span>
+  );
+}
 
 export default function RadarPage() {
   const account = useMe();
@@ -25,7 +46,8 @@ export default function RadarPage() {
 
   const tracks = radar.data ?? [];
   const cover = tracks.find((t) => t.cover)?.cover;
-  const loading = account.isLoading || radar.isLoading;
+  // Deferred, so the loaded titles cross-fade in instead of replacing the placeholder rows at once.
+  const loading = useLoadingPlaceholder(account.isLoading || radar.isLoading);
   const { markVisibleTracksSeen } = useReleaseRadarSeen(me?.id, tracks);
 
   useEffect(() => {
@@ -37,7 +59,8 @@ export default function RadarPage() {
       <CollectionHero
         eyebrow="Für dich"
         title={RADAR_TITLE}
-        description="Neues von Künstler:innen, die du hörst und denen du folgst."
+        description={RADAR_RULE}
+        clampDescription={false}
         metadata={loading ? "Wird geladen…" : tracksSummary(tracks)}
         coverUrl={cover}
         artwork={<Cover src={cover} eager />}
@@ -73,7 +96,7 @@ export default function RadarPage() {
       <QueryError label="Die Titel im Release Radar" query={radar} className="mb-4" />
       <QueryError label="Deine Kontodaten" query={account} className="mb-4" />
 
-      <CollectionTracks count={loading ? 0 : tracks.length}>
+      <CollectionTracks count={loading ? 0 : tracks.length} noteLabel="Warum im Radar">
         {loading ? (
           <RowListSkeleton />
         ) : !me ? (
@@ -101,7 +124,9 @@ export default function RadarPage() {
             Folge Künstler:innen oder höre mehr Musik, dann füllt sich dein Radar.
           </EmptyState>
         ) : (
-          tracks.map((track, i) => <TrackRow key={track.id} track={track} index={i} onPlay={() => playQueue(tracks, i, RADAR_TITLE)} />)
+          tracks.map((track, i) => (
+            <TrackRow key={track.id} track={track} index={i} onPlay={() => playQueue(tracks, i, RADAR_TITLE)} note={<RadarReasonNote reason={track.radar_reason} />} />
+          ))
         )}
       </CollectionTracks>
     </div>

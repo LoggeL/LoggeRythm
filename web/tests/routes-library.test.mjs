@@ -70,6 +70,10 @@ const stubs = {
   "@/components/Skeleton": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export function RowListSkeleton() { return createElement("span", {"data-testid": "loading"}); } export const CardGridSkeleton = RowListSkeleton;`,
   ),
+  // View transitions need a browser; tiles render their content unwrapped.
+  "@/components/motion/Morph": moduleUrl(
+    `export const Morph = ({children}) => children; export const useMorphSource = () => ({arm() {}});`,
+  ),
   "@/components/icons": moduleUrl(
     `export function HeartIcon() { return null; } export const DownloadIcon = HeartIcon; export const DownloadedIcon = HeartIcon; export const PlayIcon = HeartIcon; export const PlusIcon = HeartIcon; export const LibraryIcon = HeartIcon; export const ShuffleIcon = HeartIcon; export const SearchIcon = HeartIcon; export const ClockIcon = HeartIcon; export const UserIcon = HeartIcon;`,
   ),

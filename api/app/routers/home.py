@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
@@ -20,9 +21,9 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user_optional
 from ..db.models import FollowedArtist, Like, Play, User
 from ..db.session import get_db
-from ..schemas.track import Track
+from ..schemas.track import RadarTrack, Track
 from ..services import deezer_client as dc
-from ..services import recommend
+from ..services import radar_preload, recommend
 from ..services.discovery import DiscoveryError, run_jobs
 from ..services.lastfm_client import LastfmError
 from ..services.singleflight_cache import SingleFlightTtlCache
@@ -135,37 +136,107 @@ def _user_top_artists(db: Session, user: User, limit: int = 3) -> list[str]:
     return [f.name for f in follows if f.name]
 
 
-def _radar_artist_ids(db: Session, user: User, limit: int = 60) -> list[str]:
-    """Deezer artist IDs the radar should watch.
+_RADAR_MIN_PLAYS = 2
+
+
+@dataclass(frozen=True)
+class RadarArtist:
+    """An artist the radar watches, with the facts that explain why."""
+
+    artist_id: str
+    # From the user's own follow/play rows; "" when none of them stored a name.
+    name: str
+    # The user's plays of this artist in the last 90 days (0 if none).
+    play_count: int
+    followed: bool
+
+
+def _radar_artists(db: Session, user: User, limit: int = 60) -> list[RadarArtist]:
+    """The artists the radar should watch, in watch order.
 
     All artists the user played at least twice in the last 90 days (most-played
     first), plus followed artists — capped to bound the per-artist API fan-out.
+    Each entry also carries what a client needs to explain the watch: the
+    artist's name, the play count in that window, and whether they are followed.
     """
-    ids: list[str] = []
-    seen: set[str] = set()
     since = datetime.utcnow() - timedelta(days=90)
+    # One row per (artist, spelling of the name): an artist ID can have been
+    # recorded under several names, and with an empty one.
     rows = db.execute(
-        select(Play.artist_id, func.count().label("c"))
+        select(
+            Play.artist_id,
+            Play.artist,
+            func.count().label("plays"),
+            func.max(Play.played_at).label("last_played_at"),
+            func.max(Play.id).label("last_play_id"),
+        )
         .where(Play.user_id == user.id, Play.artist_id != "", Play.played_at >= since)
-        .group_by(Play.artist_id)
-        .having(func.count() >= 2)
-        .order_by(func.count().desc())
+        .group_by(Play.artist_id, Play.artist)
     ).all()
+    play_counts: dict[str, int] = {}
+    # artist_id -> (recency of the most recent named play, that play's name)
+    played_names: dict[str, tuple[tuple[datetime, int], str]] = {}
     for r in rows:
-        if r.artist_id not in seen:
-            seen.add(r.artist_id)
-            ids.append(r.artist_id)
+        play_counts[r.artist_id] = play_counts.get(r.artist_id, 0) + r.plays
+        name = r.artist.strip()
+        if not name:
+            continue
+        recency = (r.last_played_at, r.last_play_id)
+        known = played_names.get(r.artist_id)
+        if known is None or recency > known[0]:
+            played_names[r.artist_id] = (recency, name)
+
+    # Every follow decides the "followed" flag; only the most recent `limit`
+    # follows add artists to the watch list (unchanged fan-out bound).
     follows = db.scalars(
         select(FollowedArtist)
         .where(FollowedArtist.user_id == user.id)
-        .order_by(FollowedArtist.created_at.desc())
-        .limit(limit)
+        .order_by(FollowedArtist.created_at.desc(), FollowedArtist.id.desc())
     ).all()
-    for f in follows:
+    followed_names = {f.artist_id: f.name.strip() for f in follows if f.artist_id}
+
+    def watched(artist_id: str) -> RadarArtist:
+        played_name = played_names.get(artist_id)
+        return RadarArtist(
+            artist_id=artist_id,
+            # Follow and play rows both legitimately allow an empty name
+            # (column default ""). Stay honest about that: report "" rather
+            # than inventing a name or failing the whole radar for one row.
+            name=followed_names.get(artist_id)
+            or (played_name[1] if played_name is not None else ""),
+            play_count=play_counts.get(artist_id, 0),
+            followed=artist_id in followed_names,
+        )
+
+    ids: list[str] = [
+        artist_id
+        for artist_id, plays in sorted(
+            play_counts.items(), key=lambda item: (-item[1], item[0])
+        )
+        if plays >= _RADAR_MIN_PLAYS
+    ]
+    seen: set[str] = set(ids)
+    for f in follows[:limit]:
         if f.artist_id and f.artist_id not in seen:
             seen.add(f.artist_id)
             ids.append(f.artist_id)
-    return ids[:limit]
+    return [watched(artist_id) for artist_id in ids[:limit]]
+
+
+def _radar_reason(artist: RadarArtist) -> dict:
+    """The `RadarReason` wire dict for a track produced by `artist`."""
+    if not artist.followed and artist.play_count < _RADAR_MIN_PLAYS:
+        raise RuntimeError(
+            f"Release Radar watches artist {artist.artist_id} without a reason: "
+            f"not followed and only {artist.play_count} plays in the last 90 days"
+        )
+    return {
+        # "followed" wins when the artist is both followed and played.
+        "kind": "followed" if artist.followed else "played",
+        "artist_id": artist.artist_id,
+        "artist_name": artist.name,
+        "play_count": artist.play_count,
+    }
 
 
 _RADAR_TRACKS_PER_ARTIST = 2
@@ -210,7 +281,7 @@ def _artist_new_tracks(
     return tracks
 
 
-@router.get("/release-radar", response_model=list[Track])
+@router.get("/release-radar", response_model=list[RadarTrack])
 def release_radar(
     refresh: bool = False,
     user: User | None = Depends(get_current_user_optional),
@@ -223,26 +294,34 @@ def release_radar(
     lookups finish so clients never accept a partial radar as a successful
     refresh. Signed-out or no artist history → empty list, frontend hides the
     section.
+
+    Every track carries `radar_reason`: the watched artist whose release list
+    produced it and why that artist is watched. That source artist can differ
+    from the track's primary artist (Deezer lists releases an artist merely
+    contributes to), which is what lets a client explain an unfamiliar name.
     """
     if user is None:
         return []
-    artist_ids = _radar_artist_ids(db, user)
-    if not artist_ids:
+    artists = _radar_artists(db, user)
+    if not artists:
         return []
 
     cutoff = (date.today() - timedelta(days=90)).isoformat()
-    tracks: list[dict] = []
+    produced: dict[int, list[dict]] = {}
     failures: list[tuple[str, dc.DeezerClientError]] = []
     with ThreadPoolExecutor(max_workers=_RADAR_MAX_WORKERS) as ex:
         futures = {
-            ex.submit(_artist_new_tracks, aid, cutoff, refresh=refresh): aid
-            for aid in artist_ids
+            ex.submit(
+                _artist_new_tracks, artist.artist_id, cutoff, refresh=refresh
+            ): index
+            for index, artist in enumerate(artists)
         }
         for fut in as_completed(futures):
+            index = futures[fut]
             try:
-                tracks.extend(fut.result())
+                produced[index] = fut.result()
             except dc.DeezerClientError as e:
-                failures.append((futures[fut], e))
+                failures.append((artists[index].artist_id, e))
 
     if failures:
         details = "; ".join(
@@ -250,10 +329,20 @@ def release_radar(
         )
         error = DiscoveryError(
             f"Release Radar failed for {len(failures)} of "
-            f"{len(artist_ids)} artists: {details}",
+            f"{len(artists)} artists: {details}",
             failures=tuple(error for _, error in failures),
         )
         raise to_http(error) from failures[0][1]
+
+    # Merge in watch order rather than lookup-completion order. The sort below
+    # is stable, so when several watched artists produce the same track the
+    # dedupe keeps the first watched artist's copy — and with it a reason that
+    # is the same on every request.
+    tracks: list[dict] = []
+    for index, artist in enumerate(artists):
+        reason = _radar_reason(artist)
+        for t in produced[index]:
+            tracks.append({**t, "radar_reason": dict(reason)})
 
     tracks.sort(key=lambda t: t.get("release_date", ""), reverse=True)
     seen: set[str] = set()
@@ -271,7 +360,12 @@ def release_radar(
         seen.add(tid)
         per_artist[key] = per_artist.get(key, 0) + 1
         out.append(t)
-    return out[:100]
+    radar = out[:100]
+    # Warm the server cache for the newest releases. This only queues work for
+    # a background worker and returns; download failures are reported by that
+    # worker (services/radar_preload.py), never through this response.
+    radar_preload.schedule(radar)
+    return radar
 
 
 @router.get("/charts-collections", response_model=list[Shelf])
@@ -399,14 +493,39 @@ def mixes(
         raise to_http(error) from error
 
 
+_CHILL_MIX_SIZE = 30
+
+
+def _chill_draw_seed(user: User | None, day: date) -> str:
+    """Seed of the chill shelf's draw: one selection per listener and day.
+
+    Within a day it stays the same, so a cache rebuild or a mix detail page
+    re-reading the shelf gets the tracks the home page showed. Signed-out
+    visitors have no identity and share one selection per day, like they share
+    the "anon" mixes cache entry.
+    """
+    if user is None:
+        listener = "anon"
+    else:
+        if user.id is None:
+            raise RuntimeError("Chill mix draw needs a persisted user, but user.id is None")
+        listener = f"user:{user.id}"
+    return f"home-mix:chill:{day.isoformat()}:{listener}"
+
+
 def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
     seeds = _user_seed_tracks(db, user)[:3] if user is not None else []
     artists = _user_top_artists(db, user)[:2] if user is not None else []
+    # Server-local date, like the release radar. Read here on the request
+    # thread, where the user object belongs, not inside a provider job.
+    chill_seed = _chill_draw_seed(user, date.today())
     jobs = {
         f"seed-{index}": lambda title=title, artist=artist: recommend.similar_tracks(artist, title, 12)
         for index, (title, artist) in enumerate(seeds)
     }
-    jobs["chill"] = lambda: recommend.tag_top_tracks(_MOODS["chill"], 30)
+    jobs["chill"] = lambda: recommend.tag_track_draw(
+        _MOODS["chill"], _CHILL_MIX_SIZE, seed=chill_seed,
+    )
     jobs.update({
         f"artist-{index}": lambda artist=artist: recommend.similar_artists(artist, 8)
         for index, artist in enumerate(artists)
@@ -431,7 +550,7 @@ def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
                 )
             )
 
-    # 2) Entspannt am Abend — chill mood.
+    # 2) Entspannt am Abend — chill mood, a new draw per listener and day.
     chill = results["chill"]
     if chill:
         shelves.append(

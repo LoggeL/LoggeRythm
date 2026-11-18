@@ -12,6 +12,7 @@ export default function CollectionTracks({
   title,
   showAlbum = true,
   reorderable = false,
+  noteLabel,
   children,
 }: {
   count: number;
@@ -20,17 +21,19 @@ export default function CollectionTracks({
   showAlbum?: boolean;
   /** The rows carry a drag handle (see SortableTracks). */
   reorderable?: boolean;
+  /** Heading of the note column, when the rows carry a `note` (see TrackRow). */
+  noteLabel?: string;
   children: ReactNode;
 }) {
   return (
-    <section className={styles.tracks} aria-label={title ?? "Titel"}>
+    <section className={styles.tracks} data-notes={noteLabel !== undefined} aria-label={title ?? "Titel"}>
       {title && (
         <div className={styles.trackHeading}>
           <h2>{title}</h2>
           <span className={styles.trackCount}>{count}</span>
         </div>
       )}
-      {count > 0 && <TrackListHeader showAlbum={showAlbum} reorderable={reorderable} />}
+      {count > 0 && <TrackListHeader showAlbum={showAlbum} reorderable={reorderable} noteLabel={noteLabel} />}
       {children}
     </section>
   );

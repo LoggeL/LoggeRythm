@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { SearchIssueOwner } from '../components/search/SearchFeedback';
 import { musicQueries } from '../data';
 import type { AppLocale } from '../localization';
+import { withoutLibraryTracks } from './searchLibraryModel';
 import {
   resultLimit,
   sortSearchTracks,
@@ -25,6 +26,8 @@ interface SearchResultsInput {
   tab: SearchTab;
   sort: SearchSort;
   locale: AppLocale;
+  /** Tracks the library section already shows; never repeated in the track list. */
+  libraryTrackIds: ReadonlySet<string>;
 }
 
 interface OwnedQuery<Key extends string> {
@@ -43,7 +46,14 @@ function limited<T>(items: readonly T[], tab: SearchTab, entity: SearchEntity): 
  * active tab plus the optional track details. TanStack Query stays the only
  * owner of server state; this hook only derives what the screen shows.
  */
-export function useSearchResults({ query, ready, tab, sort, locale }: SearchResultsInput) {
+export function useSearchResults({
+  query,
+  ready,
+  tab,
+  sort,
+  locale,
+  libraryTrackIds,
+}: SearchResultsInput) {
   const wanted = wantedSearchEntities(tab);
 
   const tracksQuery = useQuery({
@@ -63,10 +73,18 @@ export function useSearchResults({ query, ready, tab, sort, locale }: SearchResu
     enabled: ready && wanted.playlist,
   });
 
-  /** All tracks in display order: the playback queue of this result page. */
-  const tracks = useMemo(
+  /** Every found track in display order, library tracks included. */
+  const foundTracks = useMemo(
     () => sortSearchTracks(tracksQuery.data ?? [], sort, locale),
     [locale, sort, tracksQuery.data],
+  );
+  /**
+   * The track list below the library section and its playback queue: row
+   * positions, `play(index)` and occurrence indices all refer to this list.
+   */
+  const tracks = useMemo(
+    () => withoutLibraryTracks(foundTracks, libraryTrackIds),
+    [foundTracks, libraryTrackIds],
   );
   const shownTracks = useMemo(() => limited(tracks, tab, 'track'), [tab, tracks]);
   const albums = albumsQuery.data ?? [];
@@ -91,7 +109,8 @@ export function useSearchResults({ query, ready, tab, sort, locale }: SearchResu
     ...(wanted.track ? [{
       key: 'track' as const,
       query: tracksQuery,
-      itemCount: tracks.length,
+      // A search that found only library tracks is not an empty search.
+      itemCount: foundTracks.length,
       retry: () => { void tracksQuery.refetch(); },
     }] : []),
     ...(wanted.album ? [{
@@ -148,6 +167,7 @@ export function useSearchResults({ query, ready, tab, sort, locale }: SearchResu
 
   return {
     wanted,
+    foundTracks,
     tracks,
     shownTracks,
     shownAlbums: limited(albums, tab, 'album'),

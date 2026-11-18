@@ -37,7 +37,7 @@ from .routers import (
     stats,
     stream,
 )
-from .services import deezer_client, storage
+from .services import deezer_client, radar_preload, storage
 
 app = FastAPI(title="LoggeRythm API", version=API_VERSION)
 
@@ -234,7 +234,15 @@ def _startup() -> None:
     storage.reconcile()  # backfill DB rows for pre-existing files
     storage.cleanup_old()  # evict stale tracks on boot
     threading.Thread(target=_cleanup_loop, daemon=True).start()
+    radar_preload.start()  # background worker that pre-caches new radar tracks
     print("LoggeRythm API started: DB ready, Deezer session initialized.")
+
+
+@app.on_event("shutdown")
+def _shutdown() -> None:
+    # Drop queued radar preloads so a restart does not wait for them; the one
+    # download in flight finishes its track (materialize publishes atomically).
+    radar_preload.stop()
 
 
 @app.get("/")

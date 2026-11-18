@@ -170,6 +170,12 @@
   line-clamp: 2;
 }
 
+.description[data-clamp="false"] {
+  display: block;
+  -webkit-line-clamp: none;
+  line-clamp: none;
+}
+
 .metadata {
   margin-top: 0.75rem;
   color: var(--muted);
@@ -206,6 +212,11 @@
 /* ---- Track section ------------------------------------------------------- */
 .tracks {
   min-width: 0;
+}
+
+/* Rows with a note give it a column once the list itself is wide enough. */
+.tracks[data-notes="true"] {
+  container-type: inline-size;
 }
 
 .trackHeading {

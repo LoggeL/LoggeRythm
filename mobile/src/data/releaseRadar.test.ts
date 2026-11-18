@@ -7,8 +7,51 @@ import {
   readReleaseRadarSeenTrackIds,
   releaseRadarSeenStorageKey,
   releaseRadarTrackIds,
+  releaseRadarTracks,
   unseenReleaseRadarTrackIds,
 } from './releaseRadar';
+import type { ReleaseRadarEntry, Track } from '../api/types';
+
+describe('Release Radar entries', () => {
+  it('yields the plain tracks in radar order without their reasons', () => {
+    const track = (id: string): Track => ({
+      id,
+      title: `Song ${id}`,
+      artist: 'Artist',
+      artist_id: '42',
+      artists: [{ id: '42', name: 'Artist' }],
+      album: 'Album',
+      album_id: '9',
+      cover: '',
+      duration_sec: 180,
+      preview_url: null,
+      rank: 0,
+      release_date: '2026-03-01',
+    });
+    const first = track('2');
+    const second = track('1');
+    const entries: ReleaseRadarEntry[] = [
+      {
+        track: first,
+        radar_reason: { kind: 'followed', artist_id: '42', artist_name: 'Artist', play_count: 0 },
+      },
+      {
+        track: second,
+        radar_reason: { kind: 'played', artist_id: '7', artist_name: 'Other', play_count: 3 },
+      },
+    ];
+
+    const tracks = releaseRadarTracks(entries);
+
+    expect(tracks).toEqual([first, second]);
+    // The very same Track objects: nothing is copied and nothing is added.
+    expect(tracks[0]).toBe(first);
+    expect(tracks[1]).toBe(second);
+    expect(tracks.some((item) => 'radar_reason' in item)).toBe(false);
+    expect(releaseRadarTrackIds(tracks)).toEqual(['2', '1']);
+    expect(releaseRadarTracks([])).toEqual([]);
+  });
+});
 
 describe('Release Radar seen state', () => {
   it('uses an origin-and-account-scoped key', () => {

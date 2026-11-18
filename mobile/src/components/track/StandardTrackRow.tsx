@@ -44,6 +44,8 @@ export interface StandardTrackRowProps {
    * recency). Rendered as `${testID}-metadata`; omitted when undefined.
    */
   caption?: string;
+  /** Spoken form of `caption` where the compact line abbreviates. Defaults to `caption`. */
+  captionAccessibilityLabel?: string;
 }
 
 /**
@@ -70,6 +72,7 @@ export default function StandardTrackRow({
   trailingControls,
   highlighted = false,
   caption,
+  captionAccessibilityLabel = caption,
 }: StandardTrackRowProps) {
   const presentation = useTrackPresentation(
     { trackId: track.id, ...occurrence },
@@ -141,7 +144,7 @@ export default function StandardTrackRow({
           {caption === undefined ? null : (
             <AppText
               testID={`${testID}-metadata`}
-              accessibilityLabel={caption}
+              accessibilityLabel={captionAccessibilityLabel}
               variant="caption"
               color={highlighted ? 'accent' : 'muted'}
               numberOfLines={2}

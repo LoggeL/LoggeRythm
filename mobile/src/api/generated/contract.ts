@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "3681bfbf67d31577cc592c51e2df5d39caa2d76e7f8a5cac43207fb107c472a6" as const;
+export const GENERATED_OPENAPI_SHA256 = "92c9d390ffde932776ad3deaa6f4066a4714dd33fc402398851aaec5de93c670" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -287,6 +287,30 @@ export interface PublicProfileWire {
   playlists: PlaylistSummaryWire[];
   top_artists: ArtistSummaryWire[];
 }
+export interface RadarReasonWire {
+  artist_id: string;
+  artist_name: string;
+  kind: "followed" | "played";
+  play_count: number;
+}
+export interface RadarTrackWire {
+  album?: string;
+  album_id?: string | number;
+  artist?: string;
+  artist_id?: string | number;
+  artists?: ArtistRefWire[];
+  cover?: string;
+  duration_sec?: number;
+  id: string;
+  loudness_gain_db?: number | null;
+  loudness_lufs?: number | null;
+  loudness_peak?: number | null;
+  preview_url?: string | null;
+  radar_reason: RadarReasonWire;
+  rank?: number;
+  release_date?: string;
+  title?: string;
+}
 export interface RecentPlayWire {
   album?: string;
   album_id?: string | number;
@@ -472,6 +496,8 @@ export interface GeneratedApiSchemas {
   "PlaylistUpdate": PlaylistUpdateWire;
   "PlaysRequest": PlaysRequestWire;
   "PublicProfile": PublicProfileWire;
+  "RadarReason": RadarReasonWire;
+  "RadarTrack": RadarTrackWire;
   "RecentPlay": RecentPlayWire;
   "RegisterRequest": RegisterRequestWire;
   "ResolveResult": ResolveResultWire;
@@ -1155,10 +1181,10 @@ export interface GeneratedApiOperations {
       };
     };
     responses: {
-      "200": TrackWire[];
+      "200": RadarTrackWire[];
       "422": HTTPValidationErrorWire;
     };
-    response: TrackWire[];
+    response: RadarTrackWire[];
   };
   "remove_like_api_me_likes__deezer_id__delete": {
     request: {

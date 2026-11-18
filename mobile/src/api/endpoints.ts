@@ -28,6 +28,7 @@ import {
   decodePlaylistSearchResults,
   decodePlaylistSummaries,
   decodePublicProfile,
+  decodeReleaseRadar,
   decodeResolveResult,
   decodeStorageCleanupResult,
   decodeTrack,
@@ -62,6 +63,7 @@ import type {
   PlaylistSummary,
   PlaylistUpdateRequest,
   PublicProfile,
+  ReleaseRadarEntry,
   ResolveResult,
   StorageCleanupResult,
   Track,
@@ -205,11 +207,12 @@ export function getHomeChartCollections(signal?: AbortSignal): Promise<HomeShelf
   });
 }
 
-export function getReleaseRadar(signal?: AbortSignal): Promise<Track[]> {
-  return apiRequest<Track[]>('/api/home/release-radar', {
+/** Each entry is a plain `Track` plus the reason it is in the radar. */
+export function getReleaseRadar(signal?: AbortSignal): Promise<ReleaseRadarEntry[]> {
+  return apiRequest<ReleaseRadarEntry[]>('/api/home/release-radar', {
     signal,
     timeoutMs: DISCOVERY_TIMEOUT_MS,
-    decode: decodeTrackList,
+    decode: decodeReleaseRadar,
   });
 }
 

@@ -175,7 +175,7 @@ export default function HomePage() {
           <BrowseTile
             href="/genre"
             title="Entdecken"
-            hint="Charts, neue Veröffentlichungen, Genres und Community-Playlists."
+            hint="Charts, neue Veröffentlichungen, Genres und Playlists."
             icon={<CompassIcon width={88} height={88} />}
             tone={3}
           />

@@ -102,6 +102,12 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     expectedArguments: (signal) => [signal],
   },
   {
+    factory: 'releaseRadarEntries', repositoryMethod: 'getReleaseRadar',
+    option: (queries) => queries.releaseRadarEntries('  account-a  '),
+    expectedKey: ['music', 'home', 'scope', 'account-a', 'release-radar'],
+    expectedArguments: (signal) => [signal],
+  },
+  {
     factory: 'mood', repositoryMethod: 'getMood', option: (queries) => queries.mood('  chill  '),
     expectedKey: ['music', 'home', 'mood', 'chill'],
     expectedArguments: (signal) => ['chill', signal],
@@ -286,6 +292,36 @@ describe('music query options', () => {
       expect(repositoryCall).toHaveBeenCalledWith(...expectedArguments(controller.signal));
     },
   );
+
+  it('serves the radar as plain tracks and as reasoned entries from one cache entry', async () => {
+    const track = { id: '12', title: 'New Song' };
+    const entries = [{
+      track,
+      radar_reason: { kind: 'played', artist_id: '7', artist_name: 'Known Artist', play_count: 4 },
+    }];
+    const getReleaseRadar = vi.fn(async () => entries);
+    const queries = createMusicQueryOptions({ getReleaseRadar } as unknown as MusicRepository);
+    const tracksOption = queries.releaseRadar('account-a');
+    const entriesOption = queries.releaseRadarEntries('account-a');
+
+    // Same key: Home (tracks) and the Radar screen (entries) share one request.
+    expect(entriesOption.queryKey).toEqual(tracksOption.queryKey);
+    const cached = await (tracksOption.queryFn as (context: never) => Promise<unknown>)(
+      queryContext(new AbortController().signal),
+    );
+    expect(cached).toBe(entries);
+
+    // The entries option exposes the cache as-is, reason included.
+    expect('select' in entriesOption).toBe(false);
+    // The tracks option hands out the very same Track objects, without the reason.
+    const select = tracksOption.select;
+    if (select === undefined) throw new Error('releaseRadar must select plain tracks');
+    const tracks = select(entries as never);
+    expect(tracks).toEqual([track]);
+    expect(tracks[0]).toBe(track);
+    // A stable selector keeps React Query's memoized array identity across renders.
+    expect(queries.releaseRadar('account-a').select).toBe(select);
+  });
 
   it('uses normalized search text for both the key and repository request', async () => {
     const searchTracks = vi.fn(async () => []);

@@ -131,6 +131,8 @@ export interface SearchTopResultInput {
   artists: readonly ArtistSummary[];
   tracks: readonly Track[];
   albums: readonly AlbumCard[];
+  /** Tracks the library section above already shows. */
+  libraryTrackIds?: ReadonlySet<string>;
 }
 
 /**
@@ -138,12 +140,19 @@ export interface SearchTopResultInput {
  * leading artist wins when the query names it (exact or prefix match),
  * otherwise the leading track, then the leading artist, then the leading
  * album. Returns null when nothing was found.
+ *
+ * `tracks` is the backend order including library tracks. When its leading
+ * track is already shown in the library section, nothing is promoted: the
+ * best hit is on screen, and a lesser one must not pose as the top result.
+ * A promoted track is therefore never a library track and is also index 0 of
+ * the list that remains after removing library tracks.
  */
 export function pickSearchTopResult({
   query,
   artists,
   tracks,
   albums,
+  libraryTrackIds,
 }: SearchTopResultInput): SearchTopResult | null {
   const needle = normalizeSearchInput(query).toLocaleLowerCase();
   const leadingArtist = artists[0];
@@ -155,7 +164,11 @@ export function pickSearchTopResult({
     return { kind: 'artist', artist: leadingArtist };
   }
   const leadingTrack = tracks[0];
-  if (leadingTrack !== undefined) return { kind: 'track', track: leadingTrack, index: 0 };
+  if (leadingTrack !== undefined) {
+    return libraryTrackIds?.has(leadingTrack.id) === true
+      ? null
+      : { kind: 'track', track: leadingTrack, index: 0 };
+  }
   if (leadingArtist !== undefined) return { kind: 'artist', artist: leadingArtist };
   const leadingAlbum = albums[0];
   if (leadingAlbum !== undefined) return { kind: 'album', album: leadingAlbum };

@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ArtistDetail, GenreDetail, Track } from '../api/types';
 import {
+  ARTIST_LIKED_TRACK_PREVIEW,
   ARTIST_POPULAR_TRACK_LIMIT,
   albumRuntimeMinutes,
   artistHasContent,
+  artistLikedTracks,
   artistPopularTracks,
   artistSongSearchQuery,
   artistSummary,
@@ -60,8 +62,11 @@ describe('catalog screen model', () => {
     expect(complete).toHaveLength(12);
   });
 
-  it('keeps Artist Popular and Song Search occurrence contexts distinct', () => {
+  it('keeps Artist Popular, Liked and Song Search occurrence contexts distinct', () => {
     expect(artistTrackPlaybackContextId(' 42 ', 'popular')).toBe('42');
+    expect(artistTrackPlaybackContextId(' 42 ', 'liked')).toBe('42:liked');
+    // A song search for "liked" is still its own context.
+    expect(artistTrackPlaybackContextId('42', 'search', 'liked')).toBe('42:search:liked');
     expect(artistTrackPlaybackContextId(' 42 ', 'search', '  midnight signal  ')).toBe(
       '42:search:midnight signal',
     );
@@ -99,6 +104,42 @@ describe('catalog screen model', () => {
         'The Artist',
       ).map((item) => item.id),
     ).toEqual(['1', '2', '3', '1']);
+  });
+
+  it('selects the liked tracks crediting an artist by id, in the likes order', () => {
+    const newestByPrimaryNumber = { ...track('1'), artist_id: 42, artist: 'Alias', artists: [] };
+    const byStringCredit = {
+      ...track('2'),
+      artist_id: '8',
+      artist: 'Guest',
+      artists: [{ id: '8', name: 'Guest' }, { id: '42', name: 'The Artist' }],
+    };
+    const byNumberCredit = {
+      ...track('3'),
+      artist_id: 8,
+      artist: 'Guest',
+      artists: [{ id: 42, name: 'The Artist' }],
+    };
+    // Same name, different id: a namesake is not this artist.
+    const namesake = { ...track('4'), artist_id: '8', artist: 'The Artist', artists: [] };
+    // "42" is only a prefix/suffix of these ids.
+    const lookalikes = {
+      ...track('5'),
+      artist_id: '420',
+      artists: [{ id: '142', name: 'Other' }, { id: 4, name: 'Other' }],
+    };
+    const likes = [newestByPrimaryNumber, namesake, byStringCredit, lookalikes, byNumberCredit];
+
+    const selected = artistLikedTracks(likes, '42');
+    expect(selected.map((item) => item.id)).toEqual(['1', '2', '3']);
+    expect(selected[0]).toBe(newestByPrimaryNumber);
+    expect(artistLikedTracks(likes, ' 42 ').map((item) => item.id)).toEqual(['1', '2', '3']);
+    expect(likes).toHaveLength(5);
+
+    expect(artistLikedTracks(likes, '999')).toEqual([]);
+    expect(artistLikedTracks([], '42')).toEqual([]);
+    expect(() => artistLikedTracks(likes, '  ')).toThrow('artist id must not be empty');
+    expect(ARTIST_LIKED_TRACK_PREVIEW).toBe(5);
   });
 
   it('shows only evidence-backed positive Last.fm play totals', () => {

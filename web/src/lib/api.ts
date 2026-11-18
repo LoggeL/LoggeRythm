@@ -21,7 +21,9 @@ import type {
   PublicProfile,
   PlaybackSettings,
   LyricsResponse,
+  RadarTrack,
 } from "@/types";
+import { decodeReleaseRadar } from "@/lib/releaseRadar";
 import { decodeSearchArtists, decodeSearchPlaylists, decodeSearchTracks } from "@/lib/searchDecoders";
 
 const BASE = "/api";
@@ -132,11 +134,21 @@ export const api = {
   homeMixes: () => req<HomeShelf[]>(`/home/mixes`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   becauseYouListened: () => req<HomeShelf[]>(`/home/because-you-listened`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   homeChartsCollections: () => req<HomeShelf[]>(`/home/charts-collections`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
-  releaseRadar: (refresh = false) =>
-    req<Track[]>(
-      `/home/release-radar${refresh ? "?refresh=true" : ""}`,
-      { timeoutMs: DISCOVERY_TIMEOUT_MS, cache: refresh ? "no-store" : undefined },
-    ),
+  /** Every track carries `radar_reason`: the watched artist that put it in the radar. */
+  releaseRadar: async (refresh = false): Promise<RadarTrack[]> => {
+    const path = `/home/release-radar${refresh ? "?refresh=true" : ""}`;
+    const payload = await req<unknown>(path, {
+      timeoutMs: DISCOVERY_TIMEOUT_MS,
+      cache: refresh ? "no-store" : undefined,
+    });
+    try {
+      return decodeReleaseRadar(payload);
+    } catch (cause) {
+      const error = new ApiError(200, `API ${path}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      error.cause = cause;
+      throw error;
+    }
+  },
   homeMood: (tag: string) =>
     req<Track[]>(`/home/mood/${encodeURIComponent(tag)}`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   genres: () => req<Genre[]>(`/genres`),

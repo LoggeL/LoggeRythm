@@ -9,6 +9,7 @@ import {
 } from "@/lib/catalogQueries";
 import { deezerPlaylistPath } from "@/lib/slugs";
 import { trackArtistLabel } from "@/lib/trackArtists";
+import { matchLibraryTracks } from "@/lib/libraryMatch";
 import { usePlayerStore } from "@/store/player";
 import { SearchIcon, PlayIcon, CloseIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
@@ -17,6 +18,7 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useSearchInput } from "@/hooks/useSearchInput";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
+import { useLibraryTracks } from "@/hooks/useLibraryTracks";
 import { movePaletteSelection, paletteRows, paletteRowKey, paletteSelectedIndex, type PaletteRow } from "./commandPaletteModel";
 
 /** Keyboard search shares catalog requests and history with the search route. */
@@ -69,16 +71,27 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     { label: "Titel", result: tracks }, { label: "Künstler", result: artists },
     { label: "Alben", result: albums }, { label: "Playlists", result: playlists },
   ];
-  const rows = enabled ? paletteRows({
-    tracks: tracks.isError ? undefined : tracks.data,
-    artists: artists.isError ? undefined : artists.data,
-    albums: albums.isError ? undefined : albums.data,
-    playlists: playlists.isError ? undefined : playlists.data,
-  }) : [];
+  // Saved songs follow the draft itself: no request, so no wait for `enabled`.
+  const library = useLibraryTracks();
+  const libraryMatches = normalizeCatalogQuery(search.input).length >= SEARCH_MIN_LENGTH ? matchLibraryTracks(library.index, search.input) : [];
+  const rows = paletteRows({
+    library: libraryMatches,
+    ...(enabled ? {
+      tracks: tracks.isError ? undefined : tracks.data,
+      artists: artists.isError ? undefined : artists.data,
+      albums: albums.isError ? undefined : albums.data,
+      playlists: playlists.isError ? undefined : playlists.data,
+    } : {}),
+  });
+  const catalogRows = rows.filter((row) => row.kind !== "library").length;
   const selected = paletteSelectedIndex(rows, selectedKey);
   const term = normalizeCatalogQuery(search.input);
   const fetching = enabled && sources.some(({ result }) => result.isFetching);
-  const empty = enabled && sources.every(({ result }) => result.isSuccess && result.data.length === 0);
+  const empty = enabled && libraryMatches.length === 0 && sources.every(({ result }) => result.isSuccess && result.data.length === 0);
+  const failures = [
+    ...(term.length >= SEARCH_MIN_LENGTH && library.likes.isError ? [{ label: "Lieblingssongs", result: library.likes }] : []),
+    ...(enabled ? sources.filter(({ result }) => result.isError) : []),
+  ];
 
   useEffect(() => {
     panelRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
@@ -103,7 +116,19 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     closeDialog();
   }
 
+  function activateLibrary(track: PaletteRow & { kind: "library" }) {
+    // Checked against the live draft: a handler from a previous render only
+    // plays a song that still matches what is typed now.
+    if (!mounted.current || normalizeCatalogQuery(inputSnapshot.current).length < SEARCH_MIN_LENGTH) return;
+    const matches = matchLibraryTracks(library.index, inputSnapshot.current);
+    const index = matches.findIndex((match) => String(match.id) === String(track.track.id));
+    if (index < 0) return;
+    playQueue(matches, index, `Bibliothek: ${normalizeCatalogQuery(inputSnapshot.current)}`);
+    history.remember(inputSnapshot.current);
+    closeDialog();
+  }
   function activate(row: PaletteRow) {
+    if (row.kind === "library") return activateLibrary(row);
     // Event handlers from a previous render must never activate an old term.
     if (!mounted.current || !enabled || normalizeCatalogQuery(inputSnapshot.current) !== search.query) return;
     if (!rows.some((current) => paletteRowKey(current) === paletteRowKey(row))) return;
@@ -123,7 +148,8 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     closeDialog();
   }
   function submitSelection() {
-    if (!search.preparing && rows[selected]) activate(rows[selected]);
+    // A saved song needs no settled query; catalog rows do.
+    if (rows[selected] && (rows[selected].kind === "library" || !search.preparing)) activate(rows[selected]);
     else fullResults();
   }
   function onInputKey(event: KeyboardEvent<HTMLInputElement>) {
@@ -138,7 +164,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const searching = term.length >= SEARCH_MIN_LENGTH && (search.preparing || (fetching && rows.length === 0));
+  const searching = term.length >= SEARCH_MIN_LENGTH && (search.preparing || (fetching && catalogRows === 0));
 
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center bg-backdrop/80 px-2 pt-[calc(.5rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[11dvh]" onClick={closeDialog}>
@@ -173,18 +199,12 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
             </div>)}
           </section>}
           {term.length > 0 && term.length < SEARCH_MIN_LENGTH && <p role="status" className="label-mono px-5 py-9 text-center">Gib mindestens zwei Zeichen ein.</p>}
-          {searching && <div role="status" aria-label="Suche läuft" className="flex flex-col gap-1 px-2 pt-3">
-            {[0, 1, 2, 3, 4].map((row) => <div key={row} className="flex items-center gap-3 px-3 py-2">
-              <span className="skeleton h-10 w-10 shrink-0 rounded-art" />
-              <span className="flex min-w-0 flex-1 flex-col gap-2"><span className="skeleton h-3.5 w-1/2 rounded" /><span className="skeleton h-3 w-1/3 rounded" /></span>
-            </div>)}
-          </div>}
           {empty && <div role="status" className="px-5 pb-8 pt-7 sm:px-6">
             <p className="label-mono mb-3">Keine Treffer</p>
             <p className="font-display text-xl font-extrabold tracking-[-0.03em] [overflow-wrap:anywhere]">Keine Treffer für „{term}“</p>
             <p className="mt-2 text-sm leading-relaxed text-muted">Prüfe die Schreibweise oder versuche es mit weniger Wörtern.</p>
           </div>}
-          {enabled && sources.filter(({ result }) => result.isError).map(({ label, result }) => <div key={label} role="alert" className="error-panel mx-3 mt-3 flex flex-wrap items-center justify-between gap-3">
+          {failures.map(({ label, result }) => <div key={label} role="alert" className="error-panel mx-3 mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="min-w-0 [overflow-wrap:anywhere]">{label} konnten nicht geladen werden: {result.error?.message}</p>
             <button type="button" className="action-secondary min-h-9 px-4 text-xs max-sm:min-h-11" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
           </div>)}
@@ -197,7 +217,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
               const detail = row.kind === "artist" ? "Künstler" : row.kind === "playlist" ? `${row.playlist.track_count} Titel` : row.kind === "album" ? row.album.artist : trackArtistLabel(row.track);
               const shape = row.kind === "artist" ? "rounded-full" : "rounded-art";
               const startsGroup = index === 0 || rows[index - 1].kind !== row.kind;
-              const plays = row.kind === "track";
+              const plays = row.kind === "track" || row.kind === "library";
               return <div key={key} role="presentation">
                 {startsGroup && <div role="presentation" className="label-mono flex items-center gap-3 px-3 pb-1.5 pt-4"><span>{GROUP_LABELS[row.kind]}</span><span aria-hidden="true" className="h-px flex-1 bg-hairline" /></div>}
                 <button id={`${listId}-${key}`} role="option" aria-selected={active} tabIndex={-1} type="button" onMouseEnter={() => setSelectedKey(key)} onClick={() => activate(row)} className={`relative flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors ${active ? "bg-foreground/[0.06]" : ""}`}>
@@ -216,6 +236,13 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
               </div>;
             })}
           </div>
+          {/* Below the list: saved songs stay in place while the catalog loads. */}
+          {searching && <div role="status" aria-label="Suche läuft" className="flex flex-col gap-1 px-2 pt-3">
+            {[0, 1, 2, 3, 4].map((row) => <div key={row} className="flex items-center gap-3 px-3 py-2">
+              <span className="skeleton h-10 w-10 shrink-0 rounded-art" />
+              <span className="flex min-w-0 flex-1 flex-col gap-2"><span className="skeleton h-3.5 w-1/2 rounded" /><span className="skeleton h-3 w-1/3 rounded" /></span>
+            </div>)}
+          </div>}
         </div>
         <div className="flex shrink-0 items-center justify-between gap-3 border-t border-hairline px-3 py-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-2">
           <div className="label-mono flex items-center gap-4 max-sm:hidden">
@@ -232,7 +259,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
 }
 
 const KBD = "inline-grid min-h-[22px] min-w-[22px] shrink-0 place-items-center rounded-[5px] border border-border bg-foreground/[0.04] px-1.5 font-mono text-[11px] font-medium normal-case leading-none tracking-normal text-muted";
-const GROUP_LABELS: Record<PaletteRow["kind"], string> = { track: "Titel", artist: "Künstler", album: "Alben", playlist: "Playlists" };
+const GROUP_LABELS: Record<PaletteRow["kind"], string> = { library: "In deiner Bibliothek", track: "Titel", artist: "Künstler", album: "Alben", playlist: "Playlists" };
 
 function ClockGlyph() {
   return (

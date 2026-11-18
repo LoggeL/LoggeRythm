@@ -259,9 +259,10 @@ class PersonalizedDiscoveryConcurrencyTests(unittest.TestCase):
             provider_started(f"seed-{artist}")
             return [{"id": f"weekly-{title}"}, {"id": "weekly-shared"}]
 
-        def tags(tags: list[str], limit: int) -> list[dict]:
+        def chill_draw(tags: list[str], limit: int, *, seed: str) -> list[dict]:
             self.assertEqual(tags, home._MOODS["chill"])
             self.assertEqual(limit, 30)
+            self.assertRegex(seed, r"^home-mix:chill:\d{4}-\d{2}-\d{2}:user:7$")
             provider_started("chill")
             return [{"id": "chill"}]
 
@@ -274,7 +275,8 @@ class PersonalizedDiscoveryConcurrencyTests(unittest.TestCase):
             patch.object(home, "_user_seed_tracks", side_effect=seed_tracks),
             patch.object(home, "_user_top_artists", side_effect=top_artists),
             patch.object(home.recommend, "similar_tracks", side_effect=similar_tracks),
-            patch.object(home.recommend, "tag_top_tracks", side_effect=tags),
+            patch.object(home.recommend, "tag_track_draw", side_effect=chill_draw),
+            patch.object(home.recommend, "tag_top_tracks") as top_tracks,
             patch.object(home.recommend, "similar_artists", side_effect=similar_artists),
             patch.object(home.recommend, "resolve_queries", return_value=[{"id": "discovery-shared"}, {"id": "discovery-shared"}, {"id": "discovery-new"}]) as resolve,
             patch.object(home.random, "shuffle"),
@@ -289,6 +291,7 @@ class PersonalizedDiscoveryConcurrencyTests(unittest.TestCase):
         self.assertEqual([track.id for track in shelves[0].tracks], ["weekly-One", "weekly-shared", "weekly-Two", "weekly-Three"])
         self.assertEqual([track.id for track in shelves[2].tracks], ["discovery-shared", "discovery-new"])
         resolve.assert_called_once_with(["Shared", "Similar A", "Shared", "Similar B"], 24)
+        top_tracks.assert_not_called()
 
     def test_artist_rails_load_concurrently_and_keep_source_order_after_empty_result(self) -> None:
         artists = ["A", "B", "C"]
@@ -377,12 +380,14 @@ class PersonalizedDiscoveryConcurrencyTests(unittest.TestCase):
             patch.object(home, "_user_seed_tracks") as seeds,
             patch.object(home, "_user_top_artists") as artists,
             patch.object(home.recommend, "tag_top_tracks", return_value=[]),
+            patch.object(home.recommend, "tag_track_draw", return_value=[]) as chill_draw,
             patch.object(home, "_chart_tracks", return_value=[]),
         ):
             self.assertEqual(home.because_you_listened(None, object()), [])
             self.assertEqual(home._build_mixes(None, object()), [])
         seeds.assert_not_called()
         artists.assert_not_called()
+        chill_draw.assert_called_once()
 
     def test_no_artist_history_is_empty_without_provider_calls(self) -> None:
         with (

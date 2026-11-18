@@ -1,4 +1,13 @@
-import type { Track } from '../api/types';
+import type { ReleaseRadarEntry, Track } from '../api/types';
+
+/**
+ * The radar's plain tracks in radar order, for everything that plays, queues,
+ * likes, downloads or counts them. A module-level function so it is a stable
+ * React Query `select`: the result keeps its identity until the radar changes.
+ */
+export function releaseRadarTracks(entries: readonly ReleaseRadarEntry[]): Track[] {
+  return entries.map((entry) => entry.track);
+}
 
 export interface ReleaseRadarStorage {
   getItem(key: string): Promise<string | null>;

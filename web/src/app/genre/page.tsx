@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { playlistPath } from "@/lib/slugs";
+import { usePlaylists } from "@/hooks/useLibrary";
 import AlbumCard from "@/components/AlbumCard";
 import ShelfCard from "@/components/ShelfCard";
 import Shelf, { ShelfSkeleton } from "@/components/browse/Shelf";
@@ -14,6 +15,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import SectionHeader from "@/components/ui/SectionHeader";
 import { CompassIcon } from "@/components/icons";
 import type { AlbumSummary, Genre, HomeShelf, PlaylistSummary } from "@/types";
+import { discoverPlaylistsQuery } from "./discoverPlaylists";
 
 const GENRE_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-4 2xl:grid-cols-6";
 
@@ -32,6 +34,8 @@ export default function DiscoverPage() {
   const genres = useQuery<Genre[]>({ queryKey: ["genres"], queryFn: () => api.genres() });
   const releases = useQuery<AlbumSummary[]>({ queryKey: ["new-releases"], queryFn: () => api.newReleases() });
   const community = useQuery<PlaylistSummary[]>({ queryKey: ["public-playlists"], queryFn: () => api.publicPlaylists() });
+  // Own and community playlists share one row, so the row needs both lists.
+  const playlists = discoverPlaylistsQuery(usePlaylists(), community);
 
   return (
     <div className="flex flex-col gap-9 md:gap-11">
@@ -43,7 +47,7 @@ export default function DiscoverPage() {
           <a href="#genres" className="filter-chip shrink-0 max-sm:min-h-11">Genres</a>
           <a href="#charts" className="filter-chip shrink-0 max-sm:min-h-11">Charts</a>
           <a href="#new-releases" className="filter-chip shrink-0 max-sm:min-h-11">Neue Alben</a>
-          <a href="#community" className="filter-chip shrink-0 max-sm:min-h-11">Community</a>
+          <a href="#playlists" className="filter-chip shrink-0 max-sm:min-h-11">Playlists</a>
         </nav>
       </header>
 
@@ -115,28 +119,28 @@ export default function DiscoverPage() {
         </QueryState>
       </section>
 
-      <section id="community" aria-labelledby="community-title" aria-busy={community.isLoading} className="scroll-mt-20">
-        <SectionHeader id="community-title" title="Playlists der Community" description="Musik, die andere für dich zusammengestellt haben." />
+      <section id="playlists" aria-labelledby="playlists-title" aria-busy={playlists.isLoading} className="scroll-mt-20">
+        <SectionHeader id="playlists-title" title="Playlists" description="Deine eigenen und die der Community." />
         <QueryState
-          query={community}
-          label="Community-Playlists"
+          query={playlists}
+          label="Playlists"
           skeleton={<ShelfSkeleton />}
           empty={
-            <EmptyState title="Es wurden noch keine öffentlichen Playlists geteilt." action={<Link href="/library" className="action-secondary">Eigene Playlist teilen</Link>}>
-              Stelle eine deiner Playlists auf öffentlich, dann erscheint sie hier.
+            <EmptyState title="Hier gibt es noch keine Playlists." action={<Link href="/library" className="action-secondary">Playlist erstellen</Link>}>
+              Lege in deiner Bibliothek eine Playlist an, dann erscheint sie hier.
             </EmptyState>
           }
         >
-          {(playlists) => (
-            <Shelf label="Playlists der Community">
-              {playlists.map((playlist) => (
+          {(entries) => (
+            <Shelf label="Playlists">
+              {entries.map(({ playlist, own }) => (
                 <Link key={String(playlist.id)} href={playlistPath(playlist)} className="music-card group block min-w-0 p-1.5 sm:p-2">
                   <div className="mb-3 aspect-square overflow-hidden rounded-art bg-panel shadow-[0_10px_26px_rgb(0_0_0/0.4),0_0_0_1px_rgb(244_240_230/0.05)] transition-transform duration-[250ms] ease-out group-hover:-translate-y-1 group-focus-visible:-translate-y-1 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-focus-visible:translate-y-0">
                     <Cover src={playlist.cover_url} className="h-full w-full" />
                   </div>
                   <div className="truncate text-[0.9375rem] font-[650] leading-[1.35] tracking-[-0.01em]">{playlist.name}</div>
                   <div className="mt-[0.2rem] truncate text-[0.8125rem] leading-[1.35] text-muted">
-                    {playlist.owner_name ? `von ${playlist.owner_name}` : "Playlist"} · {playlist.track_count} Titel
+                    {own ? "Von dir" : playlist.owner_name ? `von ${playlist.owner_name}` : "Playlist"} · {playlist.track_count} Titel
                   </div>
                 </Link>
               ))}

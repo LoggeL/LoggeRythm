@@ -163,6 +163,35 @@ export interface HomeShelf {
   tracks: Track[];
 }
 
+/** `followed` wins when the source artist is both followed and played. */
+export type RadarReasonKind = 'followed' | 'played';
+
+/**
+ * Why a track is in the Release Radar (`RadarReason` in `api/app/schemas/track.py`).
+ * Names the watched *source* artist whose release list produced the track, which
+ * is not necessarily the track's primary artist.
+ */
+export interface RadarReason {
+  kind: RadarReasonKind;
+  /** The watched source artist; compare with `track.artist_id` to spot a contribution. */
+  artist_id: DeezerId;
+  /** From the account's own follow/play rows; `''` when none of them stored a name. */
+  artist_name: string;
+  /** The account's plays of the source artist in the last 90 days; 0 if none. */
+  play_count: number;
+}
+
+/**
+ * One Release Radar row. The wire object is a flat `Track` plus `radar_reason`;
+ * it is split here so `track` stays a plain `Track` that can be played, liked,
+ * queued and downloaded through the strict track validators unchanged, and the
+ * reason can never leak into a persisted track record.
+ */
+export interface ReleaseRadarEntry {
+  track: Track;
+  radar_reason: RadarReason;
+}
+
 export interface PublicProfile {
   id: number;
   display_name: string | null;

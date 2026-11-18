@@ -192,22 +192,34 @@ export function CatalogPlaylistCard({
   playlist,
   coverUrl,
   testID,
+  own = false,
   onPress,
 }: {
   playlist: PlaylistSummary;
   coverUrl: string | null;
   testID: string;
+  /** The signed-in user's own playlist: the owner line reads "by you". */
+  own?: boolean;
   onPress: () => void;
 }) {
+  const ownerLine = own
+    ? catalogStrings.discover.ownPlaylist
+    : playlist.owner_name
+      ? catalogStrings.discover.byOwner(playlist.owner_name)
+      : null;
   return (
     <PressableScale
       testID={testID}
       accessibilityRole="button"
-      accessibilityLabel={catalogStrings.discover.openPlaylist(
-        playlist.name,
-        playlist.owner_name,
-        playlist.track_count,
-      )}
+      accessibilityLabel={
+        own
+          ? catalogStrings.discover.openOwnPlaylist(playlist.name, playlist.track_count)
+          : catalogStrings.discover.openPlaylist(
+              playlist.name,
+              playlist.owner_name,
+              playlist.track_count,
+            )
+      }
       onPress={onPress}
       scaleTo={0.98}
       style={styles.playlistCard}
@@ -215,9 +227,9 @@ export function CatalogPlaylistCard({
       <Artwork uri={coverUrl} size={layout.artwork.lg} icon="playlist-music" />
       <View style={styles.playlistMeta}>
         <AppText variant="bodyStrong" numberOfLines={2}>{playlist.name}</AppText>
-        {playlist.owner_name ? (
+        {ownerLine !== null ? (
           <AppText variant="callout" color="secondary" numberOfLines={1}>
-            {catalogStrings.discover.byOwner(playlist.owner_name)}
+            {ownerLine}
           </AppText>
         ) : null}
         <AppText variant="caption" color="muted" numberOfLines={1}>
@@ -234,6 +246,7 @@ export function CatalogTrackRow({
   testID,
   occurrence,
   metadata,
+  metadataAccessibilityLabel,
   popularity = 'none',
   plays,
   showAlbumLabel,
@@ -249,6 +262,8 @@ export function CatalogTrackRow({
   occurrence: TrackOccurrenceTarget;
   /** Additional bounded collection fact, such as Radar release recency. */
   metadata?: string;
+  /** Spoken form of `metadata` where the compact line abbreviates. Defaults to `metadata`. */
+  metadataAccessibilityLabel?: string;
   popularity?: TrackPopularityPolicy;
   plays?: TrackPlayCount;
   /** false where the album is the page itself. Defaults to the shared row's policy. */
@@ -269,6 +284,7 @@ export function CatalogTrackRow({
       plays={plays}
       showAlbumLabel={showAlbumLabel}
       caption={metadata}
+      captionAccessibilityLabel={metadataAccessibilityLabel}
       onPlay={onPress}
       onActions={onLongPress}
       onOpenAlbum={onOpenAlbum}

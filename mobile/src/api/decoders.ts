@@ -27,6 +27,8 @@ import type {
   PlaylistSearchResult,
   PlaylistSummary,
   PublicProfile,
+  RadarReason,
+  ReleaseRadarEntry,
   ResolveKind,
   ResolveResult,
   StorageCleanupResult,
@@ -187,6 +189,35 @@ export function decodeTrack(value: unknown, path = 'Track'): Track {
 
 export function decodeTrackList(value: unknown): Track[] {
   return array(value, 'Track[]', decodeTrack);
+}
+
+function decodeRadarReason(value: unknown, path: string): RadarReason {
+  const source = object(value, path);
+  return {
+    kind: literal(source.kind, `${path}.kind`, ['followed', 'played'] as const),
+    artist_id: deezerStringId(source.artist_id, `${path}.artist_id`),
+    // Legitimately '' when the account's follow/play rows never stored a name.
+    artist_name: string(source.artist_name, `${path}.artist_name`),
+    play_count: nonNegativeInteger(source.play_count, `${path}.play_count`),
+  };
+}
+
+function decodeReleaseRadarEntry(value: unknown, path: string): ReleaseRadarEntry {
+  const source = object(value, path);
+  if (!('radar_reason' in source)) {
+    throw new Error(
+      `${path}.radar_reason is missing: the server does not say why this track is in the Release Radar (it predates radar reasons)`,
+    );
+  }
+  return {
+    // decodeTrack copies only Track fields, so the reason never reaches `track`.
+    track: decodeTrack(source, path),
+    radar_reason: decodeRadarReason(source.radar_reason, `${path}.radar_reason`),
+  };
+}
+
+export function decodeReleaseRadar(value: unknown): ReleaseRadarEntry[] {
+  return array(value, 'ReleaseRadar', decodeReleaseRadarEntry);
 }
 
 export function decodeUser(value: unknown): User {

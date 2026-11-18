@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { Track } from '../api/types';
@@ -28,6 +28,7 @@ import {
 } from './catalogModel';
 import { catalogFailureMessage } from './catalogFeedback';
 import { catalogStrings } from './catalogStrings';
+import { combineCatalogQueryStates, mergeDiscoverPlaylists } from './discoverPlaylistsModel';
 
 export type DiscoverScreenProps = DiscoverRouteCallbacks;
 export type {
@@ -48,12 +49,31 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
   const charts = useQuery(musicQueries.charts());
   const genres = useQuery(musicQueries.genres());
   const releases = useQuery(musicQueries.newReleases());
-  const playlists = useQuery(musicQueries.publicPlaylists(scope));
+  const ownPlaylists = useQuery(musicQueries.playlists(scope));
+  const communityPlaylists = useQuery(musicQueries.publicPlaylists(scope));
+  // The row needs both lists: until both have loaded there is nothing to show.
+  const playlists = useMemo(
+    () =>
+      ownPlaylists.data === undefined || communityPlaylists.data === undefined
+        ? undefined
+        : mergeDiscoverPlaylists(ownPlaylists.data, communityPlaylists.data),
+    [ownPlaylists.data, communityPlaylists.data],
+  );
+  const playlistsState = combineCatalogQueryStates(
+    [ownPlaylists, communityPlaylists].map((query) => ({
+      hasData: query.data !== undefined,
+      isPending: query.isPending,
+      isFetching: query.isFetching,
+      isStale: query.isStale,
+      fetchStatus: query.fetchStatus,
+      error: query.error,
+    })),
+  );
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const scroll = useRef<ScrollView>(null);
   const sectionOffsets = useRef<Partial<Record<string, number>>>({});
   const bottomInset = useBottomInset();
-  const queries = [charts, genres, releases, playlists];
+  const queries = [charts, genres, releases, ownPlaylists, communityPlaylists];
   const refreshing = queries.some((query) => query.isFetching && !query.isPending);
 
   const refresh = () => {
@@ -70,7 +90,7 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
   const shortcuts = [
     { id: 'charts', title: catalogStrings.discover.charts },
     { id: 'new-releases', title: catalogStrings.discover.newReleases },
-    { id: 'community-playlists', title: catalogStrings.discover.communityPlaylists },
+    { id: 'playlists', title: catalogStrings.discover.playlists },
     { id: 'genres', title: catalogStrings.discover.genres },
   ];
 
@@ -196,25 +216,23 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
         </CatalogSection>
 
         <CatalogSection
-          id="community-playlists"
-          onLayout={({ nativeEvent }) => { sectionOffsets.current['community-playlists'] = nativeEvent.layout.y; }}
-          title={catalogStrings.discover.communityPlaylists}
-          hasData={playlists.data !== undefined}
-          empty={(playlists.data?.length ?? 0) === 0}
-          isPending={playlists.isPending}
-          isFetching={playlists.isFetching}
-          isStale={playlists.isStale}
-          fetchStatus={playlists.fetchStatus}
-          error={playlists.error}
-          onRetry={() => void playlists.refetch()}
+          id="playlists"
+          onLayout={({ nativeEvent }) => { sectionOffsets.current.playlists = nativeEvent.layout.y; }}
+          title={catalogStrings.discover.playlists}
+          {...playlistsState}
+          empty={playlists?.length === 0}
+          onRetry={() => {
+            void Promise.allSettled([ownPlaylists.refetch(), communityPlaylists.refetch()]);
+          }}
         >
           <HorizontalCatalogRail
-            id="discover-community-playlists"
-            data={playlists.data ?? []}
-            keyExtractor={(playlist) => String(playlist.id)}
-            renderItem={(playlist) => (
+            id="discover-playlists"
+            data={playlists ?? []}
+            keyExtractor={({ playlist }) => String(playlist.id)}
+            renderItem={({ playlist, own }) => (
               <CatalogPlaylistCard
                 playlist={playlist}
+                own={own}
                 coverUrl={
                   playlist.cover_url === null
                     ? null

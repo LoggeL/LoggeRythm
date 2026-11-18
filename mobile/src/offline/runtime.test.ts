@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { decodeTrack } from '../api/decoders';
 import type { Playlist, Track } from '../api/types';
+import { decodeOfflineManifest } from './model';
 import { getOfflineSnapshot } from './registry';
 import {
   clearOfflineDownloads,
@@ -475,5 +477,239 @@ describe('offline runtime', () => {
       hydrated: false,
       error: 'storage-unavailable',
     });
+  });
+});
+
+/**
+ * The API serialises the three loudness fields on every track, usually as
+ * null. These fixtures mirror a live response after `decodeTrack`.
+ */
+const loudnessWireShapes = [
+  {
+    shape: 'three nulls',
+    loudness: { loudness_gain_db: null, loudness_lufs: null, loudness_peak: null },
+  },
+  {
+    shape: 'all numeric',
+    loudness: { loudness_gain_db: -6.5, loudness_lufs: -9.25, loudness_peak: 0.98 },
+  },
+  {
+    shape: 'mixed null and numeric',
+    loudness: { loudness_gain_db: null, loudness_lufs: -14.3, loudness_peak: 1 },
+  },
+  { shape: 'absent keys', loudness: {} },
+] as const;
+
+function wireTrack(id: string, loudness: Record<string, number | null>): Track {
+  return decodeTrack({ ...track(id), ...loudness });
+}
+
+function storedFile(trackId: string, sizeBytes = 1_000) {
+  return {
+    trackId,
+    fileName: `${trackId}.mp3`,
+    uri: `${directory}${trackId}.mp3`,
+    sizeBytes,
+  };
+}
+
+function lastPersistedManifest(): string {
+  const call = mocks.persist.mock.calls.at(-1);
+  if (call === undefined) throw new Error('No offline manifest was persisted');
+  return call[2] as string;
+}
+
+describe.each(loudnessWireShapes)(
+  'offline runtime with $shape loudness metadata from the wire',
+  ({ loudness }) => {
+    it('downloads one track and rehydrates it on a cold start without clearing the scope', async () => {
+      const source = wireTrack('42', loudness);
+      mocks.start.mockResolvedValue({
+        scope,
+        generation: 1,
+        playlistId: '42',
+        successes: [success('42')],
+        failures: [],
+        availableDiskBytes: 9_000,
+      });
+
+      await initializeOfflineDownloads(scope);
+      await downloadTrackForOffline(scope, source);
+
+      expect(getOfflineSnapshot().error).toBeNull();
+      expect(getOfflineSnapshot().downloadedTrackIds).toEqual(new Set(['42']));
+      expect(getOfflineSnapshot().manifest?.tracks['42']).toEqual(expect.objectContaining({
+        track: { ...track('42'), ...loudness },
+        individualDownload: true,
+      }));
+      const persisted = lastPersistedManifest();
+      expect(decodeOfflineManifest(persisted, scope).tracks['42']?.track).toEqual({
+        ...track('42'),
+        ...loudness,
+      });
+
+      resetOfflineRuntimeStateForTests();
+      mocks.persist.mockClear();
+      mocks.hydrate.mockResolvedValue(hydration({
+        manifestJson: persisted,
+        files: [storedFile('42')],
+      }));
+      await initializeOfflineDownloads(scope);
+
+      expect(mocks.clearScope).not.toHaveBeenCalled();
+      // An unchanged manifest decodes and re-serialises byte for byte.
+      expect(mocks.persist).not.toHaveBeenCalled();
+      expect(getOfflineSnapshot()).toMatchObject({ scope, hydrated: true, error: null });
+      expect(getOfflineSnapshot().downloadedTrackIds).toEqual(new Set(['42']));
+      expect(getOfflineSnapshot().manifest?.tracks['42']?.track).toEqual({
+        ...track('42'),
+        ...loudness,
+      });
+    });
+
+    it('downloads a playlist and rehydrates it on a cold start without clearing the scope', async () => {
+      const source = playlist(9, [
+        wireTrack('42', loudness),
+        wireTrack('42', loudness),
+        wireTrack('43', loudness),
+      ]);
+      mocks.start.mockResolvedValue({
+        scope,
+        generation: 1,
+        playlistId: '9',
+        successes: [success('42'), success('43', 2_000)],
+        failures: [],
+        availableDiskBytes: 7_000,
+      });
+
+      await initializeOfflineDownloads(scope);
+      await downloadPlaylistForOffline(scope, source);
+
+      expect(mocks.start).toHaveBeenCalledOnce();
+      expect(getOfflineSnapshot().error).toBeNull();
+      expect(getOfflineSnapshot().playlists[0]).toMatchObject({
+        id: '9',
+        status: 'complete',
+        downloadedOccurrences: 3,
+      });
+      const persisted = lastPersistedManifest();
+      expect(decodeOfflineManifest(persisted, scope).playlists['9']?.sourceTracks.map(
+        ({ track: value }) => value,
+      )).toEqual([
+        { ...track('42'), ...loudness },
+        { ...track('42'), ...loudness },
+        { ...track('43'), ...loudness },
+      ]);
+
+      resetOfflineRuntimeStateForTests();
+      mocks.persist.mockClear();
+      mocks.hydrate.mockResolvedValue(hydration({
+        manifestJson: persisted,
+        files: [storedFile('42'), storedFile('43', 2_000)],
+      }));
+      await initializeOfflineDownloads(scope);
+
+      expect(mocks.clearScope).not.toHaveBeenCalled();
+      expect(mocks.persist).not.toHaveBeenCalled();
+      expect(getOfflineSnapshot()).toMatchObject({ scope, hydrated: true, error: null });
+      expect(getOfflineSnapshot().downloadedTrackIds).toEqual(new Set(['42', '43']));
+      expect(getOfflineSnapshot().playlists[0]).toMatchObject({ id: '9', status: 'complete' });
+      expect(getOfflineSnapshot().manifest?.tracks['43']?.track).toEqual({
+        ...track('43'),
+        ...loudness,
+      });
+    });
+  },
+);
+
+describe('offline runtime loudness compatibility', () => {
+  const nulls = { loudness_gain_db: null, loudness_lufs: null, loudness_peak: null };
+
+  /** Hand-written to pin the persisted shape from before loudness keys were accepted. */
+  function legacyManifestJson(): string {
+    return JSON.stringify({
+      version: 2,
+      scope,
+      tracks: {
+        '42': {
+          track: track('42'),
+          fileName: '42.mp3',
+          sizeBytes: 1_000,
+          ownerPlaylistIds: ['9'],
+          individualDownload: false,
+          downloadedAt: '2026-07-16T12:00:00.000Z',
+        },
+      },
+      playlists: {
+        '9': {
+          id: '9',
+          name: 'Playlist 9',
+          description: null,
+          cover_url: null,
+          is_public: false,
+          is_owner: true,
+          owner_name: null,
+          sourceTrackIds: ['42'],
+          sourceTracks: [{ position: 0, track: track('42') }],
+          status: 'complete',
+          failures: [],
+          completedAt: '2026-07-16T12:00:00.000Z',
+          updatedAt: '2026-07-16T12:00:00.000Z',
+        },
+      },
+    });
+  }
+
+  it('keeps an existing manifest without loudness keys and downloads wire tracks beside it', async () => {
+    const legacy = legacyManifestJson();
+    expect(legacy).not.toContain('loudness');
+    mocks.hydrate.mockResolvedValue(hydration({
+      manifestJson: legacy,
+      files: [storedFile('42')],
+    }));
+    mocks.start.mockResolvedValue({
+      scope,
+      generation: 1,
+      playlistId: '43',
+      successes: [success('43', 2_000)],
+      failures: [],
+      availableDiskBytes: 7_000,
+    });
+
+    await initializeOfflineDownloads(scope);
+
+    expect(mocks.clearScope).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(getOfflineSnapshot()).toMatchObject({ scope, hydrated: true, error: null });
+    expect(getOfflineSnapshot().manifest?.tracks['42']?.track).toEqual(track('42'));
+
+    await downloadTrackForOffline(scope, wireTrack('43', nulls));
+    // The already stored file gains an individual owner from a wire-shaped track.
+    await downloadTrackForOffline(scope, wireTrack('42', nulls));
+
+    expect(mocks.start).toHaveBeenCalledOnce();
+    expect(getOfflineSnapshot().error).toBeNull();
+    expect(getOfflineSnapshot().downloadedTrackIds).toEqual(new Set(['42', '43']));
+    const decoded = decodeOfflineManifest(lastPersistedManifest(), scope);
+    expect(decoded.tracks['43']?.track).toEqual({ ...track('43'), ...nulls });
+    expect(decoded.tracks['42']).toEqual(expect.objectContaining({
+      track: track('42'),
+      individualDownload: true,
+      ownerPlaylistIds: ['9'],
+    }));
+  });
+
+  it('rejects an invalid track before any native download can leave a file behind', async () => {
+    await initializeOfflineDownloads(scope);
+
+    await expect(downloadTrackForOffline(
+      scope,
+      { ...wireTrack('42', nulls), radar_reason: null } as Track,
+    )).rejects.toThrow('Individually downloaded track has unexpected fields');
+
+    expect(mocks.authenticatedHeadersFor).not.toHaveBeenCalled();
+    expect(mocks.start).not.toHaveBeenCalled();
+    expect(getOfflineSnapshot().error).toBe('download-failed');
+    expect(getOfflineSnapshot().downloadedTrackIds.size).toBe(0);
   });
 });

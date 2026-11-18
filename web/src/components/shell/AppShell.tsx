@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useLayoutEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/shell/Sidebar";
 import TopBar from "@/components/shell/TopBar";
@@ -20,6 +20,7 @@ import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
 import { useAmbientColor } from "@/hooks/useAmbientColor";
 import { SearchProvider } from "@/hooks/useSearchNavigation";
+import { PageTransition, usePageMotion } from "@/components/motion/Morph";
 
 function SplashScreen() {
   return (
@@ -60,9 +61,12 @@ function Workspace({ children }: { children: React.ReactNode }) {
   const mainRef = useRef<HTMLElement>(null);
   const pathname = usePathname();
   useAmbientColor();
+  const pageMotion = usePageMotion();
 
-  // Reset scroll position on route change.
-  useEffect(() => {
+  // Reset scroll position on route change. As a layout effect it lands before
+  // the route's view transition captures the new page, so the cross-fade ends
+  // on the page as it will be shown instead of jumping afterwards.
+  useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
 
@@ -77,12 +81,15 @@ function Workspace({ children }: { children: React.ReactNode }) {
           <div className="flex min-h-0 flex-1">
             <Sidebar />
             <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
-              <main ref={mainRef} id="main-content" tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto outline-none">
-                <TopBar />
-                <div key={pathname} className="animate-in mx-auto max-w-[96rem] px-4 pb-16 pt-3 sm:px-6 lg:px-10 lg:pt-6">
-                  {children}
-                </div>
-              </main>
+              {/* Only the page area cross-fades on navigation; sidebar, player and panels stay put. */}
+              <PageTransition>
+                <main ref={mainRef} id="main-content" tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto outline-none">
+                  <TopBar />
+                  <div key={pathname} className={`${pageMotion} mx-auto max-w-[96rem] px-4 pb-16 pt-3 sm:px-6 lg:px-10 lg:pt-6`}>
+                    {children}
+                  </div>
+                </main>
+              </PageTransition>
               {/* Lyrics dock sits at the bottom of the main column only. */}
               <Lyrics />
             </div>

@@ -8,6 +8,7 @@ import {
 } from '../offline/model';
 import type { OfflineRuntimeSnapshot } from '../offline/registry';
 import {
+  accountOfflineDownloadedTracks,
   accountOfflinePlaylistDetail,
   accountOfflinePlaylistSummaries,
   accountOfflineAvailability,
@@ -232,5 +233,25 @@ describe('offline screen selectors', () => {
       tracks: [detail.playlist.tracks[0], detail.playlist.tracks[2]],
       startIndex: 1,
     });
+  });
+});
+
+describe('downloaded tracks of an account', () => {
+  it('lists verified downloads newest first and fails closed across accounts', () => {
+    const source = playlist(4, [track('40'), track('41'), track('42')]);
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, source.tracks[0], 4_000, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, source.tracks[2], 4_000, secondTime);
+
+    expect(accountOfflineDownloadedTracks(snapshot(manifest), scope).map(({ id }) => id))
+      .toEqual(['42', '40']);
+    // A manifest entry without a verified native file is not a download.
+    expect(accountOfflineDownloadedTracks(
+      snapshot(manifest, { downloadedTrackIds: new Set(['40']) }),
+      scope,
+    ).map(({ id }) => id)).toEqual(['40']);
+    expect(accountOfflineDownloadedTracks(snapshot(manifest), otherScope)).toEqual([]);
+    expect(accountOfflineDownloadedTracks(snapshot(manifest, { hydrated: false }), scope))
+      .toEqual([]);
   });
 });

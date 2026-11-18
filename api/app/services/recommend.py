@@ -6,6 +6,7 @@ successful recommendations.
 """
 from __future__ import annotations
 
+import hashlib
 import threading
 
 from ..config import LASTFM_API_KEY
@@ -83,6 +84,84 @@ def tag_top_tracks(tags: list[str], limit: int = 30) -> list[dict]:
         resolved = _resolve_queries(queries, limit)
         if resolved:
             return resolved
+    return []
+
+
+# A seeded draw reads one larger Last.fm page per tag and resolves only the
+# names it drew, so its Deezer cost stays at the level of `tag_top_tracks`.
+TAG_DRAW_POOL_SIZE = 200
+# Extra names a draw may resolve to replace Deezer misses and duplicate hits.
+# Hard cap on Deezer searches per tag: limit + TAG_DRAW_SPARE_RESOLVES.
+TAG_DRAW_SPARE_RESOLVES = 10
+
+
+def _draw_order(queries: list[str], seed: str) -> list[str]:
+    """The distinct `queries` in an order that depends only on `seed`.
+
+    Every name is ranked by its own keyed digest instead of by a position in a
+    shuffled list. One `seed` therefore yields the same order in every process,
+    and a name entering or leaving the pool moves only itself: the rest of a
+    draw survives when Last.fm's chart shifts between two builds.
+    """
+    unique = list(dict.fromkeys(queries))
+    return sorted(
+        unique,
+        key=lambda query: (
+            hashlib.sha256(f"{seed}\x00{query}".encode("utf-8")).digest(),
+            query,
+        ),
+    )
+
+
+def tag_track_draw(
+    tags: list[str],
+    limit: int = 30,
+    *,
+    seed: str,
+    pool_size: int = TAG_DRAW_POOL_SIZE,
+    spare_resolves: int = TAG_DRAW_SPARE_RESOLVES,
+) -> list[dict]:
+    """Up to `limit` playable tracks drawn by `seed` from a tag's top tracks.
+
+    Like `tag_top_tracks`, the first tag with real playable results wins and an
+    unconfigured Last.fm is an explicit empty result. Unlike it, the tracks are
+    not the top `limit` of the tag: one request reads the tag's top `pool_size`
+    names, `seed` fixes their draw order, and only the drawn names are resolved
+    on Deezer. Names that resolve to nothing or to an already drawn track are
+    replaced by the next names in draw order, with at most
+    `limit + spare_resolves` Deezer searches per tag. The result keeps draw
+    order and can be shorter than `limit` when the pool or the cap runs out.
+    """
+    if not seed.strip():
+        raise ValueError("A tag track draw requires a non-empty seed")
+    if limit < 1 or pool_size < limit or spare_resolves < 0:
+        raise ValueError(
+            f"Invalid tag track draw bounds: limit={limit}, pool_size={pool_size}, "
+            f"spare_resolves={spare_resolves}"
+        )
+    if not LASTFM_API_KEY:
+        return []
+    max_resolves = limit + spare_resolves
+    for tag in tags:
+        data = _lastfm_get({"method": "tag.gettoptracks", "tag": tag, "limit": pool_size})
+        if data is None:
+            raise LastfmError(f"Tag {tag!r}: configured Last.fm returned no response")
+        pool = _track_queries(data, "tracks", context=f"Tag {tag!r}")[:pool_size]
+        candidates = _draw_order(pool, seed)[:max_resolves]
+        drawn: list[dict] = []
+        seen: set[str] = set()
+        attempted = 0
+        while len(drawn) < limit and attempted < len(candidates):
+            # Resolve exactly as many names as tracks are still missing, so a
+            # draw without misses costs `limit` searches and never overshoots.
+            batch = candidates[attempted:attempted + limit - len(drawn)]
+            attempted += len(batch)
+            for hit in _resolve_queries(batch, len(batch)):
+                if hit["id"] not in seen:
+                    seen.add(hit["id"])
+                    drawn.append(hit)
+        if drawn:
+            return drawn
     return []
 
 

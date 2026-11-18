@@ -154,6 +154,24 @@ describe('shared track compositions', () => {
     expect(fact.props.numberOfLines).toBe(2);
   });
 
+  it('speaks an owner-supplied label instead of an abbreviated collection fact', () => {
+    const rendered = StandardTrackRow({
+      track,
+      testID: 'row-42',
+      caption: 'New · today · Artist played 3×',
+      captionAccessibilityLabel: 'New, today, In your radar because you played Artist 3 times',
+      onPlay: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+    });
+
+    const fact = byTestID(rendered, 'row-42-metadata');
+    expect(fact.props.children).toBe('New · today · Artist played 3×');
+    expect(fact.props.accessibilityLabel).toBe(
+      'New, today, In your radar because you played Artist 3 times',
+    );
+  });
+
   it('uses a dedicated artwork play target and sibling card controls', () => {
     const rendered = TrackShelfCard({
       track,

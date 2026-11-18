@@ -8,6 +8,7 @@ import {
   CatalogAlbumCard,
   CatalogArtistCard,
   CatalogHeroArtwork,
+  CatalogPlaylistCard,
   CatalogTrackCard,
   CatalogTrackRow,
 } from './CatalogCards';
@@ -108,6 +109,27 @@ describe('CatalogTrackRow', () => {
 
     const shared = elements(row).find((element) => element.type === 'StandardTrackRow');
     expect(shared?.props.caption).toBeUndefined();
+    expect(shared?.props.captionAccessibilityLabel).toBeUndefined();
+  });
+
+  it('hands the spoken form of an abbreviated fact to the shared row', () => {
+    const row = CatalogTrackRow({
+      track,
+      index: 0,
+      testID: 'release-radar-track-12-0',
+      occurrence,
+      metadata: 'Neu · heute · Artist 3× gehört',
+      metadataAccessibilityLabel: 'Neu, heute, Im Radar, weil du Artist 3-mal gehört hast',
+      onPress: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+    });
+
+    const shared = elements(row).find((element) => element.type === 'StandardTrackRow');
+    expect(shared?.props).toMatchObject({
+      caption: 'Neu · heute · Artist 3× gehört',
+      captionAccessibilityLabel: 'Neu, heute, Im Radar, weil du Artist 3-mal gehört hast',
+    });
   });
 
   it('lets a page that is the album itself drop the redundant album label', () => {
@@ -206,5 +228,60 @@ describe('CatalogTrackCard', () => {
       onOpenAlbum,
       onOpenArtist,
     });
+  });
+});
+
+describe('CatalogPlaylistCard', () => {
+  const playlist = {
+    id: 7,
+    name: 'Roadtrip',
+    description: null,
+    cover_url: null,
+    is_public: false,
+    track_count: 12,
+    owner_name: null,
+  };
+  const texts = (card: React.ReactElement) =>
+    elements(card)
+      .map((element) => element.props.children)
+      .filter((children): children is string => typeof children === 'string');
+
+  it('names the owner of a community playlist', () => {
+    const card = CatalogPlaylistCard({
+      playlist: { ...playlist, is_public: true, owner_name: 'Sam' },
+      coverUrl: null,
+      testID: 'discover-playlist-7',
+      onPress: vi.fn(),
+    });
+
+    expect(texts(card)).toEqual([
+      'Roadtrip',
+      catalogStrings.discover.byOwner('Sam'),
+      catalogStrings.common.tracks(12),
+    ]);
+    expect(card.props.accessibilityLabel).toBe(
+      catalogStrings.discover.openPlaylist('Roadtrip', 'Sam', 12),
+    );
+  });
+
+  it('marks the signed-in user’s own playlist instead of leaving the owner line out', () => {
+    const onPress = vi.fn();
+    const card = CatalogPlaylistCard({
+      playlist,
+      own: true,
+      coverUrl: null,
+      testID: 'discover-playlist-7',
+      onPress,
+    });
+
+    expect(texts(card)).toEqual([
+      'Roadtrip',
+      catalogStrings.discover.ownPlaylist,
+      catalogStrings.common.tracks(12),
+    ]);
+    expect(card.props.accessibilityLabel).toBe(
+      catalogStrings.discover.openOwnPlaylist('Roadtrip', 12),
+    );
+    expect(card.props.onPress).toBe(onPress);
   });
 });

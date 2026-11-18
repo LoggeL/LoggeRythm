@@ -8,6 +8,9 @@ const resolver = registerHooks({
     if (specifier === "@/lib/searchDecoders") {
       return nextResolve(new URL("../src/lib/searchDecoders.ts", import.meta.url).href, context);
     }
+    if (specifier === "@/lib/releaseRadar") {
+      return nextResolve(new URL("../src/lib/releaseRadar.ts", import.meta.url).href, context);
+    }
     return nextResolve(specifier, context);
   },
 });

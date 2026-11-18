@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveSearchAggregateRemoteState,
   searchRemoteEntry,
+  searchRemoteIssueKind,
   type SearchRemoteQueryLike,
 } from './searchRemoteState';
 
@@ -107,6 +108,30 @@ describe('search remote-state composition', () => {
       body: 'empty',
       staleKeys: ['artist'],
     });
+  });
+
+  it('reports a supporting query only when it failed or is offline', () => {
+    const settled = { isPending: false, isFetching: false, fetchStatus: 'idle' } as const;
+    const data = [{ id: 'track-1' }];
+
+    // A first load in progress and a healthy (even stale or refreshing) list are quiet.
+    expect(searchRemoteIssueKind(query())).toBeNull();
+    expect(searchRemoteIssueKind(query({ ...settled, data, isStale: false }))).toBeNull();
+    expect(searchRemoteIssueKind(query({ ...settled, data, isStale: true }))).toBeNull();
+    expect(searchRemoteIssueKind(query({ data, isPending: false }))).toBeNull();
+
+    // Never loaded: a paused fetch and a transport failure are offline, not a server error.
+    expect(searchRemoteIssueKind(query({ isFetching: false, fetchStatus: 'paused' })))
+      .toBe('offline');
+    expect(searchRemoteIssueKind(query({ ...settled, error: { status: 0 } }))).toBe('offline');
+    expect(searchRemoteIssueKind(query({ ...settled, error: new Error('500') })))
+      .toBe('hard-error');
+
+    // Last-good data stays, the failed refresh is still reported.
+    expect(searchRemoteIssueKind(query({ ...settled, data, error: new Error('500') })))
+      .toBe('cached-refresh-error');
+    expect(searchRemoteIssueKind(query({ data, isPending: false, isFetching: false, fetchStatus: 'paused' })))
+      .toBe('cached-offline');
   });
 
   it('rejects impossible counts and an empty aggregate', () => {

@@ -1,7 +1,14 @@
 "use client";
 
-import { Children, useEffect, useRef, useState, type ReactNode } from "react";
+import { Children, createContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+
+/**
+ * Label of the shelf a card sits in ("" outside of one). Tells apart two cards
+ * for the same album or artist in different shelves of one page, so only the
+ * one that was opened takes part in the transition to its detail page.
+ */
+export const ShelfScope = createContext("");
 
 const ITEM_WIDTHS = {
   /** Cover cards: album, artist, mix, playlist. */
@@ -72,11 +79,13 @@ export default function Shelf({ label, size = "card", children }: { label: strin
         aria-label={label}
         className={`no-scrollbar -mx-1 flex snap-x snap-mandatory scroll-px-1 gap-1 overflow-x-auto overscroll-x-contain px-1 py-1 sm:gap-2 ${EDGE_FADES[fade]}`}
       >
-        {items.map((item, index) => (
-          <li key={index} className={`shrink-0 snap-start ${ITEM_WIDTHS[size]}`}>
-            {item}
-          </li>
-        ))}
+        <ShelfScope value={label}>
+          {items.map((item, index) => (
+            <li key={index} className={`shrink-0 snap-start ${ITEM_WIDTHS[size]}`}>
+              {item}
+            </li>
+          ))}
+        </ShelfScope>
       </ul>
       {hidden.end && (
         <button type="button" onClick={() => page(1)} aria-label={`${label}: weiter blättern`} className={`${PAGER_CLASS} -right-3`}>

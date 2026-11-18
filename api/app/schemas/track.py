@@ -1,6 +1,8 @@
 """Normalized Track shape used across the whole API (in and out)."""
 import json
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -47,6 +49,35 @@ class Track(BaseModel):
     loudness_gain_db: float | None = None
     loudness_lufs: float | None = None
     loudness_peak: float | None = None
+
+
+class RadarReason(BaseModel):
+    """Why a track is in the release radar.
+
+    Names the *watched source artist* whose Deezer release list produced the
+    track. That artist is not necessarily the track's primary artist: a
+    watched artist's release list also contains releases they only contribute
+    to, and that difference is exactly what the listener needs to see.
+    """
+    # "followed" wins when the source artist is both followed and played.
+    kind: Literal["followed", "played"]
+    artist_id: str
+    # The name the user's own follow/play rows carry for that artist. "" only
+    # when neither a follow row nor any play in the window stored a name (both
+    # columns legitimately default to ""); a name is never invented.
+    artist_name: str
+    # The user's plays of the source artist in the radar window (last 90 days).
+    play_count: int = Field(ge=0)
+
+
+class RadarTrack(Track):
+    """A release-radar track: the normal ``Track`` plus why it is there.
+
+    Response-only. ``Track`` itself stays untouched because it is also the
+    request body for likes, playlists and party queues, where a radar reason
+    would be meaningless.
+    """
+    radar_reason: RadarReason
 
 
 # --- performer-list persistence helpers -----------------------------------

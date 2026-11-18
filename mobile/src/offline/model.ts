@@ -5,6 +5,9 @@ export const OFFLINE_MANIFEST_VERSION = 2 as const;
 
 const FAILURE_CODE = /^[a-z][a-z0-9-]{1,63}$/;
 
+/** Optional wire fields of a Track that the strict offline track shape accepts. */
+const OPTIONAL_LOUDNESS_KEYS = ['loudness_gain_db', 'loudness_lufs', 'loudness_peak'] as const;
+
 export type OfflinePlaylistStatus = 'complete' | 'partial';
 
 /** One source occurrence. `position` makes repeated track IDs unambiguous. */
@@ -216,6 +219,13 @@ function decodeStrictTrack(value: unknown, label: string): Track {
   // Offline manifest v2 predates stable playlist-entry identity. Preserve it
   // for new playlist snapshots while continuing to decode existing manifests.
   if ('playlist_entry_id' in record) keys.push('playlist_entry_id');
+  // The API serialises the loudness fields on every track (usually as null),
+  // so a live track always carries them while manifests written before they
+  // were accepted do not. Keep them when present: offline playback derives its
+  // loudness normalization from them. `decodeTrack` validates their values.
+  for (const key of OPTIONAL_LOUDNESS_KEYS) {
+    if (key in record) keys.push(key);
+  }
   exactKeys(record, keys, label);
   if (!Array.isArray(record.artists)) throw new Error(`${label}.artists must be an array`);
   record.artists.forEach((artist, index) => {
@@ -224,6 +234,14 @@ function decodeStrictTrack(value: unknown, label: string): Track {
   const track = decodeTrack(record, label);
   offlineTrackId(track.id);
   return track;
+}
+
+/**
+ * Strictly validate a track for offline storage. Callers that download first
+ * and record afterwards use this to fail before any audio reaches the disk.
+ */
+export function requireOfflineTrack(value: Track, label: string): Track {
+  return decodeStrictTrack(value, label);
 }
 
 function tracksEqual(left: Track, right: Track): boolean {

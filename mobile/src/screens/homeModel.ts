@@ -4,6 +4,7 @@ import type {
   Genre,
   HomeShelf,
   PlaylistSummary,
+  ReleaseRadarEntry,
 } from '../api/types';
 import type { RecentPlay } from '../domain/listeningStats';
 import { deezerReferenceIdFromRouteValue } from '../navigationLinks';
@@ -66,6 +67,29 @@ export interface RadarRelativeDateCopy {
   weeksAgo: (weeks: number) => string;
   oneMonthAgo: string;
   monthsAgo: (months: number) => string;
+}
+
+/** Copy for the reason a track is in the Release Radar. */
+export interface RadarReasonCopy {
+  followed: (artist: string) => string;
+  played: (plays: number, artist: string) => string;
+  /** No artist is named: it is the row's own artist, or no name is known. */
+  followedUnnamed: string;
+  playedUnnamed: (plays: number) => string;
+}
+
+/**
+ * `row` is the bounded line under a track: it leaves the name out when the
+ * watched artist is the track's own primary artist, shown directly above.
+ * `spoken` names the artist whenever a name is known.
+ */
+export type RadarReasonStyle = 'row' | 'spoken';
+
+export interface RadarSourceArtist {
+  /** `null` when neither the reason nor the track's own credits name the artist. */
+  name: string | null;
+  /** The watched artist is the track's primary artist, not a contributor. */
+  isPrimary: boolean;
 }
 
 export interface RecentCatalogRoutes {
@@ -289,6 +313,67 @@ export function formatRadarReleaseDate(
   if (days < 31) return copy.weeksAgo(Math.floor(days / 7));
   if (days < 61) return copy.oneMonthAgo;
   return copy.monthsAgo(Math.floor(days / 30));
+}
+
+/**
+ * The watched artist that put a track into the radar. A legacy reason without
+ * a name is resolved through the track's own credits by artist id only, so a
+ * name is never guessed.
+ */
+export function radarSourceArtist(entry: ReleaseRadarEntry): RadarSourceArtist {
+  const { track, radar_reason: reason } = entry;
+  const sourceId = normalizedId(reason.artist_id);
+  if (sourceId === null) {
+    throw new Error(
+      `Release Radar reason for track ${String(track.id)} has no source artist id`,
+    );
+  }
+  const isPrimary = normalizedId(track.artist_id) === sourceId;
+  const credit = track.artists.find((artist) => normalizedId(artist.id) === sourceId);
+  const name =
+    optionalLabel(reason.artist_name)
+    ?? optionalLabel(credit?.name ?? '')
+    ?? (isPrimary ? optionalLabel(track.artist) : undefined);
+  return { name: name ?? null, isPrimary };
+}
+
+/**
+ * Why a track is in the Release Radar: the watched artist is followed, or was
+ * played often enough in the last 90 days. `followed` wins over the play count.
+ */
+export function formatRadarReason(
+  entry: ReleaseRadarEntry,
+  copy: RadarReasonCopy,
+  style: RadarReasonStyle,
+): string {
+  const reason = entry.radar_reason;
+  const source = radarSourceArtist(entry);
+  const name = style === 'row' && source.isPrimary ? null : source.name;
+  switch (reason.kind) {
+    case 'followed':
+      return name === null ? copy.followedUnnamed : copy.followed(name);
+    case 'played':
+      if (!Number.isSafeInteger(reason.play_count) || reason.play_count < 1) {
+        throw new Error(
+          `Release Radar reason "played" for artist ${reason.artist_id} needs a positive play count; received ${String(reason.play_count)}`,
+        );
+      }
+      return name === null
+        ? copy.playedUnnamed(reason.play_count)
+        : copy.played(reason.play_count, name);
+    default:
+      throw new Error(
+        `Unknown Release Radar reason kind: ${String((reason as { kind: unknown }).kind)}`,
+      );
+  }
+}
+
+/** One line of radar facts (new marker, release recency, reason); blank facts are left out. */
+export function joinRadarFacts(facts: readonly string[], separator: string): string {
+  return facts
+    .map((fact) => fact.trim())
+    .filter((fact) => fact.length > 0)
+    .join(separator);
 }
 
 export function testIdSegment(value: string | number): string {

@@ -33,10 +33,12 @@ export interface CatalogScreenStrings {
     charts: string;
     genres: string;
     newReleases: string;
-    communityPlaylists: string;
+    playlists: string;
     jumpToSection: (title: string) => string;
     openPlaylist: (name: string, owner: string | null, count: number) => string;
+    openOwnPlaylist: (name: string, count: number) => string;
     byOwner: (owner: string) => string;
+    ownPlaylist: string;
   };
   album: {
     typeLabel: string;
@@ -58,6 +60,12 @@ export interface CatalogScreenStrings {
     loading: string;
     empty: string;
     topTracks: string;
+    likedTracks: string;
+    likedTracksBy: (name: string) => string;
+    likedTracksFailed: string;
+    showAllLikedTracks: (name: string, count: number) => string;
+    showFewerLikedTracks: string;
+    showFewerLikedTracksOf: (name: string) => string;
     albums: string;
     relatedArtists: string;
     searchSongs: string;
@@ -121,11 +129,13 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       charts: 'Charts',
       genres: 'Genres',
       newReleases: 'Neue Veröffentlichungen',
-      communityPlaylists: 'Community-Playlists',
+      playlists: 'Playlists',
       jumpToSection: (title) => `Zu ${title} springen`,
       openPlaylist: (name, owner, count) =>
         `${name} öffnen${owner ? `, von ${owner}` : ''}, ${count} Titel`,
+      openOwnPlaylist: (name, count) => `${name} öffnen, von dir, ${count} Titel`,
       byOwner: (owner) => `von ${owner}`,
+      ownPlaylist: 'Von dir',
     },
     album: {
       typeLabel: 'ALBUM',
@@ -150,6 +160,12 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       loading: 'Interpret wird geladen…',
       empty: 'Für diesen Interpreten sind gerade keine Inhalte verfügbar.',
       topTracks: 'Beliebt',
+      likedTracks: 'Deine Lieblingssongs',
+      likedTracksBy: (name) => `von ${name}`,
+      likedTracksFailed: 'Deine Lieblingssongs konnten nicht geladen werden',
+      showAllLikedTracks: (name, count) => `Alle ${count} Lieblingssongs von ${name} anzeigen`,
+      showFewerLikedTracks: 'Weniger anzeigen',
+      showFewerLikedTracksOf: (name) => `Weniger Lieblingssongs von ${name} anzeigen`,
       albums: 'Diskografie',
       relatedArtists: 'Ähnliche Interpreten',
       searchSongs: 'Songs durchsuchen',
@@ -212,11 +228,14 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       charts: 'Charts',
       genres: 'Genres',
       newReleases: 'New releases',
-      communityPlaylists: 'Community playlists',
+      playlists: 'Playlists',
       jumpToSection: (title) => `Jump to ${title}`,
       openPlaylist: (name, owner, count) =>
         `Open ${name}${owner ? ` by ${owner}` : ''}, ${count} ${count === 1 ? 'track' : 'tracks'}`,
+      openOwnPlaylist: (name, count) =>
+        `Open ${name}, by you, ${count} ${count === 1 ? 'track' : 'tracks'}`,
       byOwner: (owner) => `by ${owner}`,
+      ownPlaylist: 'By you',
     },
     album: {
       typeLabel: 'ALBUM',
@@ -242,6 +261,12 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       loading: 'Loading artist…',
       empty: 'There is nothing available for this artist right now.',
       topTracks: 'Popular tracks',
+      likedTracks: 'Your liked songs',
+      likedTracksBy: (name) => `by ${name}`,
+      likedTracksFailed: 'Could not load your liked songs',
+      showAllLikedTracks: (name, count) => `Show all ${count} liked songs by ${name}`,
+      showFewerLikedTracks: 'Show less',
+      showFewerLikedTracksOf: (name) => `Show fewer liked songs by ${name}`,
       albums: 'Discography',
       relatedArtists: 'Related artists',
       searchSongs: 'Search songs',

@@ -55,6 +55,7 @@ describe('music query keys', () => {
 
   it('viewer-scopes playlist detail, public shelves, parties, and admin data', () => {
     expect(queryKeys.playlists.detail(7, 4)).not.toEqual(queryKeys.playlists.detail(8, 4));
+    expect(queryKeys.playlists.detail(7, 4)).toEqual([...queryKeys.playlists.details(7), '4']);
     expect(queryKeys.playlists.public(7)).not.toEqual(queryKeys.playlists.public('anonymous'));
     expect(queryKeys.party.state(7, 'ABC123')).not.toEqual(
       queryKeys.party.state(8, 'ABC123'),

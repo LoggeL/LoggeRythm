@@ -38,3 +38,14 @@ test("duplicate projections never render duplicate option IDs", () => {
   const rows = paletteRows({ tracks: [{ id: "one" }, { id: "one" }], albums: [{ id: "projection-one", album_id: "album" }, { id: "projection-two", album_id: "album" }] });
   assert.deepEqual(rows.map(paletteRowKey), ["track-one", "album-album"]);
 });
+
+test("saved songs lead, are limited to three and are not repeated among the catalog tracks", () => {
+  const library = [{ id: "a" }, { id: 2 }, { id: "c" }, { id: "d" }];
+  const tracks = [{ id: "2" }, { id: "x" }, { id: "a" }, { id: "d" }, ...Array.from({ length: 6 }, (_, index) => ({ id: `t${index}` }))];
+  const rows = paletteRows({ library, tracks });
+  assert.deepEqual(rows.map(paletteRowKey), [
+    "library-a", "library-2", "library-c",
+    "track-x", "track-d", "track-t0", "track-t1", "track-t2", "track-t3",
+  ]);
+  assert.deepEqual(paletteRows({ library }).map((row) => row.kind), ["library", "library", "library"]);
+});

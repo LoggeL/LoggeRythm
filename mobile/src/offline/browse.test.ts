@@ -197,4 +197,34 @@ describe('cold offline playlist browse selectors', () => {
     )).toThrow('another account scope');
     expect(() => reconstructOfflinePlaylist(manifest, ' ', 4)).toThrow('non-empty exact string');
   });
+
+  it('reconstructs wire-shaped tracks with their loudness metadata for offline playback', () => {
+    // The API serialises the loudness fields on every track, usually as null.
+    const measured: Track = {
+      ...track('50'),
+      loudness_gain_db: -6.5,
+      loudness_lufs: -9.25,
+      loudness_peak: 0.98,
+    };
+    const unmeasured: Track = {
+      ...track('51'),
+      loudness_gain_db: null,
+      loudness_lufs: null,
+      loudness_peak: null,
+    };
+    const source = playlist(5, 'Wire shaped', [measured, unmeasured]);
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, measured, 5_000, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, unmeasured, 5_100, firstTime);
+    manifest = settlePlaylistDownload(manifest, source, firstTime);
+
+    const reconstructed = reconstructOfflinePlaylist(manifest, scope, 5);
+    expect(reconstructed?.tracks).toEqual([measured, unmeasured]);
+    expect(Object.keys(reconstructed?.tracks[1] ?? {})).toEqual(
+      expect.arrayContaining(['loudness_gain_db', 'loudness_lufs', 'loudness_peak']),
+    );
+    expect(getOfflinePlaylistBrowseDetail(manifest, scope, 5)?.occurrences.map(
+      ({ track: value }) => value,
+    )).toEqual([measured, unmeasured]);
+  });
 });

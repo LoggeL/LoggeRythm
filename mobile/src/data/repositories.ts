@@ -26,6 +26,7 @@ import type {
   PlaylistSummary,
   PlaylistUpdateRequest,
   PublicProfile,
+  ReleaseRadarEntry,
   ResolveResult,
   StorageCleanupResult,
   Track,
@@ -59,7 +60,7 @@ export interface HomeRepository {
   getHomeMixes(signal?: AbortSignal): Promise<HomeShelf[]>;
   getBecauseYouListened(signal?: AbortSignal): Promise<HomeShelf[]>;
   getHomeChartCollections(signal?: AbortSignal): Promise<HomeShelf[]>;
-  getReleaseRadar(signal?: AbortSignal): Promise<Track[]>;
+  getReleaseRadar(signal?: AbortSignal): Promise<ReleaseRadarEntry[]>;
   getMood(tag: string, signal?: AbortSignal): Promise<Track[]>;
 }
 

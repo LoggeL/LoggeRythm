@@ -4,7 +4,10 @@ import type {
 } from "@tanstack/react-query-persist-client";
 
 export const QUERY_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-export const QUERY_CACHE_BUSTER = "loggerhythm-ui-v1";
+// Bump whenever a persisted query's data shape changes, so caches written by an
+// older build are discarded instead of being rendered with missing fields.
+// v2: release-radar tracks carry `radar_reason`.
+export const QUERY_CACHE_BUSTER = "loggerhythm-ui-v2";
 
 const QUERY_CACHE_STORAGE_KEY = "loggerhythm:query-cache";
 const PERSIST_THROTTLE_MS = 1_000;

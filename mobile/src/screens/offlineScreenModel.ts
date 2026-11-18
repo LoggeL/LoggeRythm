@@ -27,7 +27,7 @@ export interface OfflinePlaylistControlInput {
 }
 
 function exactAccountManifest(
-  snapshot: OfflineRuntimeSnapshot,
+  snapshot: Pick<OfflineRuntimeSnapshot, 'hydrated' | 'scope' | 'manifest'>,
   accountScope: string,
 ) {
   if (
@@ -50,6 +50,25 @@ export function accountOfflineAvailability(
     && (snapshot.scope === null || snapshot.scope === accountScope)
   ) return 'loading';
   return 'unavailable';
+}
+
+/**
+ * Tracks whose files this account has downloaded, newest download first.
+ * Fail closed: a missing, unhydrated, or cross-account snapshot exposes none.
+ */
+export function accountOfflineDownloadedTracks(
+  snapshot: Pick<
+    OfflineRuntimeSnapshot,
+    'hydrated' | 'scope' | 'manifest' | 'downloadedTrackIds'
+  >,
+  accountScope: string,
+): Track[] {
+  const manifest = exactAccountManifest(snapshot, accountScope);
+  if (manifest === null) return [];
+  return Object.values(manifest.tracks)
+    .filter(({ track }) => snapshot.downloadedTrackIds.has(track.id))
+    .sort((left, right) => right.downloadedAt.localeCompare(left.downloadedAt))
+    .map(({ track }) => track);
 }
 
 /** Fail closed: a missing, unhydrated, or cross-account snapshot exposes no local browse data. */

@@ -17,6 +17,7 @@ import {
   decodePlaybackSettings,
   decodePlaylist,
   decodePublicProfile,
+  decodeReleaseRadar,
   decodeResolveResult,
   decodeStorageCleanupResult,
   decodeTrack,
@@ -433,5 +434,103 @@ describe('API response decoders', () => {
       freed_bytes: 100,
     });
     expect(() => decodeStorageCleanupResult({ removed: 0.5, freed_bytes: 1 })).toThrow(/removed/);
+  });
+});
+
+describe('Release Radar decoder', () => {
+  const reason = { kind: 'played', artist_id: '7', artist_name: 'Known Artist', play_count: 4 };
+  // The wire object is a flat Track that additionally carries `radar_reason`.
+  const radarTrack = {
+    ...track,
+    release_date: '2026-03-01',
+    loudness_gain_db: null,
+    loudness_lufs: null,
+    loudness_peak: null,
+    radar_reason: reason,
+  };
+
+  it('splits each wire track into a plain Track and the reason it is in the radar', () => {
+    const { radar_reason: _reason, ...plainWireTrack } = radarTrack;
+
+    const entries = decodeReleaseRadar([radarTrack]);
+
+    expect(entries).toEqual([{ track: decodeTrack(plainWireTrack), radar_reason: reason }]);
+    // The reason must never become part of the Track that gets played, liked,
+    // queued or written to the offline manifest.
+    expect(Object.keys(entries[0].track)).toEqual(Object.keys(decodeTrack(plainWireTrack)));
+    expect('radar_reason' in entries[0].track).toBe(false);
+    expect(decodeReleaseRadar([])).toEqual([]);
+  });
+
+  it('keeps a watched source artist that differs from the primary artist of the track', () => {
+    const [entry] = decodeReleaseRadar([
+      { ...radarTrack, artist: 'Stranger', artist_id: '999', artists: [{ id: '999', name: 'Stranger' }] },
+    ]);
+
+    expect(entry.track.artist).toBe('Stranger');
+    expect(entry.track.artist_id).toBe('999');
+    expect(entry.radar_reason).toEqual(reason);
+  });
+
+  it('accepts both reason kinds, a zero play count and an unknown source artist name', () => {
+    const followed = { kind: 'followed', artist_id: '8', artist_name: '', play_count: 0 };
+
+    expect(decodeReleaseRadar([{ ...radarTrack, radar_reason: followed }])[0].radar_reason)
+      .toEqual(followed);
+  });
+
+  it('names an outdated server instead of presenting a radar without reasons', () => {
+    const { radar_reason: _reason, ...withoutReason } = radarTrack;
+
+    expect(() => decodeReleaseRadar([radarTrack, withoutReason])).toThrow(
+      'ReleaseRadar[1].radar_reason is missing: the server does not say why this track is in the Release Radar (it predates radar reasons)',
+    );
+  });
+
+  it.each<{ label: string; payload: unknown; message: RegExp }>([
+    { label: 'non-list radar', payload: { tracks: [] }, message: /ReleaseRadar must be an array/ },
+    { label: 'non-object entry', payload: ['1'], message: /ReleaseRadar\[0\] must be an object/ },
+    {
+      label: 'null reason',
+      payload: [{ ...radarTrack, radar_reason: null }],
+      message: /ReleaseRadar\[0\]\.radar_reason must be an object/,
+    },
+    {
+      label: 'unknown kind',
+      payload: [{ ...radarTrack, radar_reason: { ...reason, kind: 'liked' } }],
+      message: /ReleaseRadar\[0\]\.radar_reason\.kind must be one of: followed, played/,
+    },
+    {
+      label: 'missing source artist id',
+      payload: [{ ...radarTrack, radar_reason: { ...reason, artist_id: '' } }],
+      message: /ReleaseRadar\[0\]\.radar_reason\.artist_id must be a non-empty digit-only Deezer ID/,
+    },
+    {
+      label: 'numeric source artist id',
+      payload: [{ ...radarTrack, radar_reason: { ...reason, artist_id: 7 } }],
+      message: /ReleaseRadar\[0\]\.radar_reason\.artist_id must be a string/,
+    },
+    {
+      label: 'missing source artist name',
+      payload: [{ ...radarTrack, radar_reason: { ...reason, artist_name: undefined } }],
+      message: /ReleaseRadar\[0\]\.radar_reason\.artist_name must be a string/,
+    },
+    {
+      label: 'negative play count',
+      payload: [{ ...radarTrack, radar_reason: { ...reason, play_count: -1 } }],
+      message: /ReleaseRadar\[0\]\.radar_reason\.play_count must be a safe non-negative integer/,
+    },
+    {
+      label: 'fractional play count',
+      payload: [{ ...radarTrack, radar_reason: { ...reason, play_count: 1.5 } }],
+      message: /ReleaseRadar\[0\]\.radar_reason\.play_count must be a safe non-negative integer/,
+    },
+    {
+      label: 'invalid track inside a reasoned entry',
+      payload: [{ ...radarTrack, id: 42 }],
+      message: /ReleaseRadar\[0\]\.id must be a string/,
+    },
+  ])('rejects $label', ({ payload, message }) => {
+    expect(() => decodeReleaseRadar(payload)).toThrow(message);
   });
 });

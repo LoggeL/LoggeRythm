@@ -44,6 +44,12 @@ interface TrackRowProps {
   // the real Last.fm play count when known, otherwise the Deezer popularity bar.
   showPopularity?: boolean;
   plays?: TrackPlays;
+  /**
+   * A short remark about this row, e.g. why a radar track is listed. Its own
+   * column in a wide list (pair with `CollectionTracks noteLabel`), a third
+   * line under the artists in a narrow one.
+   */
+  note?: ReactNode;
 }
 
 /**
@@ -63,6 +69,7 @@ export default function TrackRow({
   showCover = true,
   showPopularity = false,
   plays,
+  note,
 }: TrackRowProps) {
   const cur = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
@@ -109,6 +116,7 @@ export default function TrackRow({
       data-album={showAlbum}
       data-popularity={showPopularity}
       data-handle={dragHandle !== undefined}
+      data-note={note !== undefined}
       onContextMenu={handleContextMenu}
       onDoubleClick={handleDoubleClick}
       className={styles.row}
@@ -154,6 +162,9 @@ export default function TrackRow({
               </span>
             )}
           </div>
+          {/* Narrow list: the note as a third line. Only one of the two note
+              elements is displayed at any width. */}
+          {note !== undefined && <div className={`${styles.noteLine} truncate text-xs leading-snug text-muted`}>{note}</div>}
         </div>
       </div>
 
@@ -169,6 +180,9 @@ export default function TrackRow({
           )}
         </div>
       )}
+
+      {/* note (wide list) */}
+      {note !== undefined && <div className={`${styles.note} min-w-0 truncate text-[0.8125rem] text-muted`}>{note}</div>}
 
       {/* actions + duration */}
       <div className={styles.trailing}>

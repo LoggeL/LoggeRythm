@@ -63,6 +63,11 @@ const stubs = {
   "@/hooks/usePlays": moduleUrl(
     "export const useTrackPlays = (tracks) => {globalThis.__searchScreenFixture.plays = tracks; return {};};",
   ),
+  // The library index is the real one, built from the fixture's saved songs.
+  "@/lib/libraryMatch": new URL("../src/lib/libraryMatch.ts", import.meta.url).href,
+  "@/hooks/useLibraryTracks": moduleUrl(
+    `import {indexLibraryTracks} from ${JSON.stringify(new URL("../src/lib/libraryMatch.ts", import.meta.url).href)}; export const useLibraryTracks = () => { const fixture = globalThis.__searchScreenFixture; return {index: indexLibraryTracks(fixture.library), likes: fixture.likes}; };`,
+  ),
   "@/components/TrackRow": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function TrackRow(props) {globalThis.__searchScreenFixture.trackRows.push(props); return createElement('button', {className: 'track-row-play', onClick: props.onPlay}, props.track.title);}`,
   ),
@@ -109,6 +114,7 @@ await compileInto(stubs, [
   ["./_components/ResultSection", "src/app/search/_components/ResultSection.tsx"],
   ["./_components/TopHit", "src/app/search/_components/TopHit.tsx"],
   ["./_components/TrackResults", "src/app/search/_components/TrackResults.tsx"],
+  ["./_components/LibraryResults", "src/app/search/_components/LibraryResults.tsx"],
   ["./_components/ArtistResults", "src/app/search/_components/ArtistResults.tsx"],
   ["./_components/AlbumResults", "src/app/search/_components/AlbumResults.tsx"],
   ["./_components/PlaylistResults", "src/app/search/_components/PlaylistResults.tsx"],
@@ -128,6 +134,8 @@ function screen({
   importing = false,
   data = {},
   errors = {},
+  library = [],
+  likesError = null,
 } = {}) {
   fixture.stateIndex = 0;
   fixture.states = [importing, null];
@@ -139,6 +147,15 @@ function screen({
   fixture.played = [];
   fixture.toasts = [];
   fixture.loading = loading;
+  fixture.library = library;
+  fixture.likes = {
+    isError: !!likesError,
+    error: likesError ? new Error(likesError) : null,
+    isFetching: false,
+    refetch: async () => {
+      fixture.retries.push("likes");
+    },
+  };
   fixture.selects = [];
   fixture.activations = [];
   fixture.auxActivations = [];
@@ -385,4 +402,100 @@ test("the empty search shows its heading, browsing tiles and the Spotify import 
   for (const href of ["/genre", "/radio", "/radar"]) assert.ok(html.includes(`href="${href}"`));
   assert.equal(fixture.buttons.filter((button) => button["aria-controls"] === "search-import").length, 1);
   assert.match(html, /Playlist per Link übernehmen/);
+});
+
+const saved = [
+  { id: "s1", title: "Zulu Dawn", artist: "Band", album: "Saved", duration_sec: 200 },
+  { id: "s2", title: "Other", artist: "Zulu Choir", album: "Saved", duration_sec: 210 },
+  { id: "s3", title: "Unrelated", artist: "Nobody", album: "Saved", duration_sec: 220 },
+];
+const rowIds = () => fixture.trackRows.map(({ track }) => track.id);
+
+test("saved songs matching the typed text show before the catalog search has even started", () => {
+  const html = screen({ input: "zulu", query: "", preparing: true, library: saved });
+  assert.deepEqual(requestedEntities(), [], "no catalog request while the input settles");
+  assert.deepEqual(fixture.plays, [], "library rows request no play counts");
+  assert.match(html, /<section aria-label="In deiner Bibliothek"[^>]*>.*?<h2>In deiner Bibliothek<\/h2>/);
+  assert.deepEqual(rowIds(), ["s1", "s2"]);
+  assert.ok(html.indexOf("In deiner Bibliothek") < html.indexOf('aria-busy="true"'), "the loading placeholder stays below the library");
+});
+
+test("the library follows the input on every keystroke, not the settled query", () => {
+  screen({ input: "zulu da", query: "zulu", preparing: true, library: saved, data: { track: songs } });
+  assert.deepEqual(rowIds(), ["s1"]);
+  assert.doesNotMatch(screen({ input: "z", query: "zulu", preparing: true, library: saved }), /In deiner Bibliothek/);
+  assert.doesNotMatch(screen({ input: "xyz", query: "xyz", library: saved }), /In deiner Bibliothek/);
+});
+
+test("the library stays while the catalog loads and when it fails", () => {
+  const loading = screen({ query: "zulu", library: saved, loading: ["track", "artist"] });
+  assert.match(loading, /In deiner Bibliothek/);
+  assert.deepEqual(rowIds(), ["s1", "s2"]);
+  const failed = screen({ query: "zulu", library: saved, errors: { track: "HTTP 503" } });
+  assert.match(failed, /Titel konnten nicht geladen werden: HTTP 503/);
+  assert.deepEqual(rowIds(), ["s1", "s2"]);
+  assert.ok(failed.indexOf("In deiner Bibliothek") < failed.indexOf('role="alert"'), "the failure is reported below the library");
+});
+
+test("a library song is not listed again among the catalog songs, and each list plays as its own queue", () => {
+  const catalog = [
+    { id: "c1", title: "Zulu", artist: "Band", duration_sec: 100 },
+    { id: "s1", title: "Zulu Dawn", artist: "Band", duration_sec: 200 },
+    { id: "c2", title: "Zulu Two", artist: "Band", duration_sec: 100 },
+    { id: "c3", title: "Zulu Three", artist: "Band", duration_sec: 100 },
+  ];
+  const html = screen({ query: "zulu", library: saved, data: { track: catalog } });
+  assert.deepEqual(rowIds(), ["s1", "s2", "c1", "c2", "c3"]);
+  assert.doesNotMatch(html, /Keine Ergebnisse/);
+  fixture.trackRows[3].onPlay();
+  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["c1", "c2", "c3"]);
+  assert.equal(fixture.played[0].index, 1);
+  assert.equal(fixture.played[0].title, "Suche: zulu");
+  fixture.trackRows[1].onPlay();
+  assert.deepEqual(fixture.played[1].tracks.map(({ id }) => id), ["s1", "s2"]);
+  assert.equal(fixture.played[1].index, 1);
+  assert.equal(fixture.played[1].title, "Bibliothek: zulu");
+  assert.deepEqual(fixture.historyCalls, [["remember", "zulu"], ["remember", "zulu"]]);
+});
+
+test("the top hit stays the best catalog match even when the library lists that song", () => {
+  const catalog = [
+    { id: "s1", title: "Zulu Dawn", artist: "Band", duration_sec: 200 },
+    { id: "c1", title: "Zulu", artist: "Band", duration_sec: 100 },
+  ];
+  screen({ query: "zulu", library: saved, data: { track: catalog } });
+  assert.deepEqual(rowIds(), ["s1", "s2", "c1"]);
+  fixture.buttons.find((button) => button["aria-label"] === "Zulu Dawn von Band abspielen").onClick();
+  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["s1", "c1"]);
+  assert.equal(fixture.played[0].index, 0);
+});
+
+test("the library previews five songs in the combined view, ten in the songs filter, and no other filter shows it", () => {
+  const many = Array.from({ length: 12 }, (_, index) => ({ id: `m${index}`, title: `Zulu ${index}`, artist: "Band", album: "Saved", duration_sec: 100 }));
+  screen({ query: "zulu", library: many });
+  assert.equal(fixture.trackRows.length, 5);
+  fixture.trackRows[4].onPlay();
+  assert.equal(fixture.played[0].tracks.length, 12, "playing continues through every match");
+  const filtered = screen({ query: "zulu", tab: "track", library: many, data: { track: songs } });
+  assert.deepEqual(rowIds(), [...many.slice(0, 10).map(({ id }) => id), "one", "two"]);
+  assert.match(filtered, /<h2>Weitere Titel<\/h2>/);
+  assert.doesNotMatch(screen({ query: "zulu", tab: "album", library: many }), /In deiner Bibliothek/);
+  assert.doesNotMatch(screen({ query: "zulu", importing: true, library: many }), /In deiner Bibliothek/);
+});
+
+test("using a library row before the query settles records the typed text", () => {
+  screen({ input: " zulu ", query: "zu", preparing: true, library: saved });
+  fixture.activations[0]({ button: 0, target: { closest: () => ({ tagName: "A" }) } });
+  fixture.activations[0]({ button: 0, target: { closest: () => null } });
+  fixture.auxActivations[0]({ button: 2, target: { closest: () => ({ tagName: "A" }) } });
+  assert.deepEqual(fixture.historyCalls, [["remember", " zulu "]]);
+});
+
+test("a failed liked-songs request is reported where the library would be, with a retry", async () => {
+  const html = screen({ query: "zulu", likesError: "HTTP 500" });
+  assert.match(html, /Lieblingssongs konnten nicht geladen werden: HTTP 500/);
+  buttonWithText("Erneut versuchen").onClick();
+  await new Promise(setImmediate);
+  assert.deepEqual(fixture.retries, ["likes"]);
+  assert.doesNotMatch(screen({ likesError: "HTTP 500" }), /Lieblingssongs konnten nicht geladen/, "nothing to report before a search");
 });

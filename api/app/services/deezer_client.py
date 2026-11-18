@@ -14,6 +14,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from datetime import date, datetime, timedelta
 from urllib.parse import quote_plus
 
 import requests
@@ -561,10 +562,156 @@ def genres() -> list[dict]:
     return out
 
 
+# Deezer's ``/editorial/{id}/releases`` feed answers ``{"data": [], "total": 0}``
+# for every editorial (verified 2026-11-18), so new releases are assembled from
+# the staff-picked ``/editorial/{id}/selection`` lists. Those lists carry no
+# ``release_date`` and mix this week's picks with years-old ones, so every
+# candidate's date is looked up and only recent releases are returned.
+_NEW_RELEASES_LIMIT = 24
+# Same notion of "recent" as the Release Radar cutoff in routers/home.py.
+_NEW_RELEASES_MAX_AGE_DAYS = 90
+# (editorial id, picks taken from the top of its selection). "0" is the
+# all-genres editorial; the rest are Pop, Rap/Hip Hop, Rock, Dance, R&B,
+# Alternative, Electro, Folk, Country, Heavy Metal and Latin: the genre
+# editorials whose leading picks were recent when the feed was chosen. Fresh
+# picks sit at the top of a list, and the small per-genre depth keeps a cold
+# load near Deezer's quota of 50 requests per 5 seconds (12 lists + <= 43 dates).
+_NEW_RELEASES_SOURCES: tuple[tuple[str, int], ...] = (
+    ("0", 10),
+    ("132", 3),
+    ("116", 3),
+    ("152", 3),
+    ("113", 3),
+    ("165", 3),
+    ("85", 3),
+    ("106", 3),
+    ("466", 3),
+    ("84", 3),
+    ("464", 3),
+    ("197", 3),
+)
+_NEW_RELEASES_TTL_SEC = 3600
+_new_releases_flights = SingleFlightTtlCache[str, list[dict]](
+    ttl_seconds=_NEW_RELEASES_TTL_SEC,
+    max_entries=1,
+    max_inflight=1,
+)
+# A published album's release date does not change, so hourly refreshes of the
+# merged list only look up picks that are new since the previous refresh.
+_ALBUM_RELEASE_DATE_TTL_SEC = 7 * 24 * 3600
+_album_release_date_flights = SingleFlightTtlCache[str, date](
+    ttl_seconds=_ALBUM_RELEASE_DATE_TTL_SEC,
+    max_entries=512,
+    max_inflight=64,
+)
+
+
+def _editorial_selection_path(editorial_id: str) -> str:
+    return f"/editorial/{editorial_id}/selection"
+
+
+def _editorial_selection(source: tuple[str, int]) -> list[tuple[str, dict]]:
+    """The leading ``(album id, album)`` picks of one editorial selection."""
+    editorial_id, limit = source
+    path = _editorial_selection_path(editorial_id)
+    items = _public_get(path).get("data")
+    context = f"Public Deezer editorial selection {path}"
+    if not isinstance(items, list):
+        raise DeezerClientError(
+            f"{context}: data must be an array, got {type(items).__name__}"
+        )
+    picks: list[tuple[str, dict]] = []
+    for index, item in enumerate(items[:limit]):
+        item_context = f"{context}: data[{index}]"
+        if not isinstance(item, dict):
+            raise DeezerClientError(f"{item_context} must be an object")
+        album_id = _search_id(item, item_context)
+        _search_text(item, "title", item_context)
+        artist = item.get("artist")
+        if not isinstance(artist, dict):
+            raise DeezerClientError(f"{item_context}: artist must be an object")
+        _search_text(artist, "name", f"{item_context}.artist")
+        picks.append((album_id, item))
+    return picks
+
+
+def _album_release_date(album_id: str) -> date:
+    """Release date of one album, cached because selections do not include it."""
+    def load() -> date:
+        try:
+            detail = _public_get(f"/album/{album_id}")
+        except TrackUnavailable as e:
+            # A missing album must not surface as "new releases not found".
+            raise DeezerClientError(
+                f"Could not load the release date of editorial pick album {album_id}: "
+                f"Deezer no longer has the album ({e})"
+            ) from e
+        except DeezerClientError as e:
+            raise type(e)(
+                f"Could not load the release date of editorial pick album {album_id}: {e}"
+            ) from e
+        value = detail.get("release_date")
+        if isinstance(value, str):
+            try:
+                return datetime.strptime(value, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        raise DeezerClientError(
+            f"Deezer album {album_id} has an invalid release_date {value!r}; "
+            "expected YYYY-MM-DD"
+        )
+
+    return _album_release_date_flights.get(album_id, load)
+
+
+def _load_new_releases() -> list[dict]:
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        selections = list(pool.map(_editorial_selection, _NEW_RELEASES_SOURCES))
+    picks: dict[str, dict] = {}
+    for selection in selections:
+        for album_id, item in selection:
+            picks.setdefault(album_id, item)
+    sources = ", ".join(
+        _editorial_selection_path(editorial_id)
+        for editorial_id, _limit in _NEW_RELEASES_SOURCES
+    )
+    if not picks:
+        raise DeezerClientError(
+            "Deezer returned no editorial picks from any new-release source "
+            f"({sources}); the feed may have been retired"
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        released = list(pool.map(_album_release_date, picks))
+    oldest = date.today() - timedelta(days=_NEW_RELEASES_MAX_AGE_DAYS)
+    recent = [
+        (released_on, item)
+        for released_on, item in zip(released, picks.values(), strict=True)
+        if released_on >= oldest
+    ]
+    if not recent:
+        raise DeezerClientError(
+            f"None of the {len(picks)} Deezer editorial picks was released in the "
+            f"last {_NEW_RELEASES_MAX_AGE_DAYS} days (newest: {max(released).isoformat()}; "
+            f"sources: {sources}); the feed appears to be stale"
+        )
+    # Stable sort: picks released on the same day keep their source order.
+    recent.sort(key=lambda entry: entry[0], reverse=True)
+    return [
+        normalize_album_summary({**item, "release_date": released_on.isoformat()})
+        for released_on, item in recent[:_NEW_RELEASES_LIMIT]
+    ]
+
+
 def new_releases() -> list[dict]:
-    data = _public_get("/editorial/0/releases?limit=24")
-    items = data.get("data") or []
-    return [normalize_album_summary(a) for a in items]
+    """Up to 24 staff-picked albums of the last 90 days, newest first.
+
+    Merges the leading picks of several editorial selections, drops duplicate
+    albums, and adds each album's release date. A malformed list, an album
+    without a valid date, and a merge without any recent release all raise
+    instead of producing an empty section.
+    """
+    return deepcopy(_new_releases_flights.get("editorial-selections", _load_new_releases))
 
 
 def genre_detail(genre_id: str) -> dict:

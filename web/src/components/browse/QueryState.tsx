@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useDeferredValue, type ReactNode } from "react";
 import QueryError, { type RetryableQuery } from "@/components/ui/QueryError";
 
 export interface StatefulQuery<T> extends RetryableQuery {
@@ -17,6 +17,10 @@ function isEmptyList(data: unknown): boolean {
  * pending, an error with retry (cached content stays visible below it), an
  * empty state once the request succeeded without results, and the content.
  * `label` names the data, e.g. "Deine Playlists".
+ *
+ * The skeleton stays up until React can swap it for the loaded content in a
+ * transition (a query result itself arrives as an urgent update), so the swap
+ * cross-fades instead of replacing the placeholder in a single frame.
  */
 export default function QueryState<T>({
   query,
@@ -33,11 +37,13 @@ export default function QueryState<T>({
   isEmpty?: (data: T) => boolean;
   children: (data: T) => ReactNode;
 }) {
+  const deferredLoading = useDeferredValue(query.isLoading);
+  const loading = query.isLoading || deferredLoading;
   return (
     <>
       <QueryError label={label} query={query} className="mb-4" />
       {query.isError && query.data !== undefined && <p className="mb-4 text-xs text-subtle">Der zuletzt geladene Stand bleibt sichtbar.</p>}
-      {query.isLoading ? (
+      {loading ? (
         <div role="status" aria-label={`${label} werden geladen`}>
           {skeleton}
         </div>

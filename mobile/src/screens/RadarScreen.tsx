@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import type { Track } from '../api/types';
+import type { ReleaseRadarEntry } from '../api/types';
 import { CatalogHeroArtwork, CatalogTrackRow } from '../components/catalog/CatalogCards';
 import { CatalogCollectionPage } from '../components/catalog/CatalogCollectionPage';
 import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
@@ -21,6 +21,7 @@ import {
   musicQueries,
   readReleaseRadarSeenTrackIds,
   releaseRadarTrackIds,
+  releaseRadarTracks,
   unseenReleaseRadarTrackIds,
 } from '../data';
 import { strings } from '../localization';
@@ -31,10 +32,15 @@ import {
   type TrackCatalogRouteCallbacks,
 } from './catalogModel';
 import { catalogStrings } from './catalogStrings';
-import { formatRadarReleaseDate, homeQueueContext } from './homeModel';
+import {
+  formatRadarReason,
+  formatRadarReleaseDate,
+  homeQueueContext,
+  joinRadarFacts,
+} from './homeModel';
 import { useCatalogPlayback } from './useCatalogPlayback';
 
-const EMPTY_TRACKS: Track[] = [];
+const EMPTY_ENTRIES: ReleaseRadarEntry[] = [];
 
 export type RadarScreenProps = TrackCatalogRouteCallbacks;
 
@@ -82,8 +88,10 @@ export default function RadarScreen(props: RadarScreenProps) {
   if (user === null) throw new Error('RadarScreen requires an authenticated user');
 
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
-  const radar = useQuery(musicQueries.releaseRadar(scope));
-  const tracks = radar.data ?? EMPTY_TRACKS;
+  const radar = useQuery(musicQueries.releaseRadarEntries(scope));
+  const entries = radar.data ?? EMPTY_ENTRIES;
+  // Playback, the queue and the seen-state work on the plain tracks, as before.
+  const tracks = useMemo(() => releaseRadarTracks(entries), [entries]);
   const trackIds = useMemo(() => releaseRadarTrackIds(tracks), [tracks]);
   const { runtimeError, setRuntimeError, play } = useCatalogPlayback('home-playback');
   const { newTrackIds, seenStateError } = useNewRadarTracks(scope, trackIds);
@@ -133,7 +141,7 @@ export default function RadarScreen(props: RadarScreenProps) {
           }}
         >
           <AppText variant="callout" color="secondary" numberOfLines={3}>
-            {strings.home.radarSubtitle}
+            {strings.home.radarRule}
           </AppText>
           <AppText variant="caption" color="muted">
             {newTrackIds.size > 0
@@ -172,12 +180,19 @@ export default function RadarScreen(props: RadarScreenProps) {
         />
       }
       renderTrack={(track, index) => {
+        const entry = entries[index];
+        if (entry === undefined || entry.track !== track) {
+          throw new Error(
+            `Release Radar row ${index} (track ${String(track.id)}) has no matching radar entry`,
+          );
+        }
         const date = formatRadarReleaseDate(
           track.release_date,
           now,
           strings.home.radarRelativeDate,
         );
         const isNew = newTrackIds.has(String(track.id));
+        const lead = [isNew ? strings.home.radarNewTrack : '', date];
         return (
           <CatalogTrackRow
             track={track}
@@ -187,9 +202,14 @@ export default function RadarScreen(props: RadarScreenProps) {
               queueContext: { type: 'home', id: 'release-radar' },
               originalContextOrder: index,
             }}
-            metadata={isNew
-              ? `${strings.home.radarNewTrack}${date ? ` · ${date}` : ''}`
-              : date || undefined}
+            metadata={joinRadarFacts(
+              [...lead, formatRadarReason(entry, strings.home.radarReason, 'row')],
+              ' · ',
+            )}
+            metadataAccessibilityLabel={joinRadarFacts(
+              [...lead, formatRadarReason(entry, strings.home.radarReasonSpoken, 'spoken')],
+              ', ',
+            )}
             highlighted={isNew}
             onPress={() => playFrom(index)}
             onLongPress={() => showTrackActions(track, setRuntimeError)}

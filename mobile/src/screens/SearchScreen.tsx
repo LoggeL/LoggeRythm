@@ -5,6 +5,7 @@ import { useProgress } from '../player/player';
 import { ActionButton, EmptyState, ScreenHeader, SectionHeader, TrackRowSkeleton } from '../components/ui';
 import { SearchBar } from '../components/search/SearchBar';
 import {
+  SearchLibraryLikesNotice,
   SearchMetadataFeedback,
   SearchResultsFeedback,
   showsPrimaryStaleNotice,
@@ -18,7 +19,11 @@ import {
   SearchArtistSection,
   SearchPlaylistSection,
 } from '../components/search/SearchResultSections';
-import { SearchTrackResultRow, searchTrackOccurrence } from '../components/search/SearchResults';
+import {
+  SearchTrackResultRow,
+  searchLibraryTrackOccurrence,
+  searchTrackOccurrence,
+} from '../components/search/SearchResults';
 import { SearchTopResultCard } from '../components/search/SearchTopResult';
 import { SearchVirtualizedResults } from '../components/search/SearchVirtualizedResults';
 import { SpotifyImportToggle } from '../components/search/SpotifyImportToggle';
@@ -42,6 +47,7 @@ import {
 } from '../share/spotifyImport';
 import { colors, layout, spacing } from '../theme';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
+import { searchLibraryContextId } from './searchLibraryModel';
 import {
   assertSearchRouteCallbacks,
   isCurrentSearchQuery,
@@ -56,6 +62,7 @@ import {
   type SearchTab,
   type SearchTopResult,
 } from './searchModel';
+import { useSearchLibrary } from './useSearchLibrary';
 import { useSearchResults } from './useSearchResults';
 
 export type SearchScreenProps = SearchRouteCallbacks;
@@ -112,7 +119,16 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     [queryClient],
   );
 
-  const results = useSearchResults({ query: debouncedQuery, ready, tab, sort, locale });
+  // Saved tracks match the text in the field on every keystroke, without a request.
+  const library = useSearchLibrary({ accountScope, input: normalizedInput, tab });
+  const results = useSearchResults({
+    query: debouncedQuery,
+    ready,
+    tab,
+    sort,
+    locale,
+    libraryTrackIds: library.shownIds,
+  });
   const { wanted, tracks, state: searchState } = results;
   const genresQuery = useQuery({ ...musicQueries.genres(), enabled: browsing });
   const genresState = resolveRemoteVisualState({
@@ -161,6 +177,24 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         type: 'search',
         id: debouncedQuery,
         label: strings.queue.searchContext(debouncedQuery),
+      },
+    }).catch(() =>
+      setActionError(strings.search.playFailed),
+    );
+  };
+
+  const playLibrary = (index: number) => {
+    Keyboard.dismiss();
+    if (index < 0 || index >= library.matches.length) {
+      throw new Error(
+        `Library search playback index ${index} is outside ${library.matches.length} tracks`,
+      );
+    }
+    void playTrackRow(library.matches, index, {
+      context: {
+        type: 'collection',
+        id: searchLibraryContextId(normalizedInput),
+        label: strings.queue.searchLibraryContext(normalizedInput),
       },
     }).catch(() =>
       setActionError(strings.search.playFailed),
@@ -227,7 +261,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     </View>
   );
 
-  const searchBody = browsing ? (
+  const browseBody = browsing ? (
     <SearchGenreBrowse
       testID="search-genre-browse"
       id="search-genres"
@@ -243,7 +277,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
       icon="text-search"
       title={strings.search.minimumQueryHint}
     />
-  ) : !ready ? (
+  ) : null;
+
+  // Progress, failures and the empty state of the remote search. Rendered as
+  // the list row below the library section, so that section never moves.
+  const remoteStatus = !ready ? (
     <TrackRowSkeleton
       testID="search-debounce-status"
       accessibilityLabel={strings.search.preparing}
@@ -261,7 +299,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             <SearchLoadingStatus testID={testID} label={accessibilityLabel} />
           )}
       />
-      {searchState.body === 'empty' ? (
+      {searchState.body === 'empty' && library.shown.length === 0 ? (
         <EmptyState
           testID="search-results-empty"
           icon="magnify-close"
@@ -291,18 +329,23 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     </View>
   );
 
-  const searchRows = ready && searchState.body === 'content'
+  const showRemoteRows = ready && searchState.body === 'content';
+  const searchRows = inputIsSearchable
     ? createSearchListRows({
-      artists: wanted.artist ? results.shownArtists : [],
-      tracks: wanted.track ? results.shownTracks : [],
-      albums: wanted.album ? results.shownAlbums : [],
-      playlists: wanted.playlist ? results.shownPlaylists : [],
-      topResult: tab === 'all' && sort === 'relevance'
+      libraryTracks: library.shown,
+      libraryNotice: library.likesIssue !== null,
+      remoteStatus: true,
+      artists: showRemoteRows && wanted.artist ? results.shownArtists : [],
+      tracks: showRemoteRows && wanted.track ? results.shownTracks : [],
+      albums: showRemoteRows && wanted.album ? results.shownAlbums : [],
+      playlists: showRemoteRows && wanted.playlist ? results.shownPlaylists : [],
+      topResult: showRemoteRows && tab === 'all' && sort === 'relevance'
         ? pickSearchTopResult({
           query: debouncedQuery,
           artists: results.shownArtists,
-          tracks: results.shownTracks,
+          tracks: results.foundTracks,
           albums: results.shownAlbums,
+          libraryTrackIds: library.shownIds,
         })
         : null,
     })
@@ -310,6 +353,42 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
   const renderSearchRow = (row: SearchListRow) => {
     switch (row.kind) {
+      case 'library-header':
+        return (
+          <View testID="search-section-library" style={styles.librarySectionHeader}>
+            <SectionHeader title={strings.search.sections.library} />
+          </View>
+        );
+      case 'library-track': {
+        const { track, index } = row;
+        return (
+          <SearchTrackResultRow
+            track={track}
+            testID={`search-library-track-${track.id}`}
+            occurrence={searchLibraryTrackOccurrence(normalizedInput, index)}
+            position={index + 1}
+            rollingDeviceCacheSeconds={activeProgress.cached}
+            onPlay={() => playLibrary(index)}
+            onActions={() => showTrackActions(track, setActionError)}
+            onOpenAlbum={openTrackAlbum}
+            onOpenArtist={openTrackArtist}
+          />
+        );
+      }
+      case 'library-notice':
+        // Rows of this kind exist only while the likes query reports an issue.
+        if (library.likesIssue === null) {
+          throw new Error('Library notice row rendered without a likes issue');
+        }
+        return (
+          <SearchLibraryLikesNotice
+            kind={library.likesIssue.kind}
+            retryBusy={library.likesIssue.retryBusy}
+            onRetry={library.likesIssue.retry}
+          />
+        );
+      case 'remote-status':
+        return remoteStatus;
       case 'top-result': {
         const { result } = row;
         return (
@@ -379,7 +458,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
           header={(
             <>
               {searchChrome}
-              {searchBody}
+              {browseBody}
             </>
           )}
           renderRow={renderSearchRow}
@@ -394,5 +473,6 @@ const styles = StyleSheet.create({
   chrome: { gap: spacing.sm, paddingTop: spacing.md },
   gutter: { paddingHorizontal: layout.pagePadding },
   bodyGap: { paddingTop: spacing.md },
+  librarySectionHeader: { paddingTop: spacing.md, paddingBottom: spacing.xs },
   trackSectionHeader: { paddingTop: spacing.xl, paddingBottom: spacing.xs },
 });

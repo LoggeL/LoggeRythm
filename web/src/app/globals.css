@@ -69,6 +69,12 @@
   --radius-control: 0.625rem;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Travel curve for elements that move between two places. */
+  --ease-move: cubic-bezier(0.3, 0.7, 0, 1);
+  /* Motion durations: small fades, a page cross-fade, a shared element in flight. */
+  --motion-fast: 140ms;
+  --motion-page: 220ms;
+  --motion-morph: 340ms;
   --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.6), 0 0 0 1px var(--hairline);
 
   --grad-violet-from: #5945a0;
@@ -237,6 +243,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .like-celebration-surface { position: relative; isolation: isolate; }
 .equalizer-bars { display: inline-flex; flex-shrink: 0; align-items: flex-end; justify-content: center; gap: 2px; color: var(--accent-soft); }
 .equalizer-bars [data-equalizer-bar] { width: 3px; height: 100%; border-radius: 1px; transform-origin: bottom; background: var(--accent-soft); transition: transform 65ms linear; }
+/* Lazily loaded artwork fades in when it has arrived (components/ui/Cover.tsx). */
+@keyframes coverIn { from { opacity: 0; } }
+.cover-image:not([data-loaded]) { opacity: 0; }
+.cover-image[data-loaded="arrived"] { animation: coverIn var(--motion-page) ease; }
 .new-content-highlight { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 
 @layer utilities {
@@ -265,8 +275,40 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
 }
 
+/* ---- View transitions ----------------------------------------------------
+   React's <ViewTransition> (components/motion/Morph.tsx) names the elements;
+   these rules decide how they move. `.page` is the scrolling page area, which
+   cross-fades on navigation and when loaded content replaces a placeholder.
+   `.morph` / `.morph-text` are artwork and title travelling between a card
+   and the hero of the page it opens. Everything outside the page area is
+   never named, so the shell stays as it is. */
+/* Clicks reach the page while a transition runs. */
+::view-transition { pointer-events: none; }
+/* The root only cross-fades when something outside the page area changed with
+   the navigation (the active item in the sidebar); it keeps the page's pace. */
+::view-transition-group(root), ::view-transition-group(.page) { animation-duration: var(--motion-page); animation-timing-function: ease; }
+::view-transition-group(.morph), ::view-transition-group(.morph-text) { animation-duration: var(--motion-morph); animation-timing-function: var(--ease-move); }
+/* Artwork fills its box while it changes size, instead of stretching. */
+::view-transition-old(.morph), ::view-transition-new(.morph) { height: 100%; object-fit: cover; }
+/* The small title leaves quickly so the two sizes never read as a double image. */
+::view-transition-old(.morph-text) { animation-duration: var(--motion-fast); }
+/* Without the View Transitions API a new page still fades in. */
+@supports not (view-transition-name: none) {
+  .page-enter { animation: fadeIn .28s var(--ease-out) both; }
+}
+/* Back/Forward: React commits history navigations without a view transition,
+   so the page that appears fades in on its own. */
+@keyframes pageFade { from { opacity: 0; } }
+.page-return { animation: pageFade var(--motion-page) ease both; }
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-in, .pop-in, .sheet-up, .skeleton, .eq-bar { animation: none; }
+  /* No travel and no resizing: elements take their final place at once and
+     old and new swap with a short fade. */
+  ::view-transition-group(*) { animation: none !important; }
+  ::view-transition-old(*), ::view-transition-new(*) { animation-duration: var(--motion-fast) !important; animation-delay: 0s !important; }
+  .page-return { animation-duration: var(--motion-fast); }
+  .cover-image[data-loaded="arrived"] { animation: none; }
+  .animate-in, .pop-in, .sheet-up, .skeleton, .eq-bar, .page-enter { animation: none; }
   .equalizer-bars [data-equalizer-bar] { transition: none; }
   .press:active, .play-fab:hover, .action-primary:hover, .hover-lift:hover { transform: none; }
 }

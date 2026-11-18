@@ -1,6 +1,7 @@
 import type { ArtistSummary, PlaylistSearchResult, Track } from "@/types";
 
 export type PaletteRow =
+  | { kind: "library"; track: Track }
   | { kind: "track"; track: Track }
   | { kind: "artist"; artist: ArtistSummary }
   | { kind: "album"; album: Track }
@@ -8,6 +9,7 @@ export type PaletteRow =
 
 export function paletteRowKey(row: PaletteRow): string {
   switch (row.kind) {
+    case "library": return `library-${row.track.id}`;
     case "track": return `track-${row.track.id}`;
     case "artist": return `artist-${row.artist.id}`;
     case "album": return `album-${row.album.album_id || row.album.id}`;
@@ -15,16 +17,24 @@ export function paletteRowKey(row: PaletteRow): string {
   }
 }
 
+/**
+ * `library` holds the saved songs matching the typed text. They lead the list,
+ * and a catalog track already shown among them is not listed a second time.
+ */
 export function paletteRows({
-  tracks = [], artists = [], albums = [], playlists = [],
+  library = [], tracks = [], artists = [], albums = [], playlists = [],
 }: {
+  library?: readonly Track[];
   tracks?: readonly Track[];
   artists?: readonly ArtistSummary[];
   albums?: readonly Track[];
   playlists?: readonly PlaylistSearchResult[];
 }): PaletteRow[] {
+  const saved = library.slice(0, 3);
+  const savedIds = new Set(saved.map((track) => String(track.id)));
   const candidates: PaletteRow[] = [
-    ...tracks.slice(0, 6).map((track) => ({ kind: "track" as const, track })),
+    ...saved.map((track) => ({ kind: "library" as const, track })),
+    ...tracks.filter((track) => !savedIds.has(String(track.id))).slice(0, 6).map((track) => ({ kind: "track" as const, track })),
     ...artists.slice(0, 3).map((artist) => ({ kind: "artist" as const, artist })),
     ...albums.slice(0, 3).map((album) => ({ kind: "album" as const, album })),
     ...playlists.slice(0, 3).map((playlist) => ({ kind: "playlist" as const, playlist })),

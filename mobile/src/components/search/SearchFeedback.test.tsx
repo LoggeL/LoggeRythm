@@ -2,8 +2,9 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { strings } from '../../localization';
 import type { SearchAggregateRemoteState } from '../../screens/searchRemoteState';
-import { byTestId, queryByTestId } from '../../test/render';
+import { byTestId, queryByTestId, textContent } from '../../test/render';
 import {
+  SearchLibraryLikesNotice,
   SearchMetadataFeedback,
   SearchResultsFeedback,
   searchIssueMessage,
@@ -31,6 +32,52 @@ const state = (overrides: Partial<SearchAggregateRemoteState> = {}): SearchAggre
 
 const renderLoading = (props: { testID: string; accessibilityLabel: string }) =>
   React.createElement('SearchSkeleton', props);
+
+describe('library likes notice', () => {
+  const label = strings.navigation.likedSongs;
+
+  it('reports liked songs that never loaded as an alert with retry', () => {
+    const onRetry = vi.fn();
+    const failed = SearchLibraryLikesNotice({ kind: 'hard-error', retryBusy: false, onRetry });
+    const notice = byTestId(failed, 'search-library-likes-hard-error');
+
+    expect(notice.props.accessibilityRole).toBe('alert');
+    expect(notice.props.accessibilityLiveRegion).toBe('assertive');
+    expect(textContent(failed)).toContain(strings.search.libraryLikesLoadFailed);
+    const action = byTestId(failed, 'search-library-likes-hard-error-action');
+    expect(action.props.accessibilityLabel).toBe(strings.search.retrySection(label));
+    expect(action.props.disabled).toBe(false);
+    (action.props.onPress as () => void)();
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('words an offline pause as offline, not as a server error', () => {
+    const offline = SearchLibraryLikesNotice({ kind: 'offline', retryBusy: false, onRetry: vi.fn() });
+
+    expect(byTestId(offline, 'search-library-likes-offline')).not.toBeNull();
+    expect(textContent(offline)).toContain(strings.search.libraryLikesOffline);
+    expect(textContent(offline)).not.toContain(strings.search.libraryLikesLoadFailed);
+  });
+
+  it('keeps cached likes notices polite and words them like the result sections', () => {
+    const refreshFailed = SearchLibraryLikesNotice({
+      kind: 'cached-refresh-error', retryBusy: true, onRetry: vi.fn(),
+    });
+    expect(byTestId(refreshFailed, 'search-library-likes-cached-refresh-error')
+      .props.accessibilityLiveRegion).toBe('polite');
+    expect(textContent(refreshFailed)).toContain(strings.search.remoteCachedRefreshFailed(label));
+    // A retry in flight cannot be started twice.
+    expect(byTestId(refreshFailed, 'search-library-likes-cached-refresh-error-action').props.disabled)
+      .toBe(true);
+
+    const cachedOffline = SearchLibraryLikesNotice({
+      kind: 'cached-offline', retryBusy: false, onRetry: vi.fn(),
+    });
+    expect(byTestId(cachedOffline, 'search-library-likes-cached-offline')
+      .props.accessibilityLiveRegion).toBe('polite');
+    expect(textContent(cachedOffline)).toContain(strings.search.remoteCachedOffline(label));
+  });
+});
 
 describe('search feedback', () => {
   it('words every issue kind for its section', () => {
