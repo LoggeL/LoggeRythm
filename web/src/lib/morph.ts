@@ -10,8 +10,9 @@
  * "ticket", together with what it showed (`seed`), so the detail page can draw
  * its artwork and title before its own data has loaded.
  *
- * History traversals: Back/Forward cannot run as a view transition, so the
- * page reached that way is remembered and fades in on its own.
+ * History traversals: React cannot run Back/Forward as a view transition, so
+ * the page reached that way is remembered and fades in on its own, unless
+ * `lib/traversalMorph.ts` animates the traversal itself.
  *
  * This module is framework-free; `components/motion/Morph.tsx` binds it to React.
  */
@@ -124,6 +125,16 @@ export function noteTraversal(pathname: string): void {
   // Same page, other query (search and library tabs): nothing is replaced.
   if (target === settledPath) return;
   traversedTo = target;
+  emit();
+}
+
+/**
+ * The traversal that was noted is shown as a view transition after all
+ * (`lib/traversalMorph.ts`), so its page must not also fade in on its own.
+ */
+export function forgetTraversal(): void {
+  if (traversedTo === null) return;
+  traversedTo = null;
   emit();
 }
 

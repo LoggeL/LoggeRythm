@@ -84,3 +84,18 @@ test("a page reached with Back or Forward is marked until the next navigation", 
   noteTraversal("/library");
   assert.equal(isTraversal("/library"), false);
 });
+
+test("a traversal that is animated as a view transition leaves no mark", async () => {
+  const { forgetTraversal, isTraversal, noteTraversal, settleMorph, subscribeMorph } = await load();
+  let notifications = 0;
+  subscribeMorph(() => notifications++);
+  settleMorph("/album/5000");
+
+  forgetTraversal();
+  assert.equal(notifications, 0, "nothing to forget, nobody is told");
+
+  noteTraversal("/genre");
+  forgetTraversal();
+  assert.equal(isTraversal("/genre"), false, "the page does not fade in on its own as well");
+  assert.equal(notifications, 2);
+});

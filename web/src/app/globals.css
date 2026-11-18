@@ -300,6 +300,18 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
    so the page that appears fades in on its own. */
 @keyframes pageFade { from { opacity: 0; } }
 .page-return { animation: pageFade var(--motion-page) ease both; }
+/* Back/Forward (lib/traversalMorph.ts): that module runs the traversal as a
+   view transition of its own and marks the page area and one artwork/title
+   pair with `data-traverse`. The fixed names never meet React's, which are
+   inline styles; the classes are the ones above, so both directions move
+   alike. The root is left out, so the shell is not captured and stays live. */
+:root[data-traversing] { view-transition-name: none; }
+[data-traverse="page"] { view-transition-name: traverse-page; view-transition-class: page; }
+[data-traverse="art"] { view-transition-name: traverse-art; view-transition-class: morph; }
+[data-traverse="title"] { view-transition-name: traverse-title; view-transition-class: morph-text; }
+/* The other half is not on screen: the old half fades with its page. */
+:root[data-traversing="fade"]::view-transition-old(.morph),
+:root[data-traversing="fade"]::view-transition-old(.morph-text) { animation-duration: var(--motion-page); animation-timing-function: ease; }
 
 @media (prefers-reduced-motion: reduce) {
   /* No travel and no resizing: elements take their final place at once and

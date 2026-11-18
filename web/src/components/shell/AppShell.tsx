@@ -20,7 +20,7 @@ import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
 import { useAmbientColor } from "@/hooks/useAmbientColor";
 import { SearchProvider } from "@/hooks/useSearchNavigation";
-import { PageTransition, usePageMotion } from "@/components/motion/Morph";
+import { PageTransition, usePageMotion, useTraversalMorph } from "@/components/motion/Morph";
 
 function SplashScreen() {
   return (
@@ -83,7 +83,8 @@ function Workspace({ children }: { children: React.ReactNode }) {
             <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
               {/* Only the page area cross-fades on navigation; sidebar, player and panels stay put. */}
               <PageTransition>
-                <main ref={mainRef} id="main-content" tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto outline-none">
+                {/* data-traverse-page: the page area and the page it shows, for lib/traversalMorph.ts. */}
+                <main ref={mainRef} id="main-content" data-traverse-page={pathname} tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto outline-none">
                   <TopBar />
                   <div key={pathname} className={`${pageMotion} mx-auto max-w-[96rem] px-4 pb-16 pt-3 sm:px-6 lg:px-10 lg:pt-6`}>
                     {children}
@@ -116,6 +117,7 @@ const PUBLIC_AUTH_PATHS = new Set(["/login", "/register", "/forgot-password", "/
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: me, isPending, isError, error, refetch, isFetching } = useMe();
+  useTraversalMorph();
 
   if (PUBLIC_AUTH_PATHS.has(pathname)) {
     return (

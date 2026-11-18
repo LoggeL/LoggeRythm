@@ -29,15 +29,18 @@ export default function Cover({
   alt = "",
   className = "",
   eager = false,
+  "data-traverse-card": traverseCard,
 }: {
   src?: string | null;
   alt?: string;
   className?: string;
   eager?: boolean;
+  /** Set by `Morph` around a card's cover; marks the element that travels on Back/Forward. */
+  "data-traverse-card"?: string;
 }) {
   // Decided once per mount, so a later render never cuts a running fade short.
   const [visible] = useState(() => eager || (!!src && shown.has(src)));
-  if (!src) return <CoverPlaceholder className={`shrink-0 ${className}`} />;
+  if (!src) return <CoverPlaceholder className={`shrink-0 ${className}`} data-traverse-card={traverseCard} />;
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -46,6 +49,7 @@ export default function Cover({
       loading={eager ? "eager" : "lazy"}
       decoding={eager ? "sync" : "async"}
       data-loaded={visible ? "true" : undefined}
+      data-traverse-card={traverseCard}
       ref={(image) => {
         // Already complete when mounted (cached, or loaded before hydration): no load event will follow.
         if (image?.complete) reveal(image, src, "true");

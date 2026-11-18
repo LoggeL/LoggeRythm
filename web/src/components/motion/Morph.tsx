@@ -1,9 +1,10 @@
 "use client";
 
-import { ViewTransition, useContext, useEffect, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from "react";
+import { ViewTransition, cloneElement, isValidElement, useContext, useEffect, useState, useSyncExternalStore, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { ShelfScope } from "@/components/browse/Shelf";
 import { armMorph, isTraversal, morphName, morphSeedFor, morphTargetName, noteTraversal, settleMorph, subscribeMorph, type MorphPart, type MorphSeed } from "@/lib/morph";
+import { installTraversalMorph, noteCardClick, noteRenderedPath } from "@/lib/traversalMorph";
 
 /**
  * Motion wiring on top of React's `<ViewTransition>` (the animations live in
@@ -14,6 +15,9 @@ import { armMorph, isTraversal, morphName, morphSeedFor, morphTargetName, noteTr
  * - `Morph` marks one half of a shared element; a card (`useMorphSource`) and
  *   the hero of the page it opens (`HeroMorph`) carry the same name, so the
  *   artwork and the title travel between them.
+ *
+ * Back/Forward is not a React transition; `lib/traversalMorph.ts` animates it
+ * and finds the same elements through the `data-traverse-*` attributes set here.
  *
  * Browsers without the View Transitions API render the same tree unanimated.
  */
@@ -28,15 +32,33 @@ export function PageTransition({ children }: { children: ReactNode }) {
 }
 
 /**
- * One half of a shared-element pair around a single element; it only moves
- * when the other half with the same name appears or disappears in the same
- * transition. `name` must not change while mounted. Without one it does nothing.
+ * `children` (one element that passes unknown props on to its DOM element)
+ * with `attribute` set, which is how `lib/traversalMorph.ts` finds it.
  */
-export function Morph({ name, part, children }: { name: string | undefined; part: MorphPart; children: ReactNode }) {
+function tagged(children: ReactNode, attribute: "data-traverse-card" | "data-traverse-hero", value: string | undefined): ReactNode {
+  if (value === undefined) return children;
+  if (!isValidElement(children)) throw new Error("A morph wraps exactly one element; it cannot mark text or several children.");
+  return cloneElement(children as ReactElement<Record<string, unknown>>, { [attribute]: value });
+}
+
+function Shared({ name, part, children }: { name: string | undefined; part: MorphPart; children: ReactNode }) {
   return (
     <ViewTransition name={name} share={part === "art" ? "morph" : "morph-text"} default="none">
       {children}
     </ViewTransition>
+  );
+}
+
+/**
+ * A card's half of a shared-element pair around a single element; it only
+ * moves when the other half with the same name appears or disappears in the
+ * same transition. `name` must not change while mounted. Without one it does nothing.
+ */
+export function Morph({ name, part, children }: { name: string | undefined; part: MorphPart; children: ReactNode }) {
+  return (
+    <Shared name={name} part={part}>
+      {tagged(children, "data-traverse-card", name)}
+    </Shared>
   );
 }
 
@@ -49,9 +71,9 @@ export function HeroMorph({ part, children }: { part: MorphPart; children: React
   // Fixed at mount: the name belongs to the navigation that brought the hero up.
   const [name] = useState(() => morphTargetName(part, pathname) ?? undefined);
   return (
-    <Morph name={name} part={part}>
-      {children}
-    </Morph>
+    <Shared name={name} part={part}>
+      {tagged(children, "data-traverse-hero", part)}
+    </Shared>
   );
 }
 
@@ -70,6 +92,7 @@ export function useMorphSource(href: string | undefined, seed: MorphSeed) {
       // Only a plain click navigates in this tab; modified clicks open elsewhere.
       if (href === undefined || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       armMorph(href, scope, pathname, seed);
+      noteCardClick(href, scope);
     },
   };
 }
@@ -84,6 +107,19 @@ export function useMorphSeed(): MorphSeed | null {
   );
 }
 
+/**
+ * Animates Back/Forward (`lib/traversalMorph.ts`); call once at the top of the
+ * shell, where every route renders.
+ */
+export function useTraversalMorph(): void {
+  const pathname = usePathname();
+  // During render on purpose: it records that React rendered this path, even
+  // if the render could not be shown yet. Idempotent; it only tells a page that
+  // is still loading from a mechanism that stopped working.
+  noteRenderedPath(pathname);
+  useEffect(() => installTraversalMorph(), []);
+}
+
 /** The parts of the Navigation API's `navigate` event used here (not yet in TypeScript's DOM types). */
 interface HistoryNavigateEvent extends Event {
   navigationType: "push" | "replace" | "reload" | "traverse";
@@ -94,8 +130,9 @@ interface HistoryNavigateEvent extends Event {
  * Keeps the motion bookkeeping in step with navigation; call once in the
  * shell. Returns the class for the element that holds the current page:
  * `page-enter` normally (the view transition animates it), `page-return` when
- * the page was reached with Back/Forward, which React commits without a view
- * transition, so the page fades in by itself.
+ * the page was reached with Back/Forward and `lib/traversalMorph.ts` did not
+ * animate it: React commits it without a view transition, so the page fades in
+ * by itself.
  */
 export function usePageMotion(): "page-enter" | "page-return" {
   const pathname = usePathname();

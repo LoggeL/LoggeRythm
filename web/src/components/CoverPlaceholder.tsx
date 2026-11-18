@@ -5,12 +5,16 @@
  */
 export default function CoverPlaceholder({
   className = "",
+  "data-traverse-card": traverseCard,
 }: {
   className?: string;
+  /** Passed on from `Cover`; see there. */
+  "data-traverse-card"?: string;
 }) {
   return (
     <div
       aria-hidden
+      data-traverse-card={traverseCard}
       className={`grid place-items-center overflow-hidden gradient-violet ${className}`}
     >
       <svg
