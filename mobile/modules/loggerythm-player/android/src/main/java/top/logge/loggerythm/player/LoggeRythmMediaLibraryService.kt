@@ -302,6 +302,7 @@ class LoggeRythmMediaLibraryService :
   private val notificationFavorite = LoggeRythmNotificationFavoriteCoordinator()
   private var remotePolicyExplicitlyReset = false
   private var serviceDestroyed = false
+  private var idleNotificationSuppressed = false
   private var serviceOnlyRestoreState = ServiceOnlyRestoreState.IDLE
   private val serviceOnlyRestoreWaiters = mutableListOf<() -> Unit>()
   private val browseTreeObserver = object : LoggeRythmBrowseTreeObserver {
@@ -339,6 +340,16 @@ class LoggeRythmMediaLibraryService :
         events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
       ) {
         refreshNotificationFavoriteButtons()
+      }
+      if (
+        idleNotificationSuppressed &&
+        events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
+        player.playbackState != Player.STATE_IDLE
+      ) {
+        // Playback was prepared again after a closed session: restore Media3's default so a
+        // later stop or error keeps its retry notification.
+        idleNotificationSuppressed = false
+        setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_AFTER_STOP_OR_ERROR)
       }
     }
   }
@@ -490,6 +501,31 @@ class LoggeRythmMediaLibraryService :
   ) {
     notificationFavorite.publish(mediaId, liked)
     refreshNotificationFavoriteButtons(callback)
+  }
+
+  /**
+   * The app UI is gone (task swiped away, activity destroyed). Ongoing playback continues in the
+   * background. Otherwise the session is closed: the app's own controller keeps this service
+   * bound inside the process, so Media3's stopSelf() alone would leave the paused session and its
+   * non-dismissible media notification (and OEM mini players built on it) alive indefinitely.
+   * Stopping keeps the queue and position; they stay persisted and playable.
+   */
+  override fun closeSessionUnlessPlaying() {
+    if (serviceDestroyed) return
+    if (
+      LoggeRythmSessionClosePolicy.keepsSessionWithoutUi(
+        playWhenReady = player.playWhenReady,
+        playbackState = player.playbackState,
+      )
+    ) {
+      return
+    }
+    idleNotificationSuppressed = true
+    // An idle player then has no notification, which also ends Media3's paused foreground hold.
+    setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
+    // A finished queue still has playWhenReady set; a later prepare must not start on its own.
+    player.pause()
+    player.stop()
   }
 
   private fun notifyBrowseTreeChanged(change: RuntimeBrowseTreeChange) {

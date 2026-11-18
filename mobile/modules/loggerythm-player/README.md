@@ -170,6 +170,24 @@ projection. Device instrumentation is still required to prove eviction at the 50
 real AndroidKeyStore/filesystem behavior, network interruption fallback, process death, and real
 concurrent clear/preload behavior on supported Android API levels.
 
+## Closing the app
+
+The app's own `MediaController` keeps the service bound for as long as the process lives, so
+Media3's `stopSelf()` after a task removal never destroys the session. Without further handling a
+paused session and its non-dismissible media notification (and OEM surfaces built on it, such as
+the HyperOS island mini player) would outlive the app UI with nothing left to close them.
+
+When the React activity is destroyed (task swiped from recents, activity finished) the module asks
+the service to `closeSessionUnlessPlaying`. Playback that is playing or buffering continues in the
+background unchanged. Anything else is paused and stopped: the player goes idle, the notification
+is removed, and the queue, active item and position stay in the player and in the encrypted state.
+`play` prepares a stopped player that still has a queue, so reopening the app resumes where it
+was; a failed player is left to the JavaScript recovery policy. Media3's default idle-notification
+mode is restored as soon as the player is prepared again.
+
+A session that is paused from the notification or a headset after the app was closed while
+playing keeps its notification so playback can be resumed from there.
+
 ## Android Auto and legacy browsers
 
 Android Auto, Automotive OS, and other hosts bind the exported service through the platform

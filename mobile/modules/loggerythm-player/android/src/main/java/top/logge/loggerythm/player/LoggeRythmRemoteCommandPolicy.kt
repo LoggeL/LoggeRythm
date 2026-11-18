@@ -252,6 +252,25 @@ internal interface LoggeRythmMediaSessionServiceControl {
     liked: Boolean?,
     callback: (Result<Unit>) -> Unit,
   )
+  fun closeSessionUnlessPlaying()
+}
+
+/**
+ * Decides what happens to the media session when the app's own UI goes away (task swiped from
+ * recents, activity destroyed). Audible or buffering playback continues in the background;
+ * anything else is closed so no paused media controls are left behind that nothing can dismiss.
+ */
+internal object LoggeRythmSessionClosePolicy {
+  fun keepsSessionWithoutUi(playWhenReady: Boolean, playbackState: Int): Boolean =
+    playWhenReady &&
+      (playbackState == Player.STATE_READY || playbackState == Player.STATE_BUFFERING)
+
+  /** A stopped (not failed) player with a queue must be prepared again before it can play. */
+  fun requiresPrepareBeforePlay(
+    playbackState: Int,
+    hasPlayerError: Boolean,
+    mediaItemCount: Int,
+  ): Boolean = playbackState == Player.STATE_IDLE && !hasPlayerError && mediaItemCount > 0
 }
 
 /** In-process command-policy bridge. It deliberately carries no identity, source, or credential. */
@@ -301,5 +320,10 @@ internal object LoggeRythmMediaSessionServiceBridge {
     } else {
       active.publishNotificationFavorite(mediaId, liked, callback)
     }
+  }
+
+  /** Without a running service there is no session and no media notification to close. */
+  fun closeSessionUnlessPlaying() {
+    synchronized(lock) { control }?.closeSessionUnlessPlaying()
   }
 }

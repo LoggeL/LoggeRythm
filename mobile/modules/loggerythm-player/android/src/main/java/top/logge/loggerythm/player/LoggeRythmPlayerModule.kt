@@ -11,6 +11,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -48,7 +49,7 @@ internal fun normalizedCurrentItemSnapshot(
 @UnstableApi
 class LoggeRythmPlayerModule(
   reactContext: ReactApplicationContext,
-) : ReactContextBaseJavaModule(reactContext) {
+) : ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
   private val mainHandler = Handler(Looper.getMainLooper())
   private val worker = Executors.newSingleThreadExecutor()
   private val invalidated = AtomicBoolean(false)
@@ -70,6 +71,16 @@ class LoggeRythmPlayerModule(
 
   init {
     LoggeRythmNotificationFavoriteEventBridge.attach(notificationFavoriteReceiver)
+    reactContext.addLifecycleEventListener(this)
+  }
+
+  override fun onHostResume() = Unit
+
+  override fun onHostPause() = Unit
+
+  /** The activity is gone (for example swiped from recents); see closeSessionUnlessPlaying. */
+  override fun onHostDestroy() {
+    mainHandler.post { LoggeRythmMediaSessionServiceBridge.closeSessionUnlessPlaying() }
   }
 
   private val progressTicker = object : Runnable {
@@ -389,6 +400,7 @@ class LoggeRythmPlayerModule(
   override fun invalidate() {
     if (!invalidated.compareAndSet(false, true)) return
     LoggeRythmNotificationFavoriteEventBridge.detach(notificationFavoriteReceiver)
+    reactApplicationContext.removeLifecycleEventListener(this)
     mainHandler.post {
       stopProgressTicker()
       controller?.let { active ->
@@ -418,7 +430,18 @@ class LoggeRythmPlayerModule(
           active.prepare()
         }
       }
-      PlayerCommand.Play -> active.play()
+      PlayerCommand.Play -> {
+        if (
+          LoggeRythmSessionClosePolicy.requiresPrepareBeforePlay(
+            playbackState = active.playbackState,
+            hasPlayerError = active.playerError != null,
+            mediaItemCount = active.mediaItemCount,
+          )
+        ) {
+          active.prepare()
+        }
+        active.play()
+      }
       PlayerCommand.Pause -> active.pause()
       is PlayerCommand.SeekTo -> active.seekTo(command.positionMs)
       PlayerCommand.SkipToNext -> if (active.hasNextMediaItem()) active.seekToNextMediaItem()
