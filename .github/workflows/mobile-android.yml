@@ -120,7 +120,10 @@ jobs:
           NODE_ENV: production
         run: |
           : "${GITHUB_RUN_NUMBER:?GitHub did not provide GITHUB_RUN_NUMBER}"
-          export ANDROID_VERSION_CODE=$((10000 + GITHUB_RUN_NUMBER))
+          # Base 11000 (was 10000): local release builds up to 10090 exist on
+          # testers' phones, and Android refuses an update with a lower
+          # versionCode. Keep in sync with expected_version_code below.
+          export ANDROID_VERSION_CODE=$((11000 + GITHUB_RUN_NUMBER))
           chmod +x ./gradlew
           ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g" \
             :loggerythm_player-native:testReleaseUnitTest \
@@ -315,7 +318,7 @@ jobs:
           "$aapt" dump xmltree "$apk" AndroidManifest.xml > /tmp/manifest.txt
           "$aapt" dump resources "$apk" > /tmp/resources.txt
           expected_version_name=$(node -p "require('../app.json').expo.version")
-          expected_version_code=$((10000 + GITHUB_RUN_NUMBER))
+          expected_version_code=$((11000 + GITHUB_RUN_NUMBER))
           require_fixed \
             "package: name='top.logge.loggerythm' versionCode='${expected_version_code}' versionName='${expected_version_name}'" \
             /tmp/badging.txt \

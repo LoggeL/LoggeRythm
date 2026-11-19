@@ -72,7 +72,7 @@ contract, or the app refuses to offer it:
   ```
 
   whose number equals the APK's `versionCode`. CI builds it as
-  `10000 + GITHUB_RUN_NUMBER` and checks it with `aapt dump badging` in the
+  `11000 + GITHUB_RUN_NUMBER` and checks it with `aapt dump badging` in the
   *Native Android QA* run, so take the number from the run that produced the
   uploaded APK. A missing, duplicated or malformed line is an error the app
   shows; it never guesses.
