@@ -1,0 +1,38 @@
+name: loggerythm-android-runner
+
+services:
+  loggerythm-android-runner:
+    build: .
+    image: loggerythm-android-runner:local
+    container_name: loggerythm-android-runner
+    restart: unless-stopped
+    environment:
+      RUNNER_URL: https://github.com/LoggeL/LoggeRythm
+      RUNNER_NAME: homebox-android
+      RUNNER_LABELS: homebox-android
+      # Only needed for the first start; the registration then lives in the
+      # volume. Put it in .env next to this file (never commit it).
+      RUNNER_TOKEN: ${RUNNER_TOKEN:-}
+    devices:
+      - /dev/kvm:/dev/kvm
+    # One volume for the whole home: runner registration and self-updates,
+    # tool cache, Gradle, npm, Android SDK and AVDs survive restarts. Only
+    # trusted master/release pushes and manual runs reach this runner.
+    volumes:
+      - runner-home:/home/runner
+    # Keep the live services on this host responsive.
+    cpus: 12
+    mem_limit: 18g
+    pids_limit: 8192
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - runner
+
+volumes:
+  runner-home:
+
+networks:
+  runner:

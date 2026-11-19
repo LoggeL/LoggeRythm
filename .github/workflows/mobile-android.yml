@@ -28,7 +28,10 @@ on:
 
 jobs:
   qa:
-    runs-on: ubuntu-latest
+    # Trusted pushes and manual runs use the Homebox runner (ci/homebox-runner,
+    # unprivileged container with /dev/kvm). Pull requests stay on GitHub's
+    # runners: this repo is public and PR code must never run on the Homebox.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'homebox-android' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -448,10 +451,20 @@ jobs:
           cat release-evidence/SHA256SUMS
 
       - name: Enable KVM for native instrumentation
+        if: ${{ runner.environment == 'github-hosted' }}
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      - name: Require KVM on the self-hosted runner
+        if: ${{ runner.environment == 'self-hosted' }}
+        run: |
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            echo "::error::/dev/kvm is missing or not read/writable on the self-hosted runner; the emulator QA cannot run."
+            ls -l /dev/kvm || true
+            exit 1
+          fi
 
       - name: Standalone x86_64 cold/warm release QA
         uses: reactivecircus/android-emulator-runner@v2.38.0
