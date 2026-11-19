@@ -10,16 +10,13 @@
 // or a bumped override then resolves them and the stale entry is reported.
 import { execFileSync } from 'node:child_process';
 
-// Reviewed 2026-11-17 against the GitHub advisory and the installed dependency
-// paths. GHSA-fc5q-39xc-vjpf (picomatch, ReDoS through repeated extglobs)
-// covers every release (<= 4.0.7) and has first_patched_version=null, so no
-// update or override can resolve it. picomatch reaches the production tree
-// only through build tooling: @expo/cli, @expo/metro-config, metro-file-map
-// (via micromatch) and react-native's tinyglobby. There it matches this
-// trusted checkout's own glob patterns on the build machine; it is not part
-// of the app bundle and never sees input from the network or the user.
+// Empty since 2026-11-17: `npm audit fix` plus the @expo/fingerprint minimatch
+// override resolved every production advisory, including the previously
+// reviewed braces (GHSA-vfj7-8cjw-p6xm) and node-forge (GHSA-86w9-cpqp-85rv).
+// The picomatch exception (GHSA-fc5q-39xc-vjpf) was removed on 2026-11-19
+// after GitHub withdrew that advisory on 2026-11-18.
 // Add entries here as [advisoryId, packageName] only under the rules above.
-const ALLOWLISTED_ADVISORIES = new Map([['GHSA-fc5q-39xc-vjpf', 'picomatch']]);
+const ALLOWLISTED_ADVISORIES = new Map();
 
 const FAIL_SEVERITIES = new Set(['moderate', 'high', 'critical']);
 
