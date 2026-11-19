@@ -10,7 +10,11 @@ export interface AndroidUpdateProgressPresentation {
   total: string | null;
   percent: number | null;
   visibleText: string;
-  accessibilityText: string;
+  /**
+   * The bar's `accessibilityValue.text`. The bar's static label already names
+   * the download, so this carries only the progress itself.
+   */
+  accessibilityValueText: string;
 }
 
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB'] as const;
@@ -88,9 +92,9 @@ export function presentAndroidUpdateDownloadProgress(
       visibleText: locale === 'de'
         ? `${downloaded} geladen`
         : `${downloaded} downloaded`,
-      accessibilityText: locale === 'de'
-        ? `Update-Download läuft, ${downloaded} geladen`
-        : `Update download in progress, ${downloaded} downloaded`,
+      accessibilityValueText: locale === 'de'
+        ? `Läuft, ${downloaded} geladen`
+        : `In progress, ${downloaded} downloaded`,
     };
   }
   const total = formatAndroidUpdateBytes(normalized.totalBytes, locale);
@@ -105,8 +109,8 @@ export function presentAndroidUpdateDownloadProgress(
     visibleText: locale === 'de'
       ? `${percent} % · ${downloaded} von ${total}`
       : `${percent}% · ${downloaded} of ${total}`,
-    accessibilityText: locale === 'de'
-      ? `Update-Download ${percent} Prozent, ${downloaded} von ${total}`
-      : `Update download ${percent} percent, ${downloaded} of ${total}`,
+    accessibilityValueText: locale === 'de'
+      ? `${percent} Prozent, ${downloaded} von ${total}`
+      : `${percent} percent, ${downloaded} of ${total}`,
   };
 }

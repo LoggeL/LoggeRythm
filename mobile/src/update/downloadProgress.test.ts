@@ -35,7 +35,7 @@ describe('Android update download progress', () => {
       total: '10 MB',
       percent: 50,
       visibleText: '50% · 5 MB of 10 MB',
-      accessibilityText: 'Update download 50 percent, 5 MB of 10 MB',
+      accessibilityValueText: '50 percent, 5 MB of 10 MB',
     });
 
     const german = presentAndroidUpdateDownloadProgress({
@@ -47,7 +47,7 @@ describe('Android update download progress', () => {
       total: '3 MB',
       percent: 50,
       visibleText: '50 % · 1,5 MB von 3 MB',
-      accessibilityText: 'Update-Download 50 Prozent, 1,5 MB von 3 MB',
+      accessibilityValueText: '50 Prozent, 1,5 MB von 3 MB',
     });
   });
 
@@ -57,12 +57,14 @@ describe('Android update download progress', () => {
         total: null,
         percent: null,
         visibleText: '1.5 KB downloaded',
+        accessibilityValueText: 'In progress, 1.5 KB downloaded',
       });
     expect(presentAndroidUpdateDownloadProgress({ downloadedBytes: 1536, totalBytes: null }, 'de'))
       .toMatchObject({
         total: null,
         percent: null,
         visibleText: '1,5 KB geladen',
+        accessibilityValueText: 'Läuft, 1,5 KB geladen',
       });
   });
 

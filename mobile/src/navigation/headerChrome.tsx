@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { DarkTheme, type Theme } from '@react-navigation/native';
 import { tryResolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
@@ -8,6 +8,7 @@ import BrandLockup from '../components/BrandLockup';
 import { getCurrentApiBase } from '../config';
 import { strings } from '../localization';
 import { colors, metrics, opacity, radii, spacing, typography } from '../theme';
+import { androidUpdateAttention, useAndroidUpdateSnapshot } from '../update/androidUpdateStore';
 import { rootNavigation } from './rootNavigation';
 
 /** React Navigation chrome (container background, headers) from the theme tokens. */
@@ -36,10 +37,17 @@ export const sectionScreenOptions = {
   contentStyle: { backgroundColor: colors.background },
 } as const;
 
-/** Round avatar in every stack header; opens the Profile modal route. */
+/**
+ * Round avatar in every stack header; opens the Profile modal route. While an
+ * Android update waits in the profile (an offered update, or a final install
+ * failure not yet seen), an accent dot marks the avatar and the button label
+ * says which of the two it is.
+ */
 export function ProfileButton() {
   const { user } = useAuth();
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
+  const updateAttention = androidUpdateAttention(useAndroidUpdateSnapshot());
+  const updateNeedsAttention = updateAttention !== 'none';
   const avatarValue = user?.avatar_url ?? null;
   const avatar =
     avatarValue && failedAvatar !== avatarValue
@@ -59,7 +67,13 @@ export function ProfileButton() {
     <Pressable
       testID="profile-access"
       accessibilityRole="button"
-      accessibilityLabel={strings.navigation.openProfile}
+      accessibilityLabel={
+        updateAttention === 'install-failed'
+          ? strings.navigation.openProfileUpdateFailed
+          : updateAttention === 'update-available'
+            ? strings.navigation.openProfileUpdateAvailable
+            : strings.navigation.openProfile
+      }
       onPress={openProfile}
       hitSlop={6}
       style={({ pressed }) => [styles.profileButton, pressed && styles.pressed]}
@@ -74,6 +88,15 @@ export function ProfileButton() {
       ) : (
         <Text accessible={false} style={styles.profileInitial}>{initial}</Text>
       )}
+      {updateNeedsAttention ? (
+        <View
+          testID="profile-update-dot"
+          accessible={false}
+          importantForAccessibility="no"
+          pointerEvents="none"
+          style={styles.updateDot}
+        />
+      ) : null}
     </Pressable>
   );
 }
@@ -130,7 +153,9 @@ export function brandedRootOptions(title: string) {
   };
 }
 
-const AVATAR_SIZE = 36;
+const AVATAR_SIZE = metrics.headerAvatar;
+/** The dot's outer edge meets the corner of the avatar's bounding box. */
+const DOT_INSET = (metrics.minimumTouchTarget - metrics.headerAvatar) / 2;
 
 const styles = StyleSheet.create({
   profileButton: {
@@ -156,6 +181,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.textPrimary,
     backgroundColor: colors.surfaceElevated,
+  },
+  updateDot: {
+    position: 'absolute',
+    top: DOT_INSET,
+    right: DOT_INSET,
+    width: metrics.badgeDot,
+    height: metrics.badgeDot,
+    borderRadius: radii.pill,
+    borderWidth: metrics.badgeDotRing,
+    // Header background, so the dot reads on photo avatars too.
+    borderColor: colors.background,
+    backgroundColor: colors.accent,
   },
   logoutButton: {
     minHeight: metrics.minimumTouchTarget,

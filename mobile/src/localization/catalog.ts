@@ -102,6 +102,9 @@ export interface StringCatalog {
     likedSongs: string;
     playlists: string;
     openProfile: string;
+    openProfileUpdateAvailable: string;
+    /** The header dot stands for a final install failure the user has not seen yet. */
+    openProfileUpdateFailed: string;
     profileUnavailable: string;
     invalidLinkTitle: string;
     invalidLinkBody: string;
@@ -286,18 +289,127 @@ export interface StringCatalog {
     noRemainingTime: string;
     sleepSetFailed: string;
     update: {
-      title: string;
+      titleVersion: string;
+      titleAvailable: string;
+      /** Header while the offered release failed for good and cannot be installed. */
+      titleUninstallable: string;
+      installedVersion: (version: string) => string;
+      installedBuild: (versionCode: number) => string;
       checking: string;
-      current: (version: string) => string;
-      available: (version: string, megabytes: number) => string;
-      toastAvailable: (version: string) => string;
-      startupCheckFailed: string;
-      install: string;
-      downloading: string;
-      retryInstall: string;
-      permission: string;
+      upToDate: string;
+      updatedTo: (version: string) => string;
+      lastChecked: (when: string) => string;
+      justNow: string;
+      minutesAgo: (minutes: number) => string;
+      todayAt: (time: string) => string;
+      /** Last check on another day: date ("17. November") and time. */
+      checkedOnDay: (date: string, time: string) => string;
+      transition: (from: string, to: string) => string;
+      availableMeta: (size: string, date: string) => string;
+      /** The offered release without the install framing, after a final failure. */
+      releaseVersion: (version: string) => string;
+      notesLabel: string;
+      releaseLink: string;
+      install: (size: string) => string;
+      preparing: string;
+      downloading: (version: string) => string;
+      downloadingHint: string;
+      /** Static TalkBack label of the download bar; the progress is its value. */
+      progressLabel: string;
       confirm: (version: string) => string;
-      failed: string;
+      confirmHint: string;
+      /** A broken progress report while the verified APK still reached Android's installer. */
+      progressWarning: string;
+      restartInstall: string;
+      permission: string;
+      permissionContinue: string;
+      installedNewerName: (latest: string) => string;
+      installedNewerBuild: (build: number, latest: string, latestBuild: number) => string;
+      installedNewerHint: string;
+      /** The release declares the installed build's own number: not installable, not newer. */
+      installedSameBuild: (latest: string, build: number) => string;
+      /** Points to the release's "Android-Versioncode" line, not to a development build. */
+      installedSameBuildHint: string;
+      viewRelease: string;
+      recheck: string;
+      retryInstall: string;
+      /**
+       * Announced once when a check the profile watched ends; a failed check
+       * is announced by its ErrorState (or its folded live-region line) instead.
+       */
+      checkAnnouncement: {
+        upToDate: string;
+        available: (version: string) => string;
+        /** Found, but its install already failed for good. */
+        uninstallable: (version: string) => string;
+        installedNewer: string;
+        /** The release declares the installed build's own number (see `installedSameBuild`). */
+        installedSameBuild: (latest: string) => string;
+      };
+      checkFailedTitle: string;
+      installFailedTitle: string;
+      /**
+       * Install failure that retrying the same release cannot fix, by where
+       * its cause lies: the release's data or APK (explained on the release
+       * page), or this device (named in the detail above the hint).
+       */
+      finalFailureHint: { release: string; device: string };
+      /** Prefix of a startup toast, per phase that failed. */
+      startupPhase: {
+        check: string;
+        pendingInstall: string;
+        installOutcome: string;
+        /** The installer outcome channel itself could not be read or subscribed to. */
+        installOutcomeUnavailable: string;
+        /** The app's language could not be handed to the native update notices. */
+        appLocale: string;
+      };
+      updatedToast: (version: string) => string;
+      /**
+       * Startup failure toast: the phase and a pointer to the profile, whose
+       * card shows the cause and the raw detail. Android 12+ cuts a text toast
+       * after two lines, so the toast carries nothing else.
+       */
+      startupFailureToast: (phase: string) => string;
+      detail: (code: string, message: string) => string;
+      errors: {
+        network: string;
+        rateLimited: (status: number) => string;
+        http: (status: number) => string;
+        releaseVersionCodeMissing: (version: string) => string;
+        releaseVersionCodeAmbiguous: (version: string) => string;
+        releaseInvalid: string;
+        installedVersionInvalid: (version: string) => string;
+        markerInvalid: string;
+        permissionRequired: string;
+        digestMismatch: string;
+        signatureMismatch: string;
+        apkNotNewer: (version: string, build: number) => string;
+        apkVersionMismatch: (version: string) => string;
+        apkVersionCodeMismatch: (version: string) => string;
+        download: string;
+        installBusy: string;
+        installSession: string;
+        installAborted: string;
+        installRejected: string;
+        installIncompatible: string;
+        installBlocked: string;
+        installConflict: string;
+        confirmationBlocked: string;
+        outcomeUnsaved: string;
+        permissionSettingsUnavailable: string;
+        installedUnreadable: string;
+        moduleInvalidated: string;
+        /** `updater-locale-*`: native update notices could not take the app's language. */
+        appLocale: string;
+        packageMismatch: string;
+        apkInvalid: string;
+        /** A failure without a localized cause; the raw detail is shown below it (ErrorState). */
+        unknown: string;
+        /** The same for a toast or an inline note, where the detail is not below it. */
+        unknownShort: string;
+        linkFailed: string;
+      };
       safety: string;
     };
     dangerTitle: string;
@@ -727,6 +839,8 @@ export const de: StringCatalog = {
     likedSongs: 'Lieblingstitel',
     playlists: 'Playlists',
     openProfile: 'Profil öffnen',
+    openProfileUpdateAvailable: 'Profil öffnen, App-Update verfügbar',
+    openProfileUpdateFailed: 'Profil öffnen, Update fehlgeschlagen',
     profileUnavailable: 'Das Profil kann gerade nicht geöffnet werden.',
     invalidLinkTitle: 'Dieser Link ist ungültig',
     invalidLinkBody: 'Der angeforderte Inhalt konnte nicht sicher geöffnet werden.',
@@ -905,24 +1019,131 @@ export const de: StringCatalog = {
     noRemainingTime: 'Für den aktuellen Titel ist keine Restzeit verfügbar.',
     sleepSetFailed: 'Sleep-Timer konnte nicht geändert werden',
     update: {
-      title: 'Android-Updates',
-      checking: 'GitHub Releases werden auf eine neue stabile Version geprüft…',
-      current: (version) => `Version ${version} ist aktuell.`,
-      available: (version, megabytes) =>
-        `Version ${version} ist verfügbar (${megabytes} MB).`,
-      toastAvailable: (version) =>
-        `Neue Version ${version} verfügbar – Update im Profil laden.`,
-      startupCheckFailed: 'Update-Prüfung beim App-Start fehlgeschlagen',
-      install: 'Update laden',
-      downloading: 'Update wird geprüft und geladen…',
-      retryInstall: 'Berechtigung prüfen und fortfahren',
-      permission:
-        'Erlaube LoggeRythm in den Android-Einstellungen Updates zu installieren und tippe danach erneut.',
+      titleVersion: 'App-Version',
+      titleAvailable: 'Update verfügbar',
+      titleUninstallable: 'Update nicht installierbar',
+      installedVersion: (version) => `LoggeRythm ${version}`,
+      installedBuild: (versionCode) => `Build ${versionCode}`,
+      checking: 'Suche nach Updates…',
+      upToDate: 'Du hast die neueste Version.',
+      updatedTo: (version) => `Auf Version ${version} aktualisiert.`,
+      lastChecked: (when) => `Zuletzt geprüft: ${when}`,
+      justNow: 'gerade eben',
+      minutesAgo: (minutes) => `vor ${minutes} Min.`,
+      todayAt: (time) => `heute, ${time}`,
+      checkedOnDay: (date, time) => `${date}, ${time}`,
+      transition: (from, to) => `${from} → ${to}`,
+      availableMeta: (size, date) => `${size} · veröffentlicht am ${date}`,
+      releaseVersion: (version) => `Release ${version}`,
+      notesLabel: 'Was ist neu',
+      releaseLink: 'Alle Änderungen auf GitHub',
+      install: (size) => `Installieren (${size})`,
+      preparing: 'Installation wird vorbereitet…',
+      downloading: (version) => `Version ${version} wird geladen und geprüft…`,
+      downloadingHint: 'Du kannst die App währenddessen weiter nutzen.',
+      progressLabel: 'Update-Download',
       confirm: (version) =>
-        `Version ${version} wurde sicher geprüft. Bestätige die Installation im Android-Dialog.`,
-      failed: 'Update fehlgeschlagen',
+        `Version ${version} ist geprüft. Bestätige die Installation im Android-Dialog.`,
+      confirmHint:
+        'Nach der Installation öffnest du die neue Version über die Benachrichtigung oder das App-Symbol. Kein Dialog zu sehen? Starte die Installation erneut.',
+      progressWarning:
+        'Die Fortschrittsanzeige des Downloads war fehlerhaft. Das geprüfte Update wurde trotzdem an Android übergeben.',
+      restartInstall: 'Erneut starten',
+      permission:
+        'Android muss LoggeRythm erlauben, Apps zu installieren. Aktiviere „Dieser Quelle vertrauen“ und kehre dann zurück.',
+      permissionContinue: 'Erlaubt – fortfahren',
+      installedNewerName: (latest) =>
+        `Diese Version ist neuer als das letzte Release (${latest}).`,
+      installedNewerBuild: (build, latest, latestBuild) =>
+        `Diese Installation (Build ${build}) ist neuer als Release ${latest} (Build ${latestBuild}). Android würde das Update ablehnen, deshalb wird es nicht angeboten.`,
+      installedNewerHint:
+        'Das passiert bei Test- und Entwicklungs-Builds. Sobald ein Release mit höherer Versionsnummer erscheint, wird es hier angeboten.',
+      installedSameBuild: (latest, build) =>
+        `Release ${latest} hat dieselbe Build-Nummer (${build}) wie diese Installation und kann deshalb nicht installiert werden.`,
+      installedSameBuildHint:
+        'Vermutlich ist die Zeile „Android-Versioncode“ im Release falsch. Sobald sie korrigiert ist, wird das Update hier angeboten.',
+      viewRelease: 'Release auf GitHub ansehen',
+      recheck: 'Erneut prüfen',
+      retryInstall: 'Erneut versuchen',
+      checkAnnouncement: {
+        upToDate: 'Keine neue Version.',
+        available: (version) => `Update ${version} verfügbar.`,
+        uninstallable: (version) => `Update ${version} kann nicht installiert werden.`,
+        installedNewer: 'Diese Installation ist neuer als das letzte Release.',
+        installedSameBuild: (latest) =>
+          `Release ${latest} hat dieselbe Build-Nummer und kann nicht installiert werden.`,
+      },
+      checkFailedTitle: 'Update-Prüfung fehlgeschlagen',
+      installFailedTitle: 'Update fehlgeschlagen',
+      finalFailureHint: {
+        release:
+          'Ein erneuter Versuch kann dieses Release nicht installieren. Alle Details stehen auf der Release-Seite.',
+        device:
+          'Ein erneuter Versuch kann dieses Release auf diesem Gerät nicht installieren. Die genaue Ursache steht in den Details oben.',
+      },
+      startupPhase: {
+        check: 'Update-Prüfung fehlgeschlagen',
+        pendingInstall: 'Ergebnis des letzten Updates unklar',
+        installOutcome: 'Letztes Update nicht installiert',
+        installOutcomeUnavailable: 'Status des letzten Updates nicht lesbar',
+        appLocale: 'Sprache der Update-Hinweise nicht gesetzt',
+      },
+      updatedToast: (version) => `LoggeRythm wurde auf Version ${version} aktualisiert.`,
+      startupFailureToast: (phase) => `${phase} – Details im Profil`,
+      detail: (code, message) => `Details: ${code} – ${message}`,
+      errors: {
+        network: 'GitHub ist nicht erreichbar. Prüfe deine Internetverbindung.',
+        rateLimited: (status) =>
+          `GitHub-Limit für Update-Prüfungen erreicht (HTTP ${status}). Versuche es später erneut.`,
+        http: (status) => `GitHub antwortete mit HTTP ${status}.`,
+        releaseVersionCodeMissing: (version) =>
+          `Release ${version} nennt keine Build-Nummer („Android-Versioncode“). Ohne sie lässt sich nicht prüfen, ob das Update installierbar ist.`,
+        releaseVersionCodeAmbiguous: (version) =>
+          `Release ${version} nennt mehrere Build-Nummern. Das Release muss korrigiert werden.`,
+        releaseInvalid: 'Das GitHub-Release ist unvollständig oder ungültig.',
+        installedVersionInvalid: (version) =>
+          `Die installierte Version „${version}“ ist keine stabile Versionsnummer und lässt sich nicht vergleichen.`,
+        markerInvalid: 'Der gespeicherte Stand des letzten Updates ist beschädigt und wurde verworfen.',
+        permissionRequired:
+          'LoggeRythm darf noch keine Apps installieren. Erlaube es in den Android-Einstellungen.',
+        digestMismatch:
+          'Die Prüfsumme des Downloads stimmt nicht mit GitHub überein. Es wurde nichts installiert.',
+        signatureMismatch:
+          'Das Update ist anders signiert als die installierte App. Android kann es nicht darüber installieren.',
+        apkNotNewer: (version, build) =>
+          `Das APK von Release ${version} ist nicht neuer als diese Installation (Build ${build}). Es wurde nichts installiert.`,
+        apkVersionMismatch: (version) =>
+          `Das heruntergeladene APK passt nicht zu Release ${version}. Es wurde nichts installiert.`,
+        apkVersionCodeMismatch: (version) =>
+          `Die Build-Nummer des APK passt nicht zur Angabe in Release ${version}. Es wurde nichts installiert.`,
+        download: 'Der Download wurde abgebrochen.',
+        installBusy: 'Es läuft bereits ein Update.',
+        installSession: 'Android konnte die Installation nicht starten.',
+        installAborted: 'Installation abgebrochen. Du kannst sie erneut starten.',
+        installRejected: 'Android hat die Installation abgelehnt.',
+        installIncompatible: 'Dieses Gerät erfüllt die Anforderungen des Updates nicht.',
+        installBlocked: 'Eine Geräterichtlinie blockiert die Installation.',
+        installConflict: 'Android meldet einen Konflikt mit der installierten App.',
+        confirmationBlocked:
+          'Android konnte die Installation nicht zur Bestätigung anzeigen, weil LoggeRythm im Hintergrund war und Benachrichtigungen blockiert sind. Starte sie erneut, während die App geöffnet ist.',
+        outcomeUnsaved:
+          'Android konnte den Stand des Updates nicht speichern. Starte die Installation erneut.',
+        permissionSettingsUnavailable:
+          'Android bietet keine Einstellung an, mit der LoggeRythm Apps installieren darf.',
+        installedUnreadable: 'Android konnte die installierte Version von LoggeRythm nicht lesen.',
+        moduleInvalidated: 'Der Updater wurde beendet, bevor er fertig war. Versuche es erneut.',
+        appLocale:
+          'Android konnte die App-Sprache nicht für die Update-Hinweise übernehmen. Sie erscheinen womöglich in einer anderen Sprache.',
+        packageMismatch:
+          'Das heruntergeladene APK gehört nicht zu LoggeRythm. Es wurde nichts installiert.',
+        apkInvalid:
+          'Das heruntergeladene APK ist ungültig oder unvollständig. Es wurde nichts installiert.',
+        unknown: 'Unbekannter Fehler – Details stehen darunter.',
+        unknownShort: 'Unbekannter Fehler.',
+        linkFailed: 'Die Release-Seite konnte nicht geöffnet werden.',
+      },
       safety:
-        'Es werden nur stabile APKs aus LoggeL/LoggeRythm akzeptiert. SHA-256, Paketname, Version und App-Signatur werden vor der Android-Bestätigung geprüft.',
+        'Nur signierte APKs aus LoggeL/LoggeRythm. Build-Nummer, Prüfsumme, Paket, Version und Signatur werden vor der Installation geprüft.',
     },
     dangerTitle: 'Gefahrenbereich',
     dangerBody: 'Das Konto und alle zugehörigen Daten werden dauerhaft gelöscht.',
@@ -1337,6 +1558,8 @@ export const en: StringCatalog = {
     home: 'Home', search: 'Search', discover: 'Discover', radio: 'Radio', library: 'Library',
     profile: 'Profile', album: 'Album', artist: 'Artist', genre: 'Genre',
     likedSongs: 'Liked Songs', playlists: 'Playlists', openProfile: 'Open profile',
+    openProfileUpdateAvailable: 'Open profile, app update available',
+    openProfileUpdateFailed: 'Open profile, update failed',
     profileUnavailable: 'Profile is not available right now.',
     invalidLinkTitle: 'This link is invalid',
     invalidLinkBody: 'The requested content could not be opened safely.',
@@ -1470,24 +1693,130 @@ export const en: StringCatalog = {
     noRemainingTime: 'The current track has no available time remaining.',
     sleepSetFailed: 'The sleep timer could not be changed',
     update: {
-      title: 'Android updates',
-      checking: 'Checking GitHub Releases for a newer stable version…',
-      current: (version) => `Version ${version} is up to date.`,
-      available: (version, megabytes) =>
-        `Version ${version} is available (${megabytes} MB).`,
-      toastAvailable: (version) =>
-        `New version ${version} is available — download it from your profile.`,
-      startupCheckFailed: 'Update check at app launch failed',
-      install: 'Download update',
-      downloading: 'Verifying and downloading update…',
-      retryInstall: 'Check permission and continue',
-      permission:
-        'Allow LoggeRythm to install updates in Android settings, then tap again.',
+      titleVersion: 'App version',
+      titleAvailable: 'Update available',
+      titleUninstallable: 'Update can’t be installed',
+      installedVersion: (version) => `LoggeRythm ${version}`,
+      installedBuild: (versionCode) => `Build ${versionCode}`,
+      checking: 'Checking for updates…',
+      upToDate: 'You have the latest version.',
+      updatedTo: (version) => `Updated to version ${version}.`,
+      lastChecked: (when) => `Last checked: ${when}`,
+      justNow: 'just now',
+      minutesAgo: (minutes) => `${minutes} min ago`,
+      todayAt: (time) => `today, ${time}`,
+      checkedOnDay: (date, time) => `${date}, ${time}`,
+      transition: (from, to) => `${from} → ${to}`,
+      availableMeta: (size, date) => `${size} · released ${date}`,
+      releaseVersion: (version) => `Release ${version}`,
+      notesLabel: 'What’s new (in German)',
+      releaseLink: 'Full changelog on GitHub',
+      install: (size) => `Install update (${size})`,
+      preparing: 'Preparing the installation…',
+      downloading: (version) => `Downloading and verifying version ${version}…`,
+      downloadingHint: 'You can keep using the app meanwhile.',
+      progressLabel: 'Update download',
       confirm: (version) =>
-        `Version ${version} passed verification. Confirm installation in Android's system dialog.`,
-      failed: 'Update failed',
+        `Version ${version} is verified. Confirm the installation in the Android dialog.`,
+      confirmHint:
+        'After installing, open the new version from the notification or the app icon. No dialog? Start the installation again.',
+      progressWarning:
+        'The download’s progress report was faulty. The verified update was still handed to Android.',
+      restartInstall: 'Start again',
+      permission:
+        'Android must allow LoggeRythm to install apps. Turn on “Allow from this source”, then come back.',
+      permissionContinue: 'Allowed – continue',
+      installedNewerName: (latest) =>
+        `This version is newer than the latest release (${latest}).`,
+      installedNewerBuild: (build, latest, latestBuild) =>
+        `This installation (build ${build}) is newer than release ${latest} (build ${latestBuild}). Android would reject the update, so it is not offered.`,
+      installedNewerHint:
+        'This happens with test and development builds. A release with a higher version number will be offered here once it is out.',
+      installedSameBuild: (latest, build) =>
+        `Release ${latest} has the same build number (${build}) as this installation, so it can’t be installed.`,
+      installedSameBuildHint:
+        'The release’s “Android-Versioncode” line is probably wrong. Once it is corrected, the update will be offered here.',
+      viewRelease: 'View release on GitHub',
+      recheck: 'Check again',
+      retryInstall: 'Try again',
+      checkAnnouncement: {
+        upToDate: 'No new version.',
+        available: (version) => `Update ${version} available.`,
+        uninstallable: (version) => `Update ${version} can’t be installed.`,
+        installedNewer: 'This installation is newer than the latest release.',
+        installedSameBuild: (latest) =>
+          `Release ${latest} has the same build number and can’t be installed.`,
+      },
+      checkFailedTitle: 'Update check failed',
+      installFailedTitle: 'Update failed',
+      finalFailureHint: {
+        release: 'Trying again can’t install this release. The release page has all the details.',
+        device:
+          'Trying again can’t install this release on this device. The exact cause is in the details above.',
+      },
+      startupPhase: {
+        check: 'Update check failed',
+        pendingInstall: 'Outcome of the last update unclear',
+        installOutcome: 'Last update not installed',
+        installOutcomeUnavailable: 'Status of the last update unreadable',
+        appLocale: 'Language of update notices not set',
+      },
+      updatedToast: (version) => `LoggeRythm was updated to version ${version}.`,
+      startupFailureToast: (phase) => `${phase} – details in your profile`,
+      detail: (code, message) => `Details: ${code} – ${message}`,
+      errors: {
+        network: 'GitHub can’t be reached. Check your internet connection.',
+        rateLimited: (status) =>
+          `GitHub’s limit for update checks was reached (HTTP ${status}). Try again later.`,
+        http: (status) => `GitHub responded with HTTP ${status}.`,
+        releaseVersionCodeMissing: (version) =>
+          `Release ${version} has no build number (“Android-Versioncode”), so it can’t be checked whether the update installs.`,
+        releaseVersionCodeAmbiguous: (version) =>
+          `Release ${version} names more than one build number. The release needs fixing.`,
+        releaseInvalid: 'The GitHub release is incomplete or invalid.',
+        installedVersionInvalid: (version) =>
+          `The installed version “${version}” is not a stable version number and can’t be compared.`,
+        markerInvalid: 'The saved state of the last update was corrupt and has been discarded.',
+        permissionRequired:
+          'LoggeRythm may not install apps yet. Allow it in Android settings.',
+        digestMismatch:
+          'The download’s checksum doesn’t match GitHub. Nothing was installed.',
+        signatureMismatch:
+          'The update is signed differently from the installed app. Android can’t install it over this one.',
+        apkNotNewer: (version, build) =>
+          `Release ${version}’s APK is not newer than this installation (build ${build}). Nothing was installed.`,
+        apkVersionMismatch: (version) =>
+          `The downloaded APK doesn’t match release ${version}. Nothing was installed.`,
+        apkVersionCodeMismatch: (version) =>
+          `The APK’s build number doesn’t match the one declared in release ${version}. Nothing was installed.`,
+        download: 'The download was interrupted.',
+        installBusy: 'An update is already running.',
+        installSession: 'Android couldn’t start the installation.',
+        installAborted: 'Installation cancelled. You can start it again.',
+        installRejected: 'Android rejected the installation.',
+        installIncompatible: 'This device doesn’t meet the update’s requirements.',
+        installBlocked: 'A device policy blocks the installation.',
+        installConflict: 'Android reports a conflict with the installed app.',
+        confirmationBlocked:
+          'Android couldn’t show the installation for confirmation because LoggeRythm was in the background and notifications are blocked. Start it again while the app is open.',
+        outcomeUnsaved:
+          'Android couldn’t save the update’s status. Start the installation again.',
+        permissionSettingsUnavailable:
+          'Android offers no setting that lets LoggeRythm install apps.',
+        installedUnreadable: 'Android couldn’t read the installed version of LoggeRythm.',
+        moduleInvalidated: 'The updater was stopped before it finished. Try again.',
+        appLocale:
+          'Android couldn’t apply the app language to update notices. They may appear in another language.',
+        packageMismatch:
+          'The downloaded APK doesn’t belong to LoggeRythm. Nothing was installed.',
+        apkInvalid:
+          'The downloaded APK is invalid or incomplete. Nothing was installed.',
+        unknown: 'Unknown error – details below.',
+        unknownShort: 'Unknown error.',
+        linkFailed: 'The release page couldn’t be opened.',
+      },
       safety:
-        'Only stable APKs from LoggeL/LoggeRythm are accepted. SHA-256, package, version, and app signature are verified before Android asks for confirmation.',
+        'Only signed APKs from LoggeL/LoggeRythm. Build number, checksum, package, version and signature are verified before installing.',
     },
     dangerTitle: 'Danger zone',
     dangerBody: 'Your account and all associated data will be permanently deleted.',

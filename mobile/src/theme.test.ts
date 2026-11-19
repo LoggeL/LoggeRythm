@@ -97,4 +97,21 @@ describe('production Android color contract', () => {
     expect(radii.pill).toBeGreaterThan(radii.sheet);
     expect(radii.panel).toBeLessThan(metrics.miniPlayerSurfaceHeight / 2);
   });
+
+  it('pins the header avatar and its notification dot', () => {
+    expect(metrics.headerAvatar).toBe(36);
+    expect(metrics.badgeDot).toBe(12);
+    expect(metrics.badgeDotRing).toBe(2);
+    expect(metrics.headerAvatar).toBeLessThan(metrics.minimumTouchTarget);
+    // The visible fill inside the ring stays a readable dot.
+    expect(metrics.badgeDot - 2 * metrics.badgeDotRing).toBeGreaterThanOrEqual(spacing.xs);
+    // headerChrome anchors the dot at the avatar box's top-right corner
+    // (inset = the gap between avatar and touch target edge). The dot is
+    // larger than that gap, so it overlaps the avatar's corner on purpose…
+    const dotInset = (metrics.minimumTouchTarget - metrics.headerAvatar) / 2;
+    expect(dotInset).toBeLessThan(metrics.badgeDot);
+    // …while staying entirely inside the button's top-right quadrant.
+    expect(dotInset).toBeGreaterThanOrEqual(0);
+    expect(dotInset + metrics.badgeDot).toBeLessThanOrEqual(metrics.minimumTouchTarget / 2);
+  });
 });

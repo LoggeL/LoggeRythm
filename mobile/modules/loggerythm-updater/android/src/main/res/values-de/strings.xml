@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="loggerythm_updater_channel_name">App-Updates</string>
+    <string name="loggerythm_updater_ready_title">LoggeRythm-Update bereit</string>
+    <string name="loggerythm_updater_ready_text">Tippe, um die Installation zu bestätigen.</string>
+    <string name="loggerythm_updater_not_confirmed_toast">LoggeRythm-Update nicht bestätigt. Starte es in der App neu.</string>
+    <string name="loggerythm_updater_updated_title">LoggeRythm aktualisiert</string>
+    <string name="loggerythm_updater_updated_text">Tippe, um die neue Version zu öffnen.</string>
+    <string name="loggerythm_updater_updated_toast">LoggeRythm wurde aktualisiert. Öffne die App, um die neue Version zu nutzen.</string>
+    <string name="loggerythm_updater_failed_toast">Installation des LoggeRythm-Updates fehlgeschlagen: %1$s</string>
+    <string name="loggerythm_updater_cancelled_toast">LoggeRythm-Update abgebrochen.</string>
+    <string name="loggerythm_updater_failed_status">Der Android-Paketinstaller meldete Status %1$d</string>
+    <string name="loggerythm_updater_confirmation_missing">Android hat keine Installationsbestätigung geschickt (updater-install-confirmation-missing)</string>
+</resources>

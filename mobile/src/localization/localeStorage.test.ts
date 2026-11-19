@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   activateLocale,
   getActiveLocale,
+  onLocaleActivated,
   strings,
 } from './index';
 import {
@@ -118,5 +119,30 @@ describe('runtime catalog', () => {
     activateLocale('en');
     expect(() => activateLocale('fr')).toThrow('Unsupported app locale');
     expect(getActiveLocale()).toBe('en');
+  });
+  it('tells activation listeners every activated locale until they unsubscribe', () => {
+    const listener = vi.fn();
+    const unsubscribe = onLocaleActivated(listener);
+    try {
+      activateLocale('en');
+      activateLocale('de');
+      expect(() => activateLocale('fr')).toThrow('Unsupported app locale');
+      expect(listener.mock.calls).toEqual([['en'], ['de']]);
+    } finally {
+      unsubscribe();
+    }
+    activateLocale('en');
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it('lets a failing activation listener fail the activation loudly', () => {
+    const unsubscribe = onLocaleActivated(() => {
+      throw new Error('native locale bridge broke');
+    });
+    try {
+      expect(() => activateLocale('en')).toThrow('native locale bridge broke');
+    } finally {
+      unsubscribe();
+    }
   });
 });

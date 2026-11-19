@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -23,7 +24,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.net.ssl.HttpsURLConnection
 
-private class UpdaterException(
+/** A failure with a stable code that JS maps to a localized cause. */
+internal class UpdaterException(
   val errorCode: String,
   message: String,
   cause: Throwable? = null,
@@ -47,6 +49,13 @@ class LoggeRythmUpdaterModule(
   private val worker = Executors.newSingleThreadExecutor()
   private val invalidated = AtomicBoolean(false)
   private val installing = AtomicBoolean(false)
+  private val outcomeListener: (InstallOutcome) -> Unit = ::emitInstallOutcome
+
+  init {
+    // The install receiver reports a session's end to the live module, which
+    // forwards it to JS; the persisted copy covers a dead JS runtime.
+    LoggeRythmUpdateInstallReceiver.installOutcomeListener = outcomeListener
+  }
 
   override fun getName(): String = NAME
 
@@ -94,6 +103,42 @@ class LoggeRythmUpdaterModule(
     }
   }
 
+  /**
+   * Reads and clears the last non-success installation outcome, or resolves
+   * null when there is none. A corrupt record is cleared and rejected with
+   * `updater-install-outcome-invalid`.
+   */
+  @ReactMethod
+  fun consumeInstallOutcome(promise: Promise) {
+    execute(promise) {
+      settle(promise) {
+        val outcome = try {
+          InstallOutcomeStore.consume(reactContext)
+        } catch (error: InvalidInstallOutcomeException) {
+          throw UpdaterException("updater-install-outcome-invalid", error.message ?: "Stored update outcome is corrupt", error)
+        }
+        outcome?.let(::outcomeMap)
+      }
+    }
+  }
+
+  /**
+   * Stores the language chosen in the app ('de' or 'en') for the install
+   * receiver's toasts and notifications ([AppLocaleStore]). JS calls it every
+   * time it activates a locale. Runs right here, not on [worker]: a running
+   * download must not hold it back. Rejects `updater-locale-invalid` or
+   * `updater-locale-unsaved`.
+   */
+  @ReactMethod
+  fun setAppLocale(locale: String, promise: Promise) {
+    try {
+      AppLocaleStore.set(reactContext, locale)
+      promise.resolve(null)
+    } catch (error: Throwable) {
+      reject(promise, error)
+    }
+  }
+
   @ReactMethod
   fun addListener(@Suppress("UNUSED_PARAMETER") eventName: String) = Unit
 
@@ -105,8 +150,17 @@ class LoggeRythmUpdaterModule(
     url: String,
     digest: String,
     versionName: String,
+    versionCode: Double,
     promise: Promise,
   ) {
+    // The release's declared Android-Versioncode is checked before anything
+    // else, so a malformed bridge call never starts a download.
+    val expectedVersionCode = try {
+      parseVersionCode(versionCode)
+    } catch (error: UpdaterException) {
+      reject(promise, error)
+      return
+    }
     // One install at a time: a second attempt while a download/session is in
     // flight would queue behind it and could pop a second installer dialog
     // after the UI already reported the first attempt's outcome.
@@ -135,13 +189,14 @@ class LoggeRythmUpdaterModule(
         val expectedDigest = parseDigest(digest)
         val expectedVersionName = normalizedVersion(versionName)
         downloaded = download(url, expectedDigest)
-        val update = validateApk(downloaded, expectedVersionName)
-        requestInstall(update)
+        val update = validateApk(downloaded, expectedVersionName, expectedVersionCode)
+        val sessionId = requestInstall(update)
         promise.resolve(
           Arguments.createMap().apply {
             putString("status", "awaiting-user-confirmation")
             putString("versionName", update.versionName)
             putDouble("versionCode", update.versionCode.toDouble())
+            putDouble("sessionId", sessionId.toDouble())
           },
         )
       } catch (error: Throwable) {
@@ -155,6 +210,9 @@ class LoggeRythmUpdaterModule(
 
   override fun invalidate() {
     invalidated.set(true)
+    if (LoggeRythmUpdateInstallReceiver.installOutcomeListener === outcomeListener) {
+      LoggeRythmUpdateInstallReceiver.installOutcomeListener = null
+    }
     // Graceful shutdown: queued tasks still run and settle their React
     // Promises (rejecting fast via the `invalidated` flag). shutdownNow()
     // would discard them, leaving JS promises hanging forever.
@@ -193,10 +251,16 @@ class LoggeRythmUpdaterModule(
   }
 
   private fun reject(promise: Promise, error: Throwable) {
-    val updaterError = error as? UpdaterException
+    if (error is UpdaterException) {
+      promise.reject(error.errorCode, error.message, error)
+      return
+    }
+    // Any other exception keeps its own type and message: the generic code
+    // has no localized cause, so the raw detail is all the user can read.
+    val message = error.message?.takeIf(String::isNotBlank)
     promise.reject(
-      updaterError?.errorCode ?: "updater-native-failed",
-      updaterError?.message ?: "Android update operation failed",
+      "updater-native-failed",
+      "Android update operation failed: ${error.javaClass.name}" + (message?.let { ": $it" } ?: ""),
       error,
     )
   }
@@ -211,6 +275,33 @@ class LoggeRythmUpdaterModule(
           if (totalBytes >= 0L) putDouble("totalBytes", totalBytes.toDouble()) else putNull("totalBytes")
         },
       )
+  }
+
+  private fun outcomeMap(outcome: InstallOutcome) =
+    Arguments.createMap().apply {
+      putString("code", outcome.code)
+      putString("message", outcome.message)
+      putDouble("sessionId", outcome.sessionId.toDouble())
+      if (outcome.versionName != null) putString("versionName", outcome.versionName) else putNull("versionName")
+      if (outcome.versionCode != null) {
+        putDouble("versionCode", outcome.versionCode.toDouble())
+      } else {
+        putNull("versionCode")
+      }
+    }
+
+  /**
+   * Tells JS that an installation outcome was stored. Without an active React
+   * instance nothing is lost: JS reads the stored outcome on its next start.
+   */
+  private fun emitInstallOutcome(outcome: InstallOutcome) {
+    if (invalidated.get() || !reactContext.hasActiveReactInstance()) {
+      Log.i(TAG, "Update outcome ${outcome.code} stored for the next app start")
+      return
+    }
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit(INSTALL_OUTCOME_EVENT, outcomeMap(outcome))
   }
 
   private fun canRequestPackageInstalls(): Boolean =
@@ -361,7 +452,11 @@ class LoggeRythmUpdaterModule(
     )
   }
 
-  private fun validateApk(file: File, expectedVersionName: String): ValidatedUpdate {
+  private fun validateApk(
+    file: File,
+    expectedVersionName: String,
+    expectedVersionCode: Long,
+  ): ValidatedUpdate {
     val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
       PackageManager.GET_SIGNING_CERTIFICATES
     } else {
@@ -392,12 +487,22 @@ class LoggeRythmUpdaterModule(
         "Update APK version does not match the GitHub release",
       )
     }
-    val installed = installedPackage()
     val archiveVersionCode = longVersionCode(archive)
+    if (archiveVersionCode != expectedVersionCode) {
+      throw UpdaterException(
+        "updater-apk-version-code-mismatch",
+        "Update APK has versionCode $archiveVersionCode, but the GitHub release " +
+          "declares Android-Versioncode $expectedVersionCode",
+      )
+    }
+    // Authoritative final gate: Android itself refuses an APK whose
+    // versionCode is not higher than the installed one.
+    val installed = installedPackage()
     if (archiveVersionCode <= installed.versionCode) {
       throw UpdaterException(
         "updater-apk-not-newer",
-        "Update APK version code is not newer than the installed app",
+        "Update APK versionCode $archiveVersionCode is not newer than the " +
+          "installed app's versionCode ${installed.versionCode}",
       )
     }
     if (signerDigests(archive) != installed.signerDigests) {
@@ -409,7 +514,19 @@ class LoggeRythmUpdaterModule(
     return ValidatedUpdate(file, archiveVersionName, archiveVersionCode)
   }
 
-  private fun requestInstall(update: ValidatedUpdate) {
+  /**
+   * Hands the verified APK to a new PackageInstaller session and returns its
+   * id. The new session is created and holds the APK before anything else
+   * changes, so a failure up to there leaves the earlier session open and
+   * current, as the JS updater assumes (it keeps that session's marker).
+   * Only then do earlier sessions stop being current, lose their stale
+   * "update ready" notification and get abandoned, and the new id is
+   * persisted before the commit: the install receiver drops every outcome of
+   * another session, so a late answer from an abandoned or superseded session
+   * can never end the current attempt. If superseding or the commit fails, an
+   * earlier session Android still has becomes current again.
+   */
+  private fun requestInstall(update: ValidatedUpdate): Int {
     val installer = reactContext.packageManager.packageInstaller
     val parameters = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
       .apply {
@@ -427,6 +544,8 @@ class LoggeRythmUpdaterModule(
         error,
       )
     }
+    val previousSession = InstallSessionStore.current(reactContext)
+    var superseding = false
     try {
       installer.openSession(sessionId).use { session ->
         update.file.inputStream().buffered().use { input ->
@@ -435,16 +554,70 @@ class LoggeRythmUpdaterModule(
             session.fsync(output)
           }
         }
-        session.commit(LoggeRythmUpdateInstallReceiver.statusIntent(reactContext).intentSender)
+        superseding = true
+        // From here on no earlier session counts as current: the receiver
+        // drops the abort Android sends for each abandoned one.
+        InstallSessionStore.clear(reactContext)
+        // Its installer confirmation dies with the session it belongs to.
+        LoggeRythmUpdateInstallReceiver.cancelUpdateNotification(reactContext)
+        for (earlier in installer.mySessions) {
+          if (earlier.sessionId != sessionId) abandonEarlierSession(installer, earlier.sessionId)
+        }
+        // A new session supersedes the outcome of an earlier one.
+        InstallOutcomeStore.clear(reactContext)
+        // Persisted before the commit: the receiver may run right after it.
+        InstallSessionStore.setCurrent(reactContext, sessionId)
+        session.commit(
+          LoggeRythmUpdateInstallReceiver
+            .statusIntent(reactContext, update.versionName, update.versionCode, sessionId)
+            .intentSender,
+        )
       }
     } catch (error: Throwable) {
-      installer.abandonSession(sessionId)
+      try {
+        installer.abandonSession(sessionId)
+      } catch (abandonError: Throwable) {
+        error.addSuppressed(abandonError)
+      }
+      if (superseding) {
+        try {
+          restoreCurrentSession(installer, previousSession, sessionId)
+        } catch (restoreError: Throwable) {
+          error.addSuppressed(restoreError)
+        }
+      }
       if (error is UpdaterException) throw error
       throw UpdaterException(
         "updater-install-commit-failed",
         "Could not submit the verified APK to Android's package installer",
         error,
       )
+    }
+    return sessionId
+  }
+
+  private fun abandonEarlierSession(installer: PackageInstaller, earlierSessionId: Int) {
+    try {
+      installer.abandonSession(earlierSessionId)
+    } catch (error: SecurityException) {
+      throw UpdaterException(
+        "updater-install-session-failed",
+        "Could not abandon the earlier update session $earlierSessionId",
+        error,
+      )
+    }
+  }
+
+  /**
+   * After a hand-over that failed while superseding or committing: the
+   * earlier current session is current again when Android still has it (its
+   * outcome still counts); otherwise no session is current.
+   */
+  private fun restoreCurrentSession(installer: PackageInstaller, previous: Int?, failed: Int) {
+    if (previous != null && previous != failed && installer.getSessionInfo(previous) != null) {
+      InstallSessionStore.setCurrent(reactContext, previous)
+    } else {
+      InstallSessionStore.clear(reactContext)
     }
   }
 
@@ -512,6 +685,26 @@ class LoggeRythmUpdaterModule(
     return match.groupValues[1]
   }
 
+  /**
+   * JS numbers arrive as Double. Only a finite, positive whole number that a
+   * JS number represents exactly (≤ 2^53 - 1, which is inside Long range) is a
+   * usable Android versionCode.
+   */
+  private fun parseVersionCode(value: Double): Long {
+    if (
+      !value.isFinite() ||
+      value < 1.0 ||
+      value > MAX_EXACT_VERSION_CODE ||
+      value != Math.floor(value)
+    ) {
+      throw UpdaterException(
+        "updater-version-code-invalid",
+        "Update versionCode must be a positive whole number, got $value",
+      )
+    }
+    return value.toLong()
+  }
+
   private fun normalizedVersion(value: String): String {
     val match = STABLE_VERSION.matchEntire(value.trim())
       ?: throw UpdaterException(
@@ -561,7 +754,9 @@ class LoggeRythmUpdaterModule(
 
   companion object {
     const val NAME = "LoggeRythmUpdater"
+    private const val TAG = "LoggeRythmUpdater"
     private const val DOWNLOAD_PROGRESS_EVENT = "LoggeRythmUpdaterDownloadProgress"
+    private const val INSTALL_OUTCOME_EVENT = "LoggeRythmUpdaterInstallOutcome"
     private const val GITHUB_HOST = "github.com"
     private const val GITHUB_CONTENT_SUFFIX = ".githubusercontent.com"
     private const val RELEASE_PATH_PREFIX = "/LoggeL/LoggeRythm/releases/download/"
@@ -570,6 +765,8 @@ class LoggeRythmUpdaterModule(
     private const val READ_TIMEOUT_MS = 60_000
     private const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
     private const val MAX_APK_BYTES = 300L * 1024L * 1024L
+    // Number.MAX_SAFE_INTEGER: the largest whole number a JS number holds exactly.
+    private const val MAX_EXACT_VERSION_CODE = 9_007_199_254_740_991.0
     private val SHA256_DIGEST = Regex("^sha256:([0-9a-f]{64})$")
     private val STABLE_VERSION = Regex("^v?(\\d+)\\.(\\d+)\\.(\\d+)$")
   }

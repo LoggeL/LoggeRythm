@@ -354,8 +354,12 @@ Consequences — check each when you touch a tested file:
   A mocked string component keeps its props, so `byTestId` still finds the
   testID you passed to it.
 - **Hook order is pinned** where a test mocks `useState` positionally:
-  `ProfileScreen`, `LoginScreen`, `PendingApprovalScreen`, `MixScreen`,
-  `SessionRestoreError`, `AndroidUpdateCard`, `NowPlayingScreen` (gestures),
+  `ProfileScreen` (its update-card slot comes from `useAndroidUpdatePlacement`,
+  a custom hook with its own `useState` that the profile test mocks), `LoginScreen`, `PendingApprovalScreen`, `MixScreen`,
+  `SessionRestoreError`, `AndroidUpdateCard` (one mount `useEffect` that
+  subscribes the check-outcome announcer and asks for the profile check — add
+  card behaviour there or in a store helper, not as another hook; its
+  `LastChecked` child: clock `useState`, then the one-minute refresh `useEffect`), `NowPlayingScreen` (gestures),
   `AndroidUpdateToastHost`, `TrackPresentationProvider`, `AuthContext`. Do
   not add, remove or reorder `useState` calls there without updating the
   test's sequence; put new state into a child component or a custom hook

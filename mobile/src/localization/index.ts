@@ -21,9 +21,25 @@ export function getActiveLocale(): AppLocale {
   return activeLocale;
 }
 
+const activationListeners = new Set<(locale: AppLocale) => void>();
+
+/**
+ * Called with the locale every time one is activated (bootstrap and user
+ * selection both go through {@link activateLocale}), e.g. to hand the app
+ * language to native code that cannot read it from JS. A listener that
+ * throws makes `activateLocale` throw.
+ */
+export function onLocaleActivated(listener: (locale: AppLocale) => void): () => void {
+  activationListeners.add(listener);
+  return () => {
+    activationListeners.delete(listener);
+  };
+}
+
 export function activateLocale(value: unknown): AppLocale {
   if (!isAppLocale(value)) throw new Error('Unsupported app locale');
   activeLocale = value;
+  activationListeners.forEach((listener) => listener(value));
   return activeLocale;
 }
 

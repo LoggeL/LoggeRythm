@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Texts of the install-status receiver. German lives in values-de/. The
+     receiver reads them in the language chosen in the app (AppLocaleStore),
+     not in the system language. -->
+<resources>
+    <string name="loggerythm_updater_channel_name">App updates</string>
+    <string name="loggerythm_updater_ready_title">LoggeRythm update ready</string>
+    <string name="loggerythm_updater_ready_text">Tap to confirm the installation.</string>
+    <string name="loggerythm_updater_not_confirmed_toast">LoggeRythm update not confirmed. Start it again in the app.</string>
+    <string name="loggerythm_updater_updated_title">LoggeRythm updated</string>
+    <string name="loggerythm_updater_updated_text">Tap to open the new version.</string>
+    <string name="loggerythm_updater_updated_toast">LoggeRythm updated. Open the app to use the new version.</string>
+    <string name="loggerythm_updater_failed_toast">LoggeRythm update installation failed: %1$s</string>
+    <string name="loggerythm_updater_cancelled_toast">LoggeRythm update cancelled.</string>
+    <string name="loggerythm_updater_failed_status">Android package installer returned status %1$d</string>
+    <string name="loggerythm_updater_confirmation_missing">Android sent no installation confirmation (updater-install-confirmation-missing)</string>
+</resources>

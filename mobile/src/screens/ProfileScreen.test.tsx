@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   useQueryClient: vi.fn(),
   deleteAccount: vi.fn(),
   resolveServerUrl: vi.fn(),
+  updatePlacement: vi.fn(),
 }));
 
 vi.mock('react', async (importOriginal) => {
@@ -48,6 +49,10 @@ vi.mock('../components/profile/ProfileSections', () => ({
 }));
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
 vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
+// Owns the latched slot's useState; covered by useAndroidUpdatePlacement.test.ts.
+vi.mock('../components/profile/useAndroidUpdatePlacement', () => ({
+  useAndroidUpdatePlacement: mocks.updatePlacement,
+}));
 vi.mock('../api/url', () => ({ resolveServerUrl: mocks.resolveServerUrl }));
 vi.mock('../config', () => ({
   getCurrentApiBase: () => 'https://music.example.test',
@@ -124,6 +129,7 @@ describe('ProfileScreen account deletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.resolveServerUrl.mockImplementation((value: string) => value);
+    mocks.updatePlacement.mockReturnValue('bottom');
     mocks.useAuth.mockReturnValue({
       user: {
         id: 7,
@@ -221,5 +227,38 @@ describe('ProfileScreen account deletion', () => {
     (modal?.props.onClose as () => void)();
     expect(pending.setConfirming).not.toHaveBeenCalled();
     expect(mocks.deleteAccount).toHaveBeenCalledOnce();
+  });
+
+  function scrollOrder(tree: React.ReactNode): string[] {
+    const scroll = elements(tree).find((element) => element.type === 'ScrollView');
+    if (scroll === undefined) throw new Error('Profile has no ScrollView');
+    const children = (Array.isArray(scroll.props.children)
+      ? scroll.props.children
+      : [scroll.props.children]) as (React.ReactElement<ElementProps> | null)[];
+    // An empty slot renders null.
+    return children.filter((child) => child !== null).map((child) => (
+      child.type === 'AndroidUpdateCard'
+        ? 'AndroidUpdateCard'
+        : typeof child.type === 'string'
+          ? child.type
+          : String(child.props.testID)
+    ));
+  }
+
+  it('mounts exactly one update card, directly below the header in the top slot', () => {
+    mocks.updatePlacement.mockReturnValue('top');
+    const order = scrollOrder(renderDeletionState(false, false, null).tree);
+    expect(mocks.updatePlacement).toHaveBeenCalledOnce();
+    expect(order.slice(0, 3)).toEqual(['profile-hero', 'AndroidUpdateCard', 'ProfileIdentityCard']);
+    expect(order.slice(-2)).toEqual(['ProfileEditForm', 'profile-danger']);
+    expect(order.filter((entry) => entry === 'AndroidUpdateCard')).toHaveLength(1);
+  });
+
+  it('mounts exactly one update card above the danger zone in the bottom slot', () => {
+    mocks.updatePlacement.mockReturnValue('bottom');
+    const order = scrollOrder(renderDeletionState(false, false, null).tree);
+    expect(order.slice(0, 2)).toEqual(['profile-hero', 'ProfileIdentityCard']);
+    expect(order.slice(-3)).toEqual(['ProfileEditForm', 'AndroidUpdateCard', 'profile-danger']);
+    expect(order.filter((entry) => entry === 'AndroidUpdateCard')).toHaveLength(1);
   });
 });

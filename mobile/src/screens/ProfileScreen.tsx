@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
 import LanguageSelector from '../components/profile/LanguageSelector';
 import { ProfileGroup } from '../components/profile/ProfileGroup';
+import { useAndroidUpdatePlacement } from '../components/profile/useAndroidUpdatePlacement';
 import {
   ListeningStatsPanel,
   ProfileEditForm,
@@ -47,6 +48,8 @@ export default function ProfileScreen() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Latched for this visit: exactly one update card, and it never moves.
+  const updatePlacement = useAndroidUpdatePlacement();
   const bottom = useBottomInset({ hasTabBar: false });
   const refreshing = stats.isFetching && !stats.isPending;
 
@@ -99,6 +102,7 @@ export default function ProfileScreen() {
           title={strings.profile.title}
           subtitle={strings.profile.subtitle}
         />
+        {updatePlacement === 'top' ? <AndroidUpdateCard /> : null}
 
         <ProfileIdentityCard
           user={user}
@@ -121,7 +125,7 @@ export default function ProfileScreen() {
           user={user}
           onSave={saveProfile}
         />
-        <AndroidUpdateCard />
+        {updatePlacement === 'bottom' ? <AndroidUpdateCard /> : null}
 
         <ProfileGroup
           testID="profile-danger"

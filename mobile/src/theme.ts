@@ -151,6 +151,12 @@ export const metrics = {
   tabBarHeight: 64,
   miniPlayerSurfaceHeight: 64,
   miniPlayerGap: spacing.xs,
+  /** Profile avatar in the stack headers, centred in a minimumTouchTarget button. */
+  headerAvatar: 36,
+  /** Outer diameter of a notification dot, ring included. */
+  badgeDot: 12,
+  /** Ring in the surrounding background that separates a dot from photos. */
+  badgeDotRing: 2,
 } as const;
 
 /** Shell and rhythm metrics shared by every screen. */
