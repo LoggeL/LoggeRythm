@@ -36,3 +36,10 @@ volumes:
 
 networks:
   runner:
+    # The emulator's modem simulator connects to [::1]; without any non-loopback
+    # IPv6 address getaddrinfo (AI_ADDRCONFIG) cannot resolve it and the guest
+    # boots without a modem. A private ULA subnet fixes that.
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd42:7e17:2a9::/64

@@ -12,7 +12,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # emulator links against (it runs with -no-window, so no X server is needed).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git git-lfs jq unzip zip xz-utils tar gzip file procps \
+      ca-certificates curl wget git git-lfs jq unzip zip xz-utils tar gzip file procps \
+      lsb-release openssh-client rsync \
       build-essential python3 \
       libpulse0 libgl1 libegl1 libnss3 libxcomposite1 libxcursor1 libxi6 libxtst6 \
       libxrandr2 libxdamage1 libxkbcommon0 libxkbfile1 libasound2t64 libdbus-1-3 \

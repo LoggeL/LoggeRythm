@@ -476,6 +476,9 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_7_pro
+          # SwiftShader's GLES renderer segfaults in its RenderThread on the
+          # Homebox CPU (Ryzen 7 8845HS); ANGLE on SwiftShader Vulkan boots.
+          emulator-options: ${{ runner.environment == 'self-hosted' && '-no-window -gpu swangle_indirect -no-snapshot -noaudio -no-boot-anim' || '-no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim' }}
           working-directory: mobile/android
           # The action invokes each `script` line through a separate POSIX-sh
           # process. Keep state and multiline Gradle commands inside one Bash

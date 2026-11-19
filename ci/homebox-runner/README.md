@@ -11,6 +11,11 @@ need approval for every external contributor (repository setting).
 - Unprivileged container: user `runner` (uid 1001), no sudo, `cap_drop: ALL`,
   `no-new-privileges`, no Docker socket, no host paths, own bridge network.
 - Only `/dev/kvm` is passed through, for the emulator QA step.
+- The emulator runs with `-gpu swangle_indirect` here: the default
+  `swiftshader_indirect` segfaults in SwiftShader's GLES `RenderThread` on this
+  CPU (Ryzen 7 8845HS), inside and outside the hardening options.
+- The runner network has a private IPv6 subnet so the emulator's modem
+  simulator can reach `[::1]`.
 - Limits: 12 CPUs, 18 GB RAM, so the live services keep their share.
 - The named volume `runner-home` keeps the registration, the tool cache,
   Gradle, npm, the Android SDK and the AVDs between runs.
