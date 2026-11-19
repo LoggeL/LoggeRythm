@@ -22,16 +22,19 @@ type SortKey = "recent" | "name";
 /** One playlist; its cover and name travel into the header of the playlist page. */
 function PlaylistTile({ playlist }: { playlist: PlaylistSummary }) {
   const href = playlistPath(playlist);
-  const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url });
+  const subtitle = `Playlist · ${playlist.track_count} Titel`;
+  const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url, subtitle });
   return (
-    <Link href={href} onClick={morph.arm} className={CARD}>
+    <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={CARD}>
       <Morph name={morph.art} part="art">
         <Cover src={playlist.cover_url} className="mb-3 aspect-square w-full rounded-xl" />
       </Morph>
       <Morph name={morph.title} part="title">
         <span className="block truncate text-sm font-semibold">{playlist.name}</span>
       </Morph>
-      <span className="mt-1 block truncate text-xs text-muted">Playlist · {playlist.track_count} Titel</span>
+      <Morph name={morph.meta} part="meta">
+        <span className="mt-1 block truncate text-xs text-muted">{subtitle}</span>
+      </Morph>
     </Link>
   );
 }

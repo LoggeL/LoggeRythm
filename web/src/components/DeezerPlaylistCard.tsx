@@ -24,7 +24,8 @@ export default function DeezerPlaylistCard({
   const queryClient = useQueryClient();
   const id = String(playlist.id);
   const href = deezerPlaylistPath(id);
-  const morph = useMorphSource(href, { title: playlist.title, cover: playlist.cover });
+  const subtitle = `Playlist · ${playlist.track_count} Titel`;
+  const morph = useMorphSource(href, { title: playlist.title, cover: playlist.cover, subtitle });
 
   async function load() {
     const full = await queryClient.fetchQuery({
@@ -44,11 +45,13 @@ export default function DeezerPlaylistCard({
         <CardPlayButton label={`${playlist.title} abspielen`} load={load} onPlayed={onPlayed} />
       </div>
       <Morph name={morph.title} part="title">
-        <Link href={href} onClick={morph.arm} className={`${styles.link} ${styles.title} block`}>
+        <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={`${styles.link} ${styles.title} block`}>
           {playlist.title}
         </Link>
       </Morph>
-      <p className={styles.subtitle}>Playlist · {playlist.track_count} Titel</p>
+      <Morph name={morph.meta} part="meta">
+        <p className={styles.subtitle}>{subtitle}</p>
+      </Morph>
     </article>
   );
 }

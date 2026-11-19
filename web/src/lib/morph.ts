@@ -17,12 +17,27 @@
  * This module is framework-free; `components/motion/Morph.tsx` binds it to React.
  */
 
-export type MorphPart = "art" | "title";
+/**
+ * The parts of a card that travel: its artwork, its title and its small
+ * metadata line (which lands on the hero's metadata line or eyebrow).
+ */
+/**
+ * Transition types (`transitionTypes` of a `Link`) that pick how the page
+ * area moves (`PageTransition` in `components/motion/Morph.tsx`). A link that
+ * opens a detail page (cards, artist and album links) pushes the page in…
+ */
+export const NAV_FORWARD = ["nav-forward"];
+/** …the primary navigation (sidebar, tab bar) lets it sink away and the new one rise. */
+export const NAV_LATERAL = ["nav-lateral"];
+
+export type MorphPart = "art" | "title" | "meta";
 
 /** What the source card showed; enough to draw the destination's hero. */
 export interface MorphSeed {
   title: string;
   cover?: string | null;
+  /** The card's metadata line, shown in the hero until the page's own has loaded. */
+  subtitle?: string;
 }
 
 interface MorphTicket {

@@ -16,7 +16,7 @@ export default function ArtistCard({ artist, onPlayed }: { artist: ArtistSummary
   const queryClient = useQueryClient();
   const id = String(artist.id);
   const href = `/artist/${id}`;
-  const morph = useMorphSource(href, { title: artist.name, cover: artist.picture });
+  const morph = useMorphSource(href, { title: artist.name, cover: artist.picture, subtitle: "Künstler" });
 
   async function load() {
     const full = await queryClient.fetchQuery({ queryKey: ["artist", id], queryFn: () => api.artist(id), staleTime: FIVE_MINUTES });
@@ -35,11 +35,14 @@ export default function ArtistCard({ artist, onPlayed }: { artist: ArtistSummary
         <CardPlayButton label={`${artist.name} abspielen`} load={load} onPlayed={onPlayed} />
       </div>
       <Morph name={morph.title} part="title">
-        <Link href={href} onClick={morph.arm} className={`${styles.link} ${styles.title} block`}>
+        <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={`${styles.link} ${styles.title} block`}>
           {artist.name}
         </Link>
       </Morph>
-      <p className={styles.subtitle}>Künstler</p>
+      {/* Lands on the eyebrow of the artist page, which says the same. */}
+      <Morph name={morph.meta} part="meta">
+        <p className={styles.subtitle}>Künstler</p>
+      </Morph>
     </article>
   );
 }

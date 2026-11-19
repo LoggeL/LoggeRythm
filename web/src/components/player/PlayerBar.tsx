@@ -11,6 +11,7 @@ import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Scrubber, { ProgressLine, rangeFill } from "@/components/player/Scrubber";
 import { formatTime } from "@/lib/format";
+import { NAV_FORWARD } from "@/lib/morph";
 import { setNowPlayingOpen } from "@/components/player/usePlayerSideEffects";
 import {
   PlayIcon,
@@ -169,7 +170,7 @@ function TrackSummary({ track }: { track: Track }) {
       </button>
       <div className="min-w-0">
         {track.album_id ? (
-          <Link href={`/album/${track.album_id}`} className="font-display block truncate text-[15px] font-bold tracking-tight hover:underline">{track.title}</Link>
+          <Link href={`/album/${track.album_id}`} transitionTypes={NAV_FORWARD} className="font-display block truncate text-[15px] font-bold tracking-tight hover:underline">{track.title}</Link>
         ) : (
           <p className="font-display truncate text-[15px] font-bold tracking-tight">{track.title}</p>
         )}

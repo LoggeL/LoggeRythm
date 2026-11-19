@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, type ReactNode } from "react";
+import { useDeferredValue, useState, type ReactNode } from "react";
 import { DetailHeaderSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import Cover from "@/components/ui/Cover";
-import { useMorphSeed } from "@/components/motion/Morph";
+import { HeroEntrance, useMorphSeed } from "@/components/motion/Morph";
 import CollectionHero from "./CollectionHero";
 import QueryError, { type RetryableQuery } from "@/components/ui/QueryError";
 import EmptyState from "@/components/ui/EmptyState";
@@ -25,7 +25,7 @@ export function CollectionSkeleton({ round = false }: { round?: boolean }) {
             title={seed.title}
             coverUrl={seed.cover}
             artwork={<Cover src={seed.cover} eager />}
-            metadata={<span className="skeleton inline-block h-4 w-44 max-w-full rounded align-middle" />}
+            metadata={seed.subtitle ?? <span className="skeleton inline-block h-4 w-44 max-w-full rounded align-middle" />}
             actions={
               <>
                 <div className="skeleton h-14 w-14 rounded-full" />
@@ -87,6 +87,9 @@ export default function CollectionPageState<T>({
   children: (data: T) => ReactNode;
 }) {
   const loading = useLoadingPlaceholder(query.isLoading);
+  // A hero that replaces the placeholder's must not rise in a second time.
+  const [placeholderShown, setPlaceholderShown] = useState(loading);
+  if (loading && !placeholderShown) setPlaceholderShown(true);
   if (loading) return skeleton === undefined ? <CollectionSkeleton round={round} /> : skeleton;
   if (query.data === undefined) {
     if (query.isError) return <QueryError label={label} query={query} />;
@@ -118,9 +121,11 @@ export default function CollectionPageState<T>({
     );
   }
   return (
-    <div>
-      <QueryError label={label} query={query} className="mb-4" />
-      {children(query.data)}
-    </div>
+    <HeroEntrance value={!placeholderShown}>
+      <div>
+        <QueryError label={label} query={query} className="mb-4" />
+        {children(query.data)}
+      </div>
+    </HeroEntrance>
   );
 }

@@ -27,7 +27,11 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
   const playQueue = usePlayerStore((state) => state.playQueue);
   const cover = shelf.cover || shelf.tracks.find((track) => track.cover)?.cover;
   const empty = shelf.tracks.length === 0;
-  const morph = useMorphSource(href, { title: shelf.title, cover });
+  const subtitle = shelf.subtitle || `${shelf.tracks.length} Titel`;
+  // A shelf's own subtitle describes it (the page shows it as its description),
+  // so only the plain track count lands on the page's metadata line.
+  const metaTravels = !shelf.subtitle;
+  const morph = useMorphSource(href, { title: shelf.title, cover, subtitle: metaTravels ? subtitle : undefined });
   const play = () => playQueue(shelf.tracks, 0, shelf.title);
   const artwork = cover ? (
     // eslint-disable-next-line @next/next/no-img-element
@@ -42,7 +46,6 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
   );
   const badge = statusBadge && <span className="absolute left-2 top-2 z-[1] rounded-[3px] bg-accent px-1.5 py-0.5 font-mono text-[0.625rem] font-semibold uppercase tracking-[0.08em] text-on-accent">{statusBadge}</span>;
   const linkLabel = statusBadge ? `${shelf.title}, ${statusBadge}` : shelf.title;
-  const subtitle = shelf.subtitle || `${shelf.tracks.length} Titel`;
 
   if (variant === "hero") {
     const className = `group surface-card relative flex min-h-40 w-full items-center gap-4 overflow-hidden p-5 text-left transition-colors hover:bg-panel-hover ${highlighted ? "new-content-highlight" : ""}`;
@@ -61,7 +64,7 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
       </>
     );
     return href ? (
-      <Link href={href} onClick={morph.arm} className={className} aria-label={linkLabel}>{contents}</Link>
+      <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={className} aria-label={linkLabel}>{contents}</Link>
     ) : (
       <button type="button" onClick={play} disabled={empty} className={`${className} disabled:opacity-50`} aria-label={`${shelf.title} abspielen`}>{contents}</button>
     );
@@ -82,12 +85,14 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
       </div>
       {href ? (
         <Morph name={morph.title} part="title">
-          <Link href={href} onClick={morph.arm} aria-label={linkLabel} className={`${styles.link} ${styles.title} block`}>{shelf.title}</Link>
+          <Link href={href} onClick={morph.arm} transitionTypes={morph.types} aria-label={linkLabel} className={`${styles.link} ${styles.title} block`}>{shelf.title}</Link>
         </Morph>
       ) : (
         <button type="button" onClick={play} disabled={empty} aria-label={`${shelf.title} abspielen`} className={`${styles.link} ${styles.title} block w-full text-left`}>{shelf.title}</button>
       )}
-      <p className={styles.subtitle}>{subtitle}</p>
+      <Morph name={metaTravels ? morph.meta : undefined} part="meta">
+        <p className={styles.subtitle}>{subtitle}</p>
+      </Morph>
     </article>
   );
 }

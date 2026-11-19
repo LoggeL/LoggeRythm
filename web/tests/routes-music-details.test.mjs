@@ -87,7 +87,7 @@ const collectionImports = {
   // View transitions need a browser; the hero renders its content unwrapped
   // and no card has handed over artwork for the loading header.
   "@/components/motion/Morph": moduleUrl(
-    `export const HeroMorph = ({children}) => children; export const useMorphSeed = () => null;`,
+    `export const HeroMorph = ({children}) => children; export const useMorphSeed = () => null; export const useHeroRise = () => () => ({}); export const HeroEntrance = ({children}) => children;`,
   ),
   "@/components/ui/Cover": moduleUrl(
     `export default function Cover() { return null; }`,

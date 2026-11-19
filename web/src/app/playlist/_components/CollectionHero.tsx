@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useCoverColors } from "@/hooks/useCoverColors";
-import { HeroMorph } from "@/components/motion/Morph";
+import { HeroMorph, useHeroRise } from "@/components/motion/Morph";
 import styles from "./collection.module.css";
 
 /** Steps the display title down as it gets longer, so it never dominates. */
@@ -46,25 +46,30 @@ export default function CollectionHero({
 }) {
   const palette = useCoverColors(coverUrl);
   const tint = palette ? ({ "--hero-tint": palette.rgb.join(" ") } as CSSProperties) : undefined;
+  const rise = useHeroRise();
 
   return (
     <header className={styles.hero} style={tint}>
       <div className={styles.wash} data-tinted={palette !== null} aria-hidden="true" />
-      {/* Artwork and title continue from the card this page was opened from. */}
+      {/* Artwork, title and metadata continue from the card this page was opened from; the rest rises in around them. */}
       <HeroMorph part="art">
         <div className={`${styles.artwork} group ${roundArtwork ? styles.roundArtwork : ""}`}>{artwork}</div>
       </HeroMorph>
       <div className={styles.info}>
-        <p className="page-eyebrow">{eyebrow}</p>
+        <p className="page-eyebrow" {...rise(0)}>{eyebrow}</p>
         <HeroMorph part="title">
           <h1 className={styles.title} data-size={titleSize(title)} title={title}>
             {title}
           </h1>
         </HeroMorph>
-        {description && <div className={styles.description} data-clamp={clampDescription}>{description}</div>}
-        {metadata && <p className={styles.metadata}>{metadata}</p>}
+        {description && <div className={styles.description} data-clamp={clampDescription} {...rise(1)}>{description}</div>}
+        {metadata && (
+          <HeroMorph part="meta">
+            <p className={styles.metadata}>{metadata}</p>
+          </HeroMorph>
+        )}
       </div>
-      {actions && <div className={styles.actions}>{actions}</div>}
+      {actions && <div className={styles.actions} {...rise(2)}>{actions}</div>}
     </header>
   );
 }

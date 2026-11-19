@@ -81,10 +81,11 @@ function Workspace({ children }: { children: React.ReactNode }) {
           <div className="flex min-h-0 flex-1">
             <Sidebar />
             <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
-              {/* Only the page area cross-fades on navigation; sidebar, player and panels stay put. */}
+              {/* Only the page area moves on navigation; sidebar, player and panels stay put. Its own
+                  opaque background keeps the old page from showing through the new one in flight. */}
               <PageTransition>
                 {/* data-traverse-page: the page area and the page it shows, for lib/traversalMorph.ts. */}
-                <main ref={mainRef} id="main-content" data-traverse-page={pathname} tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto outline-none">
+                <main ref={mainRef} id="main-content" data-traverse-page={pathname} tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 bg-background overflow-y-auto outline-none">
                   <TopBar />
                   <div key={pathname} className={`${pageMotion} mx-auto max-w-[96rem] px-4 pb-16 pt-3 sm:px-6 lg:px-10 lg:pt-6`}>
                     {children}

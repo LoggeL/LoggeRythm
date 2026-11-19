@@ -17,7 +17,8 @@ export default function AlbumCard({ album, onPlayed }: { album: AlbumSummary; /*
   const id = String(album.id);
   const year = album.release_date ? album.release_date.slice(0, 4) : "";
   const href = `/album/${id}`;
-  const morph = useMorphSource(href, { title: album.title, cover: album.cover });
+  const subtitle = [year, album.artist].filter(Boolean).join(" · ");
+  const morph = useMorphSource(href, { title: album.title, cover: album.cover, subtitle });
 
   async function load() {
     const full = await queryClient.fetchQuery({ queryKey: ["album", id], queryFn: () => api.album(id), staleTime: FIVE_MINUTES });
@@ -33,11 +34,13 @@ export default function AlbumCard({ album, onPlayed }: { album: AlbumSummary; /*
         <CardPlayButton label={`${album.title} abspielen`} load={load} onPlayed={onPlayed} />
       </div>
       <Morph name={morph.title} part="title">
-        <Link href={href} onClick={morph.arm} className={`${styles.link} ${styles.title} block`}>
+        <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={`${styles.link} ${styles.title} block`}>
           {album.title}
         </Link>
       </Morph>
-      <p className={styles.subtitle}>{[year, album.artist].filter(Boolean).join(" · ")}</p>
+      <Morph name={morph.meta} part="meta">
+        <p className={styles.subtitle}>{subtitle}</p>
+      </Morph>
     </article>
   );
 }

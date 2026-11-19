@@ -1,8 +1,9 @@
 /**
- * Back/Forward as a view transition: the page area cross-fades and, when the
- * history moves between a detail page and the list it was opened from, the
- * artwork and the title travel between the card and the hero (the reverse of
- * the link morph in `components/motion/Morph.tsx`).
+ * Back/Forward as a view transition: the page area slides (Back to the
+ * left-hand page, Forward to the right-hand one) and, when the history moves
+ * between a detail page and the list it was opened from, the artwork, the
+ * title and the metadata line travel between the card and the hero (the
+ * reverse of the link morph in `components/motion/Morph.tsx`).
  *
  * Why this needs its own mechanism: React renders a `popstate` navigation
  * synchronously, and a synchronous render never runs as a `<ViewTransition>`.
@@ -32,13 +33,14 @@
  *
  * Names are not React's: elements get a `data-traverse` attribute, and
  * globals.css ("Back/Forward") turns it into the fixed names `traverse-page`,
- * `traverse-art` and `traverse-title` with the classes of the link morph, so
+ * `traverse-art`, `traverse-title` and `traverse-meta` with the classes of the link morph, so
  * both directions share durations, easing and keyframes. React's names are
  * inline styles derived from `morphName()` ("morph-…") and win over these
  * rules, so the two can neither collide nor clear each other. `<html
  * data-traversing>` takes the root out of the transition: the shell is not
  * captured and stays live (`data-traversing="fade"`: the pair's other half is
- * not on screen, so the captured half fades with its page).
+ * not on screen, so the captured half fades with its page). `<html
+ * data-traverse-direction>` ("back" / "forward") picks the page's slide.
  *
  * Whenever the traversal cannot or should not be animated (`judgeTraversal`),
  * the original event is left alone and the navigation runs as it always did,
@@ -218,7 +220,10 @@ export function noteRenderedPath(pathname: string): void {
 // ---- The transition (browser only) -----------------------------------------
 
 const PAGE_AREA = "[data-traverse-page]";
+/** Travel together or not at all. */
 const PARTS: MorphPart[] = ["art", "title"];
+/** Travel along when the side has them (not every card or hero has a metadata line). */
+const OPTIONAL_PARTS: MorphPart[] = ["meta"];
 /** A traversal the browser has not let us hand over after this long is handed over without animation. */
 const HANDOVER_DEADLINE_MS = 500;
 const LOG = "[traversalMorph]";
@@ -226,6 +231,7 @@ const LOG = "[traversalMorph]";
 interface NavigationEntry {
   key: string;
   url: string | null;
+  index: number;
 }
 interface NavigationApi extends EventTarget {
   currentEntry: NavigationEntry | null;
@@ -249,7 +255,7 @@ interface Run {
 let running: Run | null = null;
 /** The mechanism failed once; traversals run unanimated until the next page load. */
 let broken = false;
-let lastTraversal: { from: EntryRef; to: EntryRef } | null = null;
+let lastTraversal: { from: EntryRef; to: EntryRef; direction: "back" | "forward" } | null = null;
 const replays = new WeakSet<Event>();
 
 function navigationApi(): NavigationApi | undefined {
@@ -292,20 +298,33 @@ function inView(element: Element, pageArea: Element): boolean {
   return false;
 }
 
-/** Artwork and title of the hero, or of `card`, if both are there and in view. */
-function findParts(pageArea: Element, side: "hero" | "card", card: CardRef): Element[] | null {
-  const found: Element[] = [];
-  for (const part of PARTS) {
+type Parts = Map<MorphPart, Element>;
+
+/**
+ * Artwork and title of the hero, or of `card`, if both are there and in view,
+ * plus the metadata line if that is too.
+ */
+function findParts(pageArea: Element, side: "hero" | "card", card: CardRef): Parts | null {
+  const find = (part: MorphPart) => {
     const selector = side === "hero" ? `[data-traverse-hero="${part}"]` : `[data-traverse-card="${morphName(part, card.path, card.scope)}"]`;
     const element = pageArea.querySelector(selector);
-    if (element === null || !inView(element, pageArea)) return null;
-    found.push(element);
+    return element !== null && inView(element, pageArea) ? element : null;
+  };
+  const found: Parts = new Map();
+  for (const part of PARTS) {
+    const element = find(part);
+    if (element === null) return null;
+    found.set(part, element);
+  }
+  for (const part of OPTIONAL_PARTS) {
+    const element = find(part);
+    if (element !== null) found.set(part, element);
   }
   return found;
 }
 
-function markParts(parts: Element[]): void {
-  parts.forEach((element, index) => element.setAttribute("data-traverse", PARTS[index]));
+function markParts(parts: Parts): void {
+  for (const [part, element] of parts) element.setAttribute("data-traverse", part);
 }
 
 function unmarkParts(): void {
@@ -315,6 +334,7 @@ function unmarkParts(): void {
 function unmarkAll(): void {
   for (const element of document.querySelectorAll("[data-traverse]")) element.removeAttribute("data-traverse");
   document.documentElement.removeAttribute("data-traversing");
+  document.documentElement.removeAttribute("data-traverse-direction");
 }
 
 /** Nothing (a dialog, the fullscreen player) lies over the page area, which the transition would paint on top of. */
@@ -437,6 +457,8 @@ function onPopState(event: PopStateEvent): void {
   try {
     const oldParts = pair === null ? null : findParts(pageArea!, pair.hero === "old" ? "hero" : "card", pair.card);
     document.documentElement.setAttribute("data-traversing", "");
+    // Unknown (the entry change was not seen): the page sinks and rises instead of sliding.
+    if (traversal !== null && traversal.to.key === currentKey) document.documentElement.setAttribute("data-traverse-direction", traversal.direction);
     pageArea!.setAttribute("data-traverse", "page");
     if (oldParts !== null) markParts(oldParts);
     run.transition = document.startViewTransition(() => update(run, replay, oldParts === null ? null : pair, destination));
@@ -486,7 +508,7 @@ function onEntryChange(event: Event): void {
   // An entry without a URL belongs to another origin's document; nothing of ours.
   if (left === null || arrived === null) return;
   noteEntryChange(navigationType, left.key, arrived.key, arrived.path);
-  if (navigationType === "traverse") lastTraversal = { from: left, to: arrived };
+  if (navigationType === "traverse") lastTraversal = { from: left, to: arrived, direction: current.index < from.index ? "back" : "forward" };
 }
 
 /** Starts animating Back/Forward; call once in the shell. Returns the undo. */

@@ -10,7 +10,8 @@ import styles from "./cards.module.css";
 /** Playlist tile: cover, name and track count, linking to the playlist. */
 export default function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
   const href = playlistPath(playlist);
-  const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url });
+  const subtitle = `${playlist.track_count} Titel`;
+  const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url, subtitle });
 
   return (
     <article className={`music-card group ${styles.tile}`}>
@@ -20,11 +21,13 @@ export default function PlaylistCard({ playlist }: { playlist: PlaylistSummary }
         </Morph>
       </div>
       <Morph name={morph.title} part="title">
-        <Link href={href} onClick={morph.arm} className={`${styles.link} ${styles.title} block`}>
+        <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={`${styles.link} ${styles.title} block`}>
           {playlist.name}
         </Link>
       </Morph>
-      <p className={styles.subtitle}>{playlist.track_count} Titel</p>
+      <Morph name={morph.meta} part="meta">
+        <p className={styles.subtitle}>{subtitle}</p>
+      </Morph>
     </article>
   );
 }

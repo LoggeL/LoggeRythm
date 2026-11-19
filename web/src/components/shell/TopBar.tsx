@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { NAV_LATERAL } from "@/lib/morph";
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
@@ -23,10 +24,10 @@ export default function TopBar() {
   }, [searchPage]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-10">
+    <header className="vt-topbar sticky top-0 z-30 flex h-16 items-center gap-2 px-4 sm:gap-3 sm:px-6 lg:px-10">
       {/* Blurred backing fades in over scrolled content without a hard edge. */}
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-background/80 backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" />
-      <Link href="/" className="shrink-0 lg:hidden" aria-label="Start">
+      <Link href="/" transitionTypes={NAV_LATERAL} className="shrink-0 lg:hidden" aria-label="Start">
         <Logo size={30} />
       </Link>
       <div className="hidden items-center gap-1.5 lg:flex">

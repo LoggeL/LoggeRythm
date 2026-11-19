@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { NAV_LATERAL } from "@/lib/morph";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { usePlaylists, useDeletePlaylist } from "@/hooks/useLibrary";
@@ -20,16 +21,20 @@ const FILTER_THRESHOLD = 8;
 const rowClass = (active: boolean) =>
   `group/row relative flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-2 py-1.5 transition-colors ${active ? "bg-foreground/[0.08]" : "hover:bg-foreground/[0.05]"}`;
 
-/** Signal marker on the active destination. */
-function ActiveMarker() {
-  return <span aria-hidden="true" className="absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent" />;
+/**
+ * Signal marker on the active destination. The primary navigation's marker
+ * `travels`: it slides from the old item to the new one (globals.css,
+ * `.vt-nav-marker`); there is only ever one of those.
+ */
+function ActiveMarker({ travels = false }: { travels?: boolean }) {
+  return <span aria-hidden="true" className={`absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent ${travels ? "vt-nav-marker" : ""}`} />;
 }
 
 function PrimaryNav() {
   const pathname = usePathname();
   return (
     <nav aria-label="Hauptnavigation" className="flex flex-col px-3">
-      <Link href="/" className="mb-5 flex items-center gap-2.5 px-2 pt-5 transition-opacity hover:opacity-80">
+      <Link href="/" transitionTypes={NAV_LATERAL} className="mb-5 flex items-center gap-2.5 px-2 pt-5 transition-opacity hover:opacity-80">
         <Logo size={30} />
         <Wordmark />
       </Link>
@@ -40,10 +45,11 @@ function PrimaryNav() {
           <Link
             key={item.href}
             href={item.href}
+            transitionTypes={NAV_LATERAL}
             aria-current={active ? "page" : undefined}
             className={`font-display relative flex min-h-11 items-center gap-3.5 rounded-[var(--radius-control)] px-2 text-[17px] font-bold tracking-tight transition-colors ${active ? "text-foreground" : "text-muted hover:text-foreground"}`}
           >
-            {active && <ActiveMarker />}
+            {active && <ActiveMarker travels />}
             <Icon width={21} height={21} className={active ? "text-accent" : ""} />
             {item.label}
           </Link>
@@ -58,6 +64,7 @@ function Shortcut({ href, label, icon }: { href: string; label: string; icon: Re
   return (
     <Link
       href={href}
+      transitionTypes={NAV_LATERAL}
       title={label}
       className="flex min-w-0 flex-1 flex-col gap-2 rounded-[var(--radius-control)] border border-hairline px-2.5 py-2.5 text-muted transition-colors hover:border-foreground/25 hover:text-foreground"
     >
@@ -71,7 +78,7 @@ function PlaylistRow({ playlist, active, playing, onMenu }: { playlist: Playlist
   const path = playlistPath(playlist);
   return (
     <li onContextMenu={(event) => onMenu(event, path)}>
-      <Link href={path} aria-current={active ? "page" : undefined} className={rowClass(active)}>
+      <Link href={path} transitionTypes={NAV_LATERAL} aria-current={active ? "page" : undefined} className={rowClass(active)}>
         {active && <ActiveMarker />}
         {playlist.cover_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -108,7 +115,7 @@ function LibrarySection() {
   return (
     <section aria-label="Bibliothek" className="mt-6 flex min-h-0 flex-1 flex-col border-t border-hairline pt-4">
       <div className="flex items-center justify-between gap-2 pl-5 pr-3">
-        <Link href="/library" className={`label-mono flex min-h-9 items-center gap-2 transition-colors hover:text-foreground ${pathname === "/library" ? "text-foreground" : ""}`}>
+        <Link href="/library" transitionTypes={NAV_LATERAL} className={`label-mono flex min-h-9 items-center gap-2 transition-colors hover:text-foreground ${pathname === "/library" ? "text-foreground" : ""}`}>
           <LibraryIcon width={15} height={15} />
           Bibliothek
         </Link>

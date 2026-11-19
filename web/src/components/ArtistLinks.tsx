@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import Link from "next/link";
+import { NAV_FORWARD } from "@/lib/morph";
 import type { Track } from "@/types";
 import { trackArtistCredits } from "@/lib/trackArtists";
 
@@ -35,6 +36,7 @@ export default function ArtistLinks({
             <Link
               href={`/artist/${a.id}`}
               onClick={onNavigate}
+              transitionTypes={NAV_FORWARD}
               className={linkClassName}
             >
               {a.name}

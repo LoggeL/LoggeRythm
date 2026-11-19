@@ -71,10 +71,16 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   /* Travel curve for elements that move between two places. */
   --ease-move: cubic-bezier(0.3, 0.7, 0, 1);
-  /* Motion durations: small fades, a page cross-fade, a shared element in flight. */
+  /* Springs (damped, sampled into linear()): `--spring-bouncy` overshoots by
+     ~8 % and settles, for shared elements in flight; `--spring-soft` by ~1.5 %,
+     for whole pages sliding in. */
+  --spring-bouncy: linear(0, 0.046, 0.1589, 0.3069, 0.4655, 0.6176, 0.7521, 0.8634, 0.9496, 1.0115, 1.0519, 1.0744, 1.0831, 1.0817, 1.0737, 1.062, 1.0489, 1.0359, 1.0241, 1.0142, 1.0063, 1.0005, 0.9966, 0.9942, 0.9932, 0.9931, 0.9936, 0.9945, 0.9956, 0.9967, 0.9977, 0.9986, 0.9993, 0.9998, 1.0002, 1.0004, 1.0006, 1.0006, 1.0006, 1.0005, 1);
+  --spring-soft: linear(0, 0.0491, 0.163, 0.3041, 0.4481, 0.5809, 0.6952, 0.7886, 0.8615, 0.916, 0.955, 0.9816, 0.9986, 1.0085, 1.0135, 1.0151, 1.0147, 1.0131, 1.0111, 1.0089, 1.0068, 1.005, 1.0035, 1.0023, 1.0014, 1.0008, 1.0004, 1.0001, 0.9999, 0.9998, 0.9998, 0.9998, 1);
+  /* Motion durations: small fades, a page cross-fade, a page sliding in, a shared element in flight. */
   --motion-fast: 140ms;
   --motion-page: 220ms;
-  --motion-morph: 340ms;
+  --motion-slide: 560ms;
+  --motion-morph: 680ms;
   --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.6), 0 0 0 1px var(--hairline);
 
   --grad-violet-from: #5945a0;
@@ -277,21 +283,95 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 
 /* ---- View transitions ----------------------------------------------------
    React's <ViewTransition> (components/motion/Morph.tsx) names the elements;
-   these rules decide how they move. `.page` is the scrolling page area, which
-   cross-fades on navigation and when loaded content replaces a placeholder.
-   `.morph` / `.morph-text` are artwork and title travelling between a card
-   and the hero of the page it opens. Everything outside the page area is
-   never named, so the shell stays as it is. */
+   these rules decide how they move.
+
+   The page area (`.page*`) moves by the transition type of the navigation:
+   - `.page-forward` (a card, artist or album link): the old page is pushed
+     back and to the left while the new one springs in from the right;
+     `.page-back` is the mirror image (Back, lib/traversalMorph.ts).
+   - `.page-lateral` (sidebar / tab bar): the old page sinks away, blurred,
+     and the new one rises into place.
+   - `.page` (untyped: loaded content replacing its placeholder, other
+     links): a plain cross-fade, since nothing moves to another place.
+   Shared elements travel on a spring that overshoots a little and settles:
+   `.morph` (artwork; it lifts off with a shadow while in flight),
+   `.morph-text` (title) and `.morph-meta` (the card's metadata line landing
+   on the hero's). The top bar and the nav markers are named only in the
+   typed transitions: the top bar stays put above the moving page, the active
+   marker slides to the new item. Everything else in the shell is never
+   named, so it stays as it is. */
 /* Clicks reach the page while a transition runs. */
 ::view-transition { pointer-events: none; }
 /* The root only cross-fades when something outside the page area changed with
    the navigation (the active item in the sidebar); it keeps the page's pace. */
 ::view-transition-group(root), ::view-transition-group(.page) { animation-duration: var(--motion-page); animation-timing-function: ease; }
-::view-transition-group(.morph), ::view-transition-group(.morph-text) { animation-duration: var(--motion-morph); animation-timing-function: var(--ease-move); }
-/* Artwork fills its box while it changes size, instead of stretching. */
-::view-transition-old(.morph), ::view-transition-new(.morph) { height: 100%; object-fit: cover; }
-/* The small title leaves quickly so the two sizes never read as a double image. */
-::view-transition-old(.morph-text) { animation-duration: var(--motion-fast); }
+
+@keyframes vt-fade-in { from { opacity: 0; } }
+@keyframes vt-fade-out { to { opacity: 0; } }
+@keyframes vt-focus-in { from { opacity: 0; filter: blur(6px); } }
+@keyframes vt-push-out { to { transform: translateX(-7%) scale(0.94); filter: blur(4px); } }
+@keyframes vt-push-in { from { transform: translateX(16%) scale(0.98); } }
+@keyframes vt-pop-out { to { transform: translateX(7%) scale(0.94); filter: blur(4px); } }
+@keyframes vt-pop-in { from { transform: translateX(-16%) scale(0.98); } }
+@keyframes vt-sink { to { transform: translateY(-1.5rem) scale(0.965); filter: blur(6px); } }
+@keyframes vt-rise { from { transform: translateY(3rem) scale(0.985); } }
+@keyframes vt-lift { 45% { filter: drop-shadow(0 1.75rem 2.25rem rgb(0 0 0 / 0.55)) brightness(1.06); } }
+
+/* Moving pages stay inside the page area instead of sliding over the shell. */
+::view-transition-group(.page-forward), ::view-transition-group(.page-back), ::view-transition-group(.page-lateral) { clip-path: inset(0); animation-duration: var(--motion-slide); animation-timing-function: var(--spring-soft); }
+::view-transition-old(.page-forward), ::view-transition-new(.page-forward),
+::view-transition-old(.page-back), ::view-transition-new(.page-back),
+::view-transition-old(.page-lateral), ::view-transition-new(.page-lateral) { mix-blend-mode: normal; }
+::view-transition-old(.page-forward) { animation: vt-push-out 420ms cubic-bezier(0.45, 0, 0.2, 1) both, vt-fade-out 300ms ease-in both; }
+::view-transition-new(.page-forward) { animation: vt-push-in var(--motion-slide) var(--spring-soft) both, vt-fade-in 280ms ease-out 60ms both; }
+::view-transition-old(.page-back) { animation: vt-pop-out 420ms cubic-bezier(0.45, 0, 0.2, 1) both, vt-fade-out 300ms ease-in both; }
+::view-transition-new(.page-back) { animation: vt-pop-in var(--motion-slide) var(--spring-soft) both, vt-fade-in 280ms ease-out 60ms both; }
+::view-transition-old(.page-lateral) { animation: vt-sink 340ms cubic-bezier(0.45, 0, 0.2, 1) both, vt-fade-out 260ms ease-in both; }
+::view-transition-new(.page-lateral) { animation: vt-rise var(--motion-slide) var(--spring-soft) both, vt-fade-in 300ms ease-out 80ms both; }
+
+/* Shared elements in flight. */
+::view-transition-group(.morph), ::view-transition-group(.morph-text), ::view-transition-group(.morph-meta) { animation-duration: var(--motion-morph); animation-timing-function: var(--spring-bouncy); }
+::view-transition-image-pair(.morph) { animation: vt-lift var(--motion-morph) ease-in-out both; }
+/* Artwork fills its box while it changes size, instead of stretching. The new
+   artwork covers the old one; the old one goes only once it is hidden, so the
+   pair never turns see-through halfway. */
+::view-transition-old(.morph), ::view-transition-new(.morph) { height: 100%; object-fit: cover; mix-blend-mode: normal; }
+::view-transition-old(.morph) { animation: vt-fade-out 180ms ease 220ms both; }
+::view-transition-new(.morph) { animation: vt-fade-in 240ms ease both; }
+/* Text: the small version leaves quickly so the two sizes never read as a
+   double image; the large one comes into focus. */
+::view-transition-old(.morph-text), ::view-transition-new(.morph-text),
+::view-transition-old(.morph-meta), ::view-transition-new(.morph-meta) { mix-blend-mode: normal; }
+::view-transition-old(.morph-text), ::view-transition-old(.morph-meta) { animation: vt-fade-out 180ms ease-out both; }
+::view-transition-new(.morph-text), ::view-transition-new(.morph-meta) { animation: vt-focus-in 360ms ease 80ms both; }
+/* A half without its counterpart (not on screen, or a hero without a metadata
+   line) does not travel: it fades where it is. */
+::view-transition-old(.morph):only-child, ::view-transition-old(.morph-text):only-child, ::view-transition-old(.morph-meta):only-child { animation: vt-fade-out 200ms ease both; }
+::view-transition-new(.morph):only-child, ::view-transition-new(.morph-text):only-child, ::view-transition-new(.morph-meta):only-child { animation: vt-fade-in 320ms ease 120ms both; }
+/* Titles and metadata lines are as wide as their text, so in flight the text
+   scales evenly instead of being stretched to a wider box. */
+[data-traverse-hero="title"], [data-traverse-hero="meta"],
+[data-traverse-card^="morph-title"], [data-traverse-card^="morph-meta"] { width: fit-content; max-width: 100%; }
+
+/* The top bar holds still above the moving page. */
+:root:active-view-transition-type(nav-forward, nav-lateral) .vt-topbar { view-transition-name: topbar; }
+:root[data-traversing] .vt-topbar { view-transition-name: topbar; }
+::view-transition-group(topbar) { animation: none; }
+::view-transition-old(topbar) { display: none; }
+::view-transition-new(topbar) { animation: none; }
+/* The active marker slides from the old nav item to the new one. */
+:root:active-view-transition-type(nav-forward, nav-lateral) .vt-nav-marker { view-transition-name: nav-marker; }
+:root[data-traversing] .vt-nav-marker { view-transition-name: nav-marker; }
+:root:active-view-transition-type(nav-forward, nav-lateral) .vt-tab-marker { view-transition-name: tab-marker; }
+:root[data-traversing] .vt-tab-marker { view-transition-name: tab-marker; }
+::view-transition-group(nav-marker), ::view-transition-group(tab-marker) { animation-duration: var(--motion-morph); animation-timing-function: var(--spring-bouncy); }
+
+/* The secondary parts of a hero (useHeroRise) rise in one after the other
+   while the shared elements land. */
+@keyframes heroRiseMove { from { transform: translateY(1.25rem); } }
+@keyframes heroRiseFade { from { opacity: 0; filter: blur(6px); } }
+[data-rise] { animation: heroRiseMove 760ms var(--spring-soft) both, heroRiseFade 420ms ease-out both; animation-delay: calc(160ms + var(--rise, 0) * 80ms); }
+
 /* Without the View Transitions API a new page still fades in. */
 @supports not (view-transition-name: none) {
   .page-enter { animation: fadeIn .28s var(--ease-out) both; }
@@ -301,23 +381,30 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 @keyframes pageFade { from { opacity: 0; } }
 .page-return { animation: pageFade var(--motion-page) ease both; }
 /* Back/Forward (lib/traversalMorph.ts): that module runs the traversal as a
-   view transition of its own and marks the page area and one artwork/title
-   pair with `data-traverse`. The fixed names never meet React's, which are
-   inline styles; the classes are the ones above, so both directions move
-   alike. The root is left out, so the shell is not captured and stays live. */
+   view transition of its own and marks the page area and one artwork / title
+   / metadata set with `data-traverse`. The fixed names never meet React's,
+   which are inline styles; the classes are the ones above, so both directions
+   move alike. The page slides by the direction of the traversal (sinks and
+   rises when that is unknown). The root is left out, so the shell is not
+   captured and stays live. */
 :root[data-traversing] { view-transition-name: none; }
-[data-traverse="page"] { view-transition-name: traverse-page; view-transition-class: page; }
+[data-traverse="page"] { view-transition-name: traverse-page; view-transition-class: page-lateral; }
+:root[data-traverse-direction="back"] [data-traverse="page"] { view-transition-class: page-back; }
+:root[data-traverse-direction="forward"] [data-traverse="page"] { view-transition-class: page-forward; }
 [data-traverse="art"] { view-transition-name: traverse-art; view-transition-class: morph; }
 [data-traverse="title"] { view-transition-name: traverse-title; view-transition-class: morph-text; }
-/* The other half is not on screen: the old half fades with its page. */
-:root[data-traversing="fade"]::view-transition-old(.morph),
-:root[data-traversing="fade"]::view-transition-old(.morph-text) { animation-duration: var(--motion-page); animation-timing-function: ease; }
+[data-traverse="meta"] { view-transition-name: traverse-meta; view-transition-class: morph-meta; }
+/* `data-traversing="fade"` (the other half is not on screen) needs no rule of
+   its own: the captured half has no counterpart and fades (`:only-child`). */
 
 @media (prefers-reduced-motion: reduce) {
   /* No travel and no resizing: elements take their final place at once and
      old and new swap with a short fade. */
-  ::view-transition-group(*) { animation: none !important; }
-  ::view-transition-old(*), ::view-transition-new(*) { animation-duration: var(--motion-fast) !important; animation-delay: 0s !important; }
+  ::view-transition-group(*), ::view-transition-image-pair(*) { animation: none !important; }
+  ::view-transition-old(*) { animation: vt-fade-out var(--motion-fast) ease both !important; }
+  ::view-transition-new(*) { animation: vt-fade-in var(--motion-fast) ease both !important; }
+  ::view-transition-new(topbar) { animation: none !important; }
+  [data-rise] { animation: none; }
   .page-return { animation-duration: var(--motion-fast); }
   .cover-image[data-loaded="arrived"] { animation: none; }
   .animate-in, .pop-in, .sheet-up, .skeleton, .eq-bar, .page-enter { animation: none; }

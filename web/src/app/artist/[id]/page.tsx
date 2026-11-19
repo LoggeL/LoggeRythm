@@ -17,7 +17,7 @@ import { formatCompact } from "@/lib/format";
 import { useMe } from "@/hooks/useAuth";
 import { useLikes } from "@/hooks/useLibrary";
 import type { Artist } from "@/types";
-import ArtistHero, { ArtistNamePlaceholder, ArtistPortraitPlaceholder, type ArtistFigure } from "./ArtistHero";
+import ArtistHero, { ArtistEyebrowPlaceholder, ArtistNamePlaceholder, ArtistPortraitPlaceholder, type ArtistFigure } from "./ArtistHero";
 import { FollowButton, FollowErrors } from "./FollowButton";
 import LikedByArtist from "./LikedByArtist";
 import styles from "./artist.module.css";
@@ -50,7 +50,7 @@ function ArtistSkeleton() {
         <div className={styles.layout}>
           <ArtistPortraitPlaceholder />
           <div className={styles.info}>
-            <div className="skeleton mb-3 h-4 w-20 rounded" />
+            <ArtistEyebrowPlaceholder />
             <ArtistNamePlaceholder />
             <div className={styles.meta}>
               <div className="skeleton h-4 w-44 rounded" />
