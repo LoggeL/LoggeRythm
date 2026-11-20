@@ -1,89 +1,146 @@
-"""Resolve external (Spotify) links into Deezer-playable tracks."""
-from concurrent.futures import ThreadPoolExecutor
+"""Resolve external (Spotify) links into Deezer-playable tracks.
 
-from fastapi import APIRouter, HTTPException, Query
+``GET /api/resolve`` answers within the request (capped at
+``SPOTIFY_RESOLVE_LIMIT`` tracks). ``/api/resolve/jobs`` runs the same import
+as a background job the client can leave and fetch later, for big playlists.
+"""
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from ..schemas.resolve import ResolveResult, UnmatchedTrack
+from ..auth import get_current_user
+from ..config import SPOTIFY_RESOLVE_LIMIT
+from ..db.models import ImportJob, User
+from ..db.session import get_db
+from ..schemas.resolve import (
+    ImportJobCreate,
+    ImportJobDetail,
+    ImportJobStatus,
+    ResolveResult,
+    UnmatchedTrack,
+)
 from ..schemas.track import Track
-from ..services import deezer_client as dc
-from ..services import spotify
+from ..services import import_jobs, spotify
+from ..services.spotify_import import resolve_link
 
 router = APIRouter(prefix="/api", tags=["resolve"])
 
 
-def _dedupe(sp_tracks: list[dict]) -> list[dict]:
-    """Drop duplicate tracks (long playlists repeat songs) — key by ISRC else artist|title."""
-    seen: set[str] = set()
-    out: list[dict] = []
-    for sp in sp_tracks:
-        key = (sp.get("isrc") or f"{sp.get('artist', '')}|{sp.get('title', '')}").lower()
-        if key and key not in seen:
-            seen.add(key)
-            out.append(sp)
-    return out
+def _spotify_http_error(e: spotify.SpotifyError) -> HTTPException:
+    if isinstance(e, spotify.SpotifyNotConfigured):
+        return HTTPException(status_code=503, detail=str(e))
+    if isinstance(e, spotify.SpotifyBadLink):
+        return HTTPException(status_code=400, detail=str(e))
+    if isinstance(e, spotify.SpotifyNotFound):
+        return HTTPException(status_code=404, detail=str(e))
+    return HTTPException(status_code=502, detail=str(e))
 
 
-def _resolve_blocking(url: str) -> dict:
-    meta = spotify.resolve(url)
-    raw = meta.get("tracks") or []
-    sp_tracks = _dedupe(raw)
-    source_total = int(meta.get("total", len(raw)) or len(raw))
-
-    def _match(sp: dict) -> tuple[dict, dict | None]:
-        try:
-            return sp, dc.match_track(
-                sp.get("title", ""), sp.get("artist", ""), sp.get("isrc", "")
-            )
-        except Exception:  # noqa: BLE001 — a single bad lookup must not abort the import
-            return sp, None
-
-    matched: list[dict] = []
-    unmatched: list[dict] = []
-    seen_deezer: set[str] = set()
-    if sp_tracks:
-        # Modest concurrency + backoff (in _public_get) keeps big imports under the rate limit.
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            for sp, deezer in pool.map(_match, sp_tracks):
-                if deezer and deezer["id"] not in seen_deezer:
-                    seen_deezer.add(deezer["id"])
-                    matched.append(deezer)
-                elif not deezer:
-                    unmatched.append(
-                        {"title": sp.get("title", ""), "artist": sp.get("artist", "")}
-                    )
-
-    return {
-        "type": meta.get("type", ""),
-        "name": meta.get("name", ""),
-        "image": meta.get("image", ""),
-        "total": len(sp_tracks),
-        "source_total": source_total,
-        "matched": len(matched),
-        "tracks": matched,
-        "unmatched": unmatched,
-    }
-
-
-@router.get("/resolve", response_model=ResolveResult)
-async def resolve(url: str = Query(..., description="Spotify playlist/album/track link")) -> ResolveResult:
-    try:
-        data = await run_in_threadpool(_resolve_blocking, url)
-    except spotify.SpotifyNotConfigured as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except spotify.SpotifyBadLink as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except spotify.SpotifyNotFound as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except spotify.SpotifyError as e:
-        raise HTTPException(status_code=502, detail=str(e))
+def _result_model(data: dict) -> ResolveResult:
     return ResolveResult(
         type=data["type"],
         name=data["name"],
         image=data["image"],
         total=data["total"],
-        source_total=data.get("source_total", data["total"]),
+        source_total=data["source_total"],
         matched=data["matched"],
         tracks=[Track(**t) for t in data["tracks"]],
         unmatched=[UnmatchedTrack(**u) for u in data["unmatched"]],
     )
+
+
+@router.get("/resolve", response_model=ResolveResult)
+async def resolve(url: str = Query(..., description="Spotify playlist/album/track link")) -> ResolveResult:
+    try:
+        resolved = await run_in_threadpool(resolve_link, url, limit=SPOTIFY_RESOLVE_LIMIT)
+    except spotify.SpotifyError as e:
+        raise _spotify_http_error(e)
+    return _result_model(resolved.as_result())
+
+
+# --- background import jobs --------------------------------------------------
+def _status_fields(job: ImportJob) -> dict:
+    return {
+        "id": job.id,
+        "url": job.url,
+        "status": job.status,
+        "type": job.type,
+        "name": job.name,
+        "image": job.image,
+        "total": job.total,
+        "source_total": job.source_total,
+        "processed": job.processed,
+        "matched": job.matched,
+        "failed_lookups": job.failed_lookups,
+        "lookup_error": job.lookup_error,
+        "error": job.error,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "finished_at": job.finished_at,
+    }
+
+
+def _owned_job(db: Session, user: User, job_id: str) -> ImportJob:
+    job = import_jobs.get_for(db, user, job_id)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Import nicht gefunden. Er wurde gelöscht oder gehört zu einem anderen Konto.",
+        )
+    return job
+
+
+@router.post(
+    "/resolve/jobs",
+    response_model=ImportJobStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_import_job(
+    body: ImportJobCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ImportJobStatus:
+    try:
+        job = import_jobs.start(db, user, body.url)
+    except spotify.SpotifyError as e:
+        raise _spotify_http_error(e)
+    except import_jobs.TooManyActiveJobs as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    return ImportJobStatus(**_status_fields(job))
+
+
+@router.get("/resolve/jobs", response_model=list[ImportJobStatus])
+def list_import_jobs(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ImportJobStatus]:
+    return [ImportJobStatus(**_status_fields(job)) for job in import_jobs.list_for(db, user)]
+
+
+@router.get("/resolve/jobs/{job_id}", response_model=ImportJobDetail)
+def get_import_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ImportJobDetail:
+    job = _owned_job(db, user, job_id)
+    result = import_jobs.result_of(job)
+    if job.status == "done" and result is None:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Import {job.id} ist als fertig markiert, hat aber kein gespeichertes Ergebnis.",
+        )
+    return ImportJobDetail(
+        **_status_fields(job),
+        result=_result_model(result) if result is not None else None,
+    )
+
+
+@router.delete("/resolve/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_import_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    import_jobs.remove(db, _owned_job(db, user, job_id))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

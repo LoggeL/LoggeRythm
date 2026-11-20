@@ -18,6 +18,7 @@ import { AuthShell } from "@/components/AuthCard";
 import { SpinnerIcon } from "@/components/icons";
 import { LandingScreen, PendingScreen } from "@/components/GateScreen";
 import { useMe } from "@/hooks/useAuth";
+import { ImportJobWatcher } from "@/hooks/useImportJobs";
 import { useAmbientColor } from "@/hooks/useAmbientColor";
 import { SearchProvider } from "@/hooks/useSearchNavigation";
 import { PageTransition, usePageMotion, useTraversalMorph } from "@/components/motion/Morph";
@@ -103,6 +104,7 @@ function Workspace({ children }: { children: React.ReactNode }) {
           <CommandPalette />
           <AddToPlaylistModal />
           <Toaster />
+          <ImportJobWatcher />
         </div>
       </SearchProvider>
     </Suspense>

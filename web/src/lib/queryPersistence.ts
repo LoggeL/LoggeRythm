@@ -41,6 +41,8 @@ const PRIVATE_QUERY_ROOTS = new Set<string>([
   "playback-settings",
   "stats",
   "party",
+  "import-jobs",
+  "import-job",
   "admin-users",
   "admin-storage",
   "admin-invites",

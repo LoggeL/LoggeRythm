@@ -94,7 +94,8 @@ Configured in `api/.env` (copied from `api/.env.example`). Defaults come from `a
 | `COOKIE_SAMESITE` | No | `lax` | SameSite policy for the session cookie. |
 | `SPOTIFY_CLIENT_ID` | No | — | Spotify app client ID; enables Spotify-link import. |
 | `SPOTIFY_CLIENT_SECRET` | No | — | Spotify app client secret (paired with the client ID). |
-| `SPOTIFY_RESOLVE_LIMIT` | No | `200` | Max tracks resolved from a single Spotify album/playlist. |
+| `SPOTIFY_RESOLVE_LIMIT` | No | `200` | Max tracks resolved by the synchronous `GET /api/resolve` (used by the Android app). |
+| `SPOTIFY_IMPORT_JOB_LIMIT` | No | `10000` | Max tracks resolved by a background import job (`/api/resolve/jobs`, used by the web app). |
 | `LASTFM_API_KEY` | No | — | Last.fm API key for song-radio similarity; without it the radio uses Deezer's mix. |
 
 Spotify import is disabled unless both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set. Last.fm radio similarity is optional.

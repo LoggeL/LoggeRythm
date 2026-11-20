@@ -708,6 +708,263 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "ImportJobCreate": {
+        "properties": {
+          "url": {
+            "description": "Spotify playlist/album/track link",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ImportJobCreate",
+        "type": "object"
+      },
+      "ImportJobDetail": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_lookups": {
+            "default": 0,
+            "title": "Failed Lookups",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image": {
+            "default": "",
+            "title": "Image",
+            "type": "string"
+          },
+          "lookup_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lookup Error"
+          },
+          "matched": {
+            "default": 0,
+            "title": "Matched",
+            "type": "integer"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "processed": {
+            "default": 0,
+            "title": "Processed",
+            "type": "integer"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResolveResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_total": {
+            "default": 0,
+            "title": "Source Total",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "type": {
+            "default": "",
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ImportJobDetail",
+        "type": "object"
+      },
+      "ImportJobStatus": {
+        "description": "Progress of a background Spotify import, without the matched tracks.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "failed_lookups": {
+            "default": 0,
+            "title": "Failed Lookups",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "image": {
+            "default": "",
+            "title": "Image",
+            "type": "string"
+          },
+          "lookup_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lookup Error"
+          },
+          "matched": {
+            "default": 0,
+            "title": "Matched",
+            "type": "integer"
+          },
+          "name": {
+            "default": "",
+            "title": "Name",
+            "type": "string"
+          },
+          "processed": {
+            "default": 0,
+            "title": "Processed",
+            "type": "integer"
+          },
+          "source_total": {
+            "default": 0,
+            "title": "Source Total",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          },
+          "type": {
+            "default": "",
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ImportJobStatus",
+        "type": "object"
+      },
       "IntegrationsStatus": {
         "properties": {
           "lastfm_configured": {
@@ -6726,6 +6983,245 @@
           }
         },
         "summary": "Resolve",
+        "tags": [
+          "resolve"
+        ]
+      }
+    },
+    "/api/resolve/jobs": {
+      "get": {
+        "operationId": "list_import_jobs_api_resolve_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportJobStatus"
+                  },
+                  "title": "Response List Import Jobs Api Resolve Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "List Import Jobs",
+        "tags": [
+          "resolve"
+        ]
+      },
+      "post": {
+        "operationId": "start_import_job_api_resolve_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportJobCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Start Import Job",
+        "tags": [
+          "resolve"
+        ]
+      }
+    },
+    "/api/resolve/jobs/{job_id}": {
+      "delete": {
+        "operationId": "delete_import_job_api_resolve_jobs__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Delete Import Job",
+        "tags": [
+          "resolve"
+        ]
+      },
+      "get": {
+        "operationId": "get_import_job_api_resolve_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportJobDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Import Job",
         "tags": [
           "resolve"
         ]

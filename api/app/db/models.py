@@ -277,3 +277,35 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ImportJob(Base):
+    """A Spotify link import running (or finished) in the background.
+
+    The client starts it, may leave, and fetches the result later. The result
+    (a ``ResolveResult``) is stored as JSON once matching is done.
+    """
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    # queued | running | done | failed
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    type: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    name: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    image: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    matched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_lookups: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lookup_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

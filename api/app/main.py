@@ -37,7 +37,7 @@ from .routers import (
     stats,
     stream,
 )
-from .services import deezer_client, radar_preload, storage
+from .services import deezer_client, import_jobs, radar_preload, storage
 
 app = FastAPI(title="LoggeRythm API", version=API_VERSION)
 
@@ -230,6 +230,7 @@ def _startup() -> None:
     init_db()
     _run_column_migrations()
     _bootstrap_admin()
+    import_jobs.fail_interrupted()  # jobs a previous process left running
     deezer_client.init_session()
     storage.reconcile()  # backfill DB rows for pre-existing files
     storage.cleanup_old()  # evict stale tracks on boot

@@ -136,13 +136,13 @@ def get_track(spotify_id: str) -> dict:
     }
 
 
-def get_album(spotify_id: str) -> dict:
+def get_album(spotify_id: str, limit: int = SPOTIFY_RESOLVE_LIMIT) -> dict:
     al = _api_get(f"/albums/{spotify_id}")
     image = _first_image(al.get("images"))
     album_stub = {"images": al.get("images") or []}
     items = (al.get("tracks") or {}).get("items") or []
     tracks = []
-    for it in items[:SPOTIFY_RESOLVE_LIMIT]:
+    for it in items[:limit]:
         it.setdefault("album", album_stub)
         it.setdefault("external_ids", {})
         tracks.append(_norm_track(it))
@@ -155,7 +155,7 @@ def get_album(spotify_id: str) -> dict:
     }
 
 
-def get_playlist(spotify_id: str) -> dict:
+def get_playlist(spotify_id: str, limit: int = SPOTIFY_RESOLVE_LIMIT) -> dict:
     pl = _api_get(f"/playlists/{spotify_id}")
     image = _first_image(pl.get("images"))
     tracks: list[dict] = []
@@ -169,10 +169,10 @@ def get_playlist(spotify_id: str) -> dict:
             track = it.get("track")
             if track and track.get("type", "track") == "track":
                 tracks.append(_norm_track(track))
-            if len(tracks) >= SPOTIFY_RESOLVE_LIMIT:
+            if len(tracks) >= limit:
                 break
         next_url = page.get("next")
-        if not next_url or len(tracks) >= SPOTIFY_RESOLVE_LIMIT:
+        if not next_url or len(tracks) >= limit:
             break
         # follow pagination via the absolute "next" URL (strip API base)
         page = _api_get(next_url.replace(_API, "", 1))
@@ -185,11 +185,16 @@ def get_playlist(spotify_id: str) -> dict:
     }
 
 
-def resolve(text: str) -> dict:
-    """Resolve a Spotify link to {type, name, image, tracks:[normalized]}."""
+def resolve(text: str, limit: int = SPOTIFY_RESOLVE_LIMIT) -> dict:
+    """Resolve a Spotify link to {type, name, image, tracks:[normalized]}.
+
+    ``limit`` caps how many tracks of a playlist/album are read.
+    """
+    if limit < 1:
+        raise ValueError(f"Spotify resolve limit must be positive, got {limit}")
     kind, spotify_id = parse_link(text)
     if kind == "playlist":
-        return get_playlist(spotify_id)
+        return get_playlist(spotify_id, limit)
     if kind == "album":
-        return get_album(spotify_id)
+        return get_album(spotify_id, limit)
     return get_track(spotify_id)

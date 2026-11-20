@@ -496,6 +496,7 @@ class ApiLifecycleTests(unittest.TestCase):
             patch.object(main, "init_db"),
             patch.object(main, "_run_column_migrations"),
             patch.object(main, "_bootstrap_admin"),
+            patch.object(main.import_jobs, "fail_interrupted"),
             patch.object(main.deezer_client, "init_session"),
             patch.object(main.storage, "reconcile"),
             patch.object(main.storage, "cleanup_old"),

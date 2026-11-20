@@ -15,25 +15,27 @@ const TONES = [
 /**
  * Coloured category tile (genre, radio, discovery entry). `tone` picks the
  * gradient, so neighbouring tiles in a grid differ; the artwork or icon sits
- * tilted in the corner.
+ * tilted in the corner. With `onClick` instead of `href` it is a button (an
+ * in-page action) that looks exactly like the linked tiles beside it.
  */
 export default function BrowseTile({
   href,
+  onClick,
   title,
   hint,
   image,
   icon,
   tone = 0,
-}: {
-  href: string;
+}: ({ href: string; onClick?: never } | { href?: never; onClick: () => void }) & {
   title: string;
   hint?: string;
   image?: string | null;
   icon?: ReactNode;
   tone?: number;
 }) {
-  return (
-    <Link href={href} className={`group hover-lift relative block h-24 overflow-hidden rounded-[var(--radius-card)] p-3.5 sm:h-32 sm:p-4 ${TONES[tone % TONES.length]}`}>
+  const className = `group hover-lift relative block h-24 w-full overflow-hidden rounded-[var(--radius-card)] p-3.5 text-left sm:h-32 sm:p-4 ${TONES[tone % TONES.length]}`;
+  const content = (
+    <>
       <span className="font-display relative z-10 block max-w-[75%] text-[17px] font-extrabold leading-none tracking-[-0.03em] [overflow-wrap:anywhere] sm:text-2xl">{title}</span>
       {hint && <span className="relative z-10 mt-1 block max-w-[70%] text-xs leading-snug text-foreground/75">{hint}</span>}
       {image ? (
@@ -52,6 +54,19 @@ export default function BrowseTile({
           </span>
         )
       )}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {content}
+      </button>
+    );
+  }
+  if (href === undefined) throw new Error(`BrowseTile „${title}“ braucht href oder onClick.`);
+  return (
+    <Link href={href} className={className}>
+      {content}
     </Link>
   );
 }

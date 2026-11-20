@@ -67,13 +67,7 @@ export default function SearchIdle({
           <BrowseTile href="/radio" title="Radio" hint="Einfach laufen lassen" icon={<RadioIcon width={72} height={72} />} tone={4} />
           <BrowseTile href="/radar" title="Release Radar" hint="Neues von deinen Künstlern" icon={<BellIcon width={72} height={72} />} tone={1} />
           <BrowseTile href="/library?tab=liked" title="Lieblingssongs" hint="Deine gelikten Titel" icon={<HeartIcon width={72} height={72} />} tone={0} />
-          <button type="button" onClick={onImport} className="group hover-lift gradient-green relative block h-24 overflow-hidden rounded-xl p-3.5 text-left sm:h-28 sm:p-4">
-            <span className="font-display relative z-10 block max-w-[75%] text-[15px] font-bold leading-tight tracking-tight sm:text-lg">Spotify-Import</span>
-            <span className="relative z-10 mt-1 block max-w-[70%] text-xs leading-snug text-foreground/75">Playlist per Link übernehmen</span>
-            <span aria-hidden="true" className="absolute -bottom-1 -right-1 text-foreground/30 transition-transform duration-300 group-hover:scale-110">
-              <ImportIcon width={72} height={72} />
-            </span>
-          </button>
+          <BrowseTile onClick={onImport} title="Spotify-Import" hint="Playlist per Link übernehmen" icon={<ImportIcon width={72} height={72} />} tone={5} />
         </nav>
       </section>
     </div>

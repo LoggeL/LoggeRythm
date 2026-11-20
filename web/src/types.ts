@@ -338,3 +338,32 @@ export interface ResolveResult {
   tracks: Track[];
   unmatched: { title: string; artist: string }[];
 }
+
+export type ImportJobState = "queued" | "running" | "done" | "failed";
+
+/** A Spotify import running on the server; the client may leave and come back. */
+export interface ImportJobStatus {
+  id: string;
+  url: string;
+  status: ImportJobState;
+  type: string;
+  name: string;
+  image: string;
+  /** Tracks to match (after dedupe and cap); 0 until Spotify answered. */
+  total: number;
+  source_total: number;
+  processed: number;
+  matched: number;
+  /** Deezer lookups that failed with an error; listed as unmatched. */
+  failed_lookups: number;
+  lookup_error: string | null;
+  /** Why a failed job ended. */
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+export interface ImportJobDetail extends ImportJobStatus {
+  result: ResolveResult | null;
+}

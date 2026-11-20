@@ -12,6 +12,7 @@ from ..auth import clear_session_cookie, get_current_user, hash_password
 from ..config import STORAGE_DIR
 from ..db.models import (
     FollowedArtist,
+    ImportJob,
     InviteCode,
     PartyMember,
     PartySession,
@@ -173,6 +174,7 @@ def purge_user_account(db: Session, user: User) -> None:
 
     db.execute(delete(Play).where(Play.user_id == user_id))
     db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
+    db.execute(delete(ImportJob).where(ImportJob.user_id == user_id))
     db.execute(delete(PartyMember).where(PartyMember.user_id == user_id))
     # Hosted parties die with their host (ORM cascade removes tracks/members).
     for session in db.scalars(

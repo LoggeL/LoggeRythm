@@ -49,6 +49,9 @@ SPOTIFY_CLIENT_ID: str = os.getenv("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET: str = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 # Cap how many tracks we resolve from one Spotify playlist/album.
 SPOTIFY_RESOLVE_LIMIT: int = int(os.getenv("SPOTIFY_RESOLVE_LIMIT", "200"))
+# Cap for background import jobs (/api/resolve/jobs). They run detached from
+# the HTTP request, so they can work through much larger playlists.
+SPOTIFY_IMPORT_JOB_LIMIT: int = int(os.getenv("SPOTIFY_IMPORT_JOB_LIMIT", "10000"))
 
 # --- Groq (optional lyrics transcription fallback) ---
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")

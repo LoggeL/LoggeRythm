@@ -12,7 +12,8 @@ import type {
   Genre,
   GenreDetail,
   HomeShelf,
-  ResolveResult,
+  ImportJobDetail,
+  ImportJobStatus,
   PartyState,
   StorageInfo,
   InviteInfo,
@@ -293,9 +294,14 @@ export const api = {
     });
   },
 
-  // External link resolution (Spotify -> Deezer-playable)
-  resolve: (url: string) =>
-    req<ResolveResult>(`/resolve?url=${encodeURIComponent(url)}`, { timeoutMs: 180_000 }),
+  // Spotify link import (Spotify -> Deezer-playable) as a background job:
+  // start it, poll its progress, fetch the result whenever convenient.
+  startImportJob: (url: string) =>
+    req<ImportJobStatus>(`/resolve/jobs`, { method: "POST", body: JSON.stringify({ url }) }),
+  importJobs: () => req<ImportJobStatus[]>(`/resolve/jobs`),
+  importJob: (id: string) => req<ImportJobDetail>(`/resolve/jobs/${encodeURIComponent(id)}`),
+  deleteImportJob: (id: string) =>
+    req<void>(`/resolve/jobs/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached
   // server-side). variant "ai" forces the Whisper transcription instead.

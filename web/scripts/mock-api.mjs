@@ -187,6 +187,30 @@ function audio(track) {
 
 // ----------------------------------------------------------------- server --
 
+// ------------------------------------------------------- import jobs --
+
+const MOCK_IMPORT_TOTAL = 140;
+const MOCK_IMPORT_MATCHED = 120;
+const importJobs = new Map();
+let importJobCounter = 0;
+
+function importJobStatus(job) {
+  const elapsed = Date.now() - job.startedAt;
+  const base = { id: job.id, url: job.url, type: "", name: "", image: "", total: 0, source_total: 0, processed: 0, matched: 0,
+    failed_lookups: 0, lookup_error: null, error: null, created_at: job.created_at, updated_at: new Date().toISOString(), finished_at: null };
+  if (elapsed < 800) return { ...base, status: "queued" };
+  if (elapsed < 2000) return { ...base, status: "running" };
+  const source = { type: "playlist", name: "Riesige Roadtrip-Playlist", image: cover("playlist", 98), total: MOCK_IMPORT_TOTAL, source_total: MOCK_IMPORT_TOTAL };
+  if (/fehler/.test(job.url)) {
+    return { ...base, ...source, status: "failed", error: "Spotify-API-Anfrage fehlgeschlagen: 502 Bad Gateway", finished_at: new Date().toISOString() };
+  }
+  const processed = Math.min(MOCK_IMPORT_TOTAL, Math.floor((elapsed - 2000) / 80));
+  const matched = Math.floor(processed * (MOCK_IMPORT_MATCHED / MOCK_IMPORT_TOTAL));
+  if (processed < MOCK_IMPORT_TOTAL) return { ...base, ...source, status: "running", processed, matched };
+  return { ...base, ...source, status: "done", processed, matched: MOCK_IMPORT_MATCHED, failed_lookups: 2,
+    lookup_error: "Kiosk Royal – Rarität (Demo): DeezerClientError: HTTP 500", finished_at: new Date().toISOString() };
+}
+
 function send(res, status, body, headers = {}) {
   if (body === undefined) { res.writeHead(status, headers).end(); return; }
   const payload = Buffer.isBuffer(body) || typeof body === "string" ? body : JSON.stringify(body);
@@ -342,6 +366,34 @@ async function handle(req, res) {
     return send(res, 200, Object.fromEntries((body.tracks ?? []).map((track) => [track.id, { plays: 20000 + hash(track.id) % 4000000, listeners: 3000 + hash(track.id) % 300000 }])));
   }
   if (is("GET", "/cached-tracks")) return send(res, 200, { ids: pick(0, 30, 5).map((track) => track.id) });
+  // Spotify import jobs: progress is derived from the time since the start, so
+  // a job visibly moves queued → running → done. A link containing "fehler"
+  // fails after the Spotify phase, to show the failure state.
+  if (is("POST", "/resolve/jobs")) {
+    const { url: link } = await readJson(req);
+    if (!/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?(playlist|album|track)\/|spotify:(playlist|album|track):/.test(link ?? "")) {
+      return send(res, 400, { detail: "Kein gültiger Spotify-Link (Playlist, Album oder Titel)." });
+    }
+    const job = { id: `job${++importJobCounter}`, url: link, startedAt: Date.now(), created_at: new Date().toISOString() };
+    importJobs.set(job.id, job);
+    return send(res, 202, importJobStatus(job));
+  }
+  if (is("GET", "/resolve/jobs")) return send(res, 200, [...importJobs.values()].reverse().map(importJobStatus));
+  if (is("GET", "/resolve/jobs/[^/]+")) {
+    const job = importJobs.get(seg[2]);
+    if (!job) return send(res, 404, { detail: "Import nicht gefunden." });
+    const status = importJobStatus(job);
+    if (status.status !== "done") return send(res, 200, { ...status, result: null });
+    const tracks = pick(12, MOCK_IMPORT_MATCHED, 4);
+    return send(res, 200, { ...status, result: { type: "playlist", name: status.name, image: status.image, total: status.total,
+      source_total: status.source_total, matched: tracks.length, tracks,
+      unmatched: [{ title: "Unauffindbar", artist: "Niemand" }, { title: "Rarität (Demo)", artist: "Kiosk Royal" }] } });
+  }
+  if (is("DELETE", "/resolve/jobs/[^/]+")) {
+    if (!importJobs.delete(seg[2])) return send(res, 404, { detail: "Import nicht gefunden." });
+    return send(res, 204);
+  }
+
   if (is("GET", "/resolve")) {
     const tracks = pick(12, 16, 4);
     return send(res, 200, { type: "playlist", name: "Importierte Playlist", image: cover("playlist", 99), total: 18, source_total: 18, matched: 16, tracks,

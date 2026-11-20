@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "92c9d390ffde932776ad3deaa6f4066a4714dd33fc402398851aaec5de93c670" as const;
+export const GENERATED_OPENAPI_SHA256 = "81df0624b030ef3f6c97b3824ccb293e6b32afc1636c77248bc6382037b7c923" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -140,6 +140,46 @@ export interface GenreDetailWire {
 }
 export interface HTTPValidationErrorWire {
   detail?: ValidationErrorWire[];
+}
+export interface ImportJobCreateWire {
+  url: string;
+}
+export interface ImportJobDetailWire {
+  created_at: string;
+  error?: string | null;
+  failed_lookups?: number;
+  finished_at?: string | null;
+  id: string;
+  image?: string;
+  lookup_error?: string | null;
+  matched?: number;
+  name?: string;
+  processed?: number;
+  result?: ResolveResultWire | null;
+  source_total?: number;
+  status: "queued" | "running" | "done" | "failed";
+  total?: number;
+  type?: string;
+  updated_at: string;
+  url: string;
+}
+export interface ImportJobStatusWire {
+  created_at: string;
+  error?: string | null;
+  failed_lookups?: number;
+  finished_at?: string | null;
+  id: string;
+  image?: string;
+  lookup_error?: string | null;
+  matched?: number;
+  name?: string;
+  processed?: number;
+  source_total?: number;
+  status: "queued" | "running" | "done" | "failed";
+  total?: number;
+  type?: string;
+  updated_at: string;
+  url: string;
 }
 export interface IntegrationsStatusWire {
   lastfm_configured: boolean;
@@ -471,6 +511,9 @@ export interface GeneratedApiSchemas {
   "Genre": GenreWire;
   "GenreDetail": GenreDetailWire;
   "HTTPValidationError": HTTPValidationErrorWire;
+  "ImportJobCreate": ImportJobCreateWire;
+  "ImportJobDetail": ImportJobDetailWire;
+  "ImportJobStatus": ImportJobStatusWire;
   "IntegrationsStatus": IntegrationsStatusWire;
   "InviteInfo": InviteInfoWire;
   "LoginRequest": LoginRequestWire;
@@ -709,6 +752,20 @@ export interface GeneratedApiOperations {
     };
     response: Record<string, unknown>;
   };
+  "delete_import_job_api_resolve_jobs__job_id__delete": {
+    request: {
+      path: {
+        job_id: string;
+      };
+    };
+    responses: {
+      "204": undefined;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: undefined;
+  };
   "delete_me_api_me_delete": {
     request: Record<never, never>;
     responses: {
@@ -861,6 +918,20 @@ export interface GeneratedApiOperations {
     };
     response: unknown;
   };
+  "get_import_job_api_resolve_jobs__job_id__get": {
+    request: {
+      path: {
+        job_id: string;
+      };
+    };
+    responses: {
+      "200": ImportJobDetailWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: ImportJobDetailWire;
+  };
   "get_party_api_party__code__get": {
     request: {
       path: {
@@ -972,6 +1043,15 @@ export interface GeneratedApiOperations {
       "403": AuthErrorWire;
     };
     response: ArtistSummaryWire[];
+  };
+  "list_import_jobs_api_resolve_jobs_get": {
+    request: Record<never, never>;
+    responses: {
+      "200": ImportJobStatusWire[];
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+    };
+    response: ImportJobStatusWire[];
   };
   "list_invites_api_admin_invites_get": {
     request: Record<never, never>;
@@ -1421,6 +1501,18 @@ export interface GeneratedApiOperations {
     };
     response: PlaylistSummaryWire;
   };
+  "start_import_job_api_resolve_jobs_post": {
+    request: {
+      body: ImportJobCreateWire;
+    };
+    responses: {
+      "202": ImportJobStatusWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: ImportJobStatusWire;
+  };
   "storage_cleanup_api_admin_storage_cleanup_post": {
     request: Record<never, never>;
     responses: {
@@ -1684,6 +1776,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "delete_import_job_api_resolve_jobs__job_id__delete": {
+    method: "DELETE",
+    path: "/api/resolve/jobs/{job_id}",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [204],
+  },
   "delete_me_api_me_delete": {
     method: "DELETE",
     path: "/api/me",
@@ -1775,6 +1874,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "get_import_job_api_resolve_jobs__job_id__get": {
+    method: "GET",
+    path: "/api/resolve/jobs/{job_id}",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "get_party_api_party__code__get": {
     method: "GET",
     path: "/api/party/{code}",
@@ -1841,6 +1947,13 @@ export const GENERATED_API_OPERATIONS = {
   "list_following_api_me_following_artists_get": {
     method: "GET",
     path: "/api/me/following/artists",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "list_import_jobs_api_resolve_jobs_get": {
+    method: "GET",
+    path: "/api/resolve/jobs",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
@@ -2096,6 +2209,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "required",
     requestMediaTypes: ["application/json"],
     successStatuses: [200],
+  },
+  "start_import_job_api_resolve_jobs_post": {
+    method: "POST",
+    path: "/api/resolve/jobs",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [202],
   },
   "storage_cleanup_api_admin_storage_cleanup_post": {
     method: "POST",
