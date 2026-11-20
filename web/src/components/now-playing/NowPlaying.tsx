@@ -7,11 +7,11 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { hiResCover } from "@/lib/cover";
 import { fullscreenTheme } from "@/lib/fullscreenTheme";
-import { INITIAL_VISUALIZER_PREFERENCES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerScene";
+import { INITIAL_VISUALIZER_PREFERENCES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerDrive";
 import { ChevronDownIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
 import Scrubber from "@/components/player/Scrubber";
-import type { VisualizerStatus } from "@/components/FullscreenVisualizer";
+import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
 import Stage, { VisualizerControls } from "./Stage";
 import QueuePanel from "./QueuePanel";
 import SimilarPanel from "./SimilarPanel";
@@ -64,6 +64,7 @@ function validatePanel(value: unknown): PanelKey {
 export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const track = usePlayerStore(currentTrack);
   const error = usePlayerStore((s) => s.error);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
   const queueContext = usePlayerStore((s) => s.queueContext);
   const palette = useCoverColors(track?.cover);
   const split = useSyncExternalStore(subscribeSplit, splitSnapshot, serverSplitSnapshot);
@@ -78,6 +79,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const [signalStatus, setSignalStatus] = useState<VisualizerStatus>("waiting");
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const albumRef = useRef<HTMLDivElement>(null);
   const swipeHandlers = useSwipeToClose(rootRef, onClose);
   useDialogFocus(!!track, rootRef, onClose);
 
@@ -149,7 +151,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   );
 
   const visualizerControls = <VisualizerControls preferences={preferences} signalStatus={signalStatus} onChange={setStoredPreferences} />;
-  const stage = <Stage track={track} palette={palette} preferences={preferences} onStatusChange={setSignalStatus} footer={split ? undefined : visualizerControls} />;
+  const stage = <Stage track={track} albumRef={albumRef} preferences={preferences} footer={split ? undefined : visualizerControls} />;
+  const showVisualizer = preferences.enabled && (split || view === "stage");
 
   return (
     <div
@@ -166,6 +169,16 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         <img src={hiResCover(track.cover)} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-3xl saturate-150" />
       )}
       <div aria-hidden className={`${styles.backdrop} pointer-events-none absolute inset-0`} />
+      {/* Spans the whole player, behind header, body and console; composed around the artwork. */}
+      {showVisualizer && (
+        <FullscreenVisualizer
+          isPlaying={isPlaying}
+          anchorRef={albumRef}
+          palette={palette}
+          onStatusChange={setSignalStatus}
+          className="pointer-events-none absolute inset-0 block h-full w-full"
+        />
+      )}
 
       {/* Drag affordance for the swipe-down gesture (touch layouts) */}
       <div aria-hidden className="relative mx-auto mt-2 h-1 w-9 flex-shrink-0 rounded-full bg-white/30 lg:hidden" />

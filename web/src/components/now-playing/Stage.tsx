@@ -1,62 +1,38 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
-import { usePlayerStore } from "@/store/player";
-import type { CoverPalette } from "@/hooks/useCoverColors";
+import type { ReactNode, RefObject } from "react";
 import { hiResCover } from "@/lib/cover";
-import { VISUALIZER_MODES, type VisualizerPreferences } from "@/lib/visualizerScene";
+import type { VisualizerPreferences } from "@/lib/visualizerDrive";
 import type { Track } from "@/types";
-import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
+import type { VisualizerStatus } from "@/components/FullscreenVisualizer";
 import BassReactiveArtwork from "@/components/BassReactiveArtwork";
 import Cover from "@/components/ui/Cover";
 import { VisualizerIcon } from "@/components/icons";
 
 /**
  * The artwork stage: the cover fills whatever room its column has (it is
- * sized against the stage, not the viewport), with the optional real-audio
- * visualizer scene drawn around it.
+ * sized against the stage, not the viewport). The visualizer itself spans the
+ * whole player (see NowPlaying) and is composed around `albumRef`.
  */
 export default function Stage({
   track,
-  palette,
+  albumRef,
   preferences,
-  onStatusChange,
   footer,
 }: {
   track: Track;
-  palette: CoverPalette | null;
+  albumRef: RefObject<HTMLDivElement | null>;
   preferences: VisualizerPreferences;
-  onStatusChange: (status: VisualizerStatus) => void;
   /** Controls shown centred under the artwork (narrow layouts). */
   footer?: ReactNode;
 }) {
-  const isPlaying = usePlayerStore((s) => s.isPlaying);
-  const albumRef = useRef<HTMLDivElement>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
-
   return (
-    <div ref={stageRef} data-np-scroll className="relative flex min-h-0 flex-1 flex-col">
-      {/* The scene bleeds past the stage and fades out, so it never shows an edge. */}
-      {preferences.enabled && (
-        <div aria-hidden className="pointer-events-none absolute -inset-x-10 -inset-y-8 z-[1] [mask-image:radial-gradient(ellipse_closest-side,black_62%,transparent)]">
-          <FullscreenVisualizer
-            isPlaying={isPlaying}
-            anchorRef={albumRef}
-            surfaceRef={stageRef}
-            className="block h-full w-full"
-            colors={palette?.gradient}
-            glow={palette?.primary}
-            rgb={palette?.rgb}
-            mode={preferences.mode}
-            onStatusChange={onStatusChange}
-          />
-        </div>
-      )}
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="relative z-10 grid min-h-40 flex-1 place-items-center [container-type:size]">
         <div
           ref={albumRef}
           className={`aspect-square max-w-[44rem] rounded-[var(--radius-card)] transition-[width] duration-300 motion-reduce:transition-none ${
-            preferences.enabled ? "w-[min(80cqw,80cqh)] lg:w-[min(66cqw,66cqh)]" : "w-[min(100cqw,100cqh)]"
+            preferences.enabled ? "w-[min(78cqw,78cqh)] lg:w-[min(66cqw,66cqh)]" : "w-[min(100cqw,100cqh)]"
           }`}
         >
           <BassReactiveArtwork className="cover-shadow">
@@ -69,7 +45,7 @@ export default function Stage({
   );
 }
 
-/** Visualizer on/off and scene choice. */
+/** A small, quiet switch for the visualizer; the choice is remembered. */
 export function VisualizerControls({
   preferences,
   signalStatus,
@@ -79,34 +55,18 @@ export function VisualizerControls({
   signalStatus: VisualizerStatus;
   onChange: (next: VisualizerPreferences) => void;
 }) {
+  const label = preferences.enabled ? "Visualizer ausschalten" : "Visualizer einschalten";
   return (
-    <div className="flex min-w-0 items-center gap-1">
-      <button
-        type="button"
-        onClick={() => onChange({ ...preferences, enabled: !preferences.enabled })}
-        aria-pressed={preferences.enabled}
-        aria-label={preferences.enabled ? "Visualisierung ausblenden" : "Visualisierung einblenden"}
-        title="Visualisierung"
-        data-audio-signal={signalStatus}
-        className="action-icon h-11 w-11"
-      >
-        <VisualizerIcon width={20} height={20} />
-      </button>
-      {preferences.enabled && (
-        <div role="group" aria-label="Visualisierungsmodus" className="flex gap-0.5">
-          {VISUALIZER_MODES.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={preferences.mode === id}
-              onClick={() => onChange({ ...preferences, mode: id })}
-              className="label-mono min-h-9 rounded-[var(--radius-control)] px-2.5 transition-colors hover:text-foreground aria-pressed:bg-foreground/10 aria-pressed:text-foreground"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={() => onChange({ enabled: !preferences.enabled })}
+      aria-pressed={preferences.enabled}
+      aria-label={label}
+      title={label}
+      data-audio-signal={signalStatus}
+      className="action-icon h-9 w-9 opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+    >
+      <VisualizerIcon width={18} height={18} />
+    </button>
   );
 }
