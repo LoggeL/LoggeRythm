@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_VISUALIZER_PALETTE, MAX_WAVES, SPECTRUM_TEXELS, advanceDrive, blendColors, createDriveTracker, ingestSpectrum,
-  paletteColors, parseCssColor, triggerWave, validateVisualizerPreferences,
+  paletteColors, parseCssColor, triggerWave,
 } from "../src/lib/visualizerDrive.ts";
 
 const FRAME = 1 / 30;
@@ -116,13 +116,4 @@ test("cover palettes parse, crossfade and reject malformed colours", () => {
   while (blendColors(current, teal, 1 / 60)) frames++;
   assert.ok(frames > 20 && frames < 200, `crossfade takes a moment (${frames} frames)`);
   assert.deepEqual(current, teal);
-});
-
-test("stored preferences: default on, legacy scene choice dropped, junk rejected", () => {
-  assert.deepEqual(validateVisualizerPreferences({ enabled: true }), { enabled: true });
-  assert.deepEqual(validateVisualizerPreferences({ enabled: false, mode: "aurora" }), { enabled: false });
-  assert.throws(() => validateVisualizerPreferences(null), /Objekt/);
-  assert.throws(() => validateVisualizerPreferences([]), /Objekt/);
-  assert.throws(() => validateVisualizerPreferences({ enabled: "yes" }), /Ein\/Aus-Schalter/);
-  assert.throws(() => validateVisualizerPreferences({ enabled: true, theme: "x" }), /unbekannte Felder: theme/);
 });

@@ -283,6 +283,13 @@
             "title": "Cover",
             "type": "string"
           },
+          "genres": {
+            "items": {
+              "$ref": "#/components/schemas/AlbumGenre"
+            },
+            "title": "Genres",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -314,6 +321,25 @@
           "id"
         ],
         "title": "AlbumDetail",
+        "type": "object"
+      },
+      "AlbumGenre": {
+        "description": "A Deezer genre an album is filed under (Deezer genre id, localised name).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AlbumGenre",
         "type": "object"
       },
       "AlbumSummary": {

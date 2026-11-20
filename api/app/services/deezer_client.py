@@ -803,6 +803,24 @@ def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
     return results[0] if results else None
 
 
+def _album_genres(data: dict, album_id: str) -> list[dict]:
+    """Genres from a public /album object, validated: Deezer always sends a
+    ``genres`` object (``{"data": []}`` when the album has none)."""
+    genres = data.get("genres")
+    if not isinstance(genres, dict) or not isinstance(genres.get("data"), list):
+        raise DeezerClientError(
+            f"Album {album_id} has no valid genres object: {genres!r}"
+        )
+    parsed = []
+    for index, genre in enumerate(genres["data"]):
+        if not isinstance(genre, dict) or genre.get("id") in (None, "") or not genre.get("name"):
+            raise DeezerClientError(
+                f"Album {album_id} has an invalid genre at index {index}: {genre!r}"
+            )
+        parsed.append({"id": str(genre["id"]), "name": str(genre["name"])})
+    return parsed
+
+
 def album_detail(album_id: str, *, track_limit: int | None = None) -> dict:
     if track_limit is not None and track_limit < 1:
         raise ValueError("Album track_limit must be positive")
@@ -828,6 +846,7 @@ def album_detail(album_id: str, *, track_limit: int | None = None) -> dict:
         "cover": data.get("cover_medium") or data.get("cover_big") or data.get("cover", "") or "",
         "release_date": data.get("release_date") or "",
         "nb_tracks": int(data.get("nb_tracks", len(norm_tracks)) or 0),
+        "genres": _album_genres(data, album_id),
         "tracks": norm_tracks,
     }
 

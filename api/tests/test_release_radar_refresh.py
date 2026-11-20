@@ -71,6 +71,7 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
     def test_radar_album_only_loads_performer_credits_for_needed_tracks(self) -> None:
         album = {
             "id": "album", "title": "Album", "nb_tracks": 20,
+            "genres": {"data": [{"id": 106, "name": "Electro"}]},
             "tracks": {"data": [{"id": str(index)} for index in range(20)]},
         }
         with (

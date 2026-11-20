@@ -7,27 +7,6 @@
  * the picture moves at the display's own rate without stepping.
  */
 
-export interface VisualizerPreferences { enabled: boolean }
-export const INITIAL_VISUALIZER_PREFERENCES: VisualizerPreferences = { enabled: true };
-
-/** `mode` is the scene choice of the retired three-scene visualizer; it is dropped. */
-const LEGACY_PREFERENCE_KEYS = new Set(["mode"]);
-
-export function validateVisualizerPreferences(value: unknown): VisualizerPreferences {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Die gespeicherte Visualisierung muss ein Objekt sein.");
-  }
-  const { enabled, ...rest } = value as Record<string, unknown>;
-  if (typeof enabled !== "boolean") {
-    throw new Error(`Die gespeicherte Visualisierung enthält einen ungültigen Ein/Aus-Schalter: ${JSON.stringify(enabled)}.`);
-  }
-  const unknown = Object.keys(rest).filter((key) => !LEGACY_PREFERENCE_KEYS.has(key));
-  if (unknown.length) {
-    throw new Error(`Die gespeicherte Visualisierung enthält unbekannte Felder: ${unknown.join(", ")}.`);
-  }
-  return { enabled };
-}
-
 /** The subset of the shared spectrum frame the drive reads. */
 export interface SpectrumInput {
   readonly bands: Float32Array;

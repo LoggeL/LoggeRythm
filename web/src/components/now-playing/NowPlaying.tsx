@@ -7,11 +7,13 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { hiResCover } from "@/lib/cover";
 import { fullscreenTheme } from "@/lib/fullscreenTheme";
-import { INITIAL_VISUALIZER_PREFERENCES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerDrive";
+import { INITIAL_VISUALIZER_PREFERENCES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerScenes";
+import { useVisualizerScene } from "@/hooks/useVisualizerScene";
 import { ChevronDownIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
 import Scrubber from "@/components/player/Scrubber";
 import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
+import SceneVisualizer from "@/components/SceneVisualizer";
 import Stage, { VisualizerControls } from "./Stage";
 import QueuePanel from "./QueuePanel";
 import SimilarPanel from "./SimilarPanel";
@@ -77,6 +79,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const [storedPreferences, setStoredPreferences] = useLocalJson<VisualizerPreferences>("player:visualizer", INITIAL_VISUALIZER_PREFERENCES);
   const preferences = validateVisualizerPreferences(storedPreferences);
   const [signalStatus, setSignalStatus] = useState<VisualizerStatus>("waiting");
+  const sceneChoice = useVisualizerScene({ track, preference: preferences.scene, listening: preferences.enabled && isPlaying });
 
   const rootRef = useRef<HTMLDivElement>(null);
   const albumRef = useRef<HTMLDivElement>(null);
@@ -150,7 +153,9 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
     </>
   );
 
-  const visualizerControls = <VisualizerControls preferences={preferences} signalStatus={signalStatus} onChange={setStoredPreferences} />;
+  const visualizerControls = (
+    <VisualizerControls preferences={preferences} choice={sceneChoice} signalStatus={signalStatus} onChange={setStoredPreferences} />
+  );
   const stage = <Stage track={track} albumRef={albumRef} preferences={preferences} footer={split ? undefined : visualizerControls} />;
   const showVisualizer = preferences.enabled && (split || view === "stage");
 
@@ -170,7 +175,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       )}
       <div aria-hidden className={`${styles.backdrop} pointer-events-none absolute inset-0`} />
       {/* Spans the whole player, behind header, body and console; composed around the artwork. */}
-      {showVisualizer && (
+      {showVisualizer && (sceneChoice.scene === "aura" ? (
         <FullscreenVisualizer
           isPlaying={isPlaying}
           anchorRef={albumRef}
@@ -178,7 +183,17 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
           onStatusChange={setSignalStatus}
           className="pointer-events-none absolute inset-0 block h-full w-full"
         />
-      )}
+      ) : (
+        <SceneVisualizer
+          scene={sceneChoice.scene}
+          isPlaying={isPlaying}
+          anchorRef={albumRef}
+          palette={palette}
+          trackId={track.id}
+          onStatusChange={setSignalStatus}
+          className="pointer-events-none absolute inset-0 block h-full w-full"
+        />
+      ))}
 
       {/* Drag affordance for the swipe-down gesture (touch layouts) */}
       <div aria-hidden className="relative mx-auto mt-2 h-1 w-9 flex-shrink-0 rounded-full bg-white/30 lg:hidden" />

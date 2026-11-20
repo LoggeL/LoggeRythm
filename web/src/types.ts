@@ -135,6 +135,13 @@ export interface AlbumSummary {
   release_date?: string;
 }
 
+/** A Deezer genre an album is filed under (`AlbumGenre` in `api/app/schemas/track.py`). */
+export interface AlbumGenre {
+  /** Deezer genre id, e.g. "106" for Electro. */
+  id: string;
+  name: string;
+}
+
 export interface Album {
   id: string | number;
   title: string;
@@ -143,6 +150,8 @@ export interface Album {
   cover: string;
   release_date?: string;
   nb_tracks?: number;
+  /** Most specific first; empty when Deezer files the album under none. */
+  genres: AlbumGenre[];
   tracks: Track[];
 }
 

@@ -237,7 +237,7 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 70)
+        self.assertEqual(len(schemas), 71)
         self.assertEqual(len(schema["paths"]), 79)
         self.assertEqual(len(operation_ids), 90)
         for schema_name in schemas:

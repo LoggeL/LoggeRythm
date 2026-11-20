@@ -45,10 +45,19 @@ const TITLE_WORDS = ["Laternen", "Sekundenschlaf", "Kreisverkehr", "Glashaus", "
 
 const cover = (kind, id) => `/api/mock-art/${kind}/${id}.svg`;
 
+// Deezer genre ids cycle through the albums so every visualizer scene shows up,
+// including a genre without a scene (Folk) and an album without any genre.
+const ALBUM_GENRES = [
+  [{ id: "106", name: "Electro" }], [{ id: "116", name: "Rap/Hip Hop" }], [{ id: "152", name: "Rock" }],
+  [{ id: "132", name: "Pop" }, { id: "113", name: "Dance" }], [{ id: "129", name: "Jazz" }], [{ id: "98", name: "Klassik" }],
+  [{ id: "466", name: "Folk" }], [],
+];
+
 const ALBUMS = ALBUM_WORDS.map((title, index) => {
   const artist = ARTISTS[index % ARTISTS.length];
   return {
     id: String(5000 + index), title, artist: artist.name, artist_id: artist.id,
+    genres: ALBUM_GENRES[index % ALBUM_GENRES.length],
     cover: cover("album", 5000 + index),
     release_date: `202${6 - (index % 4)}-${String((index % 12) + 1).padStart(2, "0")}-1${index % 9}`,
   };

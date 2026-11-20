@@ -164,6 +164,13 @@ class GenreDetail(BaseModel):
     artists: list["ArtistSummary"] = Field(default_factory=list)
 
 
+class AlbumGenre(BaseModel):
+    """A Deezer genre an album is filed under (Deezer genre id, localised name)."""
+
+    id: str
+    name: str
+
+
 class AlbumDetail(BaseModel):
     id: str
     title: str = ""
@@ -172,6 +179,9 @@ class AlbumDetail(BaseModel):
     cover: str = ""
     release_date: str = ""
     nb_tracks: int = 0
+    # Deezer's genres for the album, most specific first; empty when Deezer files
+    # the album under none. Drives the fullscreen visualizer's scene choice.
+    genres: list[AlbumGenre] = Field(default_factory=list)
     tracks: list[Track] = Field(default_factory=list)
 
 
