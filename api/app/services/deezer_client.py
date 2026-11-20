@@ -773,22 +773,37 @@ def related_artists(artist_id: str) -> list[dict]:
 
 
 def track_by_isrc(isrc: str) -> dict | None:
-    """Resolve a Deezer track by ISRC (exact cross-catalog match). None if absent."""
+    """Resolve a playable Deezer track by ISRC (exact cross-catalog match).
+
+    None when Deezer has no track for the ISRC, or only a withdrawn one
+    (``readable: false``, e.g. a dead compilation entry that 404s on
+    download). Any other upstream failure raises.
+    """
     if not isrc:
         return None
     try:
         data = _public_get(f"/track/isrc:{isrc}")
-    except DeezerClientError:
+    except TrackUnavailable:
         return None
-    if not data or not data.get("id"):
+    if not data.get("id"):
+        raise DeezerClientError(f"Deezer ISRC lookup {isrc} returned a track without id")
+    readable = data.get("readable")
+    if not isinstance(readable, bool):
+        raise DeezerClientError(
+            f"Deezer ISRC lookup {isrc} (track {data['id']}) returned no boolean "
+            f"'readable' flag: {readable!r}"
+        )
+    if not readable:
         return None
     return normalize_public_tracks([data])[0]
 
 
 def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
-    """Best-effort map of external metadata to a playable Deezer track.
+    """Map external metadata to a playable Deezer track.
 
-    Prefers an exact ISRC match; falls back to a text search on artist+title.
+    Prefers an exact, playable ISRC match; falls back to a text search on
+    artist+title (Deezer's public search only lists playable tracks). Upstream
+    failures raise so the caller can report them instead of a silent no-hit.
     """
     hit = track_by_isrc(isrc)
     if hit:
@@ -796,10 +811,7 @@ def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
     query = f"{artist} {title}".strip()
     if not query:
         return None
-    try:
-        results = search_tracks_public(query, limit=1)
-    except DeezerClientError:
-        return None
+    results = search_tracks_public(query, limit=1)
     return results[0] if results else None
 
 

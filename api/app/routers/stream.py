@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ..auth import get_current_user
 from ..db.models import User
-from ..services import storage
+from ..services import deezer, storage
 
 router = APIRouter(prefix="/api", tags=["stream"])
 
@@ -33,6 +33,14 @@ async def _materialize_track(deezer_id: str) -> str:
         raise HTTPException(status_code=400, detail="deezer_id must be numeric")
     try:
         return await run_in_threadpool(storage.materialize, deezer_id)
+    except deezer.Deezer404Exception as exc:
+        # Withdrawn catalog entries (``readable: false``) 404 on Deezer. That
+        # is a client-visible fact about the track, not a gateway failure, and
+        # a 502 body would be replaced by Cloudflare's HTML error page.
+        raise HTTPException(
+            status_code=404,
+            detail=f"Track {deezer_id} is not available on Deezer: {exc}",
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=502,

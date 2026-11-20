@@ -46,6 +46,12 @@ class ApiError extends Error {
 
 type ApiRequestOptions = RequestInit & { timeoutMs?: number };
 
+function isHtmlResponse(res: Response, text: string): boolean {
+  if (res.headers.get("content-type")?.includes("text/html")) return true;
+  const start = text.trimStart().slice(0, 15).toLowerCase();
+  return start.startsWith("<!doctype html") || start.startsWith("<html");
+}
+
 async function req<T>(
   path: string,
   { timeoutMs = 30_000, ...options }: ApiRequestOptions = {},
@@ -77,7 +83,11 @@ async function req<T>(
     if (!res.ok) {
       let body: unknown = text;
       let message = text || res.statusText || `HTTP ${res.status}`;
-      if (res.headers.get("content-type")?.includes("application/json")) {
+      if (isHtmlResponse(res, text)) {
+        // A proxy (Cloudflare replaces origin 502/504 bodies) answered with an
+        // HTML page; the markup is unreadable in a toast but stays on `body`.
+        message = `HTTP ${res.status} – der Server antwortete mit einer HTML-Fehlerseite statt einer API-Antwort.`;
+      } else if (res.headers.get("content-type")?.includes("application/json")) {
         try {
           body = JSON.parse(text);
         } catch {

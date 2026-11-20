@@ -28,6 +28,21 @@ test("HTTP failures retain status and server detail", async (t) => {
   await assert.rejects(api.me(), (error) => error instanceof ApiError && error.status === 401 && error.message.includes("Session expired"));
 });
 
+test("proxy HTML error pages become a short message and keep the page on body", async (t) => {
+  const page = "<!DOCTYPE html>\n<html><head><title>logge.top | 502: Bad gateway</title></head><body>…</body></html>";
+  for (const headers of [{ "content-type": "text/html; charset=UTF-8" }, {}]) {
+    t.mock.method(globalThis, "fetch", async () => new Response(page, { status: 502, headers }));
+    await assert.rejects(api.me(), (error) => {
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.status, 502);
+      assert.equal(error.message, "API /auth/me: HTTP 502 – der Server antwortete mit einer HTML-Fehlerseite statt einer API-Antwort.");
+      assert.equal(error.body, page);
+      return true;
+    });
+    globalThis.fetch.mock.restore();
+  }
+});
+
 test("successful JSON and bodyless mutations still work", async (t) => {
   t.mock.method(globalThis, "fetch", async () => Response.json({ id: "1" }));
   assert.deepEqual(await api.me(), { id: "1" });
