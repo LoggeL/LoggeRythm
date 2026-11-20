@@ -6,7 +6,9 @@ type LogoProps = {
 };
 
 /**
- * Loggerythm logo mark — the same equalizer glyph used as the app favicon.
+ * Loggerythm logo mark — the step-sequencer glyph also used for the favicon
+ * and app icons (all rasters are generated from /public/Logo.svg by
+ * mobile/scripts/generate_brand_assets.mjs).
  * The source SVG in /public has a transparent background, so it sits on dark
  * panels, fullscreen overlays and the auth screen.
  */

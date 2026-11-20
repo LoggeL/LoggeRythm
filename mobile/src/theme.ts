@@ -27,6 +27,8 @@ export const colors = {
   accentPressed: '#6a4ee0',
   accentSoft: '#c3b5ff',
   accentSubtle: '#262040',
+  /** Logo fill and the "Rythm" half of the wordmark (web --brand / web/public/Logo.svg). */
+  brand: '#d6ff4b',
   /** Ink on accent / accentSolid fills (dark, like the web play FAB). */
   onAccent: '#050308',
   /** Ink on light (textPrimary) fills such as the primary ActionButton. */

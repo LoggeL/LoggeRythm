@@ -11,7 +11,8 @@ const stubs = {
 };
 const { default: FullscreenVisualizer } = await import(await compileSource("src/components/FullscreenVisualizer.tsx", stubs, "visualizer"));
 
-const PURPLE = { primary: "rgb(124, 92, 255)", secondary: "rgb(168, 125, 255)", gradient: ["rgb(70, 36, 190)", "rgb(124, 92, 255)", "rgb(240, 167, 238)"] };
+/** Starts on the app's default theme so the fallback test can return to it. */
+const { DEFAULT_VISUALIZER_PALETTE: BRAND } = await import(stubs["@/lib/visualizerDrive"]);
 const TEAL = { primary: "rgb(20, 180, 170)", secondary: "rgb(60, 200, 120)", gradient: ["rgb(5, 60, 70)", "rgb(20, 180, 170)", "rgb(180, 250, 230)"] };
 
 function events() {
@@ -61,7 +62,7 @@ function harness({ reduced = false, webgl2 = true, width = 1440 } = {}) {
     observe(target) { this.observed.add(target); } unobserve(target) { this.observed.delete(target); } disconnect() { this.disconnected = true; }
   };
   const anchorRef = { current: anchor };
-  const props = { isPlaying: true, anchorRef, palette: PURPLE };
+  const props = { isPlaying: true, anchorRef, palette: BRAND };
   function render(next, { mount = false } = {}) {
     Object.assign(props, next);
     refIndex = 0;
@@ -163,21 +164,21 @@ test("a new cover crossfades; a missing palette waits before falling back to the
   const app = harness();
   const cleanup = app.mount();
   app.settle();
-  const purple = app.renders.at(-1).colors;
+  const brand = app.renders.at(-1).colors;
   app.rerender({ palette: null });
   assert.equal(app.timers.size, 1, "no immediate flash to the default while the next cover is sampled");
   app.rerender({ palette: TEAL });
   assert.equal(app.timers.size, 0, "the arriving palette cancels the pending default");
   app.step(5);
   const mid = app.renders.at(-1).colors;
-  assert.notDeepEqual(mid, purple);
+  assert.notDeepEqual(mid, brand);
   app.settle();
   const teal = app.renders.at(-1).colors;
-  assert.ok(teal[4] > mid[4], "green channel keeps rising toward the teal cover");
+  assert.ok((mid[4] - brand[4]) * (teal[4] - mid[4]) > 0, "mid-fade green channel lies between the default theme and the teal cover");
   app.rerender({ palette: null });
   [...app.timers.values()][0]();
   app.settle();
-  assert.deepEqual(app.renders.at(-1).colors, purple, "no cover palette ends on the app's default theme");
+  assert.deepEqual(app.renders.at(-1).colors, brand, "no cover palette ends on the app's default theme");
   cleanup();
 });
 

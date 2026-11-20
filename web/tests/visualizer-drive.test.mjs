@@ -107,11 +107,11 @@ test("cover palettes parse, crossfade and reject malformed colours", () => {
   assert.deepEqual(parseCssColor("#000000"), [0, 0, 0]);
   assert.throws(() => parseCssColor("purple"), /rgb\(r, g, b\)/);
   assert.throws(() => parseCssColor("rgb(300, 0, 0)"), /out of range/);
-  const violet = paletteColors(DEFAULT_VISUALIZER_PALETTE);
+  const brand = paletteColors(DEFAULT_VISUALIZER_PALETTE);
   const teal = paletteColors({ primary: "rgb(20, 180, 170)", secondary: "rgb(60, 200, 120)", gradient: ["rgb(5, 60, 70)", "rgb(20, 180, 170)", "rgb(180, 250, 230)"] });
-  const current = violet.slice();
+  const current = brand.slice();
   assert.equal(blendColors(current, teal, 0.1), true);
-  assert.ok(current[4] > violet[4] && current[4] < teal[4], "halfway between covers, not a hard cut");
+  assert.ok(current[4] < brand[4] && current[4] > teal[4], "halfway between covers, not a hard cut");
   let frames = 0;
   while (blendColors(current, teal, 1 / 60)) frames++;
   assert.ok(frames > 20 && frames < 200, `crossfade takes a moment (${frames} frames)`);

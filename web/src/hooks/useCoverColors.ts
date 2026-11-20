@@ -141,7 +141,7 @@ function extractPalette(data: Uint8ClampedArray): CoverPalette | null {
 /**
  * Derive a colour palette from a cover image (cross-origin canvas sampling).
  * Returns ``null`` until ready, or if the image can't be sampled — callers then
- * fall back to the app's default violet theme.
+ * fall back to the app's default brand-lime theme.
  */
 const cachedFor = (coverUrl: string | undefined | null): CoverPalette | null =>
   coverUrl && cache.has(coverUrl) ? cache.get(coverUrl) ?? null : null;

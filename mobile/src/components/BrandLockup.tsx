@@ -19,8 +19,8 @@ type BrandLockupProps = {
 };
 
 /**
- * Native rendering of the production masthead: the shipped equalizer mark,
- * white "Logge", divider, and violet "Rythm" wordmark.
+ * Native rendering of the production masthead: the step-sequencer mark,
+ * white "Logge", divider, and lime "Rythm" wordmark.
  */
 export default function BrandLockup({
   compact = false,
@@ -58,7 +58,7 @@ const styles = StyleSheet.create({
   wordmark: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   word: { ...typography.hero, color: colors.textPrimary },
   wordCompact: { ...typography.section, fontWeight: typography.hero.fontWeight },
-  rythm: { color: colors.accent },
+  rythm: { color: colors.brand },
   divider: {
     alignSelf: 'stretch',
     width: StyleSheet.hairlineWidth,

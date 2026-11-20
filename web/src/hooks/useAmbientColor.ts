@@ -4,12 +4,13 @@ import { useEffect } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { useCoverColors } from "@/hooks/useCoverColors";
 
-const BRAND_AMBIENT = "124 92 255";
+/** Must match the resting `--ambient` in globals.css. */
+const BRAND_AMBIENT = "170 204 60";
 
 /**
  * Publishes the playing track's dominant artwork colour as the `--ambient`
  * CSS variable (an RGB triplet) so the shell can tint itself with the music.
- * Falls back to the brand violet while nothing plays or no colour is known.
+ * Falls back to the muted brand lime while nothing plays or no colour is known.
  */
 export function useAmbientColor(): void {
   const cover = usePlayerStore((s) => currentTrack(s)?.cover);

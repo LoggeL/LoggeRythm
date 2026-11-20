@@ -250,11 +250,15 @@ export interface PaletteSource {
   gradient: readonly [string, string, string];
 }
 
-/** The app's default violet theme, used while a track has no sampled cover. */
+/**
+ * The brand-lime theme (web --accent, --accent-deep), used while a track has no
+ * sampled cover. Built like a cover palette: dark stop, primary, a companion
+ * hue shifted toward green, and a light stop.
+ */
 export const DEFAULT_VISUALIZER_PALETTE: PaletteSource = {
-  primary: "rgb(124, 92, 255)",
-  secondary: "rgb(168, 125, 255)",
-  gradient: ["rgb(70, 36, 190)", "rgb(124, 92, 255)", "rgb(240, 167, 238)"],
+  primary: "rgb(214, 255, 75)",
+  secondary: "rgb(150, 236, 96)",
+  gradient: ["rgb(58, 71, 16)", "rgb(214, 255, 75)", "rgb(240, 255, 196)"],
 };
 
 const RGB_PATTERN = /^rgba?\(\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*,?\s*(\d{1,3})\s*(?:[,/]\s*[\d.]+%?\s*)?\)$/;

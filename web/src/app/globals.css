@@ -30,8 +30,8 @@
   --accent-hover: #e3ff7d;
   --accent-soft: #d6ff4b;
   --accent-deep: #3a4710;
-  /* Brand violet of the logo: wordmark, focus rings, the liked heart. */
-  --brand: #a78bff;
+  /* Brand colour of the step-sequencer logo: wordmark and focus rings. */
+  --brand: #d6ff4b;
   --danger: #ff7a6b;
   --danger-soft: #ffb4a8;
   --success: #6fe0a8;
@@ -59,8 +59,9 @@
   --avatar-9: #5a8dee;
   --avatar-10: #e8a13a;
 
-  /* RGB triplet; replaced at runtime by useAmbientColor(). */
-  --ambient: 124 92 255;
+  /* RGB triplet; replaced at runtime by useAmbientColor(). The resting value is
+     a muted brand lime: full --accent would turn the page wash acid. */
+  --ambient: 170 204 60;
 
   /* Record-sleeve geometry: tight corners on art, soft rectangles on controls. */
   --radius-panel: 0.875rem;
@@ -83,6 +84,9 @@
   --motion-morph: 680ms;
   --shadow-pop: 0 18px 50px rgb(0 0 0 / 0.6), 0 0 0 1px var(--hairline);
 
+  /* Brand lime, darkened for large fills (missing-cover placeholder). */
+  --grad-brand-from: #4a5a16;
+  --grad-brand-to: #1b200c;
   --grad-violet-from: #5945a0;
   --grad-violet-to: #2c2648;
   --grad-pink-from: #874d72;
@@ -256,6 +260,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .new-content-highlight { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 
 @layer utilities {
+  .gradient-brand { background-image: linear-gradient(140deg, var(--grad-brand-from), var(--grad-brand-to)); }
   .gradient-violet { background-image: linear-gradient(140deg, var(--grad-violet-from), var(--grad-violet-to)); }
   .gradient-pink { background-image: linear-gradient(140deg, var(--grad-pink-from), var(--grad-pink-to)); }
   .gradient-aurora { background-image: linear-gradient(140deg, var(--grad-aurora-from), var(--grad-aurora-to)); }

@@ -22,7 +22,7 @@
       "icon": "./assets/android-icon-legacy.png",
       "allowBackup": false,
       "adaptiveIcon": {
-        "backgroundColor": "#0a0a14",
+        "backgroundColor": "#0f0e11",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
