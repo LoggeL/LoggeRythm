@@ -1,7 +1,8 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useRef, type CSSProperties, type ReactNode } from "react";
 import { useCoverColors } from "@/hooks/useCoverColors";
+import { useFitWords } from "@/hooks/useFitWords";
 import Cover from "@/components/ui/Cover";
 import { HeroMorph, useHeroRise, useMorphSeed } from "@/components/motion/Morph";
 import collection from "@/app/playlist/_components/collection.module.css";
@@ -13,6 +14,17 @@ function nameSize(name: string): "lg" | "md" | "sm" {
   if (length <= 12) return "lg";
   if (length <= 24) return "md";
   return "sm";
+}
+
+/** The artist name in display type; a single word too wide for the column shrinks instead of breaking mid-word. */
+function ArtistName({ name }: { name: string }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  useFitWords(ref, name);
+  return (
+    <h1 ref={ref} className={styles.name} data-size={nameSize(name)} title={name}>
+      {name}
+    </h1>
+  );
 }
 
 /**
@@ -35,9 +47,7 @@ export function ArtistNamePlaceholder() {
   return (
     <HeroMorph part="title">
       {seed ? (
-        <h1 className={styles.name} data-size={nameSize(seed.title)} title={seed.title}>
-          {seed.title}
-        </h1>
+        <ArtistName name={seed.title} />
       ) : (
         <div className={`${styles.name} skeleton w-3/5 rounded-[var(--radius-card)]`} data-size="md" aria-hidden="true">
           &nbsp;
@@ -89,9 +99,7 @@ export default function ArtistHero({ name, picture, figures, actions }: { name: 
             <p className="page-eyebrow">Künstler</p>
           </HeroMorph>
           <HeroMorph part="title">
-            <h1 className={styles.name} data-size={nameSize(name)} title={name}>
-              {name}
-            </h1>
+            <ArtistName name={name} />
           </HeroMorph>
           {figures.length > 0 && (
             <ul className={styles.meta} {...rise(0)}>
