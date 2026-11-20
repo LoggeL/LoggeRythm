@@ -59,6 +59,7 @@
           "backgroundColor": "#0f0e11"
         }
       ],
+      "./plugins/withSplashScreenApiLevels",
       "./plugins/withNotificationIcon",
       "./plugins/withReleaseSigning",
       "./plugins/withNoBackup",
