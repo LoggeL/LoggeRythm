@@ -583,6 +583,8 @@ export interface StringCatalog {
     playlistLoading: string;
     playlistLoadFailed: string;
     playFailed: string;
+    /** The tapped search result plays, but its track radio could not be attached. */
+    radioFailed: string;
     importTitle: string;
     importOpen: string;
     importClose: string;
@@ -698,8 +700,6 @@ export interface StringCatalog {
     contextSection: (label: string) => string;
     unknownContext: string;
     legacyContextLabel: (type: QueueContextType) => string;
-    searchContext: (query: string) => string;
-    searchLibraryContext: (query: string) => string;
     recentContext: string;
     trackRadioContext: (title: string) => string;
     manualPriority: string;
@@ -1328,6 +1328,7 @@ export const de: StringCatalog = {
     playlistLoading: 'Playlist wird geladen…',
     playlistLoadFailed: 'Playlist konnte nicht geladen werden',
     playFailed: 'Suchergebnis konnte nicht wiedergegeben werden',
+    radioFailed: 'Titel läuft, aber das Titelradio konnte nicht geladen werden',
     importTitle: 'Von Spotify importieren',
     importOpen: 'Spotify-Link importieren',
     importClose: 'Spotify-Import schließen',
@@ -1458,8 +1459,6 @@ export const de: StringCatalog = {
       recent: 'Zuletzt gehört',
       search: 'Suche',
     })[type],
-    searchContext: (query) => `Suche: „${query}“`,
-    searchLibraryContext: (query) => `In deiner Bibliothek: „${query}“`,
     recentContext: 'Zuletzt gehört',
     trackRadioContext: (title) => `Titelradio: „${title}“`,
     manualPriority: 'MANUELL EINGEREIHT',
@@ -1967,6 +1966,7 @@ export const en: StringCatalog = {
     trackServerCached: 'Stored on the server',
     playlistLoading: 'Loading playlist…', playlistLoadFailed: 'Playlist could not be loaded',
     playFailed: 'Search result could not be played',
+    radioFailed: 'Track is playing, but its radio could not be loaded',
     importTitle: 'Import from Spotify', importOpen: 'Import a Spotify link',
     importClose: 'Close Spotify import',
     importIntro:
@@ -2061,8 +2061,7 @@ export const en: StringCatalog = {
       discover: 'Discover', genre: 'Genre', home: 'Home', liked: 'Liked Songs',
       playlist: 'Playlist', radio: 'Radio', recent: 'Recently played', search: 'Search',
     })[type],
-    searchContext: (query) => `Search: “${query}”`, recentContext: 'Recently played',
-    searchLibraryContext: (query) => `In your library: “${query}”`,
+    recentContext: 'Recently played',
     trackRadioContext: (title) => `Track radio: “${title}”`,
     currentlyPlaying: 'PLAYING', currentTrackSuffix: ', currently playing', skipHint: 'Skip to this track',
     loadFailed: 'Loading queue failed',

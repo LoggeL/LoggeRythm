@@ -193,12 +193,3 @@ export function withoutLibraryTracks(
   if (libraryTrackIds.size === 0) return [...tracks];
   return tracks.filter((track) => !libraryTrackIds.has(track.id));
 }
-
-/** Queue context identity of the library section; never equals a search query context. */
-export function searchLibraryContextId(input: string): string {
-  const query = normalizeSearchInput(input);
-  if (!isSearchableQuery(query)) {
-    throw new Error('Library search playback requires a searchable query');
-  }
-  return `search-library:${query}`;
-}

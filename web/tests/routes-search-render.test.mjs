@@ -175,10 +175,18 @@ function screen({
     remove: (value) => fixture.historyCalls.push(["remove", value]),
     clear: () => fixture.historyCalls.push(["clear"]),
   };
+  fixture.radio = [];
+  fixture.toggles = 0;
   fixture.player = {
     radioSession: 0,
-    setRadioActive() {
+    queue: [],
+    index: -1,
+    setRadioActive(active) {
       this.radioSession += 1;
+      fixture.radio.push(active);
+    },
+    toggle: () => {
+      fixture.toggles += 1;
     },
     playQueue: (tracks, index, title) =>
       fixture.played.push({ tracks, index, title }),
@@ -328,7 +336,7 @@ test("starting a result records the search however playback was triggered", () =
   // the row's/card's play callback rather than a recognisable click target.
   screen({ query: "Zulu", data: { track: songs } });
   fixture.trackRows[0].onPlay();
-  assert.deepEqual(fixture.played.map(({ index, title }) => [index, title]), [[0, "Suche: Zulu"]]);
+  assert.deepEqual(fixture.played.map(({ index, title }) => [index, title]), [[0, "Radio – Zulu"]]);
   assert.deepEqual(fixture.historyCalls, [["remember", "Zulu"]]);
   const topHit = fixture.buttons.find((button) => button["aria-label"] === "Zulu von undefined abspielen");
   assert.ok(topHit, "the top-hit track card is rendered");
@@ -382,7 +390,8 @@ test("the combined view features a top hit beside the best tracks and previews o
   assert.match(html, /data-shelf="Playlists"/);
   fixture.buttons.find((button) => button["aria-label"] === "Zulu 0 von Band abspielen").onClick();
   assert.equal(fixture.played[0].index, 0);
-  assert.equal(fixture.played[0].title, "Suche: Zulu");
+  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["t0"]);
+  assert.equal(fixture.played[0].title, "Radio – Zulu 0");
   buttonWithText("Alle anzeigen").onClick();
   assert.deepEqual(fixture.navigationCalls, [["tab", "track"]]);
 });
@@ -437,7 +446,7 @@ test("the library stays while the catalog loads and when it fails", () => {
   assert.ok(failed.indexOf("In deiner Bibliothek") < failed.indexOf('role="alert"'), "the failure is reported below the library");
 });
 
-test("a library song is not listed again among the catalog songs, and each list plays as its own queue", () => {
+test("a library song is not listed again among the catalog songs, and a chosen song plays alone with its radio", () => {
   const catalog = [
     { id: "c1", title: "Zulu", artist: "Band", duration_sec: 100 },
     { id: "s1", title: "Zulu Dawn", artist: "Band", duration_sec: 200 },
@@ -448,13 +457,13 @@ test("a library song is not listed again among the catalog songs, and each list 
   assert.deepEqual(rowIds(), ["s1", "s2", "c1", "c2", "c3"]);
   assert.doesNotMatch(html, /Keine Ergebnisse/);
   fixture.trackRows[3].onPlay();
-  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["c1", "c2", "c3"]);
-  assert.equal(fixture.played[0].index, 1);
-  assert.equal(fixture.played[0].title, "Suche: zulu");
+  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["c2"]);
+  assert.equal(fixture.played[0].index, 0);
+  assert.equal(fixture.played[0].title, "Radio – Zulu Two");
   fixture.trackRows[1].onPlay();
-  assert.deepEqual(fixture.played[1].tracks.map(({ id }) => id), ["s1", "s2"]);
-  assert.equal(fixture.played[1].index, 1);
-  assert.equal(fixture.played[1].title, "Bibliothek: zulu");
+  assert.deepEqual(fixture.played[1].tracks.map(({ id }) => id), ["s2"]);
+  assert.equal(fixture.played[1].index, 0);
+  assert.deepEqual(fixture.radio, [true, true]);
   assert.deepEqual(fixture.historyCalls, [["remember", "zulu"], ["remember", "zulu"]]);
 });
 
@@ -466,8 +475,9 @@ test("the top hit stays the best catalog match even when the library lists that 
   screen({ query: "zulu", library: saved, data: { track: catalog } });
   assert.deepEqual(rowIds(), ["s1", "s2", "c1"]);
   fixture.buttons.find((button) => button["aria-label"] === "Zulu Dawn von Band abspielen").onClick();
-  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["s1", "c1"]);
+  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["s1"]);
   assert.equal(fixture.played[0].index, 0);
+  assert.equal(fixture.played[0].title, "Radio – Zulu Dawn");
 });
 
 test("the library previews five songs in the combined view, ten in the songs filter, and no other filter shows it", () => {
@@ -475,7 +485,8 @@ test("the library previews five songs in the combined view, ten in the songs fil
   screen({ query: "zulu", library: many });
   assert.equal(fixture.trackRows.length, 5);
   fixture.trackRows[4].onPlay();
-  assert.equal(fixture.played[0].tracks.length, 12, "playing continues through every match");
+  assert.deepEqual(fixture.played[0].tracks.map(({ id }) => id), ["m4"], "only the chosen match plays");
+  assert.deepEqual(fixture.radio, [true], "its song radio continues after it");
   const filtered = screen({ query: "zulu", tab: "track", library: many, data: { track: songs } });
   assert.deepEqual(rowIds(), [...many.slice(0, 10).map(({ id }) => id), "one", "two"]);
   assert.match(filtered, /<h2>Weitere Titel<\/h2>/);
@@ -498,4 +509,16 @@ test("a failed liked-songs request is reported where the library would be, with 
   await new Promise(setImmediate);
   assert.deepEqual(fixture.retries, ["likes"]);
   assert.doesNotMatch(screen({ likesError: "HTTP 500" }), /Lieblingssongs konnten nicht geladen/, "nothing to report before a search");
+});
+
+test("choosing the playing top hit again toggles playback instead of restarting its radio", () => {
+  screen({ query: "Zulu", data: { track: songs } });
+  fixture.player.queue = [songs[0]];
+  fixture.player.index = 0;
+  const topHit = fixture.buttons.find((button) => button["aria-label"] === "Zulu von undefined abspielen");
+  assert.ok(topHit, "the top-hit track card is rendered");
+  topHit.onClick();
+  assert.equal(fixture.toggles, 1);
+  assert.deepEqual(fixture.played, []);
+  assert.deepEqual(fixture.radio, []);
 });

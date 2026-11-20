@@ -2,7 +2,6 @@ import React from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 import type { Track, TrackPlayCount } from '../../api/types';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
-import { searchLibraryContextId } from '../../screens/searchLibraryModel';
 import { colors, layout, radii, spacing } from '../../theme';
 import type { AppIconName } from '../AppIcon';
 import StandardTrackRow, {
@@ -26,36 +25,18 @@ export interface SearchTrackResultRowProps {
   onOpenArtist: (params: ArtistRouteParams) => void;
 }
 
-/** The rendered sort order is the queue's original context order. */
-export function searchTrackOccurrence(
-  query: string,
-  index: number,
-): TrackOccurrenceTarget {
-  const id = query.trim();
-  if (id.length === 0) throw new Error('Search track occurrence requires a query identity');
-  if (!Number.isInteger(index) || index < 0) {
-    throw new Error(`Search track occurrence index must be non-negative; received ${index}`);
-  }
-  return {
-    queueContext: { type: 'search', id },
-    originalContextOrder: index,
-  };
-}
-
 /**
- * The library section is its own queue: every saved match of the input, best
- * first. Its context never equals the remote search context of the same query.
+ * A tapped search result plays as the seed of its own track radio (first item
+ * of the `radio` context keyed by the track id), so every row showing that
+ * track — remote result, top result or library match — is the active one.
  */
-export function searchLibraryTrackOccurrence(
-  input: string,
-  index: number,
-): TrackOccurrenceTarget {
-  if (!Number.isInteger(index) || index < 0) {
-    throw new Error(`Library search occurrence index must be non-negative; received ${index}`);
+export function searchTrackRadioOccurrence(trackId: string): TrackOccurrenceTarget {
+  if (trackId.trim().length === 0) {
+    throw new Error('Search track radio occurrence requires a track id');
   }
   return {
-    queueContext: { type: 'collection', id: searchLibraryContextId(input) },
-    originalContextOrder: index,
+    queueContext: { type: 'radio', id: trackId },
+    originalContextOrder: 0,
   };
 }
 
