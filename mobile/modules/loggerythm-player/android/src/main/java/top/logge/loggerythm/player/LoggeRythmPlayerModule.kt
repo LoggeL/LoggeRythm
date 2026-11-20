@@ -462,7 +462,8 @@ class LoggeRythmPlayerModule(
       is PlayerCommand.SetCommands,
       is PlayerCommand.SleepAfterTime,
       is PlayerCommand.SleepAfterMediaItemAtIndex,
-      PlayerCommand.CancelSleepTimer -> Unit
+      PlayerCommand.CancelSleepTimer,
+      is PlayerCommand.SetAutoRadioEnabled -> Unit
       PlayerCommand.RefreshSnapshot -> Unit
     }
   }
@@ -616,6 +617,7 @@ class LoggeRythmPlayerModule(
       )
     })
     put("shuffleEnabled", player.shuffleModeEnabled)
+    put("autoRadioEnabled", LoggeRythmAutoRadioPreference.isEnabled(reactApplicationContext))
     put("sleepTimer", when (val timer = persistedPublicState.sleepTimer) {
       null -> JSONObject.NULL
       is LoggeRythmPersistedSleepSnapshot.Time -> JSONObject().apply {

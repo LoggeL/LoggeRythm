@@ -345,6 +345,7 @@ export function createInitialPlayerSnapshot(): Readonly<PlayerSnapshot> {
     progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
     repeatMode: RepeatMode.Off,
     shuffleEnabled: false,
+    autoRadioEnabled: false,
     playbackSpeed: 1,
     volume: 1,
     sleepTimer: null,

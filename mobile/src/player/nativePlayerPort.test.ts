@@ -102,6 +102,7 @@ function nativeSnapshot(
     extras?: Record<string, unknown>;
     queuePersistence?: unknown;
     shuffleEnabled?: unknown;
+    autoRadioEnabled?: unknown;
     sleepTimer?: unknown;
   } = {},
 ): string {
@@ -122,6 +123,7 @@ function nativeSnapshot(
       contextShuffleRestoreOrder: [],
     },
     shuffleEnabled: options.shuffleEnabled ?? false,
+    autoRadioEnabled: options.autoRadioEnabled ?? true,
     sleepTimer: options.sleepTimer ?? null,
     queue: ids.map((id) => ({
       id,
@@ -180,6 +182,8 @@ describe('NativeBackedPlayerPort', () => {
       'setQueuePersistenceState',
       'setRepeatMode',
       'setShuffleEnabled',
+      'setAutoRadioEnabled',
+      'isAutoRadioEnabled',
       'setupPlayer',
       'skipToIndex',
       'skipToNext',
@@ -188,9 +192,9 @@ describe('NativeBackedPlayerPort', () => {
       'sleepAfterTime',
     ] as const;
 
-    expect(currentCalls).toHaveLength(40);
+    expect(currentCalls).toHaveLength(42);
     currentCalls.forEach((name) => expect(typeof port[name], name).toBe('function'));
-    expect(Object.keys(NATIVE_COMMAND_TRANSLATION)).toHaveLength(25);
+    expect(Object.keys(NATIVE_COMMAND_TRANSLATION)).toHaveLength(26);
     port.dispose();
   });
 
@@ -590,6 +594,32 @@ describe('NativeBackedPlayerPort', () => {
 
     expect(port.isShuffleEnabled()).toBe(false);
     expect(module.command).toHaveBeenCalledWith('setShuffleEnabled', '{"enabled":false}');
+    port.dispose();
+  });
+
+  it('reads Autoplay from the native snapshot and sends the exact toggle command', async () => {
+    const module = nativeModule();
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['one'], { autoRadioEnabled: true }),
+    });
+    expect(port.isAutoRadioEnabled()).toBe(true);
+
+    port.setAutoRadioEnabled(false);
+    expect(port.isAutoRadioEnabled()).toBe(false);
+    await port.flush();
+    expect(module.command).toHaveBeenCalledWith('setAutoRadioEnabled', '{"enabled":false}');
+    expect(() => port.setAutoRadioEnabled('yes' as unknown as boolean))
+      .toThrow('Autoplay state must be boolean');
+    port.dispose();
+  });
+
+  it('rejects a native snapshot without an Autoplay state', () => {
+    const port = createNativePlayerPort({ nativeModule: nativeModule(), emitter });
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['one'], { autoRadioEnabled: 'unknown' }),
+    });
+    expect(port.getQueue()).toEqual([]);
     port.dispose();
   });
 

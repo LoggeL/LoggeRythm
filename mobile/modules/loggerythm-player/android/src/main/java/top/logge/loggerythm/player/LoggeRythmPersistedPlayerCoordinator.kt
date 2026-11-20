@@ -976,6 +976,11 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         replaceSleep(proposed)
       }
       PlayerCommand.CancelSleepTimer -> replaceSleep(null)
+      is PlayerCommand.SetAutoRadioEnabled -> {
+        // A device preference, not queue state: nothing to persist in the encrypted snapshot.
+        LoggeRythmAutoRadioPreference.setEnabled(appContext, command.enabled)
+        return true
+      }
       else -> return false
     }
     requestSave(immediate = true)
@@ -1008,7 +1013,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       is PlayerCommand.SetQueuePersistenceState,
       is PlayerCommand.SleepAfterTime,
       is PlayerCommand.SleepAfterMediaItemAtIndex,
-      PlayerCommand.CancelSleepTimer -> Unit
+      PlayerCommand.CancelSleepTimer,
+      is PlayerCommand.SetAutoRadioEnabled -> Unit
     }
   }
 
@@ -1232,9 +1238,13 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         val currentMediaId = player.currentMediaItem?.mediaId
         val currentSource = LoggeRythmPlayerRuntime.queueSources()
           .firstOrNull { it.id == currentMediaId }
-        val currentSourceIsRadio = try {
+        val currentSourceExtendable = try {
           currentSource != null &&
-            LoggeRythmPlaybackEventJournal.isRadioExtras(currentSource.extrasJson)
+            radioExtensionEligible(
+              currentSource.extrasJson,
+              LoggeRythmAutoRadioPreference.isEnabled(appContext),
+              player.repeatMode,
+            )
         } catch (_: Exception) {
           false
         }
@@ -1242,7 +1252,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
           LoggeRythmPlayerRuntime.currentQueueGeneration() == event.queueGeneration &&
             currentMediaId == event.activeMediaId &&
             activeIndex in 0 until player.mediaItemCount &&
-            currentSourceIsRadio &&
+            currentSourceExtendable &&
             player.mediaItemCount - activeIndex <= 2
         val shouldAppend = liveEventStillCurrent && completion.items.isNotEmpty()
         if (!shouldAppend) {
@@ -2367,7 +2377,11 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       radioDedupeMediaIds.clear()
     }
     val radioNearTail = try {
-      LoggeRythmPlaybackEventJournal.isRadioExtras(source.extrasJson) &&
+      radioExtensionEligible(
+        source.extrasJson,
+        LoggeRythmAutoRadioPreference.isEnabled(appContext),
+        player.repeatMode,
+      ) &&
         player.mediaItemCount - activeIndex <= 2 &&
         activeMediaId !in radioDedupeMediaIds
     } catch (_: Exception) {

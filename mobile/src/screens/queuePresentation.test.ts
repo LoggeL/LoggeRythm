@@ -3,6 +3,7 @@ import type { QueueContextMetadata, QueueOrigin } from '../player/queueContract'
 import {
   buildQueuePresentation,
   contextLabelForSection,
+  queueTailContinuation,
   type IndexedQueueRow,
 } from './queuePresentation';
 
@@ -154,5 +155,46 @@ describe('queue presentation contract', () => {
         'Unknown',
       ),
     ).toThrow('conflicting semantic context labels');
+  });
+
+  it('splits an album and its appended autoplay radio into separate context runs', () => {
+    const radio: QueueContextMetadata = { type: 'radio', id: 'seed', label: 'Track radio' };
+    const presentation = buildQueuePresentation(
+      [
+        row('current', 'context'),
+        row('album-1', 'context'),
+        row('radio-1', 'context', radio),
+        row('radio-2', 'context', radio),
+      ],
+      0,
+    );
+
+    expect(presentation.sections.map((section) => ({
+      kind: section.kind,
+      key: section.key,
+      ids: section.data.map((entry) => entry.row.id),
+    }))).toEqual([
+      { kind: 'current', key: 'current', ids: ['current'] },
+      { kind: 'context', key: 'context', ids: ['album-1'] },
+      { kind: 'context', key: 'context-2', ids: ['radio-1', 'radio-2'] },
+    ]);
+    expect(presentation.upcomingCount).toBe(3);
+    presentation.sections
+      .filter((section) => section.kind === 'context')
+      .forEach((section) => {
+        expect(() => contextLabelForSection(section.data, (type) => type, 'Unknown'))
+          .not.toThrow();
+      });
+  });
+
+  it('says what follows the last queued track', () => {
+    const base = { lastRowIsRadio: false, autoRadioEnabled: true, repeatOff: true, partyQueue: false };
+    expect(queueTailContinuation(base)).toBe('autoplay');
+    expect(queueTailContinuation({ ...base, autoRadioEnabled: false })).toBe('stop');
+    expect(queueTailContinuation({ ...base, lastRowIsRadio: true, autoRadioEnabled: false }))
+      .toBe('radio');
+    expect(queueTailContinuation({ ...base, repeatOff: false })).toBeNull();
+    expect(queueTailContinuation({ ...base, partyQueue: true })).toBeNull();
+    expect(queueTailContinuation({ ...base, lastRowIsRadio: null })).toBeNull();
   });
 });

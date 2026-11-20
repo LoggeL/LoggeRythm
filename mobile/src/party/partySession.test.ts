@@ -74,6 +74,7 @@ function snapshot(overrides: Partial<PlayerSnapshot> = {}): PlayerSnapshot {
     progress: { position: 15, duration: 200, buffered: 0, cached: 0 },
     repeatMode: 'off' as PlayerSnapshot['repeatMode'],
     shuffleEnabled: false,
+    autoRadioEnabled: false,
     playbackSpeed: 1,
     volume: 1,
     sleepTimer: null as unknown as PlayerSnapshot['sleepTimer'],

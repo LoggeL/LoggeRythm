@@ -5,6 +5,7 @@ import type { MeUpdateRequest } from '../api/endpoints';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
+import AutoplayPanel from '../components/profile/AutoplayPanel';
 import LanguageSelector from '../components/profile/LanguageSelector';
 import { ProfileGroup } from '../components/profile/ProfileGroup';
 import { useAndroidUpdatePlacement } from '../components/profile/useAndroidUpdatePlacement';
@@ -119,6 +120,7 @@ export default function ProfileScreen() {
           onRefresh={() => void stats.refetch()}
         />
         <SleepTimerPanel />
+        <AutoplayPanel />
         <LanguageSelector />
         <ProfileEditForm
           key={`${user.display_name ?? ''}:${user.email}`}
