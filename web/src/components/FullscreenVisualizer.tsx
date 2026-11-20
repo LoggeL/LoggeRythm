@@ -1,182 +1,289 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
-import { getAudioSpectrum, subscribeAudioSpectrum } from "@/lib/audioSpectrum";
-import { drawVisualizerScene, visualizerGeometry, type VisualizerMode, type VisualizerSceneFrame } from "@/lib/visualizerScene";
-
-const DEFAULT_COLORS = ["#6c36ff", "#a87dff", "#f0a7ee"] as const;
-const DEFAULT_RGB = [124, 92, 255] as const;
-const FRAME_INTERVAL = 1000 / 30;
+import { getAudioSpectrum, subscribeAudioSpectrum, type AudioSpectrumFrame } from "@/lib/audioSpectrum";
+import {
+  DEFAULT_VISUALIZER_PALETTE, advanceDrive, blendColors, createDriveTracker, ingestSpectrum, paletteColors, triggerWave,
+  type PaletteSource,
+} from "@/lib/visualizerDrive";
+import { createVisualizerRenderer, type VisualizerRenderer } from "@/lib/visualizerShader";
 
 export type VisualizerStatus = "live" | "waiting" | "paused" | "reduced";
 
 interface FullscreenVisualizerProps {
   isPlaying: boolean;
+  /** The artwork the scene is composed around; may remount while mounted. */
   anchorRef: RefObject<HTMLElement | null>;
-  surfaceRef: RefObject<HTMLElement | null>;
-  mode?: VisualizerMode;
+  /** Cover palette; `null` while the cover is still being sampled or has none. */
+  palette: PaletteSource | null;
   className?: string;
-  colors?: readonly string[];
-  glow?: string;
-  rgb?: readonly [number, number, number];
   onStatusChange?: (status: VisualizerStatus) => void;
 }
 
-/** Three cover-anchored scenes, driven by the same real FFT as the mini player. */
-export default function FullscreenVisualizer({
-  isPlaying, anchorRef, surfaceRef, mode = "orbit", className = "",
-  colors = DEFAULT_COLORS, glow = "#a87dff", rgb = DEFAULT_RGB, onStatusChange,
-}: FullscreenVisualizerProps) {
+/** Drawing-buffer density: the scene is soft light, so it never needs full retina. */
+const MAX_DENSITY = 1.25;
+const MIN_QUALITY = 0.5;
+/** A missing cover palette waits this long before fading to the default theme. */
+const PALETTE_GRACE_MS = 700;
+const INTRO_SECONDS = 0.9;
+const SILENT: Pick<AudioSpectrumFrame, "bands" | "bass" | "mid" | "treble" | "energy" | "active" | "timeSeconds"> = {
+  bands: new Float32Array(48), bass: 0, mid: 0, treble: 0, energy: 0, active: false, timeSeconds: 0,
+};
+
+/**
+ * The fullscreen player's visualizer: one WebGL2 pass behind the whole
+ * player, composed around the artwork and driven by the shared real FFT.
+ */
+export default function FullscreenVisualizer({ isPlaying, anchorRef, palette, className = "", onStatusChange }: FullscreenVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const sceneRef = useRef<VisualizerSceneFrame>({ bands: new Float32Array(48), bass: 0, mid: 0, treble: 0, energy: 0, onset: 0, phase: 0 });
+  const playingRef = useRef(isPlaying);
+  const paletteRef = useRef(palette);
+  const statusRef = useRef(onStatusChange);
+  const syncRef = useRef<(() => void) | null>(null);
+  const paletteSyncRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => { playingRef.current = isPlaying; syncRef.current?.(); }, [isPlaying]);
+  useEffect(() => { paletteRef.current = palette; paletteSyncRef.current?.(); }, [palette]);
+  useEffect(() => { statusRef.current = onStatusChange; }, [onStatusChange]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const cover = anchorRef.current;
-    const surface = surfaceRef.current;
-    if (!canvas || !cover || !surface) throw new Error("Fullscreen visualizer requires its mounted canvas, artwork and panel.");
-    const context = canvas.getContext("2d", { desynchronized: true });
-    if (!context) throw new Error("Fullscreen visualizer requires a Canvas 2D context.");
-    if (colors.length < 2) throw new Error("Fullscreen visualizer requires at least two cover palette colors.");
-    const scroller = cover.closest<HTMLElement>("[data-np-scroll]");
-    if (!scroller) throw new Error("Fullscreen visualizer requires its scrolling player panel.");
-    const ctx = context;
-    const cv = canvas;
-    const artwork = cover;
-    const scene = sceneRef.current;
-    const palette = { colors, primary: glow, rgb };
+    const element = canvasRef.current;
+    if (!element) throw new Error("Fullscreen visualizer requires its mounted canvas.");
+    const canvas = element;
+    const context = canvas.getContext("webgl2", {
+      alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false,
+    });
+    if (!context) throw new Error("Der Vollbild-Visualizer braucht WebGL2, aber der Browser stellt keinen WebGL2-Kontext bereit.");
+    const gl = context;
+    let renderer: VisualizerRenderer | null = createVisualizerRenderer(gl);
+    const tracker = createDriveTracker();
+    const initialPalette = paletteRef.current ?? DEFAULT_VISUALIZER_PALETTE;
+    const colors = paletteColors(initialPalette);
+    let targetColors = paletteColors(initialPalette);
+    let appliedPalette: PaletteSource | null = paletteRef.current;
+    let paletteTimer = 0;
+
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let reduced = motionQuery.matches;
     let visible = document.visibilityState === "visible";
-    let intersects = true;
     let disposed = false;
     let running = false;
     let raf = 0;
-    let geometryRaf = 0;
-    let lastDraw = 0;
-    let geometryDirty = true;
+    let last = 0;
+    let intro = reduced ? 1 : 0;
+    let quality = 1;
+    let windowFrames = 0;
+    let windowSlow = 0;
+    let slowWindows = 0;
+    let smoothWindows = 0;
+    let governedFrames = 0;
     let unsubscribe: (() => void) | null = null;
-    let subscribing = false;
-    let spectrum = getAudioSpectrum();
+    let spectrum: Pick<AudioSpectrumFrame, "active"> = getAudioSpectrum();
     let status: VisualizerStatus | null = null;
-    let geometry = visualizerGeometry(1, 1, 0, 0, 0, 0);
+    let observedAnchor: HTMLElement | null = null;
+    let corner = 0;
+
+    const geometry = { width: 1, height: 1, centerX: 0, centerY: 0, halfWidth: 1, halfHeight: 1 };
 
     function publishStatus() {
-      const next: VisualizerStatus = reduced ? "reduced" : !isPlaying ? "paused" : spectrum.active ? "live" : "waiting";
-      if (next !== status) { status = next; onStatusChange?.(next); }
+      const next: VisualizerStatus = reduced ? "reduced" : !playingRef.current ? "paused" : spectrum.active ? "live" : "waiting";
+      if (next !== status) { status = next; statusRef.current?.(next); }
     }
 
-    function updateGeometry() {
-      const bounds = cv.getBoundingClientRect();
-      const anchor = artwork.getBoundingClientRect();
-      geometry = visualizerGeometry(Math.max(1, bounds.width), Math.max(1, bounds.height), anchor.left - bounds.left + anchor.width / 2, anchor.top - bounds.top + anchor.height / 2, anchor.width, anchor.height);
-      geometryDirty = false;
+    function density() {
+      return Math.min(window.devicePixelRatio, MAX_DENSITY) * quality;
+    }
+
+    function resize() {
+      const bounds = canvas.getBoundingClientRect();
+      const scale = density();
+      const width = Math.max(1, Math.round(bounds.width * scale));
+      const height = Math.max(1, Math.round(bounds.height * scale));
+      if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+      canvas.dataset.renderScale = scale.toFixed(3);
+    }
+
+    function measure() {
+      const anchor = anchorRef.current;
+      if (!anchor) throw new Error("Fullscreen visualizer lost its artwork anchor while it was still mounted.");
+      if (anchor !== observedAnchor) {
+        if (observedAnchor) resizeObserver.unobserve(observedAnchor);
+        resizeObserver.observe(anchor);
+        observedAnchor = anchor;
+      }
+      const bounds = canvas.getBoundingClientRect();
+      const box = anchor.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0 || box.width <= 0 || box.height <= 0) {
+        throw new Error(`Fullscreen visualizer needs a visible canvas and artwork (canvas ${bounds.width}×${bounds.height}, artwork ${box.width}×${box.height}).`);
+      }
+      const radius = parseFloat(getComputedStyle(anchor).borderTopLeftRadius);
+      if (!Number.isFinite(radius)) throw new Error("Fullscreen visualizer could not read the artwork's corner radius.");
+      const sx = canvas.width / bounds.width, sy = canvas.height / bounds.height;
+      geometry.width = canvas.width;
+      geometry.height = canvas.height;
+      geometry.centerX = (box.left - bounds.left + box.width / 2) * sx;
+      geometry.centerY = (box.top - bounds.top + box.height / 2) * sy;
+      geometry.halfWidth = box.width / 2 * sx;
+      geometry.halfHeight = box.height / 2 * sy;
+      corner = radius / (box.width / 2);
     }
 
     function draw() {
-      if (geometryDirty) updateGeometry();
-      drawVisualizerScene(ctx, geometry, palette, scene, mode);
+      if (!renderer) return;
+      measure();
+      renderer.render({ ...geometry, corner, intro: easeIntro(intro), drive: tracker.drive, colors });
     }
 
     function stop() {
       running = false;
       cancelAnimationFrame(raf);
       raf = 0;
-      lastDraw = 0;
+      last = 0;
+    }
+
+    function start() {
+      if (running || disposed || !renderer || !visible) return;
+      running = true;
+      raf = requestAnimationFrame(frame);
+    }
+
+    /**
+     * Fill-rate governor: a GPU that can't hold ~50 fps renders fewer pixels.
+     * Only sustained slowness counts — isolated stalls (opening the player,
+     * a React render, a screenshot) are main-thread hiccups, not fill rate —
+     * and quality climbs back once frames have been smooth for a while.
+     */
+    function govern(dt: number) {
+      governedFrames += 1;
+      if (governedFrames < 60 || dt > 0.1) return;
+      windowFrames += 1;
+      if (dt > 1 / 48) windowSlow += 1;
+      if (windowFrames < 60) return;
+      const slow = windowSlow / windowFrames > 0.5;
+      windowFrames = 0;
+      windowSlow = 0;
+      slowWindows = slow ? slowWindows + 1 : 0;
+      smoothWindows = slow ? 0 : smoothWindows + 1;
+      if (slowWindows >= 2 && quality > MIN_QUALITY) {
+        quality = Math.max(MIN_QUALITY, quality * 0.8);
+        slowWindows = 0;
+        resize();
+      } else if (smoothWindows >= 8 && quality < 1) {
+        quality = Math.min(1, quality / 0.8);
+        smoothWindows = 0;
+        resize();
+      }
     }
 
     function frame(now: number) {
       if (!running || disposed) return;
-      raf = requestAnimationFrame(frame);
-      if (lastDraw && now - lastDraw < FRAME_INTERVAL - 1) return;
-      const delta = lastDraw ? Math.min(80, now - lastDraw) : FRAME_INTERVAL;
-      lastDraw = now;
-      const live = isPlaying && spectrum.active;
-      const attack = 1 - Math.exp(-delta / 18);
-      const release = 1 - Math.exp(-delta / 170);
-      const approach = (current: number, target: number) => current + (target - current) * (target > current ? attack : release);
-      for (let i = 0; i < scene.bands.length; i++) scene.bands[i] = approach(scene.bands[i], live ? spectrum.bands[i] : 0);
-      scene.bass = approach(scene.bass, live ? spectrum.bass : 0);
-      scene.mid = approach(scene.mid, live ? spectrum.mid : 0);
-      scene.treble = approach(scene.treble, live ? spectrum.treble : 0);
-      scene.energy = approach(scene.energy, live ? spectrum.energy : 0);
-      scene.onset = approach(scene.onset, live ? spectrum.onset : 0);
-      // Time advances only with the actual audio signal. Pause keeps the galaxy still.
-      if (live && spectrum.energy > 0.005) scene.phase += delta / 1000 * (0.4 + spectrum.energy * 1.3);
+      const dt = last ? Math.min(0.1, (now - last) / 1000) : 1 / 60;
+      last = now;
+      const animating = reduced ? false : advanceDrive(tracker, dt);
+      const recolouring = blendColors(colors, targetColors, dt);
+      if (intro < 1) intro = Math.min(1, intro + dt / INTRO_SECONDS);
       draw();
-      if (!live && scene.energy < 0.001 && scene.bands.every((band) => band < 0.001)) stop();
+      if (animating && playingRef.current) govern(dt);
+      if (animating || recolouring || intro < 1) raf = requestAnimationFrame(frame);
+      else stop();
     }
 
-    function syncActivity() {
+    function onSpectrum(next: AudioSpectrumFrame) {
+      spectrum = next;
+      // Beat count is exposed for verification; it changes a few times a second at most.
+      if (ingestSpectrum(tracker, next)) canvas.dataset.beats = String(tracker.drive.beats);
+      publishStatus();
+      // Inactive frames only need the running loop to settle, not a restart.
+      if (next.active) start();
+    }
+
+    function sync() {
       if (disposed) return;
-      const eligible = isPlaying && visible && intersects && !reduced;
-      if (eligible && !unsubscribe && !subscribing) {
-        subscribing = true;
-        unsubscribe = subscribeAudioSpectrum((next) => { spectrum = next; syncActivity(); });
-        subscribing = false;
-      } else if (!eligible && unsubscribe) {
+      const eligible = playingRef.current && visible && !reduced;
+      if (eligible && !unsubscribe) unsubscribe = subscribeAudioSpectrum(onSpectrum);
+      else if (!eligible && unsubscribe) {
         const release = unsubscribe;
         unsubscribe = null;
         release();
       }
+      if (!eligible) { spectrum = SILENT; ingestSpectrum(tracker, SILENT); }
       publishStatus();
-      if (!visible || !intersects) { stop(); return; }
+      if (!visible || !renderer) { stop(); return; }
       if (reduced) {
         stop();
-        scene.bands.fill(0);
-        scene.bass = scene.mid = scene.treble = scene.energy = scene.onset = 0;
+        intro = 1;
         draw();
         return;
       }
-      if ((isPlaying && spectrum.active) || scene.energy >= 0.001 || scene.bands.some((band) => band >= 0.001)) {
-        if (!running) { running = true; raf = requestAnimationFrame(frame); }
-      } else { stop(); draw(); }
+      start();
+      if (!running) draw();
     }
 
-    function resize() {
+    function syncPalette() {
       if (disposed) return;
-      const bounds = cv.getBoundingClientRect();
-      const dpr = Math.min(window.devicePixelRatio, bounds.width < 600 ? 1.25 : 1.5);
-      const nextWidth = Math.max(1, Math.round(bounds.width * dpr));
-      const nextHeight = Math.max(1, Math.round(bounds.height * dpr));
-      if (cv.width !== nextWidth || cv.height !== nextHeight) {
-        cv.width = nextWidth;
-        cv.height = nextHeight;
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      }
-      geometryDirty = true;
-      if (visible && intersects) draw();
+      window.clearTimeout(paletteTimer);
+      const next = paletteRef.current;
+      if (next === appliedPalette) return;
+      const apply = (source: PaletteSource | null) => {
+        appliedPalette = source;
+        targetColors = paletteColors(source ?? DEFAULT_VISUALIZER_PALETTE);
+        if (tracker.live) triggerWave(tracker, 0.6);
+        if (reduced) { colors.set(targetColors); draw(); } else start();
+      };
+      // A new track's cover is sampled asynchronously; don't flash the
+      // default theme in between two covers.
+      if (next) apply(next);
+      else paletteTimer = window.setTimeout(() => apply(null), PALETTE_GRACE_MS);
     }
 
-    function onScroll() {
-      geometryDirty = true;
-      if (!running && visible && intersects && !geometryRaf) geometryRaf = requestAnimationFrame(() => { geometryRaf = 0; draw(); });
+    function onResize() {
+      if (disposed) return;
+      resize();
+      if (!running && visible && renderer) draw();
     }
-    function onVisibilityChange() { visible = document.visibilityState === "visible"; syncActivity(); }
-    function onMotionChange(event: MediaQueryListEvent) { reduced = event.matches; syncActivity(); }
+    function onVisibilityChange() { visible = document.visibilityState === "visible"; sync(); }
+    function onMotionChange(event: MediaQueryListEvent) { reduced = event.matches; sync(); }
+    function onContextLost(event: Event) {
+      // Required so the browser will restore the context later.
+      event.preventDefault();
+      stop();
+      renderer = null;
+    }
+    function onContextRestored() {
+      renderer = createVisualizerRenderer(gl);
+      resize();
+      sync();
+    }
 
-    const resizeObserver = new ResizeObserver(resize);
-    resizeObserver.observe(cv);
-    resizeObserver.observe(artwork);
-    const intersectionObserver = new IntersectionObserver(([entry]) => { intersects = entry.isIntersecting; syncActivity(); }, { threshold: 0.01 });
-    intersectionObserver.observe(surface);
-    scroller.addEventListener("scroll", onScroll, { passive: true });
+    const resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(canvas);
+    canvas.addEventListener("webglcontextlost", onContextLost);
+    canvas.addEventListener("webglcontextrestored", onContextRestored);
     document.addEventListener("visibilitychange", onVisibilityChange);
     motionQuery.addEventListener("change", onMotionChange);
+    syncRef.current = sync;
+    paletteSyncRef.current = syncPalette;
     resize();
-    syncActivity();
+    sync();
     return () => {
       disposed = true;
+      syncRef.current = null;
+      paletteSyncRef.current = null;
       stop();
-      cancelAnimationFrame(geometryRaf);
+      window.clearTimeout(paletteTimer);
       unsubscribe?.();
       resizeObserver.disconnect();
-      intersectionObserver.disconnect();
-      scroller.removeEventListener("scroll", onScroll);
+      canvas.removeEventListener("webglcontextlost", onContextLost);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       motionQuery.removeEventListener("change", onMotionChange);
+      renderer?.dispose();
     };
-  }, [anchorRef, surfaceRef, isPlaying, mode, colors, glow, rgb, onStatusChange]);
+  }, [anchorRef]);
 
-  return <canvas ref={canvasRef} className={className} aria-hidden role="presentation" data-visualizer-mode={mode} />;
+  return <canvas ref={canvasRef} className={className} aria-hidden role="presentation" data-visualizer="" />;
+}
+
+function easeIntro(t: number) {
+  return 1 - Math.pow(1 - t, 3);
 }
