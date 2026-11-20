@@ -15,6 +15,7 @@ import type {
   ImportJobDetail,
   ImportJobStatus,
   PartyState,
+  PartyStart,
   StorageInfo,
   InviteInfo,
   SystemStatus,
@@ -364,14 +365,21 @@ export const api = {
   adminCreateInvite: () => req<InviteInfo>(`/admin/invites`, { method: "POST" }),
 
   // Party mode (collaborative shared queue)
-  createParty: (name?: string) =>
+  /** Start a party; `start` seeds it with the host's queue and playhead. */
+  createParty: (name?: string, start?: PartyStart) =>
     req<PartyState>(`/party`, {
       method: "POST",
-      body: JSON.stringify({ name: name ?? "" }),
+      body: JSON.stringify({ name: name ?? "", ...start }),
     }),
   getParty: (code: string) => req<PartyState>(`/party/${encodeURIComponent(code)}`),
   joinParty: (code: string) =>
     req<PartyState>(`/party/${encodeURIComponent(code)}/join`, { method: "POST" }),
+  /** Join anonymously with a nickname; the server sets a party-scoped cookie. */
+  joinPartyAsGuest: (code: string, nickname: string) =>
+    req<PartyState>(`/party/${encodeURIComponent(code)}/guest`, {
+      method: "POST",
+      body: JSON.stringify({ nickname }),
+    }),
   partyAddTrack: (code: string, track: Track) =>
     req<void>(`/party/${encodeURIComponent(code)}/tracks`, {
       method: "POST",

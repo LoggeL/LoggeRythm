@@ -46,8 +46,17 @@ export default function QueueSidebar() {
   const startParty = async () => {
     setStartingParty(true);
     try {
-      const party = await api.createParty();
-      router.push(`/party/${party.code}`);
+      // The party continues the host's current queue right where it is.
+      const party = await api.createParty(undefined, usePlayerStore.getState().partyStartSnapshot());
+      try {
+        usePlayerStore.getState().adoptPartyQueue(
+          party.tracks.map((entry) => entry.deezer_id),
+          party.tracks.map((entry) => entry.id),
+        );
+      } finally {
+        // The party exists either way; its page takes over the server state.
+        router.push(`/party/${party.code}`);
+      }
     } catch (error) {
       toast.error(`Party konnte nicht gestartet werden: ${error instanceof Error ? error.message : String(error)}`);
     } finally {

@@ -1,12 +1,15 @@
 "use client";
 
 import { use, useState } from "react";
+import { useMe } from "@/hooks/useAuth";
+import { usePlayerStore } from "@/store/player";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { CheckCircleIcon, CopyIcon, InfoCircleIcon } from "@/components/feedbackIcons";
 import MembersCard from "./MembersCard";
 import PartyQueue from "./PartyQueue";
 import PartySearch from "./PartySearch";
 import { PartyBlocked, PartySkeleton } from "./PartyStates";
+import GuestParty from "./GuestParty";
 import ShareCard from "./ShareCard";
 import { usePartySearch } from "./usePartySearch";
 import { usePartySession } from "./usePartySession";
@@ -14,7 +17,15 @@ import { useShareLink } from "./useShareLink";
 
 export default function PartyPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = use(params);
+  const { data: me } = useMe();
+  // Without an approved account you take part anonymously with a nickname.
+  return me?.is_approved ? <MemberParty code={code} /> : <GuestParty code={code} />;
+}
+
+/** Party view for signed-in accounts: plays along and (as host) controls playback. */
+function MemberParty({ code }: { code: string }) {
   const session = usePartySession(code);
+  const buffering = usePlayerStore((s) => s.isBuffering);
   const search = usePartySearch();
   const share = useShareLink(code);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -143,6 +154,8 @@ export default function PartyPage({ params }: { params: Promise<{ code: string }
             tracks={party.tracks}
             currentIndex={party.current_index}
             isHost={isHost}
+            viewerKey={party.viewer_key}
+            bufferingCurrent={buffering}
             pending={session.queuePending}
             locked={session.queueLocked}
             error={session.queueError}

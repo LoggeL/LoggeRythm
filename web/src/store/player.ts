@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { Track } from "@/types";
+import type { PartyStart, Track } from "@/types";
 import { readLocalJsonSnapshot, writeLocalJsonValue } from "@/hooks/useLocalJson";
 import {
   clearUpcomingItems,
@@ -135,6 +135,12 @@ interface PlayerState {
   // actions
   setPartyBridge: (b: PartyBridge | null) => void;
   setPartyQueue: (tracks: Track[], index: number, itemIds: number[]) => void;
+  /** Snapshot of the queue and playhead a new party should continue from. */
+  partyStartSnapshot: () => PartyStart;
+  // Bind the server entry IDs of a party created from `partyStartSnapshot` to
+  // the local queue, so the first party frame keeps the running track instead
+  // of restarting it. Throws if the local queue changed in the meantime.
+  adoptPartyQueue: (partyTrackSongIds: string[], itemIds: number[]) => void;
   // Guest-follow: apply the host's broadcast playback atomically. Pass a
   // numeric `seekTo` only when a drift correction is needed (null = leave the
   // playhead alone). No-op while nothing is loaded (index < 0).
@@ -269,6 +275,31 @@ export const usePlayerStore = create<PlayerState>()(
                 )),
           };
         });
+      },
+      partyStartSnapshot: () => {
+        const s = get();
+        const active = s.index >= 0 && s.index < s.queue.length;
+        return {
+          tracks: s.queue.map((track) => ({ ...track })),
+          current_index: active ? s.index : -1,
+          is_playing: active && s.isPlaying,
+          position_sec: active ? Math.max(0, s.currentTime) : 0,
+        };
+      },
+      adoptPartyQueue: (partyTrackSongIds, itemIds) => {
+        if (itemIds.length !== partyTrackSongIds.length) {
+          throw new Error("Party entry IDs and songs must line up one per track.");
+        }
+        const local = get().queue.map((track) => String(track.id));
+        if (
+          local.length !== partyTrackSongIds.length ||
+          local.some((id, i) => id !== String(partyTrackSongIds[i]))
+        ) {
+          throw new Error(
+            "Die Warteschlange hat sich während des Party-Starts geändert; die Party übernimmt den Stand vom Server.",
+          );
+        }
+        set({ partyQueueItemIds: [...itemIds] });
       },
       followHostPlayback: (isPlaying, seekTo) =>
         set((s) => {

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import PartyMember, PartySession, User
 from app.db.session import Base
+from app.party_auth import PartyActor
 from app.routers import party
 from app.services import party_bus
 
@@ -37,6 +38,9 @@ def frame(version: int, name: str | None = None) -> party_bus.StateFrame:
             "playback_updated_at": None,
             "members": [],
             "tracks": [],
+            "viewer_key": "",
+            "viewer_name": "",
+            "viewer_is_guest": False,
         },
     )
 
@@ -166,20 +170,30 @@ class PartyBusTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(subscription._pending)
 
 
+def actor(user_id: int) -> PartyActor:
+    return PartyActor(user=SimpleNamespace(id=user_id, display_name=f"user{user_id}", email=""))
+
+
 class PartyStreamTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         self.assertEqual(party_bus.subscriber_count(CODE), 0)
 
     async def connect(self, initial=None, user_id=10):
         with patch.object(party, "_stream_snapshot", return_value=(10, initial or frame(1))):
-            return await party.party_events(CODE, SimpleNamespace(id=user_id))
+            return await party.party_events(CODE, actor(user_id))
 
     async def test_wire_fields_headers_and_host_stamp_are_preserved(self):
         for user_id, is_host in ((10, True), (20, False)):
             response = await self.connect(user_id=user_id)
             try:
                 event = data(await anext(response.body_iterator))
-                self.assertEqual(event, {**frame(1).payload, "is_host": is_host})
+                self.assertEqual(event, {
+                    **frame(1).payload,
+                    "is_host": is_host,
+                    "viewer_key": f"u:{user_id}",
+                    "viewer_name": f"user{user_id}",
+                    "viewer_is_guest": False,
+                })
                 self.assertEqual(response.headers["cache-control"], "no-cache, no-transform")
                 self.assertEqual(response.headers["x-accel-buffering"], "no")
                 self.assertTrue(response.headers["content-type"].startswith("text/event-stream"))
@@ -204,7 +218,7 @@ class PartyStreamTests(unittest.IsolatedAsyncioTestCase):
             return 10, frame(1)
 
         with patch.object(party, "_stream_snapshot", side_effect=load_snapshot):
-            connecting = asyncio.create_task(party.party_events(CODE, SimpleNamespace(id=10)))
+            connecting = asyncio.create_task(party.party_events(CODE, actor(10)))
             try:
                 await asyncio.wait_for(started, timeout=1)
                 # This callback executes while the database worker is blocked.
@@ -248,7 +262,7 @@ class PartyStreamTests(unittest.IsolatedAsyncioTestCase):
         failure = HTTPException(status_code=404, detail="Party not found")
         with patch.object(party, "_stream_snapshot", side_effect=failure):
             with self.assertRaises(HTTPException) as raised:
-                await party.party_events(CODE, SimpleNamespace(id=10))
+                await party.party_events(CODE, actor(10))
         self.assertEqual(raised.exception.status_code, 404)
         self.assertEqual(party_bus.subscriber_count(CODE), 0)
 
@@ -264,7 +278,7 @@ class PartyStreamTests(unittest.IsolatedAsyncioTestCase):
             return 10, frame(1)
 
         with patch.object(party, "_stream_snapshot", side_effect=load_snapshot):
-            connecting = asyncio.create_task(party.party_events(CODE, SimpleNamespace(id=10)))
+            connecting = asyncio.create_task(party.party_events(CODE, actor(10)))
             try:
                 await asyncio.wait_for(started, timeout=1)
                 connecting.cancel()
@@ -337,8 +351,11 @@ class PartyCanonicalRevisionTests(unittest.TestCase):
         self.session = PartySession(code=CODE, host_id=self.host.id, updated_at=STAMP)
         self.db.add(self.session)
         self.db.commit()
+        self.preloader = patch.object(party.party_preload, "schedule")
+        self.preloader.start()
 
     def tearDown(self) -> None:
+        self.preloader.stop()
         self.db.close()
         self.engine.dispose()
         self.directory.cleanup()
@@ -353,8 +370,8 @@ class PartyCanonicalRevisionTests(unittest.TestCase):
             previous = self.revision()
             mutations = (
                 lambda: party.join_party(CODE, self.guest, self.db),
-                lambda: party.get_party(CODE, self.host, self.db),
-                lambda: party.leave_party(CODE, self.guest, self.db),
+                lambda: party.get_party(CODE, PartyActor(user=self.host), self.db),
+                lambda: party.leave_party(CODE, PartyActor(user=self.guest), self.db),
             )
             for mutate in mutations:
                 mutate()
@@ -392,7 +409,7 @@ class PartyCanonicalRevisionTests(unittest.TestCase):
                 self.assertGreater(playback_revision, old_revision)
                 # Ordinary presence refresh uses the newer canonical snapshot
                 # without trying to overwrite its stale session revision.
-                response = party.get_party(CODE, self.guest, reading_db)
+                response = party.get_party(CODE, PartyActor(user=self.guest), reading_db)
                 self.assertEqual(response.position_sec, 7)
                 self.assertEqual(self.revision(), playback_revision)
 
@@ -401,7 +418,7 @@ class PartyCanonicalRevisionTests(unittest.TestCase):
             party.join_party(CODE, self.guest, self.db)
             previous = self.revision()
             self.guest.display_name = "Updated guest"
-            response = party.get_party(CODE, self.guest, self.db)
+            response = party.get_party(CODE, PartyActor(user=self.guest), self.db)
         self.assertGreater(self.revision(), previous)
         self.assertEqual(response.members[0].name, "Updated guest")
 

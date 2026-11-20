@@ -3,15 +3,22 @@ import { ChevronDownIcon, CloseIcon, QueueIcon } from "@/components/icons";
 import { formatTime } from "@/lib/format";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import type { PartyTrack } from "@/types";
+import PartyLoadBadge from "./PartyLoadBadge";
 import PartyTrackRow from "./PartyTrackRow";
 
 const controlClass = "action-icon h-11 min-h-11 w-11 sm:h-9 sm:min-h-9 sm:w-9";
 
-/** The shared queue. Everyone sees it; only the host plays, reorders and removes. */
+/**
+ * The shared queue. Everyone sees it and each track's load state; the host
+ * plays, reorders and removes, everyone else can remove their own upcoming
+ * additions.
+ */
 export default function PartyQueue({
   tracks,
   currentIndex,
   isHost,
+  viewerKey,
+  bufferingCurrent = false,
   pending,
   locked,
   error,
@@ -22,13 +29,17 @@ export default function PartyQueue({
   tracks: PartyTrack[];
   currentIndex: number;
   isHost: boolean;
+  /** `PartyState.viewer_key`: marks the viewer's own additions. */
+  viewerKey: string;
+  /** The viewer's own player is buffering the playing track. */
+  bufferingCurrent?: boolean;
   /** A queue change is being saved. */
   pending: boolean;
   /** Controls are unavailable (a change is being saved or the party is being left). */
   locked: boolean;
   error: string | null;
-  onPlay: (index: number, title: string) => void;
-  onMove: (from: number, to: number, title: string) => void;
+  onPlay?: (index: number, title: string) => void;
+  onMove?: (from: number, to: number, title: string) => void;
   onRemove: (itemId: number, title: string) => void;
 }) {
   return (
@@ -60,26 +71,29 @@ export default function PartyQueue({
         <ol className="-mx-2 flex flex-col gap-0.5 sm:-mx-3">
           {tracks.map((track, index) => {
             const current = index === currentIndex;
+            const own = !!viewerKey && track.added_by_member === viewerKey;
+            const canRemove = isHost || (own && !current);
             return (
               <PartyTrackRow
                 key={track.id}
                 cover={track.cover}
                 title={track.title}
-                subtitle={`${trackArtistLabel(track)} · von ${track.added_by}`}
+                subtitle={`${trackArtistLabel(track)} · von ${own ? "dir" : track.added_by}`}
                 current={current}
                 position={index + 1}
                 played={index < currentIndex}
-                onActivate={isHost ? () => onPlay(index, track.title) : undefined}
+                onActivate={isHost && onPlay ? () => onPlay(index, track.title) : undefined}
                 activateLabel={`"${track.title}" jetzt abspielen`}
                 activateDisabled={locked}
               >
-                <div className={`flex shrink-0 items-center gap-1 ${isHost ? "max-sm:w-full max-sm:justify-end" : ""}`}>
-                  <span className={`px-1 font-mono text-xs tabular-nums text-muted ${
-                      isHost ? `max-sm:mr-auto ${current ? "max-sm:pl-[4.25rem]" : "max-sm:pl-14"}` : ""
+                <div className={`flex shrink-0 items-center gap-1 ${canRemove ? "max-sm:w-full max-sm:justify-end" : ""}`}>
+                  <span className={`flex items-center gap-2 px-1 ${
+                      canRemove ? `max-sm:mr-auto ${current ? "max-sm:pl-[4.25rem]" : "max-sm:pl-14"}` : ""
                     }`}>
-                    {formatTime(track.duration_sec)}
+                    <PartyLoadBadge state={track.load_state} error={track.load_error} buffering={current && bufferingCurrent} />
+                    <span className="font-mono text-xs tabular-nums text-muted">{formatTime(track.duration_sec)}</span>
                   </span>
-                  {isHost && (
+                  {isHost && onMove && (
                     <>
                       <button
                         type="button"
@@ -99,16 +113,18 @@ export default function PartyQueue({
                       >
                         <ChevronDownIcon width={18} height={18} aria-hidden="true" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onRemove(track.id, track.title)}
-                        disabled={locked}
-                        aria-label={`"${track.title}" aus der Party entfernen`}
-                        className={`${controlClass} hover:text-danger`}
-                      >
-                        <CloseIcon width={18} height={18} aria-hidden="true" />
-                      </button>
                     </>
+                  )}
+                  {canRemove && (
+                    <button
+                      type="button"
+                      onClick={() => onRemove(track.id, track.title)}
+                      disabled={locked}
+                      aria-label={`"${track.title}" aus der Party entfernen`}
+                      className={`${controlClass} hover:text-danger`}
+                    >
+                      <CloseIcon width={18} height={18} aria-hidden="true" />
+                    </button>
                   )}
                 </div>
               </PartyTrackRow>

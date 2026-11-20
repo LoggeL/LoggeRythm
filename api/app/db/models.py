@@ -188,6 +188,11 @@ class PartySession(Base):
     members: Mapped[list["PartyMember"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
+    guests: Mapped[list["PartyGuest"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="PartyGuest.id",
+    )
 
 
 class PartyTrack(Base):
@@ -209,6 +214,11 @@ class PartyTrack(Base):
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     added_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    # Who added it, as a party member key ("u:<user id>" or "g:<guest id>").
+    # Lets members remove their own additions. "" for rows from before this.
+    added_by_member: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="", server_default=""
+    )
     added_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     session: Mapped["PartySession"] = relationship(back_populates="tracks")
@@ -229,6 +239,29 @@ class PartyMember(Base):
     last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     session: Mapped["PartySession"] = relationship(back_populates="members")
+
+
+class PartyGuest(Base):
+    """An anonymous party participant: a nickname and nothing else.
+
+    Guests have no account. They hold a random token in a cookie scoped to
+    their party's API path; only its SHA-256 is stored. A guest can see the
+    party, add tracks and remove their own additions — never anything outside
+    this one party.
+    """
+
+    __tablename__ = "party_guests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_code: Mapped[str] = mapped_column(
+        ForeignKey("party_sessions.code"), nullable=False, index=True
+    )
+    nickname: Mapped[str] = mapped_column(String(40), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+    session: Mapped["PartySession"] = relationship(back_populates="guests")
 
 
 class StoredLyrics(Base):

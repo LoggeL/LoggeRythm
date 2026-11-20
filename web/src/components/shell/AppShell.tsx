@@ -113,6 +113,11 @@ function Workspace({ children }: { children: React.ReactNode }) {
 
 const PUBLIC_AUTH_PATHS = new Set(["/login", "/register", "/forgot-password", "/reset-password"]);
 
+/** `/party/<code>` — the one app page visitors without an account may open. */
+export function isPartyInvitePath(pathname: string): boolean {
+  return /^\/party\/[^/]+\/?$/.test(pathname);
+}
+
 /**
  * Session gate. Login, registration and password reset are always reachable;
  * everything else requires an approved account.
@@ -132,6 +137,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (isError) return <SessionError message={error.message} retrying={isFetching} onRetry={() => void refetch()} />;
   if (isPending && me === undefined) return <SplashScreen />;
+  if ((!me || !me.is_approved) && isPartyInvitePath(pathname)) {
+    // An invite link works without an account: the party page lets the
+    // visitor join anonymously with a nickname. Nothing else is reachable.
+    return (
+      <div className="h-full overflow-y-auto bg-background">
+        {children}
+        <Toaster />
+      </div>
+    );
+  }
   if (!me || !me.is_approved) {
     return (
       <>

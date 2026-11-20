@@ -229,10 +229,33 @@ async function readJson(req) {
   return JSON.parse(text);
 }
 
-function partyState(party) {
-  return { code: party.code, name: party.name, host_name: me.display_name, is_host: true,
-    current_index: party.current_index, members: [{ name: me.display_name, avatar_url: null }, { name: "Jule" }, { name: "Tariq" }],
-    tracks: party.tracks, is_playing: party.is_playing, position_sec: party.position_sec, playback_updated_at: party.updated };
+const HOST_VIEWER = { key: "u:1", name: "Demo", guest: false };
+
+// Simulated background preload: from the playing track on, one track loads
+// every few seconds; the fifth upcoming track fails like an unavailable one.
+function partyLoad(party, index) {
+  const ahead = index - Math.max(party.current_index, 0);
+  if (ahead < 0) return { load_state: "ready", load_error: null };
+  if (ahead === 4) return { load_state: "failed", load_error: "Deezer403Exception: Titel in dieser Region nicht verfügbar (Demo)" };
+  const done = Math.floor((Date.now() - party.loadStart) / 4000);
+  if (ahead < done) return { load_state: "ready", load_error: null };
+  if (ahead === done) return { load_state: "loading", load_error: null };
+  return { load_state: ahead < 15 ? "queued" : "idle", load_error: null };
+}
+
+function partyState(party, viewer = HOST_VIEWER) {
+  return { code: party.code, name: party.name, host_name: me.display_name, is_host: !viewer.guest,
+    current_index: party.current_index,
+    members: [{ name: me.display_name, avatar_url: null, is_guest: false }, { name: "Jule", is_guest: false },
+      ...[...party.guests.values()].map((guest) => ({ name: guest.name, avatar_url: null, is_guest: true }))],
+    tracks: party.tracks.map((track, index) => ({ added_by_member: "", ...track, ...partyLoad(party, index) })),
+    is_playing: party.is_playing, position_sec: party.position_sec, playback_updated_at: party.updated,
+    viewer_key: viewer.key, viewer_name: viewer.name, viewer_is_guest: viewer.guest };
+}
+
+function partyGuest(req, party) {
+  const token = /(?:^|;\s*)sf_party_guest=([^;]+)/.exec(req.headers.cookie ?? "")?.[1];
+  return token ? party.guests.get(token) ?? null : null;
 }
 
 const matches = (query, ...fields) => fields.some((field) => field.toLowerCase().includes(query));
@@ -261,7 +284,10 @@ async function handle(req, res) {
     return send(res, 200, me);
   }
   if (is("GET", "/auth/me")) return loggedIn ? send(res, 200, me) : fail(res, 401, "Nicht angemeldet");
-  if (!loggedIn) return fail(res, 401, "Nicht angemeldet");
+  // Like the real API: search is public, and party routes resolve their own
+  // caller (account or anonymous guest cookie) below.
+  const publicWhenLoggedOut = is("GET", "/search") || (seg[0] === "party" && seg[1]);
+  if (!loggedIn && !publicWhenLoggedOut) return fail(res, 401, "Nicht angemeldet");
 
   if (is("PATCH", "/me")) { Object.assign(me, await readJson(req)); delete me.password; return send(res, 200, me); }
   if (is("GET", "/me/settings")) return send(res, 200, settings);
@@ -464,30 +490,63 @@ async function handle(req, res) {
   // Party
   if (is("POST", "/party")) {
     const code = "DEMO42";
-    const party = { code, name: (await readJson(req)).name || "Demo-Party", current_index: 0, is_playing: false, position_sec: 0, updated: null, nextId: 1, tracks: [] };
-    for (const track of pick(5, 6, 8)) party.tracks.push({ ...track, id: party.nextId++, deezer_id: track.id, added_by: ["Demo", "Jule", "Tariq"][party.tracks.length % 3] });
+    const body = await readJson(req);
+    const party = { code, name: body.name || "Demo-Party", current_index: 0, is_playing: false, position_sec: 0, updated: null, nextId: 1, tracks: [],
+      guests: new Map(), loadStart: Date.now() };
+    // Like the real API, a party started from a queue continues it.
+    const seed = body.tracks?.length ? body.tracks : pick(5, 6, 8);
+    for (const track of seed) party.tracks.push({ ...track, id: party.nextId++, deezer_id: track.id, added_by: "Demo", added_by_member: "u:1" });
+    if (body.tracks?.length) Object.assign(party, { current_index: body.current_index, is_playing: body.is_playing, position_sec: body.position_sec, updated: new Date().toISOString() });
     parties.set(code, party);
     return send(res, 200, partyState(party));
   }
   if (seg[0] === "party" && seg[1]) {
     const party = parties.get(seg[1].toUpperCase());
     if (!party) return fail(res, 404, "Party nicht gefunden");
-    if (is("GET", "/party/[^/]+") || is("POST", "/party/[^/]+/join")) return send(res, 200, partyState(party));
+    if (is("POST", "/party/[^/]+/guest")) {
+      const nickname = String((await readJson(req)).nickname ?? "").trim().replace(/\s+/g, " ");
+      if (!nickname) return fail(res, 422, "Der Nickname darf nicht nur aus Leerzeichen bestehen.");
+      const taken = [me.display_name, "Jule", ...[...party.guests.values()].map((guest) => guest.name)];
+      if (taken.some((name) => name.toLowerCase() === nickname.toLowerCase())) return fail(res, 409, `Der Nickname „${nickname}“ ist in dieser Party schon vergeben.`);
+      const token = `guest${party.guests.size + 1}x${Date.now()}`;
+      const guest = { key: `g:${party.guests.size + 1}`, name: nickname, guest: true };
+      party.guests.set(token, guest);
+      return send(res, 200, partyState(party, guest), { "Set-Cookie": `sf_party_guest=${token}; Path=/api/party/${party.code}; HttpOnly; SameSite=Lax` });
+    }
+    const guest = partyGuest(req, party);
+    const viewer = loggedIn ? HOST_VIEWER : guest;
+    if (!viewer) return fail(res, 401, "Not authenticated: sign in or join this party as a guest with a nickname");
+    if (is("GET", "/party/[^/]+") || is("POST", "/party/[^/]+/join")) return send(res, 200, partyState(party, viewer));
     if (is("GET", "/party/[^/]+/events")) {
-      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
-      const push = () => res.write(`data: ${JSON.stringify(partyState(party))}\n\n`);
+      // Same headers as the real API: without no-transform the Next proxy
+      // gzips the stream for browsers and holds frames back.
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive" });
+      const push = () => res.write(`data: ${JSON.stringify(partyState(party, viewer))}\n\n`);
       push();
       const timer = setInterval(push, 2000);
       req.on("close", () => clearInterval(timer));
       return;
     }
-    if (is("POST", "/party/[^/]+/leave")) return send(res, 204);
+    if (is("POST", "/party/[^/]+/leave")) {
+      if (!viewer.guest) return send(res, 204);
+      for (const [token, entry] of party.guests) if (entry === viewer) party.guests.delete(token);
+      return send(res, 204, undefined, { "Set-Cookie": `sf_party_guest=""; Path=/api/party/${party.code}; Max-Age=0` });
+    }
     if (is("POST", "/party/[^/]+/tracks")) {
       const track = await readJson(req);
-      party.tracks.push({ ...track, id: party.nextId++, deezer_id: track.id, added_by: me.display_name });
+      party.tracks.push({ ...track, id: party.nextId++, deezer_id: track.id, added_by: viewer.name, added_by_member: viewer.key });
       return send(res, 204);
     }
-    if (is("DELETE", "/party/[^/]+/tracks/\\d+")) { party.tracks = party.tracks.filter((track) => track.id !== Number(seg[3])); return send(res, 204); }
+    if (is("DELETE", "/party/[^/]+/tracks/\\d+")) {
+      const index = party.tracks.findIndex((track) => track.id === Number(seg[3]));
+      if (index < 0) return fail(res, 404, "Party track not found");
+      if (viewer.guest && party.tracks[index].added_by_member !== viewer.key) return fail(res, 403, "Du kannst nur Titel entfernen, die du selbst hinzugefügt hast.");
+      if (viewer.guest && index === party.current_index) return fail(res, 403, "Der Titel läuft gerade; nur der Host kann ihn jetzt entfernen.");
+      party.tracks.splice(index, 1);
+      if (index < party.current_index) party.current_index -= 1;
+      return send(res, 204);
+    }
+    if (viewer.guest) return fail(res, 403, "Nur der Host kann die Wiedergabe steuern.");
     if (is("PATCH", "/party/[^/]+/tracks/order")) {
       const order = (await readJson(req)).ids;
       party.tracks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));

@@ -16,7 +16,7 @@ from sqlalchemy.schema import CreateColumn
 
 from .api_version import API_VERSION
 from .config import APP_ENV, CORS_ORIGINS, validate_runtime_config
-from .db.models import Play, User
+from .db.models import PartyTrack, Play, User
 from .db.session import SessionLocal, engine, init_db
 from .openapi_security import install_auth_openapi
 from .routers import (
@@ -119,7 +119,10 @@ _COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
 # PostgreSQL receive their native representation of types such as ``Uuid``.
 # Keep the legacy SQLite DDL above untouched: deployed databases may still
 # need to replay it, while fresh databases already contain every model field.
-_PORTABLE_COLUMN_MIGRATIONS = (Play.__table__.c.event_id,)
+_PORTABLE_COLUMN_MIGRATIONS = (
+    Play.__table__.c.event_id,
+    PartyTrack.__table__.c.added_by_member,
+)
 _PORTABLE_INDEX_MIGRATIONS = tuple(
     index
     for index in Play.__table__.indexes

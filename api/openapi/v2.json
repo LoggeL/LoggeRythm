@@ -1104,7 +1104,18 @@
         "type": "object"
       },
       "PartyCreate": {
+        "description": "New party, optionally seeded with the host's current player queue.\n\n``current_index``/``is_playing``/``position_sec`` describe the host's\nplayhead inside ``tracks`` so the party continues exactly where the host's\nown playback was instead of starting from an empty queue.",
         "properties": {
+          "current_index": {
+            "default": -1,
+            "title": "Current Index",
+            "type": "integer"
+          },
+          "is_playing": {
+            "default": false,
+            "title": "Is Playing",
+            "type": "boolean"
+          },
           "name": {
             "anyOf": [
               {
@@ -1115,9 +1126,36 @@
               }
             ],
             "title": "Name"
+          },
+          "position_sec": {
+            "default": 0.0,
+            "title": "Position Sec",
+            "type": "number"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/Track"
+            },
+            "title": "Tracks",
+            "type": "array"
           }
         },
         "title": "PartyCreate",
+        "type": "object"
+      },
+      "PartyGuestJoin": {
+        "properties": {
+          "nickname": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Nickname",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nickname"
+        ],
+        "title": "PartyGuestJoin",
         "type": "object"
       },
       "PartyMemberOut": {
@@ -1132,6 +1170,11 @@
               }
             ],
             "title": "Avatar Url"
+          },
+          "is_guest": {
+            "default": false,
+            "title": "Is Guest",
+            "type": "boolean"
           },
           "name": {
             "default": "",
@@ -1202,6 +1245,21 @@
             },
             "title": "Tracks",
             "type": "array"
+          },
+          "viewer_is_guest": {
+            "default": false,
+            "title": "Viewer Is Guest",
+            "type": "boolean"
+          },
+          "viewer_key": {
+            "default": "",
+            "title": "Viewer Key",
+            "type": "string"
+          },
+          "viewer_name": {
+            "default": "",
+            "title": "Viewer Name",
+            "type": "string"
           }
         },
         "required": [
@@ -1215,6 +1273,11 @@
           "added_by": {
             "default": "",
             "title": "Added By",
+            "type": "string"
+          },
+          "added_by_member": {
+            "default": "",
+            "title": "Added By Member",
             "type": "string"
           },
           "album": {
@@ -1261,6 +1324,29 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "load_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Error"
+          },
+          "load_state": {
+            "default": "idle",
+            "enum": [
+              "ready",
+              "loading",
+              "queued",
+              "failed",
+              "idle"
+            ],
+            "title": "Load State",
+            "type": "string"
           },
           "title": {
             "default": "",
@@ -2825,6 +2911,12 @@
       }
     },
     "securitySchemes": {
+      "sf_party_guest": {
+        "description": "HttpOnly party-guest token set by POST /api/party/{code}/guest. Scoped to that party's API path; identifies an anonymous guest by nickname.",
+        "in": "cookie",
+        "name": "sf_party_guest",
+        "type": "apiKey"
+      },
       "sf_session": {
         "description": "HttpOnly JWT session cookie set by the login or registration endpoint.",
         "in": "cookie",
@@ -5194,7 +5286,7 @@
     },
     "/api/party/{code}": {
       "get": {
-        "description": "Read party state and register or refresh the requesting user as a party member.",
+        "description": "Read party state and register or refresh the requesting user as a party member. Anonymous guests of this party (guest cookie) can read it too.",
         "operationId": "get_party_api_party__code__get",
         "parameters": [
           {
@@ -5252,6 +5344,9 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Get Party",
@@ -5402,9 +5497,65 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Party Events",
+        "tags": [
+          "party"
+        ]
+      }
+    },
+    "/api/party/{code}/guest": {
+      "post": {
+        "description": "Join the party anonymously with a nickname. Sets an HttpOnly guest cookie scoped to this party's API path; no account is involved.",
+        "operationId": "join_as_guest_api_party__code__guest_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyGuestJoin"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Join As Guest",
         "tags": [
           "party"
         ]
@@ -5479,6 +5630,7 @@
     },
     "/api/party/{code}/leave": {
       "post": {
+        "description": "Leave the party. A guest's identity ends with it (cookie cleared).",
         "operationId": "leave_party_api_party__code__leave_post",
         "parameters": [
           {
@@ -5529,6 +5681,9 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Leave Party",
@@ -5670,6 +5825,9 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Add Track",
@@ -5750,6 +5908,7 @@
     },
     "/api/party/{code}/tracks/{item_id}": {
       "delete": {
+        "description": "The host removes any track; everyone else only their own upcoming ones.",
         "operationId": "remove_track_api_party__code__tracks__item_id__delete",
         "parameters": [
           {
@@ -5809,6 +5968,9 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Remove Track",

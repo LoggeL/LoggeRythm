@@ -15,6 +15,7 @@ from .api_version import (
     OPENAPI_CONTRACT_VERSION,
 )
 from .auth import get_current_session_user, get_current_user
+from .party_auth import get_party_actor
 
 
 _AUTH_ERROR_SCHEMA = {
@@ -73,7 +74,11 @@ def add_auth_error_responses(app: FastAPI, schema: dict[str, Any]) -> None:
             continue
 
         dependencies = set(_dependency_calls(route.dependant))
-        requires_approved_user = get_current_user in dependencies
+        # A party actor is an approved account or that party's guest; both
+        # failures are the same 401/403 shapes as for an approved account.
+        requires_approved_user = (
+            get_current_user in dependencies or get_party_actor in dependencies
+        )
         requires_session_user = get_current_session_user in dependencies
         if not (requires_approved_user or requires_session_user):
             continue

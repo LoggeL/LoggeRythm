@@ -3,11 +3,12 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import PartySession, PartyTrack, User
 from app.db.session import Base
+from app.party_auth import PartyActor
 from app.routers import party
 
 
@@ -39,8 +40,11 @@ class PartyQueueTests(unittest.TestCase):
         self.db.commit()
         self.publisher = patch.object(party.party_bus, "publish")
         self.publish = self.publisher.start()
+        self.preloader = patch.object(party.party_preload, "schedule")
+        self.schedule = self.preloader.start()
 
     def tearDown(self) -> None:
+        self.preloader.stop()
         self.publisher.stop()
         self.db.close()
         self.engine.dispose()
@@ -64,7 +68,7 @@ class PartyQueueTests(unittest.TestCase):
         ))
 
     def remove(self, item_id: int):
-        return party.remove_track(self.session.code, item_id, self.host, self.db)
+        return party.remove_track(self.session.code, item_id, PartyActor(user=self.host), self.db)
 
     def reorder(self, ids: list[int]):
         return party.reorder_tracks(
@@ -206,7 +210,9 @@ class PartyQueueTests(unittest.TestCase):
 
     def test_guest_cannot_mutate_queue_or_playback(self):
         mutations = (
-            lambda: party.remove_track(self.session.code, self.first.id, self.guest, self.db),
+            lambda: party.remove_track(
+                self.session.code, self.first.id, PartyActor(user=self.guest), self.db
+            ),
             lambda: party.reorder_tracks(
                 self.session.code,
                 party.OrderUpdate(ids=[self.last.id, self.current.id, self.first.id]),
@@ -229,6 +235,56 @@ class PartyQueueTests(unittest.TestCase):
             self.assertEqual(raised.exception.status_code, 403)
         self.assertEqual(len(self.rows()), 3)
         self.assertEqual(self.session.current_index, 1)
+        self.publish.assert_not_called()
+
+    def test_creating_party_adopts_host_queue_and_playhead(self):
+        body = party.PartyCreate(
+            tracks=[
+                party.Track(id="11", title="One", artist="A", artist_id=5),
+                party.Track(id="22", title="Two"),
+                party.Track(id="11", title="One again"),
+            ],
+            current_index=1,
+            is_playing=True,
+            position_sec=73.5,
+        )
+        state = party.create_party(body, self.host, self.db)
+        self.assertTrue(state.is_host)
+        self.assertEqual([t.deezer_id for t in state.tracks], ["11", "22", "11"])
+        self.assertEqual(len({t.id for t in state.tracks}), 3)
+        self.assertEqual(state.tracks[0].artist_id, "5")
+        self.assertEqual(state.current_index, 1)
+        self.assertTrue(state.is_playing)
+        self.assertEqual(state.position_sec, 73.5)
+        self.assertIsNotNone(state.playback_updated_at)
+        self.publish.assert_called_once()
+
+    def test_creating_empty_party_stays_stopped(self):
+        state = party.create_party(party.PartyCreate(), self.host, self.db)
+        self.assertEqual(state.tracks, [])
+        self.assertEqual(state.current_index, -1)
+        self.assertFalse(state.is_playing)
+        self.assertIsNone(state.playback_updated_at)
+
+    def test_creating_party_rejects_inconsistent_playhead(self):
+        cases = (
+            party.PartyCreate(tracks=[party.Track(id="1")], current_index=1),
+            party.PartyCreate(tracks=[party.Track(id="1")], current_index=-2),
+            party.PartyCreate(is_playing=True),
+            party.PartyCreate(
+                tracks=[party.Track(id="1")], current_index=0, position_sec=-1.0
+            ),
+            party.PartyCreate(
+                tracks=[party.Track(id="1")], current_index=0, position_sec=float("nan")
+            ),
+        )
+        before = self.db.scalar(select(func.count()).select_from(PartySession))
+        for body in cases:
+            with self.assertRaises(HTTPException) as raised:
+                party.create_party(body, self.host, self.db)
+            self.assertEqual(raised.exception.status_code, 422)
+        after = self.db.scalar(select(func.count()).select_from(PartySession))
+        self.assertEqual(before, after)
         self.publish.assert_not_called()
 
 

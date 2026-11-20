@@ -217,6 +217,31 @@ test("different party entries of the same song restart playback", () => {
   assert.equal(state().seekTo, 0);
 });
 
+test("starting a party continues the running queue without restarting the track", () => {
+  state().playQueue([track(1), track(2), track(3)], 1);
+  state()._clearSeek();
+  state()._setCurrentTime(61);
+  const snapshot = state().partyStartSnapshot();
+  assert.deepEqual(snapshot.tracks.map((item) => item.id), ["1", "2", "3"]);
+  assert.equal(snapshot.current_index, 1);
+  assert.equal(snapshot.is_playing, true);
+  assert.equal(snapshot.position_sec, 61);
+
+  state().adoptPartyQueue(["1", "2", "3"], [500, 501, 502]);
+  state().setPartyBridge({ addToQueue() {}, removeAt() {}, reorder() {}, setCurrent() {} });
+  state().setPartyQueue([track(1), track(2), track(3)], 1, [500, 501, 502]);
+  assert.equal(state().index, 1);
+  assert.equal(state().isPlaying, true);
+  assert.equal(state().currentTime, 61);
+  assert.equal(state().seekTo, null);
+});
+
+test("adopting a party queue fails loudly if the local queue changed meanwhile", () => {
+  state().playQueue([track(1), track(2)], 0);
+  assert.throws(() => state().adoptPartyQueue(["1", "9"], [500, 501]), /Warteschlange hat sich/);
+  assert.deepEqual(state().partyQueueItemIds, []);
+});
+
 test("invalid party snapshots fail before changing the player", () => {
   state().playTrack(track(1));
   assert.throws(() => state().setPartyQueue([track(2)], 0, []), /entry IDs/);

@@ -42,7 +42,7 @@ const party = (file) => `../src/app/party/[code]/${file}`;
 const jsxRuntime = import.meta.resolve("react/jsx-runtime");
 const requestsUrl = new URL("../src/app/party/requests.ts", import.meta.url).href;
 const toastStub = moduleUrl("export const toast = {error() {}, success() {}};");
-const playerStub = moduleUrl("export const usePlayerStore = (selector) => selector({followHostPlayback() {}});");
+const playerStub = moduleUrl("export const usePlayerStore = (selector) => selector({followHostPlayback() {}, isBuffering: false});");
 const formatStub = moduleUrl("export const formatTime = (value) => String(value);");
 const artistsStub = moduleUrl("export const trackArtistLabel = (track) => track.artist;");
 
@@ -98,6 +98,7 @@ const queueUrl = await compile(party("PartyQueue.tsx"), {
   "@/components/icons": iconStub,
   "@/lib/format": formatStub,
   "@/lib/trackArtists": artistsStub,
+  "./PartyLoadBadge": nullStub,
   "./PartyTrackRow": trackRowUrl,
 });
 const shareCardUrl = await compile(party("ShareCard.tsx"), {
@@ -117,6 +118,9 @@ const pageUrl = await compile(party("page.tsx"), {
   "react/jsx-runtime": jsxRuntime,
   "@/components/ConfirmDialog": nullStub,
   "@/components/feedbackIcons": feedbackIconStub,
+  "@/hooks/useAuth": moduleUrl("export function useMe() { return {data: {is_approved: true}}; }"),
+  "@/store/player": playerStub,
+  "./GuestParty": nullStub,
   "./MembersCard": membersUrl,
   "./PartyQueue": queueUrl,
   "./PartySearch": searchPanelUrl,
@@ -143,7 +147,10 @@ function nodes(node, predicate, found = []) {
 }
 function render() {
   fixture.cursor = 0;
-  const tree = PartyPage({params: {code: "SEARCH"}});
+  // PartyPage only picks the member or guest view; render the member view's
+  // hooks exactly once per render like React would.
+  const view = PartyPage({params: {code: "SEARCH"}});
+  const tree = view.type(view.props);
   const field = nodes(tree, (node) => node.type === SearchField)[0].props;
   const form = SearchField(field);
   const input = nodes(form, (node) => node.type === "input")[0].props;

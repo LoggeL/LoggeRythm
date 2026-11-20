@@ -16,9 +16,13 @@ export default function MembersCard({ members, hostName }: { members: PartyMembe
       ) : (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-x-2 gap-y-4">
           {members.map((member) => {
-            const host = member.name === hostName;
+            const host = !member.is_guest && member.name === hostName;
             return (
-              <li key={member.name} className="flex min-w-0 flex-col items-center text-center" title={member.name}>
+              <li
+                key={`${member.is_guest ? "g" : "u"}:${member.name}`}
+                className="flex min-w-0 flex-col items-center text-center"
+                title={member.is_guest ? `${member.name} (Gast ohne Konto)` : member.name}
+              >
                 <Avatar
                   src={member.avatar_url}
                   name={member.name}
@@ -27,6 +31,7 @@ export default function MembersCard({ members, hostName }: { members: PartyMembe
                 />
                 <span className="mt-2 block w-full truncate text-xs font-medium text-foreground">{member.name}</span>
                 {host && <span className="label-mono mt-0.5 text-[0.625rem]">Host</span>}
+                {member.is_guest && <span className="label-mono mt-0.5 text-[0.625rem]">Gast</span>}
               </li>
             );
           })}

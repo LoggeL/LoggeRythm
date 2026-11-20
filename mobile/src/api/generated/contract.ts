@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "81df0624b030ef3f6c97b3824ccb293e6b32afc1636c77248bc6382037b7c923" as const;
+export const GENERATED_OPENAPI_SHA256 = "557ab938519ca81ee44ec7d68c39f8349ece9d646340555461da339a8112e2ae" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -205,10 +205,18 @@ export interface OrderUpdateWire {
   ids: number[];
 }
 export interface PartyCreateWire {
+  current_index?: number;
+  is_playing?: boolean;
   name?: string | null;
+  position_sec?: number;
+  tracks?: TrackWire[];
+}
+export interface PartyGuestJoinWire {
+  nickname: string;
 }
 export interface PartyMemberOutWire {
   avatar_url?: string | null;
+  is_guest?: boolean;
   name?: string;
 }
 export interface PartyStateWire {
@@ -222,9 +230,13 @@ export interface PartyStateWire {
   playback_updated_at?: string | null;
   position_sec?: number;
   tracks?: PartyTrackOutWire[];
+  viewer_is_guest?: boolean;
+  viewer_key?: string;
+  viewer_name?: string;
 }
 export interface PartyTrackOutWire {
   added_by?: string;
+  added_by_member?: string;
   album?: string;
   album_id?: string;
   artist?: string;
@@ -234,6 +246,8 @@ export interface PartyTrackOutWire {
   deezer_id: string;
   duration_sec?: number;
   id: number;
+  load_error?: string | null;
+  load_state?: "ready" | "loading" | "queued" | "failed" | "idle";
   title?: string;
 }
 export interface PasswordForgotRequestWire {
@@ -520,6 +534,7 @@ export interface GeneratedApiSchemas {
   "MeUpdate": MeUpdateWire;
   "OrderUpdate": OrderUpdateWire;
   "PartyCreate": PartyCreateWire;
+  "PartyGuestJoin": PartyGuestJoinWire;
   "PartyMemberOut": PartyMemberOutWire;
   "PartyState": PartyStateWire;
   "PartyTrackOut": PartyTrackOutWire;
@@ -992,6 +1007,19 @@ export interface GeneratedApiOperations {
       "200": unknown;
     };
     response: unknown;
+  };
+  "join_as_guest_api_party__code__guest_post": {
+    request: {
+      path: {
+        code: string;
+      };
+      body: PartyGuestJoinWire;
+    };
+    responses: {
+      "200": PartyStateWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PartyStateWire;
   };
   "join_party_api_party__code__join_post": {
     request: {
@@ -1921,6 +1949,13 @@ export const GENERATED_API_OPERATIONS = {
     path: "/",
     auth: "none",
     requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "join_as_guest_api_party__code__guest_post": {
+    method: "POST",
+    path: "/api/party/{code}/guest",
+    auth: "none",
+    requestMediaTypes: ["application/json"],
     successStatuses: [200],
   },
   "join_party_api_party__code__join_post": {
