@@ -171,7 +171,7 @@ describe('ArtistVirtualizedList', () => {
 
     expect(rendered.type).toBe('SectionList');
     expect(sections.map((section) => [section.id, section.data.length])).toEqual([
-      ['liked', 5],
+      ['liked', 0],
       ['popular', 1],
       ['search', 0],
     ]);
@@ -180,12 +180,11 @@ describe('ArtistVirtualizedList', () => {
     expect(rendered.props.renderSectionHeader({ section: sections[1] }).props.children)
       .toBe(popularHeader);
 
-    const row = rendered.props.renderItem({ item: sections[0]!.data[4]! });
-    expect(row.props.testID).toBe('liked-4');
-    expect(sections[0]!.data[4]!.track).toBe(likedTracks[4]);
-
     const expanded = likedList({ tracks: likedTracks, expanded: true });
     expect(expanded.sections[0]?.data).toHaveLength(7);
+    const row = expanded.rendered.props.renderItem({ item: expanded.sections[0]!.data[4]! });
+    expect(row.props.testID).toBe('liked-4');
+    expect(expanded.sections[0]!.data[4]!.track).toBe(likedTracks[4]);
   });
 
   it('mounts neither liked rows nor the liked heading while the page has no liked block', () => {

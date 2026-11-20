@@ -115,9 +115,6 @@ export interface PlaybackSelection {
 
 export const ARTIST_POPULAR_TRACK_LIMIT = 10;
 
-/** Liked rows the Artist page lists before its "show all" link expands the block. */
-export const ARTIST_LIKED_TRACK_PREVIEW = 5;
-
 export type ArtistTrackPlaybackSurface = 'popular' | 'liked' | 'search';
 
 /** Keep Popular, Liked and query-result occurrences from claiming the same queue identity. */
@@ -141,31 +138,65 @@ export function artistPopularTracks(tracks: readonly Track[]): Track[] {
   return tracks.slice(0, ARTIST_POPULAR_TRACK_LIMIT);
 }
 
-/**
- * The user's liked tracks that credit this artist, as the primary artist or
- * as any listed contributor, in the likes list's own order (most recently
- * liked first). Ids are the only evidence: unlike `filterArtistTracks` there
- * is no name matching, so a namesake never lands in "your liked songs".
- */
-export function artistLikedTracks(likes: readonly Track[], artistId: DeezerId): Track[] {
-  const normalizedId = requireCatalogId(artistId, 'artist id');
-  return likes.filter(
-    (track) =>
-      String(track.artist_id) === normalizedId ||
-      track.artists.some((artist) => String(artist.id) === normalizedId),
-  );
+/** A stored performer id that identifies an artist; likes saved before ids were kept carry "" or "0". */
+function usableArtistId(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const id = String(value).trim();
+  return id.length > 0 && id !== '0' ? id : null;
 }
 
-/** Match the production Artist search's Deezer advanced-query syntax. */
+/**
+ * The user's liked tracks that credit this artist, as the primary artist or
+ * as any listed contributor (features included), in the likes list's own
+ * order (most recently liked first).
+ *
+ * Performer ids decide whenever a like has any: a namesake never lands in
+ * "your liked songs". Likes saved before performer ids were stored carry no
+ * id at all and match by exact (NFKC, case-insensitive) name instead, the
+ * same rule as the web's `isArtistTrack`.
+ */
+export function artistLikedTracks(
+  likes: readonly Track[],
+  artistId: DeezerId,
+  artistName: string,
+): Track[] {
+  const normalizedId = requireCatalogId(artistId, 'artist id');
+  const normalizedName = artistName.normalize('NFKC').trim().toLocaleLowerCase('en-US');
+  if (normalizedName.length === 0) {
+    throw new Error(`Artist ${normalizedId} has no name to match id-less liked tracks against`);
+  }
+  return likes.filter((track) => {
+    const ids = [track.artist_id, ...track.artists.map((artist) => artist.id)]
+      .map(usableArtistId)
+      .filter((id): id is string => id !== null);
+    if (ids.length > 0) return ids.includes(normalizedId);
+    return [track.artist, ...track.artists.map((artist) => artist.name)].some(
+      (name) => name.normalize('NFKC').trim().toLocaleLowerCase('en-US') === normalizedName,
+    );
+  });
+}
+
+function quotedSearchTerm(value: string): string {
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+/**
+ * The Artist page's song search, as two quoted Deezer terms (web
+ * `artistSongQuery`). Deezer's `artist:` filter only matches the primary
+ * artist, so it missed every song the artist is featured on; the quoted
+ * artist name also matches contributors, and `filterArtistTracks` then keeps
+ * only rows that credit the artist.
+ */
 export function artistSongSearchQuery(artistName: string, query: string): string | null {
   const normalizedArtist = artistName.trim();
   const normalizedQuery = query.trim();
   if (normalizedArtist.length === 0 || normalizedQuery.length === 0) return null;
-  return `artist:"${normalizedArtist}" track:"${normalizedQuery}"`;
+  return `${quotedSearchTerm(normalizedArtist)} ${quotedSearchTerm(normalizedQuery)}`;
 }
 
 /**
- * Drop featured/compilation noise while preserving the backend's exact order
+ * Keep only rows crediting the artist (primary or featured), dropping
+ * unrelated search noise, while preserving the backend's exact order
  * and duplicate rows. Deezer ids are authoritative; name matching is only the
  * same legacy fallback used by the production web surface.
  */

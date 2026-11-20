@@ -71,9 +71,14 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   // so the liked block follows a like/unlike made anywhere in the app at once.
   const likes = useQuery(musicQueries.likes(scope));
   const [likedExpanded, setLikedExpanded] = useState(false);
+  const artistLoadedName = artist.data?.name;
   const likedTracks = useMemo(
-    () => (likes.data === undefined ? [] : artistLikedTracks(likes.data, artistId)),
-    [likes.data, artistId],
+    // The name is needed for likes saved before performer ids were stored;
+    // until the artist has loaded, the page shows its gate, not this block.
+    () => (likes.data === undefined || artistLoadedName === undefined
+      ? []
+      : artistLikedTracks(likes.data, artistId, artistLoadedName)),
+    [likes.data, artistId, artistLoadedName],
   );
 
   const popularTracks = useMemo(

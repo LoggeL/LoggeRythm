@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ArtistDetail, GenreDetail, Track } from '../api/types';
 import {
-  ARTIST_LIKED_TRACK_PREVIEW,
   ARTIST_POPULAR_TRACK_LIMIT,
   albumRuntimeMinutes,
   artistHasContent,
@@ -75,10 +74,9 @@ describe('catalog screen model', () => {
     );
   });
 
-  it('builds artist-scoped advanced search and preserves only matching ordered rows', () => {
-    expect(artistSongSearchQuery('  The Artist ', ' signal  ')).toBe(
-      'artist:"The Artist" track:"signal"',
-    );
+  it('builds a quoted artist + song search that also finds features, keeping matching rows', () => {
+    expect(artistSongSearchQuery('  The Artist ', ' signal  ')).toBe('"The Artist" "signal"');
+    expect(artistSongSearchQuery('AC/"DC"', 'back\\slash')).toBe('"AC/\\"DC\\"" "back\\\\slash"');
     expect(artistSongSearchQuery('The Artist', '   ')).toBeNull();
 
     const byPrimaryId = { ...track('1'), artist_id: 42, artist: 'Alias' };
@@ -130,16 +128,44 @@ describe('catalog screen model', () => {
     };
     const likes = [newestByPrimaryNumber, namesake, byStringCredit, lookalikes, byNumberCredit];
 
-    const selected = artistLikedTracks(likes, '42');
+    const selected = artistLikedTracks(likes, '42', 'The Artist');
     expect(selected.map((item) => item.id)).toEqual(['1', '2', '3']);
     expect(selected[0]).toBe(newestByPrimaryNumber);
-    expect(artistLikedTracks(likes, ' 42 ').map((item) => item.id)).toEqual(['1', '2', '3']);
+    expect(artistLikedTracks(likes, ' 42 ', 'The Artist').map((item) => item.id))
+      .toEqual(['1', '2', '3']);
     expect(likes).toHaveLength(5);
 
-    expect(artistLikedTracks(likes, '999')).toEqual([]);
-    expect(artistLikedTracks([], '42')).toEqual([]);
-    expect(() => artistLikedTracks(likes, '  ')).toThrow('artist id must not be empty');
-    expect(ARTIST_LIKED_TRACK_PREVIEW).toBe(5);
+    expect(artistLikedTracks(likes, '999', 'Nobody')).toEqual([]);
+    expect(artistLikedTracks([], '42', 'The Artist')).toEqual([]);
+    expect(() => artistLikedTracks(likes, '  ', 'The Artist')).toThrow('artist id must not be empty');
+    expect(() => artistLikedTracks(likes, '42', '  ')).toThrow('Artist 42 has no name');
+  });
+
+  it('matches likes saved without performer ids by exact name, features included', () => {
+    // Stored before performer ids were kept: the API returns "" ids.
+    const legacyPrimary = {
+      ...track('1'),
+      artist_id: '',
+      artist: 'Drunken Masters',
+      artists: [{ id: '', name: 'Drunken Masters' }],
+    };
+    const legacyFeature = {
+      ...track('2'),
+      artist_id: '',
+      artist: 'Mehnersmoos',
+      artists: [{ id: '', name: 'Mehnersmoos' }, { id: '', name: 'ＤＲＵＮＫＥＮ masters ' }],
+    };
+    const legacyOther = { ...track('3'), artist_id: '0', artist: 'Drunken Master', artists: [] };
+    // Ids decide once a like has any: this namesake is someone else.
+    const namesakeWithId = { ...track('4'), artist_id: '7', artist: 'Drunken Masters', artists: [] };
+
+    expect(
+      artistLikedTracks(
+        [legacyPrimary, legacyFeature, legacyOther, namesakeWithId],
+        '4016247',
+        'Drunken Masters',
+      ).map((item) => item.id),
+    ).toEqual(['1', '2']);
   });
 
   it('shows only evidence-backed positive Last.fm play totals', () => {

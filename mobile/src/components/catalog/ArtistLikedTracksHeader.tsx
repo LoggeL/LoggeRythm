@@ -1,8 +1,9 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { artistLikedTracksExpandable } from '../../screens/artistTrackListModel';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { layout } from '../../theme';
+import { colors, layout, metrics, opacity, spacing, typography } from '../../theme';
+import AppIcon from '../AppIcon';
 import { SectionHeader } from '../ui';
 import { CatalogQueryBoundary } from './CatalogStates';
 import { catalogQueryFlags, type CatalogQueryFlags } from './catalogQueryState';
@@ -18,8 +19,13 @@ export interface ArtistLikedTracksHeaderProps {
 }
 
 /**
- * Heading, "show all" link and remote state of the Artist page's "your liked
- * songs" block. The rows themselves are list items of the page's SectionList.
+ * Heading and remote state of the Artist page's "your liked songs" block. The
+ * rows themselves are list items of the page's SectionList.
+ *
+ * The block starts collapsed: the whole heading is one expander row naming
+ * how many liked songs credit the artist, so it does not repeat the Popular
+ * list right below. Tapping it lists every liked track; tapping again hides
+ * them.
  *
  * The page mounts this only while the block exists (`artistLikedSectionVisible`):
  * with liked tracks to list, or when the likes could not be loaded at all,
@@ -33,20 +39,53 @@ export function ArtistLikedTracksHeader({
   onToggleExpanded,
 }: ArtistLikedTracksHeaderProps) {
   const title = catalogStrings.artist.likedTracks;
+  const expandable = artistLikedTracksExpandable(trackCount);
+  const heading = (
+    <SectionHeader
+      title={title}
+      subtitle={
+        expandable
+          ? catalogStrings.artist.likedTracksSummary(artistName, trackCount)
+          : catalogStrings.artist.likedTracksBy(artistName)
+      }
+      trailing={
+        expandable ? (
+          <View style={styles.toggle}>
+            <Text style={styles.toggleText}>
+              {expanded
+                ? catalogStrings.artist.hideLikedTracks
+                : catalogStrings.artist.showLikedTracks}
+            </Text>
+            <AppIcon
+              name={expanded ? 'chevron-up' : 'chevron-down'}
+              size={20}
+              color={colors.textSecondary}
+            />
+          </View>
+        ) : null
+      }
+    />
+  );
   return (
     <View testID="artist-liked-tracks" style={styles.section}>
-      <SectionHeader
-        title={title}
-        subtitle={catalogStrings.artist.likedTracksBy(artistName)}
-        onShowAll={artistLikedTracksExpandable(trackCount) ? onToggleExpanded : undefined}
-        showAllLabel={expanded ? catalogStrings.artist.showFewerLikedTracks : undefined}
-        showAllAccessibilityLabel={
-          expanded
-            ? catalogStrings.artist.showFewerLikedTracksOf(artistName)
-            : catalogStrings.artist.showAllLikedTracks(artistName, trackCount)
-        }
-        showAllTestID="artist-liked-tracks-toggle"
-      />
+      {expandable ? (
+        <Pressable
+          testID="artist-liked-tracks-toggle"
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={
+            expanded
+              ? catalogStrings.artist.hideLikedTracksOf(artistName)
+              : catalogStrings.artist.showAllLikedTracks(artistName, trackCount)
+          }
+          onPress={onToggleExpanded}
+          style={({ pressed }) => [styles.expander, pressed ? styles.pressed : null]}
+        >
+          {heading}
+        </Pressable>
+      ) : (
+        heading
+      )}
       <CatalogQueryBoundary
         id="artist-liked-tracks-state"
         hasData={likes.data !== undefined}
@@ -68,4 +107,8 @@ export function ArtistLikedTracksHeader({
 
 const styles = StyleSheet.create({
   section: { gap: layout.headerGap },
+  expander: { minHeight: metrics.minimumTouchTarget, justifyContent: 'center' },
+  toggle: { flexDirection: 'row', alignItems: 'center', gap: spacing.xxs },
+  toggleText: { ...typography.label, color: colors.textSecondary },
+  pressed: { opacity: opacity.pressed },
 });

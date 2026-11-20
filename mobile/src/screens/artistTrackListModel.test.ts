@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import type { Track } from '../api/types';
-import { ARTIST_LIKED_TRACK_PREVIEW } from './catalogModel';
 import {
   ARTIST_TRACK_SECTION_ORDER,
   artistLikedSectionVisible,
@@ -41,7 +40,7 @@ describe('Artist virtualized track-list model', () => {
     const popularTracks = [track('1'), track('2')];
     const searchTracks = [track('3'), track('4')];
     const sections = createArtistTrackListSections({
-      liked: { tracks: likedTracks, expanded: false },
+      liked: { tracks: likedTracks, expanded: true },
       popularTracks,
       searchTracks,
       searchActive: true,
@@ -84,38 +83,31 @@ describe('Artist virtualized track-list model', () => {
     ]);
   });
 
-  it('previews a long liked block without renumbering its playback context', () => {
-    const likedTracks = Array.from({ length: ARTIST_LIKED_TRACK_PREVIEW + 3 }, (_, index) =>
-      track(`liked-${index}`),
-    );
-    const collections = { popularTracks: [], searchTracks: [], searchActive: false };
+  it('lists no liked rows while collapsed and every row, in context order, once expanded', () => {
+    const likedTracks = Array.from({ length: 8 }, (_, index) => track(`liked-${index}`));
+    const collections = { popularTracks: [track('1')], searchTracks: [], searchActive: false };
 
     const collapsed = createArtistTrackListSections({
       ...collections,
       liked: { tracks: likedTracks, expanded: false },
-    })[0]!;
-    expect(collapsed.id).toBe('liked');
-    expect(collapsed.data.map(({ index }) => index)).toEqual([0, 1, 2, 3, 4]);
-    expect(collapsed.data.map(({ track: item }) => item)).toEqual(
-      likedTracks.slice(0, ARTIST_LIKED_TRACK_PREVIEW),
-    );
+    });
+    expect(collapsed.map((section) => [section.id, section.data.length])).toEqual([
+      ['liked', 0],
+      ['popular', 1],
+      ['search', 0],
+    ]);
 
     const expanded = createArtistTrackListSections({
       ...collections,
       liked: { tracks: likedTracks, expanded: true },
     })[0]!;
+    expect(expanded.id).toBe('liked');
     expect(expanded.data.map(({ track: item }) => item)).toEqual(likedTracks);
-    expect(expanded.data.at(-1)?.index).toBe(likedTracks.length - 1);
+    expect(expanded.data.map(({ index }) => index)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
 
-    const exact = likedTracks.slice(0, ARTIST_LIKED_TRACK_PREVIEW);
-    expect(
-      createArtistTrackListSections({
-        ...collections,
-        liked: { tracks: exact, expanded: false },
-      })[0]!.data,
-    ).toHaveLength(ARTIST_LIKED_TRACK_PREVIEW);
-    expect(artistLikedTracksExpandable(ARTIST_LIKED_TRACK_PREVIEW)).toBe(false);
-    expect(artistLikedTracksExpandable(ARTIST_LIKED_TRACK_PREVIEW + 1)).toBe(true);
+    expect(artistLikedTracksExpandable(0)).toBe(false);
+    expect(artistLikedTracksExpandable(1)).toBe(true);
+    expect(() => artistLikedTracksExpandable(-1)).toThrow('is not a row count');
   });
 
   it('shows the liked block for liked tracks or a failed load, never as a loading placeholder', () => {
@@ -190,7 +182,7 @@ describe('Artist virtualized track-list model', () => {
   it('creates stable, section-scoped keys for duplicate and punctuation-heavy ids', () => {
     const duplicate = track('same/id');
     const sections = createArtistTrackListSections({
-      liked: { tracks: [duplicate], expanded: false },
+      liked: { tracks: [duplicate], expanded: true },
       popularTracks: [duplicate, duplicate],
       searchTracks: [duplicate],
       searchActive: true,

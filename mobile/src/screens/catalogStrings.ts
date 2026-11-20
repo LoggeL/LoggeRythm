@@ -62,10 +62,12 @@ export interface CatalogScreenStrings {
     topTracks: string;
     likedTracks: string;
     likedTracksBy: (name: string) => string;
+    likedTracksSummary: (name: string, count: number) => string;
     likedTracksFailed: string;
+    showLikedTracks: string;
+    hideLikedTracks: string;
     showAllLikedTracks: (name: string, count: number) => string;
-    showFewerLikedTracks: string;
-    showFewerLikedTracksOf: (name: string) => string;
+    hideLikedTracksOf: (name: string) => string;
     albums: string;
     relatedArtists: string;
     searchSongs: string;
@@ -162,10 +164,12 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       topTracks: 'Beliebt',
       likedTracks: 'Deine Lieblingssongs',
       likedTracksBy: (name) => `von ${name}`,
+      likedTracksSummary: (name, count) => `${count} ${count === 1 ? 'Song' : 'Songs'} von ${name}`,
       likedTracksFailed: 'Deine Lieblingssongs konnten nicht geladen werden',
+      showLikedTracks: 'Anzeigen',
+      hideLikedTracks: 'Ausblenden',
       showAllLikedTracks: (name, count) => `Alle ${count} Lieblingssongs von ${name} anzeigen`,
-      showFewerLikedTracks: 'Weniger anzeigen',
-      showFewerLikedTracksOf: (name) => `Weniger Lieblingssongs von ${name} anzeigen`,
+      hideLikedTracksOf: (name) => `Lieblingssongs von ${name} ausblenden`,
       albums: 'Diskografie',
       relatedArtists: 'Ähnliche Interpreten',
       searchSongs: 'Songs durchsuchen',
@@ -263,10 +267,12 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       topTracks: 'Popular tracks',
       likedTracks: 'Your liked songs',
       likedTracksBy: (name) => `by ${name}`,
+      likedTracksSummary: (name, count) => `${count} ${count === 1 ? 'song' : 'songs'} by ${name}`,
       likedTracksFailed: 'Could not load your liked songs',
+      showLikedTracks: 'Show',
+      hideLikedTracks: 'Hide',
       showAllLikedTracks: (name, count) => `Show all ${count} liked songs by ${name}`,
-      showFewerLikedTracks: 'Show less',
-      showFewerLikedTracksOf: (name) => `Show fewer liked songs by ${name}`,
+      hideLikedTracksOf: (name) => `Hide liked songs by ${name}`,
       albums: 'Discography',
       relatedArtists: 'Related artists',
       searchSongs: 'Search songs',

@@ -2,7 +2,6 @@ import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtistDetail } from '../../api/types';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { strings } from '../../localization';
 import { byTestId, byType, elements, queryByTestId, textContent } from '../../test/render';
 import { ArtistAbout, artistAboutHasContent } from './ArtistAbout';
 import { ArtistFooter } from './ArtistFooter';
@@ -198,8 +197,9 @@ describe('ArtistLikedTracksHeader', () => {
     });
   }
 
-  it('titles the block and names the artist, with no toggle for a short list', () => {
-    const rendered = header({ trackCount: 5 });
+  it('starts as one collapsed expander row naming the artist and the song count', () => {
+    const onToggleExpanded = vi.fn();
+    const rendered = header({ trackCount: 6, onToggleExpanded });
     const heading = byType(rendered, 'Text').find(
       (text) => text.props.accessibilityRole === 'header',
     );
@@ -207,37 +207,41 @@ describe('ArtistLikedTracksHeader', () => {
     expect(heading?.props.children).toBe(catalogStrings.artist.likedTracks);
     expect(textContent(rendered)).toEqual([
       catalogStrings.artist.likedTracks,
-      catalogStrings.artist.likedTracksBy('LoggeRythm'),
+      catalogStrings.artist.likedTracksSummary('LoggeRythm', 6),
+      catalogStrings.artist.showLikedTracks,
     ]);
+    expect(catalogStrings.artist.likedTracksSummary('LoggeRythm', 6)).toBe('6 Songs von LoggeRythm');
+    expect(catalogStrings.artist.likedTracksSummary('LoggeRythm', 1)).toBe('1 Song von LoggeRythm');
+
+    const toggle = byTestId(rendered, 'artist-liked-tracks-toggle');
+    expect(toggle.props.accessibilityRole).toBe('button');
+    expect(toggle.props.accessibilityState).toEqual({ expanded: false });
+    expect(toggle.props.accessibilityLabel)
+      .toBe(catalogStrings.artist.showAllLikedTracks('LoggeRythm', 6));
+    expect(byType(toggle, 'AppIcon')[0]?.props.name).toBe('chevron-down');
+    // The heading itself is the expander: the title sits inside the button.
+    expect(textContent(toggle)).toContain(catalogStrings.artist.likedTracks);
+    (toggle.props.onPress as () => void)();
+    expect(onToggleExpanded).toHaveBeenCalledOnce();
     expect(byTestId(rendered, 'artist-liked-track-list')).toBeDefined();
-    expect(queryByTestId(rendered, 'artist-liked-tracks-toggle')).toBeNull();
     expect(queryByTestId(rendered, 'artist-liked-tracks-state-loading')).toBeNull();
     expect(queryByTestId(rendered, 'artist-liked-tracks-state-error')).toBeNull();
   });
 
-  it('offers "show all" beyond the preview and the reverse once expanded', () => {
+  it('offers to hide the songs again once expanded, even for a single song', () => {
     const onToggleExpanded = vi.fn();
-    const collapsed = byTestId(
-      header({ trackCount: 6, onToggleExpanded }),
-      'artist-liked-tracks-toggle',
-    );
-
-    expect(collapsed.props.accessibilityRole).toBe('button');
-    expect(collapsed.props.accessibilityLabel)
-      .toBe(catalogStrings.artist.showAllLikedTracks('LoggeRythm', 6));
-    expect(textContent(collapsed)).toEqual([strings.common.showAll]);
-    (collapsed.props.onPress as () => void)();
-    expect(onToggleExpanded).toHaveBeenCalledOnce();
-
     const expanded = byTestId(
-      header({ trackCount: 6, expanded: true, onToggleExpanded }),
+      header({ trackCount: 1, expanded: true, onToggleExpanded }),
       'artist-liked-tracks-toggle',
     );
+
+    expect(expanded.props.accessibilityState).toEqual({ expanded: true });
     expect(expanded.props.accessibilityLabel)
-      .toBe(catalogStrings.artist.showFewerLikedTracksOf('LoggeRythm'));
-    expect(textContent(expanded)).toEqual([catalogStrings.artist.showFewerLikedTracks]);
+      .toBe(catalogStrings.artist.hideLikedTracksOf('LoggeRythm'));
+    expect(textContent(expanded)).toContain(catalogStrings.artist.hideLikedTracks);
+    expect(byType(expanded, 'AppIcon')[0]?.props.name).toBe('chevron-up');
     (expanded.props.onPress as () => void)();
-    expect(onToggleExpanded).toHaveBeenCalledTimes(2);
+    expect(onToggleExpanded).toHaveBeenCalledOnce();
   });
 
   it('reports likes that could not be loaded with a retry instead of hiding them', () => {

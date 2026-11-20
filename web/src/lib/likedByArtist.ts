@@ -1,9 +1,6 @@
 import { isArtistTrack } from "@/components/artistSearchModel";
 import type { TrackArtistDescriptor } from "@/lib/trackArtists";
 
-/** Rows of the artist page's liked block before "Alle anzeigen" expands it. */
-export const LIKED_BY_ARTIST_PREVIEW = 5;
-
 /**
  * The liked tracks that credit one artist, in likes order (most recently
  * liked first). A track counts when the artist is its primary performer or

@@ -10,7 +10,7 @@ const resolver = registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const { LIKED_BY_ARTIST_PREVIEW, likedTracksByArtist } = await import("../src/lib/likedByArtist.ts");
+const { likedTracksByArtist } = await import("../src/lib/likedByArtist.ts");
 resolver.deregister();
 
 const track = (id, artist, artist_id, artists) => ({ id, title: `Song ${id}`, artist, artist_id, artists });
@@ -67,8 +67,4 @@ test("no likes and no matches both give an empty list", () => {
 test("an empty artist id is rejected instead of matching nothing", () => {
   assert.throws(() => likedTracksByArtist([track("a", "Queen", "27")], "", "Queen"), /Artist id must not be empty/);
   assert.throws(() => likedTracksByArtist([], "  ", "Queen"), /Artist id must not be empty/);
-});
-
-test("the collapsed block previews five songs", () => {
-  assert.equal(LIKED_BY_ARTIST_PREVIEW, 5);
 });

@@ -1,7 +1,6 @@
 import type { Track } from '../api/types';
 import type { CatalogQueryVisualState } from '../components/catalog/catalogQueryState';
 import { resolveRemoteVisualState } from '../data/remoteState';
-import { ARTIST_LIKED_TRACK_PREVIEW } from './catalogModel';
 
 export const ARTIST_TRACK_SECTION_ORDER = ['liked', 'popular', 'search'] as const;
 
@@ -23,7 +22,10 @@ export interface ArtistTrackListSection {
 export interface ArtistLikedTrackCollection {
   /** Every liked track crediting the artist: the block's whole playback context. */
   tracks: readonly Track[];
-  /** false lists only the first `ARTIST_LIKED_TRACK_PREVIEW` rows. */
+  /**
+   * false lists no rows: the block is a one-line expander, so it never
+   * repeats the Popular list right under the artist hero.
+   */
   expanded: boolean;
 }
 
@@ -67,9 +69,12 @@ export function artistLikedSectionVisible(
   return body === 'content' || body === 'offline' || body === 'hard-error';
 }
 
-/** More liked tracks exist than the collapsed block lists: it offers "show all". */
+/** The collapsed block has rows to reveal, so its heading is an expander. */
 export function artistLikedTracksExpandable(likedTrackCount: number): boolean {
-  return likedTrackCount > ARTIST_LIKED_TRACK_PREVIEW;
+  if (!Number.isInteger(likedTrackCount) || likedTrackCount < 0) {
+    throw new Error(`Artist liked track count ${String(likedTrackCount)} is not a row count`);
+  }
+  return likedTrackCount > 0;
 }
 
 /**
@@ -77,8 +82,9 @@ export function artistLikedTracksExpandable(likedTrackCount: number): boolean {
  * user's liked tracks by the artist (when there is such a block), Popular,
  * then Search.
  *
- * A collapsed liked block lists a preview, but every row keeps its index in
- * the full liked context, so playing a previewed row queues all of them.
+ * A collapsed liked block lists no rows (its heading is the expander); an
+ * expanded one lists every liked track with its index in the full liked
+ * context, so playing any row queues all of them.
  * Search results are removed as soon as the normalized query becomes inactive,
  * even if React Query still has a previous result in memory.
  */
@@ -90,12 +96,9 @@ export function createArtistTrackListSections({
 }: ArtistTrackListCollections): ArtistTrackListSection[] {
   const sections: ArtistTrackListSection[] = [];
   if (liked !== null) {
-    const listed = liked.expanded
-      ? liked.tracks
-      : liked.tracks.slice(0, ARTIST_LIKED_TRACK_PREVIEW);
     sections.push({
       id: 'liked',
-      data: listed.map((track, index) => ({ kind: 'liked', track, index })),
+      data: (liked.expanded ? liked.tracks : []).map((track, index) => ({ kind: 'liked', track, index })),
     });
   }
   sections.push(
