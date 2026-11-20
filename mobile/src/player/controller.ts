@@ -55,6 +55,7 @@ import {
   manualQueueTailIndex,
   nextOriginalContextOrder,
   queueContextOf,
+  queueOriginOf,
   queueStableIdOf,
   restoreUpcomingContext,
   shuffleUpcomingContext,
@@ -390,6 +391,15 @@ export async function playTracks(
   startIndex = 0,
   opts: PlayTracksOptions,
 ): Promise<void> {
+  await replaceQueueAndPlay(tracks, startIndex, opts);
+}
+
+/** Shared queue replacement; resolves with the controller generation it started. */
+async function replaceQueueAndPlay(
+  tracks: Track[],
+  startIndex: number,
+  opts: PlayTracksOptions,
+): Promise<number> {
   if (tracks.length === 0) throw new Error('playTracks called with an empty track list');
   if (!Number.isInteger(startIndex) || startIndex < 0 || startIndex >= tracks.length) {
     throw new Error(`playTracks startIndex ${startIndex} is outside a ${tracks.length}-track queue`);
@@ -420,6 +430,7 @@ export async function playTracks(
     startIndex,
   );
   Player.play();
+  return generation;
 }
 
 /**
@@ -459,14 +470,125 @@ export async function startRadio(seed: Track): Promise<void> {
     seed,
     ...uniqueTracksNotInQueue(similar, new Set([seed.id]), similar.length),
   ];
-  await playTracks(queue, 0, {
-    radio: true,
-    context: {
-      type: 'radio',
-      id: seed.id,
-      label: strings.queue.trackRadioContext(seed.title),
-    },
-  });
+  await playTracks(queue, 0, { radio: true, context: trackRadioContext(seed) });
+}
+
+/**
+ * The seed is already playing, but its track radio could not be attached.
+ * Callers surface this separately from a playback failure: the song keeps
+ * playing while the user learns that no radio follows it.
+ */
+export class TrackRadioError extends Error {
+  constructor(message: string, readonly reason?: unknown) {
+    super(message);
+    this.name = 'TrackRadioError';
+  }
+}
+
+function trackRadioContext(seed: Track): QueueContext {
+  return {
+    type: 'radio',
+    id: seed.id,
+    label: strings.queue.trackRadioContext(seed.title),
+  };
+}
+
+/**
+ * Handle a track-row tap that should play exactly this track followed by its
+ * track radio (search results). The seed starts before the radio request so
+ * playback never waits on the radio API; similar tracks are appended once
+ * they arrive. Tapping the active track keeps the play/pause toggle.
+ *
+ * Resolves `'started-radio'` once the radio is attached, or once a newer
+ * queue (or the native near-tail radio extension) superseded the append.
+ * Rejects with `TrackRadioError` when the radio could not be attached while
+ * the seed keeps playing; any other rejection means the seed did not start.
+ */
+export async function playTrackWithRadio(
+  seed: Track,
+): Promise<'toggled-current' | 'started-radio'> {
+  const activeItem = Player.getActiveMediaItem();
+  const activeTrack = activeItem === null ? null : mediaItemToTrack(activeItem);
+  if (activeTrack?.id === seed.id) {
+    togglePlay();
+    return 'toggled-current';
+  }
+
+  const context = trackRadioContext(seed);
+  const generation = await replaceQueueAndPlay([seed], 0, { radio: true, context });
+  const seedMediaId = `queue:${generation}:0:${seed.id}`;
+
+  let similar: Track[];
+  try {
+    similar = await musicRepository.getRadio(seed.id);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new TrackRadioError(`Track radio for ${seed.id} could not be loaded: ${detail}`, cause);
+  }
+
+  const { items } = getQueueSnapshot();
+  if (
+    generation !== queueGeneration
+    || !items.some((item) => item.mediaId === seedMediaId)
+  ) {
+    // A newer queue replaced this one while the radio loaded; the user moved on.
+    return 'started-radio';
+  }
+  if (items.some((item) => item.mediaId !== seedMediaId && queueOriginOf(item) === 'context')) {
+    // The native near-tail radio extension already appended similar tracks.
+    return 'started-radio';
+  }
+
+  const existing = new Set(
+    items
+      .map((item) => mediaItemToTrack(item)?.id)
+      .filter((id): id is string => id !== undefined),
+  );
+  const fresh = uniqueTracksNotInQueue(similar, existing, similar.length);
+  if (fresh.length === 0) {
+    throw new TrackRadioError(`Track radio for ${seed.id} returned no new tracks`);
+  }
+  let sources: MediaSource[];
+  try {
+    sources = await mediaSources(fresh);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new TrackRadioError(`Track radio sources for ${seed.id} are unavailable: ${detail}`, cause);
+  }
+  // mediaSources awaits; re-check that the queue still belongs to this tap.
+  const current = getQueueSnapshot().items;
+  if (
+    generation !== queueGeneration
+    || !current.some((item) => item.mediaId === seedMediaId)
+    || current.some((item) => item.mediaId !== seedMediaId && queueOriginOf(item) === 'context')
+  ) {
+    return 'started-radio';
+  }
+  const firstOrder = nextOriginalContextOrder(current);
+  const radioItems = fresh.map((track, index) =>
+    queueMediaItem(track, sources[index], {
+      mediaId: nextMediaId('radio', track),
+      origin: 'context',
+      radio: true,
+      context,
+      originalContextOrder: firstOrder + index,
+      stableId: contextStableId(context, firstOrder + index, track),
+    }),
+  );
+  assertNativeShuffleDisabledForQueueContract();
+  Player.addMediaItems(radioItems);
+  const appendedIds = new Set(radioItems.map((item) => item.mediaId));
+  try {
+    await waitForNativeQueueMutation('Track radio append', () =>
+      Player.getQueue().filter((item) => item.mediaId !== undefined && appendedIds.has(item.mediaId))
+        .length === appendedIds.size,
+    );
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new TrackRadioError(`Track radio for ${seed.id} was not appended: ${detail}`, cause);
+  }
+  persistContextShuffleState();
+  return 'started-radio';
 }
 
 /** Insert a track immediately after the current one. */

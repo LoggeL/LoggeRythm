@@ -44,10 +44,31 @@ describe('SearchScreen library section source', () => {
     expect(source).toContain("throw new Error('Library notice row rendered without a likes issue')");
   });
 
-  it('plays library matches as their own queue context', () => {
-    expect(source).toContain('playTrackRow(library.matches, index');
-    expect(source).toContain('id: searchLibraryContextId(normalizedInput)');
-    expect(source).toContain('strings.queue.searchLibraryContext(normalizedInput)');
-    expect(source).toContain('searchLibraryTrackOccurrence(normalizedInput, index)');
+  it('plays a tapped library match as the seed of its track radio', () => {
+    expect(source).toContain('playWithRadio(library.matches[index])');
+    expect(source).not.toContain('playTrackRow(library.matches');
+  });
+});
+
+describe('SearchScreen track playback source', () => {
+  it('plays only the tapped result and continues with its track radio', () => {
+    expect(source).toContain('void playTrackWithRadio(track)');
+    expect(source).toContain('playWithRadio(tracks[index])');
+    expect(source).not.toContain('playTrackRow(');
+    expect(source).not.toContain("type: 'search'");
+  });
+
+  it('routes the top track result through the same radio start', () => {
+    expect(source).toContain("case 'track':\n        return play(result.index);");
+  });
+
+  it('reports a failed radio separately from a failed playback start', () => {
+    expect(source).toContain(
+      'error instanceof TrackRadioError ? strings.search.radioFailed : strings.search.playFailed',
+    );
+  });
+
+  it('marks every row of the playing seed through the radio occurrence', () => {
+    expect(source).toContain('occurrence={searchTrackRadioOccurrence(track.id)}');
   });
 });

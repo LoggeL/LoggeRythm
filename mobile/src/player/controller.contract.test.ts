@@ -9,6 +9,7 @@ import {
   isContextShuffleEnabled,
   playNext,
   playTrackRow,
+  playTrackWithRadio,
   playTracks,
   prepareRadioPlaybackCompletionItems,
   prev,
@@ -16,6 +17,7 @@ import {
   setPlaybackEventDrainerForTests,
   startRadio,
   toggleShuffle,
+  TrackRadioError,
 } from './controller';
 import type { RadioPlaybackEvent } from './playbackEventJournal';
 import { mediaItemUsesExplicitDownload } from './mediaItem';
@@ -24,6 +26,7 @@ import {
   queueOriginOf,
   queueStableIdOf,
   withQueueOrigin,
+  withQueueProductMetadata,
 } from './queueContract';
 
 const mocks = vi.hoisted(() => ({
@@ -706,5 +709,109 @@ describe('controller Phase-0 queue contract', () => {
     expect(ids()).toEqual(['seed', 'a', 'b']);
     expect(mocks.queue.every((item) => item.extras?.radio === true)).toBe(true);
     expect(mocks.queue.every((item) => queueOriginOf(item) === 'context')).toBe(true);
+  });
+
+  it('starts a tapped track before its radio request resolves, then appends the radio', async () => {
+    mocks.queue = [media('old-1'), media('old-2')];
+    mocks.activeIndex = 0;
+    let resolveRadio: (tracks: Track[]) => void = () => undefined;
+    mocks.getRadio.mockReturnValueOnce(new Promise<Track[]>((resolve) => {
+      resolveRadio = resolve;
+    }));
+
+    const started = playTrackWithRadio(track('seed'));
+    await vi.waitFor(() => expect(mocks.getRadio).toHaveBeenCalledWith('seed'));
+
+    // The seed already plays alone; no other search result became the queue.
+    expect(ids()).toEqual(['seed']);
+    expect(mocks.activeIndex).toBe(0);
+    expect(mocks.play).toHaveBeenCalledOnce();
+    expect(mocks.queue[0].extras?.radio).toBe(true);
+    expect(queueContextOf(mocks.queue[0])).toEqual(
+      expect.objectContaining({ type: 'radio', id: 'seed' }),
+    );
+
+    resolveRadio([track('seed'), track('a'), track('a'), track('b')]);
+    await expect(started).resolves.toBe('started-radio');
+
+    expect(ids()).toEqual(['seed', 'a', 'b']);
+    expect(mocks.addMediaItems).toHaveBeenCalledOnce();
+    expect(mocks.queue.every((item) => item.extras?.radio === true)).toBe(true);
+    expect(mocks.queue.every((item) => queueOriginOf(item) === 'context')).toBe(true);
+    expect(mocks.queue.map((item) => queueContextOf(item)?.id)).toEqual(['seed', 'seed', 'seed']);
+    expect(new Set(mocks.queue.map(queueStableIdOf)).size).toBe(3);
+  });
+
+  it('keeps the play/pause toggle when the tapped track is already active', async () => {
+    mocks.queue = [media('seed'), media('other')];
+    mocks.activeIndex = 0;
+    mocks.playing = true;
+
+    await expect(playTrackWithRadio(track('seed'))).resolves.toBe('toggled-current');
+
+    expect(mocks.pause).toHaveBeenCalledOnce();
+    expect(mocks.setMediaItems).not.toHaveBeenCalled();
+    expect(mocks.getRadio).not.toHaveBeenCalled();
+    expect(ids()).toEqual(['seed', 'other']);
+  });
+
+  it('keeps the seed playing but rejects loudly when the radio cannot be loaded', async () => {
+    mocks.getRadio.mockRejectedValueOnce(new Error('radio 503'));
+
+    const failure = playTrackWithRadio(track('seed'));
+
+    await expect(failure).rejects.toBeInstanceOf(TrackRadioError);
+    await expect(failure).rejects.toThrow('Track radio for seed could not be loaded: radio 503');
+    expect(ids()).toEqual(['seed']);
+    expect(mocks.playing).toBe(true);
+  });
+
+  it('rejects loudly when the radio has no track beyond the seed', async () => {
+    mocks.getRadio.mockResolvedValueOnce([track('seed')]);
+
+    await expect(playTrackWithRadio(track('seed'))).rejects.toThrow(
+      'Track radio for seed returned no new tracks',
+    );
+    expect(ids()).toEqual(['seed']);
+  });
+
+  it('does not append a stale radio after a newer queue replaced the seed', async () => {
+    let resolveRadio: (tracks: Track[]) => void = () => undefined;
+    mocks.getRadio.mockReturnValueOnce(new Promise<Track[]>((resolve) => {
+      resolveRadio = resolve;
+    }));
+
+    const started = playTrackWithRadio(track('seed'));
+    await vi.waitFor(() => expect(mocks.getRadio).toHaveBeenCalledOnce());
+    await playTracks([track('album-1'), track('album-2')], 0, {
+      context: { type: 'album', id: 'album', label: 'Album' },
+    });
+    resolveRadio([track('a')]);
+
+    await expect(started).resolves.toBe('started-radio');
+    expect(ids()).toEqual(['album-1', 'album-2']);
+    expect(mocks.addMediaItems).not.toHaveBeenCalled();
+  });
+
+  it('leaves the queue alone when the native radio extension appended first', async () => {
+    let resolveRadio: (tracks: Track[]) => void = () => undefined;
+    mocks.getRadio.mockReturnValueOnce(new Promise<Track[]>((resolve) => {
+      resolveRadio = resolve;
+    }));
+
+    const started = playTrackWithRadio(track('seed'));
+    await vi.waitFor(() => expect(mocks.getRadio).toHaveBeenCalledOnce());
+    const nativeRadio = withQueueProductMetadata(media('native', 'context', true), {
+      origin: 'context',
+      context: queueContextOf(mocks.queue[0]),
+      originalContextOrder: 1,
+      stableId: 'context:radio:seed:1:native',
+    });
+    mocks.queue.push(nativeRadio);
+    resolveRadio([track('a')]);
+
+    await expect(started).resolves.toBe('started-radio');
+    expect(ids()).toEqual(['seed', 'native']);
+    expect(mocks.addMediaItems).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ import {
   searchPlaylistsOptions,
 } from "@/lib/catalogQueries";
 import { usePlayerStore } from "@/store/player";
+import type { Track } from "@/types";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { useLibraryTracks } from "@/hooks/useLibraryTracks";
@@ -110,17 +111,35 @@ export default function SearchPage() {
   const featuredArtist = topHit?.kind === "artist" ? topHit.artist : null;
   const listedArtists = combined ? artists.filter((artist) => artist !== featuredArtist).slice(0, PREVIEW_CARDS) : artists;
   const rememberQuery = () => remember(query);
+  /**
+   * A chosen result plays on its own and continues as its song radio; the
+   * other results never become the queue. The seed starts at once and the
+   * endless-radio top-up fetches similar tracks right away (it reports a
+   * failure as a toast and stops the radio instead of starving silently).
+   * Choosing the playing track again (the top-hit card) toggles it, like a row.
+   */
+  const playWithRadio = (list: Track[], index: number) => {
+    const track = list[index];
+    if (!track) throw new Error(`Search playback index ${index} is outside ${list.length} tracks`);
+    const state = usePlayerStore.getState();
+    if (state.queue[state.index]?.id === track.id) {
+      state.toggle();
+      return;
+    }
+    playQueue([track], 0, `Radio – ${track.title}`);
+    usePlayerStore.getState().setRadioActive(true);
+  };
   const playTrack = (index: number) => {
-    playQueue(tracks, index, `Suche: ${query}`);
+    playWithRadio(tracks, index);
     rememberQuery();
   };
   // The top hit is the best catalog match even when the library lists it too.
   const playTopHit = (index: number) => {
-    playQueue(foundTracks, index, `Suche: ${query}`);
+    playWithRadio(foundTracks, index);
     rememberQuery();
   };
   const playLibraryTrack = (index: number) => {
-    playQueue(libraryMatches, index, `Bibliothek: ${input.trim()}`);
+    playWithRadio(libraryMatches, index);
     remember(input);
   };
   const showAll = (next: SearchTab) => (combined ? () => setTab(next) : undefined);

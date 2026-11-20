@@ -1,6 +1,7 @@
 import React, { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
 import { Keyboard, StyleSheet, View } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Track } from '../api/types';
 import { useProgress } from '../player/player';
 import { ActionButton, EmptyState, ScreenHeader, SectionHeader, TrackRowSkeleton } from '../components/ui';
 import { SearchBar } from '../components/search/SearchBar';
@@ -21,8 +22,7 @@ import {
 } from '../components/search/SearchResultSections';
 import {
   SearchTrackResultRow,
-  searchLibraryTrackOccurrence,
-  searchTrackOccurrence,
+  searchTrackRadioOccurrence,
 } from '../components/search/SearchResults';
 import { SearchTopResultCard } from '../components/search/SearchTopResult';
 import { SearchVirtualizedResults } from '../components/search/SearchVirtualizedResults';
@@ -39,7 +39,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { useLocaleRevision } from '../localization/LocaleProvider';
-import { playTrackRow, playTracks } from '../player/controller';
+import { playTrackWithRadio, playTracks, TrackRadioError } from '../player/controller';
 import {
   dismissSpotifyImportRequest,
   getSpotifyImportRequestForScope,
@@ -47,7 +47,6 @@ import {
 } from '../share/spotifyImport';
 import { colors, layout, spacing } from '../theme';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
-import { searchLibraryContextId } from './searchLibraryModel';
 import {
   assertSearchRouteCallbacks,
   isCurrentSearchQuery,
@@ -167,38 +166,35 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     }
   };
 
-  const play = (index: number) => {
+  // A tapped track plays on its own and continues with its track radio; the
+  // other results never become the queue. Library matches behave the same:
+  // they are rows of the same result list, so a different tap semantic per
+  // section would be surprising.
+  const playWithRadio = (track: Track) => {
     Keyboard.dismiss();
+    setActionError(null);
+    void playTrackWithRadio(track).catch((error: unknown) => {
+      console.error('Search track playback failed', error);
+      setActionError(
+        error instanceof TrackRadioError ? strings.search.radioFailed : strings.search.playFailed,
+      );
+    });
+  };
+
+  const play = (index: number) => {
     if (index < 0 || index >= tracks.length) {
       throw new Error(`Search playback index ${index} is outside ${tracks.length} tracks`);
     }
-    void playTrackRow(tracks, index, {
-      context: {
-        type: 'search',
-        id: debouncedQuery,
-        label: strings.queue.searchContext(debouncedQuery),
-      },
-    }).catch(() =>
-      setActionError(strings.search.playFailed),
-    );
+    playWithRadio(tracks[index]);
   };
 
   const playLibrary = (index: number) => {
-    Keyboard.dismiss();
     if (index < 0 || index >= library.matches.length) {
       throw new Error(
         `Library search playback index ${index} is outside ${library.matches.length} tracks`,
       );
     }
-    void playTrackRow(library.matches, index, {
-      context: {
-        type: 'collection',
-        id: searchLibraryContextId(normalizedInput),
-        label: strings.queue.searchLibraryContext(normalizedInput),
-      },
-    }).catch(() =>
-      setActionError(strings.search.playFailed),
-    );
+    playWithRadio(library.matches[index]);
   };
 
   const startDeezerPlaylist = async (playlistId: string) => {
@@ -365,7 +361,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
           <SearchTrackResultRow
             track={track}
             testID={`search-library-track-${track.id}`}
-            occurrence={searchLibraryTrackOccurrence(normalizedInput, index)}
+            occurrence={searchTrackRadioOccurrence(track.id)}
             position={index + 1}
             rollingDeviceCacheSeconds={activeProgress.cached}
             onPlay={() => playLibrary(index)}
@@ -415,7 +411,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
           <SearchTrackResultRow
             track={track}
             testID={`search-track-${track.id}-${index}`}
-            occurrence={searchTrackOccurrence(debouncedQuery, index)}
+            occurrence={searchTrackRadioOccurrence(track.id)}
             position={index + 1}
             plays={results.trackPlays?.[track.id]}
             rollingDeviceCacheSeconds={activeProgress.cached}

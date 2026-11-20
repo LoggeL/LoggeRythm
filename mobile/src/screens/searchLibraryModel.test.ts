@@ -5,7 +5,6 @@ import {
   createSearchLibraryIndex,
   foldSearchText,
   matchSearchLibrary,
-  searchLibraryContextId,
   searchLibraryLimit,
   withoutLibraryTracks,
 } from './searchLibraryModel';
@@ -213,10 +212,5 @@ describe('library section contract', () => {
     expect(titles(withoutLibraryTracks(remote, new Set(['2'])))).toEqual(['One', 'Three']);
     expect(withoutLibraryTracks(remote, new Set())).toEqual(remote);
     expect(withoutLibraryTracks(remote, new Set(['1', '2', '3']))).toEqual([]);
-  });
-
-  it('identifies the library queue by the normalized input', () => {
-    expect(searchLibraryContextId('  blue   monday ')).toBe('search-library:blue monday');
-    expect(() => searchLibraryContextId(' a ')).toThrow('searchable query');
   });
 });

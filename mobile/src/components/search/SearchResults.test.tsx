@@ -6,8 +6,7 @@ import {
   SearchEntityCard,
   SearchResultRail,
   SearchTrackResultRow,
-  searchLibraryTrackOccurrence,
-  searchTrackOccurrence,
+  searchTrackRadioOccurrence,
 } from './SearchResults';
 
 vi.mock('react-native', () => ({
@@ -42,30 +41,16 @@ const track: Track = {
 };
 
 describe('Search track rows', () => {
-  it('derives exact semantic occurrence identity from rendered search order', () => {
-    expect(searchTrackOccurrence('  Kraftwerk  ', 3)).toEqual({
-      queueContext: { type: 'search', id: 'Kraftwerk' },
-      originalContextOrder: 3,
+  it('identifies a search row by the radio context its tap starts', () => {
+    expect(searchTrackRadioOccurrence('12')).toEqual({
+      queueContext: { type: 'radio', id: '12' },
+      originalContextOrder: 0,
     });
-    expect(() => searchTrackOccurrence(' ', 0)).toThrow('query identity');
-    expect(() => searchTrackOccurrence('Kraftwerk', -1)).toThrow('non-negative');
-    expect(() => searchTrackOccurrence('Kraftwerk', 1.5)).toThrow('non-negative');
-  });
-
-  it('gives library matches a queue context separate from the remote search', () => {
-    expect(searchLibraryTrackOccurrence('  Kraftwerk  ', 2)).toEqual({
-      queueContext: { type: 'collection', id: 'search-library:Kraftwerk' },
-      originalContextOrder: 2,
-    });
-    expect(searchLibraryTrackOccurrence('Kraftwerk', 2).queueContext)
-      .not.toEqual(searchTrackOccurrence('Kraftwerk', 2).queueContext);
-    expect(() => searchLibraryTrackOccurrence('K', 0)).toThrow('searchable query');
-    expect(() => searchLibraryTrackOccurrence('Kraftwerk', -1)).toThrow('non-negative');
-    expect(() => searchLibraryTrackOccurrence('Kraftwerk', 1.5)).toThrow('non-negative');
+    expect(() => searchTrackRadioOccurrence(' ')).toThrow('track id');
   });
 
   it('delegates duration, Search popularity, provider state, routes, and exact index', () => {
-    const occurrence = searchTrackOccurrence('Kraftwerk', 2);
+    const occurrence = searchTrackRadioOccurrence('12');
     const onPlay = vi.fn();
     const onActions = vi.fn();
     const onOpenAlbum = vi.fn();
