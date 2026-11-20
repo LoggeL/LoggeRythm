@@ -72,6 +72,8 @@ const collectionImports = {
   "next/link": nextLinkUrl,
   "./collection.module.css": styleUrl,
   "@/hooks/useCoverColors": moduleUrl(`export const useCoverColors = () => null;`),
+  // Layout effects never run in server rendering; the fit is covered by tests/fit-words.test.mjs.
+  "@/hooks/useFitWords": moduleUrl(`export const useFitWords = () => undefined;`),
   "@/components/TrackList": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export function TrackListHeader({noteLabel}) { return noteLabel === undefined ? null : createElement("span", {"data-testid": "note-heading"}, noteLabel); }`,
   ),

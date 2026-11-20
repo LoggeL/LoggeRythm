@@ -1,7 +1,8 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { useRef, type CSSProperties, type ReactNode } from "react";
 import { useCoverColors } from "@/hooks/useCoverColors";
+import { useFitWords } from "@/hooks/useFitWords";
 import { HeroMorph, useHeroRise } from "@/components/motion/Morph";
 import styles from "./collection.module.css";
 
@@ -12,6 +13,17 @@ function titleSize(title: string): "lg" | "md" | "sm" | "xs" {
   if (length <= 30) return "md";
   if (length <= 56) return "sm";
   return "xs";
+}
+
+/** The display title; a single word too wide for the column shrinks instead of breaking mid-word. */
+function CollectionTitle({ title }: { title: string }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  useFitWords(ref, title);
+  return (
+    <h1 ref={ref} className={styles.title} data-size={titleSize(title)} title={title}>
+      {title}
+    </h1>
+  );
 }
 
 /**
@@ -58,9 +70,7 @@ export default function CollectionHero({
       <div className={styles.info}>
         <p className="page-eyebrow" {...rise(0)}>{eyebrow}</p>
         <HeroMorph part="title">
-          <h1 className={styles.title} data-size={titleSize(title)} title={title}>
-            {title}
-          </h1>
+          <CollectionTitle title={title} />
         </HeroMorph>
         {description && <div className={styles.description} data-clamp={clampDescription} {...rise(1)}>{description}</div>}
         {metadata && (
