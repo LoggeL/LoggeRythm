@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,6 +73,30 @@ export const BRAND_ASSETS = Object.freeze({
     file: path.join(WEB_ROOT, 'public', 'Logo.png'),
     size: 1254, grid: 0.5, backdrop: 'square',
   },
+  /** expo-splash-screen centres this at SPLASH_IMAGE_WIDTH_DP on BRAND_BACKGROUND. */
+  androidSplash: {
+    file: path.join(MOBILE_ASSETS, 'splash-logo.png'),
+    size: 1024, grid: 0.9, backdrop: 'transparent',
+  },
+});
+
+/**
+ * Width (dp) app.json gives expo-splash-screen for splash-logo.png. Android 12+
+ * shows the splash icon inside a 192 dp circle, so the step grid's diagonal
+ * (SPLASH_IMAGE_WIDTH_DP * grid * sqrt 2) must stay below 192 dp.
+ */
+export const SPLASH_IMAGE_WIDTH_DP = 132;
+
+/**
+ * Status-bar/media-notification icon (Android tints it). Only the eight set
+ * steps of the mark: at 24 dp the empty-step dots would shrink to sub-pixel
+ * specks. The 180-unit grid gets 18 units of padding on each side, the
+ * 2-of-24 dp margin Android's system-icon grid asks for.
+ */
+export const NOTIFICATION_ICON = Object.freeze({
+  file: path.join(MOBILE_ROOT, 'plugins', 'brand', 'ic_stat_music.xml'),
+  sizeDp: 24,
+  padding: 18,
 });
 
 /** Multi-size favicon.ico; each entry is a PNG-compressed tile. */
@@ -133,6 +157,66 @@ export function composeAssetSvg(productionLogo, { size, grid, backdrop, monochro
   );
 }
 
+const RECT_PATTERN = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="(\d+)"\/>/g;
+
+/** The filled steps of Logo.svg as {x, y, width, height, radius}, in logo units. */
+export function logoSteps(productionLogo) {
+  const body = logoBody(productionLogo);
+  const steps = [...body.matchAll(RECT_PATTERN)].map((match) => {
+    const [x, y, width, height, radius] = match.slice(1).map(Number);
+    return { x, y, width, height, radius };
+  });
+  const rectCount = (body.match(/<rect\b/g) ?? []).length;
+  if (steps.length === 0 || steps.length !== rectCount) {
+    throw new Error(
+      `Cannot derive the notification icon: expected every <rect> in Logo.svg as ` +
+        `x/y/width/height/rx integers, matched ${steps.length} of ${rectCount}`,
+    );
+  }
+  for (const step of steps) {
+    if (step.x < GRID_MIN || step.y < GRID_MIN ||
+        step.x + step.width > GRID_MIN + GRID_SIZE || step.y + step.height > GRID_MIN + GRID_SIZE) {
+      throw new Error(`Logo.svg step at ${step.x},${step.y} lies outside the ${GRID_SIZE}-unit grid`);
+    }
+  }
+  return steps;
+}
+
+function roundedRectPath({ x, y, width, height, radius }) {
+  const right = x + width;
+  const bottom = y + height;
+  return (
+    `M${x + radius},${y}H${right - radius}A${radius},${radius} 0,0 1,${right},${y + radius}` +
+    `V${bottom - radius}A${radius},${radius} 0,0 1,${right - radius},${bottom}` +
+    `H${x + radius}A${radius},${radius} 0,0 1,${x},${bottom - radius}` +
+    `V${y + radius}A${radius},${radius} 0,0 1,${x + radius},${y}Z`
+  );
+}
+
+/** White VectorDrawable of the set steps, cropped to the grid plus padding. */
+export function notificationIconXml(productionLogo) {
+  const { sizeDp, padding } = NOTIFICATION_ICON;
+  const viewport = GRID_SIZE + 2 * padding;
+  const shift = GRID_MIN - padding;
+  const pathData = logoSteps(productionLogo)
+    .map((step) => roundedRectPath({ ...step, x: step.x - shift, y: step.y - shift }))
+    .join('');
+  return (
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<!-- Generated from web/public/Logo.svg by mobile/scripts/generate_brand_assets.mjs. Do not edit. -->\n' +
+    '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n' +
+    `    android:width="${sizeDp}dp"\n` +
+    `    android:height="${sizeDp}dp"\n` +
+    `    android:viewportWidth="${viewport}"\n` +
+    `    android:viewportHeight="${viewport}"\n` +
+    '    android:tint="#FFFFFF">\n' +
+    '  <path\n' +
+    '      android:fillColor="#FFFFFF"\n' +
+    `      android:pathData="${pathData}" />\n` +
+    '</vector>\n'
+  );
+}
+
 async function rasterize(svg, size) {
   return sharp(Buffer.from(svg), { density: SVG_DENSITY })
     .resize(size, size, { fit: 'fill' })
@@ -182,7 +266,11 @@ export async function renderBrandAssets() {
   for (const [name, spec] of Object.entries(BRAND_ASSETS)) {
     rendered[name] = await rasterize(composeAssetSvg(productionLogo, spec), spec.size);
   }
-  return { rasters: rendered, favicon: await renderFavicon(productionLogo) };
+  return {
+    rasters: rendered,
+    favicon: await renderFavicon(productionLogo),
+    notificationIcon: notificationIconXml(productionLogo),
+  };
 }
 
 async function rawRgba(buffer, size, description) {
@@ -213,7 +301,7 @@ async function readCommitted(filePath) {
 }
 
 export async function checkBrandAssets() {
-  const { rasters, favicon } = await renderBrandAssets();
+  const { rasters, favicon, notificationIcon } = await renderBrandAssets();
   const stale = [];
   for (const [name, spec] of Object.entries(BRAND_ASSETS)) {
     const actual = await readCommitted(spec.file);
@@ -226,6 +314,8 @@ export async function checkBrandAssets() {
   }
   const committedFavicon = await readCommitted(FAVICON_ICO.file);
   if (!committedFavicon.equals(favicon)) stale.push(path.relative(REPOSITORY_ROOT, FAVICON_ICO.file));
+  const committedIcon = (await readCommitted(NOTIFICATION_ICON.file)).toString('utf8');
+  if (committedIcon !== notificationIcon) stale.push(path.relative(REPOSITORY_ROOT, NOTIFICATION_ICON.file));
   if (stale.length > 0) {
     throw new Error(
       `Brand assets are stale (${stale.join(', ')}). Run npm run generate:brand-assets in mobile/.`,
@@ -234,10 +324,12 @@ export async function checkBrandAssets() {
 }
 
 export async function writeBrandAssets() {
-  const { rasters, favicon } = await renderBrandAssets();
+  const { rasters, favicon, notificationIcon } = await renderBrandAssets();
+  await mkdir(path.dirname(NOTIFICATION_ICON.file), { recursive: true });
   await Promise.all([
     ...Object.entries(BRAND_ASSETS).map(([name, spec]) => writeFile(spec.file, rasters[name])),
     writeFile(FAVICON_ICO.file, favicon),
+    writeFile(NOTIFICATION_ICON.file, notificationIcon),
   ]);
 }
 

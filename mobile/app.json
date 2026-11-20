@@ -51,6 +51,14 @@
           }
         }
       ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-logo.png",
+          "imageWidth": 132,
+          "backgroundColor": "#0f0e11"
+        }
+      ],
       "./plugins/withNotificationIcon",
       "./plugins/withReleaseSigning",
       "./plugins/withNoBackup",

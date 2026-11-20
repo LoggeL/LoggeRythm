@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated from web/public/Logo.svg by mobile/scripts/generate_brand_assets.mjs. Do not edit. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="216"
+    android:viewportHeight="216"
+    android:tint="#FFFFFF">
+  <path
+      android:fillColor="#FFFFFF"
+      android:pathData="M28,18H44A10,10 0,0 1,54,28V44A10,10 0,0 1,44,54H28A10,10 0,0 1,18,44V28A10,10 0,0 1,28,18ZM28,66H44A10,10 0,0 1,54,76V92A10,10 0,0 1,44,102H28A10,10 0,0 1,18,92V76A10,10 0,0 1,28,66ZM28,114H44A10,10 0,0 1,54,124V140A10,10 0,0 1,44,150H28A10,10 0,0 1,18,140V124A10,10 0,0 1,28,114ZM28,162H44A10,10 0,0 1,54,172V188A10,10 0,0 1,44,198H28A10,10 0,0 1,18,188V172A10,10 0,0 1,28,162ZM76,162H92A10,10 0,0 1,102,172V188A10,10 0,0 1,92,198H76A10,10 0,0 1,66,188V172A10,10 0,0 1,76,162ZM124,162H140A10,10 0,0 1,150,172V188A10,10 0,0 1,140,198H124A10,10 0,0 1,114,188V172A10,10 0,0 1,124,162ZM172,162H188A10,10 0,0 1,198,172V188A10,10 0,0 1,188,198H172A10,10 0,0 1,162,188V172A10,10 0,0 1,172,162ZM124,66H140A10,10 0,0 1,150,76V92A10,10 0,0 1,140,102H124A10,10 0,0 1,114,92V76A10,10 0,0 1,124,66Z" />
+</vector>

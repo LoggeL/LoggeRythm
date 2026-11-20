@@ -4,12 +4,25 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+
 import {
   BRAND_ASSETS,
+  BRAND_BACKGROUND,
   BRAND_FILL,
   FAVICON_ICO,
+  NOTIFICATION_ICON,
+  PRODUCTION_LOGO_PATH,
+  SPLASH_IMAGE_WIDTH_DP,
   checkBrandAssets,
+  logoSteps,
+  notificationIconXml,
 } from './generate_brand_assets.mjs';
+
+const MOBILE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const APP_CONFIG = JSON.parse(readFileSync(path.join(MOBILE_ROOT, 'app.json'), 'utf8'));
 
 const ANDROID_BRAND_ASSETS = {
   foreground: BRAND_ASSETS.androidForeground.file,
@@ -181,5 +194,50 @@ describe('Brand assets derived from the production Logo.svg', () => {
     const brandBackground = (80 * SIZE + 512) * 4;
     expect([...legacy.subarray(brandBackground, brandBackground + 4)]).toEqual([15, 14, 17, 255]);
     expect(path.basename(ANDROID_BRAND_ASSETS.legacy)).toBe('android-icon-legacy.png');
+  });
+
+  it('configures the native splash with the transparent mark on the brand background', async () => {
+    const splashPlugins = APP_CONFIG.expo.plugins.filter(
+      (plugin) => Array.isArray(plugin) && plugin[0] === 'expo-splash-screen',
+    );
+    expect(splashPlugins).toHaveLength(1);
+    const options = splashPlugins[0][1];
+    expect(path.resolve(MOBILE_ROOT, options.image)).toBe(BRAND_ASSETS.androidSplash.file);
+    expect(options.backgroundColor).toBe(BRAND_BACKGROUND);
+    expect(options.imageWidth).toBe(SPLASH_IMAGE_WIDTH_DP);
+    expect(Object.keys(options).sort()).toEqual(['backgroundColor', 'image', 'imageWidth']);
+
+    // Android 12+ crops the splash icon to a 192 dp circle: the grid's corners must fit.
+    const gridDp = SPLASH_IMAGE_WIDTH_DP * BRAND_ASSETS.androidSplash.grid;
+    expect(gridDp * Math.SQRT2).toBeLessThan(192);
+    expect(gridDp).toBeGreaterThan(100);
+
+    const splash = await pixels(BRAND_ASSETS.androidSplash.file);
+    expectTransparentBorder(splash);
+    const offset = (Math.round(SIZE * 0.1) * SIZE + Math.round(SIZE * 0.1)) * 4;
+    expect(`#${[...splash.subarray(offset, offset + 3)]
+      .map((channel) => channel.toString(16).padStart(2, '0'))
+      .join('')}`).toBe(BRAND_FILL);
+  });
+
+  it('derives the notification icon from the eight set steps only', async () => {
+    const logo = await readFile(PRODUCTION_LOGO_PATH, 'utf8');
+    const steps = logoSteps(logo);
+    expect(steps).toHaveLength(8);
+    const xml = notificationIconXml(logo);
+    expect(await readFile(NOTIFICATION_ICON.file, 'utf8')).toBe(xml);
+    expect(xml).toContain('android:width="24dp"');
+    expect(xml).toContain('android:viewportWidth="216"');
+    const pathData = xml.match(/android:pathData="([^"]+)"/)[1];
+    expect(pathData.match(/M/g)).toHaveLength(8);
+    const coordinates = pathData.match(/-?\d+(\.\d+)?/g).map(Number);
+    expect(Math.min(...coordinates)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...coordinates)).toBeLessThanOrEqual(216 - NOTIFICATION_ICON.padding);
+  });
+
+  it('rejects a logo whose steps the notification icon cannot read', () => {
+    const logo = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">' +
+      `<g fill="${BRAND_FILL}"><rect x="38" y="38" width="36" height="36"/></g></svg>`;
+    expect(() => logoSteps(logo)).toThrow('matched 0 of 1');
   });
 });
