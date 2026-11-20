@@ -345,7 +345,10 @@ describe('API response decoders', () => {
       is_playing: false,
       position_sec: 0,
       playback_updated_at: null,
-      members: [{ name: 'Host', avatar_url: null }],
+      members: [{ name: 'Host', avatar_url: null, is_guest: false }],
+      viewer_key: 'u:1',
+      viewer_name: 'Host',
+      viewer_is_guest: false,
       tracks: [
         {
           id: 1,
@@ -359,11 +362,20 @@ describe('API response decoders', () => {
           cover: '',
           duration_sec: 180,
           added_by: 'Host',
+          added_by_member: 'u:1',
+          load_state: 'failed',
+          load_error: 'Deezer: 404',
         },
       ],
     });
-    expect(state).toMatchObject({ code: 'ABC123', current_index: -1, is_host: true });
+    expect(state).toMatchObject({ code: 'ABC123', current_index: -1, is_host: true, viewer_key: 'u:1' });
+    expect(state.tracks[0]).toMatchObject({ load_state: 'failed', load_error: 'Deezer: 404' });
     expect(() => decodePartyState({ ...state, position_sec: -1 })).toThrow(/position_sec/);
+    expect(() => decodePartyState({
+      ...state,
+      tracks: [{ ...state.tracks[0], load_state: 'cached' }],
+    })).toThrow(/load_state/);
+    expect(() => decodePartyState({ ...state, viewer_key: undefined })).toThrow(/viewer_key/);
   });
 
   it('decodes explicit admin users, storage, status, invites, and cleanup contracts', () => {

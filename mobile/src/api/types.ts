@@ -321,11 +321,21 @@ export interface PartyTrack {
   cover: string;
   duration_sec: number;
   added_by: string;
+  /** Member key of whoever added it; equals `PartyState.viewer_key` for your own additions. */
+  added_by_member: string;
+  /** Server cache state of the audio, kept warm in the background. */
+  load_state: PartyLoadState;
+  /** Why the last background load failed (only for `failed`). */
+  load_error: string | null;
 }
+
+export type PartyLoadState = 'ready' | 'loading' | 'queued' | 'failed' | 'idle';
 
 export interface PartyMember {
   name: string;
   avatar_url: string | null;
+  /** Joined anonymously with a nickname (web guests without an account). */
+  is_guest: boolean;
 }
 
 export interface PartyState {
@@ -339,6 +349,10 @@ export interface PartyState {
   playback_updated_at: string | null;
   members: PartyMember[];
   tracks: PartyTrack[];
+  /** Member key of the requesting account ("u:<id>"). */
+  viewer_key: string;
+  viewer_name: string;
+  viewer_is_guest: boolean;
 }
 
 export interface AdminUser {

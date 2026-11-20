@@ -2,6 +2,7 @@ import { AccessibilityInfo } from 'react-native';
 import type { Track } from '../api/types';
 import { strings } from '../localization';
 import { addToQueue, playNext, startRadio } from '../player/controller';
+import { activePartyRouter } from '../party/activeParty';
 import { trackActionFailureMessage } from './trackActionFeedback';
 
 export type TrackQueueAction = 'play-next' | 'add-to-queue' | 'start-radio';
@@ -104,6 +105,15 @@ export function dismissTrackActions(requestId?: number): void {
 }
 
 function actionContract(action: TrackQueueAction, track: Track) {
+  // While the player follows a party its queue is the party's: queue actions
+  // add the song for everyone instead of editing a queue the party overwrites.
+  const party = activePartyRouter();
+  if ((action === 'play-next' || action === 'add-to-queue') && party?.isFollowingParty() === true) {
+    return {
+      succeeded: strings.party.addedToParty(track.title),
+      run: () => party.addTrack(track),
+    };
+  }
   switch (action) {
     case 'play-next':
       return {

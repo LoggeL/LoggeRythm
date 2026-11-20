@@ -18,6 +18,8 @@ import LibraryScreen from '../screens/LibraryScreen';
 import type { LibraryPlaylistRouteParams } from '../screens/libraryModel';
 import MixScreen from '../screens/MixScreen';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
+import PartyScreen, { InvalidPartyLink } from '../screens/PartyScreen';
+import { normalizePartyCode } from '../party/partyCode';
 import PlaylistScreen from '../screens/PlaylistScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import QueueScreen from '../screens/QueueScreen';
@@ -240,6 +242,25 @@ export function NowPlayingRoute(
 export function QueueRoute(props: NativeStackScreenProps<RootStackParams, 'Queue'>) {
   useLocaleRevision();
   return <QueueScreen {...props} />;
+}
+
+/** Party links are untrusted: only a well-formed code opens (and joins) a party. */
+export function PartyRoute({ route, navigation }: NativeStackScreenProps<RootStackParams, 'Party'>) {
+  useLocaleRevision();
+  const code = normalizePartyCode(route.params?.code);
+  const close = () => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
+  };
+  if (code === null) return <InvalidPartyLink onClose={close} />;
+  return (
+    <View style={styles.fill}>
+      <PartyScreen code={code} onClose={close} />
+      <PlayerErrorBanner hasTabBar={false} />
+      <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
+      <MiniPlayer hasTabBar={false} />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

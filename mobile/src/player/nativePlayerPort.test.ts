@@ -143,7 +143,7 @@ describe('NativeBackedPlayerPort', () => {
     emitter = new FakeEmitter();
   });
 
-  it('covers the 38 currently used player calls behind the first-party port', () => {
+  it('covers the 39 currently used player calls behind the first-party port', () => {
     const port = createNativePlayerPort({ nativeModule: nativeModule(), emitter });
     const currentCalls = [
       'addEventListener',
@@ -170,6 +170,7 @@ describe('NativeBackedPlayerPort', () => {
       'removeMediaItem',
       'removeMediaItems',
       'replaceMediaItem',
+      'replaceQueue',
       'seekTo',
       'setBrowseTree',
       'setCommands',
@@ -187,9 +188,9 @@ describe('NativeBackedPlayerPort', () => {
       'sleepAfterTime',
     ] as const;
 
-    expect(currentCalls).toHaveLength(39);
+    expect(currentCalls).toHaveLength(40);
     currentCalls.forEach((name) => expect(typeof port[name], name).toBe('function'));
-    expect(Object.keys(NATIVE_COMMAND_TRANSLATION)).toHaveLength(24);
+    expect(Object.keys(NATIVE_COMMAND_TRANSLATION)).toHaveLength(25);
     port.dispose();
   });
 

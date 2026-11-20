@@ -966,6 +966,138 @@ export async function moveQueueItem(
   persistContextShuffleState();
 }
 
+/** One entry of a party queue: the server's entry ID plus the song it plays. */
+export interface PartyQueueEntry {
+  itemId: number;
+  track: Track;
+}
+
+export interface PartyQueueTarget {
+  code: string;
+  /** Queue source label shown in the player ("Party" or the party's name). */
+  label: string;
+  entries: readonly PartyQueueEntry[];
+  /** The party's current entry, or -1 when nothing is selected. */
+  currentIndex: number;
+  /** Where the current entry starts when it is not already playing here. */
+  startPosition: number;
+  playing: boolean;
+  /** Keep this device's play/pause when the running entry continues (the host). */
+  keepLocalPlayState: boolean;
+}
+
+export type PartyQueueSyncResult = 'unchanged' | 'replaced' | 'cleared';
+
+/** Stable queue identity of one party entry; duplicate songs stay distinct. */
+export function partyQueueStableId(code: string, itemId: number): string {
+  return `party:${stableIdPart(code)}:${itemId}`;
+}
+
+/** The party entry the native player is on, or null when it plays something else. */
+export function activePartyItemId(code: string): number | null {
+  const { items, activeIndex } = getQueueSnapshot();
+  if (activeIndex === null) return null;
+  const prefix = `party:${stableIdPart(code)}:`;
+  const stableId = queueStableIdOf(items[activeIndex]);
+  if (!stableId.startsWith(prefix)) return null;
+  const itemId = Number(stableId.slice(prefix.length));
+  if (!Number.isInteger(itemId) || itemId <= 0) {
+    throw new Error(`Party queue item has a malformed stable id ${stableId}`);
+  }
+  return itemId;
+}
+
+/**
+ * Make the native queue mirror a party. The whole queue is replaced in one
+ * native step, so removals, additions and reorders never restart the running
+ * entry: when the party's current entry is already playing here (or, right
+ * after starting a party, the same song from the host's own queue) it keeps
+ * its playhead. Play/pause and drift are the caller's job.
+ */
+export async function syncPartyQueue(target: PartyQueueTarget): Promise<PartyQueueSyncResult> {
+  const { code, entries, currentIndex } = target;
+  if (
+    !Number.isInteger(currentIndex) ||
+    currentIndex < -1 ||
+    currentIndex >= entries.length
+  ) {
+    throw new Error(
+      `Party current index ${currentIndex} is outside a ${entries.length}-entry party queue`,
+    );
+  }
+  if (!Number.isFinite(target.startPosition) || target.startPosition < 0) {
+    throw new Error(`Party start position must be finite and non-negative, got ${target.startPosition}`);
+  }
+  const before = getQueueSnapshot();
+  if (currentIndex === -1) {
+    if (before.items.length === 0) return 'unchanged';
+    queueGeneration += 1;
+    resetContextShuffleState();
+    Player.clear();
+    await waitForNativeQueueMutation('Party queue clear', () => getQueueSnapshot().items.length === 0);
+    persistContextShuffleState();
+    return 'cleared';
+  }
+
+  const targetIds = entries.map((entry) => partyQueueStableId(code, entry.itemId));
+  if (new Set(targetIds).size !== targetIds.length) {
+    throw new Error(`Party ${code} has duplicate queue entry IDs`);
+  }
+  const localIds = before.items.map(queueStableIdOf);
+  if (sameIds(localIds, targetIds) && before.activeIndex === currentIndex) return 'unchanged';
+
+  const prefix = `party:${stableIdPart(code)}:`;
+  const activeItem = before.activeIndex === null ? null : before.items[before.activeIndex];
+  const activeStableId = activeItem === null ? null : queueStableIdOf(activeItem);
+  const currentEntry = entries[currentIndex];
+  const keepsPlayhead =
+    activeItem !== null &&
+    (activeStableId === targetIds[currentIndex] ||
+      (!localIds.some((id) => id.startsWith(prefix)) &&
+        mediaItemToTrack(activeItem)?.id === currentEntry.track.id));
+  let position = target.startPosition;
+  if (keepsPlayhead) {
+    position = Player.getProgress().position;
+    if (!Number.isFinite(position) || position < 0) {
+      throw new Error(`Native player reported invalid playback position ${String(position)}`);
+    }
+  }
+
+  const tracks = entries.map((entry) => entry.track);
+  const sources = await mediaSources(tracks);
+  const context: QueueContext = { type: 'party', id: code, label: target.label };
+  const items = entries.map((entry, index) =>
+    queueMediaItem(entry.track, sources[index], {
+      mediaId: `party:${stableIdPart(code)}:${entry.itemId}:${entry.track.id}`,
+      origin: 'context',
+      radio: false,
+      context,
+      originalContextOrder: index,
+      stableId: targetIds[index],
+    }),
+  );
+  assertNativeShuffleDisabledForQueueContract();
+  queueGeneration += 1;
+  resetContextShuffleState();
+  clearPlayerError();
+  if (keepsPlayhead && target.keepLocalPlayState) {
+    // Resume=false leaves the native play-when-ready flag exactly as it is.
+    Player.replaceQueue(items, currentIndex, position, false);
+  } else {
+    Player.replaceQueue(items, currentIndex, position, target.playing);
+    if (!target.playing) Player.pause();
+  }
+  await waitForNativeQueueMutation('Party queue sync', () => {
+    const snapshot = getQueueSnapshot();
+    return (
+      snapshot.activeIndex === currentIndex &&
+      sameIds(snapshot.items.map(queueStableIdOf), targetIds)
+    );
+  });
+  persistContextShuffleState();
+  return 'replaced';
+}
+
 /** Cycle Off → All → One → Off, returning the new mode. */
 export function cycleRepeat(): RepeatMode {
   const current = Player.getRepeatMode();

@@ -984,6 +984,7 @@ internal class LoggeRythmPersistedStateCodec(
       "genre",
       "home",
       "liked",
+      "party",
       "playlist",
       "radio",
       "recent",

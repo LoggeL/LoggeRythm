@@ -21,7 +21,7 @@ const HOSTILE_CONTROLLER_TEST_DIRECTORY =
   '../modules/loggerythm-player/android-test-controller';
 const WEB_LINK_PATHS = [
   { 'android:path': '/' },
-  ...['register', 'album', 'artist', 'playlist', 'genre', 'account', 'search', 'radio', 'library']
+  ...['register', 'album', 'artist', 'playlist', 'genre', 'account', 'search', 'radio', 'library', 'party']
     .map((value) => ({ 'android:pathPrefix': `/${value}` })),
 ];
 

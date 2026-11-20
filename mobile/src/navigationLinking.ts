@@ -1,6 +1,7 @@
 import { getStateFromPath as getReactNavigationStateFromPath } from '@react-navigation/core';
 import type { LinkingOptions } from '@react-navigation/native';
 import { mixKeyFromRouteValue, playlistIdFromRouteValue } from './navigationLinks';
+import { normalizePartyCode } from './party/partyCode';
 import { sanitizeNavigationState } from './navigationPersistence';
 import { TRANSIENT_ROOT_ROUTE_NAMES } from './navigationPolicy';
 import { getCurrentApiBase, PRODUCTION_API_BASE } from './config';
@@ -44,8 +45,25 @@ export const appLinkingConfig: NonNullable<LinkingOptions<RootStackParams>['conf
     Profile: 'account',
     NowPlaying: 'now-playing',
     Queue: 'queue',
+    Party: {
+      path: 'party/:code',
+      parse: { code: (value: string) => normalizePartyCode(value) ?? '' },
+    },
   },
 };
+
+/** Transient roots that carry params; every other transient root must have none. */
+function hasValidTransientParams(name: unknown, params: unknown): boolean {
+  if (name === 'Party') {
+    if (params === null || typeof params !== 'object') return false;
+    const keys = Object.keys(params);
+    return keys.length === 1 && keys[0] === 'code' &&
+      normalizePartyCode((params as { code?: unknown }).code) !== null;
+  }
+  return params === undefined || (
+    params !== null && typeof params === 'object' && Object.keys(params).length === 0
+  );
+}
 
 function isValidatedTransientLinkState(value: unknown): boolean {
   if (value === null || typeof value !== 'object') return false;
@@ -74,30 +92,37 @@ function isValidatedTransientLinkState(value: unknown): boolean {
   if (transient === null || typeof transient !== 'object') return false;
   const candidate = transient as { name?: unknown; params?: unknown };
   if (!TRANSIENT_ROOT_ROUTE_NAMES.includes(candidate.name as never)) return false;
-  const params = candidate.params;
-  return params === undefined || (
-    params !== null && typeof params === 'object' && Object.keys(params).length === 0
-  );
+  return hasValidTransientParams(candidate.name, candidate.params);
 }
 
-function transientRouteName(value: unknown): (typeof TRANSIENT_ROOT_ROUTE_NAMES)[number] | null {
+interface TransientRoute {
+  name: (typeof TRANSIENT_ROOT_ROUTE_NAMES)[number];
+  params?: object;
+}
+
+function transientRoute(value: unknown): TransientRoute | null {
   if (value === null || typeof value !== 'object') return null;
   const routes = (value as { routes?: unknown }).routes;
   if (!Array.isArray(routes)) return null;
   for (const route of routes) {
     if (route === null || typeof route !== 'object') continue;
-    const name = (route as { name?: unknown }).name;
+    const { name, params } = route as { name?: unknown; params?: unknown };
     if (
       typeof name === 'string' &&
       (TRANSIENT_ROOT_ROUTE_NAMES as readonly string[]).includes(name)
-    ) return name as (typeof TRANSIENT_ROOT_ROUTE_NAMES)[number];
+    ) {
+      const transientName = name as TransientRoute['name'];
+      return name === 'Party' && params !== null && typeof params === 'object'
+        ? { name: transientName, params: { code: (params as { code?: unknown }).code } }
+        : { name: transientName };
+    }
   }
   return null;
 }
 
 function transientStateWithHomeBack<T>(parsed: T): T {
-  const name = transientRouteName(parsed);
-  if (name === null) return parsed;
+  const route = transientRoute(parsed);
+  if (route === null) return parsed;
   return {
     index: 1,
     routes: [
@@ -111,7 +136,7 @@ function transientStateWithHomeBack<T>(parsed: T): T {
           }],
         },
       },
-      { name },
+      route,
     ],
   } as T;
 }
@@ -119,7 +144,7 @@ function transientStateWithHomeBack<T>(parsed: T): T {
 export function validateAppLinkedState<T>(parsed: T | undefined): T | undefined {
   if (parsed === undefined) return undefined;
   if (sanitizeNavigationState(parsed) !== null) {
-    return transientRouteName(parsed) === null ? parsed : transientStateWithHomeBack(parsed);
+    return transientRoute(parsed) === null ? parsed : transientStateWithHomeBack(parsed);
   }
   return isValidatedTransientLinkState(parsed)
     ? transientStateWithHomeBack(parsed)

@@ -22,6 +22,7 @@ import type {
   ImportJobStatus,
   LyricsLine,
   LyricsResponse,
+  PartyLoadState,
   PartyMember,
   PartyState,
   PartyTrack,
@@ -572,6 +573,14 @@ export function decodeTrackPlayCounts(value: unknown): TrackPlayCounts {
   return result;
 }
 
+const PARTY_LOAD_STATES = [
+  'ready',
+  'loading',
+  'queued',
+  'failed',
+  'idle',
+] as const satisfies readonly PartyLoadState[];
+
 function decodePartyTrack(value: unknown, path: string): PartyTrack {
   const source = object(value, path);
   return {
@@ -586,6 +595,9 @@ function decodePartyTrack(value: unknown, path: string): PartyTrack {
     cover: string(source.cover, `${path}.cover`),
     duration_sec: nonNegativeInteger(source.duration_sec, `${path}.duration_sec`),
     added_by: string(source.added_by, `${path}.added_by`),
+    added_by_member: string(source.added_by_member, `${path}.added_by_member`),
+    load_state: literal(source.load_state, `${path}.load_state`, PARTY_LOAD_STATES),
+    load_error: nullableString(source.load_error, `${path}.load_error`),
   };
 }
 
@@ -594,6 +606,7 @@ function decodePartyMember(value: unknown, path: string): PartyMember {
   return {
     name: string(source.name, `${path}.name`),
     avatar_url: nullableString(source.avatar_url, `${path}.avatar_url`),
+    is_guest: boolean(source.is_guest, `${path}.is_guest`),
   };
 }
 
@@ -613,6 +626,9 @@ export function decodePartyState(value: unknown): PartyState {
     ),
     members: array(source.members, 'PartyState.members', decodePartyMember),
     tracks: array(source.tracks, 'PartyState.tracks', decodePartyTrack),
+    viewer_key: string(source.viewer_key, 'PartyState.viewer_key'),
+    viewer_name: string(source.viewer_name, 'PartyState.viewer_name'),
+    viewer_is_guest: boolean(source.viewer_is_guest, 'PartyState.viewer_is_guest'),
   };
 }
 

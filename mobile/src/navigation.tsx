@@ -12,7 +12,7 @@ import { LogoutButton, navTheme, sectionScreenOptions } from './navigation/heade
 import { PlayerErrorBanner, PlayerNoticeWithoutMiniPlayer } from './navigation/playerOverlays';
 import { PlayerStartupError, PlayerStartupStatus } from './navigation/PlayerStartup';
 import { openSpotifyImport, rootNavigation } from './navigation/rootNavigation';
-import { NowPlayingRoute, ProfileRoute, QueueRoute } from './navigation/routes';
+import { NowPlayingRoute, PartyRoute, ProfileRoute, QueueRoute } from './navigation/routes';
 import {
   DiscoverNavigator,
   HomeNavigator,
@@ -161,6 +161,11 @@ export default function RootNavigator() {
               name="Queue"
               component={QueueRoute}
               options={transientModalScreenOptions}
+            />
+            <RootStack.Screen
+              name="Party"
+              component={PartyRoute}
+              options={{ title: strings.party.defaultName }}
             />
           </RootStack.Navigator>
         </NavigationContainer>

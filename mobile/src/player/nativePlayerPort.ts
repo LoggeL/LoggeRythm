@@ -86,6 +86,7 @@ export const NATIVE_COMMAND_TRANSLATION = deepFreeze({
   removeMediaItems: { nativeName: 'setQueue', support: 'vertical-slice' },
   replaceMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
   moveMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
+  replaceQueue: { nativeName: 'setQueue', support: 'vertical-slice' },
   clear: { nativeName: 'clearQueue', support: 'vertical-slice' },
   setRepeatMode: { nativeName: 'setRepeatMode', support: 'vertical-slice' },
   setQueuePersistenceState: {
@@ -885,6 +886,21 @@ export class NativeBackedPlayerPort implements PlayerPort {
       this.visible.progress.position,
       this.visible.isPlaying,
     );
+  }
+
+  replaceQueue(
+    mediaItems: readonly MediaItem[],
+    activeIndex: number,
+    position: number,
+    resume: boolean,
+  ): void {
+    validateMediaItems(mediaItems);
+    if (mediaItems.length === 0) throw new RangeError('replaceQueue needs items; use clear for an empty queue');
+    requireQueueIndex(activeIndex, mediaItems.length, 'Queue replace');
+    if (!Number.isFinite(position) || position < 0) {
+      throw new RangeError(`Queue replace position must be finite and non-negative, got ${position}`);
+    }
+    this.enqueueQueue('replaceQueue', mediaItems, activeIndex, position, resume, mediaItems);
   }
 
   clear(): void {

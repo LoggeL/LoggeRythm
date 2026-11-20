@@ -26,6 +26,9 @@ import {
   QueueSnapshotNoticeView,
 } from '../components/player/QueueNotices';
 import { QueueRow } from '../components/player/QueueRow';
+import { PartyNotice } from '../components/party/PartyParts';
+import { partyErrorDetail } from '../party/partyErrors';
+import { startPartyFromQueue, usePartySession } from '../party/partyRuntime';
 import { useTrackPresentationResolver } from '../components/player/TrackPresentationProvider';
 import { musicQueries } from '../data';
 import {
@@ -65,6 +68,7 @@ export interface QueueSurfaceProps {
   onClose?: () => void;
   onOpenAlbum: (params: AlbumRouteParams) => void;
   onOpenArtist: (params: ArtistRouteParams) => void;
+  onOpenParty: (code: string) => void;
 }
 
 export interface QueueSurfacePadding {
@@ -224,8 +228,14 @@ export function QueueSurface({
   onClose,
   onOpenAlbum,
   onOpenArtist,
+  onOpenParty,
 }: QueueSurfaceProps) {
   const insets = useSafeAreaInsets();
+  const partyState = usePartySession();
+  // While a party steers the player its queue is the party's: edit it there.
+  const followedParty = partyState.detached ? null : partyState.party;
+  const [startingParty, setStartingParty] = useState(false);
+  const [partyStartError, setPartyStartError] = useState<string | null>(null);
   const playerError = usePlayerError();
   const activeProgress = useProgress(1);
   const { presentationFor } = useTrackPresentationResolver();
@@ -297,10 +307,11 @@ export function QueueSurface({
 
   // The two view refs are taken out of the controller: passing a member of an
   // object to `ref` would mark the whole object as a ref for the hooks linter.
+  const editLocked = mutationPending || followedParty !== null;
   const { attachFrame, attachList, ...drag } = useQueueDrag({
     rows,
     activeIndex: queue.activeIndex,
-    disabled: mutationPending,
+    disabled: editLocked,
     onTap: (stableId) =>
       setMoveControlsFor((current) => (current === stableId ? null : stableId)),
     onDrop: (fromIndex, toIndex) => {
@@ -343,7 +354,7 @@ export function QueueSurface({
         active={active}
         // Queue-native index is authoritative even for duplicate manual or legacy ids.
         presentation={authoritativeQueueTrackPresentation(resolvedPresentation, active)}
-        disabled={mutationPending}
+        disabled={editLocked}
         canMoveUp={range !== null && nativeIndex > range.min}
         canMoveDown={range !== null && nativeIndex < range.max}
         rowRef={floating ? undefined : drag.attachRow(row.stableId)}
@@ -421,7 +432,7 @@ export function QueueSurface({
           }
           checked={shuffle}
           busy={mutationPending}
-          disabled={mutationPending || !canToggleShuffle}
+          disabled={editLocked || !canToggleShuffle}
           onPress={() =>
             void runMutation(strings.player.shuffleFailed, async () => {
               const enabled = await toggleShuffle(expectedStableIds);
@@ -437,7 +448,7 @@ export function QueueSurface({
           accessibilityLabel={strings.queue.clearUpcoming}
           accessibilityHint={strings.queue.clearUpcomingHint}
           busy={mutationPending}
-          disabled={mutationPending || !canClearUpcoming}
+          disabled={editLocked || !canClearUpcoming}
           onPress={() =>
             void runMutation(strings.queue.clearUpcomingFailed, async () => {
               await clearUpcomingQueue(expectedStableIds);
@@ -447,6 +458,42 @@ export function QueueSurface({
           }
         />
       </View>
+
+      {followedParty !== null ? (
+        <PartyNotice
+          testID="queue-party-active"
+          tone="info"
+          title={strings.party.activeTitle(
+            followedParty.name.trim() === '' ? null : followedParty.name,
+          )}
+          message={strings.party.queueLocked}
+          actionLabel={strings.party.openParty}
+          onAction={() => onOpenParty(followedParty.code)}
+        />
+      ) : (
+        <View style={styles.tools}>
+          <QueueTool
+            testID="queue-start-party"
+            icon="account-group-outline"
+            label={startingParty ? strings.party.startingParty : strings.party.startParty}
+            accessibilityLabel={strings.party.startParty}
+            busy={startingParty}
+            disabled={startingParty || mutationPending}
+            onPress={() => {
+              setStartingParty(true);
+              setPartyStartError(null);
+              startPartyFromQueue().then(
+                (party) => onOpenParty(party.code),
+                (error: unknown) =>
+                  setPartyStartError(strings.party.startPartyFailed(partyErrorDetail(error))),
+              ).finally(() => setStartingParty(false));
+            }}
+          />
+        </View>
+      )}
+      {partyStartError !== null ? (
+        <PartyNotice testID="queue-party-start-error" tone="danger" message={partyStartError} />
+      ) : null}
 
       <QueueSurfaceGlobalFeedback embedded={embedded} playerError={playerError} />
 
@@ -566,6 +613,7 @@ export default function QueueScreen({ navigation }: ScreenProps) {
         screen: 'DiscoverTab',
         params: { screen: 'Artist', params },
       })}
+      onOpenParty={(code) => navigation.navigate('Party', { code })}
     />
   );
 }

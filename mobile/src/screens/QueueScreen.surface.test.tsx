@@ -59,6 +59,11 @@ vi.mock('../player/errors', () => ({
   usePlayerError: vi.fn(() => null),
 }));
 vi.mock('../player/mediaItem', () => ({ mediaItemToTrack: vi.fn() }));
+vi.mock('../party/partyErrors', () => ({ partyErrorDetail: vi.fn(String) }));
+vi.mock('../party/partyRuntime', () => ({
+  startPartyFromQueue: vi.fn(),
+  usePartySession: vi.fn(() => ({ party: null, detached: false })),
+}));
 vi.mock('../player/queueContract', () => ({
   queueContextOf: vi.fn(),
   queueOriginOf: vi.fn(),

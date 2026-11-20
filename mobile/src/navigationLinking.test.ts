@@ -67,6 +67,20 @@ describe('cold app-link state construction', () => {
     expect(findRoute(state, target)).toBeDefined();
   });
 
+  it('opens a party link with its normalised code above Home, and rejects bad codes', () => {
+    const state = getAppStateFromPath('party/abc123');
+    expect(state?.index).toBe(1);
+    expect(state?.routes.map((route) => route.name)).toEqual(['Tabs', 'Party']);
+    expect(findRoute(state, 'Party')?.params).toEqual({ code: 'ABC123' });
+    expect(findRoute(state, 'Home')).toBeDefined();
+
+    expect(getAppStateFromPath('party/ABC')).toBeUndefined();
+    expect(getAppStateFromPath('party/ABC%2F123')).toBeUndefined();
+    expect(validateAppLinkedState({
+      routes: [{ name: 'Party', params: { code: 'ABC123', extra: true } }],
+    })).toBeUndefined();
+  });
+
   it('rejects a malformed Tabs route even when followed by a params-free transient route', () => {
     expect(validateAppLinkedState({
       routes: [

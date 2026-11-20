@@ -1,4 +1,4 @@
-export const TRANSIENT_ROOT_ROUTE_NAMES = ['Profile', 'NowPlaying', 'Queue'] as const;
+export const TRANSIENT_ROOT_ROUTE_NAMES = ['Profile', 'NowPlaying', 'Queue', 'Party'] as const;
 
 /**
  * Transient destinations always dismiss back to the durable tab topology.

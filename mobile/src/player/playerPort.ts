@@ -340,6 +340,7 @@ export type PlayerPortCommandName =
   | 'removeMediaItems'
   | 'replaceMediaItem'
   | 'moveMediaItem'
+  | 'replaceQueue'
   | 'clear'
   | 'setQueuePersistenceState'
   | 'setCommands'
@@ -386,6 +387,17 @@ export interface PlayerPort {
   removeMediaItems(fromIndex: number, toIndex: number): void;
   replaceMediaItem(index: number, mediaItem: MediaItem): void;
   moveMediaItem(fromIndex: number, toIndex: number): void;
+  /**
+   * Replace the whole queue in one native step and continue at `activeIndex`
+   * from `position` seconds. Resumes playback when `resume` is true; otherwise
+   * the native play-when-ready flag is left as it was.
+   */
+  replaceQueue(
+    mediaItems: readonly MediaItem[],
+    activeIndex: number,
+    position: number,
+    resume: boolean,
+  ): void;
   clear(): void;
 
   getPlaybackState(): PlaybackState;

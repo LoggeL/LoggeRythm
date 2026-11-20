@@ -754,6 +754,85 @@ export interface StringCatalog {
     nowPlayingSection: string;
     upNextSection: string;
   };
+  party: {
+    eyebrow: string;
+    defaultName: string;
+    live: string;
+    stale: string;
+    youAreHost: string;
+    hostedBy: (name: string) => string;
+    memberCount: (count: number) => string;
+    codeLabel: string;
+    share: string;
+    shareMessage: (name: string, url: string) => string;
+    shareFailed: (detail: string) => string;
+    leave: string;
+    leaving: string;
+    leaveConfirmTitle: string;
+    leaveConfirmHost: string;
+    leaveConfirmMember: string;
+    leaveConfirm: string;
+    leaveStay: string;
+    leaveFailed: (detail: string) => string;
+    followHint: (host: string) => string;
+    detachedTitle: string;
+    detachedBody: string;
+    rejoinPlayback: string;
+    syncFailed: (detail: string) => string;
+    broadcastFailed: (detail: string) => string;
+    joining: string;
+    joinFailedTitle: string;
+    joinFailed: (detail: string) => string;
+    retryJoin: string;
+    loadFailed: (detail: string) => string;
+    reload: string;
+    invalidCodeTitle: string;
+    invalidCodeBody: string;
+    back: string;
+    serverUnreachable: string;
+    serverNoDetail: (status: number) => string;
+    streamEnded: string;
+    streamNetwork: string;
+    streamTimeout: string;
+    streamRejected: (status: number, detail: string) => string;
+    searchLabel: string;
+    searchPlaceholder: string;
+    searching: string;
+    searchFailed: (detail: string) => string;
+    searchEmpty: (query: string) => string;
+    add: (title: string) => string;
+    added: (title: string) => string;
+    addFailed: (title: string, detail: string) => string;
+    queueTitle: string;
+    queueEmpty: string;
+    nowPlaying: string;
+    addedBy: (name: string) => string;
+    addedByYou: string;
+    playAt: (title: string) => string;
+    moveUp: (title: string) => string;
+    moveDown: (title: string) => string;
+    remove: (title: string) => string;
+    playFailed: (title: string, detail: string) => string;
+    moveFailed: (title: string, detail: string) => string;
+    removeFailed: (title: string, detail: string) => string;
+    loadReady: string;
+    loadLoading: string;
+    loadQueued: string;
+    loadFailedState: (reason: string) => string;
+    loadIdle: string;
+    buffering: string;
+    membersTitle: string;
+    hostBadge: string;
+    guestBadge: string;
+    startParty: string;
+    startingParty: string;
+    startPartyFailed: (detail: string) => string;
+    /** `null` for a party without its own name. */
+    activeTitle: (name: string | null) => string;
+    openParty: string;
+    queueLocked: string;
+    addedToParty: (title: string) => string;
+  };
 }
 
 export const de: StringCatalog = {
@@ -1516,6 +1595,7 @@ export const de: StringCatalog = {
       genre: 'Genre',
       home: 'Start',
       liked: 'Lieblingstitel',
+      party: 'Party',
       playlist: 'Playlist',
       radio: 'Radio',
       recent: 'Zuletzt gehört',
@@ -1547,6 +1627,89 @@ export const de: StringCatalog = {
     removed: (title) => `„${title}“ wurde aus der Warteschlange entfernt.`,
     nowPlayingSection: 'Jetzt läuft',
     upNextSection: 'Als Nächstes',
+  },
+  party: {
+    eyebrow: 'Gemeinsam hören',
+    defaultName: 'Party',
+    live: 'Live',
+    stale: 'Nicht aktuell',
+    youAreHost: 'Du bist Host',
+    hostedBy: (name) => `Host: ${name}`,
+    memberCount: (count) => (count === 1 ? '1 Person' : `${count} Personen`),
+    codeLabel: 'Party-Code',
+    share: 'Einladungslink teilen',
+    shareMessage: (name, url) => `Hör mit in der Party „${name}“: ${url}`,
+    shareFailed: (detail) => `Der Einladungslink konnte nicht geteilt werden: ${detail}`,
+    leave: 'Party verlassen',
+    leaving: 'Party wird verlassen…',
+    leaveConfirmTitle: 'Party verlassen?',
+    leaveConfirmHost: 'Du steuerst als Host die Wiedergabe für alle in dieser Party.',
+    leaveConfirmMember:
+      'Deine Wiedergabe folgt danach nicht mehr dem Host. Über den Einladungslink kannst du wieder beitreten.',
+    leaveConfirm: 'Verlassen',
+    leaveStay: 'Bleiben',
+    leaveFailed: (detail) => `Die Party konnte nicht verlassen werden: ${detail}`,
+    followHint: (host) =>
+      `${host} steuert die Wiedergabe. Deine Wiedergabe folgt automatisch – Songs kannst du jederzeit hinzufügen.`,
+    detachedTitle: 'Deine Wiedergabe folgt der Party nicht mehr',
+    detachedBody: 'Du hast andere Musik gestartet. Die Party läuft ohne dich weiter.',
+    rejoinPlayback: 'Wieder mithören',
+    syncFailed: (detail) => `Die Wiedergabe konnte nicht mit der Party abgeglichen werden: ${detail}`,
+    broadcastFailed: (detail) => `Die Wiedergabe konnte nicht an die Party gesendet werden: ${detail}`,
+    joining: 'Party wird beigetreten…',
+    joinFailedTitle: 'Beitritt nicht möglich',
+    joinFailed: (detail) => `Beitritt zur Party fehlgeschlagen: ${detail}`,
+    retryJoin: 'Erneut versuchen',
+    loadFailed: (detail) => `Die Party ist nicht aktuell: ${detail}`,
+    reload: 'Erneut laden',
+    invalidCodeTitle: 'Ungültiger Party-Link',
+    invalidCodeBody: 'Dieser Link enthält keinen gültigen Party-Code.',
+    back: 'Zurück',
+    serverUnreachable: 'Der Server ist nicht erreichbar. Prüfe deine Verbindung.',
+    serverNoDetail: (status) => `Der Server hat mit HTTP ${status} geantwortet, ohne Begründung.`,
+    streamEnded: 'Der Server hat die Live-Verbindung beendet.',
+    streamNetwork: 'Die Live-Verbindung ist abgebrochen (Netzwerkfehler).',
+    streamTimeout: 'Die Live-Verbindung hat das Zeitlimit überschritten.',
+    streamRejected: (status, detail) =>
+      detail === ''
+        ? `Der Server hat die Live-Verbindung abgelehnt (HTTP ${status}).`
+        : `Der Server hat die Live-Verbindung abgelehnt (HTTP ${status}): ${detail}`,
+    searchLabel: 'Songs für die Party suchen',
+    searchPlaceholder: 'Titel oder Künstler:in',
+    searching: 'Suche läuft…',
+    searchFailed: (detail) => `Die Suche ist fehlgeschlagen: ${detail}`,
+    searchEmpty: (query) => `Keine Songs für „${query}“ gefunden.`,
+    add: (title) => `„${title}“ zur Party hinzufügen`,
+    added: (title) => `„${title}“ ist jetzt in der Party.`,
+    addFailed: (title, detail) => `„${title}“ konnte nicht hinzugefügt werden: ${detail}`,
+    queueTitle: 'Party-Warteschlange',
+    queueEmpty: 'Noch keine Songs. Such oben nach Titeln und füg sie hinzu.',
+    nowPlaying: 'Läuft gerade',
+    addedBy: (name) => `von ${name}`,
+    addedByYou: 'von dir',
+    playAt: (title) => `„${title}“ für alle abspielen`,
+    moveUp: (title) => `„${title}“ nach oben verschieben`,
+    moveDown: (title) => `„${title}“ nach unten verschieben`,
+    remove: (title) => `„${title}“ aus der Party entfernen`,
+    playFailed: (title, detail) => `„${title}“ konnte nicht abgespielt werden: ${detail}`,
+    moveFailed: (title, detail) => `„${title}“ konnte nicht verschoben werden: ${detail}`,
+    removeFailed: (title, detail) => `„${title}“ konnte nicht entfernt werden: ${detail}`,
+    loadReady: 'Geladen',
+    loadLoading: 'Lädt…',
+    loadQueued: 'Wartet aufs Laden',
+    loadFailedState: (reason) => `Laden fehlgeschlagen: ${reason}`,
+    loadIdle: 'Nicht geladen',
+    buffering: 'Puffert…',
+    membersTitle: 'Dabei',
+    hostBadge: 'Host',
+    guestBadge: 'Gast',
+    startParty: 'Party starten',
+    startingParty: 'Party wird gestartet…',
+    startPartyFailed: (detail) => `Die Party konnte nicht gestartet werden: ${detail}`,
+    activeTitle: (name) => (name === null ? 'Party läuft' : `Party „${name}“ läuft`),
+    openParty: 'Zur Party',
+    queueLocked: 'Diese Warteschlange gehört zur Party. Bearbeite sie in der Party.',
+    addedToParty: (title) => `„${title}“ wurde zur Party hinzugefügt.`,
   },
 };
 
@@ -2153,7 +2316,7 @@ export const en: StringCatalog = {
     unknownContext: 'Playback context',
     legacyContextLabel: (type) => ({
       album: 'Album', artist: 'Artist', chart: 'Charts', collection: 'Collection',
-      discover: 'Discover', genre: 'Genre', home: 'Home', liked: 'Liked Songs',
+      discover: 'Discover', genre: 'Genre', home: 'Home', liked: 'Liked Songs', party: 'Party',
       playlist: 'Playlist', radio: 'Radio', recent: 'Recently played', search: 'Search',
     })[type],
     recentContext: 'Recently played',
@@ -2174,5 +2337,88 @@ export const en: StringCatalog = {
     removed: (title) => `${title} was removed from the queue.`,
     nowPlayingSection: 'Now playing',
     upNextSection: 'Up next',
+  },
+  party: {
+    eyebrow: 'Listening together',
+    defaultName: 'Party',
+    live: 'Live',
+    stale: 'Out of date',
+    youAreHost: "You're the host",
+    hostedBy: (name) => `Host: ${name}`,
+    memberCount: (count) => (count === 1 ? '1 person' : `${count} people`),
+    codeLabel: 'Party code',
+    share: 'Share invite link',
+    shareMessage: (name, url) => `Listen along in the party “${name}”: ${url}`,
+    shareFailed: (detail) => `Sharing the invite link failed: ${detail}`,
+    leave: 'Leave party',
+    leaving: 'Leaving party…',
+    leaveConfirmTitle: 'Leave the party?',
+    leaveConfirmHost: 'As the host you control playback for everyone in this party.',
+    leaveConfirmMember:
+      'Your playback will no longer follow the host. You can rejoin with the invite link.',
+    leaveConfirm: 'Leave',
+    leaveStay: 'Stay',
+    leaveFailed: (detail) => `Leaving the party failed: ${detail}`,
+    followHint: (host) =>
+      `${host} controls playback. Yours follows automatically – you can add songs any time.`,
+    detachedTitle: 'Your playback no longer follows the party',
+    detachedBody: 'You started other music. The party continues without you.',
+    rejoinPlayback: 'Listen along again',
+    syncFailed: (detail) => `Syncing playback with the party failed: ${detail}`,
+    broadcastFailed: (detail) => `Sending playback to the party failed: ${detail}`,
+    joining: 'Joining party…',
+    joinFailedTitle: "Can't join",
+    joinFailed: (detail) => `Joining the party failed: ${detail}`,
+    retryJoin: 'Try again',
+    loadFailed: (detail) => `The party is out of date: ${detail}`,
+    reload: 'Reload',
+    invalidCodeTitle: 'Invalid party link',
+    invalidCodeBody: "This link doesn't contain a valid party code.",
+    back: 'Back',
+    serverUnreachable: "The server can't be reached. Check your connection.",
+    serverNoDetail: (status) => `The server answered HTTP ${status} without a reason.`,
+    streamEnded: 'The server ended the live connection.',
+    streamNetwork: 'The live connection dropped (network error).',
+    streamTimeout: 'The live connection timed out.',
+    streamRejected: (status, detail) =>
+      detail === ''
+        ? `The server rejected the live connection (HTTP ${status}).`
+        : `The server rejected the live connection (HTTP ${status}): ${detail}`,
+    searchLabel: 'Search songs for the party',
+    searchPlaceholder: 'Title or artist',
+    searching: 'Searching…',
+    searchFailed: (detail) => `Search failed: ${detail}`,
+    searchEmpty: (query) => `No songs found for “${query}”.`,
+    add: (title) => `Add “${title}” to the party`,
+    added: (title) => `“${title}” is now in the party.`,
+    addFailed: (title, detail) => `Adding “${title}” failed: ${detail}`,
+    queueTitle: 'Party queue',
+    queueEmpty: 'No songs yet. Search above and add some.',
+    nowPlaying: 'Now playing',
+    addedBy: (name) => `by ${name}`,
+    addedByYou: 'by you',
+    playAt: (title) => `Play “${title}” for everyone`,
+    moveUp: (title) => `Move “${title}” up`,
+    moveDown: (title) => `Move “${title}” down`,
+    remove: (title) => `Remove “${title}” from the party`,
+    playFailed: (title, detail) => `Playing “${title}” failed: ${detail}`,
+    moveFailed: (title, detail) => `Moving “${title}” failed: ${detail}`,
+    removeFailed: (title, detail) => `Removing “${title}” failed: ${detail}`,
+    loadReady: 'Loaded',
+    loadLoading: 'Loading…',
+    loadQueued: 'Waiting to load',
+    loadFailedState: (reason) => `Loading failed: ${reason}`,
+    loadIdle: 'Not loaded',
+    buffering: 'Buffering…',
+    membersTitle: 'Listening',
+    hostBadge: 'Host',
+    guestBadge: 'Guest',
+    startParty: 'Start party',
+    startingParty: 'Starting party…',
+    startPartyFailed: (detail) => `Starting the party failed: ${detail}`,
+    activeTitle: (name) => (name === null ? 'Party is on' : `Party “${name}” is on`),
+    openParty: 'Open party',
+    queueLocked: 'This queue belongs to the party. Edit it in the party.',
+    addedToParty: (title) => `“${title}” was added to the party.`,
   },
 };

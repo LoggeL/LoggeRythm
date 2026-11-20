@@ -3,7 +3,7 @@ import { TRANSIENT_ROOT_ROUTE_NAMES, transientModalScreenOptions } from './navig
 
 describe('root navigation dismissal policy', () => {
   it('keeps transient routes modal and delegates Android dismissal to system Back', () => {
-    expect(TRANSIENT_ROOT_ROUTE_NAMES).toEqual(['Profile', 'NowPlaying', 'Queue']);
+    expect(TRANSIENT_ROOT_ROUTE_NAMES).toEqual(['Profile', 'NowPlaying', 'Queue', 'Party']);
     expect(transientModalScreenOptions).toEqual({
       headerShown: false,
       presentation: 'modal',

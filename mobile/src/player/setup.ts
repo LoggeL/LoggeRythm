@@ -4,6 +4,7 @@ import Player, {
 } from './player';
 import { requirePlayerSessionBinding } from './playerPort';
 import { strings } from '../localization';
+import { activePartyRouter } from '../party/activeParty';
 import {
   installPlaybackListeners,
   resetControllerState,
@@ -168,6 +169,8 @@ async function performPlayerSessionCleanup(): Promise<void> {
   }
 
   try {
+    // The party session steers this account's player; forget it with the account.
+    activePartyRouter()?.reset();
     resetControllerState();
   } catch {
     throw new PlayerSessionCleanupError(['javascript-controller-state']);

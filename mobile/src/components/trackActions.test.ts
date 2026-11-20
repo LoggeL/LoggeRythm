@@ -10,6 +10,7 @@ import {
   subscribeTrackActions,
   trackActionIdsForRequest,
 } from './trackActions';
+import { installActivePartyRouter } from '../party/activeParty';
 
 const mocks = vi.hoisted(() => ({
   announce: vi.fn(),
@@ -27,6 +28,13 @@ vi.mock('../player/controller', () => ({
   addToQueue: mocks.addToQueue,
   startRadio: mocks.startRadio,
 }));
+
+const party = { following: false, addTrack: vi.fn(async () => undefined) };
+installActivePartyRouter({
+  isFollowingParty: () => party.following,
+  addTrack: party.addTrack,
+  reset: vi.fn(),
+});
 
 const track: Track = {
   id: 'track-1',
@@ -79,6 +87,25 @@ describe('track action sheet contract', () => {
     expect(mocks.announce).toHaveBeenCalledWith(message);
     expect(getTrackActionRequest()).toBeNull();
   });
+
+  it.each(['play-next', 'add-to-queue'] as const)(
+    'adds the song to the followed party instead of the local queue for %s',
+    async (action) => {
+      party.following = true;
+      try {
+        showTrackActions(track, vi.fn());
+        const request = getTrackActionRequest();
+        if (request === null) throw new Error('Expected active track action request');
+        await expect(runTrackQueueAction(request, action)).resolves.toBe(true);
+        expect(party.addTrack).toHaveBeenCalledWith(track);
+        expect(mocks.playNext).not.toHaveBeenCalled();
+        expect(mocks.addToQueue).not.toHaveBeenCalled();
+        expect(mocks.announce).toHaveBeenCalledWith(strings.party.addedToParty(track.title));
+      } finally {
+        party.following = false;
+      }
+    },
+  );
 
   it('keeps the sheet open and reports a failed action without announcing success', async () => {
     const onError = vi.fn();

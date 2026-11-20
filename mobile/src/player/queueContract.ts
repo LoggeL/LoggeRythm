@@ -12,6 +12,7 @@ export type QueueContextType =
   | 'genre'
   | 'home'
   | 'liked'
+  | 'party'
   | 'playlist'
   | 'radio'
   | 'recent'
@@ -53,6 +54,7 @@ const QUEUE_CONTEXT_TYPES: ReadonlySet<string> = new Set<QueueContextType>([
   'genre',
   'home',
   'liked',
+  'party',
   'playlist',
   'radio',
   'recent',

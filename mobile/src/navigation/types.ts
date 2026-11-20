@@ -38,4 +38,6 @@ export type RootStackParams = {
   Profile: undefined;
   NowPlaying: undefined;
   Queue: undefined;
+  /** `code` comes from links and is validated by the route before use. */
+  Party: { code: string };
 };

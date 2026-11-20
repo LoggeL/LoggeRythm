@@ -313,6 +313,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
             embedded
             onOpenAlbum={openCatalogAlbum}
             onOpenArtist={openCatalogArtist}
+            onOpenParty={(code) => navigation.navigate('Party', { code })}
           />
         </View>
       ) : (

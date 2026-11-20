@@ -104,6 +104,12 @@ export interface PlaybackSettingsUpdate {
 
 export interface PartyCreateRequest {
   name?: string | null;
+  /** The host's queue the party continues from (empty for a blank party). */
+  tracks?: TrackInput[];
+  /** Index into `tracks` that is playing, or -1 for none. */
+  current_index?: number;
+  is_playing?: boolean;
+  position_sec?: number;
 }
 
 export interface PartyPlaybackUpdate {
