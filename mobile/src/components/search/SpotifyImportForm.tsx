@@ -8,12 +8,20 @@ import { SearchErrorNotice } from './SearchRemoteStates';
 interface SpotifyImportFormProps {
   value: string;
   error: string | null;
+  /** The import is being started; the action is locked meanwhile. */
+  starting: boolean;
   onChangeText: (value: string) => void;
   onSubmit: () => void;
 }
 
-/** Link entry: title, one-line explanation, URL field and the resolve action. */
-export function SpotifyImportForm({ value, error, onChangeText, onSubmit }: SpotifyImportFormProps) {
+/** Link entry: title, one-line explanation, URL field and the import action. */
+export function SpotifyImportForm({
+  value,
+  error,
+  starting,
+  onChangeText,
+  onSubmit,
+}: SpotifyImportFormProps) {
   return (
     <Surface testID="spotify-import-panel" padded style={styles.panel}>
       <AppText variant="section" accessibilityRole="header">{strings.search.importTitle}</AppText>
@@ -36,10 +44,11 @@ export function SpotifyImportForm({ value, error, onChangeText, onSubmit }: Spot
       />
       <ActionButton
         testID="spotify-import-resolve"
-        label={strings.search.importResolve}
+        label={starting ? strings.search.importStarting : strings.search.importResolve}
         icon="arrow-right"
         fullWidth
-        disabled={value.trim().length === 0}
+        busy={starting}
+        disabled={starting || value.trim().length === 0}
         onPress={onSubmit}
       />
       {error !== null ? (

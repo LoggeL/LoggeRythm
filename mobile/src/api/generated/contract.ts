@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "557ab938519ca81ee44ec7d68c39f8349ece9d646340555461da339a8112e2ae" as const;
+export const GENERATED_OPENAPI_SHA256 = "757d0188bec296963d2c04d003f0fcdb67305cafbff9d6e8d902434a1042bbc9" as const;
 
 export interface AdminUserWire {
   avatar_url?: string | null;
@@ -55,11 +55,16 @@ export interface AlbumDetailWire {
   artist?: string;
   artist_id?: string | number;
   cover?: string;
+  genres?: AlbumGenreWire[];
   id: string;
   nb_tracks?: number;
   release_date?: string;
   title?: string;
   tracks?: TrackWire[];
+}
+export interface AlbumGenreWire {
+  id: string;
+  name: string;
 }
 export interface AlbumSummaryWire {
   artist?: string;
@@ -510,6 +515,7 @@ export interface GeneratedApiSchemas {
   "AgentManifest": AgentManifestWire;
   "AgentOperation": AgentOperationWire;
   "AlbumDetail": AlbumDetailWire;
+  "AlbumGenre": AlbumGenreWire;
   "AlbumSummary": AlbumSummaryWire;
   "ApiCompatibility": ApiCompatibilityWire;
   "ArtistAbout": ArtistAboutWire;

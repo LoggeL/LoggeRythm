@@ -154,10 +154,16 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     expectedArguments: (signal) => ['46', signal],
   },
   {
-    factory: 'resolveExternalUrl', repositoryMethod: 'resolveExternalUrl',
-    option: (queries) => queries.resolveExternalUrl('  https://open.spotify.com/track/abc  '),
-    expectedKey: ['music', 'external', 'resolve', 'https://open.spotify.com/track/abc'],
-    expectedArguments: (signal) => ['https://open.spotify.com/track/abc', signal],
+    factory: 'importJobs', repositoryMethod: 'getImportJobs',
+    option: (queries) => queries.importJobs('account-a'),
+    expectedKey: ['music', 'external', 'import-jobs', 'account-a'],
+    expectedArguments: (signal) => [signal],
+  },
+  {
+    factory: 'importJob', repositoryMethod: 'getImportJob',
+    option: (queries) => queries.importJob('account-a', 'job-1'),
+    expectedKey: ['music', 'external', 'import-jobs', 'account-a', 'job-1'],
+    expectedArguments: (signal) => ['job-1', signal],
   },
   {
     factory: 'deezerPlaylist', repositoryMethod: 'getDeezerPlaylist',

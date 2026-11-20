@@ -612,6 +612,35 @@ export interface StringCatalog {
     importSaved: (added: number, name: string) => string;
     importSaveFailed: string;
     importUnmatchedTitle: string;
+    importStarting: string;
+    importStartFailed: (detail: string) => string;
+    importServerUnreachable: string;
+    importServerNoDetail: string;
+    importBackgroundHint: string;
+    importReadingLink: string;
+    importProgressLabel: string;
+    importJobsTitle: string;
+    importJobsLoading: string;
+    importJobsLoadFailed: (detail: string) => string;
+    importJobQueued: string;
+    importJobReading: string;
+    importJobProgress: (processed: number, total: number, matched: number) => string;
+    importJobDone: (matched: number, total: number) => string;
+    importJobFailed: (error: string) => string;
+    importJobNoServerError: string;
+    importJobOpen: string;
+    importJobOpenLabel: (title: string) => string;
+    importJobCancel: (title: string) => string;
+    importJobRemove: (title: string) => string;
+    importJobCancelConfirmTitle: string;
+    importJobCancelConfirmMessage: (title: string) => string;
+    importJobCancelConfirm: string;
+    importJobKeepRunning: string;
+    importJobRemoveFailed: (detail: string) => string;
+    importJobResultLoading: string;
+    importJobResultFailed: string;
+    importFinishedNotice: (title: string, matched: number, total: number) => string;
+    importFailedNotice: (title: string) => string;
     sections: {
       library: string;
       tracks: string;
@@ -1333,10 +1362,10 @@ export const de: StringCatalog = {
     importOpen: 'Spotify-Link importieren',
     importClose: 'Spotify-Import schließen',
     importIntro:
-      'Füge einen Spotify-Link für einen Titel, ein Album oder eine Playlist ein. Die gefundenen Titel werden über Deezer abgespielt.',
+      'Füge einen Spotify-Link für einen Titel, ein Album oder eine Playlist ein. Der Import läuft im Hintergrund, auch bei großen Playlists – du kannst ihn verlassen und das Ergebnis später hier abholen. Die gefundenen Titel werden über Deezer abgespielt.',
     importInputLabel: 'Spotify-Link',
     importPlaceholder: 'https://open.spotify.com/playlist/…',
-    importResolve: 'Auflösen',
+    importResolve: 'Importieren',
     importResolving: 'Spotify-Link wird mit Deezer abgeglichen…',
     importInvalid: 'Teile oder füge einen gültigen Spotify-Link für Titel, Album oder Playlist ein.',
     importAmbiguous: 'Der geteilte Text enthält mehrere verschiedene Spotify-Links.',
@@ -1359,6 +1388,39 @@ export const de: StringCatalog = {
       `${added} ${added === 1 ? 'Titel wurde' : 'Titel wurden'} in „${name}“ gespeichert.`,
     importSaveFailed: 'Import konnte nicht gespeichert werden',
     importUnmatchedTitle: 'Nicht auf Deezer gefunden',
+    importStarting: 'Startet…',
+    importStartFailed: (detail) => `Import konnte nicht gestartet werden: ${detail}`,
+    importServerUnreachable: 'Der Server ist nicht erreichbar.',
+    importServerNoDetail: 'Der Server hat keinen Grund genannt.',
+    importBackgroundHint:
+      'Der Import läuft im Hintergrund weiter. Du kannst woanders hingehen und das Ergebnis später unter „Deine Importe“ abholen.',
+    importReadingLink: 'Spotify-Link wird gelesen…',
+    importProgressLabel: 'Import-Fortschritt',
+    importJobsTitle: 'Deine Importe',
+    importJobsLoading: 'Deine Importe werden geladen…',
+    importJobsLoadFailed: (detail) => `Deine Importe konnten nicht geladen werden: ${detail}`,
+    importJobQueued: 'Wartet auf Start…',
+    importJobReading: 'Liest die Titel von Spotify…',
+    importJobProgress: (processed, total, matched) =>
+      `${processed}/${total} abgeglichen · ${matched} gefunden`,
+    importJobDone: (matched, total) => `Fertig · ${matched}/${total} Titel gefunden`,
+    importJobFailed: (error) => `Fehlgeschlagen: ${error}`,
+    importJobNoServerError: 'ohne Fehlermeldung vom Server',
+    importJobOpen: 'Öffnen',
+    importJobOpenLabel: (title) => `Import öffnen: ${title}`,
+    importJobCancel: (title) => `Import abbrechen: ${title}`,
+    importJobRemove: (title) => `Import entfernen: ${title}`,
+    importJobCancelConfirmTitle: 'Import abbrechen?',
+    importJobCancelConfirmMessage: (title) =>
+      `„${title}“ wird abgebrochen. Der bisherige Fortschritt geht verloren.`,
+    importJobCancelConfirm: 'Import abbrechen',
+    importJobKeepRunning: 'Weiterlaufen lassen',
+    importJobRemoveFailed: (detail) => `Import konnte nicht entfernt werden: ${detail}`,
+    importJobResultLoading: 'Importierte Titel werden geladen…',
+    importJobResultFailed: 'Die importierten Titel konnten nicht geladen werden',
+    importFinishedNotice: (title, matched, total) =>
+      `Spotify-Import fertig: ${title} (${matched}/${total} Titel). Abholen unter Suche → Spotify-Import.`,
+    importFailedNotice: (title) => `Spotify-Import fehlgeschlagen: ${title}`,
     sections: {
       library: 'In deiner Bibliothek',
       tracks: 'Titel', albums: 'Alben', artists: 'Künstler', playlists: 'Playlists',
@@ -1970,9 +2032,9 @@ export const en: StringCatalog = {
     importTitle: 'Import from Spotify', importOpen: 'Import a Spotify link',
     importClose: 'Close Spotify import',
     importIntro:
-      'Paste a Spotify track, album, or playlist link. Matching tracks play through Deezer.',
+      'Paste a Spotify track, album, or playlist link. The import runs in the background, even for large playlists – you can leave and pick up the result here later. Matching tracks play through Deezer.',
     importInputLabel: 'Spotify link',
-    importPlaceholder: 'https://open.spotify.com/playlist/…', importResolve: 'Resolve',
+    importPlaceholder: 'https://open.spotify.com/playlist/…', importResolve: 'Import',
     importResolving: 'Matching the Spotify link with Deezer…',
     importInvalid: 'Share or paste a valid Spotify track, album, or playlist link.',
     importAmbiguous: 'The shared text contains multiple different Spotify links.',
@@ -1992,6 +2054,39 @@ export const en: StringCatalog = {
       `${added} ${added === 1 ? 'track was' : 'tracks were'} saved to ${name}.`,
     importSaveFailed: 'Import could not be saved',
     importUnmatchedTitle: 'Not found on Deezer',
+    importStarting: 'Starting…',
+    importStartFailed: (detail) => `Import could not be started: ${detail}`,
+    importServerUnreachable: 'The server cannot be reached.',
+    importServerNoDetail: 'The server gave no reason.',
+    importBackgroundHint:
+      'The import keeps running in the background. You can go elsewhere and pick up the result later under “Your imports”.',
+    importReadingLink: 'Reading the Spotify link…',
+    importProgressLabel: 'Import progress',
+    importJobsTitle: 'Your imports',
+    importJobsLoading: 'Loading your imports…',
+    importJobsLoadFailed: (detail) => `Your imports could not be loaded: ${detail}`,
+    importJobQueued: 'Waiting to start…',
+    importJobReading: 'Reading the tracks from Spotify…',
+    importJobProgress: (processed, total, matched) =>
+      `${processed}/${total} checked · ${matched} found`,
+    importJobDone: (matched, total) => `Done · ${matched}/${total} tracks found`,
+    importJobFailed: (error) => `Failed: ${error}`,
+    importJobNoServerError: 'without an error message from the server',
+    importJobOpen: 'Open',
+    importJobOpenLabel: (title) => `Open import: ${title}`,
+    importJobCancel: (title) => `Cancel import: ${title}`,
+    importJobRemove: (title) => `Remove import: ${title}`,
+    importJobCancelConfirmTitle: 'Cancel import?',
+    importJobCancelConfirmMessage: (title) =>
+      `${title} will be cancelled. Its progress so far is lost.`,
+    importJobCancelConfirm: 'Cancel import',
+    importJobKeepRunning: 'Keep running',
+    importJobRemoveFailed: (detail) => `Import could not be removed: ${detail}`,
+    importJobResultLoading: 'Loading the imported tracks…',
+    importJobResultFailed: 'The imported tracks could not be loaded',
+    importFinishedNotice: (title, matched, total) =>
+      `Spotify import finished: ${title} (${matched}/${total} tracks). Pick it up under Search → Spotify import.`,
+    importFailedNotice: (title) => `Spotify import failed: ${title}`,
     sections: {
       library: 'In your library',
       tracks: 'Tracks', albums: 'Albums', artists: 'Artists', playlists: 'Playlists',

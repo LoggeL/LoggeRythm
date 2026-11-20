@@ -57,10 +57,13 @@ export const queryKeys = {
   },
   external: {
     root: () => [...root, 'external'] as const,
-    resolve: (url: string) =>
-      [...queryKeys.external.root(), 'resolve', scalar(url, 'external URL')] as const,
     deezerPlaylist: (id: DeezerId) =>
       [...queryKeys.external.root(), 'deezer-playlist', scalar(id, 'Deezer playlist id')] as const,
+    /** Background Spotify imports belong to one account. */
+    importJobs: (scope: QueryScope) =>
+      [...queryKeys.external.root(), 'import-jobs', scalar(scope, 'import scope')] as const,
+    importJob: (scope: QueryScope, id: string) =>
+      [...queryKeys.external.importJobs(scope), scalar(id, 'import job id')] as const,
   },
   lyrics: (artist: string, title: string, deezerId?: DeezerId) =>
     [

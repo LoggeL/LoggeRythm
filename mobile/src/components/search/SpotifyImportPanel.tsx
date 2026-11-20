@@ -1,4 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert } from 'react-native';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ImportJobStatus } from '../../api/types';
+import { isActiveImportJob, musicQueries, musicRepository, queryKeys } from '../../data';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { useBottomInset } from '../../hooks/useBottomInset';
 import { strings } from '../../localization';
@@ -10,9 +14,11 @@ import {
 } from '../../share/spotifyImport';
 import { showTrackActions } from '../trackActions';
 import { TrackRowSkeleton } from '../ui';
-import { SearchRemoteBoundary } from './SearchRemoteStates';
+import { importJobErrorDetail, importJobTitle } from './importJobModel';
+import { SearchErrorNotice, SearchRemoteBoundary } from './SearchRemoteStates';
 import { SearchTrackResultRow } from './SearchResults';
 import { SpotifyImportForm } from './SpotifyImportForm';
+import { SpotifyImportJobList, SpotifyImportProgress } from './SpotifyImportJobs';
 import { SpotifyImportResultSummary } from './SpotifyImportResultSummary';
 import {
   SpotifyImportDestinationRow,
@@ -51,9 +57,10 @@ function inputErrorMessage(code: SpotifyImportInputErrorCode): string {
 }
 
 /**
- * The Spotify link import: a link form, the resolved matches and the save
- * destinations, all rows of one vertical list so every control stays
- * reachable in landscape and with the keyboard open.
+ * The Spotify link import: a link form that starts a background import job,
+ * the account's imports with their progress, and for a finished import its
+ * matches and save destinations, all rows of one vertical list so every
+ * control stays reachable in landscape and with the keyboard open.
  */
 export default function SpotifyImportPanel({
   accountScope,
@@ -63,40 +70,105 @@ export default function SpotifyImportPanel({
   onOpenAlbum,
   onOpenArtist,
 }: SpotifyImportPanelProps) {
+  const queryClient = useQueryClient();
+  const jobsKey = queryKeys.external.importJobs(accountScope);
   const [input, setInput] = useState(sharedRequest?.link ?? '');
   const [inputError, setInputError] = useState<string | null>(
     sharedRequest?.errorCode ? inputErrorMessage(sharedRequest.errorCode) : null,
   );
-  const [submission, setSubmission] = useState<{ id: number; link: string } | null>(() =>
-    sharedRequest?.link ? { id: sharedRequest.id, link: sharedRequest.link } : null,
-  );
-  const nextSubmissionId = useMemo(() => (submission?.id ?? 0) + 1, [submission?.id]);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const bottomInset = useBottomInset();
-  const link = submission?.link ?? null;
-  const session = useSpotifyImportSession({
-    accountScope,
-    link,
-    submissionId: submission?.id ?? null,
-  });
+
+  const jobsQuery = useQuery(musicQueries.importJobs(accountScope));
+  const jobs = jobsQuery.data;
+  const selectedJob = jobs?.find((job) => job.id === selectedJobId) ?? null;
+  const session = useSpotifyImportSession({ accountScope, job: selectedJob });
   const { result } = session;
+  const link = result === undefined || selectedJob === null ? null : selectedJob.url;
+
+  const start = useMutation({
+    mutationKey: ['music', 'mutation', accountScope, 'spotify-import-job', 'start'],
+    mutationFn: (url: string) => musicRepository.startImportJob(url),
+    onMutate: () => {
+      setInputError(null);
+      setRemoveError(null);
+    },
+    onSuccess: (job) => {
+      queryClient.setQueryData<ImportJobStatus[]>(jobsKey, (current) =>
+        [job, ...(current ?? []).filter((entry) => entry.id !== job.id)]);
+      void queryClient.invalidateQueries({ queryKey: jobsKey, exact: true });
+      setSelectedJobId(job.id);
+      setInput('');
+    },
+    onError: (error) => {
+      setInputError(strings.search.importStartFailed(importJobErrorDetail(error)));
+    },
+  });
+
+  const remove = useMutation({
+    mutationKey: ['music', 'mutation', accountScope, 'spotify-import-job', 'remove'],
+    mutationFn: (job: ImportJobStatus) => musicRepository.deleteImportJob(job.id),
+    onMutate: () => setRemoveError(null),
+    onSuccess: (_data, job) => {
+      queryClient.setQueryData<ImportJobStatus[]>(jobsKey, (current) =>
+        (current ?? []).filter((entry) => entry.id !== job.id));
+      queryClient.removeQueries({
+        queryKey: queryKeys.external.importJob(accountScope, job.id),
+        exact: true,
+      });
+      setSelectedJobId((current) => (current === job.id ? null : current));
+    },
+    onError: (error) => {
+      setRemoveError(strings.search.importJobRemoveFailed(importJobErrorDetail(error)));
+    },
+  });
+
+  // A link shared into the app starts its import right away, exactly once
+  // per share (the panel is keyed by the share id).
+  const startedShare = useRef<number | null>(null);
+  const startImport = start.mutate;
+  useEffect(() => {
+    if (sharedRequest?.link === undefined || sharedRequest.link === null) return;
+    if (startedShare.current === sharedRequest.id) return;
+    startedShare.current = sharedRequest.id;
+    startImport(sharedRequest.link);
+  }, [sharedRequest, startImport]);
 
   const updateInput = (value: string) => {
     setInput(value);
     setInputError(null);
-    setSubmission(null);
   };
 
   const submit = () => {
+    if (start.isPending) return;
     try {
       const normalized = normalizeSpotifyImportInput(input);
       setInput(normalized);
-      setInputError(null);
-      setSubmission({ id: nextSubmissionId, link: normalized });
+      start.mutate(normalized);
     } catch (error) {
       const code = error instanceof SpotifyImportInputError ? error.code : 'invalid';
       setInputError(inputErrorMessage(code));
-      setSubmission(null);
     }
+  };
+
+  const removeJob = (job: ImportJobStatus) => {
+    if (!isActiveImportJob(job)) {
+      remove.mutate(job);
+      return;
+    }
+    Alert.alert(
+      strings.search.importJobCancelConfirmTitle,
+      strings.search.importJobCancelConfirmMessage(importJobTitle(job)),
+      [
+        { text: strings.search.importJobKeepRunning, style: 'cancel' },
+        {
+          text: strings.search.importJobCancelConfirm,
+          style: 'destructive',
+          onPress: () => remove.mutate(job),
+        },
+      ],
+    );
   };
 
   const title = strings.search.importTitle;
@@ -107,17 +179,45 @@ export default function SpotifyImportPanel({
       <SpotifyImportForm
         value={input}
         error={inputError}
+        starting={start.isPending}
         onChangeText={updateInput}
         onSubmit={submit}
       />
-      {link !== null ? (
+      <SpotifyImportJobList
+        jobs={jobs}
+        loadError={jobsQuery.error === null ? null : importJobErrorDetail(jobsQuery.error)}
+        retryBusy={jobsQuery.fetchStatus === 'fetching'}
+        onRetry={() => { void jobsQuery.refetch(); }}
+        selectedId={selectedJobId}
+        removingId={remove.isPending ? remove.variables.id : null}
+        onSelect={(job) => {
+          setRemoveError(null);
+          setSelectedJobId(job.id);
+        }}
+        onRemove={removeJob}
+      />
+      {removeError !== null ? (
+        <SearchErrorNotice testID="spotify-import-remove-error" message={removeError} />
+      ) : null}
+      {selectedJob !== null && isActiveImportJob(selectedJob) ? (
+        <SpotifyImportProgress job={selectedJob} />
+      ) : null}
+      {selectedJob !== null && selectedJob.status === 'failed' ? (
+        <SearchErrorNotice
+          testID="spotify-import-job-failed"
+          message={`${importJobTitle(selectedJob)}: ${
+            selectedJob.error ?? strings.search.importJobNoServerError
+          }`}
+        />
+      ) : null}
+      {selectedJob !== null && selectedJob.status === 'done' ? (
         <SearchRemoteBoundary
           id="spotify-import-resolve"
           state={session.resultState}
-          loadingLabel={strings.search.importResolving}
-          emptyLabel={strings.search.importResolveFailed}
+          loadingLabel={strings.search.importJobResultLoading}
+          emptyLabel={strings.search.importJobResultFailed}
           offlineLabel={strings.search.remoteOffline(title)}
-          errorLabel={strings.search.remoteLoadFailed(title)}
+          errorLabel={strings.search.importJobResultFailed}
           cachedOfflineLabel={strings.search.remoteCachedOffline(title)}
           cachedErrorLabel={strings.search.remoteCachedRefreshFailed(title)}
           refreshingLabel={strings.search.remoteRefreshing(title)}

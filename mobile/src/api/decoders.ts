@@ -17,6 +17,9 @@ import type {
   Genre,
   GenreDetail,
   HomeShelf,
+  ImportJobDetail,
+  ImportJobState,
+  ImportJobStatus,
   LyricsLine,
   LyricsResponse,
   PartyMember,
@@ -444,6 +447,51 @@ export function decodeResolveResult(value: unknown): ResolveResult {
     tracks: array(source.tracks, 'ResolveResult.tracks', decodeTrack),
     unmatched: array(source.unmatched, 'ResolveResult.unmatched', decodeUnmatchedTrack),
   };
+}
+
+const IMPORT_JOB_STATES = ['queued', 'running', 'done', 'failed'] as const satisfies readonly ImportJobState[];
+
+function decodeImportJobFields(source: Record<string, unknown>, path: string): ImportJobStatus {
+  return {
+    id: string(source.id, `${path}.id`),
+    url: string(source.url, `${path}.url`),
+    status: literal(source.status, `${path}.status`, IMPORT_JOB_STATES),
+    type: literal(source.type, `${path}.type`, ['', 'playlist', 'album', 'track'] as const),
+    name: string(source.name, `${path}.name`),
+    image: string(source.image, `${path}.image`),
+    total: nonNegativeInteger(source.total, `${path}.total`),
+    source_total: nonNegativeInteger(source.source_total, `${path}.source_total`),
+    processed: nonNegativeInteger(source.processed, `${path}.processed`),
+    matched: nonNegativeInteger(source.matched, `${path}.matched`),
+    failed_lookups: nonNegativeInteger(source.failed_lookups, `${path}.failed_lookups`),
+    lookup_error: nullableString(source.lookup_error, `${path}.lookup_error`),
+    error: nullableString(source.error, `${path}.error`),
+    created_at: string(source.created_at, `${path}.created_at`),
+    updated_at: string(source.updated_at, `${path}.updated_at`),
+    finished_at: nullableString(source.finished_at, `${path}.finished_at`),
+  };
+}
+
+function decodeImportJobStatusAt(value: unknown, path: string): ImportJobStatus {
+  return decodeImportJobFields(object(value, path), path);
+}
+
+export function decodeImportJobStatus(value: unknown): ImportJobStatus {
+  return decodeImportJobStatusAt(value, 'ImportJobStatus');
+}
+
+export function decodeImportJobStatuses(value: unknown): ImportJobStatus[] {
+  return array(value, 'ImportJobStatus[]', decodeImportJobStatusAt);
+}
+
+export function decodeImportJobDetail(value: unknown): ImportJobDetail {
+  const source = object(value, 'ImportJobDetail');
+  const job = decodeImportJobFields(source, 'ImportJobDetail');
+  const result = source.result === null ? null : decodeResolveResult(source.result);
+  if (job.status === 'done' && result === null) {
+    throw new Error(`ImportJobDetail ${job.id} is done but carries no result`);
+  }
+  return { ...job, result };
 }
 
 function decodeDeezerPlaylistTrack(value: unknown, path: string): DeezerPlaylistTrack {

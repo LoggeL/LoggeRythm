@@ -29,7 +29,9 @@ import {
   decodePlaylistSummaries,
   decodePublicProfile,
   decodeReleaseRadar,
-  decodeResolveResult,
+  decodeImportJobDetail,
+  decodeImportJobStatus,
+  decodeImportJobStatuses,
   decodeStorageCleanupResult,
   decodeTrack,
   decodeTrackList,
@@ -64,7 +66,8 @@ import type {
   PlaylistUpdateRequest,
   PublicProfile,
   ReleaseRadarEntry,
-  ResolveResult,
+  ImportJobDetail,
+  ImportJobStatus,
   StorageCleanupResult,
   Track,
   TrackInput,
@@ -287,14 +290,37 @@ export function getRadio(
   });
 }
 
-export function resolveExternalUrl(url: string, signal?: AbortSignal): Promise<ResolveResult> {
-  return apiRequest<ResolveResult>(`/api/resolve?url=${encodeURIComponent(url)}`, {
+/** Starts a background Spotify import; the server answers 202 with the queued job. */
+export function startImportJob(url: string): Promise<ImportJobStatus> {
+  return apiRequest<ImportJobStatus>('/api/resolve/jobs', {
+    method: 'POST',
+    body: { url },
+    successStatuses: [202],
+    decode: decodeImportJobStatus,
+  });
+}
+
+/** The account's Spotify imports, newest first. */
+export function getImportJobs(signal?: AbortSignal): Promise<ImportJobStatus[]> {
+  return apiRequest<ImportJobStatus[]>('/api/resolve/jobs', {
     signal,
-    // The production resolver may match up to 200 tracks against Deezer in
-    // bounded batches; the ordinary 20 s request budget is too short for that
-    // server contract. Cancellation from query unmount/replacement still wins.
-    timeoutMs: 120_000,
-    decode: decodeResolveResult,
+    decode: decodeImportJobStatuses,
+  });
+}
+
+/** One import with its matched tracks once it is done. */
+export function getImportJob(id: string, signal?: AbortSignal): Promise<ImportJobDetail> {
+  return apiRequest<ImportJobDetail>(`/api/resolve/jobs/${pathSegment(id)}`, {
+    signal,
+    decode: decodeImportJobDetail,
+  });
+}
+
+/** Removes a finished import or cancels a running one. */
+export function deleteImportJob(id: string): Promise<void> {
+  return apiRequest<void>(`/api/resolve/jobs/${pathSegment(id)}`, {
+    method: 'DELETE',
+    successStatuses: [204],
   });
 }
 

@@ -27,7 +27,8 @@ import type {
   PlaylistUpdateRequest,
   PublicProfile,
   ReleaseRadarEntry,
-  ResolveResult,
+  ImportJobDetail,
+  ImportJobStatus,
   StorageCleanupResult,
   Track,
   TrackInput,
@@ -52,7 +53,10 @@ export interface SearchRepository {
   searchAlbums(query: string, signal?: AbortSignal): Promise<AlbumCard[]>;
   searchArtists(query: string, signal?: AbortSignal): Promise<ArtistSummary[]>;
   searchPlaylists(query: string, signal?: AbortSignal): Promise<PlaylistSearchResult[]>;
-  resolveExternalUrl(url: string, signal?: AbortSignal): Promise<ResolveResult>;
+  startImportJob(url: string): Promise<ImportJobStatus>;
+  getImportJobs(signal?: AbortSignal): Promise<ImportJobStatus[]>;
+  getImportJob(id: string, signal?: AbortSignal): Promise<ImportJobDetail>;
+  deleteImportJob(id: string): Promise<void>;
   getDeezerPlaylist(id: DeezerId, signal?: AbortSignal): Promise<DeezerPlaylistDetail>;
 }
 
@@ -208,7 +212,10 @@ export const musicRepository: MusicRepository = {
   getArtistAbout: api.getArtistAbout,
   getRadio: api.getRadio,
   recordPlay: api.recordPlay,
-  resolveExternalUrl: api.resolveExternalUrl,
+  startImportJob: api.startImportJob,
+  getImportJobs: api.getImportJobs,
+  getImportJob: api.getImportJob,
+  deleteImportJob: api.deleteImportJob,
   getDeezerPlaylist: api.getDeezerPlaylist,
   getLyrics: api.getLyrics,
   getCachedTrackIds: api.getCachedTrackIds,

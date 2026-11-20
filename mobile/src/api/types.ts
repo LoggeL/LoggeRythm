@@ -237,6 +237,37 @@ export interface ResolveResult {
   unmatched: UnmatchedTrack[];
 }
 
+export type ImportJobState = 'queued' | 'running' | 'done' | 'failed';
+
+/** Progress of a background Spotify import (`/api/resolve/jobs`), without the tracks. */
+export interface ImportJobStatus {
+  id: string;
+  url: string;
+  status: ImportJobState;
+  /** Empty until Spotify answered. */
+  type: ResolveKind | '';
+  name: string;
+  image: string;
+  /** Tracks to match after dedupe and cap; 0 while Spotify is still being read. */
+  total: number;
+  source_total: number;
+  processed: number;
+  matched: number;
+  /** Deezer lookups that raised; those tracks are listed as unmatched. */
+  failed_lookups: number;
+  lookup_error: string | null;
+  /** Why a failed job ended. */
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+export interface ImportJobDetail extends ImportJobStatus {
+  /** Set once the job is done. */
+  result: ResolveResult | null;
+}
+
 /** The unmodeled Deezer-playlist route omits Track.release_date. */
 export type DeezerPlaylistTrack = Omit<Track, 'release_date'>;
 

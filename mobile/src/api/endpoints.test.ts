@@ -10,6 +10,7 @@ import {
   createParty,
   createPlaylist,
   deleteAdminUser,
+  deleteImportJob,
   deletePlaylist,
   DISCOVERY_TIMEOUT_MS,
   getAdminInvites,
@@ -22,6 +23,8 @@ import {
   getDeezerPlaylist,
   getHomeChartCollections,
   getHomeMixes,
+  getImportJob,
+  getImportJobs,
   getLyrics,
   getMood,
   getPlaylist,
@@ -48,8 +51,8 @@ import {
   removePlaylistEntry,
   reorderPlaylistEntries,
   reorderPlaylistTracks,
-  resolveExternalUrl,
   setPlaylistVisibility,
+  startImportJob,
   unlikeTrack,
   updatePlaylist,
 } from './endpoints';
@@ -124,6 +127,26 @@ describe('API endpoint URL construction', () => {
   ])('encodes the dynamic path segment for %s', (_label, request, expectedPath) => {
     request();
     expect(mocks.apiRequest).toHaveBeenCalledWith(expectedPath, expect.any(Object));
+  });
+
+  it('starts, lists and removes Spotify import jobs with their documented statuses', () => {
+    startImportJob('https://open.spotify.com/playlist/abc');
+    getImportJobs();
+    deleteImportJob('job/../1');
+
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(1, '/api/resolve/jobs', expect.objectContaining({
+      method: 'POST',
+      body: { url: 'https://open.spotify.com/playlist/abc' },
+      successStatuses: [202],
+      decode: expect.any(Function),
+    }));
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(2, '/api/resolve/jobs', expect.objectContaining({
+      decode: expect.any(Function),
+    }));
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(3, '/api/resolve/jobs/job%2F..%2F1', {
+      method: 'DELETE',
+      successStatuses: [204],
+    });
   });
 
   it('encodes the track id used by the like endpoint', () => {
@@ -344,7 +367,7 @@ describe('web-parity endpoint contracts', () => {
   });
 
   it('encodes resolve, lyrics, import, cache, preload, and play-count requests', () => {
-    resolveExternalUrl('https://example.test/list?a=1&b=2');
+    getImportJob('ab/../cd');
     getDeezerPlaylist('12/../34');
     getLyrics('AC/DC', 'One & Two', '12');
     getCachedTrackIds();
@@ -353,11 +376,10 @@ describe('web-parity endpoint contracts', () => {
 
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(
       1,
-      '/api/resolve?url=https%3A%2F%2Fexample.test%2Flist%3Fa%3D1%26b%3D2',
+      '/api/resolve/jobs/ab%2F..%2Fcd',
       expect.objectContaining({
         decode: expect.any(Function),
         signal: undefined,
-        timeoutMs: 120_000,
       }),
     );
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(

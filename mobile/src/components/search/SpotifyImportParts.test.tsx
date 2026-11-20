@@ -63,7 +63,13 @@ describe('SpotifyImportForm', () => {
   it('keeps the link field, resolve action and input error contracts', () => {
     const onChangeText = vi.fn();
     const onSubmit = vi.fn();
-    const empty = SpotifyImportForm({ value: ' ', error: null, onChangeText, onSubmit });
+    const empty = SpotifyImportForm({
+      value: ' ',
+      error: null,
+      starting: false,
+      onChangeText,
+      onSubmit,
+    });
 
     expect(byTestId(empty, 'spotify-import-panel')).not.toBeNull();
     expect(byTestId(empty, 'spotify-import-input').props).toMatchObject({
@@ -80,6 +86,7 @@ describe('SpotifyImportForm', () => {
     const filled = SpotifyImportForm({
       value: 'https://open.spotify.com/album/1',
       error: 'Invalid link',
+      starting: false,
       onChangeText,
       onSubmit,
     });
@@ -89,6 +96,20 @@ describe('SpotifyImportForm', () => {
     expect(onSubmit).toHaveBeenCalledOnce();
     expect(byTestId(filled, 'spotify-import-input-error').props.accessibilityRole).toBe('alert');
     expect(textContent(filled)).toContain('Invalid link');
+
+    const starting = SpotifyImportForm({
+      value: 'https://open.spotify.com/album/1',
+      error: null,
+      starting: true,
+      onChangeText,
+      onSubmit,
+    });
+    const startingAction = byTestId(starting, 'spotify-import-resolve');
+    expect(startingAction.props).toMatchObject({
+      accessibilityLabel: strings.search.importStarting,
+      accessibilityState: { disabled: true, busy: true },
+      disabled: true,
+    });
   });
 });
 

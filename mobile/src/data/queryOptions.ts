@@ -2,7 +2,14 @@ import { queryOptions } from '@tanstack/react-query';
 import { canonicalDeezerIds, normalizeSearchQuery, queryKeys, type QueryScope } from './queryKeys';
 import { releaseRadarTracks } from './releaseRadar';
 import { musicRepository, type MusicRepository } from './repositories';
-import type { DeezerId, TrackPlayQuery } from '../api/types';
+import type { DeezerId, ImportJobStatus, TrackPlayQuery } from '../api/types';
+
+/** How often the import list refreshes while an import is still working. */
+export const IMPORT_JOB_POLL_MS = 1500;
+
+export function isActiveImportJob(job: Pick<ImportJobStatus, 'status'>): boolean {
+  return job.status === 'queued' || job.status === 'running';
+}
 
 export const LYRICS_STALE_TIME_MS = 60 * 60_000;
 export const SIMILAR_TRACKS_STALE_TIME_MS = 15 * 60_000;
@@ -145,11 +152,22 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         staleTime: SIMILAR_TRACKS_STALE_TIME_MS,
       });
     },
-    resolveExternalUrl(url: string) {
-      const normalized = url.trim();
+    /** The account's Spotify imports; polls while one is still working. */
+    importJobs(scope: QueryScope) {
       return queryOptions({
-        queryKey: queryKeys.external.resolve(normalized),
-        queryFn: ({ signal }) => repository.resolveExternalUrl(normalized, signal),
+        queryKey: queryKeys.external.importJobs(scope),
+        queryFn: ({ signal }) => repository.getImportJobs(signal),
+        staleTime: 0,
+        refetchInterval: (query) =>
+          query.state.data?.some(isActiveImportJob) ? IMPORT_JOB_POLL_MS : false,
+      });
+    },
+    /** A finished import's result; it never changes again. */
+    importJob(scope: QueryScope, id: string) {
+      return queryOptions({
+        queryKey: queryKeys.external.importJob(scope, id),
+        queryFn: ({ signal }) => repository.getImportJob(id, signal),
+        staleTime: Infinity,
       });
     },
     deezerPlaylist(id: DeezerId) {

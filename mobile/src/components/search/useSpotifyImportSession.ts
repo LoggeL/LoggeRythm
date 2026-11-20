@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PlaylistSummary, ResolveResult } from '../../api/types';
+import type { ImportJobStatus, PlaylistSummary, ResolveResult } from '../../api/types';
 import {
   createPlaylistWithTracks,
   invalidatePlaylistCaches,
@@ -19,8 +19,8 @@ import { playTracks } from '../../player/controller';
 import { reportPlayerNotice } from '../../player/notices';
 import { spotifyImportContextId } from './SpotifyImportVirtualizedList';
 
-/** Query key placeholder while no link is submitted; the query stays disabled. */
-const IDLE_IMPORT_QUERY_URL = 'https://open.spotify.com/track/idle';
+/** Query key placeholder while no finished import is open; the query stays disabled. */
+const IDLE_IMPORT_JOB_ID = 'idle';
 
 function autoRefreshNotice(): void {
   reportPlayerNotice(
@@ -36,16 +36,16 @@ interface ExistingSaveVariables {
   tracks: ResolveResult['tracks'];
 }
 
-/** Per-submission UI state; a new submission id resets all of it. */
+/** Per-import UI state; opening another import resets all of it. */
 interface ImportUiState {
   newNameOverride: string | null;
   playingIndex: number | null;
   runtimeError: string | null;
   saveFeedback: string | null;
-  submissionId: number | null;
+  submissionId: string | null;
 }
 
-function emptyUiState(submissionId: number | null): ImportUiState {
+function emptyUiState(submissionId: string | null): ImportUiState {
   return {
     newNameOverride: null,
     playingIndex: null,
@@ -57,26 +57,28 @@ function emptyUiState(submissionId: number | null): ImportUiState {
 
 interface SpotifyImportSessionInput {
   accountScope: string;
-  /** The normalized, submitted link; null while nothing is submitted. */
-  link: string | null;
-  submissionId: number | null;
+  /** The open import; its result loads once it is done. */
+  job: ImportJobStatus | null;
 }
 
 /**
- * Everything behind one submitted Spotify link: the resolve query, the
+ * Everything behind one finished Spotify import: its result, the
  * destination playlists, both save mutations and playback of the matches.
  */
-export function useSpotifyImportSession({
-  accountScope,
-  link,
-  submissionId,
-}: SpotifyImportSessionInput) {
+export function useSpotifyImportSession({ accountScope, job }: SpotifyImportSessionInput) {
   const queryClient = useQueryClient();
+  const done = job !== null && job.status === 'done';
+  const submissionId = job?.id ?? null;
+  const link = done ? job.url : null;
   const resultQuery = useQuery({
-    ...musicQueries.resolveExternalUrl(link ?? IDLE_IMPORT_QUERY_URL),
-    enabled: link !== null,
+    ...musicQueries.importJob(accountScope, job?.id ?? IDLE_IMPORT_JOB_ID),
+    enabled: done,
   });
-  const result = link === null ? undefined : resultQuery.data;
+  const detail = done ? resultQuery.data : undefined;
+  if (detail !== undefined && detail.result === null) {
+    throw new Error(`Finished Spotify import ${detail.id} has no result`);
+  }
+  const result: ResolveResult | undefined = detail?.result ?? undefined;
 
   const [storedUiState, setStoredUiState] = useState<ImportUiState>(() =>
     emptyUiState(submissionId));
