@@ -14,7 +14,7 @@ import {
   reconcileOfflineManifest,
   removeIndividualDownload,
   removePlaylistDownload,
-  requireOfflineTrack,
+  validateOfflineTrack,
   settlePlaylistDownload,
   type OfflineManifest,
   type OfflineTrackFailureInput,
@@ -516,7 +516,7 @@ export function downloadTrackForOffline(scope: string, track: Track): Promise<vo
     try {
       // Reject metadata the manifest cannot record before the native download
       // runs; otherwise the audio file would land on disk without an owner.
-      requireOfflineTrack(track, 'Individually downloaded track');
+      validateOfflineTrack(track, 'Individually downloaded track');
       const origin = offlineScopeOrigin(scope);
       const configuredOrigin = new URL(await getApiBase()).origin;
       if (origin !== configuredOrigin) {

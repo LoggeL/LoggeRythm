@@ -240,7 +240,7 @@ function decodeStrictTrack(value: unknown, label: string): Track {
  * Strictly validate a track for offline storage. Callers that download first
  * and record afterwards use this to fail before any audio reaches the disk.
  */
-export function requireOfflineTrack(value: Track, label: string): Track {
+export function validateOfflineTrack(value: Track, label: string): Track {
   return decodeStrictTrack(value, label);
 }
 
