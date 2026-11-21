@@ -3,10 +3,10 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { PartyMember, PartyState, PartyTrack, Track } from '../../api/types';
 import { strings } from '../../localization';
 import { canRemovePartyTrack, partyDisplayName, partyLoadLabel } from '../../party/partyModel';
-import type { PartyPhase } from '../../party/partySession';
+import type { PartyListenMode, PartyPhase } from '../../party/partySession';
 import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon, { type AppIconName } from '../AppIcon';
-import { ActionButton, AppText, Artwork, IconButton } from '../ui';
+import { ActionButton, AppText, Artwork, FilterChip, IconButton } from '../ui';
 
 interface PartyHeaderProps {
   party: PartyState;
@@ -303,6 +303,45 @@ export function PartySearchResultRow({ track, locked, adding, onAdd }: PartySear
   );
 }
 
+interface PartyListenChoiceProps {
+  hostName: string;
+  mode: PartyListenMode;
+  onChange: (mode: PartyListenMode) => void;
+}
+
+/**
+ * A member picks where they hear the party: in step on this device, or
+ * together at the host's speaker with this device silent.
+ */
+export function PartyListenChoice({ hostName, mode, onChange }: PartyListenChoiceProps) {
+  return (
+    <View testID="party-listen-choice" style={styles.listen}>
+      <AppText variant="bodyStrong" accessibilityRole="header">{strings.party.listenTitle}</AppText>
+      <View accessibilityRole="radiogroup" accessibilityLabel={strings.party.listenTitle} style={styles.listenOptions}>
+        <FilterChip
+          testID="party-listen-device"
+          label={strings.party.listenOnDevice}
+          icon="cellphone"
+          accessibilityRole="radio"
+          selected={mode === 'device'}
+          onPress={() => onChange('device')}
+        />
+        <FilterChip
+          testID="party-listen-host"
+          label={strings.party.listenAtHost}
+          icon="speaker"
+          accessibilityRole="radio"
+          selected={mode === 'host'}
+          onPress={() => onChange('host')}
+        />
+      </View>
+      <AppText testID="party-listen-hint" variant="callout" color="secondary">
+        {mode === 'device' ? strings.party.followHint(hostName) : strings.party.listenAtHostHint(hostName)}
+      </AppText>
+    </View>
+  );
+}
+
 /** Everyone in the party; the host first is the server's order, badges mark host and guests. */
 export function PartyMembers({ members, hostName }: { members: readonly PartyMember[]; hostName: string }) {
   return (
@@ -378,6 +417,15 @@ const styles = StyleSheet.create({
   rowCopy: { flex: 1, minWidth: 0, gap: 2 },
   rowActions: { flexDirection: 'row' },
   pressed: { opacity: opacity.pressed },
+  listen: {
+    marginHorizontal: layout.pagePadding,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    gap: spacing.xs,
+    borderRadius: radii.md,
+    backgroundColor: colors.fill,
+  },
+  listenOptions: { flexDirection: 'row', flexWrap: 'wrap', columnGap: spacing.xs },
   members: { paddingHorizontal: layout.pagePadding, gap: spacing.xs },
   member: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 44 },
   memberName: { flex: 1, minWidth: 0 },

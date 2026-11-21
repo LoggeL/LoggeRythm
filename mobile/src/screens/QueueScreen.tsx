@@ -318,7 +318,13 @@ export function QueueSurface({
   const insets = useSafeAreaInsets();
   const partyState = usePartySession();
   // While a party steers the player its queue is the party's: edit it there.
-  const followedParty = partyState.detached ? null : partyState.party;
+  const followedParty =
+    partyState.detached || partyState.listenMode === 'host' ? null : partyState.party;
+  // Listening at the host leaves this device's queue to the device, but the
+  // party stays one tap away (and a second party cannot be started meanwhile).
+  const hostParty =
+    !partyState.detached && partyState.listenMode === 'host' ? partyState.party : null;
+  const bannerParty = followedParty ?? hostParty;
   const [startingParty, setStartingParty] = useState(false);
   const [partyStartError, setPartyStartError] = useState<string | null>(null);
   const playerError = usePlayerError();
@@ -576,16 +582,20 @@ export function QueueSurface({
         />
       </View>
 
-      {followedParty !== null ? (
+      {bannerParty !== null ? (
         <PartyNotice
           testID="queue-party-active"
           tone="info"
           title={strings.party.activeTitle(
-            followedParty.name.trim() === '' ? null : followedParty.name,
+            bannerParty.name.trim() === '' ? null : bannerParty.name,
           )}
-          message={strings.party.queueLocked}
+          message={
+            followedParty !== null
+              ? strings.party.queueLocked
+              : strings.party.queueAtHost(bannerParty.host_name)
+          }
           actionLabel={strings.party.openParty}
-          onAction={() => onOpenParty(followedParty.code)}
+          onAction={() => onOpenParty(bannerParty.code)}
         />
       ) : (
         <View style={styles.tools}>

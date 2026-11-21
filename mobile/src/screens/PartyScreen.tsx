@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, TextInput, Vie
 import type { Track } from '../api/types';
 import {
   PartyHeader,
+  PartyListenChoice,
   PartyMembers,
   PartyNotice,
   PartyQueueRow,
@@ -183,7 +184,18 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   };
 
   const ids = party.tracks.map((entry) => entry.id);
-  const buffering = playbackState === PlaybackState.Buffering && !session.detached;
+  // Only a device that plays the party buffers it.
+  const buffering =
+    playbackState === PlaybackState.Buffering && !session.detached && session.listenMode === 'device';
+
+  const changeListenMode = (mode: 'device' | 'host') => {
+    setActionError(null);
+    try {
+      partySession().setListenMode(mode);
+    } catch (error) {
+      setActionError(strings.party.listenSwitchFailed(partyErrorDetail(error)));
+    }
+  };
 
   return (
     <ScrollView
@@ -230,7 +242,11 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         <PartyNotice testID="party-feedback" tone="info" message={feedback} />
       ) : null}
       {!party.is_host && !session.detached ? (
-        <PartyNotice testID="party-follow-hint" tone="info" message={strings.party.followHint(party.host_name)} />
+        <PartyListenChoice
+          hostName={party.host_name}
+          mode={session.listenMode}
+          onChange={changeListenMode}
+        />
       ) : null}
 
       <View style={styles.section}>

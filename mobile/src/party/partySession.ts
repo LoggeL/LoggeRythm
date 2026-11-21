@@ -23,12 +23,21 @@ export const PARTY_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000] as const;
 
 export type PartyPhase = 'idle' | 'joining' | 'join-failed' | 'live' | 'stale';
 
+/**
+ * Where a member hears the party: `device` plays it on this device in step
+ * with the host; `host` listens together at the host's speaker, so this
+ * device stays silent and only adds songs. The host always plays.
+ */
+export type PartyListenMode = 'device' | 'host';
+
 export interface PartySessionSnapshot {
   code: string | null;
   party: PartyState | null;
   phase: PartyPhase;
   /** Why joining failed (join-failed) or why the shown party is out of date (stale). */
   error: string | null;
+  /** Where this device listens; always `device` for the host. */
+  listenMode: PartyListenMode;
   /** The player plays something else; the party continues without this device. */
   detached: boolean;
   /** The last failed player sync or host broadcast; cleared by the next success. */
@@ -57,6 +66,8 @@ export interface PartySessionDependencies {
   openStream(code: string, handlers: PartyStreamHandlers): Promise<() => void>;
   player: PartySessionPlayer;
   syncQueue(target: PartyQueueTarget): Promise<PartyQueueSyncResult>;
+  /** Clear the party's entries from the native player; other music stays. */
+  releaseQueue(code: string): Promise<boolean>;
   activePartyItemId(code: string): number | null;
   now(): number;
   setTimeout(callback: () => void, ms: number): unknown;
@@ -70,6 +81,7 @@ const IDLE: PartySessionSnapshot = Object.freeze({
   party: null,
   phase: 'idle',
   error: null,
+  listenMode: 'device',
   detached: false,
   playbackError: null,
 });
@@ -123,9 +135,38 @@ export class PartySession {
 
   getSnapshot = (): PartySessionSnapshot => this.state;
 
-  /** True while the native player follows a party (queue actions go to the party). */
+  /** True while the native player follows a party. */
   isFollowingParty(): boolean {
-    return this.state.code !== null && this.state.party !== null && !this.state.detached;
+    return this.state.code !== null && this.state.party !== null && this.steersPlayer();
+  }
+
+  /**
+   * Play-next / add-to-queue add the song to the party: while this device
+   * plays the party, and while it listens at the host without own music queued.
+   */
+  routesQueueActionsToParty(): boolean {
+    if (this.state.code === null || this.state.party === null || this.state.detached) return false;
+    if (this.state.listenMode === 'device') return true;
+    return this.deps.player.getSnapshot().queue.length === 0;
+  }
+
+  /**
+   * Choose where this member hears the party. `host` stops the party on this
+   * device (other music it plays stays untouched); `device` plays along again.
+   */
+  setListenMode(mode: PartyListenMode): void {
+    const engine = this.requireEngine();
+    const party = this.state.party;
+    if (party === null) throw new Error('The party has not loaded yet; there is nothing to listen to');
+    if (party.is_host && mode !== 'device') {
+      throw new Error('The host plays the party on this device and cannot listen elsewhere');
+    }
+    if (mode === this.state.listenMode && !this.state.detached) return;
+    engine.synced = false;
+    engine.lastActiveItemId = null;
+    engine.lastIntent = null;
+    this.publish({ ...this.state, listenMode: mode, detached: false, playbackError: null });
+    this.scheduleSync(engine);
   }
 
   /**
@@ -182,14 +223,9 @@ export class PartySession {
     this.publish(IDLE);
   }
 
-  /** Follow the party again after the player was used for other music. */
+  /** Follow the party on this device again after it was used for other music. */
   rejoinPlayback(): void {
-    const engine = this.requireEngine();
-    engine.synced = false;
-    engine.lastActiveItemId = null;
-    engine.lastIntent = null;
-    this.publish({ ...this.state, detached: false, playbackError: null });
-    this.scheduleSync(engine);
+    this.setListenMode('device');
   }
 
   /** Add a song for everyone (track actions route here while following a party). */
@@ -202,6 +238,11 @@ export class PartySession {
   reset(): void {
     this.stopEngine();
     this.publish(IDLE);
+  }
+
+  /** This device's player plays the party and is steered by it. */
+  private steersPlayer(): boolean {
+    return !this.state.detached && this.state.listenMode === 'device';
   }
 
   private requireEngine(): Engine {
@@ -353,7 +394,11 @@ export class PartySession {
     };
   }
 
-  /** Serialised, latest-wins mirror of the party queue into the player. */
+  /**
+   * Serialised, latest-wins reconciliation of the player with the party:
+   * mirror the queue while listening on this device, release it while
+   * listening at the host.
+   */
   private scheduleSync(engine: Engine): void {
     if (this.state.detached) return;
     if (engine.syncing) {
@@ -367,8 +412,15 @@ export class PartySession {
           engine.syncQueued = false;
           const party = this.state.party;
           if (party === null || this.engine !== engine || this.state.detached) return;
+          if (this.state.listenMode === 'host') {
+            await this.deps.releaseQueue(engine.code);
+            if (this.engine !== engine) return;
+            engine.synced = false;
+            if (this.state.playbackError !== null) this.publish({ ...this.state, playbackError: null });
+            continue;
+          }
           await this.deps.syncQueue(this.target(party));
-          if (this.engine !== engine) return;
+          if (this.engine !== engine || this.state.listenMode !== 'device') continue;
           engine.synced = true;
           engine.lastActiveItemId = this.deps.activePartyItemId(engine.code);
           engine.lastIntent = intendsToPlay(this.deps.player.getSnapshot());
@@ -386,7 +438,7 @@ export class PartySession {
 
   private onPlayerChange(engine: Engine): void {
     const party = this.state.party;
-    if (this.engine !== engine || party === null || this.state.detached) return;
+    if (this.engine !== engine || party === null || !this.steersPlayer()) return;
     if (engine.syncing || !engine.synced) return;
     const snapshot = this.deps.player.getSnapshot();
     const itemId = this.deps.activePartyItemId(engine.code);
@@ -443,7 +495,7 @@ export class PartySession {
   /** Followers: track the host's entry, play state and position. */
   private follow(engine: Engine): void {
     const party = this.state.party;
-    if (this.engine !== engine || party === null || party.is_host || this.state.detached) return;
+    if (this.engine !== engine || party === null || party.is_host || !this.steersPlayer()) return;
     if (engine.syncing || !engine.synced) return;
     const current = currentItemId(party);
     if (current === null) return;

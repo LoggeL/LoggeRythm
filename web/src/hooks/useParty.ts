@@ -10,6 +10,7 @@ import {
 } from "@/lib/partySocket";
 import { usePlayerStore } from "@/store/player";
 import { usePartyStore } from "@/store/party";
+import { partyPlayerAction } from "@/app/party/listenMode";
 import type { PartyState, PartyTrack, Track } from "@/types";
 
 function partyTrackToTrack(pt: PartyTrack): Track {
@@ -31,6 +32,7 @@ export function useParty(code: string | null) {
   const setPartyBridge = usePlayerStore((s) => s.setPartyBridge);
   const setParty = usePartyStore((s) => s.setParty);
   const clearParty = usePartyStore((s) => s.clearParty);
+  const listenMode = usePartyStore((s) => s.listenMode);
 
   // Live state fed by the SSE stream. The initial full-state frame arrives on
   // connect; every mutation pushes a fresh frame. React Query below is only the
@@ -94,11 +96,10 @@ export function useParty(code: string | null) {
     };
   }, [code, data, setPartyBridge]);
 
-  // Sync live state into the player queue + party store.
+  // Sync live state into the party store first: it resets the listen mode
+  // when a different party opens.
   useEffect(() => {
     if (!data) return;
-    const tracks = data.tracks.map(partyTrackToTrack);
-    setPartyQueue(tracks, data.current_index, data.tracks.map((entry) => entry.id));
     setParty({
       code: data.code,
       active: true,
@@ -112,7 +113,28 @@ export function useParty(code: string | null) {
         ? Date.parse(data.playback_updated_at)
         : null,
     });
-  }, [data, setPartyQueue, setParty]);
+  }, [data, setParty]);
+
+  // Mirror the party into this browser's player while listening here; while
+  // listening at the host, take the party out of the player instead.
+  useEffect(() => {
+    if (!data) return;
+    const storeCode = usePartyStore.getState().code;
+    if (storeCode !== data.code) {
+      throw new Error(`Party store holds ${storeCode ?? "no party"} while party ${data.code} is shown.`);
+    }
+    const holdsParty = usePlayerStore.getState().partyQueueItemIds.length > 0;
+    switch (partyPlayerAction(data.is_host, listenMode, holdsParty)) {
+      case "mirror":
+        setPartyQueue(data.tracks.map(partyTrackToTrack), data.current_index, data.tracks.map((entry) => entry.id));
+        return;
+      case "release":
+        setPartyQueue([], -1, []);
+        return;
+      case "none":
+        return;
+    }
+  }, [data, listenMode, setPartyQueue]);
 
   const create = useCallback(async (name?: string) => api.createParty(name), []);
   const join = useCallback(async () => {

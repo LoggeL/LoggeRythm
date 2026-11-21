@@ -1008,6 +1008,23 @@ export function activePartyItemId(code: string): number | null {
 }
 
 /**
+ * Stop this device from playing a party: clears the native queue when it holds
+ * any of the party's entries and leaves other music alone. Resolves true when
+ * the queue was cleared.
+ */
+export async function releasePartyQueue(code: string): Promise<boolean> {
+  const prefix = `party:${stableIdPart(code)}:`;
+  const before = getQueueSnapshot();
+  if (!before.items.some((item) => queueStableIdOf(item).startsWith(prefix))) return false;
+  queueGeneration += 1;
+  resetContextShuffleState();
+  Player.clear();
+  await waitForNativeQueueMutation('Party queue release', () => getQueueSnapshot().items.length === 0);
+  persistContextShuffleState();
+  return true;
+}
+
+/**
  * Make the native queue mirror a party. The whole queue is replaced in one
  * native step, so removals, additions and reorders never restart the running
  * entry: when the party's current entry is already playing here (or, right

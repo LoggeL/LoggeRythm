@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PartyState, PartyTrack } from '../../api/types';
 import { strings } from '../../localization';
 import { byTestId, queryByTestId, textContent } from '../../test/render';
-import { PartyLoadBadge, PartyMembers, PartyNotice, PartyQueueRow } from './PartyParts';
+import { PartyListenChoice, PartyLoadBadge, PartyMembers, PartyNotice, PartyQueueRow } from './PartyParts';
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
@@ -110,6 +110,20 @@ describe('party parts', () => {
     expect(textContent(rendered)).toEqual(expect.arrayContaining([
       'Host', strings.party.hostBadge, 'Sam', strings.party.guestBadge,
     ]));
+  });
+
+  it('lets a member choose between this device and the host, with a hint for each', () => {
+    const onChange = vi.fn();
+    const onDevice = PartyListenChoice({ hostName: 'Kim', mode: 'device', onChange });
+    expect(byTestId(onDevice, 'party-listen-device').props.accessibilityState).toMatchObject({ checked: true });
+    expect(byTestId(onDevice, 'party-listen-host').props.accessibilityState).toMatchObject({ checked: false });
+    expect(textContent(onDevice)).toContain(strings.party.followHint('Kim'));
+    (byTestId(onDevice, 'party-listen-host').props.onPress as () => void)();
+    expect(onChange).toHaveBeenCalledWith('host');
+
+    const atHost = PartyListenChoice({ hostName: 'Kim', mode: 'host', onChange });
+    expect(byTestId(atHost, 'party-listen-host').props.accessibilityState).toMatchObject({ checked: true });
+    expect(textContent(atHost)).toContain(strings.party.listenAtHostHint('Kim'));
   });
 
   it('renders danger notices as alerts and requires complete actions', () => {

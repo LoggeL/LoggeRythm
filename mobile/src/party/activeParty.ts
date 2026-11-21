@@ -2,8 +2,8 @@ import type { Track } from '../api/types';
 
 /** What queue actions elsewhere in the app need to know about the open party. */
 export interface ActivePartyRouter {
-  /** The native player currently follows a party. */
-  isFollowingParty(): boolean;
+  /** Play-next / add-to-queue go to the open party instead of this device's queue. */
+  routesQueueActionsToParty(): boolean;
   /** Add a song to that party for everyone. */
   addTrack(track: Track): Promise<void>;
   /** Forget the party locally (account cleanup). */

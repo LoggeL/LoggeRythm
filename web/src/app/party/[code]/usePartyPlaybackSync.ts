@@ -17,7 +17,8 @@ const MAX_DRIFT_SEC = 1.5;
 export function usePartyPlaybackSync(
   code: string,
   isHost: boolean,
-  joined: boolean,
+  /** Joined and listening in this browser; false while listening at the host. */
+  following: boolean,
   setPlayback: (isPlaying: boolean, positionSec: number) => Promise<void>,
 ) {
   const followHostPlayback = usePlayerStore((s) => s.followHostPlayback);
@@ -46,7 +47,7 @@ export function usePartyPlaybackSync(
   }, [code, isHost, setPlayback]);
 
   useEffect(() => {
-    if (!code || isHost || !joined) return;
+    if (!code || isHost || !following) return;
     const reconcile = () => {
       const player = usePlayerStore.getState();
       if (player.index < 0) return;
@@ -59,5 +60,5 @@ export function usePartyPlaybackSync(
     reconcile();
     const interval = window.setInterval(reconcile, 1000);
     return () => window.clearInterval(interval);
-  }, [code, isHost, joined, hostIsPlaying, hostPosition, hostUpdatedAt, followHostPlayback]);
+  }, [code, isHost, following, hostIsPlaying, hostPosition, hostUpdatedAt, followHostPlayback]);
 }

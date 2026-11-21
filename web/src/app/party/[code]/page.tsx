@@ -4,12 +4,13 @@ import { use, useState } from "react";
 import { useMe } from "@/hooks/useAuth";
 import { usePlayerStore } from "@/store/player";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { CheckCircleIcon, CopyIcon, InfoCircleIcon } from "@/components/feedbackIcons";
+import { CheckCircleIcon, CopyIcon } from "@/components/feedbackIcons";
 import MembersCard from "./MembersCard";
 import PartyQueue from "./PartyQueue";
 import PartySearch from "./PartySearch";
 import { PartyBlocked, PartySkeleton } from "./PartyStates";
 import GuestParty from "./GuestParty";
+import ListenChoice from "./ListenChoice";
 import ShareCard from "./ShareCard";
 import { usePartySearch } from "./usePartySearch";
 import { usePartySession } from "./usePartySession";
@@ -138,13 +139,7 @@ function MemberParty({ code }: { code: string }) {
         </div>
       )}
       {!isHost && (
-        <p className="mb-8 flex items-start gap-3 border-l-2 border-border py-0.5 pl-4 text-sm leading-relaxed text-muted">
-          <InfoCircleIcon width={18} height={18} className="mt-0.5 shrink-0 text-muted" />
-          <span>
-            <span className="font-medium text-foreground">{party.host_name} steuert die Wiedergabe.</span> Deine Wiedergabe folgt
-            automatisch – Songs kannst du jederzeit zur Warteschlange hinzufügen.
-          </span>
-        </p>
+        <ListenChoice hostName={party.host_name} mode={session.listenMode} onChange={session.setListenMode} />
       )}
 
       <div className="grid items-start gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_19rem]">
@@ -155,7 +150,7 @@ function MemberParty({ code }: { code: string }) {
             currentIndex={party.current_index}
             isHost={isHost}
             viewerKey={party.viewer_key}
-            bufferingCurrent={buffering}
+            bufferingCurrent={buffering && session.listenMode === "device"}
             pending={session.queuePending}
             locked={session.queueLocked}
             error={session.queueError}

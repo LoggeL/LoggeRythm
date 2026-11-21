@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { PartyListenMode } from "@/app/party/listenMode";
 import type { PartyMember } from "@/types";
 
 interface PartyStoreState {
@@ -16,6 +17,10 @@ interface PartyStoreState {
   /** epoch ms of the last playback update, or null if never set. */
   playbackUpdatedAt: number | null;
 
+  /** Where this browser hears the party; reset to `device` for each new party. */
+  listenMode: PartyListenMode;
+  setListenMode: (mode: PartyListenMode) => void;
+
   setParty: (state: {
     code: string;
     active?: boolean;
@@ -30,7 +35,7 @@ interface PartyStoreState {
   clearParty: () => void;
 }
 
-export const usePartyStore = create<PartyStoreState>((set) => ({
+export const usePartyStore = create<PartyStoreState>((set, get) => ({
   code: null,
   active: false,
   name: "",
@@ -40,9 +45,20 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
   isPlaying: false,
   positionSec: 0,
   playbackUpdatedAt: null,
+  listenMode: "device",
+
+  setListenMode: (mode) => {
+    const { code, isHost } = get();
+    if (code === null) throw new Error("No party is open; there is nowhere to listen.");
+    if (isHost && mode !== "device") {
+      throw new Error("The host plays the party in this browser and cannot listen elsewhere.");
+    }
+    set({ listenMode: mode });
+  },
 
   setParty: (state) =>
-    set({
+    set((current) => ({
+      ...(current.code === state.code ? {} : { listenMode: "device" as const }),
       code: state.code,
       active: state.active ?? true,
       name: state.name,
@@ -52,7 +68,7 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
       isPlaying: state.isPlaying,
       positionSec: state.positionSec,
       playbackUpdatedAt: state.playbackUpdatedAt,
-    }),
+    })),
 
   clearParty: () =>
     set({
@@ -65,5 +81,6 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
       isPlaying: false,
       positionSec: 0,
       playbackUpdatedAt: null,
+      listenMode: "device",
     }),
 }));

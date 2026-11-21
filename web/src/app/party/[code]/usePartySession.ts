@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useParty } from "@/hooks/useParty";
+import { usePartyStore } from "@/store/party";
 import { toast } from "@/store/toast";
 import type { Track } from "@/types";
 import { leavePartyAndNavigate, partyFailureMessage } from "../requests";
@@ -30,7 +31,9 @@ export function usePartySession(code: string) {
   const { party, isLoading, isError, error, refetch, join, add, remove, reorder, setCurrent, setPlayback, leave } =
     useParty(code);
   const isHost = !!party?.is_host;
-  usePartyPlaybackSync(code, isHost, !!party, setPlayback);
+  const listenMode = usePartyStore((s) => s.listenMode);
+  const setListenMode = usePartyStore((s) => s.setListenMode);
+  usePartyPlaybackSync(code, isHost, !!party && listenMode === "device", setPlayback);
 
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
@@ -126,6 +129,9 @@ export function usePartySession(code: string) {
   return {
     party,
     isHost,
+    /** Where this browser hears the party (members only; the host always plays). */
+    listenMode,
+    setListenMode,
     isLoading,
     /** The background refresh failed while older party data is still shown. */
     isStale: isError,

@@ -31,7 +31,7 @@ vi.mock('../player/controller', () => ({
 
 const party = { following: false, addTrack: vi.fn(async () => undefined) };
 installActivePartyRouter({
-  isFollowingParty: () => party.following,
+  routesQueueActionsToParty: () => party.following,
   addTrack: party.addTrack,
   reset: vi.fn(),
 });

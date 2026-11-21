@@ -61,6 +61,7 @@ const sessionUrl = await compile(party("usePartySession.ts"), {
     add: async (track) => {globalThis.__partySearchFixture.added.push(track);},
     join: async () => {}, leave: async () => {},
   }; }`),
+  "@/store/party": moduleUrl("export const usePartyStore = (selector) => selector({listenMode: 'device', setListenMode() {}});"),
   "@/store/toast": toastStub,
   "../requests": requestsUrl,
   "./usePartyPlaybackSync": playbackSyncUrl,
@@ -113,6 +114,9 @@ const membersUrl = await compile(party("MembersCard.tsx"), {
 const statesUrl = await compile(party("PartyStates.tsx"), {
   "react/jsx-runtime": jsxRuntime,
 });
+const listenChoiceUrl = await compile(party("ListenChoice.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+});
 const pageUrl = await compile(party("page.tsx"), {
   react: reactStub,
   "react/jsx-runtime": jsxRuntime,
@@ -121,6 +125,7 @@ const pageUrl = await compile(party("page.tsx"), {
   "@/hooks/useAuth": moduleUrl("export function useMe() { return {data: {is_approved: true}}; }"),
   "@/store/player": playerStub,
   "./GuestParty": nullStub,
+  "./ListenChoice": listenChoiceUrl,
   "./MembersCard": membersUrl,
   "./PartyQueue": queueUrl,
   "./PartySearch": searchPanelUrl,

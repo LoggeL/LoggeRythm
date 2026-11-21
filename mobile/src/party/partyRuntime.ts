@@ -1,7 +1,7 @@
 import type { PartyState } from '../api/types';
 import { musicRepository } from '../data/repositories';
 import Player, { PlaybackState } from '../player/player';
-import { activePartyItemId, getQueueSnapshot, syncPartyQueue } from '../player/controller';
+import { activePartyItemId, getQueueSnapshot, releasePartyQueue, syncPartyQueue } from '../player/controller';
 import { mediaItemToTrack } from '../player/mediaItem';
 import { installActivePartyRouter } from './activeParty';
 import { openPartyStream } from './partyStream';
@@ -17,6 +17,7 @@ export function partySession(): PartySession {
       openStream: (code, handlers) => openPartyStream(code, handlers),
       player: Player,
       syncQueue: syncPartyQueue,
+      releaseQueue: releasePartyQueue,
       activePartyItemId,
       now: () => Date.now(),
       setTimeout: (callback, ms) => setTimeout(callback, ms),

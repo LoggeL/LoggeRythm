@@ -787,6 +787,12 @@ export interface StringCatalog {
     leaveStay: string;
     leaveFailed: (detail: string) => string;
     followHint: (host: string) => string;
+    listenTitle: string;
+    listenOnDevice: string;
+    listenAtHost: string;
+    listenAtHostHint: (host: string) => string;
+    listenSwitchFailed: (detail: string) => string;
+    queueAtHost: (host: string) => string;
     detachedTitle: string;
     detachedBody: string;
     rejoinPlayback: string;
@@ -1676,6 +1682,14 @@ export const de: StringCatalog = {
     leaveFailed: (detail) => `Die Party konnte nicht verlassen werden: ${detail}`,
     followHint: (host) =>
       `${host} steuert die Wiedergabe. Deine Wiedergabe folgt automatisch – Songs kannst du jederzeit hinzufügen.`,
+    listenTitle: 'Wo hörst du?',
+    listenOnDevice: 'Auf diesem Gerät',
+    listenAtHost: 'Beim Host',
+    listenAtHostHint: (host) =>
+      `Ihr hört gemeinsam bei ${host}. Dieses Gerät spielt nichts ab – Songs kannst du trotzdem hinzufügen.`,
+    listenSwitchFailed: (detail) => `Der Hörort konnte nicht gewechselt werden: ${detail}`,
+    queueAtHost: (host) =>
+      `Du hörst gemeinsam bei ${host}. Solange hier keine eigene Musik läuft, landen hinzugefügte Songs in der Party.`,
     detachedTitle: 'Deine Wiedergabe folgt der Party nicht mehr',
     detachedBody: 'Du hast andere Musik gestartet. Die Party läuft ohne dich weiter.',
     rejoinPlayback: 'Wieder mithören',
@@ -2398,6 +2412,14 @@ export const en: StringCatalog = {
     leaveFailed: (detail) => `Leaving the party failed: ${detail}`,
     followHint: (host) =>
       `${host} controls playback. Yours follows automatically – you can add songs any time.`,
+    listenTitle: 'Where are you listening?',
+    listenOnDevice: 'On this device',
+    listenAtHost: 'At the host',
+    listenAtHostHint: (host) =>
+      `You’re listening together at ${host}’s. This device stays silent – you can still add songs.`,
+    listenSwitchFailed: (detail) => `Switching where you listen failed: ${detail}`,
+    queueAtHost: (host) =>
+      `You’re listening together at ${host}’s. While nothing else plays here, songs you add go to the party.`,
     detachedTitle: 'Your playback no longer follows the party',
     detachedBody: 'You started other music. The party continues without you.',
     rejoinPlayback: 'Listen along again',

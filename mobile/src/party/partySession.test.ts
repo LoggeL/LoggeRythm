@@ -115,6 +115,7 @@ function harness(initialActive: number | null = 1) {
       seekTo: vi.fn(),
     },
     syncQueue: vi.fn(async (_target: PartyQueueTarget) => 'replaced' as const),
+    releaseQueue: vi.fn(async (_code: string) => true),
     activePartyItemId: vi.fn(() => state.activeItemId),
     now: vi.fn(() => NOW),
     setTimeout: vi.fn((callback: () => void, ms: number) => {
@@ -304,6 +305,72 @@ describe('PartySession', () => {
     await h.settle();
     expect(h.session.getSnapshot().detached).toBe(false);
     expect(h.deps.syncQueue).toHaveBeenCalledOnce();
+  });
+
+  it('listens at the host: releases the party from this device and stops steering it', async () => {
+    const h = harness(1);
+    h.session.enter('ABC123');
+    await h.settle();
+    expect(h.session.getSnapshot().listenMode).toBe('device');
+
+    h.session.setListenMode('host');
+    await h.settle();
+    expect(h.session.getSnapshot()).toMatchObject({ listenMode: 'host', detached: false });
+    expect(h.deps.releaseQueue).toHaveBeenCalledWith('ABC123');
+    expect(h.session.isFollowingParty()).toBe(false);
+
+    // New frames keep the party off this device instead of syncing it back.
+    h.deps.syncQueue.mockClear();
+    h.state.activeItemId = null;
+    h.state.snapshot = snapshot({ queue: [], activeIndex: null, isPlaying: false });
+    h.streams[0].onState(party({ current_index: 1 }));
+    await h.settle();
+    expect(h.deps.syncQueue).not.toHaveBeenCalled();
+
+    // Neither the follower loop nor a player change touches the player.
+    h.state.snapshot = snapshot({ isPlaying: false });
+    h.tick(PARTY_FOLLOW_INTERVAL_MS);
+    h.playerChanged();
+    expect(h.deps.player.play).not.toHaveBeenCalled();
+    expect(h.deps.player.seekTo).not.toHaveBeenCalled();
+    expect(h.session.getSnapshot().detached).toBe(false);
+
+    h.session.setListenMode('device');
+    await h.settle();
+    expect(h.session.getSnapshot().listenMode).toBe('device');
+    expect(h.deps.syncQueue).toHaveBeenCalledWith(expect.objectContaining({ currentIndex: 1 }));
+    expect(h.session.isFollowingParty()).toBe(true);
+  });
+
+  it('routes queue actions to the party at the host only while no own music is queued', async () => {
+    const h = harness(1);
+    h.session.enter('ABC123');
+    await h.settle();
+    expect(h.session.routesQueueActionsToParty()).toBe(true);
+
+    h.session.setListenMode('host');
+    await h.settle();
+    h.state.snapshot = snapshot({ queue: [], activeIndex: null });
+    expect(h.session.routesQueueActionsToParty()).toBe(true);
+    h.state.snapshot = snapshot();
+    expect(h.session.routesQueueActionsToParty()).toBe(false);
+  });
+
+  it('surfaces a failed release and refuses to send the host elsewhere', async () => {
+    const h = harness(1);
+    h.deps.releaseQueue.mockRejectedValueOnce(new Error('native clear timed out'));
+    h.session.enter('ABC123');
+    await h.settle();
+    h.session.setListenMode('host');
+    await h.settle();
+    expect(h.session.getSnapshot().playbackError).toBe(strings.party.syncFailed('native clear timed out'));
+
+    const host = harness(1);
+    host.session.enter('ABC123', party({ is_host: true }));
+    await host.settle();
+    expect(() => host.session.setListenMode('host')).toThrow(
+      'The host plays the party on this device and cannot listen elsewhere',
+    );
   });
 
   it('leaves only after the server confirmed it and stops every timer', async () => {

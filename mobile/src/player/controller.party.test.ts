@@ -3,6 +3,7 @@ import type { Track } from '../api/types';
 import {
   activePartyItemId,
   partyQueueStableId,
+  releasePartyQueue,
   syncPartyQueue,
   type PartyQueueTarget,
 } from './controller';
@@ -169,6 +170,19 @@ describe('party queue sync', () => {
     await expect(syncPartyQueue(target({ entries: [], currentIndex: -1 }))).resolves.toBe('cleared');
     expect(player.clear).toHaveBeenCalledOnce();
     await expect(syncPartyQueue(target({ entries: [], currentIndex: -1 }))).resolves.toBe('unchanged');
+  });
+
+  it('releases only this party’s queue when a member listens at the host', async () => {
+    player.queue = [contextItem('100', 'context:album:1:0:100')];
+    player.activeIndex = 0;
+    await expect(releasePartyQueue('ABC123')).resolves.toBe(false);
+    expect(player.clear).not.toHaveBeenCalled();
+
+    await syncPartyQueue(target());
+    await expect(releasePartyQueue('OTHER1')).resolves.toBe(false);
+    await expect(releasePartyQueue('ABC123')).resolves.toBe(true);
+    expect(player.clear).toHaveBeenCalledOnce();
+    expect(player.queue).toEqual([]);
   });
 
   it('rejects impossible targets loudly', async () => {

@@ -105,10 +105,11 @@ export function dismissTrackActions(requestId?: number): void {
 }
 
 function actionContract(action: TrackQueueAction, track: Track) {
-  // While the player follows a party its queue is the party's: queue actions
-  // add the song for everyone instead of editing a queue the party overwrites.
+  // While this device plays a party (or listens at the host without own
+  // music), queue actions add the song for everyone instead of editing a
+  // queue the party overwrites.
   const party = activePartyRouter();
-  if ((action === 'play-next' || action === 'add-to-queue') && party?.isFollowingParty() === true) {
+  if ((action === 'play-next' || action === 'add-to-queue') && party?.routesQueueActionsToParty() === true) {
     return {
       succeeded: strings.party.addedToParty(track.title),
       run: () => party.addTrack(track),
