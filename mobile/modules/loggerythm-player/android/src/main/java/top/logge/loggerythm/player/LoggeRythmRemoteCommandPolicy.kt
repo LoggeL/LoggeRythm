@@ -7,10 +7,11 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionCommands
 
-internal enum class RemoteControllerProfile {
-  INTERNAL,
-  NOTIFICATION,
-  TRUSTED_BROWSER,
+internal enum class RemoteControllerProfile(val supportsFavorite: Boolean) {
+  INTERNAL(false),
+  NOTIFICATION(true),
+  CAR(true),
+  TRUSTED_BROWSER(false),
 }
 
 internal fun publishableRestoredRemoteCapabilities(
@@ -105,19 +106,18 @@ internal class LoggeRythmRemoteCommandPolicy {
     return commands
   }
 
-  fun sessionCommands(profile: RemoteControllerProfile): SessionCommands = when (profile) {
-    RemoteControllerProfile.INTERNAL ->
-      MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-    RemoteControllerProfile.NOTIFICATION -> SessionCommands.Builder()
-      .add(LoggeRythmNotificationFavoriteContract.command)
-      .build()
-    RemoteControllerProfile.TRUSTED_BROWSER -> SessionCommands.Builder().apply {
+  fun sessionCommands(profile: RemoteControllerProfile): SessionCommands {
+    if (profile == RemoteControllerProfile.INTERNAL) {
+      return MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+    }
+    return SessionCommands.Builder().apply {
       sessionCommandCodes(profile).forEach(::add)
+      if (profile.supportsFavorite) add(LoggeRythmNotificationFavoriteContract.command)
     }.build()
   }
 
   fun sessionCommandCodes(profile: RemoteControllerProfile): Set<Int> = when (profile) {
-    RemoteControllerProfile.TRUSTED_BROWSER -> setOf(
+    RemoteControllerProfile.CAR, RemoteControllerProfile.TRUSTED_BROWSER -> setOf(
       SessionCommand.COMMAND_CODE_LIBRARY_GET_LIBRARY_ROOT,
       SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN,
       SessionCommand.COMMAND_CODE_LIBRARY_GET_ITEM,
@@ -135,7 +135,8 @@ internal class LoggeRythmRemoteCommandPolicy {
     RemoteControllerProfile.NOTIFICATION ->
       playerCommand in playerCommandCodes(profile) &&
         playerCommand !in PLATFORM_MIRROR_ONLY_COMMANDS
-    RemoteControllerProfile.TRUSTED_BROWSER -> playerCommand in playerCommandCodes(profile)
+    RemoteControllerProfile.CAR, RemoteControllerProfile.TRUSTED_BROWSER ->
+      playerCommand in playerCommandCodes(profile)
   }
 
   companion object {

@@ -258,7 +258,7 @@ internal object LoggeRythmControllerPolicy {
     // Android Auto may also identify as Media3's media-notification controller or with the app's
     // own UID via legacy browser bridging. Treat the automotive identity first or Auto receives an
     // internal/notification command shape without library browse/selection support.
-    automotive || autoCompanion -> RemoteControllerProfile.TRUSTED_BROWSER
+    automotive || autoCompanion -> RemoteControllerProfile.CAR
     mediaNotification -> RemoteControllerProfile.NOTIFICATION
     self -> RemoteControllerProfile.INTERNAL
     else -> RemoteControllerProfile.TRUSTED_BROWSER
@@ -576,7 +576,7 @@ class LoggeRythmMediaLibraryService :
   }
 
   private fun notificationFavoriteButtons(profile: RemoteControllerProfile): List<CommandButton> =
-    if (profile == RemoteControllerProfile.NOTIFICATION) {
+    if (profile.supportsFavorite) {
       notificationFavorite.buttonFor(player.currentMediaItem?.mediaId)
     } else {
       emptyList()
@@ -587,7 +587,14 @@ class LoggeRythmMediaLibraryService :
   ) {
     val futures = librarySession.connectedControllers.mapNotNull { controller ->
       val profile = controllerProfile(librarySession, controller)
-      if (profile != RemoteControllerProfile.NOTIFICATION) return@mapNotNull null
+      // Platform car controllers read the notification controller's mirrored PlaybackState.
+      // Only Media3 controllers receive their own preference updates.
+      if (
+        !profile.supportsFavorite ||
+        controller.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+      ) {
+        return@mapNotNull null
+      }
       librarySession.setMediaButtonPreferences(
         controller,
         notificationFavoriteButtons(profile),
@@ -768,7 +775,7 @@ class LoggeRythmMediaLibraryService :
     when (profile) {
       RemoteControllerProfile.NOTIFICATION ->
         throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
-      RemoteControllerProfile.TRUSTED_BROWSER ->
+      RemoteControllerProfile.CAR, RemoteControllerProfile.TRUSTED_BROWSER ->
         if (!remoteCommandPolicy.permits(profile, Player.COMMAND_SET_MEDIA_ITEM)) {
           throw LoggeRythmCarRequestException(LoggeRythmCarError.CONTROLS_NOT_READY)
         }
@@ -895,7 +902,7 @@ class LoggeRythmMediaLibraryService :
       args: Bundle,
     ): ListenableFuture<SessionResult> {
       if (
-        controllerProfile(session, controller) != RemoteControllerProfile.NOTIFICATION ||
+        !controllerProfile(session, controller).supportsFavorite ||
         customCommand.customAction != LoggeRythmNotificationFavoriteContract.ACTION
       ) {
         return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))

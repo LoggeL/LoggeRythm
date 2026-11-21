@@ -27,14 +27,14 @@ class LoggeRythmControllerPolicyTest {
         self = true,
         mediaNotification = true,
         automotive = true,
-      ) == RemoteControllerProfile.TRUSTED_BROWSER,
+      ) == RemoteControllerProfile.CAR,
     )
     assertTrue(
       LoggeRythmControllerPolicy.commandProfile(
         self = false,
         mediaNotification = true,
         autoCompanion = true,
-      ) == RemoteControllerProfile.TRUSTED_BROWSER,
+      ) == RemoteControllerProfile.CAR,
     )
   }
 
@@ -59,6 +59,7 @@ class LoggeRythmControllerPolicyTest {
     assertFalse(
       LoggeRythmControllerPolicy.requiresServiceOnlyRestore(RemoteControllerProfile.INTERNAL),
     )
+    assertTrue(LoggeRythmControllerPolicy.requiresServiceOnlyRestore(RemoteControllerProfile.CAR))
     assertTrue(
       LoggeRythmControllerPolicy.requiresServiceOnlyRestore(RemoteControllerProfile.NOTIFICATION),
     )

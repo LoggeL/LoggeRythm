@@ -16,6 +16,23 @@ import org.junit.Test
 @UnstableApi
 class LoggeRythmRemoteCommandPolicyTest {
   @Test
+  fun carCanSendTheFavoriteActionMirroredByTheNotificationAndStillBrowse() {
+    val policy = LoggeRythmRemoteCommandPolicy()
+    // SessionCommand.equals calls Android's TextUtils, which is stubbed in local JVM tests.
+    fun favoriteAvailable(profile: RemoteControllerProfile) =
+      policy.sessionCommands(profile).commands.any {
+        it.customAction == LoggeRythmNotificationFavoriteContract.ACTION
+      }
+
+    assertTrue(favoriteAvailable(RemoteControllerProfile.NOTIFICATION))
+    assertTrue(favoriteAvailable(RemoteControllerProfile.CAR))
+    assertTrue(policy.sessionCommands(RemoteControllerProfile.CAR)
+      .contains(SessionCommand.COMMAND_CODE_LIBRARY_GET_CHILDREN))
+    assertFalse(favoriteAvailable(RemoteControllerProfile.TRUSTED_BROWSER))
+    assertFalse(favoriteAvailable(RemoteControllerProfile.INTERNAL))
+  }
+
+  @Test
   fun internalControllerCannotRequestGlobalShuffleMutation() {
     val policy = LoggeRythmRemoteCommandPolicy()
 

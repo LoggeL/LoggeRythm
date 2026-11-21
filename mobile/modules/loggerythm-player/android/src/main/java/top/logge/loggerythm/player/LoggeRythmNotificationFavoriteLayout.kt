@@ -5,10 +5,10 @@ import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 
 /**
- * Only for preference publication to Media3's built-in notification controller. In Media3 1.10.1,
+ * Only for Media3 button preference publication to the notification or a car controller. In 1.10.1,
  * preferences are applied and onMediaButtonPreferencesChanged is delivered before the deprecated
- * onSetCustomLayout acknowledgment completes. The notification listener handles the new event and
- * inherits the old hook's ERROR_NOT_SUPPORTED result, so that acknowledgment is not a publication
+ * onSetCustomLayout acknowledgment completes. A listener can handle the new event and inherit
+ * the old hook's ERROR_NOT_SUPPORTED result, so that acknowledgment is not a publication
  * failure. This policy must not be used for favorite mutations or other controller commands.
  */
 @UnstableApi
