@@ -31,6 +31,7 @@ import {
 import { refreshBrowseTree, refreshOfflineBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
 import { spacing } from '../theme';
+import { isTvMode, tvFocusRegistry } from '../tv';
 import {
   TrackActionRow,
   TrackActionsCreateForm,
@@ -88,6 +89,7 @@ export default function TrackActionsHost() {
       : musicCacheScope(getCurrentApiBase(), user.id);
   const accountScope = user === null ? null : scope;
   const previousAccountScope = useRef<string | null>(accountScope);
+  const wasVisibleRef = useRef(false);
   const [mode, setMode] = useState<Mode>('actions');
   const [newName, setNewName] = useState('');
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -104,6 +106,9 @@ export default function TrackActionsHost() {
     setPendingAction(null);
   }
 
+  const visible = request !== null && user !== null;
+  const isTv = isTvMode();
+
   useEffect(() => {
     const accountChanged = previousAccountScope.current !== accountScope;
     previousAccountScope.current = accountScope;
@@ -113,6 +118,21 @@ export default function TrackActionsHost() {
       dismissTrackActions(requestId);
     }
   }, [accountScope, requestId]);
+
+  // Preserve & restore D-Pad focus when the track action sheet opens/closes on Android TV.
+  useEffect(() => {
+    if (visible && !wasVisibleRef.current) {
+      wasVisibleRef.current = true;
+      if (isTvMode()) {
+        tvFocusRegistry.pushCheckpoint('track-actions');
+      }
+    } else if (!visible && wasVisibleRef.current) {
+      wasVisibleRef.current = false;
+      if (isTvMode()) {
+        tvFocusRegistry.popAndRestore();
+      }
+    }
+  }, [visible]);
 
   const playlists = useQuery({
     ...musicQueries.playlists(scope),
@@ -126,7 +146,7 @@ export default function TrackActionsHost() {
 
   const addMutation = useMutation({
     ...musicMutations.addToPlaylist(scope),
-    onMutate: ({ id, track }) => {
+    onMutate: ({ id }) => {
       setRuntimeError(null);
       return request === null
         ? undefined
@@ -187,6 +207,22 @@ export default function TrackActionsHost() {
     activePendingAction !== null || addMutation.isPending || createMutation.isPending;
   const close = () => {
     if (!pending) dismissTrackActions(requestId ?? undefined);
+  };
+
+  // Android system Back (and header Back) steps create -> playlists -> actions -> close.
+  const handleBack = () => {
+    if (pending) return;
+    if (mode === 'create') {
+      setRuntimeError(null);
+      setMode('playlists');
+      return;
+    }
+    if (mode === 'playlists') {
+      setRuntimeError(null);
+      setMode('actions');
+      return;
+    }
+    close();
   };
 
   const runQueueAction = (action: TrackQueueAction) => {
@@ -386,23 +422,27 @@ export default function TrackActionsHost() {
       ? {
           testID: 'track-action-create-back',
           label: strings.trackActions.backToPlaylists,
-          onPress: () => setMode('playlists'),
+          onPress: handleBack,
         }
       : mode === 'playlists'
         ? {
             testID: 'track-action-playlists-back',
             label: strings.trackActions.back,
-            onPress: () => {
-              setRuntimeError(null);
-              setMode('actions');
-            },
+            onPress: handleBack,
           }
         : undefined;
 
+  const visibleActionIds = trackActionIdsForRequest(
+    request,
+    accountScope,
+    individuallyDownloaded,
+  );
+
   return (
     <BottomSheet
-      visible={request !== null && user !== null}
+      visible={visible}
       onClose={close}
+      onBack={handleBack}
       closeLabel={strings.trackActions.close}
       testID="track-actions-modal"
       contentStyle={mode === 'create' ? { paddingBottom: keyboardHeight } : undefined}
@@ -445,9 +485,13 @@ export default function TrackActionsHost() {
           style={styles.scroll}
           contentContainerStyle={styles.list}
         >
-          {trackActionIdsForRequest(request, accountScope, individuallyDownloaded).map(
-            (action) => <TrackActionRow key={action} {...actionRows[action]} />,
-          )}
+          {visibleActionIds.map((action, index) => (
+            <TrackActionRow
+              key={action}
+              {...actionRows[action]}
+              hasTVPreferredFocus={isTv && visible && index === 0 ? true : undefined}
+            />
+          ))}
         </ScrollView>
       ) : mode === 'create' ? (
         <TrackActionsCreateForm
@@ -464,6 +508,7 @@ export default function TrackActionsHost() {
             label={strings.trackActions.newPlaylist}
             icon="plus"
             disabled={pending}
+            hasTVPreferredFocus={isTv && visible ? true : undefined}
             onPress={() => {
               setRuntimeError(null);
               setMode('create');

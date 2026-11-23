@@ -20,16 +20,31 @@ export interface RadioStationCardProps {
   blocked: boolean;
   /** This station is the source of the current queue. */
   onAir?: boolean;
+  /** Whether playback is actively running (only meaningful when `onAir` is true). */
+  onAirPlaying?: boolean;
   onPress: () => void;
 }
 
-function PlayDisc({ busy, onAir }: { busy: boolean; onAir: boolean }) {
+function PlayDisc({
+  busy,
+  onAir,
+  playing,
+}: {
+  busy: boolean;
+  onAir: boolean;
+  playing: boolean;
+}) {
+  const activelyPlaying = onAir && playing;
   return (
-    <View style={[styles.disc, onAir ? styles.discOnAir : null]}>
+    <View style={[styles.disc, activelyPlaying ? styles.discOnAir : null]}>
       {busy ? (
         <ActivityIndicator accessible={false} color={colors.onAccent} size="small" />
       ) : (
-        <AppIcon name={onAir ? 'equalizer' : 'play'} color={colors.onAccent} size={22} />
+        <AppIcon
+          name={activelyPlaying ? 'equalizer' : 'play'}
+          color={colors.onAccent}
+          size={22}
+        />
       )}
     </View>
   );
@@ -38,8 +53,8 @@ function PlayDisc({ busy, onAir }: { busy: boolean; onAir: boolean }) {
 /**
  * RadioStationCard is one startable station: artwork, the RADIO eyebrow,
  * title, subtitle and a play disc that turns into a spinner while the
- * station starts and into an equalizer while it is on air. The whole card is
- * a single button named "start <title>"; the disc is decoration.
+ * station starts and into an equalizer while it is actively playing. The whole
+ * card is a single button named "start <title>"; the disc is decoration.
  */
 export function RadioStationCard({
   testID,
@@ -50,24 +65,45 @@ export function RadioStationCard({
   busy,
   blocked,
   onAir = false,
+  onAirPlaying = true,
   onPress,
 }: RadioStationCardProps) {
   const wide = variant === 'mood';
+  const activelyPlaying = onAir && onAirPlaying;
+  const pausedOnAir = onAir && !onAirPlaying;
   const badge = (
-    <AppText variant="overline" color={onAir ? 'success' : 'accent'} numberOfLines={1}>
-      {onAir ? accountStrings.radio.onAir : strings.radio.badge}
+    <AppText
+      variant="overline"
+      color={activelyPlaying ? 'success' : pausedOnAir ? 'secondary' : 'accent'}
+      numberOfLines={1}
+    >
+      {activelyPlaying
+        ? accountStrings.radio.onAir
+        : pausedOnAir
+          ? strings.trackPresentation.paused
+          : strings.radio.badge}
     </AppText>
   );
   return (
     <PressableScale
       testID={testID}
+      focusable={!blocked}
       accessibilityRole="button"
       accessibilityLabel={strings.radio.startStation(title)}
-      accessibilityHint={onAir ? accountStrings.radio.stationOnAir(title) : undefined}
+      accessibilityHint={
+        activelyPlaying
+          ? accountStrings.radio.stationOnAir(title)
+          : pausedOnAir
+            ? strings.trackPresentation.paused
+            : undefined
+      }
       accessibilityState={{ disabled: blocked || busy, busy, selected: onAir }}
       disabled={blocked}
       onPress={busy ? undefined : onPress}
-      style={[wide ? styles.wide : styles.tile, onAir ? styles.onAir : null]}
+      style={[
+        wide ? styles.wide : styles.tile,
+        activelyPlaying ? styles.onAir : pausedOnAir ? styles.onAirPaused : null,
+      ]}
     >
       {wide ? (
         <>
@@ -77,14 +113,14 @@ export function RadioStationCard({
             <AppText variant="bodyStrong" numberOfLines={2}>{title}</AppText>
             <AppText variant="callout" color="secondary" numberOfLines={2}>{subtitle}</AppText>
           </View>
-          <PlayDisc busy={busy} onAir={onAir} />
+          <PlayDisc busy={busy} onAir={onAir} playing={onAirPlaying} />
         </>
       ) : (
         <>
           <View>
             <Artwork uri={cover} size={RADIO_TILE_WIDTH} icon={variant === 'genre' ? 'radio-tower' : 'radio'} />
             <View style={styles.tileDisc}>
-              <PlayDisc busy={busy} onAir={onAir} />
+              <PlayDisc busy={busy} onAir={onAir} playing={onAirPlaying} />
             </View>
           </View>
           <View style={styles.tileCopy}>
@@ -116,6 +152,7 @@ const styles = StyleSheet.create({
   },
   wideCopy: { flex: 1, minWidth: 0, gap: spacing.xxs / 2 },
   onAir: { borderColor: colors.accent, backgroundColor: colors.accentSubtle },
+  onAirPaused: { borderColor: colors.border, backgroundColor: colors.surfaceElevated },
   disc: {
     width: RADIO_PLAY_DISC,
     height: RADIO_PLAY_DISC,

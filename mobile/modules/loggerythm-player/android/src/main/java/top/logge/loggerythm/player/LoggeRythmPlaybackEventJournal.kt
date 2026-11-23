@@ -73,6 +73,21 @@ internal data class LoggeRythmRadioPlaybackEvent(
       "activeMediaId=<redacted>, queueGeneration=$queueGeneration)"
 }
 
+internal data class LoggeRythmFavoritePlaybackEvent(
+  override val eventId: String,
+  override val createdAtMs: Long,
+  override val attempt: Int = 0,
+  override val notBeforeEpochMs: Long = 0L,
+  override val track: LoggeRythmPlaybackEventTrackMetadata,
+  val mediaId: String,
+  val requestedLiked: Boolean,
+) : LoggeRythmPlaybackEvent {
+  override fun toString(): String =
+    "LoggeRythmFavoritePlaybackEvent(eventId=<redacted>, createdAtMs=$createdAtMs, " +
+      "attempt=$attempt, notBeforeEpochMs=$notBeforeEpochMs, track=<redacted>, " +
+      "mediaId=<redacted>, requestedLiked=$requestedLiked)"
+}
+
 internal data class LoggeRythmPlaybackEventRadioContext(
   val activeMediaId: String,
   val queueGeneration: Long,
@@ -223,6 +238,56 @@ internal class LoggeRythmPlaybackEventJournal(
   }
 
   @Synchronized
+  fun previewEnqueueFavorite(
+    track: LoggeRythmPlaybackEventTrackMetadata,
+    mediaId: String,
+    requestedLiked: Boolean,
+    nowMs: Long,
+  ): LoggeRythmPlaybackEventJournalMutation {
+    requireNoPendingMutation()
+    val now = requireNow(nowMs)
+    validateSafeString(mediaId, "event-media-id-invalid", MAX_EVENT_MEDIA_ID_LENGTH)
+    validateTrack(track)
+    val base = normalize(committedEvents, now)
+    // Supersede earlier unleased FAVORITE toggles for the same track so rapid car taps converge
+    // to the final intent without redundant requests, while preserving any leased in-flight event.
+    val retained = base.filterNot { existing ->
+      existing is LoggeRythmFavoritePlaybackEvent &&
+        existing.track.id == track.id &&
+        !eventLeaseIds.containsKey(existing.eventId) &&
+        pendingMutation?.eventId != existing.eventId
+    }
+    val latestSameTrackTime = retained
+      .filterIsInstance<LoggeRythmFavoritePlaybackEvent>()
+      .filter { it.track.id == track.id }
+      .maxOfOrNull(LoggeRythmFavoritePlaybackEvent::createdAtMs)
+    val eventTime = if (latestSameTrackTime != null && latestSameTrackTime >= now) {
+      safeAdd(latestSameTrackTime, 1L, "journal-time-invalid")
+    } else {
+      now
+    }
+    val event = LoggeRythmFavoritePlaybackEvent(
+      eventId = nextUuid("event-id-invalid"),
+      createdAtMs = eventTime,
+      track = track,
+      mediaId = mediaId,
+      requestedLiked = requestedLiked,
+    )
+    val candidate = normalize(retained + event, now)
+    return beginMutation(candidate, event, resolution = null)
+  }
+
+  /** Latest pending favorite intent per canonical track ID, ordered by [EVENT_ORDER]. */
+  @Synchronized
+  fun pendingFavorites(nowMs: Long): Map<String, Boolean> {
+    val result = linkedMapOf<String, Boolean>()
+    normalize(committedEvents, nowMs)
+      .filterIsInstance<LoggeRythmFavoritePlaybackEvent>()
+      .forEach { event -> result[event.track.id] = event.requestedLiked }
+    return result.toMap()
+  }
+
+  @Synchronized
   fun previewEnqueue(
     event: LoggeRythmPlaybackEvent,
     nowMs: Long,
@@ -315,11 +380,19 @@ internal class LoggeRythmPlaybackEventJournal(
       fail(error.code)
     }
     cleanupExpiredLeases(now)
-    val selected = normalize(committedEvents, now)
+    val normalized = normalize(committedEvents, now)
+    val leasedFavoriteTrackIds = normalized
+      .filterIsInstance<LoggeRythmFavoritePlaybackEvent>()
+      .filter { eventLeaseIds.containsKey(it.eventId) || pendingMutation?.eventId == it.eventId }
+      .mapTo(mutableSetOf()) { it.track.id }
+    val selected = normalized
       .asSequence()
       .filter { it.notBeforeEpochMs <= now }
       .filterNot { eventLeaseIds.containsKey(it.eventId) }
       .filterNot { pendingMutation?.eventId == it.eventId }
+      .filterNot { event ->
+        event is LoggeRythmFavoritePlaybackEvent && event.track.id in leasedFavoriteTrackIds
+      }
       .take(maxEvents)
       .toMutableList()
     val leaseId = nextUuid("lease-id-invalid")
@@ -585,9 +658,15 @@ internal class LoggeRythmPlaybackEventJournal(
     private val EVENT_ORDER = compareBy<LoggeRythmPlaybackEvent>({ it.createdAtMs }, { it.eventId })
     private val EVICTION_ORDER = compareBy<LoggeRythmPlaybackEvent>(
       // PLAY accounting is replay-safe and can tolerate bounded oldest-first loss under extreme
-      // backlog pressure. A current RADIO compare-and-set event owns endless-tail continuity, so
-      // retain RADIO until every older PLAY candidate has already been evicted.
-      { if (it is LoggeRythmPlayPlaybackEvent) 0 else 1 },
+      // backlog pressure. RADIO preserves endless-tail continuity, and explicit user FAVORITE
+      // actions are retained ahead of both.
+      {
+        when (it) {
+          is LoggeRythmPlayPlaybackEvent -> 0
+          is LoggeRythmRadioPlaybackEvent -> 1
+          is LoggeRythmFavoritePlaybackEvent -> 2
+        }
+      },
       { it.createdAtMs },
       { it.eventId },
     )
@@ -603,6 +682,10 @@ internal class LoggeRythmPlaybackEventJournal(
     private val RADIO_PERSISTED_KEYS = PLAY_PERSISTED_KEYS + setOf(
       "activeMediaId",
       "queueGeneration",
+    )
+    private val FAVORITE_PERSISTED_KEYS = PLAY_PERSISTED_KEYS + setOf(
+      "mediaId",
+      "requestedLiked",
     )
     private val TRACK_KEYS = setOf(
       "id",
@@ -684,7 +767,10 @@ internal class LoggeRythmPlaybackEventJournal(
       requireSafeInteger(persistedQueueGeneration, "persisted-queue-generation-invalid")
       requireSafeInteger(restoredQueueGeneration, "restored-queue-generation-invalid")
       if (restoredActiveMediaId == null) {
-        return normalize(events.filterIsInstance<LoggeRythmPlayPlaybackEvent>(), nowMs)
+        return normalize(
+          events.filter { it !is LoggeRythmRadioPlaybackEvent },
+          nowMs,
+        )
       }
       validateSafeString(
         restoredActiveMediaId,
@@ -694,7 +780,7 @@ internal class LoggeRythmPlaybackEventJournal(
       return normalize(
         events.mapNotNull { event ->
           when {
-            event is LoggeRythmPlayPlaybackEvent -> event
+            event is LoggeRythmPlayPlaybackEvent || event is LoggeRythmFavoritePlaybackEvent -> event
             event is LoggeRythmRadioPlaybackEvent &&
               event.queueGeneration == persistedQueueGeneration &&
               event.activeMediaId == restoredActiveMediaId ->
@@ -747,6 +833,7 @@ internal class LoggeRythmPlaybackEventJournal(
         when (type) {
           "PLAY" -> PLAY_PERSISTED_KEYS
           "RADIO" -> RADIO_PERSISTED_KEYS
+          "FAVORITE" -> FAVORITE_PERSISTED_KEYS
           else -> fail("event-type-invalid")
         },
       )
@@ -772,16 +859,15 @@ internal class LoggeRythmPlaybackEventJournal(
           exactKeys = true,
         ),
       )
-      return if (type == "PLAY") {
-        LoggeRythmPlayPlaybackEvent(
+      return when (type) {
+        "PLAY" -> LoggeRythmPlayPlaybackEvent(
           common.eventId,
           common.createdAtMs,
           common.attempt,
           common.notBeforeEpochMs,
           common.track,
         )
-      } else {
-        LoggeRythmRadioPlaybackEvent(
+        "RADIO" -> LoggeRythmRadioPlaybackEvent(
           common.eventId,
           common.createdAtMs,
           common.attempt,
@@ -797,6 +883,21 @@ internal class LoggeRythmPlaybackEventJournal(
             "event-queue-generation-invalid",
           ),
         )
+        "FAVORITE" -> LoggeRythmFavoritePlaybackEvent(
+          common.eventId,
+          common.createdAtMs,
+          common.attempt,
+          common.notBeforeEpochMs,
+          common.track,
+          mediaId = safeString(
+            source.opt("mediaId"),
+            "event-media-id-invalid",
+            MAX_EVENT_MEDIA_ID_LENGTH,
+          ),
+          requestedLiked = source.opt("requestedLiked") as? Boolean
+            ?: fail("event-requested-liked-invalid"),
+        )
+        else -> fail("event-type-invalid")
       }
     }
 
@@ -864,19 +965,32 @@ internal class LoggeRythmPlaybackEventJournal(
         .toByteArray(StandardCharsets.UTF_8)
         .size
 
+    private fun eventTypeWireName(event: LoggeRythmPlaybackEvent): String = when (event) {
+      is LoggeRythmPlayPlaybackEvent -> "PLAY"
+      is LoggeRythmRadioPlaybackEvent -> "RADIO"
+      is LoggeRythmFavoritePlaybackEvent -> "FAVORITE"
+    }
+
     private fun persistedEventJson(event: LoggeRythmPlaybackEvent): JSONObject =
       JSONObject()
         .put("schemaVersion", SCHEMA_VERSION)
         .put("eventId", event.eventId)
-        .put("type", if (event is LoggeRythmRadioPlaybackEvent) "RADIO" else "PLAY")
+        .put("type", eventTypeWireName(event))
         .put("createdAtMs", event.createdAtMs)
         .put("attempt", event.attempt)
         .put("notBeforeEpochMs", event.notBeforeEpochMs)
         .put("track", trackJson(event.track))
         .apply {
-          if (event is LoggeRythmRadioPlaybackEvent) {
-            put("activeMediaId", event.activeMediaId)
-            put("queueGeneration", event.queueGeneration)
+          when (event) {
+            is LoggeRythmPlayPlaybackEvent -> Unit
+            is LoggeRythmRadioPlaybackEvent -> {
+              put("activeMediaId", event.activeMediaId)
+              put("queueGeneration", event.queueGeneration)
+            }
+            is LoggeRythmFavoritePlaybackEvent -> {
+              put("mediaId", event.mediaId)
+              put("requestedLiked", event.requestedLiked)
+            }
           }
         }
 
@@ -884,14 +998,21 @@ internal class LoggeRythmPlaybackEventJournal(
       JSONObject()
         .put("schemaVersion", SCHEMA_VERSION)
         .put("eventId", event.eventId)
-        .put("type", if (event is LoggeRythmRadioPlaybackEvent) "RADIO" else "PLAY")
+        .put("type", eventTypeWireName(event))
         .put("createdAtMs", event.createdAtMs)
         .put("attempt", event.attempt)
         .put("track", trackJson(event.track))
         .apply {
-          if (event is LoggeRythmRadioPlaybackEvent) {
-            put("activeMediaId", event.activeMediaId)
-            put("queueGeneration", event.queueGeneration)
+          when (event) {
+            is LoggeRythmPlayPlaybackEvent -> Unit
+            is LoggeRythmRadioPlaybackEvent -> {
+              put("activeMediaId", event.activeMediaId)
+              put("queueGeneration", event.queueGeneration)
+            }
+            is LoggeRythmFavoritePlaybackEvent -> {
+              put("mediaId", event.mediaId)
+              put("requestedLiked", event.requestedLiked)
+            }
           }
         }
 
@@ -957,6 +1078,13 @@ internal class LoggeRythmPlaybackEventJournal(
           )
           requireSafeInteger(event.queueGeneration, "event-queue-generation-invalid")
         }
+        is LoggeRythmFavoritePlaybackEvent -> {
+          validateSafeString(
+            event.mediaId,
+            "event-media-id-invalid",
+            MAX_EVENT_MEDIA_ID_LENGTH,
+          )
+        }
       }
     }
 
@@ -996,6 +1124,10 @@ internal class LoggeRythmPlaybackEventJournal(
         notBeforeEpochMs = notBeforeEpochMs,
       )
       is LoggeRythmRadioPlaybackEvent -> copy(
+        attempt = nextAttempt,
+        notBeforeEpochMs = notBeforeEpochMs,
+      )
+      is LoggeRythmFavoritePlaybackEvent -> copy(
         attempt = nextAttempt,
         notBeforeEpochMs = notBeforeEpochMs,
       )

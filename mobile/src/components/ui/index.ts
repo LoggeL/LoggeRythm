@@ -5,7 +5,16 @@
  */
 export { ActionButton, type ActionButtonProps, type ActionButtonVariant } from './ActionButton';
 export { AppText, type AppTextColor, type AppTextProps } from './AppText';
-export { Artwork, type ArtworkProps } from './Artwork';
+export {
+  Artwork,
+  ArtworkErrorSurface,
+  getArtworkLoadState,
+  isArtworkFailed,
+  isArtworkLoaded,
+  resetArtworkCacheForTests,
+  type ArtworkLoadState,
+  type ArtworkProps,
+} from './Artwork';
 export { BottomSheet, shouldDismissSheet, type BottomSheetProps } from './BottomSheet';
 export { FilterChip, type FilterChipProps } from './FilterChip';
 export {
@@ -16,14 +25,26 @@ export {
 } from './IconButton';
 export { ListSeparator, type ListSeparatorProps } from './ListSeparator';
 export { PlayButton, type PlayButtonProps, type PlayButtonSize } from './PlayButton';
-export { PressableScale, type PressableScaleProps } from './PressableScale';
+export {
+  createFocusRingController,
+  FocusRingOverlay,
+  PressableScale,
+  type FocusRingController,
+  type FocusRingOverlayProps,
+  type PressableScaleProps,
+  type TvFocusProps,
+} from './PressableScale';
 export { ScreenHeader, type ScreenHeaderProps } from './ScreenHeader';
 export { SectionHeader, type SectionHeaderProps } from './SectionHeader';
 export {
   CardRailSkeleton,
+  DetailHeroSkeleton,
+  resetSkeletonClockForTests,
   Skeleton,
   TrackRowSkeleton,
   type CardRailSkeletonProps,
+  type CardRailSkeletonVariant,
+  type DetailHeroSkeletonProps,
   type SkeletonGroupProps,
   type SkeletonProps,
 } from './Skeleton';

@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ArtistSummary,
   PlaylistSummary,
@@ -21,6 +21,39 @@ import {
   type LibraryListItem,
   type LibrarySectionPresentations,
 } from './LibraryVirtualizedList';
+
+const hookMocks = vi.hoisted(() => ({
+  memoSlot: 0,
+  memoCache: new Map<number, { deps: readonly unknown[]; value: unknown }>(),
+}));
+
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    default: actual,
+    useMemo: <T,>(factory: () => T, deps: readonly unknown[]) => {
+      const slot = hookMocks.memoSlot++;
+      const prev = hookMocks.memoCache.get(slot);
+      if (
+        prev !== undefined
+        && prev.deps.length === deps.length
+        && prev.deps.every((dep, idx) => Object.is(dep, deps[idx]))
+      ) {
+        return prev.value as T;
+      }
+      const value = factory();
+      hookMocks.memoCache.set(slot, { deps, value });
+      return value;
+    },
+    useCallback: <T,>(fn: T) => fn,
+  };
+});
+
+beforeEach(() => {
+  hookMocks.memoSlot = 0;
+  hookMocks.memoCache.clear();
+});
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
@@ -268,6 +301,7 @@ describe('Library virtualized presentation', () => {
       initialNumToRender: 14,
       maxToRenderPerBatch: 12,
       windowSize: 9,
+      removeClippedSubviews: false,
     });
     expect((props.sections as { id: string }[]).map((section) => section.id))
       .toEqual(LIBRARY_SECTION_ORDER);
@@ -300,5 +334,42 @@ describe('Library virtualized presentation', () => {
       onRetry: expect.any(Function),
     });
     expect(footer.props).toMatchObject({ id: 'liked', onRetry: expect.any(Function) });
+  });
+
+  it('memoizes sections identity across identical re-renders and chunks TV multi-column grids', () => {
+    const stableCollections = collections();
+    const stablePresentations = presentations();
+    const baseProps = {
+      collections: stableCollections,
+      presentations: stablePresentations,
+      refreshing: false,
+      onRefresh: vi.fn(),
+      header: React.createElement('LibraryHero'),
+      renderItem: () => React.createElement('LibraryRow'),
+      bottomInset: 96,
+    };
+    hookMocks.memoSlot = 0;
+    const first = LibraryVirtualizedList(baseProps);
+    hookMocks.memoSlot = 0;
+    const second = LibraryVirtualizedList(baseProps);
+    expect(propsOf(first).sections).toBe(propsOf(second).sections);
+
+    const tvSections = createLibraryListSections(
+      {
+        ...stableCollections,
+        playlists: [playlist, { ...playlist, id: 8 }, { ...playlist, id: 9 }],
+        following: [artist, { ...artist, id: 'artist-2' }],
+      },
+      stablePresentations,
+      { gridColumns: 2 },
+    );
+    expect(tvSections.find((section) => section.id === 'playlists')?.data).toHaveLength(2);
+    expect(tvSections.find((section) => section.id === 'playlists')?.data[0]?.kind).toBe(
+      'playlist-row',
+    );
+    expect(tvSections.find((section) => section.id === 'following')?.data).toHaveLength(1);
+    expect(tvSections.find((section) => section.id === 'following')?.data[0]?.kind).toBe(
+      'following-row',
+    );
   });
 });

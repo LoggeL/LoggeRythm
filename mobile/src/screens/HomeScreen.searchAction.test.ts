@@ -20,4 +20,10 @@ describe('HomeScreen search action', () => {
     expect(modelSource).toContain('onOpenSearch: () => void;');
     expect(modelSource).toContain("typeof (value as Partial<HomeRouteCallbacks>).onOpenSearch !== 'function'");
   });
+
+  it('registers TV fallback focus targets, gates preferredFocus on isFocused, and avoids unmatched checkpoint pushes', () => {
+    expect(homeSource).toContain('tvFocusRegistry.register(');
+    expect(homeSource).toContain('tv.isTv && isFocused && requestedFocusKey === chipTestId');
+    expect(homeSource).not.toContain('pushCheckpoint(');
+  });
 });

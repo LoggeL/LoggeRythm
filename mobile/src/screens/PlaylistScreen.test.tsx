@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   ) => refresh()),
 }));
 
+vi.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 vi.mock('react-native', () => ({
   Alert: { alert: vi.fn() },
   FlatList: 'FlatList',
@@ -48,6 +49,7 @@ vi.mock('../components/track/StandardTrackRow', () => ({
 vi.mock('../auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('../components/trackActions', () => ({ showTrackActions: vi.fn() }));
 vi.mock('../data', () => ({
+  findCachedPlaylistSummary: vi.fn(() => null),
   invalidatePlaylistCaches: vi.fn(),
   musicCacheScope: vi.fn(),
   musicMutations: {},
@@ -64,7 +66,11 @@ vi.mock('../player/browseTree', () => ({
   refreshBrowseTree: mocks.refreshBrowseTree,
   refreshOfflineBrowseTree: mocks.refreshOfflineBrowseTree,
 }));
-vi.mock('../player/controller', () => ({ playTracks: vi.fn(), toggleShuffle: vi.fn() }));
+vi.mock('../player/controller', () => ({
+  playTracks: vi.fn(),
+  playTrackRow: vi.fn(),
+  toggleShuffle: vi.fn(),
+}));
 vi.mock('../player/notices', () => ({ reportPlayerNotice: vi.fn() }));
 vi.mock('../offline/hooks', () => ({ useOfflineDownloads: vi.fn() }));
 vi.mock('../offline/runtime', () => ({

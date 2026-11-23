@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   type GestureResponderEvent,
@@ -7,6 +7,7 @@ import {
   type NativeSyntheticEvent,
   type View,
 } from 'react-native';
+import { useHaptics } from '../hooks/useHaptics';
 import type { QueueOrigin } from '../player/queueContract';
 import {
   DRAG_START_DISTANCE,
@@ -112,6 +113,7 @@ export function useQueueDrag({
   /** The handle was tapped without dragging. */
   onTap: (stableId: string) => void;
 }): QueueDragController {
+  const haptics = useHaptics();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [ghostTop] = useState(() => new Animated.Value(0));
   const [indicatorTop] = useState(() => new Animated.Value(0));
@@ -127,9 +129,14 @@ export function useQueueDrag({
     latest.current = { rows, activeIndex, disabled, onDrop, onTap };
   });
 
-  const origins = rows.map((row) => row.origin);
-  const rangeOf = (nativeIndex: number): QueueDragRange | null =>
-    queueDragRange(origins, activeIndex, nativeIndex);
+  const origins = useMemo(() => rows.map((row) => row.origin), [rows]);
+  const canDrag = useCallback(
+    (nativeIndex: number) => {
+      const range = queueDragRange(origins, activeIndex, nativeIndex);
+      return range !== null && range.min < range.max;
+    },
+    [activeIndex, origins],
+  );
 
   /** Position the floating copy and the insertion line for the current finger position. */
   const update = useCallback(() => {
@@ -184,20 +191,25 @@ export function useQueueDrag({
       if (current.scrollTimer !== null) clearInterval(current.scrollTimer);
       indicatorOpacity.setValue(0);
       if (!current.started) {
-        if (commit) latest.current.onTap(current.stableId);
+        if (commit) {
+          haptics.trigger('tap');
+          latest.current.onTap(current.stableId);
+        }
         return;
       }
       setDraggingId(null);
       if (commit && current.targetIndex !== current.fromIndex) {
+        haptics.trigger('commit');
         latest.current.onDrop(current.fromIndex, current.targetIndex);
       }
     },
-    [indicatorOpacity],
+    [haptics, indicatorOpacity],
   );
 
   const begin = useCallback(
     (current: DragSession) => {
       current.started = true;
+      haptics.trigger('drag');
       const frame = frameRef.current;
       const row = rowNodes.current.get(current.stableId);
       if (frame === null || row === undefined) {
@@ -248,7 +260,7 @@ export function useQueueDrag({
         update();
       }, FRAME_INTERVAL_MS);
     },
-    [measureRow, update],
+    [haptics, measureRow, update],
   );
 
   // A drag is defined against one queue order; a transition or an outside
@@ -259,7 +271,7 @@ export function useQueueDrag({
     if (disabled) end(false);
   }, [disabled, end]);
 
-  const handlersFor = (stableId: string): QueueDragHandlers => ({
+  const handlersFor = useCallback((stableId: string): QueueDragHandlers => ({
     onStartShouldSetResponder: () => !latest.current.disabled && session.current === null,
     onResponderGrant: (event) => {
       const { rows: currentRows, activeIndex: currentActive } = latest.current;
@@ -303,9 +315,9 @@ export function useQueueDrag({
     onResponderRelease: () => end(true),
     onResponderTerminate: () => end(false),
     onResponderTerminationRequest: () => false,
-  });
+  }), [begin, end, update]);
 
-  const attachRow = (stableId: string) => (node: View | null) => {
+  const attachRow = useCallback((stableId: string) => (node: View | null) => {
     if (node === null) {
       rowNodes.current.delete(stableId);
       return;
@@ -314,17 +326,14 @@ export function useQueueDrag({
     rowNodes.current.set(stableId, node);
     // Rows scrolled into view during a drag are measured once they are laid out.
     if (!known && session.current?.started === true) setTimeout(() => measureRow(stableId), 0);
-  };
+  }, [measureRow]);
 
   return {
     draggingId,
     ghostTop,
     indicatorTop,
     indicatorOpacity,
-    canDrag: (nativeIndex) => {
-      const range = rangeOf(nativeIndex);
-      return range !== null && range.min < range.max;
-    },
+    canDrag,
     handlersFor,
     attachRow,
     attachFrame: (frame) => {

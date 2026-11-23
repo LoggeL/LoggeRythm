@@ -75,6 +75,8 @@ internal object LoggeRythmPlayerRuntime {
   private var sessionBinding: LoggeRythmPersistedSessionBinding? = null
   private var queueSources: List<PlayerItemSpec> = emptyList()
   private var queueExtras: Map<String, String> = emptyMap()
+  private var stagedSources: LinkedHashMap<Pair<String, String>, PlayerItemSpec> = linkedMapOf()
+  private var stagedExtrasById: LinkedHashMap<String, String> = linkedMapOf()
   private var browseTree: RuntimeBrowseTree = defaultBrowseTree()
   private var browseTreeSpec: BrowseTreeSpec? = null
 
@@ -91,6 +93,8 @@ internal object LoggeRythmPlayerRuntime {
       cookieVault.clearAll()
       queueSources = emptyList()
       queueExtras = emptyMap()
+      stagedSources.clear()
+      stagedExtrasById.clear()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
       browseTreeSpec = null
       Triple(
@@ -133,10 +137,163 @@ internal object LoggeRythmPlayerRuntime {
       cookieVault.replaceQueue(cookies)
       queueSources = items.toList()
       queueExtras = nextExtras.toMap()
+      stagedSources.clear()
+      stagedExtrasById.clear()
       mediaItems to queueGeneration.incrementAndGet()
     }
     LoggeRythmCacheServiceBridge.queueChanged(revision)
     return installed
+  }
+
+  /**
+   * Stages newly added or inserted queue items ahead of an in-place Media3 `addMediaItems` call.
+   * Staging by `(id, url)` ensures a spontaneous `EVENT_TIMELINE_CHANGED` (such as progressive
+   * duration resolution) arriving before the MediaSession IPC executes cannot drop the pending
+   * sidecar or cookie, while hostile controllers still fail closed in [captureQueue].
+   */
+  fun stageAddedQueueItems(
+    existingIds: Set<String>,
+    items: List<PlayerItemSpec>,
+  ): List<MediaItem> {
+    if (items.isEmpty()) throw PlayerProtocolException("queue-items-empty")
+    val (staged, revision) = synchronized(lock) {
+      val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
+      if (existingIds.size + items.size > LoggeRythmPlayerProtocol.MAX_QUEUE_ITEMS) {
+        throw PlayerProtocolException("queue-too-large")
+      }
+      val seenIds = existingIds.toMutableSet()
+      items.forEach { item ->
+        requireCookieMatchesBinding(item, binding)
+        if (!seenIds.add(item.id)) throw PlayerProtocolException("queue-item-id-duplicate")
+      }
+      val candidateCookies = buildList {
+        queueSources.filter { it.url.startsWith("https://") }.forEach { add(it.url to it.cookie) }
+        stagedSources.values.filter { it.url.startsWith("https://") }.forEach {
+          add(it.url to it.cookie)
+        }
+        items.filter { it.url.startsWith("https://") }.forEach { add(it.url to it.cookie) }
+      }
+      cookieVault.replaceQueue(candidateCookies)
+      val mediaItems = items.map { item ->
+        stagedSources[item.id to item.url] = item
+        stagedExtrasById[item.id] = item.extrasJson
+        mediaItem(
+          id = item.id,
+          url = item.url,
+          title = item.title,
+          artist = item.artist,
+          album = item.album,
+          subtitle = null,
+          artworkUrl = item.artworkUrl,
+          durationMs = item.durationMs,
+          browsable = false,
+          playable = true,
+        )
+      }
+      mediaItems to queueGeneration.incrementAndGet()
+    }
+    LoggeRythmCacheServiceBridge.queueChanged(revision)
+    return staged
+  }
+
+  /**
+   * Stages one replacement item ahead of an in-place Media3 `replaceMediaItem` call. Supports
+   * updating the URL or cookie of an existing mediaId (such as playback recovery) without causing
+   * a transient sidecar mismatch if an earlier timeline callback fires first.
+   */
+  fun stageReplacedQueueItem(replacedId: String, item: PlayerItemSpec): MediaItem {
+    val (staged, revision) = synchronized(lock) {
+      val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
+      requireCookieMatchesBinding(item, binding)
+      val candidateCookies = buildList {
+        queueSources.forEach { existing ->
+          if (!existing.url.startsWith("https://")) return@forEach
+          if (existing.id == replacedId && existing.url == item.url) return@forEach
+          add(existing.url to existing.cookie)
+        }
+        stagedSources.values.forEach { existing ->
+          if (!existing.url.startsWith("https://")) return@forEach
+          if (existing.id == replacedId && existing.url == item.url) return@forEach
+          add(existing.url to existing.cookie)
+        }
+        if (item.url.startsWith("https://")) add(item.url to item.cookie)
+      }
+      cookieVault.replaceQueue(candidateCookies)
+      stagedSources[item.id to item.url] = item
+      stagedExtrasById[item.id] = item.extrasJson
+      mediaItem(
+        id = item.id,
+        url = item.url,
+        title = item.title,
+        artist = item.artist,
+        album = item.album,
+        subtitle = null,
+        artworkUrl = item.artworkUrl,
+        durationMs = item.durationMs,
+        browsable = false,
+        playable = true,
+      ) to queueGeneration.incrementAndGet()
+    }
+    LoggeRythmCacheServiceBridge.queueChanged(revision)
+    return staged
+  }
+
+  /**
+   * Stages all items of an active-preserving `replaceQueue` splice ahead of incremental
+   * `removeMediaItems` / `addMediaItems` calls around the uninterrupted running track.
+   */
+  fun stagePreservedReplaceQueue(items: List<PlayerItemSpec>): List<MediaItem> {
+    if (items.isEmpty()) throw PlayerProtocolException("empty-queue-replace-invalid")
+    val (staged, revision) = synchronized(lock) {
+      val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
+      if (items.size > LoggeRythmPlayerProtocol.MAX_QUEUE_ITEMS) {
+        throw PlayerProtocolException("queue-too-large")
+      }
+      val seenIds = mutableSetOf<String>()
+      items.forEach { item ->
+        requireCookieMatchesBinding(item, binding)
+        if (!seenIds.add(item.id)) throw PlayerProtocolException("queue-item-id-duplicate")
+      }
+      val candidateCookies = items
+        .filter { it.url.startsWith("https://") }
+        .map { it.url to it.cookie }
+      cookieVault.replaceQueue(candidateCookies)
+      stagedSources.clear()
+      stagedExtrasById.clear()
+      val mediaItems = items.map { item ->
+        stagedSources[item.id to item.url] = item
+        stagedExtrasById[item.id] = item.extrasJson
+        mediaItem(
+          id = item.id,
+          url = item.url,
+          title = item.title,
+          artist = item.artist,
+          album = item.album,
+          subtitle = null,
+          artworkUrl = item.artworkUrl,
+          durationMs = item.durationMs,
+          browsable = false,
+          playable = true,
+        )
+      }
+      mediaItems to queueGeneration.incrementAndGet()
+    }
+    LoggeRythmCacheServiceBridge.queueChanged(revision)
+    return staged
+  }
+
+  fun unstageQueueItems(items: List<PlayerItemSpec>) {
+    synchronized(lock) {
+      items.forEach { item -> stagedSources.remove(item.id to item.url) }
+      rebuildStagedExtrasLocked()
+      val candidateCookies = buildList {
+        queueSources.filter { it.url.startsWith("https://") }.forEach { add(it.url to it.cookie) }
+        stagedSources.values.filter { it.url.startsWith("https://") }.forEach {
+          add(it.url to it.cookie)
+        }
+      }
+      cookieVault.replaceQueue(candidateCookies)
+    }
   }
 
   /**
@@ -186,6 +343,8 @@ internal object LoggeRythmPlayerRuntime {
       cookieVault.clearQueue()
       queueSources = emptyList()
       queueExtras = emptyMap()
+      stagedSources.clear()
+      stagedExtrasById.clear()
       queueGeneration.incrementAndGet()
     }
     LoggeRythmCacheServiceBridge.queueChanged(revision)
@@ -310,33 +469,55 @@ internal object LoggeRythmPlayerRuntime {
   }
 
   fun extrasFor(mediaId: String): String = synchronized(lock) {
-    queueExtras[mediaId] ?: "{}"
+    stagedExtrasById[mediaId] ?: queueExtras[mediaId] ?: "{}"
   }
 
   fun loudnessGainFor(mediaId: String?): Float = synchronized(lock) {
     if (mediaId == null) return@synchronized 1f
-    LoggeRythmLoudnessNormalization.gainLinearFromExtras(queueExtras[mediaId] ?: "{}")
+    LoggeRythmLoudnessNormalization.gainLinearFromExtras(
+      stagedExtrasById[mediaId] ?: queueExtras[mediaId] ?: "{}",
+    )
   }
 
   /**
    * Reconciles the Media3 timeline back to its private source sidecars. Unknown or URI-mismatched
    * items fail closed so a controller cannot smuggle an unvalidated source into durable state.
    */
-  fun captureQueue(mediaItems: List<MediaItem>): List<PlayerItemSpec> {
+  fun captureQueue(mediaItems: List<MediaItem>): List<PlayerItemSpec> =
+    captureQueueEntries(mediaItems.map { it.mediaId to it.localConfiguration?.uri?.toString() })
+
+  internal fun captureQueueEntries(entries: List<Pair<String, String?>>): List<PlayerItemSpec> {
     val (captured, revision) = synchronized(lock) {
       val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
       val queueById = queueSources.associateBy(PlayerItemSpec::id)
-      val result = mediaItems.map { mediaItem ->
-        val source = queueById[mediaItem.mediaId]
-          ?: browseTree.nodes[mediaItem.mediaId]?.source
-          ?: throw PlayerProtocolException("player-source-sidecar-missing")
-        val liveUrl = mediaItem.localConfiguration?.uri?.toString()
+      val consumedStaged = mutableSetOf<Pair<String, String>>()
+      val result = entries.map { (mediaId, rawLiveUrl) ->
+        val liveUrl = rawLiveUrl
           ?: throw PlayerProtocolException("player-source-uri-missing")
-        if (source.url != liveUrl) throw PlayerProtocolException("player-source-uri-mismatch")
+        val stagedKey = mediaId to liveUrl
+        val staged = stagedSources[stagedKey]
+        val source = if (staged != null) {
+          consumedStaged += stagedKey
+          staged
+        } else {
+          val existing = queueById[mediaId]
+            ?: browseTree.nodes[mediaId]?.source
+            ?: throw PlayerProtocolException("player-source-sidecar-missing")
+          if (existing.url != liveUrl) throw PlayerProtocolException("player-source-uri-mismatch")
+          existing
+        }
         requireCookieMatchesBinding(source, binding)
         source
       }
-      cookieVault.replaceQueue(result.map { it.url to it.cookie })
+      consumedStaged.forEach(stagedSources::remove)
+      rebuildStagedExtrasLocked()
+      val cookieEntries = buildList {
+        result.filter { it.url.startsWith("https://") }.forEach { add(it.url to it.cookie) }
+        stagedSources.values.filter { it.url.startsWith("https://") }.forEach {
+          add(it.url to it.cookie)
+        }
+      }
+      cookieVault.replaceQueue(cookieEntries)
       val changed = result != queueSources
       queueSources = result.toList()
       queueExtras = result.associate { it.id to it.extrasJson }
@@ -356,6 +537,8 @@ internal object LoggeRythmPlayerRuntime {
       cookieVault.clearAll()
       queueSources = emptyList()
       queueExtras = emptyMap()
+      stagedSources.clear()
+      stagedExtrasById.clear()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
       browseTreeSpec = null
       queueGeneration.incrementAndGet() to publicTreeChange(previousTree, browseTree)
@@ -371,12 +554,19 @@ internal object LoggeRythmPlayerRuntime {
       cookieVault.clearAll()
       queueSources = emptyList()
       queueExtras = emptyMap()
+      stagedSources.clear()
+      stagedExtrasById.clear()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
       browseTreeSpec = null
       queueGeneration.incrementAndGet() to publicTreeChange(previousTree, browseTree)
     }
     LoggeRythmCacheServiceBridge.queueChanged(revision)
     LoggeRythmBrowseTreeServiceBridge.publish(browseChange)
+  }
+
+  private fun rebuildStagedExtrasLocked() {
+    stagedExtrasById.clear()
+    stagedSources.values.forEach { item -> stagedExtrasById[item.id] = item.extrasJson }
   }
 
   /** Compare only Media3-public fields; private source sidecars and Cookie never enter the diff. */

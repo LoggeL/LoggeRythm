@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -28,25 +28,31 @@ import {
   trackLikeMutationKey,
 } from '../data';
 import { resolveRemoteVisualState } from '../data/remoteState';
+import { useHaptics } from '../hooks/useHaptics';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { strings } from '../localization';
 import { refreshBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
 import { colors, metrics, opacity, radii } from '../theme';
 import AppIcon from './AppIcon';
+import {
+  createFocusRingController,
+  FocusRingOverlay,
+  type TvFocusProps,
+} from './ui';
 
-interface TrackLikeButtonProps {
+export interface TrackLikeButtonProps extends TvFocusProps {
   track: Track;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 }
 
-interface EpicLikeGlyphProps {
+export interface EpicLikeGlyphProps {
   liked: boolean;
   color: string;
-}
-
-interface EpicLikeGlyphState {
-  reduceMotion: boolean;
+  celebrating?: boolean;
+  celebrationKey?: number;
+  onCelebrationComplete?: () => void;
 }
 
 /** Same glyph size as IconButton md, so Like lines up with the overflow control. */
@@ -61,156 +67,190 @@ const burstParticles = [
   { x: -23, y: -13, color: colors.accent },
 ] as const;
 
+const likedIdSetCache = new WeakMap<readonly Track[], ReadonlySet<string>>();
+
 /**
- * The celebration owns only transform/opacity animations, allowing Android's
- * native driver to keep every frame off the JS thread.
+ * Derive one O(1) lookup set per React Query likes array reference.
+ * All visible rows share the cached Set without duplicating O(L) scans.
  */
-class EpicLikeGlyph extends React.PureComponent<EpicLikeGlyphProps, EpicLikeGlyphState> {
-  state: EpicLikeGlyphState = { reduceMotion: true };
+export function getLikedTrackIdSet(tracks: readonly Track[]): ReadonlySet<string> {
+  let ids = likedIdSetCache.get(tracks);
+  if (ids === undefined) {
+    ids = new Set(tracks.map((item) => String(item.id)));
+    likedIdSetCache.set(tracks, ids);
+  }
+  return ids;
+}
 
-  private readonly heartScale = new Animated.Value(1);
+interface ActiveLikeCelebrationProps {
+  liked: boolean;
+  color: string;
+  onComplete?: () => void;
+}
 
-  private readonly burst = new Animated.Value(0);
+/**
+ * Mounted ONLY while an active user-triggered like burst is running (0 idle
+ * Animated views or interpolations at rest). Owns transform/opacity animations
+ * exclusively so Android's native driver keeps every frame off the JS thread.
+ */
+const ActiveLikeCelebration = React.memo(function ActiveLikeCelebration({
+  liked,
+  color,
+  onComplete,
+}: ActiveLikeCelebrationProps) {
+  const [heartScale] = useState(() => new Animated.Value(1));
+  const [burst] = useState(() => new Animated.Value(0));
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
-  private animation: Animated.CompositeAnimation | null = null;
-
-  private mounted = false;
-
-  private reduceMotionSubscription: { remove: () => void } | null = null;
-
-  componentDidMount(): void {
-    this.mounted = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
-      if (this.mounted) this.setState({ reduceMotion });
+  const interpolations = useMemo(() => {
+    const burstOpacity = burst.interpolate({
+      inputRange: [0, 0.12, 0.72, 1],
+      outputRange: [0, 1, 0.82, 0],
     });
-    this.reduceMotionSubscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      (reduceMotion) => {
-        this.setState({ reduceMotion });
-        if (reduceMotion) {
-          this.animation?.stop();
-          this.heartScale.setValue(1);
-          this.burst.setValue(0);
-        }
-      },
-    );
-  }
+    const ringScale = burst.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.35, 1.75],
+    });
+    const particleScale = burst.interpolate({
+      inputRange: [0, 0.32, 1],
+      outputRange: [0.2, 1.15, 0.45],
+    });
+    const particles = burstParticles.map((particle, index) => ({
+      key: `${particle.x}:${particle.y}`,
+      color: particle.color,
+      translateX: burst.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, particle.x],
+      }),
+      translateY: burst.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, particle.y],
+      }),
+      rotate: `${index * 60}deg`,
+    }));
+    return { burstOpacity, ringScale, particleScale, particles };
+  }, [burst]);
 
-  componentDidUpdate(previous: EpicLikeGlyphProps): void {
-    if (!previous.liked && this.props.liked) this.celebrate();
-  }
-
-  componentWillUnmount(): void {
-    this.mounted = false;
-    this.animation?.stop();
-    this.reduceMotionSubscription?.remove();
-  }
-
-  private celebrate(): void {
-    this.animation?.stop();
-    this.heartScale.setValue(1);
-    this.burst.setValue(0);
-    if (this.state.reduceMotion) return;
-
-    this.animation = Animated.parallel([
+  useEffect(() => {
+    heartScale.setValue(1);
+    burst.setValue(0);
+    const animation = Animated.parallel([
       Animated.sequence([
-        Animated.timing(this.heartScale, {
+        Animated.timing(heartScale, {
           toValue: 0.72,
           duration: 65,
           easing: Easing.out(Easing.quad),
           useNativeDriver: true,
         }),
-        Animated.spring(this.heartScale, {
+        Animated.spring(heartScale, {
           toValue: 1.48,
           speed: 24,
           bounciness: 13,
           useNativeDriver: true,
         }),
-        Animated.spring(this.heartScale, {
+        Animated.spring(heartScale, {
           toValue: 1,
           speed: 18,
           bounciness: 8,
           useNativeDriver: true,
         }),
       ]),
-      Animated.timing(this.burst, {
+      Animated.timing(burst, {
         toValue: 1,
         duration: 620,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
     ]);
-    this.animation.start(({ finished }) => {
-      if (finished) this.burst.setValue(0);
+    animation.start(({ finished }) => {
+      if (finished) {
+        burst.setValue(0);
+        onCompleteRef.current?.();
+      }
     });
-  }
+    return () => {
+      animation.stop();
+    };
+  }, [burst, heartScale]);
 
-  render() {
-    const { liked, color } = this.props;
-    const burstOpacity = this.burst.interpolate({
-      inputRange: [0, 0.12, 0.72, 1],
-      outputRange: [0, 1, 0.82, 0],
-    });
-    return (
-      <View accessible={false} pointerEvents="none" style={styles.celebrationFrame}>
+  return (
+    <View
+      testID="like-celebration-active"
+      accessible={false}
+      pointerEvents="none"
+      style={styles.celebrationFrame}
+    >
+      <Animated.View
+        style={[
+          styles.burstRing,
+          {
+            opacity: interpolations.burstOpacity,
+            transform: [{ scale: interpolations.ringScale }],
+          },
+        ]}
+      />
+      {interpolations.particles.map((particle) => (
         <Animated.View
+          key={particle.key}
           style={[
-            styles.burstRing,
+            styles.burstParticle,
             {
-              opacity: burstOpacity,
-              transform: [{
-                scale: this.burst.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.35, 1.75],
-                }),
-              }],
+              opacity: interpolations.burstOpacity,
+              transform: [
+                { translateX: particle.translateX },
+                { translateY: particle.translateY },
+                { scale: interpolations.particleScale },
+                { rotate: particle.rotate },
+              ],
             },
           ]}
-        />
-        {burstParticles.map((particle, index) => (
-          <Animated.View
-            key={`${particle.x}:${particle.y}`}
-            style={[
-              styles.burstParticle,
-              {
-                opacity: burstOpacity,
-                transform: [
-                  {
-                    translateX: this.burst.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, particle.x],
-                    }),
-                  },
-                  {
-                    translateY: this.burst.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, particle.y],
-                    }),
-                  },
-                  {
-                    scale: this.burst.interpolate({
-                      inputRange: [0, 0.32, 1],
-                      outputRange: [0.2, 1.15, 0.45],
-                    }),
-                  },
-                  { rotate: `${index * 60}deg` },
-                ],
-              },
-            ]}
-          >
-            <AppIcon name="star-four-points" color={particle.color} size={9} />
-          </Animated.View>
-        ))}
-        <Animated.View style={{ transform: [{ scale: this.heartScale }] }}>
-          <AppIcon
-            name={liked ? 'heart' : 'heart-outline'}
-            color={color}
-            size={GLYPH_SIZE}
-          />
+        >
+          <AppIcon name="star-four-points" color={particle.color} size={9} />
         </Animated.View>
-      </View>
+      ))}
+      <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+        <AppIcon
+          name={liked ? 'heart' : 'heart-outline'}
+          color={color}
+          size={GLYPH_SIZE}
+        />
+      </Animated.View>
+    </View>
+  );
+});
+
+/**
+ * Renders a lightweight static heart at rest (0 Animated views, 0 particles,
+ * 0 native listeners) and mounts `ActiveLikeCelebration` only during an active
+ * user-triggered like burst.
+ */
+export function EpicLikeGlyph({
+  liked,
+  color,
+  celebrating = false,
+  celebrationKey = 0,
+  onCelebrationComplete,
+}: EpicLikeGlyphProps) {
+  if (celebrating) {
+    return (
+      <ActiveLikeCelebration
+        key={celebrationKey}
+        liked={liked}
+        color={color}
+        onComplete={onCelebrationComplete}
+      />
     );
   }
+  return (
+    <AppIcon
+      name={liked ? 'heart' : 'heart-outline'}
+      color={color}
+      size={GLYPH_SIZE}
+    />
+  );
 }
 
 function notifyFailure(message: string): void {
@@ -219,17 +259,60 @@ function notifyFailure(message: string): void {
 }
 
 /** Account-scoped favorite control shared by rows, cards, and player surfaces. */
-export default function TrackLikeButton({ track, testID, style }: TrackLikeButtonProps) {
+export default function TrackLikeButton({
+  track,
+  testID,
+  style,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
+}: TrackLikeButtonProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const reducedMotion = useReducedMotion();
+  const haptics = useHaptics();
+  const [focusController] = useState(createFocusRingController);
+  const trackId = String(track.id);
+  const burstSequenceRef = useRef(0);
+  const [celebration, setCelebration] = useState<{
+    ownerTrackId: string;
+    burstId: number;
+  } | null>(null);
+
+  // Drop stale celebration ownership immediately on FlatList row recycle (A -> B -> A)
+  // or when reduced motion turns on, so passive rows never burst.
+  if (
+    celebration !== null
+    && (celebration.ownerTrackId !== trackId || reducedMotion)
+  ) {
+    setCelebration(null);
+  }
+  const activeCelebration =
+    !reducedMotion && celebration !== null && celebration.ownerTrackId === trackId
+      ? celebration
+      : null;
+
+  const clearCelebration = useCallback(() => {
+    setCelebration((current) =>
+      current !== null && current.ownerTrackId === trackId ? null : current,
+    );
+  }, [trackId]);
+
   const scope =
     user === null
       ? 'signed-out'
       : musicCacheScope(getCurrentApiBase(), user.id);
+  const selectLiked = useCallback(
+    (tracks: readonly Track[]) => getLikedTrackIdSet(tracks).has(trackId),
+    [trackId],
+  );
   const likes = useQuery({
     ...musicQueries.likes(scope),
     enabled: user !== null,
-    select: (tracks) => tracks.some((item) => item.id === track.id),
+    select: selectLiked,
   });
   const mutationKey = trackLikeMutationKey(scope, track.id);
   const matchingMutations = useIsMutating({ mutationKey, exact: true });
@@ -239,7 +322,10 @@ export default function TrackLikeButton({ track, testID, style }: TrackLikeButto
       scope,
       track,
       refreshAutoBrowse: refreshBrowseTree,
-      onMutationError: () => notifyFailure(strings.player.likeFailed),
+      onMutationError: () => {
+        clearCelebration();
+        notifyFailure(strings.player.likeFailed);
+      },
       onMutationSuccess: (nextLiked) => {
         AccessibilityInfo.announceForAccessibility(
           nextLiked
@@ -314,19 +400,47 @@ export default function TrackLikeButton({ track, testID, style }: TrackLikeButto
         busy,
       }}
       disabled={disabled}
+      focusable={focusable}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{
+        color: colors.fillStrong,
+        borderless: true,
+        radius: metrics.minimumTouchTarget / 2,
+      }}
       hitSlop={8}
+      onFocus={(event) => {
+        focusController.setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused(false);
+        onBlur?.(event);
+      }}
       onPress={() => {
         if (queryRetry) {
           void likes.refetch();
           return;
         }
-        mutation.mutate(!liked);
+        const nextLiked = !liked;
+        if (nextLiked) {
+          haptics.trigger('like');
+          if (!reducedMotion) {
+            burstSequenceRef.current += 1;
+            setCelebration({
+              ownerTrackId: trackId,
+              burstId: burstSequenceRef.current,
+            });
+          }
+        } else {
+          clearCelebration();
+        }
+        mutation.mutate(nextLiked);
       }}
       style={({ pressed }) => [
         styles.button,
         style,
         busy && styles.busy,
-        pressed && !disabled && styles.pressed,
+        pressed && !disabled && (reducedMotion ? styles.pressedReduced : styles.pressed),
       ]}
     >
       {loading ? (
@@ -348,9 +462,19 @@ export default function TrackLikeButton({ track, testID, style }: TrackLikeButto
                   ? colors.accent
                   : colors.textSecondary
             }
+            celebrating={activeCelebration !== null}
+            celebrationKey={activeCelebration?.burstId ?? 0}
+            onCelebrationComplete={clearCelebration}
           />
         )
       )}
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.pill}
+        controlledFocused={focused}
+        disabled={disabled}
+        focusedStyle={focusedStyle}
+      />
     </Pressable>
   );
 }
@@ -388,4 +512,5 @@ const styles = StyleSheet.create({
   },
   busy: { opacity: opacity.pressed },
   pressed: { opacity: opacity.pressed, transform: [{ scale: 0.94 }] },
+  pressedReduced: { opacity: opacity.pressed },
 });

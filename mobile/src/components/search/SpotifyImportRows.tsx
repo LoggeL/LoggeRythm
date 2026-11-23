@@ -5,7 +5,13 @@ import { trackArtistLabel } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import { colors, layout, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
-import { ActionButton, AppText, SectionHeader } from '../ui';
+import {
+  ActionButton,
+  AppText,
+  FocusRingOverlay,
+  SectionHeader,
+  createFocusRingController,
+} from '../ui';
 import { spotifyImportInputStyle } from './SpotifyImportForm';
 
 interface SpotifyImportSaveControlsProps {
@@ -72,6 +78,7 @@ export function SpotifyImportDestinationRow({
   busy,
   onPress,
 }: SpotifyImportDestinationRowProps) {
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={`spotify-import-save-existing-${playlist.id}`}
@@ -79,6 +86,10 @@ export function SpotifyImportDestinationRow({
       accessibilityLabel={strings.search.importSaveToPlaylist(playlist.name)}
       accessibilityState={{ disabled: saving, busy }}
       disabled={saving}
+      focusable={!saving}
+      android_ripple={{ color: colors.fillStrong }}
+      onFocus={() => focusController.setFocused(true)}
+      onBlur={() => focusController.setFocused(false)}
       onPress={onPress}
       style={({ pressed }) => [
         styles.destination,
@@ -99,6 +110,11 @@ export function SpotifyImportDestinationRow({
           {strings.common.trackCount(playlist.track_count)}
         </AppText>
       </View>
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.sm}
+        disabled={saving}
+      />
     </Pressable>
   );
 }

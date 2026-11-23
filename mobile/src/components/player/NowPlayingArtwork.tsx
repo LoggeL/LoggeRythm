@@ -121,6 +121,10 @@ export function NowPlayingArtwork({
   );
 }
 
+/** Memoized wrappers prevent blur/image churn on unrelated screen updates. */
+export const MemoNowPlayingBackdrop = React.memo(NowPlayingBackdrop);
+export const MemoNowPlayingArtwork = React.memo(NowPlayingArtwork);
+
 const absoluteFill = {
   position: 'absolute' as const,
   top: 0,

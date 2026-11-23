@@ -238,4 +238,28 @@ describe('native queue mutations', () => {
     );
     expect(player.removeMediaItems).not.toHaveBeenCalled();
   });
+
+  it('prunes removed stableId from persisted context-shuffle restore order', async () => {
+    const {
+      resetControllerState,
+      restoreControllerStateFromNativeQueue,
+    } = await import('./controller');
+    const getQueuePersistenceState = vi.fn(() => ({
+      contextShuffleEnabled: true,
+      contextShuffleRestoreOrder: ['b', 'c'],
+    }));
+    const playerMod = (await import('./player')).default as unknown as Record<string, unknown>;
+    playerMod.getQueuePersistenceState = getQueuePersistenceState;
+    resetControllerState();
+    player.queue = [item('a'), item('b'), item('c')];
+    player.activeIndex = 0;
+
+    restoreControllerStateFromNativeQueue();
+    await removeQueueItem(2, expectedQueue());
+
+    expect(player.setQueuePersistenceState).toHaveBeenLastCalledWith({
+      contextShuffleEnabled: true,
+      contextShuffleRestoreOrder: ['b'],
+    });
+  });
 });

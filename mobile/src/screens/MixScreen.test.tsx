@@ -1,18 +1,35 @@
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import MixScreen from './MixScreen';
+import MixScreen, { MixCollectionTvShell } from './MixScreen';
 
 const mocks = vi.hoisted(() => ({
   refetch: vi.fn(),
   useAuth: vi.fn(),
   useQuery: vi.fn(),
   useState: vi.fn(),
+  isFocused: true,
+  useTvFocusReturn: vi.fn(),
+  tvEnv: {
+    isTv: false,
+    contentWidth: 360,
+    splitPrimaryRatio: 0.44,
+    gridGap: 14,
+  },
 }));
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   return { ...actual, default: actual, useState: mocks.useState };
 });
+vi.mock('@react-navigation/native', () => ({
+  useIsFocused: () => mocks.isFocused,
+}));
+vi.mock('../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
+vi.mock('../tv', () => ({
+  TvFocusScope: 'TvFocusScope',
+  useTvEnvironment: () => mocks.tvEnv,
+  useTvFocusReturn: mocks.useTvFocusReturn,
+}));
 vi.mock('react-native', () => ({
   RefreshControl: 'RefreshControl',
   ScrollView: 'ScrollView',
@@ -52,7 +69,11 @@ vi.mock('../localization', () => ({
     },
   },
 }));
-vi.mock('../player/controller', () => ({ playTracks: vi.fn() }));
+vi.mock('../player/controller', () => ({
+  playTracks: vi.fn(),
+  playTrackRow: vi.fn(),
+  toggleShuffle: vi.fn(),
+}));
 // The screen is built from the shared scaffold and primitives now. They are
 // only instantiated here, never called, so they stay opaque host elements.
 vi.mock('../components/catalog/CatalogCollectionPage', () => ({
@@ -88,6 +109,13 @@ function elements(node: React.ReactNode): React.ReactElement<ElementProps>[] {
 describe('MixScreen missing-route query state', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isFocused = true;
+    mocks.tvEnv = {
+      isTv: false,
+      contentWidth: 360,
+      splitPrimaryRatio: 0.44,
+      gridGap: 14,
+    };
     mocks.useAuth.mockReturnValue({ user: { id: 7 } });
     mocks.useState.mockReturnValue([null, vi.fn()]);
   });
@@ -153,5 +181,29 @@ describe('MixScreen missing-route query state', () => {
     });
     expect(tree.props.onRetry).toBeUndefined();
     expect(mocks.useQuery).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
+  });
+
+  it('wires MixCollectionTvShell focus return to isFocused and forwards bottomInset to CatalogCollectionPage', () => {
+    mocks.tvEnv = { isTv: true, contentWidth: 700, splitPrimaryRatio: 0.44, gridGap: 16 };
+    mocks.isFocused = false;
+    const shell = MixCollectionTvShell({
+      id: 'mix',
+      tracks: [],
+      hero: ({} as React.ReactElement),
+      empty: null,
+      refreshing: false,
+      refreshAccessibilityLabel: 'Refreshing',
+      onRefresh: vi.fn(),
+      renderTrack: vi.fn(),
+    });
+    expect(mocks.useTvFocusReturn).toHaveBeenCalledWith({
+      scope: 'mix',
+      active: false,
+      enabled: true,
+    });
+    const page = shell.props.children as React.ReactElement<ElementProps>;
+    expect(page.type).toBe('CatalogCollectionPage');
+    expect(page.props.bottomInset).toBe(96);
+    expect(page.props.tv).toBe(mocks.tvEnv);
   });
 });

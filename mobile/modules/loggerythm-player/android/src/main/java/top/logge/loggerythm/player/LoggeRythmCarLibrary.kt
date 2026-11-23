@@ -138,6 +138,18 @@ internal enum class LoggeRythmCarError(
     R.string.loggerythm_player_car_error_unsupported,
     offersOpenApp = false,
   ),
+  FAVORITE_UNAVAILABLE(
+    "car-favorite-unavailable",
+    SessionError.ERROR_INVALID_STATE,
+    R.string.loggerythm_player_car_error_favorite_unavailable,
+    offersOpenApp = true,
+  ),
+  FAVORITE_UPDATE_FAILED(
+    "car-favorite-update-failed",
+    SessionError.ERROR_IO,
+    R.string.loggerythm_player_car_error_favorite_failed,
+    offersOpenApp = false,
+  ),
 }
 
 /**

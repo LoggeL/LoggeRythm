@@ -73,4 +73,22 @@ describe('CatalogDetailHero', () => {
     expect(queryByTestId(rendered, 'album-play-all')).toBeNull();
     expect(byType(rendered, 'Pressable')).toHaveLength(0);
   });
+
+  it('renders an optional shuffle button alongside PlayButton when provided', () => {
+    const onShuffle = vi.fn();
+    const onPlay = vi.fn();
+    const rendered = CatalogDetailHero({
+      artwork: React.createElement('Cover'),
+      title: 'Album',
+      titleTestID: 'album-title',
+      shuffle: { testID: 'album-shuffle', accessibilityLabel: 'Shuffle play', onPress: onShuffle },
+      play: { testID: 'album-play-all', accessibilityLabel: 'Play all', onPress: onPlay },
+    });
+
+    const shuffle = byTestId(rendered, 'album-shuffle');
+    expect(shuffle.props.accessibilityLabel).toBe('Shuffle play');
+    (shuffle.props.onPress as () => void)();
+    expect(onShuffle).toHaveBeenCalledOnce();
+    expect(onPlay).not.toHaveBeenCalled();
+  });
 });

@@ -22,6 +22,7 @@ vi.mock('react-native', () => ({
 vi.mock('../ui', async (original) => ({
   ...(await original<typeof import('../ui')>()),
   CardRailSkeleton: 'CardRailSkeleton',
+  DetailHeroSkeleton: 'DetailHeroSkeleton',
   Skeleton: 'Skeleton',
   TrackRowSkeleton: 'TrackRowSkeleton',
 }));
@@ -82,9 +83,28 @@ describe('Catalog remote-state presentation', () => {
       accessibilityRole: 'progressbar',
       accessibilityLabel: catalogStrings.album.loading,
     });
-    // The page is drawn as a skeleton of itself, not a centred spinner.
+    // The page is drawn as a skeleton of itself with DetailHeroSkeleton (64dp action row), not a spinner.
+    const heroSkeleton = elements(loading).find((element) => element.type === 'DetailHeroSkeleton');
+    expect(heroSkeleton?.props).toMatchObject({ round: false, compact: false, includeActionRow: true });
     expect(elements(loading).some((element) => element.type === 'Skeleton')).toBe(true);
     expect(elements(loading).some((element) => element.type === 'ActivityIndicator')).toBe(false);
+
+    const compactLoading = CatalogPageGate({
+      id: 'genre',
+      variant: 'compact',
+      hasData: false,
+      isPending: true,
+      isFetching: true,
+      isStale: true,
+      fetchStatus: 'fetching',
+      error: null,
+      loadingLabel: catalogStrings.genre.loading,
+      onRetry: vi.fn(),
+    });
+    const compactHero = elements(compactLoading).find(
+      (element) => element.type === 'DetailHeroSkeleton',
+    );
+    expect(compactHero?.props).toMatchObject({ round: false, compact: true, includeActionRow: true });
 
     const onRetry = vi.fn();
     const failed = CatalogPageGate({
@@ -231,6 +251,12 @@ describe('Catalog remote-state presentation', () => {
     });
     expect(byTestId(section({ ...loading, skeleton: 'artists' }), 'catalog-section-charts-loading')
       ?.props.round).toBe(true);
+    expect(byTestId(section({ ...loading, skeleton: 'tracks' }), 'catalog-section-charts-loading')
+      ?.props.variant).toBe('track');
+    expect(byTestId(section({ ...loading, skeleton: 'playlists' }), 'catalog-section-charts-loading')
+      ?.props.variant).toBe('playlist');
+    expect(byTestId(section({ ...loading, skeleton: 'genres' }), 'catalog-section-charts-loading')
+      ?.props.variant).toBe('genre');
     expect(byTestId(section({ ...loading, skeleton: 'rows' }), 'catalog-section-charts-loading')
       ?.type).toBe('TrackRowSkeleton');
 

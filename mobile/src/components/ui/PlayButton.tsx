@@ -6,12 +6,19 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { triggerHaptic, type HapticKind } from '../../hooks/useHaptics';
+import { getReducedMotionSnapshot } from '../../hooks/useReducedMotion';
 import { colors, elevation, metrics, opacity, radii } from '../../theme';
 import AppIcon, { type AppIconName } from '../AppIcon';
+import {
+  createFocusRingController,
+  FocusRingOverlay,
+  type TvFocusProps,
+} from './PressableScale';
 
 export type PlayButtonSize = 'sm' | 'md' | 'lg';
 
-export interface PlayButtonProps {
+export interface PlayButtonProps extends TvFocusProps {
   onPress: () => void;
   /** Localized action name, e.g. strings.common.play or "Play <album>". */
   accessibilityLabel: string;
@@ -24,6 +31,8 @@ export interface PlayButtonProps {
   size?: PlayButtonSize;
   /** Overrides the play/pause glyph (e.g. "shuffle"). */
   icon?: AppIconName;
+  /** Subtle Android haptic kind on press; defaults to `'commit'`, pass `false` to disable. */
+  haptic?: HapticKind | false;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -39,7 +48,8 @@ const glyphs: Record<PlayButtonSize, number> = { sm: 26, md: 30, lg: 34 };
  * PlayButton is the one loud control of the app (web `.play-fab`): a round
  * accent button that starts or toggles playback. Use exactly one per view
  * (detail hero, mix card, now playing transport). It reports `busy` while
- * the player is buffering and never shrinks below the 48dp target.
+ * the player is buffering, never shrinks below the 48dp target, and supports
+ * Android TV D-Pad focus rings.
  */
 export function PlayButton({
   onPress,
@@ -49,11 +59,19 @@ export function PlayButton({
   disabled = false,
   size = 'md',
   icon,
+  haptic = 'commit',
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
   testID,
   style,
 }: PlayButtonProps) {
   const unavailable = disabled || busy;
   const diameter = diameters[size];
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={testID}
@@ -61,12 +79,34 @@ export function PlayButton({
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled: unavailable, busy }}
       disabled={unavailable}
-      onPress={onPress}
+      focusable={focusable}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{ color: 'rgba(255,255,255,0.22)', borderless: true, radius: diameter / 2 }}
+      onFocus={(event) => {
+        focusController.setFocused?.(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused?.(false);
+        onBlur?.(event);
+      }}
+      onPress={
+        haptic === false
+          ? onPress
+          : () => {
+              triggerHaptic(haptic);
+              onPress();
+            }
+      }
       style={({ pressed }) => [
         styles.button,
         { width: diameter, height: diameter },
         style,
-        pressed ? styles.pressed : null,
+        pressed
+          ? getReducedMotionSnapshot()
+            ? styles.pressedReduced
+            : styles.pressed
+          : null,
         disabled ? styles.disabled : null,
       ]}
     >
@@ -79,6 +119,13 @@ export function PlayButton({
           size={glyphs[size]}
         />
       )}
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.pill}
+        controlledFocused={focused}
+        disabled={unavailable}
+        focusedStyle={focusedStyle}
+      />
     </Pressable>
   );
 }
@@ -93,5 +140,6 @@ const styles = StyleSheet.create({
     shadowColor: colors.accent,
   },
   pressed: { backgroundColor: colors.accentSolid, transform: [{ scale: 0.95 }] },
+  pressedReduced: { backgroundColor: colors.accentSolid },
   disabled: { opacity: opacity.disabled },
 });

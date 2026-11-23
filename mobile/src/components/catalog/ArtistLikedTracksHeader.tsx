@@ -2,9 +2,9 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { artistLikedTracksExpandable } from '../../screens/artistTrackListModel';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { colors, layout, metrics, opacity, spacing, typography } from '../../theme';
+import { colors, layout, metrics, opacity, radii, spacing, typography } from '../../theme';
 import AppIcon from '../AppIcon';
-import { SectionHeader } from '../ui';
+import { createFocusRingController, FocusRingOverlay, SectionHeader } from '../ui';
 import { CatalogQueryBoundary } from './CatalogStates';
 import { catalogQueryFlags, type CatalogQueryFlags } from './catalogQueryState';
 
@@ -40,6 +40,7 @@ export function ArtistLikedTracksHeader({
 }: ArtistLikedTracksHeaderProps) {
   const title = catalogStrings.artist.likedTracks;
   const expandable = artistLikedTracksExpandable(trackCount);
+  const focusController = createFocusRingController();
   const heading = (
     <SectionHeader
       title={title}
@@ -71,6 +72,7 @@ export function ArtistLikedTracksHeader({
       {expandable ? (
         <Pressable
           testID="artist-liked-tracks-toggle"
+          focusable
           accessibilityRole="button"
           accessibilityState={{ expanded }}
           accessibilityLabel={
@@ -78,10 +80,13 @@ export function ArtistLikedTracksHeader({
               ? catalogStrings.artist.hideLikedTracksOf(artistName)
               : catalogStrings.artist.showAllLikedTracks(artistName, trackCount)
           }
+          onFocus={() => focusController.setFocused(true)}
+          onBlur={() => focusController.setFocused(false)}
           onPress={onToggleExpanded}
           style={({ pressed }) => [styles.expander, pressed ? styles.pressed : null]}
         >
           {heading}
+          <FocusRingOverlay controller={focusController} borderRadius={radii.md} />
         </Pressable>
       ) : (
         heading

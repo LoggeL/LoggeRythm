@@ -13,7 +13,13 @@ const mocks = vi.hoisted(() => ({ setExpanded: vi.fn(), useState: vi.fn() }));
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
-  return { ...actual, default: actual, useState: mocks.useState };
+  return {
+    ...actual,
+    default: actual,
+    useState: mocks.useState,
+    useMemo: <T,>(factory: () => T) => factory(),
+    useCallback: <T,>(fn: T) => fn,
+  };
 });
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
@@ -129,6 +135,18 @@ describe('ArtistHero', () => {
     expect(refetch).toHaveBeenCalledOnce();
     expect(queryByTestId(rendered, 'artist-fans')).toBeNull();
     expect(byTestId(rendered, 'artist-play-all').props.disabled).toBe(true);
+  });
+
+  it('wires optional shuffle action alongside play and disables it when top tracks are empty', () => {
+    const onShuffle = vi.fn();
+    const rendered = hero({ onShuffle });
+    const shuffle = byTestId(rendered, 'artist-shuffle');
+    expect(shuffle.props.disabled).toBe(false);
+    (shuffle.props.onPress as () => void)();
+    expect(onShuffle).toHaveBeenCalledOnce();
+
+    const empty = hero({ artist: { ...artist, top: [] }, onShuffle });
+    expect(byTestId(empty, 'artist-shuffle').props.disabled).toBe(true);
   });
 });
 

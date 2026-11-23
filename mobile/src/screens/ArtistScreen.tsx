@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { useQuery } from '@tanstack/react-query';
+import React, { useCallback, useMemo, useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import type { ArtistDetail, Track } from '../api/types';
 import { ArtistFooter } from '../components/catalog/ArtistFooter';
 import { ArtistHero } from '../components/catalog/ArtistHero';
 import { ArtistLikedTracksHeader } from '../components/catalog/ArtistLikedTracksHeader';
@@ -18,11 +20,14 @@ import {
   settledCatalogQueryFlags,
 } from '../components/catalog/catalogQueryState';
 import { showTrackActions } from '../components/trackActions';
-import { EmptyState } from '../components/ui';
+import { EmptyState, TrackRowSkeleton } from '../components/ui';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
-import { musicCacheScope, musicQueries } from '../data';
-import { colors, layout } from '../theme';
+import { findCachedArtistSummary, musicCacheScope, musicQueries } from '../data';
+import { resolveRemoteVisualState } from '../data/remoteState';
+import { useBottomInset } from '../hooks/useBottomInset';
+import { colors, layout, spacing } from '../theme';
+import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 import { artistLikedSectionVisible } from './artistTrackListModel';
 import {
   artistHasContent,
@@ -43,26 +48,42 @@ import { useCatalogPlayback } from './useCatalogPlayback';
 export type ArtistScreenProps = ArtistScreenContract;
 export type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 
+const EMPTY_TRACKS: readonly Track[] = [];
+
 export default function ArtistScreen(props: ArtistScreenProps) {
   assertArtistScreenContract(props);
   const artistId = requireCatalogId(props.artistId, 'artist id');
   const { user } = useAuth();
   if (user === null) throw new Error('ArtistScreen requires an authenticated user');
 
+  const queryClient = useQueryClient();
+  const isFocused = useIsFocused();
+  const bottomInset = useBottomInset();
+  const tv = useTvEnvironment();
+  useTvFocusReturn({ scope: 'artist', active: isFocused, enabled: tv.isTv });
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const artist = useQuery(musicQueries.artist(artistId));
+  const seededArtist = useMemo(
+    () => findCachedArtistSummary(queryClient, artistId, scope),
+    [artistId, queryClient, scope],
+  );
+  const routeName = props.name?.trim() ?? '';
   const artistName = artist.data?.name.trim() ?? '';
   const aboutEnabled = artistName.length > 0;
   const about = useQuery({
     ...musicQueries.artistAbout(artistName || '__artist_pending__'),
     enabled: aboutEnabled,
   });
-  const { runtimeError, setRuntimeError, play } = useCatalogPlayback();
+  const { runtimeError, setRuntimeError, play, playRow, shuffle } = useCatalogPlayback();
   const follow = useArtistFollow({
     scope,
     artist:
       artist.data === undefined
-        ? { id: artistId, name: '', picture: '' }
+        ? {
+            id: artistId,
+            name: seededArtist?.name ?? routeName,
+            picture: seededArtist?.picture ?? '',
+          }
         : artistSummary(artist.data),
     onResult: setRuntimeError,
   });
@@ -71,6 +92,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   // so the liked block follows a like/unlike made anywhere in the app at once.
   const likes = useQuery(musicQueries.likes(scope));
   const [likedExpanded, setLikedExpanded] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const artistLoadedName = artist.data?.name;
   const likedTracks = useMemo(
     // The name is needed for likes saved before performer ids were stored;
@@ -82,7 +104,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   );
 
   const popularTracks = useMemo(
-    () => artistPopularTracks(artist.data?.top ?? []),
+    () => artistPopularTracks(artist.data?.top ?? EMPTY_TRACKS),
     [artist.data?.top],
   );
   const trackPlayRequest = useMemo(
@@ -99,7 +121,52 @@ export default function ArtistScreen(props: ArtistScreenProps) {
     enabled: hasPopularTracks,
   });
 
-  if (artist.data === undefined) {
+  const likedSectionVisible = artistLikedSectionVisible(
+    { hasData: likes.data !== undefined, ...catalogQueryFlags(likes) },
+    likedTracks.length,
+  );
+  const likedCollection = useMemo(
+    () => (likedSectionVisible ? { tracks: likedTracks, expanded: likedExpanded } : null),
+    [likedExpanded, likedSectionVisible, likedTracks],
+  );
+
+  const refresh = useCallback(() => {
+    setManualRefreshing(true);
+    void Promise.allSettled([
+      artist.refetch(),
+      follow.state.refetch(),
+      likes.refetch(),
+      ...(aboutEnabled ? [about.refetch()] : []),
+      ...(hasPopularTracks ? [trackPlays.refetch()] : []),
+      ...(songSearch.enabled ? [songSearch.search.refetch()] : []),
+    ]).finally(() => setManualRefreshing(false));
+  }, [
+    about,
+    aboutEnabled,
+    artist,
+    follow.state,
+    hasPopularTracks,
+    likes,
+    songSearch.enabled,
+    songSearch.search,
+    trackPlays,
+  ]);
+
+  const initialVisual = resolveRemoteVisualState({
+    hasData: artist.data !== undefined,
+    empty: false,
+    pending: artist.isPending,
+    fetching: artist.isFetching,
+    stale: artist.isStale,
+    fetchStatus: artist.fetchStatus,
+    error: artist.error,
+  });
+  const seededInitialLoading =
+    artist.data === undefined
+    && initialVisual.body === 'loading'
+    && (seededArtist !== null || routeName.length > 0);
+
+  if (artist.data === undefined && !seededInitialLoading) {
     return (
       <CatalogPageGate
         id="artist"
@@ -112,152 +179,231 @@ export default function ArtistScreen(props: ArtistScreenProps) {
     );
   }
 
-  const detail = artist.data;
-  const playArtist = (tracks: typeof detail.top, index: number, contextId: string) =>
-    play(tracks, index, { type: 'artist', id: contextId, label: detail.name });
-
-  const likedSectionVisible = artistLikedSectionVisible(
-    { hasData: likes.data !== undefined, ...catalogQueryFlags(likes) },
-    likedTracks.length,
-  );
-
-  const refresh = () => {
-    void Promise.allSettled([
-      artist.refetch(),
-      follow.state.refetch(),
-      likes.refetch(),
-      ...(aboutEnabled ? [about.refetch()] : []),
-      ...(hasPopularTracks ? [trackPlays.refetch()] : []),
-      ...(songSearch.enabled ? [songSearch.search.refetch()] : []),
-    ]);
-  };
-  // The likes refetch after every like/unlike; that must not flash the pull-to-refresh spinner.
-  const refreshing = [artist, follow.state, about, trackPlays, songSearch.search].some(
-    (query) => query.isFetching && !query.isPending,
-  );
-
-  return (
-    <View testID="artist-screen" style={styles.container}>
-      <ArtistVirtualizedList
-        artistName={detail.name}
-        liked={likedSectionVisible ? { tracks: likedTracks, expanded: likedExpanded } : null}
-        popularTracks={popularTracks}
-        searchTracks={songSearch.results}
-        searchActive={songSearch.active}
-        refreshing={refreshing}
-        refreshAccessibilityLabel={catalogStrings.common.refreshing}
-        onRefresh={refresh}
-        header={
-          <View style={styles.listHeader}>
+  if (seededInitialLoading) {
+    const seededDetail: ArtistDetail = {
+      id: artistId,
+      name: seededArtist?.name ?? routeName,
+      picture: seededArtist?.picture ?? '',
+      fans: 0,
+      albums_count: 0,
+      top: [],
+      albums: [],
+      related: [],
+    };
+    return (
+      <TvFocusScope scope="artist">
+        <View
+          testID="artist-screen"
+          style={[
+            styles.container,
+            tv.isTv ? [styles.tvSplit, { gap: tv.gridGap }] : styles.seededLoading,
+          ]}
+        >
+          <View
+            style={
+              tv.isTv
+                ? { width: Math.round(tv.contentWidth * tv.splitPrimaryRatio) }
+                : undefined
+            }
+          >
             <ArtistHero
-              artist={detail}
+              artist={seededDetail}
               followState={follow.state}
               following={follow.following}
               followUpdating={follow.updating}
               onToggleFollow={follow.toggle}
-              onPlay={() => playArtist(
-                detail.top,
-                0,
-                artistTrackPlaybackContextId(artistId, 'popular'),
-              )}
+              onPlay={() => undefined}
+              onShuffle={() => undefined}
             />
-            <CatalogRuntimeError id="artist" message={runtimeError} />
-            <CatalogContentStatus
-              id="artist"
-              hasData
-              {...catalogQueryFlags(artist)}
-              refreshIndicator={false}
-              onRetry={() => void artist.refetch()}
-            />
-            {!artistHasContent(detail) ? (
-              <EmptyState
-                testID="artist-empty"
-                icon="account-music-outline"
-                title={catalogStrings.artist.empty}
-              />
-            ) : null}
           </View>
-        }
-        likedHeader={
-          <ArtistLikedTracksHeader
-            artistName={detail.name}
-            likes={likes}
-            trackCount={likedTracks.length}
-            expanded={likedExpanded}
-            onToggleExpanded={() => setLikedExpanded((value) => !value)}
-          />
-        }
-        popularHeader={
-          <CatalogSection
-            id="artist-top-tracks"
-            title={catalogStrings.artist.topTracks}
-            hasData
-            empty={popularTracks.length === 0}
-            emptyIcon="music-off"
-            {...(hasPopularTracks ? catalogQueryFlags(trackPlays) : settledCatalogQueryFlags)}
-            onRetry={() => void trackPlays.refetch()}
-            skeleton="rows"
-          >
-            <View testID="artist-track-list" />
-          </CatalogSection>
-        }
-        searchHeader={
-          <ArtistSongSearchHeader
-            artistName={detail.name}
-            input={songSearch.input}
-            onChangeInput={songSearch.setInput}
-            query={songSearch.query}
-            search={songSearch.search}
-            resultCount={songSearch.results.length}
-          />
-        }
-        footer={
-          <ArtistFooter
-            albums={detail.albums}
-            related={detail.related}
-            about={about}
-            aboutEnabled={aboutEnabled}
+          <View style={tv.isTv ? styles.tvTracksPane : undefined}>
+            <TrackRowSkeleton
+              testID="artist-loading"
+              accessibilityLabel={catalogStrings.artist.loading}
+              count={5}
+            />
+          </View>
+        </View>
+      </TvFocusScope>
+    );
+  }
+
+  const detail = artist.data;
+  if (detail === undefined) {
+    throw new Error(`ArtistScreen reached loaded render without detail for artist ${String(artistId)}`);
+  }
+  const playArtistAll = () =>
+    play(detail.top, 0, {
+      type: 'artist',
+      id: artistTrackPlaybackContextId(artistId, 'popular'),
+      label: detail.name,
+    });
+  const shuffleArtistAll = () =>
+    shuffle(detail.top, {
+      type: 'artist',
+      id: artistTrackPlaybackContextId(artistId, 'popular'),
+      label: detail.name,
+    });
+  const playArtistRow = (tracks: Track[], index: number, contextId: string) =>
+    playRow(tracks, index, { type: 'artist', id: contextId, label: detail.name });
+
+  const heroBlock = (
+    <View style={styles.listHeader}>
+      <ArtistHero
+        artist={detail}
+        followState={follow.state}
+        following={follow.following}
+        followUpdating={follow.updating}
+        onToggleFollow={follow.toggle}
+        onPlay={playArtistAll}
+        onShuffle={shuffleArtistAll}
+      />
+      <CatalogRuntimeError id="artist" message={runtimeError} />
+      <CatalogContentStatus
+        id="artist"
+        hasData
+        {...catalogQueryFlags(artist)}
+        refreshIndicator={false}
+        onRetry={() => void artist.refetch()}
+      />
+      {!artistHasContent(detail) ? (
+        <EmptyState
+          testID="artist-empty"
+          icon="account-music-outline"
+          title={catalogStrings.artist.empty}
+        />
+      ) : null}
+    </View>
+  );
+
+  const trackList = (
+    <ArtistVirtualizedList
+      artistName={detail.name}
+      liked={likedCollection}
+      popularTracks={popularTracks}
+      searchTracks={songSearch.results}
+      searchActive={songSearch.active}
+      refreshing={manualRefreshing}
+      refreshAccessibilityLabel={catalogStrings.common.refreshing}
+      onRefresh={refresh}
+      header={tv.isTv ? null : heroBlock}
+      likedHeader={
+        <ArtistLikedTracksHeader
+          artistName={detail.name}
+          likes={likes}
+          trackCount={likedTracks.length}
+          expanded={likedExpanded}
+          onToggleExpanded={() => setLikedExpanded((value) => !value)}
+        />
+      }
+      popularHeader={
+        <CatalogSection
+          id="artist-top-tracks"
+          title={catalogStrings.artist.topTracks}
+          hasData
+          empty={popularTracks.length === 0}
+          emptyIcon="music-off"
+          {...(hasPopularTracks ? catalogQueryFlags(trackPlays) : settledCatalogQueryFlags)}
+          onRetry={() => void trackPlays.refetch()}
+          skeleton="rows"
+        >
+          <View testID="artist-track-list" />
+        </CatalogSection>
+      }
+      searchHeader={
+        <ArtistSongSearchHeader
+          artistName={detail.name}
+          input={songSearch.input}
+          onChangeInput={songSearch.setInput}
+          query={songSearch.query}
+          search={songSearch.search}
+          resultCount={songSearch.results.length}
+        />
+      }
+      footer={
+        <ArtistFooter
+          albums={detail.albums}
+          related={detail.related}
+          about={about}
+          aboutEnabled={aboutEnabled}
+          cardSize={tv.isTv ? tv.cardSize : undefined}
+          onOpenAlbum={props.onOpenAlbum}
+          onOpenArtist={props.onOpenArtist}
+        />
+      }
+      renderTrackItem={({ kind, track, index }) => {
+        const isPopular = kind === 'popular';
+        const playbackContextId = artistTrackPlaybackContextId(artistId, kind, songSearch.query);
+        const contextTracks = {
+          liked: likedTracks,
+          popular: popularTracks,
+          search: songSearch.results,
+        }[kind];
+        const testIdPrefix = {
+          liked: 'artist-liked-track',
+          popular: 'artist-track',
+          search: 'artist-song-search-track',
+        }[kind];
+        return (
+          <CatalogTrackRow
+            track={track}
+            index={index}
+            testID={`${testIdPrefix}-${trackContextKey(track, index)}`}
+            occurrence={{
+              queueContext: { type: 'artist', id: playbackContextId },
+              originalContextOrder: index,
+            }}
+            popularity={isPopular ? 'artist-popular' : 'none'}
+            plays={isPopular ? trackPlays.data?.[track.id] : undefined}
+            onPress={() => playArtistRow(contextTracks, index, playbackContextId)}
+            onLongPress={() => showTrackActions(track, setRuntimeError)}
             onOpenAlbum={props.onOpenAlbum}
             onOpenArtist={props.onOpenArtist}
           />
-        }
-        renderTrackItem={({ kind, track, index }) => {
-          const isPopular = kind === 'popular';
-          const playbackContextId = artistTrackPlaybackContextId(artistId, kind, songSearch.query);
-          const contextTracks = {
-            liked: likedTracks,
-            popular: popularTracks,
-            search: songSearch.results,
-          }[kind];
-          const testIdPrefix = {
-            liked: 'artist-liked-track',
-            popular: 'artist-track',
-            search: 'artist-song-search-track',
-          }[kind];
-          return (
-            <CatalogTrackRow
-              track={track}
-              index={index}
-              testID={`${testIdPrefix}-${trackContextKey(track, index)}`}
-              occurrence={{
-                queueContext: { type: 'artist', id: playbackContextId },
-                originalContextOrder: index,
+        );
+      }}
+    />
+  );
+
+  return (
+    <TvFocusScope scope="artist">
+      <View
+        testID="artist-screen"
+        style={[
+          styles.container,
+          tv.isTv ? [styles.tvSplit, { gap: tv.gridGap }] : null,
+        ]}
+      >
+        {tv.isTv ? (
+          <>
+            <ScrollView
+              testID="artist-tv-hero-pane"
+              showsVerticalScrollIndicator={false}
+              style={{
+                width: Math.round(tv.contentWidth * tv.splitPrimaryRatio),
+                flexGrow: 0,
+                flexShrink: 0,
               }}
-              popularity={isPopular ? 'artist-popular' : 'none'}
-              plays={isPopular ? trackPlays.data?.[track.id] : undefined}
-              onPress={() => playArtist(contextTracks, index, playbackContextId)}
-              onLongPress={() => showTrackActions(track, setRuntimeError)}
-              onOpenAlbum={props.onOpenAlbum}
-              onOpenArtist={props.onOpenArtist}
-            />
-          );
-        }}
-      />
-    </View>
+              contentContainerStyle={{ paddingBottom: bottomInset }}
+            >
+              {heroBlock}
+            </ScrollView>
+            <View testID="artist-tv-tracks-pane" style={styles.tvTracksPane}>
+              {trackList}
+            </View>
+          </>
+        ) : (
+          trackList
+        )}
+      </View>
+    </TvFocusScope>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   listHeader: { gap: layout.stackGap },
+  seededLoading: { paddingTop: spacing.md, gap: layout.sectionGap },
+  tvSplit: { flexDirection: 'row', alignItems: 'stretch' },
+  tvTracksPane: { flex: 1, minWidth: 0 },
 });

@@ -10,9 +10,17 @@ import {
 import { strings } from '../localization';
 import { colors, layout, metrics, opacity, radii, spacing, typography } from '../theme';
 import AppIcon, { type AppIconName } from './AppIcon';
-import { ActionButton, AppText, Artwork, IconButton } from './ui';
+import {
+  ActionButton,
+  AppText,
+  Artwork,
+  createFocusRingController,
+  FocusRingOverlay,
+  IconButton,
+  type TvFocusProps,
+} from './ui';
 
-export interface TrackActionRowProps {
+export interface TrackActionRowProps extends TvFocusProps {
   testID: string;
   label: string;
   icon: AppIconName;
@@ -26,7 +34,8 @@ export interface TrackActionRowProps {
 /**
  * One full-width action of the track sheet: leading glyph, label and a
  * trailing spinner while its own command runs. The whole row is the 48dp+
- * button, so the label is its accessible name.
+ * button, so the label is its accessible name. Supports Android TV D-Pad
+ * focus rings without extra idle views on touch phones.
  */
 export function TrackActionRow({
   testID,
@@ -35,9 +44,16 @@ export function TrackActionRow({
   disabled,
   busy = false,
   destructive = false,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
   onPress,
 }: TrackActionRowProps) {
   const foreground = destructive ? colors.danger : colors.textPrimary;
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={testID}
@@ -45,6 +61,17 @@ export function TrackActionRow({
       accessibilityLabel={label}
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
+      focusable={disabled ? false : focusable !== false}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{ color: colors.fillStrong, borderless: false }}
+      onFocus={(event) => {
+        focusController.setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused(false);
+        onBlur?.(event);
+      }}
       onPress={onPress}
       style={({ pressed }) => [
         styles.actionRow,
@@ -61,6 +88,13 @@ export function TrackActionRow({
         {label}
       </AppText>
       {busy ? <ActivityIndicator accessible={false} color={colors.accentSoft} size="small" /> : null}
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.md}
+        controlledFocused={focused}
+        disabled={disabled}
+        focusedStyle={focusedStyle}
+      />
     </Pressable>
   );
 }
@@ -118,7 +152,7 @@ export function TrackActionsHeader({
   );
 }
 
-export interface TrackActionsPlaylistRowProps {
+export interface TrackActionsPlaylistRowProps extends TvFocusProps {
   testID: string;
   name: string;
   detail: string;
@@ -136,8 +170,15 @@ export function TrackActionsPlaylistRow({
   accessibilityLabel,
   disabled,
   busy,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
   onPress,
 }: TrackActionsPlaylistRowProps) {
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={testID}
@@ -145,6 +186,17 @@ export function TrackActionsPlaylistRow({
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
+      focusable={disabled ? false : focusable !== false}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{ color: colors.fillStrong, borderless: false }}
+      onFocus={(event) => {
+        focusController.setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused(false);
+        onBlur?.(event);
+      }}
       onPress={onPress}
       style={({ pressed }) => [
         styles.playlistRow,
@@ -162,6 +214,13 @@ export function TrackActionsPlaylistRow({
       ) : (
         <AppIcon name="plus" color={colors.textMuted} size={20} />
       )}
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.md}
+        controlledFocused={focused}
+        disabled={disabled}
+        focusedStyle={focusedStyle}
+      />
     </Pressable>
   );
 }
@@ -184,23 +243,33 @@ export function TrackActionsCreateForm({
   submitting,
   onSubmit,
 }: TrackActionsCreateFormProps) {
+  const inputFocusController = createFocusRingController();
   return (
     <View style={styles.createForm}>
-      <TextInput
-        testID="track-action-new-playlist-name"
-        accessibilityLabel={strings.trackActions.newPlaylistName}
-        placeholder={strings.trackActions.newPlaylistName}
-        placeholderTextColor={colors.textMuted}
-        selectionColor={colors.accent}
-        value={name}
-        onChangeText={onChangeName}
-        editable={!disabled}
-        autoFocus
-        maxLength={120}
-        returnKeyType="done"
-        onSubmitEditing={onSubmit}
-        style={styles.input}
-      />
+      <View style={styles.inputWrapper}>
+        <TextInput
+          testID="track-action-new-playlist-name"
+          accessibilityLabel={strings.trackActions.newPlaylistName}
+          placeholder={strings.trackActions.newPlaylistName}
+          placeholderTextColor={colors.textMuted}
+          selectionColor={colors.accent}
+          value={name}
+          onChangeText={onChangeName}
+          editable={!disabled}
+          autoFocus
+          maxLength={120}
+          returnKeyType="done"
+          onFocus={() => inputFocusController.setFocused(true)}
+          onBlur={() => inputFocusController.setFocused(false)}
+          onSubmitEditing={onSubmit}
+          style={styles.input}
+        />
+        <FocusRingOverlay
+          controller={inputFocusController}
+          borderRadius={radii.md}
+          disabled={disabled}
+        />
+      </View>
       <ActionButton
         testID="track-action-create-submit"
         label={strings.trackActions.createAndAdd}
@@ -263,6 +332,7 @@ const styles = StyleSheet.create({
   rowPressed: { opacity: opacity.pressed, backgroundColor: colors.fill },
   disabled: { opacity: opacity.disabled },
   createForm: { gap: spacing.md, paddingHorizontal: spacing.sm, paddingTop: spacing.xs },
+  inputWrapper: { position: 'relative', borderRadius: radii.md },
   input: {
     ...typography.body,
     minHeight: metrics.minimumTouchTarget,

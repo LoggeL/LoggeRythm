@@ -94,8 +94,8 @@ function Gate() {
   if (route === 'pending') return <PendingApprovalScreen />;
   return (
     <View style={styles.authenticatedApp}>
-      <ConnectivityBanner />
       <RootNavigator />
+      <ConnectivityBanner />
     </View>
   );
 }

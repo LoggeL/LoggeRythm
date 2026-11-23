@@ -32,16 +32,27 @@ export function RadioHero({ onAir }: RadioHeroProps) {
         subtitle={strings.radio.subtitle}
       />
       {onAir !== null ? (
-        <View testID="radio-on-air" accessibilityLiveRegion="polite" style={styles.onAir}>
+        <View
+          testID="radio-on-air"
+          accessibilityLiveRegion="polite"
+          style={[styles.onAir, !onAir.playing ? styles.onAirPaused : null]}
+        >
           <AppIcon
             name={onAir.playing ? 'equalizer' : 'pause'}
-            color={colors.success}
+            color={onAir.playing ? colors.success : colors.textSecondary}
             size={18}
           />
-          <AppText variant="label" color="success" numberOfLines={1} style={styles.onAirText}>
+          <AppText
+            variant="label"
+            color={onAir.playing ? 'success' : 'secondary'}
+            numberOfLines={1}
+            style={styles.onAirText}
+          >
             {onAir.label === null
               ? accountStrings.radio.onAirUnnamed
-              : accountStrings.radio.onAirStation(onAir.label)}
+              : onAir.playing
+                ? accountStrings.radio.onAirStation(onAir.label)
+                : `${strings.trackPresentation.paused}: ${onAir.label}`}
           </AppText>
         </View>
       ) : null}
@@ -87,6 +98,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: radii.pill,
     backgroundColor: colors.successSubtle,
+  },
+  onAirPaused: {
+    backgroundColor: colors.fill,
   },
   onAirText: { flexShrink: 1 },
 });

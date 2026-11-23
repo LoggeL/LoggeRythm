@@ -54,6 +54,18 @@ The React Native module is `LoggeRythmPlayer`. All mutations are asynchronous:
 The supported command names and payloads are:
 
 - `setQueue`: `{ items, startIndex?: number, startPositionMs?: number }`.
+- `replaceQueue`: `{ items, startIndex, startPositionMs, resume }`. Splices surrounding items
+  in place when the active item keeps the same `id`, `url`, and cookie so party queue edits do
+  not interrupt playback.
+- `addQueueItems`: `{ index, items }` (in-place Media3 `addMediaItems` without re-preparing an
+  already populated queue).
+- `moveQueueItem`: `{ fromIndex, toIndex }` (in-place Media3 `moveMediaItem`).
+- `removeQueueItems`: `{ fromIndex, toIndex }` (in-place Media3 `removeMediaItems`; non-active
+  removals never interrupt playback, while active removal performs an intentional transition or
+  clears to idle when the queue becomes empty).
+- `replaceQueueItem`: `{ index, item }` (in-place Media3 `replaceMediaItem`; only active item
+  recovery prepares when idle/errored).
+- `skipToIndex`: `{ index }` (Media3 `seekTo(index, 0)` without rebuilding the timeline).
 - `play`, `pause`, `skipToNext`, `skipToPrevious`, `stop`, `clearQueue`, and
   `refreshSnapshot`: exactly `{}`.
 - `seekTo`: `{ positionMs: number }`.

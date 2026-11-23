@@ -25,10 +25,17 @@ afterEach(() => {
 describe('Expo API-origin policy', () => {
   it('keeps production HTTPS-only at the canonical origin', () => {
     const config = resolvedConfig('production', undefined);
-    expect(config.android.predictiveBackGestureEnabled).toBe(true);
+    // RN 0.86 ReactActivity only registers OnBackPressedCallback on targetSdk >= 36
+    // (AndroidVersion.isAtLeastTargetSdk36). Leaving predictiveBackGestureEnabled true
+    // emits android:enableOnBackInvokedCallback="true", which bypasses onBackPressed()
+    // on Android 13–15 (API 33–35) and exits the app instead of dispatching BackHandler /
+    // React Navigation back events on phones and TVs.
+    expect(config.android.predictiveBackGestureEnabled).toBe(false);
     expect(config.android.icon).toBe('./assets/android-icon-legacy.png');
     expect(config.plugins).toContain('./plugins/withMusicVolumeControl');
     expect(config.plugins).toContain('./plugins/withAndroidLauncherAssets');
+    expect(config.plugins).toContain('./plugins/withAndroidTvSupport');
+    expect(config.plugins.filter((entry) => entry === './plugins/withAndroidTvSupport')).toHaveLength(1);
     expect(config.plugins).toContain('./plugins/withNoHttpRedirects');
     expect(config.plugins).toContain('./plugins/withFirstPartyPlayer');
     expect(config.plugins).not.toContain('./plugins/withAndroidAuto');

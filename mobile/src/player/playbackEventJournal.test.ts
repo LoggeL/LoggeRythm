@@ -477,4 +477,220 @@ describe('durable playback-event drainer', () => {
     expect(native.completeRadioPlaybackEvent).not.toHaveBeenCalled();
     expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
   });
+
+  it('decodes and drains FAVORITE Like and Unlike events with authoritative reconciliation', async () => {
+    const FAVORITE_LIKE_ID = '123e4567-e89b-42d3-a456-426614174003';
+    const FAVORITE_UNLIKE_ID = '123e4567-e89b-42d3-a456-426614174004';
+    const raw = claim([
+      {
+        schemaVersion: 1,
+        eventId: FAVORITE_LIKE_ID,
+        type: 'FAVORITE',
+        createdAtMs: NOW - 400,
+        attempt: 0,
+        track: metadata('42'),
+        mediaId: 'playlist:1:0:42',
+        requestedLiked: true,
+      },
+      {
+        schemaVersion: 1,
+        eventId: FAVORITE_UNLIKE_ID,
+        type: 'FAVORITE',
+        createdAtMs: NOW - 200,
+        attempt: 0,
+        track: metadata('84'),
+        mediaId: 'playlist:1:1:84',
+        requestedLiked: false,
+      },
+    ]);
+    const decoded = decodePlaybackEventClaim(raw, { now: NOW });
+    expect(decoded.events).toHaveLength(2);
+    expect(decoded.events[0]).toMatchObject({
+      type: 'FAVORITE',
+      mediaId: 'playlist:1:0:42',
+      requestedLiked: true,
+    });
+
+    const native = nativePort(raw);
+    const likeTrack = vi.fn(async () => undefined);
+    const unlikeTrack = vi.fn(async () => undefined);
+    const completeFavoritePlaybackEvent = vi.fn(async () => undefined);
+    const failFavoritePlaybackEvent = vi.fn(async () => undefined);
+    const onFavoriteUpdated = vi.fn(async () => undefined);
+    const onFavoriteFailed = vi.fn();
+
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      likeTrack,
+      unlikeTrack,
+      completeFavoritePlaybackEvent,
+      failFavoritePlaybackEvent,
+      onFavoriteUpdated,
+      onFavoriteFailed,
+    }));
+
+    await expect(drainer.drain()).resolves.toEqual({
+      claimed: 2,
+      completed: 2,
+      retried: 0,
+    });
+    expect(likeTrack).toHaveBeenCalledWith(
+      trackFromPlaybackEventMetadata(metadata('42')),
+      PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
+      REQUEST_AUTHORITY,
+    );
+    expect(unlikeTrack).toHaveBeenCalledWith(
+      '84',
+      PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
+      REQUEST_AUTHORITY,
+    );
+    expect(completeFavoritePlaybackEvent).toHaveBeenNthCalledWith(1, LEASE_ID, FAVORITE_LIKE_ID);
+    expect(completeFavoritePlaybackEvent).toHaveBeenNthCalledWith(2, LEASE_ID, FAVORITE_UNLIKE_ID);
+    expect(failFavoritePlaybackEvent).not.toHaveBeenCalled();
+    expect(onFavoriteUpdated).toHaveBeenNthCalledWith(
+      1,
+      BINDING,
+      trackFromPlaybackEventMetadata(metadata('42')),
+      true,
+    );
+    expect(onFavoriteUpdated).toHaveBeenNthCalledWith(
+      2,
+      BINDING,
+      trackFromPlaybackEventMetadata(metadata('84')),
+      false,
+    );
+    expect(onFavoriteFailed).not.toHaveBeenCalled();
+  });
+
+  it('rolls back native heart state and reports loudly when a FAVORITE backend call fails', async () => {
+    const FAVORITE_ID = '123e4567-e89b-42d3-a456-426614174005';
+    const backendError = new Error('500 server error');
+    const native = nativePort(claim([
+      {
+        schemaVersion: 1,
+        eventId: FAVORITE_ID,
+        type: 'FAVORITE',
+        createdAtMs: NOW - 200,
+        attempt: 0,
+        track: metadata('42'),
+        mediaId: 'liked:0:42',
+        requestedLiked: true,
+      },
+    ]));
+    const completeFavoritePlaybackEvent = vi.fn(async () => undefined);
+    const failFavoritePlaybackEvent = vi.fn(async () => undefined);
+    const onFavoriteFailed = vi.fn();
+
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      likeTrack: vi.fn(async () => { throw backendError; }),
+      unlikeTrack: vi.fn(async () => undefined),
+      completeFavoritePlaybackEvent,
+      failFavoritePlaybackEvent,
+      onFavoriteFailed,
+    }));
+
+    await expect(drainer.drain()).resolves.toEqual({
+      claimed: 1,
+      completed: 0,
+      retried: 0,
+    });
+    expect(completeFavoritePlaybackEvent).not.toHaveBeenCalled();
+    expect(native.retryPlaybackEvent).not.toHaveBeenCalled();
+    expect(failFavoritePlaybackEvent).toHaveBeenCalledWith(LEASE_ID, FAVORITE_ID);
+    expect(onFavoriteFailed).toHaveBeenCalledWith(
+      trackFromPlaybackEventMetadata(metadata('42')),
+      true,
+      backendError,
+    );
+  });
+
+  it('fails loudly when a FAVORITE event is claimed without favorite callbacks configured', async () => {
+    const FAVORITE_ID = '123e4567-e89b-42d3-a456-426614174006';
+    const native = nativePort(claim([
+      {
+        schemaVersion: 1,
+        eventId: FAVORITE_ID,
+        type: 'FAVORITE',
+        createdAtMs: NOW - 200,
+        attempt: 0,
+        track: metadata('42'),
+        mediaId: 'liked:0:42',
+        requestedLiked: true,
+      },
+    ]));
+    const drainer = new PlaybackEventDrainer(dependencies(native));
+
+    await expect(drainer.drain()).rejects.toMatchObject({
+      code: 'favorite-drain-unconfigured',
+    });
+  });
+
+  it('chains a follow-up drain immediately when a second favorite toggle arrives mid-drain', async () => {
+    const FIRST_ID = '123e4567-e89b-42d3-a456-426614174007';
+    const SECOND_ID = '123e4567-e89b-42d3-a456-426614174008';
+    const native = nativePort();
+    native.claimPlaybackEvents
+      .mockResolvedValueOnce(claim([
+        {
+          schemaVersion: 1,
+          eventId: FIRST_ID,
+          type: 'FAVORITE',
+          createdAtMs: NOW - 200,
+          attempt: 0,
+          track: metadata('42'),
+          mediaId: 'liked:0:42',
+          requestedLiked: true,
+        },
+      ]))
+      .mockResolvedValueOnce(claim([
+        {
+          schemaVersion: 1,
+          eventId: SECOND_ID,
+          type: 'FAVORITE',
+          createdAtMs: NOW - 100,
+          attempt: 0,
+          track: metadata('42'),
+          mediaId: 'liked:0:42',
+          requestedLiked: false,
+        },
+      ]));
+
+    let releaseLike!: () => void;
+    const likeStarted = new Promise<void>((resolve) => {
+      releaseLike = resolve;
+    });
+    let resolveLikeRequest!: () => void;
+    const likeTrack = vi.fn(async () => {
+      releaseLike();
+      await new Promise<void>((resolve) => {
+        resolveLikeRequest = resolve;
+      });
+    });
+    const unlikeTrack = vi.fn(async () => undefined);
+    const completeFavoritePlaybackEvent = vi.fn(async () => undefined);
+    const failFavoritePlaybackEvent = vi.fn(async () => undefined);
+
+    const drainer = new PlaybackEventDrainer(dependencies(native, {
+      likeTrack,
+      unlikeTrack,
+      completeFavoritePlaybackEvent,
+      failFavoritePlaybackEvent,
+    }));
+
+    const firstDrain = drainer.drain();
+    await likeStarted;
+    const secondDrain = drainer.drain();
+    expect(secondDrain).toBe(firstDrain);
+    resolveLikeRequest();
+
+    await expect(firstDrain).resolves.toEqual({
+      claimed: 2,
+      completed: 2,
+      retried: 0,
+    });
+    expect(native.claimPlaybackEvents).toHaveBeenCalledTimes(2);
+    expect(likeTrack).toHaveBeenCalledTimes(1);
+    expect(unlikeTrack).toHaveBeenCalledTimes(1);
+    expect(completeFavoritePlaybackEvent).toHaveBeenNthCalledWith(1, LEASE_ID, FIRST_ID);
+    expect(completeFavoritePlaybackEvent).toHaveBeenNthCalledWith(2, LEASE_ID, SECOND_ID);
+  });
 });

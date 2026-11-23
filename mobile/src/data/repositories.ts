@@ -117,8 +117,16 @@ export interface PlaylistsRepository {
 
 export interface LibraryRepository {
   getLikes(signal?: AbortSignal): Promise<Track[]>;
-  likeTrack(track: Track): Promise<void>;
-  unlikeTrack(deezerId: DeezerId): Promise<void>;
+  likeTrack(
+    track: Track,
+    timeoutMs?: number,
+    authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
+  ): Promise<void>;
+  unlikeTrack(
+    deezerId: DeezerId,
+    timeoutMs?: number,
+    authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
+  ): Promise<void>;
 }
 
 export interface FollowsRepository {

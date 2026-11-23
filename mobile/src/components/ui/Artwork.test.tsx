@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-import { byType, flatStyle } from '../../test/render';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { byTestId, byType, flatStyle } from '../../test/render';
 import { colors, radii } from '../../theme';
-import { Artwork } from './Artwork';
+import {
+  Artwork,
+  isArtworkFailed,
+  isArtworkLoaded,
+  resetArtworkCacheForTests,
+} from './Artwork';
 
 vi.mock('react-native', () => ({
   Image: 'Image',
@@ -10,29 +15,87 @@ vi.mock('react-native', () => ({
 }));
 vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 
+beforeEach(() => {
+  resetArtworkCacheForTests();
+});
+
 describe('Artwork', () => {
-  it('layers the image over an always-present placeholder glyph', () => {
-    const rendered = Artwork({ uri: 'https://example.test/cover.jpg', size: 48, testID: 'cover' });
-    expect(rendered.props.testID).toBe('cover');
-    expect(flatStyle(rendered.props.style)).toMatchObject({
+  it('renders a calm loading surface without placeholder icon bleed-through and switches to fadeDuration=0 once seen', () => {
+    const uri = 'https://example.test/cover.jpg';
+    const initial = Artwork({ uri, size: 48, testID: 'cover' });
+    expect(initial.props.testID).toBe('cover');
+    expect(flatStyle(initial.props.style)).toMatchObject({
       width: 48,
       height: 48,
       borderRadius: radii.sm,
-      backgroundColor: colors.surfaceElevated,
+      backgroundColor: colors.surface,
       overflow: 'hidden',
     });
-    expect(byType(rendered, 'AppIcon')[0].props.name).toBe('music-note');
-    const [image] = byType(rendered, 'Image');
-    expect(image.props.source).toEqual({ uri: 'https://example.test/cover.jpg' });
-    expect(image.props.accessible).toBe(false);
-    expect(flatStyle(image.props.style).position).toBe('absolute');
+    // Loading state must NOT bleed the missing-cover icon behind the image.
+    expect(byType(initial, 'AppIcon')).toHaveLength(0);
+
+    const [firstImage] = byType(initial, 'Image');
+    expect(firstImage.props.source).toEqual({ uri });
+    expect(firstImage.props.accessible).toBe(false);
+    expect(firstImage.props.fadeDuration).toBeGreaterThan(0);
+    expect(flatStyle(firstImage.props.style).position).toBe('absolute');
+
+    // Simulate image load completion -> cached URL paints immediately without recycle flash.
+    (firstImage.props.onLoad as () => void)();
+    expect(isArtworkLoaded(uri)).toBe(true);
+
+    const recycled = Artwork({ uri, size: 48, testID: 'cover' });
+    const [recycledImage] = byType(recycled, 'Image');
+    expect(recycledImage.props.fadeDuration).toBe(0);
   });
 
-  it.each([null, undefined, ''])('renders only the placeholder for uri %j', (uri) => {
+  it('distinguishes real image load failure from a missing cover and recovers if a reload succeeds', () => {
+    const uri = 'https://example.test/broken.jpg';
+    const initial = Artwork({
+      uri,
+      size: 64,
+      testID: 'cover',
+      accessibilityLabel: 'Cover von Parity',
+    });
+    const [image] = byType(initial, 'Image');
+
+    (image.props.onError as () => void)();
+    expect(isArtworkFailed(uri)).toBe(true);
+    expect(isArtworkLoaded(uri)).toBe(false);
+
+    const failed = Artwork({
+      uri,
+      size: 64,
+      testID: 'cover',
+      accessibilityLabel: 'Cover von Parity',
+    });
+    const errorSurface = byTestId(failed, 'cover-error');
+    expect(flatStyle(errorSurface.props.style)).toMatchObject({
+      backgroundColor: colors.dangerSubtle,
+      borderColor: colors.danger,
+    });
+    expect(byType(failed, 'AppIcon')[0].props).toMatchObject({
+      name: 'image-broken-variant',
+      color: colors.danger,
+    });
+    expect(failed.props.accessibilityLabel).toContain('Cover von Parity');
+    expect(failed.props.accessibilityLabel).not.toBe('Cover von Parity');
+
+    // Recovery after reconnect / successful retry clears failed state.
+    const [retryImage] = byType(failed, 'Image');
+    (retryImage.props.onLoad as () => void)();
+    expect(isArtworkFailed(uri)).toBe(false);
+    expect(isArtworkLoaded(uri)).toBe(true);
+  });
+
+  it.each([null, undefined, '', '   '])('renders only the missing-cover placeholder for uri %j', (uri) => {
     const rendered = Artwork({ uri, size: 148, icon: 'album' });
     expect(byType(rendered, 'Image')).toHaveLength(0);
     expect(byType(rendered, 'AppIcon')[0].props.name).toBe('album');
-    expect(flatStyle(rendered.props.style).borderRadius).toBe(radii.card);
+    expect(flatStyle(rendered.props.style)).toMatchObject({
+      borderRadius: radii.card,
+      backgroundColor: colors.surfaceElevated,
+    });
   });
 
   it('supports round avatars, explicit radii and fluid tiles', () => {

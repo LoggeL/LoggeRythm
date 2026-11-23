@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import type { ArtistDetail } from '../../api/types';
+import { strings } from '../../localization';
 import { catalogStrings } from '../../screens/catalogStrings';
 import { ActionButton, AppText } from '../ui';
 import { CatalogHeroArtwork } from './CatalogCards';
@@ -16,13 +17,14 @@ export interface ArtistHeroProps {
   followUpdating: boolean;
   onToggleFollow: () => void;
   onPlay: () => void;
+  onShuffle?: () => void;
 }
 
 /**
  * The Artist page hero: round portrait, name, fan count, and one action row
- * with Follow (left) and the PlayButton (right). Follow is the light primary
- * pill until the artist is followed, then a quiet "Following" toggle; while
- * its state loads a pill-shaped skeleton keeps the row from jumping.
+ * with Follow (left) and Shuffle + PlayButton (right). Follow is the light
+ * primary pill until the artist is followed, then a quiet "Following" toggle;
+ * while its state loads a pill-shaped skeleton keeps the row from jumping.
  */
 export function ArtistHero({
   artist,
@@ -31,6 +33,7 @@ export function ArtistHero({
   followUpdating,
   onToggleFollow,
   onPlay,
+  onShuffle,
 }: ArtistHeroProps) {
   return (
     <CatalogDetailHero
@@ -40,6 +43,16 @@ export function ArtistHero({
       eyebrowTestID="artist-type-label"
       title={artist.name}
       titleTestID="artist-title"
+      shuffle={
+        onShuffle === undefined
+          ? undefined
+          : {
+              testID: 'artist-shuffle',
+              accessibilityLabel: strings.common.shuffleAll,
+              disabled: artist.top.length === 0,
+              onPress: onShuffle,
+            }
+      }
       play={{
         testID: 'artist-play-all',
         accessibilityLabel: catalogStrings.common.play,

@@ -80,7 +80,7 @@ describe('SpotifyImportVirtualizedList', () => {
       initialNumToRender: 12,
       maxToRenderPerBatch: 10,
       windowSize: 9,
-      removeClippedSubviews: true,
+      removeClippedSubviews: false,
     });
     expect(props.ListHeaderComponent).toBe(header);
     expect(props.style).toMatchObject({ flex: 1 });

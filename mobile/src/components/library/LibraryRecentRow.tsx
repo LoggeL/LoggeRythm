@@ -15,7 +15,13 @@ import {
   trackIdentityCopy,
   trackStateIndicatorCopy,
 } from '../track/trackPresentationCopy';
-import { AppText, Artwork, IconButton } from '../ui';
+import {
+  AppText,
+  Artwork,
+  createFocusRingController,
+  FocusRingOverlay,
+  IconButton,
+} from '../ui';
 
 export interface LibraryRecentRowProps {
   play: RecentPlay;
@@ -75,6 +81,7 @@ export function LibraryRecentRow({
 }: LibraryRecentRowProps) {
   const presentation = useTrackPresentation({ trackId: play.id, ...occurrence });
   const metadata = buildTrackMetadata(play);
+  const focusController = createFocusRingController();
   return (
     <View
       testID={`${testID}-container`}
@@ -82,6 +89,7 @@ export function LibraryRecentRow({
     >
       <Pressable
         testID={testID}
+        focusable={!disabled}
         accessibilityRole="button"
         accessibilityLabel={libraryStrings.library.playTrack(play.title, play.artist)}
         accessibilityState={{
@@ -90,6 +98,8 @@ export function LibraryRecentRow({
           selected: presentation.active,
         }}
         disabled={disabled}
+        onFocus={() => focusController.setFocused(true)}
+        onBlur={() => focusController.setFocused(false)}
         onPress={onPlay}
         style={({ pressed }) => [styles.playControl, pressed ? styles.pressed : null]}
       >
@@ -103,6 +113,11 @@ export function LibraryRecentRow({
           {index + 1}
         </AppText>
         <RecentArtwork play={play} busy={busy} playback={presentation.playback} />
+        <FocusRingOverlay
+          controller={focusController}
+          borderRadius={radii.md}
+          disabled={disabled}
+        />
       </Pressable>
       <View style={styles.meta}>
         <TrackIdentityLinks

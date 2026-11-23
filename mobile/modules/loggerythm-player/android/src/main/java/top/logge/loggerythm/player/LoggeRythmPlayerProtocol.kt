@@ -59,6 +59,35 @@ internal sealed interface PlayerCommand {
     val startPositionMs: Long,
   ) : PlayerCommand
 
+  data class ReplaceQueue(
+    val items: List<PlayerItemSpec>,
+    val startIndex: Int,
+    val startPositionMs: Long,
+    val resume: Boolean,
+  ) : PlayerCommand
+
+  data class AddQueueItems(
+    val index: Int,
+    val items: List<PlayerItemSpec>,
+  ) : PlayerCommand
+
+  data class MoveQueueItem(
+    val fromIndex: Int,
+    val toIndex: Int,
+  ) : PlayerCommand
+
+  data class RemoveQueueItems(
+    val fromIndex: Int,
+    val toIndex: Int,
+  ) : PlayerCommand
+
+  data class ReplaceQueueItem(
+    val index: Int,
+    val item: PlayerItemSpec,
+  ) : PlayerCommand
+
+  data class SkipToIndex(val index: Int) : PlayerCommand
+
   data object Play : PlayerCommand
   data object Pause : PlayerCommand
   data class SeekTo(val positionMs: Long) : PlayerCommand
@@ -77,6 +106,17 @@ internal sealed interface PlayerCommand {
   data object Stop : PlayerCommand
   data object ClearQueue : PlayerCommand
   data object RefreshSnapshot : PlayerCommand
+}
+
+internal fun PlayerCommand.mutatesQueueStructure(): Boolean = when (this) {
+  is PlayerCommand.SetQueue,
+  is PlayerCommand.ReplaceQueue,
+  is PlayerCommand.AddQueueItems,
+  is PlayerCommand.MoveQueueItem,
+  is PlayerCommand.RemoveQueueItems,
+  is PlayerCommand.ReplaceQueueItem,
+  PlayerCommand.ClearQueue -> true
+  else -> false
 }
 
 internal data class BrowseNodeSpec(
@@ -134,6 +174,15 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     val payload = parseObject(payloadJson)
     return when (name) {
       "setQueue" -> parseSetQueue(payload)
+      "replaceQueue" -> parseReplaceQueue(payload)
+      "addQueueItems" -> parseAddQueueItems(payload)
+      "moveQueueItem" -> parseMoveQueueItem(payload)
+      "removeQueueItems" -> parseRemoveQueueItems(payload)
+      "replaceQueueItem" -> parseReplaceQueueItem(payload)
+      "skipToIndex" -> {
+        requireExactKeys(payload, setOf("index"), setOf("index"))
+        PlayerCommand.SkipToIndex(requiredLong(payload, "index").toIntExact("skip-index-invalid"))
+      }
       "play" -> emptyPayload(payload, PlayerCommand.Play)
       "pause" -> emptyPayload(payload, PlayerCommand.Pause)
       "seekTo" -> {
@@ -284,6 +333,25 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     return BrowseTreeSpec(root)
   }
 
+  fun parseLikedTrackIds(trackIdsJson: String?): Set<String>? {
+    if (trackIdsJson == null) return null
+    val value = parseObject(trackIdsJson)
+    requireExactKeys(value, LIKED_TRACK_IDS_KEYS, LIKED_TRACK_IDS_KEYS)
+    if (requiredLong(value, "schemaVersion") != LIKED_TRACK_IDS_SCHEMA_VERSION) {
+      fail("liked-track-ids-version-unsupported")
+    }
+    if (value.isNull("trackIds")) return null
+    val values = requiredArray(value, "trackIds")
+    if (values.length() > MAX_LIKED_TRACK_IDS) fail("liked-track-ids-too-large")
+    val result = linkedSetOf<String>()
+    repeat(values.length()) { index ->
+      val id = values.opt(index) as? String ?: fail("liked-track-id-invalid")
+      if (!DEEZER_ID_PATTERN.matches(id)) fail("liked-track-id-invalid")
+      if (!result.add(id)) fail("liked-track-id-duplicate")
+    }
+    return result.toSet()
+  }
+
   private fun parseSetQueue(payload: JSONObject): PlayerCommand.SetQueue {
     requireExactKeys(
       payload,
@@ -306,6 +374,65 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       fail("start-index-invalid")
     }
     return PlayerCommand.SetQueue(items, startIndex, startPositionMs)
+  }
+
+  private fun parseReplaceQueue(payload: JSONObject): PlayerCommand.ReplaceQueue {
+    requireExactKeys(
+      payload,
+      setOf("items", "startIndex", "startPositionMs", "resume"),
+      setOf("items", "startIndex", "startPositionMs", "resume"),
+    )
+    val values = requiredArray(payload, "items")
+    if (values.length() == 0) fail("empty-queue-replace-invalid")
+    if (values.length() > MAX_QUEUE_ITEMS) fail("queue-too-large")
+    val ids = mutableSetOf<String>()
+    val items = List(values.length()) { index ->
+      val item = parseQueueItem(requiredObject(values, index))
+      if (!ids.add(item.id)) fail("queue-item-id-duplicate")
+      item
+    }
+    val startIndex = requiredLong(payload, "startIndex").toIntExact("start-index-invalid")
+    val startPositionMs = requiredLong(payload, "startPositionMs")
+    val resume = optionalBoolean(payload, "resume") ?: fail("replace-resume-invalid")
+    if (startIndex !in items.indices) fail("start-index-invalid")
+    return PlayerCommand.ReplaceQueue(items, startIndex, startPositionMs, resume)
+  }
+
+  private fun parseAddQueueItems(payload: JSONObject): PlayerCommand.AddQueueItems {
+    requireExactKeys(payload, setOf("index", "items"), setOf("index", "items"))
+    val index = requiredLong(payload, "index").toIntExact("queue-index-invalid")
+    val values = requiredArray(payload, "items")
+    if (values.length() == 0) fail("queue-items-empty")
+    if (values.length() > MAX_QUEUE_ITEMS) fail("queue-too-large")
+    val ids = mutableSetOf<String>()
+    val items = List(values.length()) { i ->
+      val item = parseQueueItem(requiredObject(values, i))
+      if (!ids.add(item.id)) fail("queue-item-id-duplicate")
+      item
+    }
+    return PlayerCommand.AddQueueItems(index, items)
+  }
+
+  private fun parseMoveQueueItem(payload: JSONObject): PlayerCommand.MoveQueueItem {
+    requireExactKeys(payload, setOf("fromIndex", "toIndex"), setOf("fromIndex", "toIndex"))
+    val fromIndex = requiredLong(payload, "fromIndex").toIntExact("move-index-invalid")
+    val toIndex = requiredLong(payload, "toIndex").toIntExact("move-index-invalid")
+    return PlayerCommand.MoveQueueItem(fromIndex, toIndex)
+  }
+
+  private fun parseRemoveQueueItems(payload: JSONObject): PlayerCommand.RemoveQueueItems {
+    requireExactKeys(payload, setOf("fromIndex", "toIndex"), setOf("fromIndex", "toIndex"))
+    val fromIndex = requiredLong(payload, "fromIndex").toIntExact("remove-range-invalid")
+    val toIndex = requiredLong(payload, "toIndex").toIntExact("remove-range-invalid")
+    if (toIndex <= fromIndex) fail("remove-range-invalid")
+    return PlayerCommand.RemoveQueueItems(fromIndex, toIndex)
+  }
+
+  private fun parseReplaceQueueItem(payload: JSONObject): PlayerCommand.ReplaceQueueItem {
+    requireExactKeys(payload, setOf("index", "item"), setOf("index", "item"))
+    val index = requiredLong(payload, "index").toIntExact("replace-index-invalid")
+    val item = parseQueueItem(requiredObject(payload, "item"))
+    return PlayerCommand.ReplaceQueueItem(index, item)
   }
 
   private fun parseQueueItem(value: JSONObject): PlayerItemSpec {
@@ -558,7 +685,7 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     private const val MAX_ID_LENGTH = 128
     private const val MAX_JSON_LENGTH = 2_000_000
     private const val MAX_METADATA_LENGTH = 512
-    private const val MAX_QUEUE_ITEMS = 2_000
+    internal const val MAX_QUEUE_ITEMS = 2_000
     private const val MAX_TITLE_LENGTH = 256
     private const val MAX_URL_LENGTH = 4_096
     private const val MAX_ACCOUNT_SCOPE_LENGTH = 128
@@ -569,6 +696,10 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     private const val MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L
     private const val MAX_RADIO_COMPLETION_ITEMS = 5
     private const val RADIO_COMPLETION_SCHEMA_VERSION = 1L
+    internal const val MAX_LIKED_TRACK_IDS = 50_000
+    private const val LIKED_TRACK_IDS_SCHEMA_VERSION = 1L
+    private val DEEZER_ID_PATTERN = Regex("[0-9]{1,32}")
+    private val LIKED_TRACK_IDS_KEYS = setOf("schemaVersion", "trackIds")
     private val ID_PATTERN = Regex("[A-Za-z0-9._:-]{1,$MAX_ID_LENGTH}")
     private val EXTRA_KEY_PATTERN = Regex("[A-Za-z0-9._:-]{1,64}")
     private val REPEAT_MODES = setOf("off", "one", "all")

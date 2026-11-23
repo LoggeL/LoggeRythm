@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { ArtistSummary, PlaylistSummary } from '../../api/types';
 import { resolveServerUrl } from '../../api/url';
 import {
@@ -11,7 +11,13 @@ import {
 import { libraryStrings } from '../../screens/libraryStrings';
 import { colors, layout, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
-import { AppText, Artwork, PressableScale } from '../ui';
+import {
+  AppText,
+  Artwork,
+  createFocusRingController,
+  FocusRingOverlay,
+  PressableScale,
+} from '../ui';
 
 const CHEVRON_SIZE = 22;
 
@@ -23,6 +29,7 @@ interface LibraryRowProps {
   title: string;
   subtitle?: React.ReactNode;
   trailing?: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -37,14 +44,19 @@ export function LibraryRow({
   title,
   subtitle,
   trailing,
+  style,
 }: LibraryRowProps) {
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={testID}
+      focusable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      onFocus={() => focusController.setFocused(true)}
+      onBlur={() => focusController.setFocused(false)}
       onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [styles.row, style, pressed ? styles.pressed : null]}
     >
       {artwork}
       <View style={styles.copy}>
@@ -58,6 +70,7 @@ export function LibraryRow({
       {trailing ?? (
         <AppIcon name="chevron-right" color={colors.textMuted} size={CHEVRON_SIZE} />
       )}
+      <FocusRingOverlay controller={focusController} borderRadius={radii.md} />
     </Pressable>
   );
 }
@@ -66,9 +79,15 @@ export interface LibraryPlaylistRowProps {
   playlist: PlaylistSummary;
   apiBase: string;
   onOpenPlaylist: (params: LibraryPlaylistRouteParams) => void;
+  style?: StyleProp<ViewStyle>;
 }
 
-export function LibraryPlaylistRow({ playlist, apiBase, onOpenPlaylist }: LibraryPlaylistRowProps) {
+export function LibraryPlaylistRow({
+  playlist,
+  apiBase,
+  onOpenPlaylist,
+  style,
+}: LibraryPlaylistRowProps) {
   const description = playlist.description?.trim();
   const count = libraryStrings.common.tracks(playlist.track_count);
   return (
@@ -87,6 +106,7 @@ export function LibraryPlaylistRow({ playlist, apiBase, onOpenPlaylist }: Librar
       }
       title={playlist.name}
       subtitle={description ? `${count} · ${description}` : count}
+      style={style}
     />
   );
 }
@@ -104,6 +124,7 @@ export function LibraryLikedCollectionCard({
   return (
     <PressableScale
       testID="library-open-liked"
+      focusable
       accessibilityRole="button"
       accessibilityLabel={libraryStrings.library.openLiked(count)}
       onPress={() => onOpenPlaylist({ kind: 'liked', name: libraryStrings.library.likedTracks })}
@@ -129,9 +150,10 @@ export function LibraryLikedCollectionCard({
 export interface LibraryFollowingRowProps {
   artist: ArtistSummary;
   onOpenArtist: (params: LibraryArtistRouteParams) => void;
+  style?: StyleProp<ViewStyle>;
 }
 
-export function LibraryFollowingRow({ artist, onOpenArtist }: LibraryFollowingRowProps) {
+export function LibraryFollowingRow({ artist, onOpenArtist, style }: LibraryFollowingRowProps) {
   return (
     <LibraryRow
       testID={`library-following-${libraryTestIdSegment(artist.id)}`}
@@ -146,6 +168,7 @@ export function LibraryFollowingRow({ artist, onOpenArtist }: LibraryFollowingRo
         />
       }
       title={artist.name}
+      style={style}
     />
   );
 }

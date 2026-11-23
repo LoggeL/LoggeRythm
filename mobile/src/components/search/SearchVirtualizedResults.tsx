@@ -24,7 +24,7 @@ export function SearchVirtualizedResults({
     <FlatList
       testID="search-results-list"
       accessibilityLabel={accessibilityLabel}
-      data={[...rows]}
+      data={rows}
       keyExtractor={searchListRowKey}
       renderItem={({ item }) => renderRow(item)}
       ListHeaderComponent={header}
@@ -34,7 +34,7 @@ export function SearchVirtualizedResults({
       initialNumToRender={12}
       maxToRenderPerBatch={10}
       windowSize={9}
-      removeClippedSubviews
+      removeClippedSubviews={false}
       contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomInset }}
       style={styles.list}
     />

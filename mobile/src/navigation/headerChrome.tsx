@@ -1,12 +1,18 @@
 import React, { useState } from 'react';
 import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { DarkTheme, type Theme } from '@react-navigation/native';
+import type { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import { tryResolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import { presentError } from '../auth/presentationError';
 import BrandLockup from '../components/BrandLockup';
+import {
+  createFocusRingController,
+  FocusRingOverlay,
+} from '../components/ui/PressableScale';
 import { getCurrentApiBase } from '../config';
 import { strings } from '../localization';
+import { stackTransitionOptions } from '../navigationPolicy';
 import { colors, metrics, opacity, radii, spacing, typography } from '../theme';
 import { androidUpdateAttention, useAndroidUpdateSnapshot } from '../update/androidUpdateStore';
 import { rootNavigation } from './rootNavigation';
@@ -37,6 +43,16 @@ export const sectionScreenOptions = {
   contentStyle: { backgroundColor: colors.background },
 } as const;
 
+/** Reduced-motion-aware native-stack screen options shared by root & section stacks. */
+export function buildSectionScreenOptions(
+  reducedMotion: boolean,
+): NativeStackNavigationOptions {
+  return {
+    ...sectionScreenOptions,
+    ...stackTransitionOptions(reducedMotion),
+  };
+}
+
 /**
  * Round avatar in every stack header; opens the Profile modal route. While an
  * Android update waits in the profile (an offered update, or a final install
@@ -48,6 +64,7 @@ export function ProfileButton() {
   const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
   const updateAttention = androidUpdateAttention(useAndroidUpdateSnapshot());
   const updateNeedsAttention = updateAttention !== 'none';
+  const [focusController] = useState(createFocusRingController);
   const avatarValue = user?.avatar_url ?? null;
   const avatar =
     avatarValue && failedAvatar !== avatarValue
@@ -74,6 +91,13 @@ export function ProfileButton() {
             ? strings.navigation.openProfileUpdateAvailable
             : strings.navigation.openProfile
       }
+      android_ripple={{
+        color: colors.fillStrong,
+        borderless: true,
+        radius: metrics.minimumTouchTarget / 2,
+      }}
+      onFocus={() => focusController.setFocused(true)}
+      onBlur={() => focusController.setFocused(false)}
       onPress={openProfile}
       hitSlop={6}
       style={({ pressed }) => [styles.profileButton, pressed && styles.pressed]}
@@ -97,6 +121,7 @@ export function ProfileButton() {
           style={styles.updateDot}
         />
       ) : null}
+      <FocusRingOverlay controller={focusController} borderRadius={radii.pill} />
     </Pressable>
   );
 }
@@ -105,6 +130,7 @@ export function ProfileButton() {
 export function LogoutButton() {
   const { logout } = useAuth();
   const [busy, setBusy] = useState(false);
+  const [focusController] = useState(createFocusRingController);
   const onLogout = async () => {
     setBusy(true);
     try {
@@ -123,12 +149,20 @@ export function LogoutButton() {
       accessibilityRole="button"
       accessibilityLabel={busy ? strings.auth.signingOut : strings.auth.signOut}
       accessibilityState={{ disabled: busy, busy }}
+      android_ripple={{ color: colors.fillStrong, borderless: false }}
+      onFocus={() => focusController.setFocused(true)}
+      onBlur={() => focusController.setFocused(false)}
       onPress={() => void onLogout()}
       disabled={busy}
       hitSlop={8}
       style={({ pressed }) => [styles.logoutButton, pressed && styles.pressed]}
     >
       <Text style={styles.logout}>{busy ? strings.auth.signingOut : strings.auth.signOut}</Text>
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.md}
+        disabled={busy}
+      />
     </Pressable>
   );
 }
@@ -145,9 +179,20 @@ export function RootHeaderTitle({ title }: { title: string }) {
   );
 }
 
-/** Header options of a tab root: brand lockup on the left, profile on the right. */
-export function brandedRootOptions(title: string) {
+/**
+ * Header options of a tab root: brand lockup on the left and profile on the
+ * right on phones; hidden on Android TV where `TvNavigationRail` already
+ * presents the brand lockup and Profile entry persistently on the left edge.
+ */
+export function brandedRootOptions(
+  title: string,
+  isTv = false,
+): NativeStackNavigationOptions {
+  if (isTv) {
+    return { headerShown: false };
+  }
   return {
+    headerShown: true,
     headerTitle: () => <RootHeaderTitle title={title} />,
     headerRight: () => <ProfileButton />,
   };
@@ -198,6 +243,7 @@ const styles = StyleSheet.create({
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
     paddingHorizontal: spacing.xs,
+    borderRadius: radii.md,
   },
   logout: { ...typography.label, color: colors.textSecondary },
   pressed: { opacity: opacity.pressed },

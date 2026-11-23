@@ -6,13 +6,20 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { triggerHaptic, type HapticKind } from '../../hooks/useHaptics';
+import { getReducedMotionSnapshot } from '../../hooks/useReducedMotion';
 import { colors, metrics, opacity, radii } from '../../theme';
 import AppIcon, { type AppIconName } from '../AppIcon';
+import {
+  createFocusRingController,
+  FocusRingOverlay,
+  type TvFocusProps,
+} from './PressableScale';
 
 export type IconButtonSize = 'sm' | 'md' | 'lg';
 export type IconButtonVariant = 'plain' | 'tonal' | 'filled';
 
-export interface IconButtonProps {
+export interface IconButtonProps extends TvFocusProps {
   icon: AppIconName;
   onPress: () => void;
   /** Required: an icon alone has no accessible name. */
@@ -29,6 +36,8 @@ export interface IconButtonProps {
   color?: string;
   disabled?: boolean;
   busy?: boolean;
+  /** Optional subtle Android haptic kind on press. */
+  haptic?: HapticKind | false;
   testID?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -38,9 +47,9 @@ const glyphSize: Record<IconButtonSize, number> = { sm: 20, md: 24, lg: 28 };
 /**
  * IconButton is the one round, icon-only control (web `.action-icon`). It
  * always occupies a 48dp target regardless of glyph size, requires an
- * accessibility label, exposes `selected`/`disabled`/`busy` state and applies
- * the shared pressed feedback. Use it for header actions, row overflow menus
- * and transport controls instead of a hand-rolled Pressable + AppIcon.
+ * accessibility label, exposes `selected`/`disabled`/`busy` state, applies
+ * native Android circular ripple + pressed feedback, and supports Android TV
+ * D-Pad focus rings.
  */
 export function IconButton({
   icon,
@@ -54,10 +63,18 @@ export function IconButton({
   color,
   disabled = false,
   busy = false,
+  haptic = false,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
   testID,
   style,
 }: IconButtonProps) {
   const unavailable = disabled || busy;
+  const focusController = createFocusRingController();
   const foreground =
     color ??
     (variant === 'filled'
@@ -77,13 +94,39 @@ export function IconButton({
         selected === undefined ? { disabled: unavailable, busy } : { disabled: unavailable, busy, selected }
       }
       disabled={unavailable}
-      onPress={onPress}
+      focusable={focusable}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{
+        color: variant === 'filled' ? 'rgba(11,12,16,0.14)' : colors.fillStrong,
+        borderless: true,
+        radius: metrics.minimumTouchTarget / 2,
+      }}
+      onFocus={(event) => {
+        focusController.setFocused?.(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused?.(false);
+        onBlur?.(event);
+      }}
+      onPress={
+        haptic === false
+          ? onPress
+          : () => {
+              triggerHaptic(haptic);
+              onPress();
+            }
+      }
       onLongPress={onLongPress}
       style={({ pressed }) => [
         styles.button,
         styles[variant],
         style,
-        pressed ? styles.pressed : null,
+        pressed
+          ? getReducedMotionSnapshot()
+            ? styles.pressedReduced
+            : styles.pressed
+          : null,
         unavailable ? styles.disabled : null,
       ]}
     >
@@ -92,6 +135,13 @@ export function IconButton({
       ) : (
         <AppIcon name={icon} color={foreground} size={glyphSize[size]} />
       )}
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.pill}
+        controlledFocused={focused}
+        disabled={unavailable}
+        focusedStyle={focusedStyle}
+      />
     </Pressable>
   );
 }
@@ -108,5 +158,6 @@ const styles = StyleSheet.create({
   tonal: { backgroundColor: colors.fill },
   filled: { backgroundColor: colors.textPrimary },
   pressed: { opacity: opacity.pressed, transform: [{ scale: 0.94 }] },
+  pressedReduced: { opacity: opacity.pressed },
   disabled: { opacity: opacity.disabled },
 });

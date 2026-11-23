@@ -30,10 +30,19 @@ export type { CatalogQueryVisualState } from './catalogQueryState';
 
 /**
  * The shape of the content a boundary stands in for while it loads:
- * `rail` album/track cards, `artists` round cards, `rows` track rows,
- * `text` a paragraph, `pill` one button.
+ * `rail` album cards, `tracks` track shelf cards (with action row), `artists`
+ * round cards, `playlists` wide playlist cards, `genres` landscape genre tiles,
+ * `rows` track rows, `text` a paragraph, `pill` one button.
  */
-export type CatalogSkeletonShape = 'rail' | 'artists' | 'rows' | 'text' | 'pill';
+export type CatalogSkeletonShape =
+  | 'rail'
+  | 'tracks'
+  | 'artists'
+  | 'playlists'
+  | 'genres'
+  | 'rows'
+  | 'text'
+  | 'pill';
 
 function visualState(state: CatalogQueryVisualState, empty: boolean) {
   return resolveRemoteVisualState({
@@ -72,11 +81,20 @@ function CatalogLoading({ testID, label, shape, padded }: CatalogLoadingProps) {
       />
     );
   }
+  const variant =
+    shape === 'tracks'
+      ? 'track'
+      : shape === 'playlists'
+        ? 'playlist'
+        : shape === 'genres'
+          ? 'genre'
+          : 'card';
   return (
     <CardRailSkeleton
       testID={testID}
       accessibilityLabel={label}
       round={shape === 'artists'}
+      variant={variant}
       style={flush}
     />
   );
@@ -202,8 +220,8 @@ interface CatalogPageGateProps extends CatalogQueryVisualState {
   id: string;
   loadingLabel: string;
   onRetry: () => void;
-  /** Shapes the first-load skeleton: `artist` has a round hero. */
-  variant?: 'collection' | 'artist';
+  /** Shapes the first-load skeleton: `artist` has a round hero, `compact` matches GenreScreen. */
+  variant?: 'collection' | 'artist' | 'compact';
 }
 
 /** Full-page state for a detail query. Cached data always wins over a blocking state. */
@@ -227,6 +245,7 @@ export function CatalogPageGate({
         testID={`${id}-loading`}
         accessibilityLabel={loadingLabel}
         round={variant === 'artist'}
+        compact={variant === 'compact'}
       />
     );
   }

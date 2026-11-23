@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RecentPlay } from '../../domain/listeningStats';
 import { strings } from '../../localization';
 import { colors } from '../../theme';
-import { byTestId, byType, flatStyle, queryByTestId, type TestElement } from '../../test/render';
+import { byTestId, byType, flatStyle, queryByTestId, textContent, type TestElement } from '../../test/render';
 import {
   HomeQuickGrid,
   HomeQuickGridSkeleton,
@@ -21,6 +21,13 @@ const presentation = vi.hoisted(() => ({
   },
 }));
 
+vi.mock('react', async (original) => ({
+  ...(await original<typeof import('react')>()),
+  useState: <T,>(initial: T | (() => T)): [T, (next: T) => void] => [
+    typeof initial === 'function' ? (initial as () => T)() : initial,
+    vi.fn(),
+  ],
+}));
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
   Image: 'Image',
@@ -34,7 +41,6 @@ vi.mock('../player/TrackPresentationProvider', () => ({
 }));
 vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../TrackStateIndicator', () => ({ default: 'TrackStateIndicator' }));
-vi.mock('../track/TrackIdentityLinks', () => ({ default: 'TrackIdentityLinks' }));
 vi.mock('../ui', async (original) => ({
   ...(await original<typeof import('../ui')>()),
   Skeleton: 'Skeleton',
@@ -68,17 +74,19 @@ function card(overrides: Partial<Parameters<typeof HomeRecentCard>[0]> = {}) {
     busy: false,
     disabled: false,
     onPlay: vi.fn(),
-    onOpenAlbum: vi.fn(),
-    onOpenArtist: vi.fn(),
     ...overrides,
   });
 }
 
 describe('quickGridRows', () => {
-  it('chunks items into rows of two and keeps their original index', () => {
+  it('chunks items into rows of two (or custom TV column count) and keeps their original index', () => {
     expect(quickGridRows(['a', 'b', 'c'])).toEqual([
       [{ item: 'a', index: 0 }, { item: 'b', index: 1 }],
       [{ item: 'c', index: 2 }],
+    ]);
+    expect(quickGridRows(['a', 'b', 'c', 'd'], 3)).toEqual([
+      [{ item: 'a', index: 0 }, { item: 'b', index: 1 }, { item: 'c', index: 2 }],
+      [{ item: 'd', index: 3 }],
     ]);
     expect(quickGridRows([])).toEqual([]);
     expect(() => quickGridRows(['a'], 0)).toThrow('positive column count');
@@ -106,7 +114,24 @@ describe('HomeQuickGrid', () => {
     expect(lastRowCells).toHaveLength(2);
   });
 
-  it('announces one loading group shaped like the grid', () => {
+  it('supports 3-column 16:9 Android TV layout with padding fillers', () => {
+    const grid = HomeQuickGrid({
+      id: 'recently-heard',
+      columns: 3,
+      data: ['a', 'b', 'c', 'd'],
+      keyExtractor: (item) => item,
+      renderItem: (item, index) => React.createElement('Tile', { testID: `tile-${item}-${index}` }),
+    });
+    const rows = byTestId(grid, 'home-shelf-recently-heard').props.children as TestElement[];
+
+    expect(rows).toHaveLength(2);
+    const lastRowCells = byType(rows[1], 'View').filter(
+      (element) => flatStyle(element.props.style).flex === 1,
+    );
+    expect(lastRowCells).toHaveLength(3);
+  });
+
+  it('announces one loading group shaped like the grid (phone & TV)', () => {
     const skeleton = HomeQuickGridSkeleton({
       testID: 'home-section-recently-heard-loading',
       accessibilityLabel: 'Loading',
@@ -117,78 +142,75 @@ describe('HomeQuickGrid', () => {
     expect(group.props.accessibilityLabel).toBe('Loading');
     expect(group.props.accessibilityLiveRegion).toBe('polite');
     expect(byType(skeleton, 'Skeleton')).toHaveLength(6);
+
+    const tvSkeleton = HomeQuickGridSkeleton({
+      testID: 'tv-loading',
+      accessibilityLabel: 'Loading',
+      columns: 3,
+      tileHeight: 72,
+    });
+    const tvRows = byTestId(tvSkeleton, 'tv-loading').props.children as TestElement[];
+    expect(tvRows).toHaveLength(2);
+    expect(byType(tvSkeleton, 'Skeleton')[0].props.height).toBe(72);
   });
 });
 
 describe('HomeRecentCard', () => {
-  it('keeps play and all route-safe identity credits as distinct controls', () => {
+  it('makes the entire tile one D-Pad focusable play target containing artwork, copy, and state', () => {
     presentation.current = { ...presentation.current, active: false, playback: 'inactive' };
     const onPlay = vi.fn();
-    const onOpenAlbum = vi.fn();
-    const onOpenArtist = vi.fn();
-    const tree = card({ onPlay, onOpenAlbum, onOpenArtist });
-    const play = byTestId(tree, 'home-track-recent-track-1-0');
-    const identity = byTestId(tree, 'home-track-recent-track-1-0-identity');
+    const onFocus = vi.fn();
+    const tree = card({ onPlay, onFocus });
+    const tile = byTestId(tree, 'home-track-recent-track-1-0');
 
-    expect(play.type).toBe('Pressable');
-    expect(play.props.accessibilityRole).toBe('button');
-    expect(play.props.accessibilityLabel).toBe(strings.home.playTrack(recent.title, recent.artist));
-    expect(play.props.accessibilityState).toEqual({ disabled: false, busy: false, selected: false });
-    expect(queryByTestId(play, 'home-track-recent-track-1-0-identity')).toBeNull();
-    expect(identity.type).toBe('TrackIdentityLinks');
-    expect(identity.props.showAlbumLabel).toBe(false);
-    expect(identity.props.showDuration).toBe(false);
-    expect(identity.props.showPopularity).toBe(false);
-    expect(identity.props.metadata).toMatchObject({
-      albumRoute: { albumId: '9', title: 'Parity' },
-      artists: [
-        { name: 'LoggeRythm', route: { artistId: '7', name: 'LoggeRythm' } },
-        { name: 'Guest Artist', route: { artistId: '8', name: 'Guest Artist' } },
-      ],
-    });
-    expect(byTestId(tree, 'home-track-recent-track-1-0-state').type).toBe('TrackStateIndicator');
+    expect(tile.type).toBe('Pressable');
+    expect(tile.props.accessibilityRole).toBe('button');
+    expect(tile.props.accessibilityLabel).toBe(
+      strings.home.playTrack(recent.title, 'LoggeRythm, Guest Artist'),
+    );
+    expect(tile.props.accessibilityState).toEqual({ disabled: false, busy: false, selected: false });
+    expect(tile.props.focusable).toBe(true);
+    // Identity copy and cache indicator sit inside the full-tile pressable target.
+    expect(queryByTestId(tile, 'home-track-recent-track-1-0-identity')).not.toBeNull();
+    expect(textContent(tile)).toEqual(['Midnight Signal', 'LoggeRythm, Guest Artist']);
+    expect(byTestId(tile, 'home-track-recent-track-1-0-state').type).toBe('TrackStateIndicator');
 
-    (play.props.onPress as () => void)();
+    (tile.props.onPress as () => void)();
     expect(onPlay).toHaveBeenCalledOnce();
-    expect(onOpenAlbum).not.toHaveBeenCalled();
-    expect(onOpenArtist).not.toHaveBeenCalled();
-    (identity.props.onOpenAlbum as (params: unknown) => void)({ albumId: '9' });
-    (identity.props.onOpenArtist as (params: unknown) => void)({ artistId: '8' });
-    expect(onOpenAlbum).toHaveBeenCalledOnce();
-    expect(onOpenArtist).toHaveBeenCalledOnce();
-    expect(onPlay).toHaveBeenCalledOnce();
+    (tile.props.onFocus as (event: unknown) => void)({});
+    expect(onFocus).toHaveBeenCalledOnce();
   });
 
-  it('keeps hydration busy state on the dedicated playback target', () => {
+  it('keeps hydration busy state on the tile and disables focus while disabled', () => {
     presentation.current = { ...presentation.current, active: false, playback: 'inactive' };
     const tree = card({ busy: true, disabled: true });
-    const play = byTestId(tree, 'home-track-recent-track-1-0');
+    const tile = byTestId(tree, 'home-track-recent-track-1-0');
 
-    expect(play.props.disabled).toBe(true);
-    expect(play.props.accessibilityState).toEqual({ disabled: true, busy: true, selected: false });
+    expect(tile.props.disabled).toBe(true);
+    expect(tile.props.focusable).toBe(false);
+    expect(tile.props.accessibilityState).toEqual({ disabled: true, busy: true, selected: false });
     expect(
-      byType(byTestId(play, 'home-track-recent-track-1-0-transport'), 'ActivityIndicator'),
+      byType(byTestId(tile, 'home-track-recent-track-1-0-transport'), 'ActivityIndicator'),
     ).toHaveLength(1);
   });
 
-  it('shows no transport overlay on an idle tile and a touch target of at least 48dp', () => {
+  it('shows no transport overlay on an idle tile and preserves >=48dp height with press feedback', () => {
     presentation.current = { ...presentation.current, active: false, playback: 'inactive' };
-    const play = byTestId(card(), 'home-track-recent-track-1-0');
+    const tile = byTestId(card(), 'home-track-recent-track-1-0');
 
-    expect(queryByTestId(play, 'home-track-recent-track-1-0-transport')).toBeNull();
-    expect(flatStyle(play.props.style).width).toBeGreaterThanOrEqual(48);
-    expect(flatStyle(play.props.style).minHeight).toBeGreaterThanOrEqual(48);
-    expect(flatStyle(play.props.style, { pressed: true }).opacity).toBeLessThan(1);
+    expect(queryByTestId(tile, 'home-track-recent-track-1-0-transport')).toBeNull();
+    expect(flatStyle(tile.props.style).minHeight).toBeGreaterThanOrEqual(48);
+    expect(flatStyle(tile.props.style, { pressed: true }).opacity).toBeLessThan(1);
   });
 
   it('highlights the playing tile and shows its transport state', () => {
     presentation.current = { ...presentation.current, active: true, playback: 'playing' };
     const tree = card();
-    const play = byTestId(tree, 'home-track-recent-track-1-0');
+    const tile = byTestId(tree, 'home-track-recent-track-1-0');
 
-    expect(flatStyle(tree.props.style).backgroundColor).toBe(colors.accentSubtle);
-    expect(play.props.accessibilityState).toEqual({ disabled: false, busy: false, selected: true });
-    const transport = byTestId(play, 'home-track-recent-track-1-0-transport');
+    expect(flatStyle(tile.props.style).backgroundColor).toBe(colors.accentSubtle);
+    expect(tile.props.accessibilityState).toEqual({ disabled: false, busy: false, selected: true });
+    const transport = byTestId(tile, 'home-track-recent-track-1-0-transport');
     expect(byType(transport, 'AppIcon').map((icon) => icon.props.name)).toEqual(['pause']);
   });
 });

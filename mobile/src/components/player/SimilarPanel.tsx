@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   FlatList,
@@ -11,7 +11,8 @@ import type { Track } from '../../api/types';
 import { musicQueries } from '../../data';
 import { resolveRemoteVisualState, type RemoteVisualState } from '../../data/remoteState';
 import { strings } from '../../localization';
-import { playTracks } from '../../player/controller';
+import { playTrackRow } from '../../player/controller';
+import { playerFailureMessage } from '../../player/errors';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { layout, spacing } from '../../theme';
 import { AppText } from '../ui';
@@ -19,6 +20,8 @@ import TrackRow from '../TrackRow';
 import { showTrackActions } from '../trackActions';
 import { SearchErrorNotice, SearchRemoteBoundary } from '../search/SearchRemoteStates';
 import { ownsSimilarSeed, similarPlaybackSelection } from './similarModel';
+
+const EMPTY_TRACKS: readonly Track[] = Object.freeze([]);
 
 export interface SimilarPanelProps {
   seed: Track;
@@ -52,7 +55,6 @@ export function SimilarPanelView({
   onOpenAlbum,
   onOpenArtist,
 }: SimilarPanelViewProps) {
-  const data = [...tracks];
   const renderItem = ({ item, index }: ListRenderItemInfo<Track>) => (
     <TrackRow
       track={item}
@@ -96,7 +98,7 @@ export function SimilarPanelView({
       >
         <FlatList
           testID="similar-list"
-          data={data}
+          data={tracks as Track[]}
           style={styles.virtualList}
           keyExtractor={(track, index) => `${seedId}:${track.id}:${index}`}
           renderItem={renderItem}
@@ -104,13 +106,15 @@ export function SimilarPanelView({
           maxToRenderPerBatch={8}
           updateCellsBatchingPeriod={40}
           windowSize={7}
-          removeClippedSubviews
+          removeClippedSubviews={false}
           contentContainerStyle={styles.list}
         />
       </SearchRemoteBoundary>
     </View>
   );
 }
+
+const MemoSimilarPanelView = React.memo(SimilarPanelView);
 
 function SimilarPanelQuery({ seed, onOpenAlbum, onOpenArtist }: SimilarPanelProps) {
   const query = useQuery(musicQueries.similarTracks(seed.id));
@@ -128,7 +132,7 @@ function SimilarPanelQuery({ seed, onOpenAlbum, onOpenArtist }: SimilarPanelProp
   // Never publish placeholder rows owned by the previous seed. Cached rows for
   // this exact query key remain valid last-good data during a refresh failure.
   const hasData = query.data !== undefined && !query.isPlaceholderData;
-  const tracks = hasData ? query.data : [];
+  const tracks = hasData ? query.data : EMPTY_TRACKS;
   const state = resolveRemoteVisualState({
     hasData,
     empty: hasData && tracks.length === 0,
@@ -139,7 +143,7 @@ function SimilarPanelQuery({ seed, onOpenAlbum, onOpenArtist }: SimilarPanelProp
     error: query.error,
   });
 
-  const play = (index: number) => {
+  const play = useCallback((index: number) => {
     const renderedSeedId = seed.id;
     if (!ownsSimilarSeed(renderedSeedId, ownerSeedId.current)) return;
 
@@ -151,43 +155,53 @@ function SimilarPanelQuery({ seed, onOpenAlbum, onOpenArtist }: SimilarPanelProp
         index,
         strings.player.similar.context(seed.title),
       );
-    } catch {
-      setRuntimeError(strings.player.similar.playFailed);
+    } catch (cause) {
+      console.error('[LoggeRythm] Similar track selection failed:', cause);
+      setRuntimeError(playerFailureMessage(strings.player.similar.playFailed, cause));
       return;
     }
 
     setRuntimeError(null);
-    void playTracks(selection.tracks, selection.startIndex, selection.options)
-      .then(() => {
+    void playTrackRow(selection.tracks, selection.startIndex, selection.options)
+      .then((outcome) => {
         if (!mounted.current || !ownsSimilarSeed(renderedSeedId, ownerSeedId.current)) return;
-        AccessibilityInfo.announceForAccessibility(
-          strings.player.similar.started(selection.tracks[selection.startIndex].title),
-        );
+        if (outcome === 'started-context') {
+          AccessibilityInfo.announceForAccessibility(
+            strings.player.similar.started(selection.tracks[selection.startIndex].title),
+          );
+        }
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
+        console.error('[LoggeRythm] Similar playback failed:', cause);
         if (!mounted.current || !ownsSimilarSeed(renderedSeedId, ownerSeedId.current)) return;
-        setRuntimeError(strings.player.similar.playFailed);
+        setRuntimeError(playerFailureMessage(strings.player.similar.playFailed, cause));
       });
-  };
+  }, [seed, tracks]);
 
-  const actions = (track: Track) => {
+  const actions = useCallback((track: Track) => {
     const renderedSeedId = seed.id;
     if (!ownsSimilarSeed(renderedSeedId, ownerSeedId.current)) return;
-    showTrackActions(track, () => {
+    showTrackActions(track, (errorMessage) => {
+      console.error('[LoggeRythm] Similar track action failed:', errorMessage);
       if (mounted.current && ownsSimilarSeed(renderedSeedId, ownerSeedId.current)) {
-        setRuntimeError(strings.player.similar.actionFailed);
+        const trimmed = errorMessage.trim();
+        setRuntimeError(trimmed.length > 0 ? trimmed : strings.player.similar.actionFailed);
       }
     });
-  };
+  }, [seed.id]);
+
+  const retry = useCallback(() => {
+    void query.refetch();
+  }, [query]);
 
   return (
-    <SimilarPanelView
+    <MemoSimilarPanelView
       seedId={seed.id}
       tracks={tracks}
       state={state}
       retryBusy={query.fetchStatus === 'fetching'}
       runtimeError={runtimeError}
-      onRetry={() => void query.refetch()}
+      onRetry={retry}
       onPlay={play}
       onActions={actions}
       onOpenAlbum={onOpenAlbum}

@@ -4,14 +4,35 @@ import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(fileURLToPath(new URL('./SearchScreen.tsx', import.meta.url)), 'utf8');
 
-describe('SearchScreen browsing source', () => {
-  it('exposes genre browsing immediately without recent-search hydration UI', () => {
+describe('SearchScreen browsing & recent searches source', () => {
+  it('exposes genre browsing immediately alongside account-scoped RecentSearches', () => {
     expect(source).toContain('testID="search-genre-browse"');
     expect(source).toContain('id="search-genres"');
+    expect(source).toContain('useRecentSearches(accountScope)');
+    expect(source).toContain('<RecentSearches');
     expect(source).not.toContain('search-history-loading');
-    expect(source).not.toContain('search-recent');
     expect(source).not.toContain('AsyncStorage.getItem');
-    expect(source).not.toContain('persistRecentSearches');
+  });
+
+  it('does not subscribe to 1Hz useProgress ticks', () => {
+    expect(source).not.toContain('useProgress');
+    expect(source).not.toContain('activeProgress');
+  });
+
+  it('wires Android BackHandler for Spotify Import -> clear query -> tab back and TV focus scope', () => {
+    expect(source).toContain('useBackHandler(isFocused && (importing || input.length > 0), handleBack)');
+    expect(source).toContain('<TvFocusScope scope={SEARCH_TV_SCOPE}>');
+    expect(source).toContain('useTvFocusReturn(');
+    expect(source).toContain("tvFocusRegistry.register(\n      'search-input',");
+    expect(source).toContain('tv.isTv && isFocused && requestedInputFocus');
+    expect(source).not.toContain('pushCheckpoint(');
+  });
+
+  it('avoids flashing TrackRowSkeleton on keystroke debounce and preserves real playlist error detail', () => {
+    expect(source).toContain('<SearchLoadingStatus\n        testID="search-debounce-status"');
+    expect(source).not.toContain('<TrackRowSkeleton\n      testID="search-debounce-status"');
+    expect(source).toContain("console.error('Search playlist playback failed', error)");
+    expect(source).toContain('formatSearchErrorDetail(error)');
   });
 });
 
@@ -23,8 +44,8 @@ describe('SearchScreen library section source', () => {
     expect(source).toContain('libraryTrackIds: library.shownIds');
   });
 
-  it('builds rows for every searchable input, before the remote search is ready', () => {
-    expect(source).toContain('const searchRows = inputIsSearchable');
+  it('builds memoized rows for every searchable input, before the remote search is ready', () => {
+    expect(source).toContain('const searchRows = useMemo(');
     expect(source).toContain('libraryTracks: library.shown');
     expect(source).toContain('remoteStatus: true');
     expect(source).toContain('testID="search-section-library"');
@@ -59,7 +80,7 @@ describe('SearchScreen track playback source', () => {
   });
 
   it('routes the top track result through the same radio start', () => {
-    expect(source).toContain("case 'track':\n        return play(result.index);");
+    expect(source).toContain("case 'track':\n          return play(result.index);");
   });
 
   it('reports a failed radio separately from a failed playback start', () => {

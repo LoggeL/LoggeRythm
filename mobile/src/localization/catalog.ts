@@ -11,9 +11,12 @@ export interface StringCatalog {
     cancel: string;
     play: string;
     pause: string;
+    shuffle: string;
+    shuffleAll: string;
     nextTrack: string;
     previousTrack: string;
     loading: string;
+    artworkLoadFailed: string;
     trackBy: (title: string, artist: string) => string;
     trackCount: (count: number) => string;
   };
@@ -22,12 +25,17 @@ export interface StringCatalog {
     offlineBody: string;
     backOnlineTitle: string;
     backOnlineBody: string;
+    revalidationFailedTitle: string;
+    revalidationFailedBody: string;
+    revalidationRetry: string;
   };
   trackPresentation: {
     playing: string;
     paused: string;
     buffering: string;
     active: string;
+    playTrack: (title: string) => string;
+    pauseTrack: (title: string) => string;
     downloaded: string;
     serverCached: string;
     rollingDeviceCache: (duration: string) => string;
@@ -464,6 +472,8 @@ export interface StringCatalog {
     openQueue: string;
     closeNowPlaying: string;
     nothingPlaying: string;
+    playingFrom: string;
+    nowPlayingHeading: string;
     nowPlayingTabs: {
       label: string;
       playing: string;
@@ -498,6 +508,10 @@ export interface StringCatalog {
       cachedRefreshFailed: string;
       stale: string;
       synchronized: string;
+      notSynchronized: string;
+      followActiveLine: string;
+      syncToCurrent: string;
+      autoScrollPaused: string;
       aiGenerated: string;
       cached: string;
       source: (provider: string) => string;
@@ -575,6 +589,14 @@ export interface StringCatalog {
     browseTitle: string;
     browsePrompt: string;
     browseLoading: string;
+    recentTitle: string;
+    recentClear: string;
+    recentClearLabel: string;
+    recentEmpty: string;
+    recentOpen: (query: string) => string;
+    recentRemove: (query: string) => string;
+    recentLoadFailed: string;
+    recentSaveFailed: string;
     trackDuration: (duration: string) => string;
     trackPlayCount: (plays: number, listeners: number) => string;
     trackPopularity: (percent: number) => string;
@@ -846,9 +868,12 @@ export const de: StringCatalog = {
     cancel: 'Abbrechen',
     play: 'Wiedergabe starten',
     pause: 'Wiedergabe pausieren',
+    shuffle: 'Zufallswiedergabe',
+    shuffleAll: 'Zufällig abspielen',
     nextTrack: 'Nächster Titel',
     previousTrack: 'Vorheriger Titel',
     loading: 'Wird geladen…',
+    artworkLoadFailed: 'Cover konnte nicht geladen werden',
     trackBy: (title, artist) => `${title} von ${artist}`,
     trackCount: (count) => `${count} ${count === 1 ? 'Titel' : 'Titel'}`,
   },
@@ -857,12 +882,17 @@ export const de: StringCatalog = {
     offlineBody: 'Nur heruntergeladene Musik ist verfügbar. Online-Inhalte kehren mit der Verbindung zurück.',
     backOnlineTitle: 'Wieder online',
     backOnlineBody: 'Online-Inhalte sind wieder verfügbar.',
+    revalidationFailedTitle: 'Sitzung konnte nicht geprüft werden',
+    revalidationFailedBody: 'Die Online-Sitzung konnte nicht überprüft werden. Versuche es erneut.',
+    revalidationRetry: 'Erneut prüfen',
   },
   trackPresentation: {
     playing: 'Wird wiedergegeben',
     paused: 'Wiedergabe pausiert',
     buffering: 'Titel wird gepuffert…',
     active: 'Aktueller Titel',
+    playTrack: (title) => `„${title}“ abspielen`,
+    pauseTrack: (title) => `„${title}“ pausieren`,
     downloaded: 'Heruntergeladen',
     serverCached: 'Auf dem Server gespeichert',
     rollingDeviceCache: (duration) => `Automatischer Gerätecache ${duration}`,
@@ -1318,6 +1348,8 @@ export const de: StringCatalog = {
     openQueue: 'Warteschlange öffnen',
     closeNowPlaying: 'Aktuelle Wiedergabe schließen',
     nothingPlaying: 'Aktuell wird nichts wiedergegeben.',
+    playingFrom: 'Wiedergabe aus',
+    nowPlayingHeading: 'Jetzt läuft',
     nowPlayingTabs: {
       label: 'Ansicht der aktuellen Wiedergabe',
       playing: 'Jetzt läuft',
@@ -1354,6 +1386,10 @@ export const de: StringCatalog = {
         'Die Aktualisierung ist fehlgeschlagen. Der gespeicherte Songtext bleibt sichtbar.',
       stale: 'Gespeicherter Songtext wird angezeigt.',
       synchronized: 'Synchronisiert',
+      notSynchronized: 'Nicht synchronisiert',
+      followActiveLine: 'Aktiver Zeile folgen',
+      syncToCurrent: 'Zur aktuellen Zeile',
+      autoScrollPaused: 'Automatisches Scrollen pausiert',
       aiGenerated: 'KI-transkribiert',
       cached: 'Vom Server gespeichert',
       source: (provider) => `Quelle: ${provider}`,
@@ -1427,6 +1463,14 @@ export const de: StringCatalog = {
     browseTitle: 'Zum Stöbern',
     browsePrompt: 'Wonach suchst du?',
     browseLoading: 'Genres werden geladen…',
+    recentTitle: 'Zuletzt gesucht',
+    recentClear: 'Verlauf löschen',
+    recentClearLabel: 'Suchverlauf löschen',
+    recentEmpty: 'Noch keine letzten Suchanfragen.',
+    recentOpen: (query) => `Erneut suchen: ${query}`,
+    recentRemove: (query) => `Aus Suchverlauf entfernen: ${query}`,
+    recentLoadFailed: 'Suchverlauf konnte nicht geladen werden.',
+    recentSaveFailed: 'Suchverlauf konnte nicht gespeichert werden.',
     trackDuration: (duration) => `Dauer ${duration}`,
     trackPlayCount: (plays, listeners) =>
       `${plays.toLocaleString('de-DE')} Wiedergaben · ${listeners.toLocaleString('de-DE')} Hörer:innen (Last.fm)`,
@@ -1716,8 +1760,8 @@ export const de: StringCatalog = {
 export const en: StringCatalog = {
   common: {
     appName: 'LoggeRythm', retry: 'Retry', retrying: 'Retrying…', showAll: 'Show all', working: 'Working…', dismiss: 'Dismiss', cancel: 'Cancel',
-    play: 'Play', pause: 'Pause', nextTrack: 'Next track', previousTrack: 'Previous track',
-    loading: 'Loading…', trackBy: (title, artist) => `${title} by ${artist}`,
+    play: 'Play', pause: 'Pause', shuffle: 'Shuffle', shuffleAll: 'Shuffle play', nextTrack: 'Next track', previousTrack: 'Previous track',
+    loading: 'Loading…', artworkLoadFailed: 'Cover could not be loaded', trackBy: (title, artist) => `${title} by ${artist}`,
     trackCount: (count) => `${count} ${count === 1 ? 'track' : 'tracks'}`,
   },
   shell: {
@@ -1725,12 +1769,17 @@ export const en: StringCatalog = {
     offlineBody: 'Only downloaded music is available. Online content returns with the connection.',
     backOnlineTitle: 'Back online',
     backOnlineBody: 'Online content is available again.',
+    revalidationFailedTitle: 'Could not verify session',
+    revalidationFailedBody: 'Your online session could not be verified. Please try again.',
+    revalidationRetry: 'Check again',
   },
   trackPresentation: {
     playing: 'Playing',
     paused: 'Playback paused',
     buffering: 'Buffering track…',
     active: 'Current track',
+    playTrack: (title) => `Play ${title}`,
+    pauseTrack: (title) => `Pause ${title}`,
     downloaded: 'Downloaded',
     serverCached: 'Stored on the server',
     rollingDeviceCache: (duration) => `Automatic device cache ${duration}`,
@@ -2094,6 +2143,8 @@ export const en: StringCatalog = {
     },
     openNowPlaying: (title, artist) => `Open Now Playing for ${title} by ${artist}`,
     openQueue: 'Open queue', closeNowPlaying: 'Close Now Playing', nothingPlaying: 'Nothing playing.',
+    playingFrom: 'Playing from',
+    nowPlayingHeading: 'Now playing',
     nowPlayingTabs: {
       label: 'Now Playing view',
       playing: 'Playing',
@@ -2128,6 +2179,10 @@ export const en: StringCatalog = {
       cachedRefreshFailed: 'Refresh failed. Saved lyrics remain visible.',
       stale: 'Showing saved lyrics.',
       synchronized: 'Synchronized',
+      notSynchronized: 'Not synchronized',
+      followActiveLine: 'Follow active line',
+      syncToCurrent: 'Sync to current line',
+      autoScrollPaused: 'Auto-scroll paused',
       aiGenerated: 'AI transcription',
       cached: 'Saved on the server',
       source: (provider) => `Source: ${provider}`,
@@ -2183,6 +2238,14 @@ export const en: StringCatalog = {
     },
     browseTitle: 'Browse', browsePrompt: 'What are you looking for?',
     browseLoading: 'Loading genres…',
+    recentTitle: 'Recent searches',
+    recentClear: 'Clear history',
+    recentClearLabel: 'Clear recent searches',
+    recentEmpty: 'No recent searches yet.',
+    recentOpen: (query) => `Search again: ${query}`,
+    recentRemove: (query) => `Remove from recent searches: ${query}`,
+    recentLoadFailed: 'Recent searches could not be loaded.',
+    recentSaveFailed: 'Recent searches could not be saved.',
     trackDuration: (duration) => `Duration ${duration}`,
     trackPlayCount: (plays, listeners) =>
       `${plays.toLocaleString('en-US')} plays · ${listeners.toLocaleString('en-US')} listeners (Last.fm)`,

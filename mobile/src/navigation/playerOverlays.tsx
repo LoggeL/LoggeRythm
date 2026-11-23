@@ -1,43 +1,89 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT } from '../components/MiniPlayer';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
+import {
+  createFocusRingController,
+  FocusRingOverlay,
+} from '../components/ui/PressableScale';
 import { strings } from '../localization';
 import { clearPlayerError, usePlayerError } from '../player/errors';
-import { useActiveMediaItem } from '../player/player';
+import { useHasActiveTrack } from '../player/player';
 import { colors, elevation, metrics, opacity, radii, spacing, typography } from '../theme';
+import { useTvEnvironment } from '../tv';
+
+/** Matches `TV_BAR_HEIGHT` in `MiniPlayer.tsx` (76dp surface + 16dp bottom offset = 92dp). */
+const TV_MINI_PLAYER_SURFACE_HEIGHT = 76;
+
+export interface PlayerOverlayBottomOffsetInput {
+  hasTabBar: boolean;
+  bottomInset: number;
+  isTv: boolean;
+  aboveMiniPlayer: boolean;
+}
+
+/**
+ * Computes overlay bottom clearance across phones (optional 64dp tab bar +
+ * 72dp MiniPlayer) and Android TV (no phone tab bar; 92dp TV MiniPlayer
+ * footprint when a MiniPlayer sits below).
+ */
+export function playerOverlayBottomOffset({
+  hasTabBar,
+  bottomInset,
+  isTv,
+  aboveMiniPlayer,
+}: PlayerOverlayBottomOffsetInput): number {
+  if (isTv) {
+    if (!aboveMiniPlayer) {
+      return Math.max(spacing.md, bottomInset + spacing.xs);
+    }
+    const tvBarBottom = Math.max(spacing.md, bottomInset + metrics.miniPlayerGap);
+    return tvBarBottom + TV_MINI_PLAYER_SURFACE_HEIGHT + spacing.xs;
+  }
+  return (
+    (hasTabBar ? TAB_BAR_HEIGHT : 0) +
+    bottomInset +
+    (aboveMiniPlayer ? MINI_PLAYER_HEIGHT : 0) +
+    spacing.xs
+  );
+}
 
 /** Fatal playback error, floating above the mini player until dismissed. */
 export function PlayerErrorBanner({ hasTabBar = true }: { hasTabBar?: boolean }) {
   const error = usePlayerError();
   const insets = useSafeAreaInsets();
+  const tv = useTvEnvironment();
+  const [dismissFocus] = useState(createFocusRingController);
   if (!error) return null;
+  const bottom = playerOverlayBottomOffset({
+    hasTabBar: hasTabBar && !tv.isTv,
+    bottomInset: insets.bottom,
+    isTv: tv.isTv,
+    aboveMiniPlayer: true,
+  });
   return (
     <View
       testID="player-error-banner"
-      style={[
-        styles.errorBanner,
-        {
-          bottom:
-            (hasTabBar ? TAB_BAR_HEIGHT : 0) +
-            insets.bottom +
-            MINI_PLAYER_HEIGHT +
-            spacing.xs,
-        },
-      ]}
+      focusable={false}
+      style={[styles.errorBanner, { bottom }]}
       accessibilityRole="alert"
       accessibilityLiveRegion="assertive"
     >
       <Text style={styles.errorText} numberOfLines={3}>{error}</Text>
       <Pressable
+        testID="player-error-dismiss"
         accessibilityRole="button"
         accessibilityLabel={strings.player.playerErrorDismiss}
+        focusable
+        onFocus={() => dismissFocus.setFocused(true)}
+        onBlur={() => dismissFocus.setFocused(false)}
         onPress={clearPlayerError}
         hitSlop={8}
         style={({ pressed }) => [styles.dismissButton, pressed && styles.pressed]}
       >
         <Text style={styles.dismiss}>{strings.common.dismiss}</Text>
+        <FocusRingOverlay controller={dismissFocus} borderRadius={radii.md} />
       </Pressable>
     </View>
   );
@@ -45,14 +91,17 @@ export function PlayerErrorBanner({ hasTabBar = true }: { hasTabBar?: boolean })
 
 /** Non-fatal notices while nothing is loaded; MiniPlayer hosts them otherwise. */
 export function PlayerNoticeWithoutMiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
-  const item = useActiveMediaItem();
+  const hasActiveTrack = useHasActiveTrack();
   const insets = useSafeAreaInsets();
-  if (item !== undefined && item !== null) return null;
-  return (
-    <PlayerNoticeBanner
-      bottom={(hasTabBar ? TAB_BAR_HEIGHT : 0) + insets.bottom + spacing.xs}
-    />
-  );
+  const tv = useTvEnvironment();
+  if (hasActiveTrack) return null;
+  const bottom = playerOverlayBottomOffset({
+    hasTabBar: hasTabBar && !tv.isTv,
+    bottomInset: insets.bottom,
+    isTv: tv.isTv,
+    aboveMiniPlayer: false,
+  });
+  return <PlayerNoticeBanner bottom={bottom} />;
 }
 
 const styles = StyleSheet.create({
@@ -78,6 +127,7 @@ const styles = StyleSheet.create({
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
     paddingHorizontal: spacing.xs,
+    borderRadius: radii.md,
   },
   dismiss: { ...typography.label, color: colors.textPrimary },
   pressed: { opacity: opacity.pressed },

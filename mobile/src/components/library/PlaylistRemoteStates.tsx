@@ -6,7 +6,7 @@ import {
   type RemoteVisualState,
 } from '../../data/remoteState';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors, layout, spacing } from '../../theme';
+import { colors, layout, metrics, spacing, typography } from '../../theme';
 import { AppText, ErrorState, Skeleton } from '../ui';
 import { InlineNotice } from './InlineNotice';
 
@@ -36,6 +36,7 @@ export function resolvePlaylistRemoteVisualState(
 }
 
 const SKELETON_ROWS = [0, 1, 2, 3, 4] as const;
+const PLAY_BUTTON_LG = 64;
 
 interface PlaylistQueryGateProps {
   visual: RemoteVisualState;
@@ -50,8 +51,8 @@ export function PlaylistQueryGate({
   onRetry,
 }: PlaylistQueryGateProps) {
   if (visual.body === 'loading') {
-    // Shaped like the loaded screen (hero, action row, track rows) so nothing
-    // jumps when the playlist arrives.
+    // Shaped like the loaded screen (hero, 64dp action row, 64dp track rows)
+    // so nothing jumps when the playlist arrives.
     return (
       <View
         testID="playlist-loading"
@@ -62,18 +63,35 @@ export function PlaylistQueryGate({
       >
         <View style={styles.loadingHero}>
           <Skeleton width={layout.artwork.hero} height={layout.artwork.hero} radius="card" />
-          <Skeleton width="70%" height={spacing.xxl} />
-          <Skeleton width="45%" height={spacing.md} />
-        </View>
-        {SKELETON_ROWS.map((row) => (
-          <View key={row} style={styles.loadingRow}>
-            <Skeleton width={layout.artwork.sm} height={layout.artwork.sm} />
-            <View style={styles.loadingCopy}>
-              <Skeleton width="62%" height={spacing.md} />
-              <Skeleton width="38%" height={spacing.sm} />
-            </View>
+          <View style={styles.loadingIdentity}>
+            <Skeleton width="70%" height={typography.hero.fontSize} />
+            <Skeleton width="45%" height={typography.callout.fontSize} />
           </View>
-        ))}
+          <View testID="playlist-loading-action-row" style={styles.loadingActions}>
+            <Skeleton width={PLAY_BUTTON_LG} height={PLAY_BUTTON_LG} radius="pill" />
+            <Skeleton
+              width={metrics.minimumTouchTarget}
+              height={metrics.minimumTouchTarget}
+              radius="pill"
+            />
+            <Skeleton
+              width={metrics.minimumTouchTarget}
+              height={metrics.minimumTouchTarget}
+              radius="pill"
+            />
+          </View>
+        </View>
+        <View style={styles.loadingRows}>
+          {SKELETON_ROWS.map((row) => (
+            <View key={row} testID={`playlist-loading-row-${row}`} style={styles.loadingRow}>
+              <Skeleton width={layout.artwork.sm} height={layout.artwork.sm} />
+              <View style={styles.loadingCopy}>
+                <Skeleton width={row % 2 === 0 ? '68%' : '54%'} height={typography.callout.fontSize} />
+                <Skeleton width={row % 2 === 0 ? '42%' : '48%'} height={typography.caption.fontSize} />
+              </View>
+            </View>
+          ))}
+        </View>
       </View>
     );
   }
@@ -177,13 +195,26 @@ const styles = StyleSheet.create({
   pageState: { flex: 1, backgroundColor: colors.background },
   loading: {
     flex: 1,
-    gap: spacing.md,
     paddingTop: spacing.xl,
     paddingHorizontal: layout.pagePadding,
     backgroundColor: colors.background,
   },
-  loadingHero: { alignItems: 'center', gap: spacing.md, paddingBottom: spacing.xl },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  loadingHero: { alignItems: 'center', gap: spacing.lg, paddingBottom: spacing.lg },
+  loadingIdentity: { alignSelf: 'stretch', alignItems: 'center', gap: spacing.xs },
+  loadingActions: {
+    minHeight: layout.rowHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  loadingRows: { gap: 0 },
+  loadingRow: {
+    height: layout.rowHeight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   loadingCopy: { flex: 1, gap: spacing.xs },
   refreshing: {
     flexDirection: 'row',

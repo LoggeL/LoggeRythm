@@ -45,7 +45,10 @@ vi.mock('react', async (importOriginal) => {
 
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({}) }));
 vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: { getAllKeys: vi.fn(), removeItem: vi.fn() },
+  default: {
+    getAllKeys: vi.fn(async () => []),
+    removeItem: vi.fn(async () => undefined),
+  },
 }));
 vi.mock('../api/client', () => ({
   ApiError: class ApiError extends Error {

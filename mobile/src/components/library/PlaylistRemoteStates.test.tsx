@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { queryByTestId as byTestId, textContent as textLines } from '../../test/render';
+import { flatStyle, queryByTestId as byTestId, textContent as textLines } from '../../test/render';
+import { layout } from '../../theme';
 import {
   PlaylistQueryGate,
   PlaylistQueryNotice,
@@ -53,6 +54,13 @@ describe('Playlist collection remote states', () => {
     expect(loading?.props.accessibilityRole).toBe('progressbar');
     expect(loading?.props.accessibilityLabel).toBe(libraryStrings.playlist.loading);
     expect(loading?.props.accessibilityLiveRegion).toBe('polite');
+    // Skeleton matches rendered 64dp action row + 64dp track rows to prevent layout jump.
+    expect(flatStyle(byTestId(tree, 'playlist-loading-action-row')?.props.style).minHeight).toBe(
+      layout.rowHeight,
+    );
+    expect(flatStyle(byTestId(tree, 'playlist-loading-row-0')?.props.style).height).toBe(
+      layout.rowHeight,
+    );
   });
 
   it('classifies paused first load as offline and owns a safe retry', () => {

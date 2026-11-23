@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { colors, layout, spacing, typography } from '../../theme';
-import { Skeleton } from '../ui';
+import { DetailHeroSkeleton, Skeleton } from '../ui';
 
 export interface CatalogPageSkeletonProps {
   testID: string;
@@ -9,19 +9,23 @@ export interface CatalogPageSkeletonProps {
   accessibilityLabel: string;
   /** Round hero artwork for artist pages. */
   round?: boolean;
+  /** Compact horizontal hero matching GenreScreen. */
+  compact?: boolean;
   /** Number of placeholder track rows under the hero. */
   rows?: number;
 }
 
 /**
  * The first-load placeholder of a detail page, shaped like the page it
- * replaces (hero artwork, eyebrow, title, meta line, track rows) so nothing
- * jumps when the data arrives. The group is one polite `progressbar`.
+ * replaces (hero artwork, eyebrow, title, meta line, 64dp action row, track
+ * rows) so nothing jumps when the data arrives. The group is one polite
+ * `progressbar`.
  */
 export function CatalogPageSkeleton({
   testID,
   accessibilityLabel,
   round = false,
+  compact = false,
   rows = 5,
 }: CatalogPageSkeletonProps) {
   return (
@@ -32,17 +36,12 @@ export function CatalogPageSkeleton({
       accessibilityLiveRegion="polite"
       style={styles.page}
     >
-      <View style={[styles.hero, round ? styles.heroCentered : null]}>
-        <Skeleton
-          width={layout.artwork.hero}
-          height={layout.artwork.hero}
-          radius={round ? 'pill' : 'panel'}
-          style={styles.artwork}
-        />
-        <Skeleton width="24%" height={typography.overline.fontSize} />
-        <Skeleton width="72%" height={typography.hero.fontSize} />
-        <Skeleton width="44%" height={typography.callout.fontSize} />
-      </View>
+      <DetailHeroSkeleton
+        testID={`${testID}-hero`}
+        round={round}
+        compact={compact}
+        includeActionRow
+      />
       <View>
         {Array.from({ length: rows }, (_, index) => (
           <View key={index} style={styles.row}>
@@ -111,9 +110,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.pagePadding,
     backgroundColor: colors.background,
   },
-  hero: { gap: spacing.sm },
-  heroCentered: { alignItems: 'center' },
-  artwork: { alignSelf: 'center', marginBottom: spacing.xs },
   row: {
     height: layout.rowHeight,
     flexDirection: 'row',

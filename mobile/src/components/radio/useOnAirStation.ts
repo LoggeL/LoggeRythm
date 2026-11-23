@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useActiveMediaItem, useIsPlaying } from '../../player/player';
 import { queueContextOf } from '../../player/queueContract';
 
@@ -12,8 +13,11 @@ export interface OnAirStation {
 export function useOnAirStation(): OnAirStation | null {
   const item = useActiveMediaItem();
   const playing = useIsPlaying();
-  if (item === null) return null;
-  const context = queueContextOf(item);
-  if (context === null || context.type !== 'radio') return null;
-  return { id: context.id, label: context.label, playing };
+  const context = item === null ? null : queueContextOf(item);
+  const radioId = context !== null && context.type === 'radio' ? context.id : null;
+  const radioLabel = context !== null && context.type === 'radio' ? context.label : null;
+  return useMemo(
+    () => (radioId === null ? null : { id: radioId, label: radioLabel, playing }),
+    [radioId, radioLabel, playing],
+  );
 }

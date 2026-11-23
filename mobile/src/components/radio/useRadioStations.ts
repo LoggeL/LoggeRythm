@@ -43,6 +43,7 @@ export function useRadioStations() {
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const [startingKey, setStartingKey] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const stats = useQuery(musicQueries.stats(scope));
   const genres = useQuery(musicQueries.genres());
@@ -131,9 +132,12 @@ export function useRadioStations() {
     startingKey,
     startError,
     dismissStartError: () => setStartError(null),
-    refreshing: everyQuery.some((query) => query.isFetching && !query.isPending),
+    refreshing: manualRefreshing,
     refresh: () => {
-      void Promise.allSettled(everyQuery.map((query) => query.refetch()));
+      setManualRefreshing(true);
+      void Promise.allSettled(everyQuery.map((query) => query.refetch())).finally(() =>
+        setManualRefreshing(false),
+      );
     },
     personal,
     personalState,

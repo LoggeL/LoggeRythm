@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { colors, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon, { type AppIconName } from '../AppIcon';
-import { AppText } from '../ui';
+import { AppText, createFocusRingController, FocusRingOverlay } from '../ui';
 
 const GLYPH_TILE = 40;
 
@@ -59,14 +59,18 @@ export function SheetActionRow({
       </View>
     );
   }
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={testID}
+      focusable={!disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={description}
       accessibilityState={{ disabled }}
       disabled={disabled}
+      onFocus={() => focusController.setFocused(true)}
+      onBlur={() => focusController.setFocused(false)}
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
@@ -75,6 +79,11 @@ export function SheetActionRow({
       ]}
     >
       {content}
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.md}
+        disabled={disabled}
+      />
     </Pressable>
   );
 }

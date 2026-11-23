@@ -324,6 +324,115 @@ class LoggeRythmPlayerProtocolTest {
     }
   }
 
+  @Test
+  fun parsesStrictLikedTrackIdSnapshotsAndRejectsInvalidPayloads() {
+    assertEquals(null, protocol.parseLikedTrackIds(null))
+    assertEquals(null, protocol.parseLikedTrackIds("""{"schemaVersion":1,"trackIds":null}"""))
+    assertEquals(emptySet<String>(), protocol.parseLikedTrackIds("""{"schemaVersion":1,"trackIds":[]}"""))
+    assertEquals(
+      setOf("1001", "2002"),
+      protocol.parseLikedTrackIds("""{"schemaVersion":1,"trackIds":["1001","2002"]}"""),
+    )
+
+    assertCode("liked-track-ids-version-unsupported") {
+      protocol.parseLikedTrackIds("""{"schemaVersion":2,"trackIds":[]}""")
+    }
+    assertCode("liked-track-id-invalid") {
+      protocol.parseLikedTrackIds("""{"schemaVersion":1,"trackIds":["not-numeric"]}""")
+    }
+    assertCode("liked-track-id-duplicate") {
+      protocol.parseLikedTrackIds("""{"schemaVersion":1,"trackIds":["1001","1001"]}""")
+    }
+    assertCode("unexpected-key") {
+      protocol.parseLikedTrackIds("""{"schemaVersion":1,"trackIds":[],"extra":1}""")
+    }
+  }
+
+  @Test
+  fun parsesGranularQueueEditCommandsAndRejectsMalformedPayloads() {
+    val add = protocol.parseCommand(
+      "addQueueItems",
+      """{"index":2,"items":[{"id":"next:1","url":"https://loggerythm.logge.top/api/tracks/1/stream","headers":{"Cookie":"sf_session=ok"}}]}""",
+    ) as PlayerCommand.AddQueueItems
+    assertEquals(2, add.index)
+    assertEquals(listOf("next:1"), add.items.map(PlayerItemSpec::id))
+    assertTrue(add.mutatesQueueStructure())
+
+    val move = protocol.parseCommand(
+      "moveQueueItem",
+      """{"fromIndex":3,"toIndex":1}""",
+    ) as PlayerCommand.MoveQueueItem
+    assertEquals(3, move.fromIndex)
+    assertEquals(1, move.toIndex)
+    assertTrue(move.mutatesQueueStructure())
+
+    val remove = protocol.parseCommand(
+      "removeQueueItems",
+      """{"fromIndex":1,"toIndex":3}""",
+    ) as PlayerCommand.RemoveQueueItems
+    assertEquals(1, remove.fromIndex)
+    assertEquals(3, remove.toIndex)
+    assertTrue(remove.mutatesQueueStructure())
+
+    val replace = protocol.parseCommand(
+      "replaceQueueItem",
+      """{"index":0,"item":{"id":"queue:0","url":"https://loggerythm.logge.top/api/tracks/2/stream?lr_recovery=1"}}""",
+    ) as PlayerCommand.ReplaceQueueItem
+    assertEquals(0, replace.index)
+    assertEquals("queue:0", replace.item.id)
+    assertTrue(replace.mutatesQueueStructure())
+
+    val skip = protocol.parseCommand("skipToIndex", """{"index":4}""") as PlayerCommand.SkipToIndex
+    assertEquals(4, skip.index)
+    assertFalse(skip.mutatesQueueStructure())
+
+    val replaceQueue = protocol.parseCommand(
+      "replaceQueue",
+      """{"items":[{"id":"p:1","url":"https://loggerythm.logge.top/api/tracks/1/stream"}],"startIndex":0,"startPositionMs":4200,"resume":true}""",
+    ) as PlayerCommand.ReplaceQueue
+    assertEquals(0, replaceQueue.startIndex)
+    assertEquals(4200L, replaceQueue.startPositionMs)
+    assertTrue(replaceQueue.resume)
+    assertTrue(replaceQueue.mutatesQueueStructure())
+
+    assertCode("queue-items-empty") {
+      protocol.parseCommand("addQueueItems", """{"index":0,"items":[]}""")
+    }
+    assertCode("queue-item-id-duplicate") {
+      protocol.parseCommand(
+        "addQueueItems",
+        """{"index":0,"items":[{"id":"dup","url":"https://example.test/1"},{"id":"dup","url":"https://example.test/2"}]}""",
+      )
+    }
+    assertCode("remove-range-invalid") {
+      protocol.parseCommand("removeQueueItems", """{"fromIndex":2,"toIndex":2}""")
+    }
+    assertCode("remove-range-invalid") {
+      protocol.parseCommand("removeQueueItems", """{"fromIndex":3,"toIndex":1}""")
+    }
+    assertCode("empty-queue-replace-invalid") {
+      protocol.parseCommand(
+        "replaceQueue",
+        """{"items":[],"startIndex":0,"startPositionMs":0,"resume":false}""",
+      )
+    }
+    assertCode("boolean-value-invalid") {
+      protocol.parseCommand(
+        "replaceQueue",
+        """{"items":[{"id":"p:1","url":"https://example.test/1"}],"startIndex":0,"startPositionMs":0,"resume":"yes"}""",
+      )
+    }
+    assertCode("replace-resume-invalid") {
+      protocol.parseCommand(
+        "replaceQueue",
+        """{"items":[{"id":"p:1","url":"https://example.test/1"}],"startIndex":0,"startPositionMs":0,"resume":null}""",
+      )
+    }
+    assertCode("unexpected-key") {
+      protocol.parseCommand("moveQueueItem", """{"fromIndex":1,"toIndex":2,"extra":true}""")
+    }
+  }
+
   private fun assertCode(code: String, action: () -> Unit) {
     val error = assertThrows(PlayerProtocolException::class.java, action)
     assertEquals(code, error.code)

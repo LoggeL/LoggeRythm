@@ -497,6 +497,26 @@ internal interface LoggeRythmPersistedServiceControl {
   ) {
     callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
   }
+  fun syncLikedTrackIds(
+    trackIds: Set<String>?,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+  }
+  fun completeFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
+  fun failFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    callback(Result.failure(LoggeRythmPersistedPlayerException("playback-event-journal-unavailable")))
+  }
   fun preparePlaybackJournalWake(
     callback: (Result<LoggeRythmPlaybackJournalWakeDecision>) -> Unit,
   ) {
@@ -618,6 +638,44 @@ internal object LoggeRythmPersistedServiceBridge {
     }
   }
 
+  fun syncLikedTrackIds(
+    trackIds: Set<String>?,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.syncLikedTrackIds(trackIds, callback)
+    }
+  }
+
+  fun completeFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.completeFavoritePlaybackEvent(leaseId, eventId, callback)
+    }
+  }
+
+  fun failFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val active = synchronized(lock) { control }
+    if (active == null) {
+      callback(Result.failure(LoggeRythmPersistedPlayerException("player-persistence-unavailable")))
+    } else {
+      active.failFavoritePlaybackEvent(leaseId, eventId, callback)
+    }
+  }
+
   fun preparePlaybackJournalWake(
     callback: (Result<LoggeRythmPlaybackJournalWakeDecision>) -> Unit,
   ) {
@@ -651,6 +709,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   private val player: ExoPlayer,
   clearCache: ((Result<LoggeRythmCacheClearResult>) -> Unit) -> Unit,
   private val nowEpochMs: () -> Long = System::currentTimeMillis,
+  private val onFavoriteStateChanged: () -> Unit = {},
+  private val onFavoriteSyncFailed: () -> Unit = {},
 ) : LoggeRythmPersistedServiceControl {
   private val sharedCacheClear = LoggeRythmSharedCacheClear(clearCache)
   private val appContext = context.applicationContext
@@ -682,6 +742,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   private val remotePolicyDurability = LoggeRythmRemotePolicyDurability()
   private val playbackEventJournal = LoggeRythmPlaybackEventJournal()
   private var playbackEventsForPersistence: List<LoggeRythmPlaybackEvent> = emptyList()
+  private var likedTrackIds: Set<String>? = null
+  private var likedTrackIdsForPersistence: Set<String>? = null
   private var lastPlayMediaId: String? = null
   private val restoredPlayEchoGuard = LoggeRythmRestoredPlayEchoGuard()
   private var radioDedupeGeneration = -1L
@@ -721,6 +783,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         if (!reconcileRuntimeTimeline()) return
         normalizeAuxiliaryForTimeline()
         applyCurrentLoudnessGain()
+        notifyFavoriteStateChanged()
       }
       if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)) handleMediaItemSleepAtEnd()
 
@@ -749,6 +812,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       // generation in its durable RADIO event.
       if (!reconcileRuntimeTimeline()) return
       applyCurrentLoudnessGain()
+      notifyFavoriteStateChanged()
       handleMediaItemTransition(reason)
       enqueuePlaybackEventsForTransition(mediaItem, reason)
       lastKnownIndex = player.currentMediaItemIndex
@@ -985,8 +1049,17 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   override fun onCommandApplied(command: PlayerCommand) {
     requireReady()
     when (command) {
-      is PlayerCommand.SetQueue -> {
+      is PlayerCommand.SetQueue,
+      is PlayerCommand.ReplaceQueue -> {
         contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
+        normalizeAuxiliaryForTimeline()
+        applyCurrentLoudnessGain()
+        requestSave(immediate = false)
+      }
+      is PlayerCommand.AddQueueItems,
+      is PlayerCommand.MoveQueueItem,
+      is PlayerCommand.RemoveQueueItems,
+      is PlayerCommand.ReplaceQueueItem -> {
         normalizeAuxiliaryForTimeline()
         applyCurrentLoudnessGain()
         requestSave(immediate = false)
@@ -1001,6 +1074,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       is PlayerCommand.SeekTo,
       PlayerCommand.SkipToNext,
       PlayerCommand.SkipToPrevious,
+      is PlayerCommand.SkipToIndex,
       is PlayerCommand.SetRepeatMode -> requestSave(immediate = false)
       PlayerCommand.DisableGlobalShuffle,
       is PlayerCommand.SetCommands -> Unit
@@ -1370,6 +1444,197 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     )
   }
 
+  override fun syncLikedTrackIds(
+    trackIds: Set<String>?,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    val normalized = trackIds?.toSet()
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val mutation = try {
+          playbackEventJournal.previewPrune(nowEpochMs())
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        persistPlaybackJournalMutation(
+          operationTicket = operationTicket,
+          mutation = mutation,
+          candidateLastPlayMediaId = lastPlayMediaId,
+          updateLikedTrackIds = true,
+          candidateLikedTrackIds = normalized,
+        ) { result ->
+          if (result.isSuccess) notifyFavoriteStateChanged()
+          settle(result)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  fun enqueueFavoriteToggle(
+    mediaId: String,
+    track: LoggeRythmPlaybackEventTrackMetadata,
+    requestedLiked: Boolean,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val mutation = try {
+          playbackEventJournal.previewEnqueueFavorite(
+            track = track,
+            mediaId = mediaId,
+            requestedLiked = requestedLiked,
+            nowMs = nowEpochMs(),
+          )
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        persistPlaybackJournalMutation(
+          operationTicket = operationTicket,
+          mutation = mutation,
+          candidateLastPlayMediaId = lastPlayMediaId,
+        ) { result ->
+          if (result.isSuccess) {
+            notifyFavoriteStateChanged()
+            schedulePlaybackJournalWake()
+            // Best-effort fast foreground wake when React is mounted; native durable lease +
+            // Headless JS / WorkManager remain authoritative if no foreground listener exists.
+            runCatching { LoggeRythmNotificationFavoriteEventBridge.emit(mediaId, requestedLiked) }
+          }
+          settle(result)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  override fun completeFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val mutation = try {
+          playbackEventJournal.previewAck(leaseId, eventId, nowEpochMs())
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        if (!mutation.changed) {
+          settle(Result.success(Unit))
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        val event = mutation.event as? LoggeRythmFavoritePlaybackEvent
+        if (event == null) {
+          playbackEventJournal.abort(mutation)
+          settle(failure("favorite-completion-event-mismatch"))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        val nextLikedTrackIds = likedTrackIds?.let { current ->
+          if (event.requestedLiked) current + event.track.id else current - event.track.id
+        }
+        persistPlaybackJournalMutation(
+          operationTicket = operationTicket,
+          mutation = mutation,
+          candidateLastPlayMediaId = lastPlayMediaId,
+          updateLikedTrackIds = true,
+          candidateLikedTrackIds = nextLikedTrackIds,
+        ) { result ->
+          if (result.isSuccess) notifyFavoriteStateChanged()
+          settle(result)
+          val hasPendingFavorite = runCatching {
+            playbackEventJournal.pendingFavorites(nowEpochMs()).isNotEmpty()
+          }.getOrDefault(false)
+          schedulePlaybackJournalWake(immediateEligible = hasPendingFavorite)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  override fun failFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    callback: (Result<Unit>) -> Unit,
+  ) {
+    val settle = oncePlaybackJournalResult(callback)
+    enqueuePlaybackJournalOperation(
+      start = { operationTicket ->
+        val mutation = try {
+          playbackEventJournal.previewAck(leaseId, eventId, nowEpochMs())
+        } catch (error: Exception) {
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        if (!mutation.changed) {
+          settle(Result.success(Unit))
+          schedulePlaybackJournalWake(immediateEligible = false)
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        if (mutation.event !is LoggeRythmFavoritePlaybackEvent) {
+          playbackEventJournal.abort(mutation)
+          settle(failure("favorite-failure-event-mismatch"))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
+        }
+        persistPlaybackJournalMutation(
+          operationTicket = operationTicket,
+          mutation = mutation,
+          candidateLastPlayMediaId = lastPlayMediaId,
+        ) { result ->
+          if (result.isSuccess) {
+            notifyFavoriteStateChanged()
+            runCatching(onFavoriteSyncFailed)
+          }
+          settle(result)
+          val hasPendingFavorite = runCatching {
+            playbackEventJournal.pendingFavorites(nowEpochMs()).isNotEmpty()
+          }.getOrDefault(false)
+          schedulePlaybackJournalWake(immediateEligible = hasPendingFavorite)
+          finishPlaybackJournalOperation(operationTicket)
+        }
+      },
+      cancel = { error -> settle(Result.failure(error)) },
+    )
+  }
+
+  fun currentFavoriteProjection(): Pair<Set<String>?, Map<String, Boolean>> {
+    if (!isReady()) return null to emptyMap()
+    val pending = try {
+      playbackEventJournal.pendingFavorites(nowEpochMs())
+    } catch (_: Exception) {
+      emptyMap()
+    }
+    return likedTrackIds?.toSet() to pending
+  }
+
+  fun resolveTrackMetadataForMediaId(mediaId: String): LoggeRythmPlaybackEventTrackMetadata? {
+    val source = LoggeRythmPlayerRuntime.queueSources().firstOrNull { it.id == mediaId }
+      ?: LoggeRythmPlayerRuntime.browseTree().nodes[mediaId]?.source
+      ?: return null
+    return playbackEventTrackMetadata(source)
+  }
+
+  fun resolveTrackIdForMediaId(mediaId: String): String? =
+    resolveTrackMetadataForMediaId(mediaId)?.id
+
   /**
    * Cancels a not-yet-acknowledged command policy and queues the last committed policy behind its
    * already-admitted write on the same FIFO executor. The live policy stays fail-closed until that
@@ -1613,6 +1878,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     scheduleSleep()
     updateHeartbeat()
     schedulePlaybackJournalWake()
+    notifyFavoriteStateChanged()
     callback(Result.success(Unit))
   }
 
@@ -1656,6 +1922,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     )
     playbackJournalUnsafeDurableWrite = false
     playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+    likedTrackIds = state.likedTrackIds?.toSet()
+    likedTrackIdsForPersistence = likedTrackIds
     lastPlayMediaId = state.lastPlayMediaId
     restoredPlayEchoGuard.arm(
       persistedLastPlayMediaId = state.lastPlayMediaId,
@@ -1704,6 +1972,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         playbackEventJournal = playbackEventsForPersistence.toList(),
         lastPlayMediaId = lastPlayMediaId,
         playbackJournalQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration(),
+        likedTrackIds = likedTrackIdsForPersistence?.toSet(),
       )
     }
     val activeIndex = player.currentMediaItemIndex
@@ -1721,6 +1990,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       playbackEventJournal = playbackEventsForPersistence.toList(),
       lastPlayMediaId = lastPlayMediaId,
       playbackJournalQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration(),
+      likedTrackIds = likedTrackIdsForPersistence?.toSet(),
     )
   }
 
@@ -1738,6 +2008,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       playbackEventJournal = emptyList(),
       lastPlayMediaId = null,
       playbackJournalQueueGeneration = LoggeRythmPlayerRuntime.currentQueueGeneration(),
+      likedTrackIds = null,
     )
 
   private fun requestSave(immediate: Boolean) {
@@ -1897,7 +2168,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
     sleep = null
     lastKnownIndex = C.INDEX_UNSET
+    likedTrackIds = null
+    likedTrackIdsForPersistence = null
     resetPlaybackJournalState(cause)
+    notifyFavoriteStateChanged()
     // The candidate itself is durable and accepted; a same-account restore will publish it as one
     // coherent queue. This flag only represents writes whose callback can still be rejected.
     playbackJournalUnsafeDurableWrite = false
@@ -2026,7 +2300,14 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList())
     sleep = null
     lastKnownIndex = C.INDEX_UNSET
+    likedTrackIds = null
+    likedTrackIdsForPersistence = null
     resetPlaybackJournalState()
+    notifyFavoriteStateChanged()
+  }
+
+  private fun notifyFavoriteStateChanged() {
+    runCatching(onFavoriteStateChanged)
   }
 
   private fun reconcileRuntimeTimeline(): Boolean = try {
@@ -2099,6 +2380,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     mutation: LoggeRythmPlaybackEventJournalMutation,
     candidateLastPlayMediaId: String?,
     wakePrearmed: Boolean = false,
+    updateLikedTrackIds: Boolean = false,
+    candidateLikedTrackIds: Set<String>? = likedTrackIdsForPersistence,
     callback: (Result<Unit>) -> Unit,
   ) {
     if (!playbackJournalOperationGeneration.isCurrent(operationTicket) || !isReady()) {
@@ -2107,7 +2390,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       return
     }
     val previousLastPlayMediaId = lastPlayMediaId
-    val stateChanged = mutation.changed || candidateLastPlayMediaId != previousLastPlayMediaId
+    val previousLikedTrackIds = likedTrackIdsForPersistence
+    val nextLikedTrackIds = if (updateLikedTrackIds) candidateLikedTrackIds?.toSet() else previousLikedTrackIds
+    val likedChanged = updateLikedTrackIds && nextLikedTrackIds != previousLikedTrackIds
+    val stateChanged = mutation.changed || candidateLastPlayMediaId != previousLastPlayMediaId || likedChanged
     if (!stateChanged) {
       callback(Result.success(Unit))
       return
@@ -2130,6 +2416,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
             mutation = mutation,
             candidateLastPlayMediaId = candidateLastPlayMediaId,
             wakePrearmed = true,
+            updateLikedTrackIds = updateLikedTrackIds,
+            candidateLikedTrackIds = candidateLikedTrackIds,
             callback = callback,
           )
         },
@@ -2142,6 +2430,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
     playbackEventsForPersistence = mutation.candidateEvents.toList()
     lastPlayMediaId = candidateLastPlayMediaId
+    if (updateLikedTrackIds) likedTrackIdsForPersistence = nextLikedTrackIds
     val lifecycleTicket = generation.current()
     val candidateState = try {
       captureState().also { candidate -> codec.encode(candidate).fill(0) }
@@ -2149,6 +2438,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       if (mutation.changed) runCatching { playbackEventJournal.abort(mutation) }
       playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
       lastPlayMediaId = previousLastPlayMediaId
+      if (updateLikedTrackIds) likedTrackIdsForPersistence = previousLikedTrackIds
       callback(failure("playback-event-candidate-invalid"))
       return
     }
@@ -2166,6 +2456,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
           if (playbackJournalOperationGeneration.isCurrent(operationTicket) && isReady()) {
             playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
             lastPlayMediaId = previousLastPlayMediaId
+            if (updateLikedTrackIds) likedTrackIdsForPersistence = previousLikedTrackIds
             playbackJournalUnsafeDurableWrite = false
           }
           if (journalQueueCommitGate.isActive()) {
@@ -2179,6 +2470,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
         try {
           if (mutation.changed) playbackEventJournal.commit(mutation)
           playbackEventsForPersistence = playbackEventJournal.snapshot(nowEpochMs())
+          if (updateLikedTrackIds) {
+            likedTrackIds = nextLikedTrackIds
+            likedTrackIdsForPersistence = likedTrackIds
+          }
           playbackJournalUnsafeDurableWrite = false
           flushDeferredNormalSavesAfterJournalCommit(forceSave = false)
           callback(Result.success(Unit))
@@ -2274,6 +2569,13 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       replaceSleep(null)
       return
     }
+    if (contextShuffle.enabled && contextShuffle.restoreOrder.isNotEmpty()) {
+      val liveStableIds = liveQueueStableIds()
+      val filtered = contextShuffle.restoreOrder.filter { it in liveStableIds }
+      if (filtered != contextShuffle.restoreOrder) {
+        contextShuffle = contextShuffle.copy(restoreOrder = filtered)
+      }
+    }
     val activeSleep = sleep
     if (activeSleep is LoggeRythmPersistedSleepState.MediaItem) {
       val normalized = when {
@@ -2284,6 +2586,21 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       }
       if (normalized != activeSleep) replaceSleep(normalized)
     }
+  }
+
+  private fun liveQueueStableIds(): Set<String> {
+    val result = mutableSetOf<String>()
+    repeat(player.mediaItemCount) { index ->
+      val mediaId = player.getMediaItemAt(index).mediaId
+      val stableId = try {
+        val extras = JSONObject(LoggeRythmPlayerRuntime.extrasFor(mediaId))
+        (extras.opt("queueStableId") as? String)?.takeIf(String::isNotBlank) ?: mediaId
+      } catch (_: Exception) {
+        mediaId
+      }
+      result += stableId
+    }
+    return result
   }
 
   private fun replaceSleep(value: LoggeRythmPersistedSleepState?) {

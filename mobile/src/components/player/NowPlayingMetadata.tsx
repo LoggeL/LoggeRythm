@@ -4,14 +4,16 @@ import type { ArtistRef, Track } from '../../api/types';
 import { trackArtistCredits } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import { trackAlbumRoute, trackArtistRoute } from '../../navigationLinks';
-import { metrics, opacity } from '../../theme';
-import { AppText } from '../ui';
+import { metrics, opacity, radii, spacing } from '../../theme';
+import { AppText, createFocusRingController, FocusRingOverlay } from '../ui';
 
 export interface NowPlayingMetadataProps {
   track: Track;
   onOpenAlbum: () => void;
   onOpenArtist: (artist: ArtistRef) => void;
   compact?: boolean;
+  /** Enlarged 10-foot sizing when rendered inside the Android TV split layout. */
+  isTv?: boolean;
 }
 
 /**
@@ -24,10 +26,15 @@ export default function NowPlayingMetadata({
   onOpenAlbum,
   onOpenArtist,
   compact = false,
+  isTv = false,
 }: NowPlayingMetadataProps) {
   const albumNavigable = trackAlbumRoute(track) !== null;
   const artists = trackArtistCredits(track);
-  const artistVariant = compact ? 'callout' : 'body';
+  const titleVariant = compact ? 'bodyStrong' : isTv ? 'section' : 'title';
+  const artistVariant = compact ? 'callout' : isTv ? 'body' : 'body';
+  const albumFocus = createFocusRingController();
+  const titleLinkStyle = isTv ? styles.tvLink : styles.link;
+  const artistLinkStyle = isTv ? styles.tvArtistLink : styles.artistLink;
 
   return (
     <View testID="now-playing-metadata" style={styles.container}>
@@ -36,16 +43,20 @@ export default function NowPlayingMetadata({
           testID="now-playing-open-album"
           accessibilityRole="link"
           accessibilityLabel={strings.trackActions.openAlbum(track.album || track.title)}
+          focusable
+          onFocus={() => albumFocus.setFocused(true)}
+          onBlur={() => albumFocus.setFocused(false)}
           onPress={onOpenAlbum}
-          style={({ pressed }) => [styles.link, pressed && styles.pressed]}
+          style={({ pressed }) => [titleLinkStyle, pressed && styles.pressed]}
         >
-          <AppText variant={compact ? 'bodyStrong' : 'title'} numberOfLines={compact ? 1 : 2}>
+          <AppText variant={titleVariant} numberOfLines={compact ? 1 : 2}>
             {track.title}
           </AppText>
+          <FocusRingOverlay controller={albumFocus} borderRadius={radii.sm} />
         </Pressable>
       ) : (
-        <View testID="now-playing-title-text" style={styles.link}>
-          <AppText variant={compact ? 'bodyStrong' : 'title'} numberOfLines={compact ? 1 : 2}>
+        <View testID="now-playing-title-text" style={titleLinkStyle}>
+          <AppText variant={titleVariant} numberOfLines={compact ? 1 : 2}>
             {track.title}
           </AppText>
         </View>
@@ -57,6 +68,7 @@ export default function NowPlayingMetadata({
             artist_id: artist.id,
             artist: artist.name,
           }) !== null;
+          const artistFocus = artistNavigable ? createFocusRingController() : null;
           return (
             <React.Fragment key={`${String(artist.id)}-${index}`}>
               {index > 0 ? (
@@ -69,17 +81,21 @@ export default function NowPlayingMetadata({
                   {', '}
                 </AppText>
               ) : null}
-              {artistNavigable ? (
+              {artistNavigable && artistFocus !== null ? (
                 <Pressable
                   testID={`now-playing-open-artist-${index}`}
                   accessibilityRole="link"
                   accessibilityLabel={strings.trackActions.openArtist(artist.name)}
+                  focusable
+                  onFocus={() => artistFocus.setFocused(true)}
+                  onBlur={() => artistFocus.setFocused(false)}
                   onPress={() => onOpenArtist(artist)}
-                  style={({ pressed }) => [styles.artistLink, pressed && styles.pressed]}
+                  style={({ pressed }) => [artistLinkStyle, pressed && styles.pressed]}
                 >
                   <AppText variant={artistVariant} color="secondary" numberOfLines={1}>
                     {artist.name}
                   </AppText>
+                  <FocusRingOverlay controller={artistFocus} borderRadius={radii.sm} />
                 </Pressable>
               ) : (
                 <AppText
@@ -99,12 +115,24 @@ export default function NowPlayingMetadata({
   );
 }
 
+export const MemoNowPlayingMetadata = React.memo(NowPlayingMetadata);
+
 const styles = StyleSheet.create({
   container: { minWidth: 0, flex: 1 },
   link: {
     minHeight: metrics.minimumTouchTarget,
     minWidth: metrics.minimumTouchTarget,
     justifyContent: 'center',
+    paddingHorizontal: spacing.xxs,
+    marginHorizontal: -spacing.xxs,
+    borderRadius: radii.sm,
+  },
+  tvLink: {
+    minHeight: 32,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xxs,
+    marginHorizontal: -spacing.xxs,
+    borderRadius: radii.sm,
   },
   artistRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   artistLink: {
@@ -112,6 +140,17 @@ const styles = StyleSheet.create({
     minWidth: metrics.minimumTouchTarget,
     justifyContent: 'center',
     maxWidth: '100%',
+    paddingHorizontal: spacing.xxs,
+    marginHorizontal: -spacing.xxs,
+    borderRadius: radii.sm,
+  },
+  tvArtistLink: {
+    minHeight: 28,
+    justifyContent: 'center',
+    maxWidth: '100%',
+    paddingHorizontal: spacing.xxs,
+    marginHorizontal: -spacing.xxs,
+    borderRadius: radii.sm,
   },
   pressed: { opacity: opacity.pressed },
 });

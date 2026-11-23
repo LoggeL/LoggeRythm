@@ -15,7 +15,10 @@ vi.mock('react', async () => {
   return {
     ...actual,
     default: actual,
-    useState: <T,>(initial: T) => [initial, vi.fn()],
+    useState: <T,>(initial: T | (() => T)) => [
+      typeof initial === 'function' ? (initial as () => T)() : initial,
+      vi.fn(),
+    ],
   };
 });
 

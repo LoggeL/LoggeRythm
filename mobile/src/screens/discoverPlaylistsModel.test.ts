@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { PlaylistSummary } from '../api/types';
 import type { CatalogQueryVisualState } from '../components/catalog/catalogQueryState';
 import { resolveRemoteVisualState } from '../data/remoteState';
-import { combineCatalogQueryStates, mergeDiscoverPlaylists } from './discoverPlaylistsModel';
+import {
+  combineCatalogQueryStates,
+  mergeDiscoverPlaylists,
+  resolveDiscoverPlaylistsSection,
+  type DiscoverPlaylistSourceQuery,
+} from './discoverPlaylistsModel';
 
 const playlist = (id: number, overrides: Partial<PlaylistSummary> = {}): PlaylistSummary => ({
   id,
@@ -155,5 +160,92 @@ describe('combineCatalogQueryStates', () => {
 
   it('refuses to combine nothing', () => {
     expect(() => combineCatalogQueryStates([])).toThrow('at least one query');
+  });
+});
+
+describe('resolveDiscoverPlaylistsSection (decoupled own vs community)', () => {
+  const source = (
+    data: PlaylistSummary[] | undefined,
+    overrides: Partial<DiscoverPlaylistSourceQuery> = {},
+  ): DiscoverPlaylistSourceQuery => ({
+    data,
+    isPending: data === undefined,
+    isFetching: data === undefined,
+    isStale: false,
+    fetchStatus: data === undefined ? 'fetching' : 'idle',
+    error: null,
+    ...overrides,
+  });
+
+  it('shows own playlists immediately while community playlists are still loading', () => {
+    const own = [playlist(7, { is_public: false })];
+    const resolved = resolveDiscoverPlaylistsSection(source(own), source(undefined));
+
+    expect(resolved.entries).toEqual([{ playlist: own[0], own: true }]);
+    expect(resolved.empty).toBe(false);
+    expect(body(resolved.state, resolved.empty)).toEqual({
+      body: 'content',
+      notice: 'refreshing',
+    });
+  });
+
+  it('shows community playlists immediately while own playlists are still loading', () => {
+    const community = [playlist(11, { owner_name: 'Sam' })];
+    const resolved = resolveDiscoverPlaylistsSection(source(undefined), source(community));
+
+    expect(resolved.entries).toEqual([{ playlist: community[0], own: false }]);
+    expect(body(resolved.state, resolved.empty)).toEqual({
+      body: 'content',
+      notice: 'refreshing',
+    });
+  });
+
+  it('keeps loading instead of showing a false empty state when one list is empty and the other is pending', () => {
+    const resolved = resolveDiscoverPlaylistsSection(source([]), source(undefined));
+
+    expect(resolved.entries).toEqual([]);
+    expect(resolved.empty).toBe(false);
+    expect(body(resolved.state, resolved.empty)).toEqual({
+      body: 'loading',
+      notice: null,
+    });
+  });
+
+  it('keeps loaded playlists usable while surfacing the other list failure loudly', () => {
+    const own = [playlist(7)];
+    const failure = new Error('GET /api/playlists/public: HTTP 503');
+    const resolved = resolveDiscoverPlaylistsSection(
+      source(own),
+      source(undefined, { isPending: false, isFetching: false, fetchStatus: 'idle', error: failure }),
+    );
+
+    expect(resolved.entries).toEqual([{ playlist: own[0], own: true }]);
+    expect(resolved.state.error).toBe(failure);
+    expect(body(resolved.state, resolved.empty)).toEqual({
+      body: 'content',
+      notice: 'cached-refresh-error',
+    });
+  });
+
+  it('blocks with hard-error when one list is empty and the other fails', () => {
+    const failure = new Error('GET /api/playlists/public: HTTP 503');
+    const resolved = resolveDiscoverPlaylistsSection(
+      source([]),
+      source(undefined, { isPending: false, isFetching: false, fetchStatus: 'idle', error: failure }),
+    );
+
+    expect(body(resolved.state, resolved.empty)).toEqual({
+      body: 'hard-error',
+      notice: null,
+    });
+  });
+
+  it('reports empty only once both lists have resolved with zero playlists', () => {
+    const resolved = resolveDiscoverPlaylistsSection(source([]), source([]));
+    expect(resolved.empty).toBe(true);
+    expect(body(resolved.state, resolved.empty)).toEqual({
+      body: 'empty',
+      notice: null,
+    });
   });
 });

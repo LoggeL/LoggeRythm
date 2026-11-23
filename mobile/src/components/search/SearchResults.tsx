@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, FlatList, StyleSheet, View, type TextStyle } from 'react-native';
 import type { Track, TrackPlayCount } from '../../api/types';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { colors, layout, radii, spacing } from '../../theme';
@@ -8,7 +8,7 @@ import StandardTrackRow, {
   type TrackOccurrenceTarget,
 } from '../track/StandardTrackRow';
 import type { TrackPopularityPolicy } from '../track/trackMetadata';
-import { AppText, Artwork, PressableScale } from '../ui';
+import { AppText, Artwork, PressableScale, type TvFocusProps } from '../ui';
 
 export interface SearchTrackResultRowProps {
   track: Track;
@@ -70,7 +70,7 @@ export function SearchTrackResultRow({
   );
 }
 
-interface SearchEntityCardProps {
+interface SearchEntityCardProps extends TvFocusProps {
   testID: string;
   accessibilityLabel: string;
   title: string;
@@ -83,6 +83,10 @@ interface SearchEntityCardProps {
   disabled?: boolean;
   busy?: boolean;
   onPress: () => void;
+  /** Optional square card size override for 16:9 Android TV. */
+  cardSize?: number;
+  titleStyle?: TextStyle;
+  subtitleStyle?: TextStyle;
 }
 
 /** One card of a horizontal result rail: artwork, title and one meta line. */
@@ -97,7 +101,20 @@ export function SearchEntityCard({
   disabled = false,
   busy = false,
   onPress,
+  cardSize = layout.artwork.card,
+  titleStyle,
+  subtitleStyle,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused,
+  focusedStyle,
 }: SearchEntityCardProps) {
+  const cardStyle =
+    cardSize === layout.artwork.card
+      ? styles.entityCard
+      : [styles.entityCard, { width: cardSize }];
   return (
     <PressableScale
       testID={testID}
@@ -105,13 +122,19 @@ export function SearchEntityCard({
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled, busy }}
       disabled={disabled}
+      focusable={focusable}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      onFocus={onFocus}
+      onBlur={onBlur}
+      focused={focused}
+      focusedStyle={focusedStyle}
       onPress={onPress}
-      style={styles.entityCard}
+      style={cardStyle}
     >
       <View>
         <Artwork
           uri={imageUri}
-          size={layout.artwork.card}
+          size={cardSize}
           shape={round ? 'round' : 'square'}
           icon={icon}
         />
@@ -122,7 +145,12 @@ export function SearchEntityCard({
         ) : null}
       </View>
       <View style={styles.copy}>
-        <AppText variant="label" numberOfLines={2} align={round ? 'center' : undefined}>
+        <AppText
+          variant="label"
+          numberOfLines={2}
+          align={round ? 'center' : undefined}
+          style={titleStyle}
+        >
           {title}
         </AppText>
         <AppText
@@ -130,6 +158,7 @@ export function SearchEntityCard({
           color="secondary"
           numberOfLines={1}
           align={round ? 'center' : undefined}
+          style={subtitleStyle}
         >
           {subtitle}
         </AppText>
@@ -143,14 +172,31 @@ interface SearchResultRailProps<T> {
   data: readonly T[];
   keyExtractor: (item: T, index: number) => string;
   renderItem: (item: T, index: number) => React.ReactElement;
+  paddingHorizontal?: number;
+  gap?: number;
 }
 
-export function SearchResultRail<T>({ id, data, keyExtractor, renderItem }: SearchResultRailProps<T>) {
+export function SearchResultRail<T>({
+  id,
+  data,
+  keyExtractor,
+  renderItem,
+  paddingHorizontal,
+  gap,
+}: SearchResultRailProps<T>) {
+  const containerStyle =
+    paddingHorizontal === undefined && gap === undefined
+      ? styles.rail
+      : [
+          styles.rail,
+          paddingHorizontal !== undefined ? { paddingHorizontal } : null,
+          gap !== undefined ? { gap } : null,
+        ];
   return (
     <FlatList
       testID={`search-rail-${id}`}
       horizontal
-      data={[...data]}
+      data={data}
       keyExtractor={keyExtractor}
       renderItem={({ item, index }) => renderItem(item, index)}
       showsHorizontalScrollIndicator={false}
@@ -158,7 +204,8 @@ export function SearchResultRail<T>({ id, data, keyExtractor, renderItem }: Sear
       initialNumToRender={5}
       maxToRenderPerBatch={6}
       windowSize={5}
-      contentContainerStyle={styles.rail}
+      removeClippedSubviews={false}
+      contentContainerStyle={containerStyle}
     />
   );
 }

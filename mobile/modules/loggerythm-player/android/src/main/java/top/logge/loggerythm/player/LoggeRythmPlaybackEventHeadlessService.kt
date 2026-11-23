@@ -3,6 +3,7 @@ package top.logge.loggerythm.player
 import android.content.Context
 import android.content.Intent
 import com.facebook.react.HeadlessJsTaskService
+import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.jstasks.HeadlessJsTaskConfig
 
@@ -27,14 +28,18 @@ class LoggeRythmPlaybackEventHeadlessService : HeadlessJsTaskService() {
      * Starting a background service can be denied by the platform. Returning false preserves the
      * durable event for the coordinator's next Handler wake instead of treating dispatch as ack.
      */
-    internal fun tryStart(context: Context): Boolean = try {
-      context.applicationContext.startService(
-        Intent(context.applicationContext, LoggeRythmPlaybackEventHeadlessService::class.java),
-      ) != null
-    } catch (_: IllegalStateException) {
-      false
-    } catch (_: SecurityException) {
-      false
+    internal fun tryStart(context: Context): Boolean {
+      val appContext = context.applicationContext
+      if (appContext !is ReactApplication) return false
+      return try {
+        appContext.startService(
+          Intent(appContext, LoggeRythmPlaybackEventHeadlessService::class.java),
+        ) != null
+      } catch (_: IllegalStateException) {
+        false
+      } catch (_: SecurityException) {
+        false
+      }
     }
   }
 }

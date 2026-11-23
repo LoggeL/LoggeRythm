@@ -67,4 +67,24 @@ describe('ActionButton', () => {
     expect(rendered.props.accessibilityLabel).toBe('Alle Titel abspielen');
     expect(flatStyle(rendered.props.style).alignSelf).toBe('stretch');
   });
+
+  it('forwards TV focus props and invokes focus/blur handlers cleanly', () => {
+    const onFocus = vi.fn();
+    const onBlur = vi.fn();
+    const rendered = ActionButton({
+      label: 'Abspielen',
+      onPress: vi.fn(),
+      focusable: true,
+      hasTVPreferredFocus: true,
+      onFocus,
+      onBlur,
+      focused: true,
+    });
+    expect(rendered.props.focusable).toBe(true);
+    expect(rendered.props.hasTVPreferredFocus).toBe(true);
+    (rendered.props.onFocus as (e: unknown) => void)('in');
+    (rendered.props.onBlur as (e: unknown) => void)('out');
+    expect(onFocus).toHaveBeenCalledWith('in');
+    expect(onBlur).toHaveBeenCalledWith('out');
+  });
 });

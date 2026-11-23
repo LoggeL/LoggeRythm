@@ -8,6 +8,7 @@ import {
 } from './TrackPresentationProvider';
 
 const READY = 'ready' as PlaybackState;
+const BUFFERING = 'buffering' as PlaybackState;
 
 const mocks = vi.hoisted(() => ({
   activeItem: null as MediaItem | null,
@@ -26,32 +27,61 @@ const mocks = vi.hoisted(() => ({
   queryCalls: 0,
   queryOptionsCalls: 0,
   offlineCalls: 0,
+  trackHooks: false,
+  hookCursor: 0,
+  hookSlots: [] as { deps: readonly unknown[]; value: unknown }[],
 }));
+
+function depsEqual(
+  prev: readonly unknown[] | undefined,
+  next: readonly unknown[] | undefined,
+): boolean {
+  if (prev === undefined || next === undefined || prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i += 1) {
+    if (!Object.is(prev[i], next[i])) return false;
+  }
+  return true;
+}
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
   return {
     ...actual,
     default: actual,
-    useCallback: <T,>(callback: T): T => callback,
+    useCallback: <T,>(callback: T, deps?: readonly unknown[]): T => {
+      if (!mocks.trackHooks) return callback;
+      const index = mocks.hookCursor++;
+      const slot = mocks.hookSlots[index];
+      if (slot && depsEqual(slot.deps, deps)) return slot.value as T;
+      mocks.hookSlots[index] = { deps: deps ?? [], value: callback };
+      return callback;
+    },
     useContext: () => mocks.contextValue,
-    useMemo: <T,>(factory: () => T): T => factory(),
+    useMemo: <T,>(factory: () => T, deps?: readonly unknown[]): T => {
+      if (!mocks.trackHooks) return factory();
+      const index = mocks.hookCursor++;
+      const slot = mocks.hookSlots[index];
+      if (slot && depsEqual(slot.deps, deps)) return slot.value as T;
+      const value = factory();
+      mocks.hookSlots[index] = { deps: deps ?? [], value };
+      return value;
+    },
   };
 });
 
 vi.mock('../../player/player', () => ({
-    useActiveMediaItem: () => {
-      mocks.activeCalls += 1;
-      return mocks.activeItem;
-    },
-    useIsPlaying: () => {
-      mocks.playingCalls += 1;
-      return mocks.isPlaying;
-    },
-    usePlaybackState: () => {
-      mocks.playbackCalls += 1;
-      return mocks.playbackState;
-    },
+  useActiveMediaItem: () => {
+    mocks.activeCalls += 1;
+    return mocks.activeItem;
+  },
+  useIsPlaying: () => {
+    mocks.playingCalls += 1;
+    return mocks.isPlaying;
+  },
+  usePlaybackState: () => {
+    mocks.playbackCalls += 1;
+    return mocks.playbackState;
+  },
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -82,6 +112,7 @@ type ProviderElement = React.ReactElement<{
 }>;
 
 function providerValue(): TrackPresentationContextValue {
+  mocks.hookCursor = 0;
   const element = TrackPresentationProvider({ children: null }) as ProviderElement;
   return element.props.value;
 }
@@ -119,6 +150,9 @@ describe('TrackPresentationProvider', () => {
     mocks.queryCalls = 0;
     mocks.queryOptionsCalls = 0;
     mocks.offlineCalls = 0;
+    mocks.trackHooks = false;
+    mocks.hookCursor = 0;
+    mocks.hookSlots = [];
   });
 
   it('subscribes to every global source and the cached-id query exactly once', () => {
@@ -143,6 +177,40 @@ describe('TrackPresentationProvider', () => {
       rollingDeviceCache: null,
       explicitDownload: { kind: 'downloaded' },
     });
+  });
+
+  it('preserves strict context value identity across 1s ticks with new MediaItem refs of identical occurrence', () => {
+    mocks.trackHooks = true;
+    const first = providerValue();
+
+    // Simulate a 1s tick emitting a brand-new MediaItem object with identical
+    // occurrence identity (e.g., refreshed URL/title/duration metadata).
+    mocks.activeItem = activeMediaItem({ title: 'Updated Metadata Title' });
+    const second = providerValue();
+
+    expect(second).toBe(first);
+    expect(second.presentationFor).toBe(first.presentationFor);
+
+    // Changing playback phase updates context identity cleanly.
+    mocks.playbackState = BUFFERING;
+    const third = providerValue();
+    expect(third).not.toBe(first);
+    expect(
+      third.presentationFor({
+        trackId: '42',
+        queueContext: { type: 'album', id: 'album-7' },
+        originalContextOrder: 1,
+      }).playback,
+    ).toBe('buffering');
+
+    // While idle (no active track), state changes do not churn context value.
+    mocks.activeItem = null;
+    mocks.isPlaying = false;
+    mocks.playbackState = 'idle' as PlaybackState;
+    const idleFirst = providerValue();
+    mocks.playbackState = 'ended' as PlaybackState;
+    const idleSecond = providerValue();
+    expect(idleSecond).toBe(idleFirst);
   });
 
   it('accepts caller-owned rolling cache evidence without adding a progress subscription', () => {

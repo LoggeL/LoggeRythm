@@ -517,6 +517,78 @@ class LoggeRythmPlaybackEventJournalTest {
     assertFalse(journal.commit(pending))
   }
 
+  @Test
+  fun favoriteEventsRoundTripSupersedeUnleasedTogglesSerializeSameTrackLeasesAndSurviveRebase() {
+    val journal = LoggeRythmPlaybackEventJournal(
+      uuidFactory = uuidFactory(uuid(1), uuid(2), uuid(3), uuid(4), uuid(5), uuid(6)),
+    )
+
+    // Like then rapidly Unlike before claim: unleased toggle is superseded by the final intent.
+    val like = journal.previewEnqueueFavorite(metadata("42"), "playlist:1:0:42", true, NOW)
+    assertTrue(journal.commit(like))
+    assertEquals(mapOf("42" to true), journal.pendingFavorites(NOW))
+
+    val unlike = journal.previewEnqueueFavorite(metadata("42"), "playlist:1:0:42", false, NOW + 1L)
+    assertTrue(journal.commit(unlike))
+    assertEquals(1, journal.snapshot().size)
+    assertEquals(mapOf("42" to false), journal.pendingFavorites(NOW + 1L))
+
+    // Round-trip persisted codec + verify claim shape leaks no sensitive fields.
+    val encoded = LoggeRythmPlaybackEventJournal.encodePersistedEvents(journal.snapshot())
+    val decoded = LoggeRythmPlaybackEventJournal.decodePersistedEvents(encoded)
+    assertEquals(journal.snapshot(), decoded)
+    val rebased = LoggeRythmPlaybackEventJournal.rebaseRestoredRadioEvents(
+      events = decoded,
+      persistedQueueGeneration = 1L,
+      restoredQueueGeneration = 2L,
+      restoredActiveMediaId = null,
+      nowMs = NOW + 2L,
+    )
+    assertEquals(decoded, rebased)
+
+    // Lease the first FAVORITE for track 42, then tap Like again while the first is in flight.
+    val firstClaimRaw = journal.claim(binding, maxEvents = 8, leaseMs = 60_000L, nowMs = NOW + 2L)
+    val firstClaim = JSONObject(firstClaimRaw)
+    val firstEvent = firstClaim.getJSONArray("events").getJSONObject(0)
+    assertEquals(
+      setOf(
+        "schemaVersion",
+        "eventId",
+        "type",
+        "createdAtMs",
+        "attempt",
+        "track",
+        "mediaId",
+        "requestedLiked",
+      ),
+      keys(firstEvent),
+    )
+    assertEquals("FAVORITE", firstEvent.getString("type"))
+    assertEquals("playlist:1:0:42", firstEvent.getString("mediaId"))
+    assertEquals(false, firstEvent.getBoolean("requestedLiked"))
+
+    val relike = journal.previewEnqueueFavorite(metadata("42"), "playlist:1:0:42", true, NOW + 3L)
+    assertTrue(journal.commit(relike))
+    // Pending projection reflects the newest user intent (true), while both leased & queued stay.
+    assertEquals(2, journal.snapshot().size)
+    assertEquals(mapOf("42" to true), journal.pendingFavorites(NOW + 3L))
+
+    // Concurrent claim MUST NOT lease the second FAVORITE for track 42 while the first is leased.
+    val blockedClaim = JSONObject(
+      journal.claim(binding, maxEvents = 8, leaseMs = 60_000L, nowMs = NOW + 4L),
+    )
+    assertEquals(0, blockedClaim.getJSONArray("events").length())
+
+    // Acking the first event unblocks claiming the second event in strict order.
+    val ack = journal.previewAck(firstClaim.getString("leaseId"), firstEvent.getString("eventId"), NOW + 5L)
+    assertTrue(journal.commit(ack))
+    val secondClaim = JSONObject(
+      journal.claim(binding, maxEvents = 8, leaseMs = 60_000L, nowMs = NOW + 6L),
+    )
+    assertEquals(1, secondClaim.getJSONArray("events").length())
+    assertEquals(true, secondClaim.getJSONArray("events").getJSONObject(0).getBoolean("requestedLiked"))
+  }
+
   private fun validExtras(): JSONObject = JSONObject()
     .put("radio", false)
     .put(

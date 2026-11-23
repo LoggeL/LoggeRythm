@@ -1,18 +1,22 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type TextStyle } from 'react-native';
 import { trackArtistLabel } from '../../api/trackArtists';
 import { strings } from '../../localization';
 import type { SearchTopResult } from '../../screens/searchModel';
 import { colors, layout, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
-import { AppText, Artwork, PressableScale } from '../ui';
+import { AppText, Artwork, PressableScale, type TvFocusProps } from '../ui';
 
 const TOP_RESULT_ARTWORK = layout.artwork.md + spacing.md;
 
-interface SearchTopResultCardProps {
+interface SearchTopResultCardProps extends TvFocusProps {
   result: SearchTopResult;
   onPress: () => void;
   onLongPress?: () => void;
+  paddingHorizontal?: number;
+  artworkSize?: number;
+  titleStyle?: TextStyle;
+  subtitleStyle?: TextStyle;
 }
 
 interface TopResultCopy {
@@ -62,14 +66,38 @@ function topResultCopy(result: SearchTopResult): TopResultCopy {
  * The hero of a result page: the best hit as one large card. The whole card
  * is a single button; the trailing disc only signals what the tap does.
  */
-export function SearchTopResultCard({ result, onPress, onLongPress }: SearchTopResultCardProps) {
+export function SearchTopResultCard({
+  result,
+  onPress,
+  onLongPress,
+  paddingHorizontal,
+  artworkSize = TOP_RESULT_ARTWORK,
+  titleStyle,
+  subtitleStyle,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused,
+  focusedStyle,
+}: SearchTopResultCardProps) {
   const copy = topResultCopy(result);
+  const sectionStyle =
+    paddingHorizontal === undefined
+      ? styles.section
+      : [styles.section, { paddingHorizontal }];
   return (
-    <View testID="search-section-top-result" style={styles.section}>
+    <View testID="search-section-top-result" style={sectionStyle}>
       <PressableScale
         testID="search-top-result"
         accessibilityRole="button"
         accessibilityLabel={`${strings.search.topResult}: ${copy.accessibilityLabel}`}
+        focusable={focusable}
+        hasTVPreferredFocus={hasTVPreferredFocus}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        focused={focused}
+        focusedStyle={focusedStyle}
         onPress={onPress}
         onLongPress={onLongPress}
         scaleTo={0.98}
@@ -77,14 +105,16 @@ export function SearchTopResultCard({ result, onPress, onLongPress }: SearchTopR
       >
         <Artwork
           uri={copy.imageUri}
-          size={TOP_RESULT_ARTWORK}
+          size={artworkSize}
           shape={copy.round ? 'round' : 'square'}
           icon={copy.round ? 'account-music' : 'music-note'}
         />
         <View style={styles.copy}>
           <AppText variant="overline" color="accent">{strings.search.topResult}</AppText>
-          <AppText variant="section" numberOfLines={2}>{copy.title}</AppText>
-          <AppText variant="callout" color="secondary" numberOfLines={1}>{copy.subtitle}</AppText>
+          <AppText variant="section" numberOfLines={2} style={titleStyle}>{copy.title}</AppText>
+          <AppText variant="callout" color="secondary" numberOfLines={1} style={subtitleStyle}>
+            {copy.subtitle}
+          </AppText>
         </View>
         <View style={[styles.disc, copy.plays ? styles.discPlay : styles.discOpen]}>
           <AppIcon

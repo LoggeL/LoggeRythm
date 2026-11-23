@@ -1,7 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 import MiniPlayer from '../components/MiniPlayer';
 import { ActionButton } from '../components/ui/ActionButton';
 import { AppText } from '../components/ui/AppText';
@@ -11,8 +14,14 @@ import { navigateToSearch } from '../navigationActions';
 import { playlistIdFromRouteValue, safeRouteLabel } from '../navigationLinks';
 import AlbumScreen from '../screens/AlbumScreen';
 import ArtistScreen from '../screens/ArtistScreen';
+import type {
+  AlbumRouteParams,
+  ArtistRouteParams,
+  GenreRouteParams,
+} from '../screens/catalogModel';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import GenreScreen from '../screens/GenreScreen';
+import type { HomeMixRouteParams } from '../screens/homeModel';
 import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import type { LibraryPlaylistRouteParams } from '../screens/libraryModel';
@@ -36,27 +45,87 @@ import { useApprovedAccountScope } from './useApprovedAccountScope';
 /**
  * Route wrappers: the only place that knows both React Navigation and the
  * screens. Each wrapper subscribes to the locale and translates navigation
- * props into the screen's plain `onOpenX` callbacks, so screens stay free of
- * navigation types and are testable as plain functions.
+ * props into memoized plain `onOpenX` callbacks, so screens stay free of
+ * navigation types, avoid prop-identity churn, and are testable as plain functions.
  */
 type SectionProps<Name extends keyof SectionStackParams> = NativeStackScreenProps<
   SectionStackParams,
   Name
 >;
 
+function useSectionCallbacks<Name extends keyof SectionStackParams>(
+  navigation: NativeStackNavigationProp<SectionStackParams, Name>,
+) {
+  const onOpenAlbum = useCallback(
+    (params: AlbumRouteParams) => navigation.push('Album', params),
+    [navigation],
+  );
+  const onOpenArtist = useCallback(
+    (params: ArtistRouteParams) => navigation.push('Artist', params),
+    [navigation],
+  );
+  const onOpenGenre = useCallback(
+    (params: GenreRouteParams) => navigation.push('Genre', params),
+    [navigation],
+  );
+  const onOpenPlaylist = useCallback(
+    (params: LibraryPlaylistRouteParams) => navigation.push('Playlist', params),
+    [navigation],
+  );
+  const onOpenSummaryPlaylist = useCallback(
+    (params: { playlistId: number; name: string }) =>
+      navigation.push('Playlist', { kind: 'playlist', ...params }),
+    [navigation],
+  );
+  const onOpenMix = useCallback(
+    (params: HomeMixRouteParams) => navigation.push('Mix', params),
+    [navigation],
+  );
+  const onOpenRadar = useCallback(
+    () => navigation.push('Radar'),
+    [navigation],
+  );
+  const onOpenSearch = useCallback(
+    () => navigateToSearch(rootNavigation),
+    [],
+  );
+  const onDeleted = useCallback(
+    () => navigation.goBack(),
+    [navigation],
+  );
+  return {
+    onOpenAlbum,
+    onOpenArtist,
+    onOpenGenre,
+    onOpenPlaylist,
+    onOpenSummaryPlaylist,
+    onOpenMix,
+    onOpenRadar,
+    onOpenSearch,
+    onDeleted,
+  };
+}
+
 export function HomeRoute({ navigation }: SectionProps<'Home'>) {
   useLocaleRevision();
+  const {
+    onOpenAlbum,
+    onOpenArtist,
+    onOpenGenre,
+    onOpenSummaryPlaylist,
+    onOpenMix,
+    onOpenRadar,
+    onOpenSearch,
+  } = useSectionCallbacks(navigation);
   return (
     <HomeScreen
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
-      onOpenGenre={(params) => navigation.push('Genre', params)}
-      onOpenPlaylist={(params) =>
-        navigation.push('Playlist', { kind: 'playlist', ...params })
-      }
-      onOpenMix={(params) => navigation.push('Mix', params)}
-      onOpenRadar={() => navigation.push('Radar')}
-      onOpenSearch={() => navigateToSearch(rootNavigation)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
+      onOpenGenre={onOpenGenre}
+      onOpenPlaylist={onOpenSummaryPlaylist}
+      onOpenMix={onOpenMix}
+      onOpenRadar={onOpenRadar}
+      onOpenSearch={onOpenSearch}
     />
   );
 }
@@ -65,6 +134,8 @@ export function SearchRoute({ navigation }: SectionProps<'Search'>) {
   useLocaleRevision();
   const accountScope = useApprovedAccountScope();
   const focused = useIsFocused();
+  const { onOpenAlbum, onOpenArtist, onOpenGenre } = useSectionCallbacks(navigation);
+
   useEffect(() => {
     if (!focused) return undefined;
     return spotifySharedTextCoordinator.attachSearchOwner(accountScope);
@@ -72,23 +143,27 @@ export function SearchRoute({ navigation }: SectionProps<'Search'>) {
 
   return (
     <SearchScreen
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
-      onOpenGenre={(params) => navigation.push('Genre', params)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
+      onOpenGenre={onOpenGenre}
     />
   );
 }
 
 export function DiscoverRoute({ navigation }: SectionProps<'Discover'>) {
   useLocaleRevision();
+  const {
+    onOpenAlbum,
+    onOpenArtist,
+    onOpenGenre,
+    onOpenSummaryPlaylist,
+  } = useSectionCallbacks(navigation);
   return (
     <DiscoverScreen
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
-      onOpenGenre={(params) => navigation.push('Genre', params)}
-      onOpenPlaylist={(params) =>
-        navigation.push('Playlist', { kind: 'playlist', ...params })
-      }
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
+      onOpenGenre={onOpenGenre}
+      onOpenPlaylist={onOpenSummaryPlaylist}
     />
   );
 }
@@ -100,65 +175,71 @@ export function RadioRoute() {
 
 export function LibraryRoute({ navigation }: SectionProps<'Library'>) {
   useLocaleRevision();
+  const { onOpenPlaylist, onOpenAlbum, onOpenArtist } = useSectionCallbacks(navigation);
   return (
     <LibraryScreen
-      onOpenPlaylist={(params) => navigation.push('Playlist', params)}
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
+      onOpenPlaylist={onOpenPlaylist}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
 
 export function AlbumRoute({ route, navigation }: SectionProps<'Album'>) {
   useLocaleRevision();
+  const { onOpenAlbum, onOpenArtist } = useSectionCallbacks(navigation);
   return (
     <AlbumScreen
       {...route.params}
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
 
 export function MixRoute({ route, navigation }: SectionProps<'Mix'>) {
   useLocaleRevision();
+  const { onOpenAlbum, onOpenArtist } = useSectionCallbacks(navigation);
   return (
     <MixScreen
       {...route.params}
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
 
 export function RadarRoute({ navigation }: SectionProps<'Radar'>) {
   useLocaleRevision();
+  const { onOpenAlbum, onOpenArtist } = useSectionCallbacks(navigation);
   return (
     <RadarScreen
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
 
 export function GenreRoute({ route, navigation }: SectionProps<'Genre'>) {
   useLocaleRevision();
+  const { onOpenAlbum, onOpenArtist } = useSectionCallbacks(navigation);
   return (
     <GenreScreen
       {...route.params}
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
 
 export function ArtistRoute({ route, navigation }: SectionProps<'Artist'>) {
   useLocaleRevision();
+  const { onOpenAlbum, onOpenArtist } = useSectionCallbacks(navigation);
   return (
     <ArtistScreen
       {...route.params}
-      onOpenAlbum={(params) => navigation.push('Album', params)}
-      onOpenArtist={(params) => navigation.push('Artist', params)}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
@@ -188,8 +269,18 @@ function normalizedPlaylistParams(value: unknown): LibraryPlaylistRouteParams | 
 }
 
 export function PlaylistRoute({ route, navigation }: SectionProps<'Playlist'>) {
-  useLocaleRevision();
-  const params = normalizedPlaylistParams(route.params);
+  const localeRevision = useLocaleRevision();
+  const { onOpenAlbum, onOpenArtist, onDeleted } = useSectionCallbacks(navigation);
+  const params = useMemo(
+    () => normalizedPlaylistParams(route.params),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fallback labels follow locale
+    [route.params, localeRevision],
+  );
+  const handleInvalidBack = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
+  }, [navigation]);
+
   if (params === null) {
     return (
       <View testID="invalid-content-link" style={styles.invalidLink}>
@@ -202,10 +293,7 @@ export function PlaylistRoute({ route, navigation }: SectionProps<'Playlist'>) {
         <ActionButton
           testID="invalid-content-link-back"
           label={strings.navigation.invalidLinkBack}
-          onPress={() => {
-            if (navigation.canGoBack()) navigation.goBack();
-            else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
-          }}
+          onPress={handleInvalidBack}
         />
       </View>
     );
@@ -213,9 +301,9 @@ export function PlaylistRoute({ route, navigation }: SectionProps<'Playlist'>) {
   return (
     <PlaylistScreen
       {...params}
-      onDeleted={() => navigation.goBack()}
-      onOpenAlbum={(album) => navigation.push('Album', album)}
-      onOpenArtist={(artist) => navigation.push('Artist', artist)}
+      onDeleted={onDeleted}
+      onOpenAlbum={onOpenAlbum}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
@@ -248,10 +336,10 @@ export function QueueRoute(props: NativeStackScreenProps<RootStackParams, 'Queue
 export function PartyRoute({ route, navigation }: NativeStackScreenProps<RootStackParams, 'Party'>) {
   useLocaleRevision();
   const code = normalizePartyCode(route.params?.code);
-  const close = () => {
+  const close = useCallback(() => {
     if (navigation.canGoBack()) navigation.goBack();
     else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
-  };
+  }, [navigation]);
   if (code === null) return <InvalidPartyLink onClose={close} />;
   return (
     <View style={styles.fill}>

@@ -87,10 +87,16 @@ interface SearchResultsFeedbackProps {
   owners: readonly SearchIssueOwner[];
   /** Renders the first-load placeholder; receives the contract testID and label. */
   renderLoading: (props: { testID: string; accessibilityLabel: string }) => React.ReactNode;
+  tvMode?: boolean;
 }
 
 /** Per-type failures with their own retry, then at most one progress/stale line. */
-export function SearchResultsFeedback({ state, owners, renderLoading }: SearchResultsFeedbackProps) {
+export function SearchResultsFeedback({
+  state,
+  owners,
+  renderLoading,
+  tvMode = false,
+}: SearchResultsFeedbackProps) {
   const loading = state.loadingKeys.length > 0;
   const quiet = state.issues.length === 0 && !loading;
   return (
@@ -128,6 +134,7 @@ export function SearchResultsFeedback({ state, owners, renderLoading }: SearchRe
           testID="search-results-stale"
           message={strings.search.remoteStale(strings.search.tabs.all)}
           compact
+          tvMode={tvMode}
         />
       ) : null}
     </>
@@ -140,6 +147,7 @@ interface SearchMetadataFeedbackProps {
   onRetry: () => void;
   /** The result list already shows a stale marker. */
   primaryStale: boolean;
+  tvMode?: boolean;
 }
 
 /** One quiet line for the optional track details (play counts, cache membership). */
@@ -148,6 +156,7 @@ export function SearchMetadataFeedback({
   retryBusy,
   onRetry,
   primaryStale,
+  tvMode = false,
 }: SearchMetadataFeedbackProps) {
   if (state === null) return null;
   const title = strings.search.metadataTitle;
@@ -188,6 +197,7 @@ export function SearchMetadataFeedback({
         testID="search-metadata-stale"
         message={strings.search.remoteStale(title)}
         compact
+        tvMode={tvMode}
       />
     );
   }

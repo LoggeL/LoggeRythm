@@ -18,8 +18,11 @@ import {
   type AuthenticatedRequestAuthority,
 } from '../api/client';
 import { getApiBase } from '../config';
+import { refreshLibraryAutoBrowse } from '../data/autoBrowseRefresh';
 import { invalidateListeningStats, musicCacheScope } from '../data/queryClient';
+import { queryKeys } from '../data/queryKeys';
 import { musicRepository } from '../data/repositories';
+import { withTrackLiked } from '../data/trackLikes';
 import { strings } from '../localization';
 import { offlineUriForTrack } from '../offline/registry';
 import { clearPlayerError, reportPlayerError, UserFacingPlayerError } from './errors';
@@ -132,6 +135,45 @@ function playbackEventDrainer(): PlaybackEventDrainPort {
     recordPlay: (track, timeoutMs, eventId, authority) =>
       musicRepository.recordPlay(track, timeoutMs, eventId, authority),
     prepareRadioItems: prepareRadioPlaybackCompletionItems,
+    likeTrack: (track, timeoutMs, authority) =>
+      musicRepository.likeTrack(track, timeoutMs, authority),
+    unlikeTrack: (trackId, timeoutMs, authority) =>
+      musicRepository.unlikeTrack(trackId, timeoutMs, authority),
+    completeFavoritePlaybackEvent: async (leaseId, eventId) => {
+      await (await import('./favoriteNativePort'))
+        .getFavoriteNativePort()
+        .completeFavoritePlaybackEvent(leaseId, eventId);
+    },
+    failFavoritePlaybackEvent: async (leaseId, eventId) => {
+      await (await import('./favoriteNativePort'))
+        .getFavoriteNativePort()
+        .failFavoritePlaybackEvent(leaseId, eventId);
+    },
+    onFavoriteUpdated: async (binding, track, requestedLiked) => {
+      const [{ musicQueryClient }, { refreshBrowseTree }] = await Promise.all([
+        import('../data/queryClient'),
+        import('./browseTree'),
+      ]);
+      const scope = `${binding.origin}::${binding.accountScope}`;
+      const likesKey = queryKeys.library.likes(scope);
+      musicQueryClient.setQueryData<Track[]>(likesKey, (current) =>
+        current === undefined ? undefined : withTrackLiked(current, track, requestedLiked),
+      );
+      await Promise.all([
+        musicQueryClient.invalidateQueries({ queryKey: likesKey, exact: true }),
+        refreshLibraryAutoBrowse(refreshBrowseTree, () =>
+          reportPlayerNotice(
+            'bookkeeping',
+            'auto-library-refresh',
+            strings.player.autoLibraryFailed,
+            strings.player.autoLibraryRefreshFailedMessage,
+          ),
+        ),
+      ]);
+    },
+    onFavoriteFailed: (_track, _requestedLiked, error) => {
+      reportPlayerError(strings.player.likeFailed, error);
+    },
     onPlayRecorded: () => invalidateListeningStats(),
   });
   return defaultPlaybackEventDrainer;
@@ -860,7 +902,6 @@ export async function skipToQueueItem(
       queueStableIdOf(snapshot.items[index]) === stableId
     );
   });
-  // Native SetQueue resets the persisted context-shuffle sidecar — re-persist.
   persistContextShuffleState();
 }
 
@@ -890,7 +931,11 @@ export async function removeQueueItem(
         (activeItem !== null && queueStableIdOf(activeItem) === activeStableId))
     );
   });
-  // Native SetQueue resets the persisted context-shuffle sidecar — re-persist.
+  // Prune any removed stableId from the restore order before re-persisting so
+  // removing a track while shuffled keeps context-shuffle persistence valid.
+  if (contextShuffleRestoreOrder.length > 0) {
+    contextShuffleRestoreOrder = contextShuffleRestoreOrder.filter((id) => id !== stableId);
+  }
   persistContextShuffleState();
 }
 
@@ -962,7 +1007,6 @@ export async function moveQueueItem(
         (activeItem !== null && queueStableIdOf(activeItem) === activeStableId))
     );
   });
-  // Native SetQueue resets the persisted context-shuffle sidecar — re-persist.
   persistContextShuffleState();
 }
 
@@ -1498,6 +1542,8 @@ export async function handleBackgroundPlaybackEvent(event: BackgroundEvent): Pro
       BACKGROUND_RECOVERY_REQUEST_TIMEOUT_MS,
       BACKGROUND_RECOVERY_BUDGET_MS,
     );
+  } else if (event.type === Event.RemoteToggleFavorite) {
+    await drainDurablePlaybackEvents();
   }
 }
 
@@ -1506,6 +1552,11 @@ export function installPlaybackListeners(): void {
   if (listenersInstalled) return;
   Player.addEventListener(Event.MediaItemTransition, (event) => {
     void handleMediaItemTransition(event);
+  });
+  Player.addEventListener(Event.RemoteToggleFavorite, () => {
+    void drainDurablePlaybackEvents().catch((cause) => {
+      reportPlayerError(strings.player.likeFailed, cause);
+    });
   });
   Player.addEventListener(Event.PlaybackProgressUpdated, notePlaybackProgress);
   Player.addEventListener(Event.PlaybackError, (error) => {

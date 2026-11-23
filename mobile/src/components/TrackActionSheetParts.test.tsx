@@ -22,13 +22,18 @@ vi.mock('react-native', () => ({
 vi.mock('./AppIcon', () => ({ default: 'AppIcon' }));
 
 describe('track action sheet parts', () => {
-  it('renders an action as one labelled button that reports busy and disabled', () => {
+  it('renders an action as one labelled button that reports busy, disabled, and TV focus props', () => {
     const onPress = vi.fn();
+    const onFocus = vi.fn();
+    const onBlur = vi.fn();
     const idle = TrackActionRow({
       testID: 'action',
       label: 'Play next',
       icon: 'playlist-play',
       disabled: false,
+      hasTVPreferredFocus: true,
+      onFocus,
+      onBlur,
       onPress,
     });
     const button = byTestId(idle, 'action');
@@ -37,11 +42,17 @@ describe('track action sheet parts', () => {
       accessibilityRole: 'button',
       accessibilityLabel: 'Play next',
       accessibilityState: { disabled: false, busy: false },
+      focusable: true,
+      hasTVPreferredFocus: true,
     });
     expect(textContent(idle)).toEqual(['Play next']);
     expect(flatStyle(button.props.style, { pressed: true }).opacity).toBe(opacity.pressed);
     (button.props.onPress as () => void)();
+    (button.props.onFocus as (event: unknown) => void)({ nativeEvent: {} });
+    (button.props.onBlur as (event: unknown) => void)({ nativeEvent: {} });
     expect(onPress).toHaveBeenCalledOnce();
+    expect(onFocus).toHaveBeenCalledOnce();
+    expect(onBlur).toHaveBeenCalledOnce();
 
     const busy = byTestId(
       TrackActionRow({
@@ -56,6 +67,7 @@ describe('track action sheet parts', () => {
       'action',
     );
     expect(busy.props.disabled).toBe(true);
+    expect(busy.props.focusable).toBe(false);
     expect(busy.props.accessibilityState).toEqual({ disabled: true, busy: true });
     expect(
       byTestId(
@@ -106,7 +118,7 @@ describe('track action sheet parts', () => {
     expect(byTestId(nested, 'track-actions-close').props.disabled).toBe(true);
   });
 
-  it('adds to a playlist through one row button with the full spoken destination', () => {
+  it('adds to a playlist through one row button with the full spoken destination and D-Pad focusability', () => {
     const onPress = vi.fn();
     const rendered = TrackActionsPlaylistRow({
       testID: 'playlist',
@@ -120,6 +132,7 @@ describe('track action sheet parts', () => {
     const rowButton = byTestId(rendered, 'playlist');
 
     expect(rowButton.props.accessibilityLabel).toBe('Add Get Lucky to Roadtrip');
+    expect(rowButton.props.focusable).toBe(true);
     expect(textContent(rendered)).toEqual(['Roadtrip', '12 tracks']);
     (rowButton.props.onPress as () => void)();
     expect(onPress).toHaveBeenCalledOnce();

@@ -6,6 +6,7 @@ import { byTestId as byTestID, textContent as textLines } from '../test/render';
 import { LibraryDownloadsList, LibraryLikedTrackRow } from './LibraryScreen';
 import { libraryStrings } from './libraryStrings';
 
+vi.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
   Image: 'Image',
@@ -42,7 +43,7 @@ vi.mock('../data', () => ({
   refreshLibraryAutoBrowse: vi.fn(),
 }));
 vi.mock('../player/browseTree', () => ({ refreshBrowseTree: vi.fn() }));
-vi.mock('../player/controller', () => ({ playTracks: vi.fn() }));
+vi.mock('../player/controller', () => ({ playTracks: vi.fn(), playTrackRow: vi.fn() }));
 vi.mock('../player/notices', () => ({ reportPlayerNotice: vi.fn() }));
 vi.mock('../offline/hooks', () => ({ useOfflineDownloads: vi.fn() }));
 

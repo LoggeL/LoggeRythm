@@ -14,6 +14,7 @@ import {
   ErrorState,
   RetryButton,
   SectionHeader,
+  type CardRailSkeletonVariant,
 } from '../ui';
 
 /** The remote state of one Home section, straight from its query. */
@@ -42,6 +43,16 @@ export interface HomeSectionProps extends HomeSectionState {
   empty: boolean;
   /** Placeholder shaped like the content. Defaults to a card rail. */
   skeleton?: (props: HomeSectionSkeletonProps) => React.ReactElement;
+  /** CardRailSkeleton shape variant matching the actual shelf cards (prevents jumps). */
+  skeletonVariant?: CardRailSkeletonVariant;
+  /** Optional card size override for CardRailSkeleton (e.g. TV card sizing). */
+  skeletonCardSize?: number;
+  /** Optional genre/landscape card height override for CardRailSkeleton. */
+  skeletonCardHeight?: number;
+  /** Optional horizontal padding override for 16:9 TV layout. */
+  paddingHorizontal?: number;
+  /** On Android TV, decorative status markers stay non-accessible so Fabric never makes them D-Pad focusable. */
+  tvMode?: boolean;
   /** Empty-state copy; defaults to the generic "nothing for <title>" line. */
   emptyTitle?: string;
   emptyMessage?: string;
@@ -51,8 +62,22 @@ export interface HomeSectionProps extends HomeSectionState {
   children: React.ReactNode;
 }
 
-function railSkeleton(props: HomeSectionSkeletonProps) {
-  return <CardRailSkeleton {...props} />;
+function railSkeleton(
+  props: HomeSectionSkeletonProps,
+  variant?: CardRailSkeletonVariant,
+  size?: number,
+  cardHeight?: number,
+  paddingHorizontal?: number,
+) {
+  return (
+    <CardRailSkeleton
+      {...props}
+      {...(variant !== undefined ? { variant } : {})}
+      {...(size !== undefined ? { size } : {})}
+      {...(cardHeight !== undefined ? { cardHeight } : {})}
+      {...(paddingHorizontal !== undefined ? { style: { paddingHorizontal } } : {})}
+    />
+  );
 }
 
 /**
@@ -74,7 +99,12 @@ export function HomeSection({
   error,
   empty,
   onRetry,
-  skeleton = railSkeleton,
+  skeleton,
+  skeletonVariant,
+  skeletonCardSize,
+  skeletonCardHeight,
+  paddingHorizontal,
+  tvMode = false,
   emptyTitle,
   emptyMessage,
   emptyIcon,
@@ -93,12 +123,26 @@ export function HomeSection({
   const retryBusy = fetchStatus === 'fetching';
   const retryLabel = strings.home.retrySection(title);
   const retryTestID = `home-section-${id}-retry`;
+  const gutterStyle =
+    paddingHorizontal === undefined ? styles.gutter : { marginHorizontal: paddingHorizontal };
+  const emptyStyle =
+    paddingHorizontal === undefined
+      ? styles.empty
+      : [styles.empty, { marginHorizontal: paddingHorizontal }];
+  const cachedNoticeStyle =
+    paddingHorizontal === undefined
+      ? styles.cachedNotice
+      : [styles.cachedNotice, { paddingHorizontal }];
+  const headerStyle =
+    paddingHorizontal === undefined ? undefined : { paddingHorizontal };
 
   const marker =
     visual.notice === 'refreshing' ? (
       <View
         testID={`home-section-${id}-refreshing`}
-        accessible
+        accessible={!tvMode}
+        focusable={false}
+        importantForAccessibility={tvMode ? 'no-hide-descendants' : undefined}
         accessibilityRole="progressbar"
         accessibilityLabel={`${title}. ${strings.home.sectionRefreshing}`}
         accessibilityLiveRegion="polite"
@@ -109,7 +153,9 @@ export function HomeSection({
     ) : visual.notice === 'stale' ? (
       <View
         testID={`home-section-${id}-stale`}
-        accessible
+        accessible={!tvMode}
+        focusable={false}
+        importantForAccessibility={tvMode ? 'no-hide-descendants' : undefined}
         accessibilityLabel={`${title}. ${strings.home.sectionStale}`}
         accessibilityLiveRegion="polite"
         style={styles.marker}
@@ -129,14 +175,24 @@ export function HomeSection({
           }
         : null;
 
+  const loadingProps: HomeSectionSkeletonProps = {
+    testID: `home-section-${id}-loading`,
+    accessibilityLabel: strings.home.sectionLoading(title),
+  };
+
   return (
     <View testID={`home-section-${id}`} style={styles.section}>
-      <SectionHeader title={title} subtitle={subtitle} trailing={marker} />
+      <SectionHeader title={title} subtitle={subtitle} trailing={marker} style={headerStyle} />
       {visual.body === 'loading'
-        ? skeleton({
-            testID: `home-section-${id}-loading`,
-            accessibilityLabel: strings.home.sectionLoading(title),
-          })
+        ? skeleton !== undefined
+          ? skeleton(loadingProps)
+          : railSkeleton(
+              loadingProps,
+              skeletonVariant,
+              skeletonCardSize,
+              skeletonCardHeight,
+              paddingHorizontal,
+            )
         : null}
       {visual.body === 'offline' ? (
         <ErrorState
@@ -147,7 +203,7 @@ export function HomeSection({
           retryBusy={retryBusy}
           retryAccessibilityLabel={retryLabel}
           retryTestID={retryTestID}
-          style={styles.gutter}
+          style={gutterStyle}
         />
       ) : null}
       {visual.body === 'hard-error' ? (
@@ -158,7 +214,7 @@ export function HomeSection({
           retryBusy={retryBusy}
           retryAccessibilityLabel={retryLabel}
           retryTestID={retryTestID}
-          style={styles.gutter}
+          style={gutterStyle}
         />
       ) : null}
       {visual.body === 'empty' ? (
@@ -168,7 +224,7 @@ export function HomeSection({
           message={emptyMessage}
           icon={emptyIcon}
           action={emptyAction}
-          style={styles.empty}
+          style={emptyStyle}
         />
       ) : null}
       {visual.body === 'content' ? children : null}
@@ -177,7 +233,7 @@ export function HomeSection({
           testID={cachedNotice.testID}
           accessibilityRole="alert"
           accessibilityLiveRegion="polite"
-          style={styles.cachedNotice}
+          style={cachedNoticeStyle}
         >
           <View style={styles.cachedCopy}>
             <AppIcon name={cachedNotice.icon} color={colors.warning} size={20} />

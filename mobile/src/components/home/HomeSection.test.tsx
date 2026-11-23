@@ -90,6 +90,22 @@ describe('HomeSection state contract', () => {
     expect(byTestId(loading, 'home-section-recently-heard-loading').type).toBe('GridSkeleton');
   });
 
+  it('forwards matched CardRailSkeleton variants and TV sizing when no custom skeleton is supplied', () => {
+    const trackLoading = section({
+      hasData: false,
+      pending: true,
+      fetching: true,
+      skeletonVariant: 'track',
+      skeletonCardSize: 180,
+      paddingHorizontal: 32,
+    });
+    const skeletonNode = byTestId(trackLoading, 'home-section-recently-heard-loading');
+    expect(skeletonNode.type).toBe('CardRailSkeleton');
+    expect(skeletonNode.props.variant).toBe('track');
+    expect(skeletonNode.props.size).toBe(180);
+    expect(skeletonNode.props.style).toEqual({ paddingHorizontal: 32 });
+  });
+
   it('offers the next step of an empty section', () => {
     const empty = section({
       empty: true,
@@ -167,6 +183,7 @@ describe('HomeSection state contract', () => {
     expect(queryByTestId(refreshing, 'recent-content')).not.toBeNull();
     const refreshingState = byTestId(refreshing, 'home-section-recently-heard-refreshing');
     expect(refreshingState.props.accessibilityLiveRegion).toBe('polite');
+    expect(refreshingState.props.focusable).toBe(false);
     expect(refreshingState.props.accessibilityRole).toBe('progressbar');
     expect(refreshingState.props.accessibilityLabel).toBe(
       `${title}. ${strings.home.sectionRefreshing}`,
@@ -177,7 +194,16 @@ describe('HomeSection state contract', () => {
     expect(queryByTestId(stale, 'recent-content')).not.toBeNull();
     const staleState = byTestId(stale, 'home-section-recently-heard-stale');
     expect(staleState.props.accessibilityLiveRegion).toBe('polite');
+    expect(staleState.props.focusable).toBe(false);
+    expect(staleState.props.accessible).toBe(true);
     expect(staleState.props.accessibilityLabel).toBe(`${title}. ${strings.home.sectionStale}`);
+
+    // On Android TV, status markers disable `accessible` so RN Fabric does not make them D-Pad stops.
+    const tvStale = section({ stale: true, tvMode: true });
+    const tvStaleState = byTestId(tvStale, 'home-section-recently-heard-stale');
+    expect(tvStaleState.props.accessible).toBe(false);
+    expect(tvStaleState.props.focusable).toBe(false);
+    expect(tvStaleState.props.importantForAccessibility).toBe('no-hide-descendants');
   });
 
   it('shows no status marker and no notice for fresh content', () => {

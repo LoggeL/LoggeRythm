@@ -1,20 +1,24 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   pendingInvalidationAuthority,
   retryInvalidatedSessionCleanup,
   runWithSessionInvalidationAuthority,
   type SessionInvalidationAuthority,
 } from '../api/client';
+import { clearAllRecentSearchesStorage } from '../components/search/useRecentSearches';
 import { clearPlayerSession } from '../player/setup';
 import { clearOfflineIdentity } from './offlineIdentity';
 
 export type AuthoritativeSessionCleanupBoundary =
   | 'native-player-session'
   | 'offline-identity'
+  | 'recent-searches'
   | 'invalidated-session';
 
 export interface AuthoritativeSessionCleanupOperations {
   clearPlayerSession(): Promise<void>;
   clearOfflineIdentity(): Promise<void>;
+  clearRecentSearches(): Promise<void>;
   retryInvalidatedSessionCleanup(): Promise<void>;
   runWithSessionInvalidationAuthority(
     authority: SessionInvalidationAuthority,
@@ -82,6 +86,7 @@ export class AuthoritativeSessionCleanupCoordinator {
 
     await capture('native-player-session', this.operations.clearPlayerSession);
     await capture('offline-identity', this.operations.clearOfflineIdentity);
+    await capture('recent-searches', this.operations.clearRecentSearches);
     await capture(
       'invalidated-session',
       this.operations.retryInvalidatedSessionCleanup,
@@ -96,6 +101,7 @@ export class AuthoritativeSessionCleanupCoordinator {
 const authoritativeSessionCleanup = new AuthoritativeSessionCleanupCoordinator({
   clearPlayerSession,
   clearOfflineIdentity,
+  clearRecentSearches: () => clearAllRecentSearchesStorage(AsyncStorage, null),
   retryInvalidatedSessionCleanup,
   runWithSessionInvalidationAuthority,
 });

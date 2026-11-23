@@ -1,8 +1,12 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import { CatalogHeroArtwork, CatalogTrackRow } from '../components/catalog/CatalogCards';
-import { CatalogCollectionPage } from '../components/catalog/CatalogCollectionPage';
+import {
+  CatalogCollectionPage,
+  type CatalogCollectionPageProps,
+} from '../components/catalog/CatalogCollectionPage';
 import { CatalogDetailHero } from '../components/catalog/CatalogDetailHero';
 import {
   CatalogContentStatus,
@@ -15,8 +19,10 @@ import { AppText, EmptyState, ErrorState, RetryButton } from '../components/ui';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { colors } from '../theme';
+import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 import {
   assertTrackCatalogRouteCallbacks,
   trackContextKey,
@@ -27,6 +33,23 @@ import { findHomeMix, type HomeMixRouteParams } from './homeModel';
 import { useCatalogPlayback } from './useCatalogPlayback';
 
 export type MixScreenProps = HomeMixRouteParams & TrackCatalogRouteCallbacks;
+
+/**
+ * Isolates TV layout/focus hooks in a child boundary so `MixScreen` itself
+ * preserves its exact `useAuth -> useQuery -> useState` hook order pinned by
+ * `MixScreen.test.tsx`.
+ */
+export function MixCollectionTvShell(props: Omit<CatalogCollectionPageProps, 'tv' | 'bottomInset'>) {
+  const isFocused = useIsFocused();
+  const bottomInset = useBottomInset();
+  const tv = useTvEnvironment();
+  useTvFocusReturn({ scope: 'mix', active: isFocused, enabled: tv.isTv });
+  return (
+    <TvFocusScope scope="mix">
+      <CatalogCollectionPage {...props} tv={tv} bottomInset={bottomInset} />
+    </TvFocusScope>
+  );
+}
 
 export default function MixScreen(props: MixScreenProps) {
   assertTrackCatalogRouteCallbacks(props, 'MixScreen');
@@ -42,7 +65,7 @@ export default function MixScreen(props: MixScreenProps) {
     enabled: validRoute,
   });
   // Hook order (useAuth → useQuery → one useState inside this hook) is pinned by MixScreen.test.
-  const { runtimeError, setRuntimeError, play } = useCatalogPlayback('home-playback');
+  const { runtimeError, setRuntimeError, play, playRow } = useCatalogPlayback('home-playback');
   const refetch = () => void mixes.refetch();
 
   if (!validRoute) {
@@ -80,11 +103,10 @@ export default function MixScreen(props: MixScreenProps) {
     );
   }
 
-  const playFrom = (index: number) =>
-    play(mix.tracks, index, { type: 'home', id: `mix:${mix.key}`, label: mix.title });
+  const context = { type: 'home' as const, id: `mix:${mix.key}`, label: mix.title };
 
   return (
-    <CatalogCollectionPage
+    <MixCollectionTvShell
       id="mix"
       tracks={mix.tracks}
       refreshing={refreshing}
@@ -100,7 +122,7 @@ export default function MixScreen(props: MixScreenProps) {
             testID: 'mix-play-all',
             accessibilityLabel: strings.common.play,
             disabled: mix.tracks.length === 0,
-            onPress: () => playFrom(0),
+            onPress: () => play(mix.tracks, 0, context),
           }}
         >
           {mix.subtitle.trim().length > 0 ? (
@@ -149,7 +171,7 @@ export default function MixScreen(props: MixScreenProps) {
             queueContext: { type: 'home', id: `mix:${mix.key}` },
             originalContextOrder: index,
           }}
-          onPress={() => playFrom(index)}
+          onPress={() => playRow(mix.tracks, index, context)}
           onLongPress={() => showTrackActions(track, setRuntimeError)}
           onOpenAlbum={props.onOpenAlbum}
           onOpenArtist={props.onOpenArtist}

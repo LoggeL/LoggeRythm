@@ -165,6 +165,7 @@ describe('Search entity cards and rails', () => {
       testID: 'search-rail-albums',
       horizontal: true,
       keyboardShouldPersistTaps: 'handled',
+      removeClippedSubviews: false,
       data: ['a', 'b'],
     });
     (rendered.props.renderItem as (info: { item: string; index: number }) => unknown)({

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Track } from '../api/types';
 import {
   PartyHeader,
@@ -12,6 +14,7 @@ import { spotifyImportInputStyle } from '../components/search/SpotifyImportForm'
 import { ActionButton, AppText, EmptyState, ErrorState, SectionHeader } from '../components/ui';
 import { getApiBase } from '../config';
 import { musicRepository } from '../data/repositories';
+import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { partyErrorDetail } from '../party/partyErrors';
@@ -19,6 +22,7 @@ import { movedPartyIds, partyDisplayName, partyInviteUrl } from '../party/partyM
 import { partySession, usePartySession } from '../party/partyRuntime';
 import { PlaybackState, usePlaybackState } from '../player/player';
 import { colors, layout, spacing } from '../theme';
+import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -77,10 +81,19 @@ interface PartyScreenProps {
   onClose: () => void;
 }
 
+function PartyBottomSafeSpacer() {
+  const insets = useSafeAreaInsets();
+  if (insets.bottom <= 0) return null;
+  return <View pointerEvents="none" style={{ height: insets.bottom, backgroundColor: colors.background }} />;
+}
+
 export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   const session = usePartySession();
   const playbackState = usePlaybackState();
+  const isFocused = useIsFocused();
   const bottomInset = useBottomInset({ hasTabBar: false });
+  const tv = useTvEnvironment();
+  useTvFocusReturn({ scope: 'party', active: isFocused, enabled: tv.isTv });
   const [search, setQuery] = usePartySearch();
   const [pending, setPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -88,6 +101,12 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   const [leaving, setLeaving] = useState(false);
   const [reloading, setReloading] = useState(false);
   const busy = useRef(false);
+
+  // Android Back clears an active party song search before leaving the party screen.
+  useBackHandler(isFocused && search.query.trim() !== '', () => {
+    setQuery('');
+    return true;
+  });
 
   useEffect(() => {
     partySession().enter(code);
@@ -185,13 +204,8 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   const ids = party.tracks.map((entry) => entry.id);
   const buffering = playbackState === PlaybackState.Buffering && !session.detached;
 
-  return (
-    <ScrollView
-      testID="party-screen"
-      style={styles.screen}
-      contentContainerStyle={{ paddingBottom: bottomInset }}
-      keyboardShouldPersistTaps="handled"
-    >
+  const headerAndNotices = (
+    <>
       <PartyHeader
         party={party}
         phase={session.phase}
@@ -232,121 +246,181 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
       {!party.is_host && !session.detached ? (
         <PartyNotice testID="party-follow-hint" tone="info" message={strings.party.followHint(party.host_name)} />
       ) : null}
+    </>
+  );
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <SectionHeader title={strings.party.searchLabel} padded={false} />
+  const searchSection = (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <SectionHeader title={strings.party.searchLabel} padded={false} />
+      </View>
+      <TextInput
+        testID="party-search-input"
+        accessibilityLabel={strings.party.searchLabel}
+        value={search.query}
+        onChangeText={setQuery}
+        placeholder={strings.party.searchPlaceholder}
+        placeholderTextColor={colors.textMuted}
+        selectionColor={colors.accent}
+        autoCorrect={false}
+        returnKeyType="search"
+        maxLength={200}
+        style={[spotifyImportInputStyle, styles.searchInput]}
+      />
+      {search.loading ? (
+        <View testID="party-search-loading" style={styles.inlineStatus}>
+          <ActivityIndicator color={colors.accent} />
+          <AppText variant="callout" color="secondary">{strings.party.searching}</AppText>
         </View>
-        <TextInput
-          testID="party-search-input"
-          accessibilityLabel={strings.party.searchLabel}
-          value={search.query}
-          onChangeText={setQuery}
-          placeholder={strings.party.searchPlaceholder}
-          placeholderTextColor={colors.textMuted}
-          selectionColor={colors.accent}
-          autoCorrect={false}
-          returnKeyType="search"
-          maxLength={200}
-          style={[spotifyImportInputStyle, styles.searchInput]}
+      ) : null}
+      {search.error !== null ? (
+        <PartyNotice
+          testID="party-search-error"
+          tone="danger"
+          message={strings.party.searchFailed(search.error)}
+          actionLabel={strings.party.reload}
+          onAction={() => setQuery(search.query)}
         />
-        {search.loading ? (
-          <View testID="party-search-loading" style={styles.inlineStatus}>
-            <ActivityIndicator color={colors.accent} />
-            <AppText variant="callout" color="secondary">{strings.party.searching}</AppText>
-          </View>
-        ) : null}
-        {search.error !== null ? (
-          <PartyNotice
-            testID="party-search-error"
-            tone="danger"
-            message={strings.party.searchFailed(search.error)}
-            actionLabel={strings.party.reload}
-            onAction={() => setQuery(search.query)}
-          />
-        ) : null}
-        {!search.loading && search.error === null && search.query.trim() !== '' && search.results.length === 0 ? (
-          <AppText testID="party-search-empty" variant="callout" color="secondary" style={styles.inlineStatus}>
-            {strings.party.searchEmpty(search.query.trim())}
-          </AppText>
-        ) : null}
-        {search.results.map((track) => (
-          <PartySearchResultRow
-            key={track.id}
-            track={track}
+      ) : null}
+      {!search.loading && search.error === null && search.query.trim() !== '' && search.results.length === 0 ? (
+        <AppText testID="party-search-empty" variant="callout" color="secondary" style={styles.inlineStatus}>
+          {strings.party.searchEmpty(search.query.trim())}
+        </AppText>
+      ) : null}
+      {search.results.map((track) => (
+        <PartySearchResultRow
+          key={track.id}
+          track={track}
+          locked={locked}
+          adding={pending === `add:${track.id}`}
+          onAdd={() =>
+            run(
+              `add:${track.id}`,
+              (detail) => strings.party.addFailed(track.title, detail),
+              () => musicRepository.partyAddTrack(party.code, track),
+              strings.party.added(track.title),
+            )
+          }
+        />
+      ))}
+    </View>
+  );
+
+  const queueSection = (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <SectionHeader title={strings.party.queueTitle} padded={false} />
+      </View>
+      {party.tracks.length === 0 ? (
+        <EmptyState
+          testID="party-queue-empty"
+          layout="inline"
+          icon="playlist-music"
+          title={strings.party.queueEmpty}
+        />
+      ) : (
+        party.tracks.map((entry, index) => (
+          <PartyQueueRow
+            key={entry.id}
+            party={party}
+            index={index}
+            buffering={buffering}
             locked={locked}
-            adding={pending === `add:${track.id}`}
-            onAdd={() =>
+            onPlay={() =>
               run(
-                `add:${track.id}`,
-                (detail) => strings.party.addFailed(track.title, detail),
-                () => musicRepository.partyAddTrack(party.code, track),
-                strings.party.added(track.title),
+                `play:${entry.id}`,
+                (detail) => strings.party.playFailed(entry.title, detail),
+                () => musicRepository.partySetCurrent(party.code, index),
+              )
+            }
+            onMoveUp={() =>
+              run(
+                `move:${entry.id}`,
+                (detail) => strings.party.moveFailed(entry.title, detail),
+                () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index - 1)),
+              )
+            }
+            onMoveDown={() =>
+              run(
+                `move:${entry.id}`,
+                (detail) => strings.party.moveFailed(entry.title, detail),
+                () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index + 1)),
+              )
+            }
+            onRemove={() =>
+              run(
+                `remove:${entry.id}`,
+                (detail) => strings.party.removeFailed(entry.title, detail),
+                () => musicRepository.partyRemoveTrack(party.code, entry.id),
               )
             }
           />
-        ))}
-      </View>
+        ))
+      )}
+    </View>
+  );
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <SectionHeader title={strings.party.queueTitle} padded={false} />
-        </View>
-        {party.tracks.length === 0 ? (
-          <EmptyState
-            testID="party-queue-empty"
-            layout="inline"
-            icon="playlist-music"
-            title={strings.party.queueEmpty}
-          />
-        ) : (
-          party.tracks.map((entry, index) => (
-            <PartyQueueRow
-              key={entry.id}
-              party={party}
-              index={index}
-              buffering={buffering}
-              locked={locked}
-              onPlay={() =>
-                run(
-                  `play:${entry.id}`,
-                  (detail) => strings.party.playFailed(entry.title, detail),
-                  () => musicRepository.partySetCurrent(party.code, index),
-                )
-              }
-              onMoveUp={() =>
-                run(
-                  `move:${entry.id}`,
-                  (detail) => strings.party.moveFailed(entry.title, detail),
-                  () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index - 1)),
-                )
-              }
-              onMoveDown={() =>
-                run(
-                  `move:${entry.id}`,
-                  (detail) => strings.party.moveFailed(entry.title, detail),
-                  () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index + 1)),
-                )
-              }
-              onRemove={() =>
-                run(
-                  `remove:${entry.id}`,
-                  (detail) => strings.party.removeFailed(entry.title, detail),
-                  () => musicRepository.partyRemoveTrack(party.code, entry.id),
-                )
-              }
-            />
-          ))
-        )}
+  const membersSection = (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <SectionHeader title={strings.party.membersTitle} padded={false} />
       </View>
+      <PartyMembers members={party.members} hostName={party.host_name} />
+    </View>
+  );
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <SectionHeader title={strings.party.membersTitle} padded={false} />
+  if (tv.isTv) {
+    const leftWidth = Math.round(tv.contentWidth * tv.splitPrimaryRatio);
+    return (
+      <TvFocusScope scope="party">
+        <View
+          testID="party-screen"
+          style={[
+            styles.screen,
+            styles.tvSplit,
+            { gap: tv.gridGap },
+          ]}
+        >
+          <ScrollView
+            testID="party-tv-left-pane"
+            showsVerticalScrollIndicator={false}
+            style={{ width: leftWidth, flexGrow: 0, flexShrink: 0 }}
+            contentContainerStyle={{ paddingBottom: bottomInset }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {headerAndNotices}
+            {searchSection}
+            {membersSection}
+          </ScrollView>
+          <ScrollView
+            testID="party-tv-queue-pane"
+            showsVerticalScrollIndicator={false}
+            style={styles.tvQueuePane}
+            contentContainerStyle={{ paddingBottom: bottomInset }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {queueSection}
+          </ScrollView>
         </View>
-        <PartyMembers members={party.members} hostName={party.host_name} />
-      </View>
-    </ScrollView>
+      </TvFocusScope>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <ScrollView
+        testID="party-screen"
+        style={styles.screen}
+        contentContainerStyle={{ paddingBottom: bottomInset }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {headerAndNotices}
+        {searchSection}
+        {queueSection}
+        {membersSection}
+      </ScrollView>
+      <PartyBottomSafeSpacer />
+    </View>
   );
 }
 
@@ -385,4 +459,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.pagePadding,
     paddingTop: spacing.md,
   },
+  tvSplit: { flexDirection: 'row', alignItems: 'stretch' },
+  tvQueuePane: { flex: 1, minWidth: 0 },
 });

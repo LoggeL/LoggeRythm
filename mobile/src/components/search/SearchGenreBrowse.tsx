@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type TextStyle } from 'react-native';
 import type { Genre } from '../../api/types';
 import type { RemoteVisualState } from '../../data/remoteState';
 import { strings } from '../../localization';
@@ -19,6 +19,14 @@ interface SearchGenreBrowseProps {
   retryBusy: boolean;
   onRetry: () => void;
   onOpenGenre: (params: SearchGenreRouteParams) => void;
+  /** Optional 16:9 Android TV layout overrides. */
+  columns?: number;
+  tileHeight?: number;
+  paddingHorizontal?: number;
+  gap?: number;
+  titleStyle?: TextStyle;
+  onTileFocus?: (focusKey: string) => void;
+  tvMode?: boolean;
 }
 
 /** The idle search state: a grid of genre tiles to browse before typing. */
@@ -30,11 +38,21 @@ export function SearchGenreBrowse({
   retryBusy,
   onRetry,
   onOpenGenre,
+  columns,
+  tileHeight,
+  paddingHorizontal,
+  gap,
+  titleStyle,
+  onTileFocus,
+  tvMode = false,
 }: SearchGenreBrowseProps) {
   const title = strings.search.browseTitle;
   return (
     <View testID={testID} style={styles.browse}>
-      <SectionHeader title={title} />
+      <SectionHeader
+        title={title}
+        style={paddingHorizontal === undefined ? undefined : { paddingHorizontal }}
+      />
       <SearchRemoteBoundary
         id={id}
         state={genresState}
@@ -49,10 +67,25 @@ export function SearchGenreBrowse({
         retryLabel={strings.search.retrySection(title)}
         retryBusy={retryBusy}
         onRetry={onRetry}
-        loadingFallback={(props) => <GenreTileGridSkeleton {...props} />}
+        tvMode={tvMode}
+        loadingFallback={(props) => (
+          <GenreTileGridSkeleton
+            {...props}
+            columns={columns}
+            tileHeight={tileHeight}
+            paddingHorizontal={paddingHorizontal}
+            gap={gap}
+          />
+        )}
       >
         <GenreTileGrid
           genres={genres}
+          columns={columns}
+          tileHeight={tileHeight}
+          paddingHorizontal={paddingHorizontal}
+          gap={gap}
+          titleStyle={titleStyle}
+          onTileFocus={onTileFocus}
           tileTestID={(genre) => `search-genre-${genre.id}`}
           tileAccessibilityLabel={(genre) => strings.search.openGenre(genre.name)}
           onOpenGenre={(genre) => onOpenGenre({ genreId: genre.id, name: genre.name })}

@@ -149,6 +149,11 @@ internal data class LoggeRythmPersistedPlayerState(
   val lastPlayMediaId: String? = null,
   /** Monotonic native timeline identity used by durable RADIO compare-and-append. */
   val playbackJournalQueueGeneration: Long = 0L,
+  /**
+   * Account-scoped liked track IDs synced from the server. `null` preserves the fail-closed
+   * distinction between not-yet-synced and synced-empty so native never fabricates `false`.
+   */
+  val likedTrackIds: Set<String>? = null,
 ) {
   override fun toString(): String =
     "LoggeRythmPersistedPlayerState(sessionBinding=<redacted>, queue=<redacted:${queue.size}>, " +
@@ -157,7 +162,8 @@ internal data class LoggeRythmPersistedPlayerState(
       "remoteCapabilities=<public:${remoteCapabilities?.size ?: 0}>, " +
       "playbackEventJournal=<redacted:${playbackEventJournal.size}>, " +
       "lastPlayMediaId=<redacted>, " +
-      "playbackJournalQueueGeneration=$playbackJournalQueueGeneration)"
+      "playbackJournalQueueGeneration=$playbackJournalQueueGeneration, " +
+      "likedTrackIds=<redacted:${likedTrackIds?.size ?: "null"}>)"
 }
 
 /**
@@ -192,6 +198,7 @@ internal class LoggeRythmPersistedStateCodec(
       )
       .put("lastPlayMediaId", normalized.lastPlayMediaId ?: JSONObject.NULL)
       .put("playbackJournalQueueGeneration", normalized.playbackJournalQueueGeneration)
+      .put("likedTrackIds", likedTrackIdsJson(normalized.likedTrackIds))
     val encoded = root.toString().toByteArray(StandardCharsets.UTF_8)
     if (encoded.size > MAX_STATE_JSON_BYTES) fail("state-size-invalid")
     return encoded
@@ -218,7 +225,8 @@ internal class LoggeRythmPersistedStateCodec(
     val root = parseExactObject(encoded)
     when (requiredInt(root, "version")) {
       LEGACY_SCHEMA_VERSION -> requireExactKeys(root, LEGACY_ROOT_KEYS)
-      PREVIOUS_SCHEMA_VERSION -> requireExactKeys(root, PREVIOUS_ROOT_KEYS)
+      V2_SCHEMA_VERSION -> requireExactKeys(root, V2_ROOT_KEYS)
+      V3_SCHEMA_VERSION -> requireExactKeys(root, V3_ROOT_KEYS)
       SCHEMA_VERSION -> requireExactKeys(root, ROOT_KEYS)
       else -> fail("state-version-unsupported")
     }
@@ -262,6 +270,7 @@ internal class LoggeRythmPersistedStateCodec(
       } else {
         0L
       },
+      likedTrackIds = if (schemaVersion >= 4) parseLikedTrackIds(root) else null,
     )
     return validateAndNormalize(state)
   }
@@ -301,7 +310,12 @@ internal class LoggeRythmPersistedStateCodec(
     validateContextShuffle(parsedQueue, state.contextShuffle)
     validateSleep(parsedQueue, state.activeIndex, state.sleep)
     state.lastPlayMediaId?.let(::validatePlaybackMediaId)
-    return state.copy(queue = parsedQueue, browseTree = parsedBrowseTree)
+    validateLikedTrackIds(state.likedTrackIds)
+    return state.copy(
+      queue = parsedQueue,
+      browseTree = parsedBrowseTree,
+      likedTrackIds = state.likedTrackIds?.toSet(),
+    )
   }
 
   private fun normalizeBrowseTree(value: BrowseTreeSpec?): BrowseTreeSpec? {
@@ -535,7 +549,9 @@ internal class LoggeRythmPersistedStateCodec(
         if (label.isBlank()) fail("queue-context-invalid")
       }
     }
-    if (origin == "manual" && (hasType || extras.has("queueOriginalContextOrder"))) {
+    // Manual items added while playing a context queue intentionally inherit that context's
+    // type/id/label (matching queueContract.ts), and only forbid queueOriginalContextOrder.
+    if (origin == "manual" && extras.has("queueOriginalContextOrder")) {
       fail("queue-context-invalid")
     }
     if (origin == "context" && (!hasType || !extras.has("queueOriginalContextOrder"))) {
@@ -567,6 +583,12 @@ internal class LoggeRythmPersistedStateCodec(
     state.contextShuffle.restoreOrder.forEach { add(jsonStringBytes(it)) }
     state.remoteCapabilities?.forEach { add(jsonStringBytes(it.wireValue)) }
     state.lastPlayMediaId?.let { add(jsonStringBytes(it)) }
+    state.likedTrackIds?.let { likedIds ->
+      if (likedIds.size > LoggeRythmPlayerProtocol.MAX_LIKED_TRACK_IDS) {
+        fail("liked-track-ids-too-large")
+      }
+      likedIds.forEach { id -> add(jsonStringBytes(id) + 1L) }
+    }
     add(
       LoggeRythmPlaybackEventJournal.persistedUtf8Bytes(state.playbackEventJournal).toLong(),
     )
@@ -783,6 +805,34 @@ internal class LoggeRythmPersistedStateCodec(
       JSONArray(capabilities.map(RemotePlayerCapability::wireValue).sorted())
     } ?: JSONObject.NULL
 
+  private fun likedTrackIdsJson(value: Set<String>?): Any =
+    value?.let { ids -> JSONArray(ids.sorted()) } ?: JSONObject.NULL
+
+  private fun parseLikedTrackIds(root: JSONObject): Set<String>? {
+    if (root.isNull("likedTrackIds")) return null
+    val values = requiredArray(root, "likedTrackIds")
+    if (values.length() > LoggeRythmPlayerProtocol.MAX_LIKED_TRACK_IDS) {
+      fail("liked-track-ids-too-large")
+    }
+    val result = linkedSetOf<String>()
+    repeat(values.length()) { index ->
+      val id = values.opt(index) as? String ?: fail("liked-track-id-invalid")
+      if (!DEEZER_ID_PATTERN.matches(id)) fail("liked-track-id-invalid")
+      if (!result.add(id)) fail("liked-track-id-duplicate")
+    }
+    return result.toSet()
+  }
+
+  private fun validateLikedTrackIds(value: Set<String>?) {
+    if (value == null) return
+    if (value.size > LoggeRythmPlayerProtocol.MAX_LIKED_TRACK_IDS) {
+      fail("liked-track-ids-too-large")
+    }
+    value.forEach { id ->
+      if (!DEEZER_ID_PATTERN.matches(id)) fail("liked-track-id-invalid")
+    }
+  }
+
   private fun parseLastPlayMediaId(root: JSONObject): String? {
     if (root.isNull("lastPlayMediaId")) return null
     return requiredString(root, "lastPlayMediaId", MAX_STABLE_ID_LENGTH).also(
@@ -928,11 +978,13 @@ internal class LoggeRythmPersistedStateCodec(
   private fun fail(code: String): Nothing = throw LoggeRythmPersistedStateException(code)
 
   companion object {
-    internal const val SCHEMA_VERSION = 3
-    private const val PREVIOUS_SCHEMA_VERSION = 2
+    internal const val SCHEMA_VERSION = 4
+    private const val V3_SCHEMA_VERSION = 3
+    private const val V2_SCHEMA_VERSION = 2
     private const val LEGACY_SCHEMA_VERSION = 1
     internal const val MAX_STATE_JSON_BYTES = 2_000_000
     internal const val MAX_QUEUE_ITEMS = 2_000
+    private val DEEZER_ID_PATTERN = Regex("[0-9]{1,32}")
     private const val MAX_URI_LENGTH = 4_096
     private const val MAX_STABLE_ID_LENGTH = 512
     private const val MAX_CONTEXT_ID_LENGTH = 512
@@ -957,13 +1009,15 @@ internal class LoggeRythmPersistedStateCodec(
       "playbackEventJournal",
       "lastPlayMediaId",
       "playbackJournalQueueGeneration",
+      "likedTrackIds",
     )
-    private val PREVIOUS_ROOT_KEYS = ROOT_KEYS - setOf(
+    private val V3_ROOT_KEYS = ROOT_KEYS - setOf("likedTrackIds")
+    private val V2_ROOT_KEYS = V3_ROOT_KEYS - setOf(
       "playbackEventJournal",
       "lastPlayMediaId",
       "playbackJournalQueueGeneration",
     )
-    private val LEGACY_ROOT_KEYS = PREVIOUS_ROOT_KEYS - setOf(
+    private val LEGACY_ROOT_KEYS = V2_ROOT_KEYS - setOf(
       "browseTree",
       "remoteCapabilities",
     )

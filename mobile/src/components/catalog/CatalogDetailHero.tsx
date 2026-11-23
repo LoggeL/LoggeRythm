@@ -1,12 +1,13 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { layout, spacing } from '../../theme';
-import { AppText, PlayButton } from '../ui';
+import { AppText, IconButton, PlayButton } from '../ui';
 
 export interface CatalogHeroPlayAction {
   testID: string;
   accessibilityLabel: string;
   disabled?: boolean;
+  hasTVPreferredFocus?: boolean;
   onPress: () => void;
 }
 
@@ -18,7 +19,7 @@ interface CatalogDetailHeroProps {
    * Without `title` (legacy row layout): the whole identity block.
    */
   children?: React.ReactNode;
-  /** Secondary actions. In the stacked layout they sit left of the play button. */
+  /** Secondary actions. In the stacked layout they sit left of the play/shuffle controls. */
   actions?: React.ReactNode;
   /** Uppercase type label above the title ("ALBUM"). */
   eyebrow?: string;
@@ -26,6 +27,8 @@ interface CatalogDetailHeroProps {
   /** Setting a title switches to the stacked hero: large cover, then identity, then actions. */
   title?: string;
   titleTestID?: string;
+  /** Optional shuffle control rendered directly beside PlayButton (web album/artist parity). */
+  shuffle?: CatalogHeroPlayAction;
   /** The one loud control of the page. */
   play?: CatalogHeroPlayAction;
   /** Centre the identity under the cover (artists). Stacked layout only. */
@@ -36,8 +39,9 @@ interface CatalogDetailHeroProps {
  * The shared hero of every catalog detail page. The stacked layout (pass
  * `title`) is the standard: one large cover as the page's hero element, an
  * eyebrow, the title, supporting copy and a single action row that ends in
- * the PlayButton. Without `title` it keeps the legacy compact row (cover
- * beside caller-supplied copy) for callers that have not migrated yet.
+ * optional Shuffle + the PlayButton. Without `title` it keeps the legacy
+ * compact row (cover beside caller-supplied copy) for callers that have not
+ * migrated yet.
  */
 export function CatalogDetailHero({
   artwork,
@@ -47,6 +51,7 @@ export function CatalogDetailHero({
   eyebrowTestID,
   title,
   titleTestID,
+  shuffle,
   play,
   centered = false,
 }: CatalogDetailHeroProps) {
@@ -82,15 +87,26 @@ export function CatalogDetailHero({
         </AppText>
         {children}
       </View>
-      {actions || play ? (
+      {actions || shuffle || play ? (
         <View style={styles.actionRow}>
           <View style={styles.secondaryActions}>{actions}</View>
+          {shuffle ? (
+            <IconButton
+              testID={shuffle.testID}
+              icon="shuffle-variant"
+              variant="tonal"
+              accessibilityLabel={shuffle.accessibilityLabel}
+              disabled={shuffle.disabled}
+              onPress={shuffle.onPress}
+            />
+          ) : null}
           {play ? (
             <PlayButton
               testID={play.testID}
               size="lg"
               accessibilityLabel={play.accessibilityLabel}
               disabled={play.disabled}
+              hasTVPreferredFocus={play.hasTVPreferredFocus}
               onPress={play.onPress}
             />
           ) : null}

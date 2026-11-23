@@ -23,6 +23,12 @@ export interface TrackIdentityLinksProps {
   showPopularity?: boolean;
   /** Tints the title while this exact occurrence is the active track. */
   active?: boolean;
+  /**
+   * When `false`, renders plain non-pressable text so a parent row-wide
+   * tap-to-play Pressable receives every tap without nested Pressables or
+   * accidental Album/Artist screen hijacks. Defaults to `true`.
+   */
+  interactive?: boolean;
 }
 
 // Both lines are far thinner than a touch target, so each link line claims
@@ -35,10 +41,10 @@ const DETAILS_HIT_SLOP = { bottom: spacing.xs } as const;
 /**
  * The shared, bounded identity presentation for every track surface: the
  * title stays one line and all secondary metadata shares exactly one
- * ellipsized line. The title line is one album target as wide as the copy
- * block. The secondary line is one artist target of the same width (it opens
- * the first routable artist); a tap directly on another artist or the album
- * label still opens that exact route.
+ * ellipsized line. When `interactive` is true, the title and artist lines
+ * expose explicit album/artist links; when `interactive` is false (e.g. inside
+ * row-wide tap-to-play `StandardTrackRow`), it renders plain text with zero
+ * nested responders.
  */
 export default function TrackIdentityLinks({
   metadata,
@@ -50,6 +56,7 @@ export default function TrackIdentityLinks({
   showDuration = true,
   showPopularity = true,
   active = false,
+  interactive = true,
 }: TrackIdentityLinksProps) {
   const albumActionLabel = metadata.album.trim() || metadata.title;
   const popularityText = !showPopularity || metadata.popularity === null
@@ -63,7 +70,9 @@ export default function TrackIdentityLinks({
   const hasAlbum = showAlbumLabel && metadata.album.trim().length > 0;
   const hasFacts = durationText !== null || popularityText !== null;
   const titleStyle = active ? [styles.title, styles.titleActive] : styles.title;
-  const primaryArtist = metadata.artists.find((artist) => artist.route !== null);
+  const primaryArtist = interactive
+    ? metadata.artists.find((artist) => artist.route !== null)
+    : undefined;
 
   const details = (
     <Text
@@ -83,7 +92,7 @@ export default function TrackIdentityLinks({
               {', '}
             </Text>
           ) : null}
-          {artist.route !== null ? (
+          {interactive && artist.route !== null ? (
             <Text
               testID={`${testID}-artist-link-${index}`}
               accessibilityRole="link"
@@ -107,7 +116,7 @@ export default function TrackIdentityLinks({
       {hasAlbum ? (
         <>
           <Text accessible={false} style={styles.secondary}>{' · '}</Text>
-          {metadata.albumRoute !== null ? (
+          {interactive && metadata.albumRoute !== null ? (
             <Text
               testID={`${testID}-album-label-link`}
               accessibilityRole="link"
@@ -144,7 +153,7 @@ export default function TrackIdentityLinks({
 
   return (
     <View testID={testID} style={styles.container}>
-      {metadata.albumRoute !== null ? (
+      {interactive && metadata.albumRoute !== null ? (
         <Pressable
           testID={`${testID}-album-link`}
           accessibilityRole="link"

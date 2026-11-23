@@ -1,6 +1,14 @@
-import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import React, { useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  View,
+  type TextStyle,
+} from 'react-native';
+import { trackArtistLabel } from '../../api/trackArtists';
 import type { RecentPlay } from '../../domain/listeningStats';
+import { triggerHaptic } from '../../hooks/useHaptics';
 import { strings } from '../../localization';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { colors, layout, opacity, radii, spacing } from '../../theme';
@@ -8,13 +16,15 @@ import AppIcon from '../AppIcon';
 import TrackStateIndicator from '../TrackStateIndicator';
 import { useTrackPresentation } from '../player/TrackPresentationProvider';
 import type { TrackOccurrenceTarget } from '../track/StandardTrackRow';
-import TrackIdentityLinks from '../track/TrackIdentityLinks';
-import { buildTrackMetadata } from '../track/trackMetadata';
+import { trackStateIndicatorCopy } from '../track/trackPresentationCopy';
 import {
-  trackIdentityCopy,
-  trackStateIndicatorCopy,
-} from '../track/trackPresentationCopy';
-import { Artwork, Skeleton } from '../ui';
+  AppText,
+  Artwork,
+  Skeleton,
+  createFocusRingController,
+  FocusRingOverlay,
+  type TvFocusProps,
+} from '../ui';
 import type { HomeSectionSkeletonProps } from './HomeSection';
 
 export const QUICK_GRID_COLUMNS = 2;
@@ -41,24 +51,47 @@ interface HomeQuickGridProps<T> {
   data: readonly T[];
   keyExtractor: (item: T, index: number) => string;
   renderItem: (item: T, index: number) => React.ReactElement;
+  /** Column count (2 on phones, 3 on 16:9 Android TV). */
+  columns?: number;
+  /** Optional TV horizontal padding override. */
+  paddingHorizontal?: number;
+  /** Optional TV gap override. */
+  gap?: number;
 }
 
 /**
- * The two-column "jump back in" grid at the top of Home. Cells share the row
- * width equally, so it needs no screen measurement and holds at 360dp; a
- * short last row is padded with an empty cell to keep the column width.
+ * The "jump back in" quick grid at the top of Home. Cells share the row width
+ * equally (2 columns on phone, 3 on 16:9 TV); a short last row is padded with
+ * empty cells to preserve exact column alignment.
  */
-export function HomeQuickGrid<T>({ id, data, keyExtractor, renderItem }: HomeQuickGridProps<T>) {
+export function HomeQuickGrid<T>({
+  id,
+  data,
+  keyExtractor,
+  renderItem,
+  columns = QUICK_GRID_COLUMNS,
+  paddingHorizontal,
+  gap,
+}: HomeQuickGridProps<T>) {
+  const gridStyle =
+    paddingHorizontal === undefined && gap === undefined
+      ? styles.grid
+      : [
+          styles.grid,
+          paddingHorizontal !== undefined ? { paddingHorizontal } : null,
+          gap !== undefined ? { gap } : null,
+        ];
+  const rowStyle = gap === undefined ? styles.row : [styles.row, { gap }];
   return (
-    <View testID={`home-shelf-${id}`} style={styles.grid}>
-      {quickGridRows(data).map((row) => (
-        <View key={keyExtractor(row[0].item, row[0].index)} style={styles.row}>
+    <View testID={`home-shelf-${id}`} style={gridStyle}>
+      {quickGridRows(data, columns).map((row) => (
+        <View key={keyExtractor(row[0].item, row[0].index)} style={rowStyle}>
           {row.map(({ item, index }) => (
             <View key={keyExtractor(item, index)} style={styles.cell}>
               {renderItem(item, index)}
             </View>
           ))}
-          {Array.from({ length: QUICK_GRID_COLUMNS - row.length }, (_, filler) => (
+          {Array.from({ length: columns - row.length }, (_, filler) => (
             <View key={`filler-${filler}`} style={styles.cell} />
           ))}
         </View>
@@ -72,22 +105,45 @@ export function HomeQuickGridSkeleton({
   testID,
   accessibilityLabel,
   count = 6,
-}: HomeSectionSkeletonProps & { count?: number }) {
+  columns = QUICK_GRID_COLUMNS,
+  tileHeight = TILE_HEIGHT,
+  paddingHorizontal,
+  gap,
+}: HomeSectionSkeletonProps & {
+  count?: number;
+  columns?: number;
+  tileHeight?: number;
+  paddingHorizontal?: number;
+  gap?: number;
+}) {
   const cells = Array.from({ length: count }, (_, index) => index);
+  const gridStyle =
+    paddingHorizontal === undefined && gap === undefined
+      ? styles.grid
+      : [
+          styles.grid,
+          paddingHorizontal !== undefined ? { paddingHorizontal } : null,
+          gap !== undefined ? { gap } : null,
+        ];
+  const rowStyle = gap === undefined ? styles.row : [styles.row, { gap }];
   return (
     <View
       testID={testID}
+      focusable={false}
       accessibilityRole="progressbar"
       accessibilityLabel={accessibilityLabel}
       accessibilityLiveRegion="polite"
-      style={styles.grid}
+      style={gridStyle}
     >
-      {quickGridRows(cells).map((row) => (
-        <View key={row[0].index} style={styles.row}>
+      {quickGridRows(cells, columns).map((row) => (
+        <View key={row[0].index} style={rowStyle}>
           {row.map(({ index }) => (
             <View key={index} style={styles.cell}>
-              <Skeleton height={TILE_HEIGHT} radius="sm" />
+              <Skeleton height={tileHeight} radius="sm" />
             </View>
+          ))}
+          {Array.from({ length: columns - row.length }, (_, filler) => (
+            <View key={`filler-${filler}`} style={styles.cell} />
           ))}
         </View>
       ))}
@@ -95,21 +151,27 @@ export function HomeQuickGridSkeleton({
   );
 }
 
-interface RecentCardProps {
+export interface RecentCardProps extends TvFocusProps {
   play: RecentPlay;
   testID: string;
   occurrence: TrackOccurrenceTarget;
   busy: boolean;
   disabled: boolean;
   onPlay: () => void;
-  onOpenAlbum: (params: AlbumRouteParams) => void;
-  onOpenArtist: (params: ArtistRouteParams) => void;
+  /** Kept optional for backwards signature compatibility; full-tile tap plays. */
+  onOpenAlbum?: (params: AlbumRouteParams) => void;
+  onOpenArtist?: (params: ArtistRouteParams) => void;
+  /** Optional tile height override (larger on 10-foot Android TV). */
+  tileHeight?: number;
+  /** Optional TV typography overrides for 10-foot legibility. */
+  titleStyle?: TextStyle;
+  subtitleStyle?: TextStyle;
 }
 
 /**
- * A history tile: the cover is the dedicated play target, the title and the
- * artists stay separate catalog links. The tile tints while its track is the
- * active one and the cover then shows the transport state.
+ * A history tile matching `web/QuickTile.tsx`: the ENTIRE tile is one
+ * pressable/D-Pad-focusable play/toggle target with cover artwork, title,
+ * artist subtitle, active tint, transport overlay, and cache state indicator.
  */
 export function HomeRecentCard({
   play,
@@ -118,27 +180,58 @@ export function HomeRecentCard({
   busy,
   disabled,
   onPlay,
-  onOpenAlbum,
-  onOpenArtist,
+  tileHeight = TILE_HEIGHT,
+  titleStyle,
+  subtitleStyle,
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
 }: RecentCardProps) {
   const presentation = useTrackPresentation({ trackId: play.id, ...occurrence });
   const working = busy || presentation.playback === 'buffering';
+  const artistLabel = trackArtistLabel(play);
+  const [focusController] = useState(createFocusRingController);
+
   return (
-    <View style={[styles.tile, presentation.active ? styles.tileActive : null]}>
-      <Pressable
-        testID={testID}
-        accessibilityRole="button"
-        accessibilityLabel={strings.home.playTrack(play.title, play.artist)}
-        accessibilityState={{ disabled, busy: working, selected: presentation.active }}
-        disabled={disabled}
-        onPress={onPlay}
-        style={({ pressed }) => [
-          styles.tilePlay,
-          pressed ? styles.pressed : null,
-          disabled && !working ? styles.disabled : null,
+    <Pressable
+      testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={strings.home.playTrack(play.title, artistLabel)}
+      accessibilityState={{ disabled, busy: working, selected: presentation.active }}
+      disabled={disabled}
+      focusable={focusable ?? !disabled}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{ color: colors.fillStrong }}
+      onFocus={(event) => {
+        focusController.setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused(false);
+        onBlur?.(event);
+      }}
+      onPress={() => {
+        triggerHaptic('tap');
+        onPlay();
+      }}
+      style={({ pressed }) => [
+        styles.tile,
+        tileHeight !== TILE_HEIGHT ? { minHeight: tileHeight } : null,
+        presentation.active ? styles.tileActive : null,
+        pressed && !disabled ? styles.pressed : null,
+        disabled && !working ? styles.disabled : null,
+      ]}
+    >
+      <View
+        style={[
+          styles.tileArtworkWrap,
+          tileHeight !== TILE_HEIGHT ? { width: tileHeight, minHeight: tileHeight } : null,
         ]}
       >
-        <Artwork uri={play.cover} size={TILE_HEIGHT} style={styles.tileArtwork} />
+        <Artwork uri={play.cover} size={tileHeight} style={styles.tileArtwork} />
         {working || presentation.active ? (
           <View testID={`${testID}-transport`} accessible={false} style={styles.tileTransport}>
             {working ? (
@@ -152,27 +245,46 @@ export function HomeRecentCard({
             )}
           </View>
         ) : null}
-      </Pressable>
+      </View>
       <View style={styles.tileIdentity}>
-        <TrackIdentityLinks
-          metadata={buildTrackMetadata(play)}
-          testID={`${testID}-identity`}
-          copy={trackIdentityCopy}
-          onOpenAlbum={onOpenAlbum}
-          onOpenArtist={onOpenArtist}
-          showAlbumLabel={false}
-          showDuration={false}
-          showPopularity={false}
-        />
+        <View testID={`${testID}-identity`} style={styles.tileCopy}>
+          <AppText
+            variant="bodyStrong"
+            color={presentation.active ? 'accent' : 'primary'}
+            numberOfLines={1}
+            style={titleStyle}
+          >
+            {play.title}
+          </AppText>
+          {artistLabel.length > 0 ? (
+            <AppText
+              variant="caption"
+              color="secondary"
+              numberOfLines={1}
+              style={subtitleStyle}
+            >
+              {artistLabel}
+            </AppText>
+          ) : null}
+        </View>
         <TrackStateIndicator
           presentation={presentation}
           copy={trackStateIndicatorCopy}
           testID={`${testID}-state`}
         />
       </View>
-    </View>
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.sm}
+        controlledFocused={focused}
+        disabled={disabled}
+        focusedStyle={focusedStyle}
+      />
+    </Pressable>
   );
 }
+
+export const MemoHomeRecentCard = React.memo(HomeRecentCard);
 
 const styles = StyleSheet.create({
   grid: { gap: spacing.xs, paddingHorizontal: layout.pagePadding },
@@ -184,10 +296,15 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     overflow: 'hidden',
     borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: colors.hairline,
     backgroundColor: colors.surface,
   },
-  tileActive: { backgroundColor: colors.accentSubtle },
-  tilePlay: {
+  tileActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSubtle,
+  },
+  tileArtworkWrap: {
     width: TILE_HEIGHT,
     minHeight: TILE_HEIGHT,
     justifyContent: 'center',
@@ -212,6 +329,11 @@ const styles = StyleSheet.create({
     gap: spacing.xxs,
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xxs,
+  },
+  tileCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 1,
   },
   pressed: { opacity: opacity.pressed },
   disabled: { opacity: opacity.disabled },

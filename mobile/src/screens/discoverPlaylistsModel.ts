@@ -61,3 +61,65 @@ export function combineCatalogQueryStates(
     error: failed === undefined ? null : failed.error,
   };
 }
+
+export interface DiscoverPlaylistSourceQuery extends Omit<CatalogQueryVisualState, 'hasData'> {
+  data: readonly PlaylistSummary[] | undefined;
+}
+
+export interface DiscoverPlaylistsSectionModel {
+  entries: DiscoverPlaylistEntry[];
+  state: CatalogQueryVisualState;
+  empty: boolean;
+}
+
+/**
+ * Decouples the user's own playlists from community playlists on Discover so
+ * whichever list resolves first with items renders immediately instead of
+ * waiting on the slower query, while keeping failures/offline states loud:
+ * - If both lists have loaded: renders the full merged list (or empty).
+ * - If only one list has loaded with items: renders those items right away;
+ *   the other query's loading/offline/error state surfaces as a non-blocking
+ *   refresh indicator or retryable notice (never silently swallowed).
+ * - If one list loaded empty while the other is pending/offline/failed:
+ *   keeps `hasData: false` so Discover never flashes a false empty state.
+ */
+export function resolveDiscoverPlaylistsSection(
+  own: DiscoverPlaylistSourceQuery,
+  community: DiscoverPlaylistSourceQuery,
+): DiscoverPlaylistsSectionModel {
+  const bothLoaded = own.data !== undefined && community.data !== undefined;
+  const entries =
+    own.data !== undefined || community.data !== undefined
+      ? mergeDiscoverPlaylists(own.data ?? [], community.data ?? [])
+      : [];
+  const hasVisibleEntries = entries.length > 0;
+  const states: CatalogQueryVisualState[] = [
+    {
+      hasData: own.data !== undefined,
+      isPending: own.isPending,
+      isFetching: own.isFetching,
+      isStale: own.isStale,
+      fetchStatus: own.fetchStatus,
+      error: own.error,
+    },
+    {
+      hasData: community.data !== undefined,
+      isPending: community.isPending,
+      isFetching: community.isFetching,
+      isStale: community.isStale,
+      fetchStatus: community.fetchStatus,
+      error: community.error,
+    },
+  ];
+  const combined = combineCatalogQueryStates(states);
+  const progressiveHasData = bothLoaded || hasVisibleEntries;
+  return {
+    entries,
+    empty: bothLoaded && entries.length === 0,
+    state: {
+      ...combined,
+      hasData: progressiveHasData,
+      isPending: !progressiveHasData && combined.isPending,
+    },
+  };
+}

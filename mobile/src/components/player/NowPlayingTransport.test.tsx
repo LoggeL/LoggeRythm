@@ -15,6 +15,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('@react-native-community/slider', () => ({ default: 'Slider' }));
 vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../../tv', () => ({ TvFocusable: 'TvFocusable' }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 
@@ -161,5 +162,33 @@ describe('NowPlayingTransport', () => {
     expect(byTestId(rendered, 'now-playing-play-pause')).toBeDefined();
     expect(byTestId(rendered, 'now-playing-next')).toBeDefined();
     expect(byTestId(rendered, 'trailing-control')).toBeDefined();
+  });
+
+  it('registers the Play/Pause button in TvFocusRegistry via TvFocusable when tvPlayFocusKey is supplied', () => {
+    const onTogglePlay = vi.fn();
+    const rendered = NowPlayingTransport({
+      position: 30,
+      duration: 120,
+      playing: false,
+      buffering: false,
+      onPositionChange: vi.fn(),
+      onSeek: vi.fn(),
+      onPrevious: vi.fn(),
+      onTogglePlay,
+      onNext: vi.fn(),
+      tvPreferredPlayFocus: true,
+      tvPlayFocusKey: 'now-playing-play-pause',
+    });
+
+    const playPause = byTestId(rendered, 'now-playing-play-pause');
+    expect(playPause.type).toBe('TvFocusable');
+    expect(playPause.props).toMatchObject({
+      focusKey: 'now-playing-play-pause',
+      preferredFocus: true,
+      accessibilityRole: 'button',
+      accessibilityLabel: strings.common.play,
+    });
+    (playPause.props.onPress as () => void)();
+    expect(onTogglePlay).toHaveBeenCalledOnce();
   });
 });

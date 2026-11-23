@@ -66,7 +66,16 @@ export interface RadioPlaybackEvent extends PlaybackEventCommon {
   queueGeneration: number;
 }
 
-export type DurablePlaybackEvent = PlayPlaybackEvent | RadioPlaybackEvent;
+export interface FavoritePlaybackEvent extends PlaybackEventCommon {
+  type: 'FAVORITE';
+  mediaId: string;
+  requestedLiked: boolean;
+}
+
+export type DurablePlaybackEvent =
+  | PlayPlaybackEvent
+  | RadioPlaybackEvent
+  | FavoritePlaybackEvent;
 
 export interface PlaybackEventClaim {
   schemaVersion: 1;
@@ -106,6 +115,34 @@ export interface PlaybackEventDrainerDependencies {
     timeoutMs: number,
     authority: AuthenticatedRequestAuthority,
   ): Promise<readonly NativeQueueWireItem[]>;
+  likeTrack?(
+    track: Track,
+    timeoutMs: number,
+    authority: AuthenticatedRequestAuthority,
+  ): Promise<void>;
+  unlikeTrack?(
+    trackId: string,
+    timeoutMs: number,
+    authority: AuthenticatedRequestAuthority,
+  ): Promise<void>;
+  completeFavoritePlaybackEvent?(
+    leaseId: string,
+    eventId: string,
+  ): Promise<void>;
+  failFavoritePlaybackEvent?(
+    leaseId: string,
+    eventId: string,
+  ): Promise<void>;
+  onFavoriteUpdated?(
+    binding: Readonly<PlayerSessionBinding>,
+    track: Track,
+    requestedLiked: boolean,
+  ): Promise<void>;
+  onFavoriteFailed?(
+    track: Track,
+    requestedLiked: boolean,
+    error: unknown,
+  ): void;
   onPlayRecorded?(): Promise<void>;
   now?: () => number;
 }
@@ -307,6 +344,17 @@ function decodeEvent(
       'activeMediaId',
       'queueGeneration',
     ], label);
+  } else if (source.type === 'FAVORITE') {
+    exactKeys(source, [
+      'schemaVersion',
+      'eventId',
+      'type',
+      'createdAtMs',
+      'attempt',
+      'track',
+      'mediaId',
+      'requestedLiked',
+    ], label);
   } else {
     throw new TypeError(`${label}.type is unsupported`);
   }
@@ -333,6 +381,21 @@ function decodeEvent(
     track: decodeTrackMetadata(source.track, `${label}.track`),
   } as const;
   if (source.type === 'PLAY') return Object.freeze({ ...common, type: 'PLAY' as const });
+  if (source.type === 'FAVORITE') {
+    if (typeof source.requestedLiked !== 'boolean') {
+      throw new TypeError(`${label}.requestedLiked must be a boolean`);
+    }
+    return Object.freeze({
+      ...common,
+      type: 'FAVORITE' as const,
+      mediaId: safeString(
+        source.mediaId,
+        `${label}.mediaId`,
+        MAX_EVENT_MEDIA_ID_LENGTH,
+      ),
+      requestedLiked: source.requestedLiked,
+    });
+  }
   return Object.freeze({
     ...common,
     type: 'RADIO' as const,
@@ -432,22 +495,46 @@ function retryNotBefore(now: number, attempt: number): number {
 
 export class PlaybackEventDrainer {
   private inFlight: Promise<Readonly<PlaybackEventDrainResult>> | null = null;
+  private followUpRequested = false;
   private readonly now: () => number;
 
   constructor(private readonly dependencies: PlaybackEventDrainerDependencies) {
     this.now = dependencies.now ?? Date.now;
   }
 
-  /** Concurrent foreground/headless requests share one bounded native claim. */
+  /** Concurrent foreground/headless requests share one bounded native claim and chain one follow-up if needed. */
   drain(): Promise<Readonly<PlaybackEventDrainResult>> {
-    if (this.inFlight !== null) return this.inFlight;
-    const attempt = this.run();
+    if (this.inFlight !== null) {
+      this.followUpRequested = true;
+      return this.inFlight;
+    }
+    const attempt = this.runWithFollowUp();
     this.inFlight = attempt;
     const clear = (): void => {
       if (this.inFlight === attempt) this.inFlight = null;
     };
     void attempt.then(clear, clear);
     return attempt;
+  }
+
+  private async runWithFollowUp(): Promise<Readonly<PlaybackEventDrainResult>> {
+    let totalClaimed = 0;
+    let totalCompleted = 0;
+    let totalRetried = 0;
+    for (;;) {
+      this.followUpRequested = false;
+      const pass = await this.run();
+      totalClaimed += pass.claimed;
+      totalCompleted += pass.completed;
+      totalRetried += pass.retried;
+      if (!this.followUpRequested || pass.claimed === 0) {
+        return Object.freeze({
+          claimed: totalClaimed,
+          completed: totalCompleted,
+          retried: totalRetried,
+        });
+      }
+    }
   }
 
   private async run(): Promise<Readonly<PlaybackEventDrainResult>> {
@@ -506,6 +593,51 @@ export class PlaybackEventDrainer {
               // Stats refresh is best-effort and must not retry an already acknowledged event.
             }
           }
+        } else if (event.type === 'FAVORITE') {
+          if (
+            this.dependencies.likeTrack === undefined
+            || this.dependencies.unlikeTrack === undefined
+            || this.dependencies.completeFavoritePlaybackEvent === undefined
+            || this.dependencies.failFavoritePlaybackEvent === undefined
+          ) {
+            throw new PlaybackEventDrainError('favorite-drain-unconfigured');
+          }
+          const track = trackFromPlaybackEventMetadata(event.track);
+          if (event.requestedLiked) {
+            await this.dependencies.likeTrack(
+              track,
+              PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
+              requestAuthority,
+            );
+          } else {
+            await this.dependencies.unlikeTrack(
+              track.id,
+              PLAYBACK_EVENT_REQUEST_TIMEOUT_MS,
+              requestAuthority,
+            );
+          }
+          await this.dependencies.completeFavoritePlaybackEvent(
+            claim.leaseId,
+            event.eventId,
+          );
+          completed += 1;
+          if (this.dependencies.onFavoriteUpdated !== undefined) {
+            try {
+              await this.dependencies.onFavoriteUpdated(
+                claim.binding,
+                track,
+                event.requestedLiked,
+              );
+            } catch (reconcileError) {
+              // The server favorite and native state are already confirmed; surface reconciliation
+              // failure loudly without rolling back the confirmed server mutation.
+              this.dependencies.onFavoriteFailed?.(
+                track,
+                event.requestedLiked,
+                reconcileError,
+              );
+            }
+          }
         } else {
           const items = await this.dependencies.prepareRadioItems(
             event,
@@ -543,6 +675,33 @@ export class PlaybackEventDrainer {
         }
         if (this.dependencies.isAuthenticatedRequestAuthorityError(error)) {
           throw new PlaybackEventDrainError('session-authority-changed');
+        }
+        if (
+          error instanceof PlaybackEventDrainError
+          && error.code === 'favorite-drain-unconfigured'
+        ) {
+          throw error;
+        }
+        if (event.type === 'FAVORITE') {
+          const failFavorite = this.dependencies.failFavoritePlaybackEvent;
+          if (failFavorite === undefined) {
+            throw new PlaybackEventDrainError('favorite-drain-unconfigured');
+          }
+          try {
+            await failFavorite(claim.leaseId, event.eventId);
+          } catch {
+            throw new PlaybackEventDrainError('favorite-rollback-failed');
+          }
+          try {
+            this.dependencies.onFavoriteFailed?.(
+              trackFromPlaybackEventMetadata(event.track),
+              event.requestedLiked,
+              error,
+            );
+          } catch {
+            // Presentation callback must not mask the already-completed native rollback.
+          }
+          continue;
         }
         const notBeforeEpochMs = retryNotBefore(
           safeInteger(this.now(), 'Playback event retry time', 1),

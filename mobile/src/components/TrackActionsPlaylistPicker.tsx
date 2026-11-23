@@ -30,6 +30,7 @@ function PlaylistRowsSkeleton() {
   return (
     <View
       testID="track-action-playlists-loading"
+      focusable={false}
       accessibilityRole="progressbar"
       accessibilityLabel={strings.trackActions.loadingPlaylists}
       accessibilityLiveRegion="polite"
@@ -129,6 +130,7 @@ export function TrackActionsPlaylistPicker({
     notice = (
       <View
         testID="track-action-playlists-refreshing"
+        focusable={false}
         accessibilityRole="progressbar"
         accessibilityLabel={catalogStrings.common.refreshing}
         accessibilityLiveRegion="polite"

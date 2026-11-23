@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import type { ReleaseRadarEntry } from '../api/types';
 import { CatalogHeroArtwork, CatalogTrackRow } from '../components/catalog/CatalogCards';
@@ -24,7 +25,9 @@ import {
   releaseRadarTracks,
   unseenReleaseRadarTrackIds,
 } from '../data';
+import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
+import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 import { catalogFailureMessage } from './catalogFeedback';
 import {
   assertTrackCatalogRouteCallbacks,
@@ -88,14 +91,23 @@ export default function RadarScreen(props: RadarScreenProps) {
   if (user === null) throw new Error('RadarScreen requires an authenticated user');
 
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
+  const isFocused = useIsFocused();
+  const bottomInset = useBottomInset();
+  const tv = useTvEnvironment();
+  useTvFocusReturn({ scope: 'radar', active: isFocused, enabled: tv.isTv });
   const radar = useQuery(musicQueries.releaseRadarEntries(scope));
   const entries = radar.data ?? EMPTY_ENTRIES;
   // Playback, the queue and the seen-state work on the plain tracks, as before.
   const tracks = useMemo(() => releaseRadarTracks(entries), [entries]);
   const trackIds = useMemo(() => releaseRadarTrackIds(tracks), [tracks]);
-  const { runtimeError, setRuntimeError, play } = useCatalogPlayback('home-playback');
+  const { runtimeError, setRuntimeError, play, playRow } = useCatalogPlayback('home-playback');
   const { newTrackIds, seenStateError } = useNewRadarTracks(scope, trackIds);
-  const refetch = () => void radar.refetch();
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const refetch = useCallback(() => void radar.refetch(), [radar]);
+  const pullToRefresh = useCallback(() => {
+    setManualRefreshing(true);
+    void radar.refetch().finally(() => setManualRefreshing(false));
+  }, [radar]);
 
   if (radar.data === undefined) {
     return (
@@ -109,115 +121,114 @@ export default function RadarScreen(props: RadarScreenProps) {
     );
   }
 
-  const playFrom = (index: number) =>
-    play(
-      tracks,
-      index,
-      homeQueueContext({ kind: 'release-radar', label: strings.home.releaseRadar }),
-    );
-  const refreshing = radar.isFetching && !radar.isPending;
+  const context = homeQueueContext({ kind: 'release-radar', label: strings.home.releaseRadar });
   const cover = tracks.find((track) => track.cover)?.cover ?? '';
   const now = new Date();
   const trackCount = strings.common.trackCount(tracks.length);
 
   return (
-    <CatalogCollectionPage
-      id="release-radar"
-      tracks={tracks}
-      refreshing={refreshing}
-      refreshAccessibilityLabel={catalogStrings.common.refreshing}
-      onRefresh={refetch}
-      hero={
-        <CatalogDetailHero
-          artwork={<CatalogHeroArtwork uri={cover} />}
-          eyebrow={strings.home.radarTypeLabel}
-          title={strings.home.releaseRadar}
-          titleTestID="release-radar-title"
-          play={{
-            testID: 'release-radar-play-all',
-            accessibilityLabel: catalogStrings.common.playAll,
-            disabled: tracks.length === 0,
-            onPress: () => playFrom(0),
-          }}
-        >
-          <AppText variant="callout" color="secondary" numberOfLines={3}>
-            {strings.home.radarRule}
-          </AppText>
-          <AppText variant="caption" color="muted">
-            {newTrackIds.size > 0
-              ? `${trackCount} · ${strings.home.radarNewCount(newTrackIds.size)}`
-              : trackCount}
-          </AppText>
-        </CatalogDetailHero>
-      }
-      status={
-        <>
-          <CatalogRuntimeError id="release-radar-playback" message={runtimeError} />
-          <CatalogRuntimeError id="release-radar-seen-state" message={seenStateError} />
-          <CatalogContentStatus
-            id="release-radar"
-            hasData
-            {...catalogQueryFlags(radar)}
-            refreshIndicator={false}
-            onRetry={refetch}
-          />
-        </>
-      }
-      empty={
-        <EmptyState
-          testID="release-radar-empty"
-          icon="radar"
-          title={strings.home.radarEmptyTitle}
-          message={strings.home.radarEmpty}
-          action={
-            <RetryButton
-              testID="release-radar-empty-refresh"
-              label={refreshing ? catalogStrings.common.refreshingNow : catalogStrings.common.refresh}
-              busy={refreshing}
+    <TvFocusScope scope="radar">
+      <CatalogCollectionPage
+        id="release-radar"
+        tracks={tracks}
+        refreshing={manualRefreshing}
+        refreshAccessibilityLabel={catalogStrings.common.refreshing}
+        onRefresh={pullToRefresh}
+        tv={tv}
+        bottomInset={bottomInset}
+        hero={
+          <CatalogDetailHero
+            artwork={<CatalogHeroArtwork uri={cover} />}
+            eyebrow={strings.home.radarTypeLabel}
+            title={strings.home.releaseRadar}
+            titleTestID="release-radar-title"
+            play={{
+              testID: 'release-radar-play-all',
+              accessibilityLabel: catalogStrings.common.playAll,
+              disabled: tracks.length === 0,
+              hasTVPreferredFocus: tv.isTv && isFocused && tracks.length > 0 ? true : undefined,
+              onPress: () => play(tracks, 0, context),
+            }}
+          >
+            <AppText variant="callout" color="secondary" numberOfLines={3}>
+              {strings.home.radarRule}
+            </AppText>
+            <AppText variant="caption" color="muted">
+              {newTrackIds.size > 0
+                ? `${trackCount} · ${strings.home.radarNewCount(newTrackIds.size)}`
+                : trackCount}
+            </AppText>
+          </CatalogDetailHero>
+        }
+        status={
+          <>
+            <CatalogRuntimeError id="release-radar-playback" message={runtimeError} />
+            <CatalogRuntimeError id="release-radar-seen-state" message={seenStateError} />
+            <CatalogContentStatus
+              id="release-radar"
+              hasData
+              {...catalogQueryFlags(radar)}
+              refreshIndicator={false}
               onRetry={refetch}
             />
-          }
-        />
-      }
-      renderTrack={(track, index) => {
-        const entry = entries[index];
-        if (entry === undefined || entry.track !== track) {
-          throw new Error(
-            `Release Radar row ${index} (track ${String(track.id)}) has no matching radar entry`,
-          );
+          </>
         }
-        const date = formatRadarReleaseDate(
-          track.release_date,
-          now,
-          strings.home.radarRelativeDate,
-        );
-        const isNew = newTrackIds.has(String(track.id));
-        const lead = [isNew ? strings.home.radarNewTrack : '', date];
-        return (
-          <CatalogTrackRow
-            track={track}
-            index={index}
-            testID={`release-radar-track-${trackContextKey(track, index)}`}
-            occurrence={{
-              queueContext: { type: 'home', id: 'release-radar' },
-              originalContextOrder: index,
-            }}
-            metadata={joinRadarFacts(
-              [...lead, formatRadarReason(entry, strings.home.radarReason, 'row')],
-              ' · ',
-            )}
-            metadataAccessibilityLabel={joinRadarFacts(
-              [...lead, formatRadarReason(entry, strings.home.radarReasonSpoken, 'spoken')],
-              ', ',
-            )}
-            highlighted={isNew}
-            onPress={() => playFrom(index)}
-            onLongPress={() => showTrackActions(track, setRuntimeError)}
-            onOpenAlbum={props.onOpenAlbum}
-            onOpenArtist={props.onOpenArtist}
+        empty={
+          <EmptyState
+            testID="release-radar-empty"
+            icon="radar"
+            title={strings.home.radarEmptyTitle}
+            message={strings.home.radarEmpty}
+            action={
+              <RetryButton
+                testID="release-radar-empty-refresh"
+                label={radar.isFetching ? catalogStrings.common.refreshingNow : catalogStrings.common.refresh}
+                busy={radar.isFetching}
+                onRetry={refetch}
+              />
+            }
           />
-        );
-      }}
-    />
+        }
+        renderTrack={(track, index) => {
+          const entry = entries[index];
+          if (entry === undefined || entry.track !== track) {
+            throw new Error(
+              `Release Radar row ${index} (track ${String(track.id)}) has no matching radar entry`,
+            );
+          }
+          const date = formatRadarReleaseDate(
+            track.release_date,
+            now,
+            strings.home.radarRelativeDate,
+          );
+          const isNew = newTrackIds.has(String(track.id));
+          const lead = [isNew ? strings.home.radarNewTrack : '', date];
+          return (
+            <CatalogTrackRow
+              track={track}
+              index={index}
+              testID={`release-radar-track-${trackContextKey(track, index)}`}
+              occurrence={{
+                queueContext: { type: 'home', id: 'release-radar' },
+                originalContextOrder: index,
+              }}
+              metadata={joinRadarFacts(
+                [...lead, formatRadarReason(entry, strings.home.radarReason, 'row')],
+                ' · ',
+              )}
+              metadataAccessibilityLabel={joinRadarFacts(
+                [...lead, formatRadarReason(entry, strings.home.radarReasonSpoken, 'spoken')],
+                ', ',
+              )}
+              highlighted={isNew}
+              onPress={() => playRow(tracks, index, context)}
+              onLongPress={() => showTrackActions(track, setRuntimeError)}
+              onOpenAlbum={props.onOpenAlbum}
+              onOpenArtist={props.onOpenArtist}
+            />
+          );
+        }}
+      />
+    </TvFocusScope>
   );
 }

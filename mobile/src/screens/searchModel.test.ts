@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
 import {
   assertSearchRouteCallbacks,
+  formatSearchErrorDetail,
   formatSearchDuration,
   isCurrentSearchQuery,
   isSearchableQuery,
@@ -107,6 +108,18 @@ describe('search model', () => {
     state = searchInputReducer(state, { type: 'edit', value: 'a' });
     state = searchInputReducer(state, { type: 'submit' });
     expect(state.publishedQuery).toBe('');
+
+    state = searchInputReducer(state, { type: 'select', query: '  kraft   werk ' });
+    expect(state).toEqual({ input: 'kraft werk', publishedQuery: 'kraft werk' });
+    state = searchInputReducer(state, { type: 'select', query: 'x' });
+    expect(state).toEqual({ input: 'x', publishedQuery: '' });
+  });
+
+  it('extracts specific error details without dropping causes', () => {
+    expect(formatSearchErrorDetail(new Error('HTTP 503'))).toBe('HTTP 503');
+    expect(formatSearchErrorDetail('  timeout  ')).toBe('timeout');
+    expect(formatSearchErrorDetail(new Error('   '))).toBeNull();
+    expect(formatSearchErrorDetail(null)).toBeNull();
   });
 
   it('selects only the entity queries needed by a tab', () => {

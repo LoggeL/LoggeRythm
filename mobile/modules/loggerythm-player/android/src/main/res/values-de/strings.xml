@@ -13,4 +13,6 @@
     <string name="loggerythm_player_car_error_busy">LoggeRythm ist gerade beschäftigt. Versuche es gleich noch einmal.</string>
     <string name="loggerythm_player_car_error_unsupported">LoggeRythm kann diese Anfrage nicht abspielen. Wähle stattdessen etwas aus deiner Bibliothek.</string>
     <string name="loggerythm_player_car_error_refresh_required">Öffne LoggeRythm einmal auf deinem Handy, um die Auto-Bibliothek zu aktualisieren. Versuche es danach erneut.</string>
+    <string name="loggerythm_player_car_error_favorite_unavailable">Favoriten wurden noch nicht geladen. Öffne LoggeRythm einmal auf deinem Handy und versuche es dann erneut.</string>
+    <string name="loggerythm_player_car_error_favorite_failed">Favoriten konnten nicht aktualisiert werden. Prüfe deine Verbindung und versuche es erneut.</string>
 </resources>

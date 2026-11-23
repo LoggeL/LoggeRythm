@@ -14,28 +14,43 @@ import { AppText, FilterChip } from '../ui';
 interface SearchTabsProps {
   tab: SearchTab;
   onSelect: (tab: SearchTab) => void;
+  paddingHorizontal?: number;
+  onChipFocus?: (focusKey: string) => void;
 }
 
 /** Result-type switcher. */
-export function SearchTabs({ tab, onSelect }: SearchTabsProps) {
+export function SearchTabs({
+  tab,
+  onSelect,
+  paddingHorizontal,
+  onChipFocus,
+}: SearchTabsProps) {
+  const containerStyle =
+    paddingHorizontal === undefined
+      ? styles.chips
+      : [styles.chips, { paddingHorizontal }];
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.chips}
+      contentContainerStyle={containerStyle}
       accessibilityRole="tablist"
     >
-      {SEARCH_TABS.map((candidate) => (
-        <FilterChip
-          key={candidate}
-          testID={`search-tab-${candidate}`}
-          accessibilityRole="tab"
-          label={strings.search.tabs[candidate]}
-          selected={candidate === tab}
-          onPress={() => onSelect(candidate)}
-        />
-      ))}
+      {SEARCH_TABS.map((candidate) => {
+        const chipTestId = `search-tab-${candidate}`;
+        return (
+          <FilterChip
+            key={candidate}
+            testID={chipTestId}
+            accessibilityRole="tab"
+            label={strings.search.tabs[candidate]}
+            selected={candidate === tab}
+            onFocus={onChipFocus ? () => onChipFocus(chipTestId) : undefined}
+            onPress={() => onSelect(candidate)}
+          />
+        );
+      })}
     </ScrollView>
   );
 }
@@ -56,31 +71,46 @@ export function searchSortLabel(sort: SearchSort): string {
 interface SearchSortControlsProps {
   sort: SearchSort;
   onSelect: (sort: SearchSort) => void;
+  paddingHorizontal?: number;
+  onChipFocus?: (focusKey: string) => void;
 }
 
 /** Track ordering; one row, the label scrolls with the chips. */
-export function SearchSortControls({ sort, onSelect }: SearchSortControlsProps) {
+export function SearchSortControls({
+  sort,
+  onSelect,
+  paddingHorizontal,
+  onChipFocus,
+}: SearchSortControlsProps) {
+  const containerStyle =
+    paddingHorizontal === undefined
+      ? styles.chips
+      : [styles.chips, { paddingHorizontal }];
   return (
     <ScrollView
       testID="search-sort-controls"
       horizontal
       showsHorizontalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.chips}
+      contentContainerStyle={containerStyle}
     >
       <View style={styles.sortHeading}>
         <AppIcon name="sort" color={colors.textMuted} size={16} />
         <AppText variant="caption" color="muted">{strings.search.sortLabel}</AppText>
       </View>
-      {SEARCH_SORTS.map((candidate) => (
-        <FilterChip
-          key={candidate}
-          testID={`search-sort-${candidate}`}
-          label={searchSortLabel(candidate)}
-          selected={candidate === sort}
-          onPress={() => onSelect(candidate)}
-        />
-      ))}
+      {SEARCH_SORTS.map((candidate) => {
+        const chipTestId = `search-sort-${candidate}`;
+        return (
+          <FilterChip
+            key={candidate}
+            testID={chipTestId}
+            label={searchSortLabel(candidate)}
+            selected={candidate === sort}
+            onFocus={onChipFocus ? () => onChipFocus(chipTestId) : undefined}
+            onPress={() => onSelect(candidate)}
+          />
+        );
+      })}
     </ScrollView>
   );
 }

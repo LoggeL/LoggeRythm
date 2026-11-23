@@ -54,6 +54,7 @@ describe('SearchVirtualizedResults', () => {
     const props = propsOf(rendered);
 
     expect(rendered.type).toBe('FlatList');
+    expect(props.data).toBe(rows);
     expect(props).toMatchObject({
       testID: 'search-results-list',
       accessibilityLabel: 'Search',
@@ -61,7 +62,7 @@ describe('SearchVirtualizedResults', () => {
       initialNumToRender: 12,
       maxToRenderPerBatch: 10,
       windowSize: 9,
-      removeClippedSubviews: true,
+      removeClippedSubviews: false,
     });
     // The mini-player clearance is the owner's bottom inset, not a fixed footer.
     expect(props.contentContainerStyle).toEqual({ flexGrow: 1, paddingBottom: 96 });

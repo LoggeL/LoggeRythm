@@ -91,7 +91,7 @@ describe('Search remote-state accessibility primitives', () => {
     expect(byTestId(rendered, 'status').props.accessibilityLiveRegion).toBe('polite');
   });
 
-  it('keeps stale cache detail accessible behind one compact visual marker', () => {
+  it('keeps stale cache detail accessible with visible caption text so no unlabelled icon pill renders', () => {
     const rendered = SearchPoliteStatus({
       testID: 'stale',
       message: 'Showing saved data',
@@ -100,10 +100,27 @@ describe('Search remote-state accessibility primitives', () => {
 
     expect(byTestId(rendered, 'stale').props).toMatchObject({
       accessible: true,
+      focusable: false,
       accessibilityLabel: 'Showing saved data',
       accessibilityLiveRegion: 'polite',
     });
-    expect(elements(rendered).some((element) => element.type === 'Text')).toBe(false);
+    const labelElement = elements(rendered).find(
+      (element) => element.props.children === 'Showing saved data',
+    );
+    expect(labelElement).toBeDefined();
+
+    // On Android TV, compact status badges disable `accessible` so Fabric never creates a dead D-Pad stop.
+    const tvRendered = SearchPoliteStatus({
+      testID: 'stale',
+      message: 'Showing saved data',
+      compact: true,
+      tvMode: true,
+    });
+    expect(byTestId(tvRendered, 'stale').props).toMatchObject({
+      accessible: false,
+      focusable: false,
+      importantForAccessibility: 'no-hide-descendants',
+    });
   });
 
   it('rejects an action without matching accessible copy', () => {

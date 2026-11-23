@@ -26,6 +26,8 @@ export interface ArtistFooterProps {
   aboutEnabled: boolean;
   onOpenAlbum: (params: AlbumRouteParams) => void;
   onOpenArtist: (params: ArtistRouteParams) => void;
+  /** Optional 10-foot card size for Android TV. */
+  cardSize?: number;
 }
 
 interface ShelfProps {
@@ -55,6 +57,7 @@ export function ArtistFooter({
   aboutEnabled,
   onOpenAlbum,
   onOpenArtist,
+  cardSize,
 }: ArtistFooterProps) {
   return (
     <View style={styles.footer}>
@@ -67,6 +70,7 @@ export function ArtistFooter({
             renderItem={(album) => (
               <CatalogAlbumCard
                 album={album}
+                cardSize={cardSize}
                 testID={`artist-album-${catalogTestIdSegment(album.id)}`}
                 onPress={() => onOpenAlbum({ albumId: album.id, title: album.title })}
               />
@@ -84,6 +88,7 @@ export function ArtistFooter({
             renderItem={(artist) => (
               <CatalogArtistCard
                 artist={artist}
+                cardSize={cardSize}
                 testID={`artist-related-${catalogTestIdSegment(artist.id)}`}
                 onPress={() => onOpenArtist({ artistId: artist.id, name: artist.name })}
               />

@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { Track } from '../api/types';
-import { playTracks, type PlayTracksOptions } from '../player/controller';
+import {
+  playTrackRow,
+  playTracks,
+  toggleShuffle,
+  type PlayTracksOptions,
+} from '../player/controller';
 import { catalogFailureMessage, type CatalogFailureKind } from './catalogFeedback';
 import { playbackSelection } from './catalogModel';
 
@@ -9,8 +14,12 @@ export interface CatalogPlayback {
   runtimeError: string | null;
   /** For sibling actions on the same page (track menu, follow) that share the banner. */
   setRuntimeError: (message: string | null) => void;
-  /** Starts `tracks` at `index` in `context`. Failures land in `runtimeError`. */
+  /** Starts `tracks` at `index` in `context` (for Play All / context-start controls). */
   play: (tracks: Track[], index: number, context: PlayTracksOptions['context']) => void;
+  /** Row tap activation: toggles play/pause when already active, else starts `tracks` at `index`. */
+  playRow: (tracks: Track[], index: number, context: PlayTracksOptions['context']) => void;
+  /** Starts `tracks` at a random entry and enables product context shuffle. */
+  shuffle: (tracks: Track[], context: PlayTracksOptions['context']) => void;
 }
 
 /**
@@ -27,7 +36,11 @@ export function useCatalogPlayback(
   failureKind: Extract<CatalogFailureKind, 'playback' | 'home-playback'> = 'playback',
 ): CatalogPlayback {
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
-  const play: CatalogPlayback['play'] = (tracks, index, context) => {
+  const runStart = (
+    tracks: Track[],
+    index: number,
+    start: (selected: ReturnType<typeof playbackSelection>) => Promise<unknown>,
+  ) => {
     let selected: ReturnType<typeof playbackSelection>;
     try {
       selected = playbackSelection(tracks, index);
@@ -36,9 +49,26 @@ export function useCatalogPlayback(
       return;
     }
     setRuntimeError(null);
-    void playTracks(selected.tracks, selected.startIndex, { context }).catch((error) =>
+    void start(selected).catch((error) =>
       setRuntimeError(catalogFailureMessage(failureKind, error)),
     );
   };
-  return { runtimeError, setRuntimeError, play };
+  const play: CatalogPlayback['play'] = (tracks, index, context) => {
+    runStart(tracks, index, (selected) =>
+      playTracks(selected.tracks, selected.startIndex, { context }),
+    );
+  };
+  const playRow: CatalogPlayback['playRow'] = (tracks, index, context) => {
+    runStart(tracks, index, (selected) =>
+      playTrackRow(selected.tracks, selected.startIndex, { context }),
+    );
+  };
+  const shuffle: CatalogPlayback['shuffle'] = (tracks, context) => {
+    const startIndex = tracks.length > 1 ? Math.floor(Math.random() * tracks.length) : 0;
+    runStart(tracks, startIndex, async (selected) => {
+      await playTracks(selected.tracks, selected.startIndex, { context });
+      await toggleShuffle();
+    });
+  };
+  return { runtimeError, setRuntimeError, play, playRow, shuffle };
 }

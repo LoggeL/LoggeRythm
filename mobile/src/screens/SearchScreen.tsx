@@ -1,9 +1,18 @@
-import React, { useEffect, useReducer, useState, useSyncExternalStore } from 'react';
-import { Keyboard, StyleSheet, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { Keyboard, StyleSheet, View, type TextInput } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Track } from '../api/types';
-import { useProgress } from '../player/player';
+import type { Genre, Track } from '../api/types';
 import { ActionButton, EmptyState, ScreenHeader, SectionHeader, TrackRowSkeleton } from '../components/ui';
+import { RecentSearches } from '../components/search/RecentSearches';
 import { SearchBar } from '../components/search/SearchBar';
 import {
   SearchLibraryLikesNotice,
@@ -31,11 +40,13 @@ import {
   createSearchListRows,
   type SearchListRow,
 } from '../components/search/searchListModel';
+import { useRecentSearches } from '../components/search/useRecentSearches';
 import { showTrackActions } from '../components/trackActions';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, queryKeys } from '../data';
 import { resolveRemoteVisualState } from '../data/remoteState';
 import { useAuth } from '../auth/AuthContext';
+import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { useLocaleRevision } from '../localization/LocaleProvider';
@@ -46,9 +57,11 @@ import {
   subscribeSpotifyImportRequests,
 } from '../share/spotifyImport';
 import { colors, layout, spacing } from '../theme';
+import { TvFocusScope, tvFocusRegistry, useTvEnvironment, useTvFocusReturn } from '../tv';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import {
   assertSearchRouteCallbacks,
+  formatSearchErrorDetail,
   isCurrentSearchQuery,
   isSearchableQuery,
   normalizeSearchInput,
@@ -71,6 +84,10 @@ export type {
   SearchGenreRouteParams,
 } from './searchModel';
 
+const EMPTY_GENRES: readonly Genre[] = [];
+const EMPTY_TRACKS: readonly Track[] = [];
+const SEARCH_TV_SCOPE = 'search';
+
 export default function SearchScreen(props: Partial<SearchScreenProps>) {
   assertSearchRouteCallbacks(props);
   const locale = useLocaleRevision();
@@ -78,20 +95,59 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   const { user } = useAuth();
   if (user === null) throw new Error('SearchScreen requires an authenticated user');
 
+  const isFocused = useIsFocused();
+  const tv = useTvEnvironment();
   const queryClient = useQueryClient();
-  const activeProgress = useProgress(1);
   const bottomInset = useBottomInset();
   const accountScope = musicCacheScope(getCurrentApiBase(), user.id);
   const [{ input, publishedQuery: debouncedQuery }, dispatchSearchInput] = useReducer(
     searchInputReducer,
     { input: '', publishedQuery: '' },
   );
+  const [previousContentQuery, setPreviousContentQuery] = useState<string | null>(null);
+  const latestContentQueryRef = useRef<string | null>(null);
   const [tab, setTab] = useState<SearchTab>('all');
   const [sort, setSort] = useState<SearchSort>('relevance');
   const [actionError, setActionError] = useState<string | null>(null);
   const [startingPlaylist, setStartingPlaylist] = useState<string | null>(null);
   const [manualImporting, setManualImporting] = useState(false);
-  const getScopedImportRequest = () => getSpotifyImportRequestForScope(accountScope);
+
+  const searchInputRef = useRef<TextInput | null>(null);
+  const [requestedInputFocus, setRequestedInputFocus] = useState(false);
+
+  useEffect(() => {
+    if (!tv.isTv) return;
+    return tvFocusRegistry.register(
+      'search-input',
+      {
+        requestFocus: () => {
+          setRequestedInputFocus(true);
+          searchInputRef.current?.focus();
+        },
+      },
+      SEARCH_TV_SCOPE,
+    );
+  }, [tv.isTv]);
+
+  useTvFocusReturn({
+    scope: SEARCH_TV_SCOPE,
+    active: isFocused,
+    fallbackKey: 'search-input',
+    enabled: tv.isTv,
+  });
+
+  const recordSearchFocus = useCallback(
+    (focusKey: string) => {
+      if (tv.isTv) tvFocusRegistry.recordFocus(focusKey, SEARCH_TV_SCOPE);
+    },
+    [tv.isTv],
+  );
+
+  const recentSearches = useRecentSearches(accountScope);
+  const getScopedImportRequest = useCallback(
+    () => getSpotifyImportRequestForScope(accountScope),
+    [accountScope],
+  );
   const sharedImportRequest = useSyncExternalStore(
     subscribeSpotifyImportRequests,
     getScopedImportRequest,
@@ -120,8 +176,14 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
   // Saved tracks match the text in the field on every keystroke, without a request.
   const library = useSearchLibrary({ accountScope, input: normalizedInput, tab });
+  // While typing during debounce (`!ready`), keep the last query that had content
+  // keyed with `enabled: false` so previous results stay calm on screen instead of
+  // flashing 6 skeleton rows on every character. Never retain prior errors or empty states.
+  const activeResultQuery = ready
+    ? debouncedQuery
+    : (inputIsSearchable ? (previousContentQuery ?? '') : '');
   const results = useSearchResults({
-    query: debouncedQuery,
+    query: activeResultQuery,
     ready,
     tab,
     sort,
@@ -129,6 +191,20 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     libraryTrackIds: library.shownIds,
   });
   const { wanted, tracks, state: searchState } = results;
+
+  useEffect(() => {
+    if (!inputIsSearchable) {
+      latestContentQueryRef.current = null;
+      return;
+    }
+    if (!ready) return;
+    if (searchState.body === 'content') {
+      latestContentQueryRef.current = debouncedQuery;
+    } else if (searchState.body === 'empty' || searchState.body === 'blocked') {
+      latestContentQueryRef.current = null;
+    }
+  }, [debouncedQuery, inputIsSearchable, ready, searchState.body]);
+
   const genresQuery = useQuery({ ...musicQueries.genres(), enabled: browsing });
   const genresState = resolveRemoteVisualState({
     hasData: genresQuery.data !== undefined,
@@ -140,116 +216,269 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     error: genresQuery.error,
   });
 
-  const openTrackAlbum = (params: AlbumRouteParams) => onOpenAlbum({
-    albumId: params.albumId,
-    title: params.title ?? strings.navigation.album,
-  });
-  const openTrackArtist = (params: ArtistRouteParams) => onOpenArtist({
-    artistId: params.artistId,
-    name: params.name ?? strings.navigation.artist,
-  });
-
-  const updateInput = (value: string) => {
-    dispatchSearchInput({ type: 'edit', value });
-    setActionError(null);
-    if (normalizeSearchInput(value) !== normalizedInput) {
-      void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+  const rememberCurrentQuery = useCallback(() => {
+    if (isSearchableQuery(normalizedInput)) {
+      recentSearches.remember(normalizedInput);
     }
-  };
+  }, [normalizedInput, recentSearches]);
 
-  const toggleImport = () => {
+  const openTrackAlbum = useCallback(
+    (params: AlbumRouteParams) => {
+      rememberCurrentQuery();
+      onOpenAlbum({
+        albumId: params.albumId,
+        title: params.title ?? strings.navigation.album,
+      });
+    },
+    [onOpenAlbum, rememberCurrentQuery],
+  );
+
+  const openTrackArtist = useCallback(
+    (params: ArtistRouteParams) => {
+      rememberCurrentQuery();
+      onOpenArtist({
+        artistId: params.artistId,
+        name: params.name ?? strings.navigation.artist,
+      });
+    },
+    [onOpenArtist, rememberCurrentQuery],
+  );
+
+  const openSearchAlbum = useCallback(
+    (params: Parameters<SearchRouteCallbacks['onOpenAlbum']>[0]) => {
+      rememberCurrentQuery();
+      onOpenAlbum(params);
+    },
+    [onOpenAlbum, rememberCurrentQuery],
+  );
+
+  const openSearchArtist = useCallback(
+    (params: Parameters<SearchRouteCallbacks['onOpenArtist']>[0]) => {
+      rememberCurrentQuery();
+      onOpenArtist(params);
+    },
+    [onOpenArtist, rememberCurrentQuery],
+  );
+
+  const openSearchGenre = useCallback(
+    (params: Parameters<SearchRouteCallbacks['onOpenGenre']>[0]) => {
+      onOpenGenre(params);
+    },
+    [onOpenGenre],
+  );
+
+  const updateInput = useCallback(
+    (value: string) => {
+      const nextNormalized = normalizeSearchInput(value);
+      dispatchSearchInput({ type: 'edit', value });
+      setActionError(null);
+      if (!isSearchableQuery(nextNormalized)) {
+        setPreviousContentQuery(null);
+      } else if (nextNormalized !== normalizedInput) {
+        setPreviousContentQuery(latestContentQueryRef.current);
+      }
+      if (nextNormalized !== normalizedInput) {
+        void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+      }
+    },
+    [normalizedInput, queryClient],
+  );
+
+  const selectRecentSearch = useCallback(
+    (query: string) => {
+      setActionError(null);
+      setPreviousContentQuery(null);
+      dispatchSearchInput({ type: 'select', query });
+      recentSearches.remember(query);
+      Keyboard.dismiss();
+    },
+    [recentSearches],
+  );
+
+  const toggleImport = useCallback(() => {
     if (importing) {
       setManualImporting(false);
       dismissSpotifyImportRequest(sharedImportRequest?.id);
     } else {
       setManualImporting(true);
     }
-  };
+  }, [importing, sharedImportRequest?.id]);
+
+  // Android hardware/gesture Back: close Spotify Import -> clear active query -> normal tab Back.
+  const handleBack = useCallback(() => {
+    if (importing) {
+      setManualImporting(false);
+      dismissSpotifyImportRequest(sharedImportRequest?.id);
+      return true;
+    }
+    if (input.length > 0) {
+      updateInput('');
+      return true;
+    }
+    return false;
+  }, [importing, input.length, sharedImportRequest?.id, updateInput]);
+
+  useBackHandler(isFocused && (importing || input.length > 0), handleBack);
 
   // A tapped track plays on its own and continues with its track radio; the
   // other results never become the queue. Library matches behave the same:
   // they are rows of the same result list, so a different tap semantic per
   // section would be surprising.
-  const playWithRadio = (track: Track) => {
-    Keyboard.dismiss();
-    setActionError(null);
-    void playTrackWithRadio(track).catch((error: unknown) => {
-      console.error('Search track playback failed', error);
-      setActionError(
-        error instanceof TrackRadioError ? strings.search.radioFailed : strings.search.playFailed,
-      );
-    });
-  };
-
-  const play = (index: number) => {
-    if (index < 0 || index >= tracks.length) {
-      throw new Error(`Search playback index ${index} is outside ${tracks.length} tracks`);
-    }
-    playWithRadio(tracks[index]);
-  };
-
-  const playLibrary = (index: number) => {
-    if (index < 0 || index >= library.matches.length) {
-      throw new Error(
-        `Library search playback index ${index} is outside ${library.matches.length} tracks`,
-      );
-    }
-    playWithRadio(library.matches[index]);
-  };
-
-  const startDeezerPlaylist = async (playlistId: string) => {
-    setStartingPlaylist(playlistId);
-    setActionError(null);
-    try {
-      const playlist = await queryClient.fetchQuery(musicQueries.deezerPlaylist(playlistId));
-      if (playlist.tracks.length === 0) throw new Error(strings.search.noResults);
-      const fullTracks = await Promise.all(
-        orderedPlaylistTrackIds(playlist.tracks).map((id) =>
-          queryClient.fetchQuery(musicQueries.track(id)),
-        ),
-      );
-      await playTracks(fullTracks, 0, {
-        context: {
-          type: 'collection',
-          id: `deezer-playlist:${playlistId}`,
-          label: playlist.name,
-        },
+  const playWithRadio = useCallback(
+    (track: Track) => {
+      Keyboard.dismiss();
+      rememberCurrentQuery();
+      setActionError(null);
+      void playTrackWithRadio(track).catch((error: unknown) => {
+        console.error('Search track playback failed', error);
+        const base =
+          error instanceof TrackRadioError ? strings.search.radioFailed : strings.search.playFailed;
+        const detail = formatSearchErrorDetail(error);
+        setActionError(detail !== null ? `${base}: ${detail}` : base);
       });
-    } catch {
-      setActionError(strings.search.playlistLoadFailed);
-    } finally {
-      setStartingPlaylist(null);
-    }
-  };
+    },
+    [rememberCurrentQuery],
+  );
 
-  const openTopResult = (result: SearchTopResult) => {
-    switch (result.kind) {
-      case 'artist':
-        return onOpenArtist({ artistId: result.artist.id, name: result.artist.name });
-      case 'album':
-        return onOpenAlbum({ albumId: result.album.id, title: result.album.title });
-      case 'track':
-        return play(result.index);
-    }
-  };
+  const play = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= tracks.length) {
+        throw new Error(`Search playback index ${index} is outside ${tracks.length} tracks`);
+      }
+      playWithRadio(tracks[index]);
+    },
+    [playWithRadio, tracks],
+  );
+
+  const playLibrary = useCallback(
+    (index: number) => {
+      if (index < 0 || index >= library.matches.length) {
+        throw new Error(
+          `Library search playback index ${index} is outside ${library.matches.length} tracks`,
+        );
+      }
+      playWithRadio(library.matches[index]);
+    },
+    [library.matches, playWithRadio],
+  );
+
+  const startDeezerPlaylist = useCallback(
+    async (playlistId: string) => {
+      setStartingPlaylist(playlistId);
+      setActionError(null);
+      rememberCurrentQuery();
+      try {
+        const playlist = await queryClient.fetchQuery(musicQueries.deezerPlaylist(playlistId));
+        if (playlist.tracks.length === 0) throw new Error(strings.search.noResults);
+        const fullTracks = await Promise.all(
+          orderedPlaylistTrackIds(playlist.tracks).map((id) =>
+            queryClient.fetchQuery(musicQueries.track(id)),
+          ),
+        );
+        await playTracks(fullTracks, 0, {
+          context: {
+            type: 'collection',
+            id: `deezer-playlist:${playlistId}`,
+            label: playlist.name,
+          },
+        });
+      } catch (error: unknown) {
+        console.error('Search playlist playback failed', error);
+        const detail = formatSearchErrorDetail(error);
+        setActionError(
+          detail !== null
+            ? `${strings.search.playlistLoadFailed}: ${detail}`
+            : strings.search.playlistLoadFailed,
+        );
+      } finally {
+        setStartingPlaylist(null);
+      }
+    },
+    [queryClient, rememberCurrentQuery],
+  );
+
+  const openTopResult = useCallback(
+    (result: SearchTopResult) => {
+      switch (result.kind) {
+        case 'artist':
+          return openSearchArtist({ artistId: result.artist.id, name: result.artist.name });
+        case 'album':
+          return openSearchAlbum({ albumId: result.album.id, title: result.album.title });
+        case 'track':
+          return play(result.index);
+      }
+    },
+    [openSearchAlbum, openSearchArtist, play],
+  );
+
+  const tvPaddingHorizontal = tv.isTv ? tv.contentPaddingHorizontal : undefined;
+  const tvGap = tv.isTv ? tv.gridGap : undefined;
+  const tvCardSize = tv.isTv ? tv.cardSize : undefined;
+  const tvGenreColumns = tv.isTv ? Math.min(4, Math.max(3, tv.gridColumns)) : undefined;
+  const tvGenreTileHeight = tv.isTv ? Math.round(layout.artwork.lg * 1.15) : undefined;
+  const tvLabelStyle = tv.isTv ? tv.typography.label : undefined;
+  const tvBodyStyle = tv.isTv ? tv.typography.body : undefined;
+  const tvTitleStyle = tv.isTv ? tv.typography.bodyStrong : undefined;
+  const tvSubtitleStyle = tv.isTv ? tv.typography.callout : undefined;
+  const tvSectionTitleStyle = tv.isTv ? tv.typography.section : undefined;
+  const tvTopArtwork = tv.isTv ? Math.round((layout.artwork.md + spacing.md) * 1.25) : undefined;
 
   const searchChrome = (
     <View style={styles.chrome}>
-      <ScreenHeader title={strings.navigation.search} style={styles.gutter} />
+      <ScreenHeader
+        title={strings.navigation.search}
+        style={
+          tvPaddingHorizontal === undefined
+            ? styles.gutter
+            : { paddingHorizontal: tvPaddingHorizontal }
+        }
+      />
       {!importing ? (
         <SearchBar
+          inputRef={searchInputRef}
           value={input}
           onChangeText={updateInput}
+          marginHorizontal={tvPaddingHorizontal}
+          minHeight={tv.isTv ? tv.minFocusTargetHeight : undefined}
+          inputTextStyle={tvBodyStyle}
+          hasTVPreferredFocus={tv.isTv && isFocused && requestedInputFocus ? true : undefined}
+          onInputFocus={() => {
+            setRequestedInputFocus(false);
+            recordSearchFocus('search-input');
+          }}
           onSubmit={() => {
             dispatchSearchInput({ type: 'submit' });
+            rememberCurrentQuery();
             Keyboard.dismiss();
           }}
         />
       ) : null}
-      <SpotifyImportToggle expanded={importing} onToggle={toggleImport} />
-      {!importing && inputIsSearchable ? <SearchTabs tab={tab} onSelect={setTab} /> : null}
+      <SpotifyImportToggle
+        expanded={importing}
+        onToggle={toggleImport}
+        marginHorizontal={
+          tvPaddingHorizontal === undefined
+            ? undefined
+            : tvPaddingHorizontal - spacing.sm
+        }
+        labelStyle={tvLabelStyle}
+        onFocus={() => recordSearchFocus('spotify-import-toggle')}
+      />
+      {!importing && inputIsSearchable ? (
+        <SearchTabs
+          tab={tab}
+          onSelect={setTab}
+          paddingHorizontal={tvPaddingHorizontal}
+          onChipFocus={recordSearchFocus}
+        />
+      ) : null}
       {!importing && inputIsSearchable && wanted.track ? (
-        <SearchSortControls sort={sort} onSelect={setSort} />
+        <SearchSortControls
+          sort={sort}
+          onSelect={setSort}
+          paddingHorizontal={tvPaddingHorizontal}
+          onChipFocus={recordSearchFocus}
+        />
       ) : null}
       {!importing && actionError !== null ? (
         <SearchErrorNotice testID="search-action-error" message={actionError} />
@@ -258,15 +487,36 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
   );
 
   const browseBody = browsing ? (
-    <SearchGenreBrowse
-      testID="search-genre-browse"
-      id="search-genres"
-      genres={genresQuery.data ?? []}
-      genresState={genresState}
-      retryBusy={genresQuery.fetchStatus === 'fetching'}
-      onRetry={() => { void genresQuery.refetch(); }}
-      onOpenGenre={onOpenGenre}
-    />
+    <>
+      <RecentSearches
+        recent={recentSearches.recent}
+        error={recentSearches.error}
+        onSelect={selectRecentSearch}
+        onRemove={recentSearches.remove}
+        onClear={recentSearches.clear}
+        onRetry={recentSearches.retry}
+        paddingHorizontal={tvPaddingHorizontal}
+        minTargetHeight={tv.isTv ? tv.minFocusTargetHeight : undefined}
+        labelStyle={tvLabelStyle}
+        onChipFocus={recordSearchFocus}
+      />
+      <SearchGenreBrowse
+        testID="search-genre-browse"
+        id="search-genres"
+        genres={genresQuery.data ?? EMPTY_GENRES}
+        genresState={genresState}
+        retryBusy={genresQuery.fetchStatus === 'fetching'}
+        onRetry={() => { void genresQuery.refetch(); }}
+        onOpenGenre={openSearchGenre}
+        columns={tvGenreColumns}
+        tileHeight={tvGenreTileHeight}
+        paddingHorizontal={tvPaddingHorizontal}
+        gap={tvGap}
+        titleStyle={tvTitleStyle}
+        onTileFocus={recordSearchFocus}
+        tvMode={tv.isTv}
+      />
+    </>
   ) : !inputIsSearchable ? (
     <EmptyState
       testID="search-minimum-hint"
@@ -275,24 +525,44 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     />
   ) : null;
 
+  const hasVisibleRemoteFeedback =
+    !ready ||
+    searchState.body !== 'content' ||
+    searchState.issues.length > 0 ||
+    searchState.loadingKeys.length > 0 ||
+    searchState.refreshingKeys.length > 0 ||
+    showsPrimaryStaleNotice(searchState) ||
+    (results.metadata.state !== null &&
+      (results.metadata.state.issues.length > 0 ||
+        results.metadata.state.loadingKeys.length > 0 ||
+        results.metadata.state.refreshingKeys.length > 0 ||
+        (results.metadata.state.staleKeys.length > 0 && !showsPrimaryStaleNotice(searchState))));
+
   // Progress, failures and the empty state of the remote search. Rendered as
   // the list row below the library section, so that section never moves.
   const remoteStatus = !ready ? (
-    <TrackRowSkeleton
-      testID="search-debounce-status"
-      accessibilityLabel={strings.search.preparing}
-      style={styles.bodyGap}
-    />
+    <View style={styles.debounceWrap}>
+      <SearchLoadingStatus
+        testID="search-debounce-status"
+        label={strings.search.preparing}
+        paddingHorizontal={tvPaddingHorizontal}
+      />
+    </View>
   ) : (
-    <View style={styles.bodyGap}>
+    <View style={hasVisibleRemoteFeedback ? styles.bodyGap : undefined}>
       <SearchResultsFeedback
         state={searchState}
         owners={results.owners}
+        tvMode={tv.isTv}
         renderLoading={({ testID, accessibilityLabel }) =>
           searchState.body === 'loading' ? (
             <TrackRowSkeleton testID={testID} accessibilityLabel={accessibilityLabel} />
           ) : (
-            <SearchLoadingStatus testID={testID} label={accessibilityLabel} />
+            <SearchLoadingStatus
+              testID={testID}
+              label={accessibilityLabel}
+              paddingHorizontal={tvPaddingHorizontal}
+            />
           )}
       />
       {searchState.body === 'empty' && library.shown.length === 0 ? (
@@ -319,40 +589,74 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             retryBusy={results.metadata.retryBusy}
             onRetry={results.metadata.retry}
             primaryStale={showsPrimaryStaleNotice(searchState)}
+            tvMode={tv.isTv}
           />
         </View>
       ) : null}
     </View>
   );
 
-  const showRemoteRows = ready && searchState.body === 'content';
-  const searchRows = inputIsSearchable
-    ? createSearchListRows({
-      libraryTracks: library.shown,
-      libraryNotice: library.likesIssue !== null,
-      remoteStatus: true,
-      artists: showRemoteRows && wanted.artist ? results.shownArtists : [],
-      tracks: showRemoteRows && wanted.track ? results.shownTracks : [],
-      albums: showRemoteRows && wanted.album ? results.shownAlbums : [],
-      playlists: showRemoteRows && wanted.playlist ? results.shownPlaylists : [],
-      topResult: showRemoteRows && tab === 'all' && sort === 'relevance'
-        ? pickSearchTopResult({
-          query: debouncedQuery,
-          artists: results.shownArtists,
-          tracks: results.foundTracks,
-          albums: results.shownAlbums,
-          libraryTrackIds: library.shownIds,
-        })
-        : null,
-    })
-    : [];
+  const showingPreviousWhileTyping =
+    !ready && previousContentQuery !== null && searchState.body === 'content';
+  const showRemoteRows = (ready && searchState.body === 'content') || showingPreviousWhileTyping;
+
+  const searchRows = useMemo(
+    () =>
+      inputIsSearchable
+        ? createSearchListRows({
+            libraryTracks: library.shown,
+            libraryNotice: library.likesIssue !== null,
+            remoteStatus: true,
+            artists: showRemoteRows && wanted.artist ? results.shownArtists : [],
+            tracks: showRemoteRows && wanted.track ? results.shownTracks : EMPTY_TRACKS,
+            albums: showRemoteRows && wanted.album ? results.shownAlbums : [],
+            playlists: showRemoteRows && wanted.playlist ? results.shownPlaylists : [],
+            topResult:
+              showRemoteRows && tab === 'all' && sort === 'relevance'
+                ? pickSearchTopResult({
+                    query: activeResultQuery,
+                    artists: results.shownArtists,
+                    tracks: results.foundTracks,
+                    albums: results.shownAlbums,
+                    libraryTrackIds: library.shownIds,
+                  })
+                : null,
+          })
+        : [],
+    [
+      activeResultQuery,
+      inputIsSearchable,
+      library.likesIssue,
+      library.shown,
+      library.shownIds,
+      results.foundTracks,
+      results.shownAlbums,
+      results.shownArtists,
+      results.shownPlaylists,
+      results.shownTracks,
+      showRemoteRows,
+      sort,
+      tab,
+      wanted.album,
+      wanted.artist,
+      wanted.playlist,
+      wanted.track,
+    ],
+  );
 
   const renderSearchRow = (row: SearchListRow) => {
     switch (row.kind) {
       case 'library-header':
         return (
           <View testID="search-section-library" style={styles.librarySectionHeader}>
-            <SectionHeader title={strings.search.sections.library} />
+            <SectionHeader
+              title={strings.search.sections.library}
+              style={
+                tvPaddingHorizontal === undefined
+                  ? undefined
+                  : { paddingHorizontal: tvPaddingHorizontal }
+              }
+            />
           </View>
         );
       case 'library-track': {
@@ -363,7 +667,6 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             testID={`search-library-track-${track.id}`}
             occurrence={searchTrackRadioOccurrence(track.id)}
             position={index + 1}
-            rollingDeviceCacheSeconds={activeProgress.cached}
             onPlay={() => playLibrary(index)}
             onActions={() => showTrackActions(track, setActionError)}
             onOpenAlbum={openTrackAlbum}
@@ -390,6 +693,11 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         return (
           <SearchTopResultCard
             result={result}
+            paddingHorizontal={tvPaddingHorizontal}
+            artworkSize={tvTopArtwork}
+            titleStyle={tvSectionTitleStyle}
+            subtitleStyle={tvSubtitleStyle}
+            onFocus={() => recordSearchFocus('search-top-result')}
             onPress={() => openTopResult(result)}
             onLongPress={result.kind === 'track'
               ? () => showTrackActions(result.track, setActionError)
@@ -398,11 +706,29 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         );
       }
       case 'artist-section':
-        return <SearchArtistSection artists={row.artists} onOpenArtist={onOpenArtist} />;
+        return (
+          <SearchArtistSection
+            artists={row.artists}
+            onOpenArtist={openSearchArtist}
+            cardSize={tvCardSize}
+            paddingHorizontal={tvPaddingHorizontal}
+            gap={tvGap}
+            titleStyle={tvLabelStyle}
+            subtitleStyle={tvSubtitleStyle}
+            onCardFocus={recordSearchFocus}
+          />
+        );
       case 'track-header':
         return (
           <View testID="search-section-tracks" style={styles.trackSectionHeader}>
-            <SectionHeader title={strings.search.sections.tracks} />
+            <SectionHeader
+              title={strings.search.sections.tracks}
+              style={
+                tvPaddingHorizontal === undefined
+                  ? undefined
+                  : { paddingHorizontal: tvPaddingHorizontal }
+              }
+            />
           </View>
         );
       case 'track': {
@@ -414,7 +740,6 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             occurrence={searchTrackRadioOccurrence(track.id)}
             position={index + 1}
             plays={results.trackPlays?.[track.id]}
-            rollingDeviceCacheSeconds={activeProgress.cached}
             onPlay={() => play(index)}
             onActions={() => showTrackActions(track, setActionError)}
             onOpenAlbum={openTrackAlbum}
@@ -423,44 +748,62 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         );
       }
       case 'album-section':
-        return <SearchAlbumSection albums={row.albums} onOpenAlbum={onOpenAlbum} />;
+        return (
+          <SearchAlbumSection
+            albums={row.albums}
+            onOpenAlbum={openSearchAlbum}
+            cardSize={tvCardSize}
+            paddingHorizontal={tvPaddingHorizontal}
+            gap={tvGap}
+            titleStyle={tvLabelStyle}
+            subtitleStyle={tvSubtitleStyle}
+            onCardFocus={recordSearchFocus}
+          />
+        );
       case 'playlist-section':
         return (
           <SearchPlaylistSection
             playlists={row.playlists}
             startingPlaylistId={startingPlaylist}
             onStartPlaylist={(playlistId) => void startDeezerPlaylist(playlistId)}
+            cardSize={tvCardSize}
+            paddingHorizontal={tvPaddingHorizontal}
+            gap={tvGap}
+            titleStyle={tvLabelStyle}
+            subtitleStyle={tvSubtitleStyle}
+            onCardFocus={recordSearchFocus}
           />
         );
     }
   };
 
   return (
-    <View testID="search-screen" style={styles.container}>
-      {importing ? (
-        <SearchImportMode
-          accountScope={accountScope}
-          chrome={searchChrome}
-          sharedRequest={sharedImportRequest}
-          rollingDeviceCacheSeconds={activeProgress.cached}
-          onOpenAlbum={openTrackAlbum}
-          onOpenArtist={openTrackArtist}
-        />
-      ) : (
-        <SearchVirtualizedResults
-          accessibilityLabel={strings.navigation.search}
-          rows={searchRows}
-          bottomInset={bottomInset}
-          header={(
-            <>
-              {searchChrome}
-              {browseBody}
-            </>
-          )}
-          renderRow={renderSearchRow}
-        />
-      )}
-    </View>
+    <TvFocusScope scope={SEARCH_TV_SCOPE}>
+      <View testID="search-screen" style={styles.container}>
+        {importing ? (
+          <SearchImportMode
+            accountScope={accountScope}
+            chrome={searchChrome}
+            sharedRequest={sharedImportRequest}
+            onOpenAlbum={openTrackAlbum}
+            onOpenArtist={openTrackArtist}
+          />
+        ) : (
+          <SearchVirtualizedResults
+            accessibilityLabel={strings.navigation.search}
+            rows={searchRows}
+            bottomInset={bottomInset}
+            header={(
+              <>
+                {searchChrome}
+                {browseBody}
+              </>
+            )}
+            renderRow={renderSearchRow}
+          />
+        )}
+      </View>
+    </TvFocusScope>
   );
 }
 
@@ -468,6 +811,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   chrome: { gap: spacing.sm, paddingTop: spacing.md },
   gutter: { paddingHorizontal: layout.pagePadding },
+  debounceWrap: { paddingTop: spacing.xs },
   bodyGap: { paddingTop: spacing.md },
   librarySectionHeader: { paddingTop: spacing.md, paddingBottom: spacing.xs },
   trackSectionHeader: { paddingTop: spacing.xl, paddingBottom: spacing.xs },

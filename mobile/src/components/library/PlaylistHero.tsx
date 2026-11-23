@@ -45,7 +45,8 @@ export interface PlaylistHeroProps {
   /** The liked-tracks collection gets its accent heart tile instead of a cover. */
   liked: boolean;
   ownerName: string | null;
-  trackCount: number;
+  /** Number of tracks in the playlist; null omits the count while unknown. */
+  trackCount: number | null;
   /** Sum of the listed tracks' durations in seconds. */
   durationSeconds: number;
   /** Owner-only visibility badge; null hides it. */
@@ -58,6 +59,14 @@ export interface PlaylistHeroProps {
   download: PlaylistHeroDownload | null;
   /** Opens the overflow sheet; undefined hides the button. */
   onOpenActions?: () => void;
+  /** Optional direct D-Pad reorder toggle shown in the action row on TV. */
+  reorder?: {
+    active: boolean;
+    disabled?: boolean;
+    onPress: () => void;
+  } | null;
+  /** Request initial TV D-Pad focus on PlayButton (strictly pass only on TV). */
+  preferredPlayFocus?: boolean;
 }
 
 /**
@@ -78,6 +87,8 @@ export function PlaylistHero({
   onShuffle,
   download,
   onOpenActions,
+  reorder = null,
+  preferredPlayFocus = false,
 }: PlaylistHeroProps) {
   const duration = playlistDurationLabel(durationSeconds);
   return (
@@ -106,9 +117,11 @@ export function PlaylistHero({
               {libraryStrings.playlist.byOwner(ownerName)}
             </AppText>
           ) : null}
-          <AppText testID="playlist-track-count" variant="callout" color="secondary">
-            {libraryStrings.common.tracks(trackCount)}
-          </AppText>
+          {trackCount === null ? null : (
+            <AppText testID="playlist-track-count" variant="callout" color="secondary">
+              {libraryStrings.common.tracks(trackCount)}
+            </AppText>
+          )}
           {duration === null ? null : (
             <AppText testID="playlist-duration" variant="callout" color="secondary">
               {duration}
@@ -149,6 +162,7 @@ export function PlaylistHero({
               testID="playlist-play-all"
               size="lg"
               accessibilityLabel={libraryStrings.playlist.playAll}
+              hasTVPreferredFocus={preferredPlayFocus || undefined}
               onPress={onPlay}
             />
             <IconButton
@@ -160,6 +174,21 @@ export function PlaylistHero({
             />
           </>
         ) : null}
+        {reorder === null ? null : (
+          <IconButton
+            testID="playlist-tv-reorder"
+            icon="swap-vertical"
+            variant="tonal"
+            selected={reorder.active}
+            disabled={reorder.disabled}
+            accessibilityLabel={
+              reorder.active
+                ? libraryStrings.playlist.reorderDone
+                : libraryStrings.playlist.reorder
+            }
+            onPress={reorder.onPress}
+          />
+        )}
         {download === null ? null : (
           <IconButton
             testID="playlist-download"

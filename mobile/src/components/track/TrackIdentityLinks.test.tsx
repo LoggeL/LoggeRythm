@@ -138,6 +138,28 @@ describe('TrackIdentityLinks', () => {
       .toBe('12345 plays, 6789 listeners');
   });
 
+  it('renders plain non-pressable text when interactive is false for row-wide tap-to-play', () => {
+    const onOpenAlbum = vi.fn();
+    const onOpenArtist = vi.fn();
+    const rendered = TrackIdentityLinks({
+      metadata: buildTrackMetadata(track),
+      testID: 'row-identity',
+      copy,
+      onOpenAlbum,
+      onOpenArtist,
+      interactive: false,
+    });
+
+    expect(elements(rendered).filter((element) => element.type === 'Pressable')).toHaveLength(0);
+    expect(elements(rendered).some((element) => element.props.accessibilityRole === 'link'))
+      .toBe(false);
+    expect(elements(rendered).some((element) => element.props.onPress !== undefined))
+      .toBe(false);
+    expect(byTestId(rendered, 'row-identity-title-text').props.children).toBe('Midnight Signal');
+    expect(byTestId(rendered, 'row-identity-artist-text-0').props.children).toBe('Primary Artist');
+    expect(byTestId(rendered, 'row-identity-album-label-text').props.children).toBe('Parity');
+  });
+
   it('keeps invalid legacy identities readable and entirely inert', () => {
     const onOpenAlbum = vi.fn();
     const onOpenArtist = vi.fn();

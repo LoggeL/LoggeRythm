@@ -5,6 +5,7 @@ import {
   createMusicQueryClient,
   invalidateListeningStats,
   musicCacheScope,
+  QUERY_STALE_TIMES,
 } from './queryClient';
 import { queryKeys } from './queryKeys';
 
@@ -193,5 +194,47 @@ describe('music query client boundaries', () => {
     expect(client.getQueryState(secondStats)?.isInvalidated).toBe(true);
     expect(client.getQueryState(settings)?.isInvalidated).toBe(false);
     expect(client.getQueryState(publicProfile)?.isInvalidated).toBe(false);
+  });
+
+  it('applies web-aligned staleTime defaults across catalog, home, library, search, and party queries', () => {
+    const client = createMusicQueryClient();
+
+    expect(client.getDefaultOptions().queries?.staleTime).toBe(QUERY_STALE_TIMES.default);
+    expect(client.getQueryDefaults(queryKeys.catalog.album('42')).staleTime).toBe(
+      QUERY_STALE_TIMES.album,
+    );
+    expect(client.getQueryDefaults(queryKeys.catalog.artist('7')).staleTime).toBe(
+      QUERY_STALE_TIMES.artist,
+    );
+    expect(client.getQueryDefaults(queryKeys.catalog.artistAbout('Artist')).staleTime).toBe(
+      QUERY_STALE_TIMES.artistAbout,
+    );
+    expect(client.getQueryDefaults(queryKeys.catalog.genres()).staleTime).toBe(
+      QUERY_STALE_TIMES.genres,
+    );
+    expect(client.getQueryDefaults(queryKeys.catalog.newReleases()).staleTime).toBe(
+      QUERY_STALE_TIMES.newReleases,
+    );
+    expect(client.getQueryDefaults(queryKeys.catalog.charts()).staleTime).toBe(
+      QUERY_STALE_TIMES.charts,
+    );
+    expect(client.getQueryDefaults(queryKeys.home.mixes('scope-a')).staleTime).toBe(
+      QUERY_STALE_TIMES.homePersonalized,
+    );
+    expect(client.getQueryDefaults(queryKeys.library.likes('scope-a')).staleTime).toBe(
+      QUERY_STALE_TIMES.library,
+    );
+    expect(client.getQueryDefaults(queryKeys.playlists.owned('scope-a')).staleTime).toBe(
+      QUERY_STALE_TIMES.playlists,
+    );
+    expect(client.getQueryDefaults(queryKeys.storage.cachedTrackIds()).staleTime).toBe(
+      QUERY_STALE_TIMES.cachedTrackIds,
+    );
+    expect(client.getQueryDefaults(queryKeys.search.tracks('radiohead')).staleTime).toBe(
+      QUERY_STALE_TIMES.search,
+    );
+    expect(client.getQueryDefaults(queryKeys.party.state('scope-a', 'ABC')).staleTime).toBe(
+      QUERY_STALE_TIMES.party,
+    );
   });
 });

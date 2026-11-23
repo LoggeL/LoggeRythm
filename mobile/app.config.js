@@ -35,19 +35,31 @@ function localApiUsesCleartext() {
   return url.protocol === 'http:';
 }
 
+const ANDROID_TV_PLUGIN = './plugins/withAndroidTvSupport';
+
+function ensurePlugin(plugins, pluginName) {
+  const alreadyPresent = plugins.some(
+    (entry) => entry === pluginName || (Array.isArray(entry) && entry[0] === pluginName),
+  );
+  return alreadyPresent ? plugins : [...plugins, pluginName];
+}
+
 module.exports = ({ config }) => ({
   ...config,
-  plugins: config.plugins.map((plugin) => {
-    if (!Array.isArray(plugin) || plugin[0] !== 'expo-build-properties') return plugin;
-    return [
-      plugin[0],
-      {
-        ...plugin[1],
-        android: {
-          ...plugin[1].android,
-          usesCleartextTraffic: localApiUsesCleartext(),
+  plugins: ensurePlugin(
+    config.plugins.map((plugin) => {
+      if (!Array.isArray(plugin) || plugin[0] !== 'expo-build-properties') return plugin;
+      return [
+        plugin[0],
+        {
+          ...plugin[1],
+          android: {
+            ...plugin[1].android,
+            usesCleartextTraffic: localApiUsesCleartext(),
+          },
         },
-      },
-    ];
-  }),
+      ];
+    }),
+    ANDROID_TV_PLUGIN,
+  ),
 });

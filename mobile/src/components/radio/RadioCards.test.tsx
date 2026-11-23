@@ -138,6 +138,26 @@ describe('Radio query-state presentation', () => {
     expect(onPress).toHaveBeenCalledOnce();
   });
 
+  it('shows paused badge and play icon instead of green ON AIR when the active radio is paused', () => {
+    const tree = RadioStationCard({
+      testID: 'radio-genre-8',
+      title: 'Rock radio',
+      subtitle: 'Rock',
+      cover: '',
+      variant: 'genre',
+      busy: false,
+      blocked: false,
+      onAir: true,
+      onAirPlaying: false,
+      onPress: vi.fn(),
+    });
+
+    expect(elements(tree).some((element) => element.props.children === strings.trackPresentation.paused))
+      .toBe(true);
+    expect(elements(tree).some((element) => element.props.children === accountStrings.radio.onAir))
+      .toBe(false);
+  });
+
   it('reports a starting station as busy and ignores further presses', () => {
     const onPress = vi.fn();
     const tree = RadioStationCard({

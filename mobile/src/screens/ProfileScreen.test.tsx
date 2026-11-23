@@ -1,21 +1,37 @@
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ProfileScreen from './ProfileScreen';
+import ProfileScreen, { ProfileBottomSafeSpacer, ProfileTvFocusEffect } from './ProfileScreen';
 
 const mocks = vi.hoisted(() => ({
   useState: vi.fn(),
+  useEffect: vi.fn(),
+  isFocused: true,
   useAuth: vi.fn(),
   useQuery: vi.fn(),
   useQueryClient: vi.fn(),
   deleteAccount: vi.fn(),
   resolveServerUrl: vi.fn(),
   updatePlacement: vi.fn(),
+  safeInsets: { top: 0, right: 0, bottom: 24, left: 0 },
+  tvEnv: {
+    isTv: false,
+    overscan: { top: 0, right: 0, bottom: 0, left: 0 },
+    contentPaddingHorizontal: 20,
+    gridGap: 14,
+  },
+  useTvFocusReturn: vi.fn(),
+  pushCheckpoint: vi.fn(),
+  popAndRestore: vi.fn(),
 }));
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
-  return { ...actual, default: actual, useState: mocks.useState };
+  return { ...actual, default: actual, useState: mocks.useState, useEffect: mocks.useEffect };
 });
+
+vi.mock('@react-navigation/native', () => ({
+  useIsFocused: () => mocks.isFocused,
+}));
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
@@ -41,6 +57,18 @@ vi.mock('../components/ui', async (original) => ({
   BottomSheet: 'BottomSheet',
 }));
 vi.mock('../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => mocks.safeInsets,
+}));
+vi.mock('../tv', () => ({
+  TvFocusScope: 'TvFocusScope',
+  tvFocusRegistry: {
+    pushCheckpoint: mocks.pushCheckpoint,
+    popAndRestore: mocks.popAndRestore,
+  },
+  useTvEnvironment: () => mocks.tvEnv,
+  useTvFocusReturn: mocks.useTvFocusReturn,
+}));
 vi.mock('../components/profile/ProfileSections', () => ({
   ListeningStatsPanel: 'ListeningStatsPanel',
   ProfileEditForm: 'ProfileEditForm',
@@ -128,8 +156,16 @@ function renderDeletionState(
 describe('ProfileScreen account deletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.isFocused = true;
     mocks.resolveServerUrl.mockImplementation((value: string) => value);
     mocks.updatePlacement.mockReturnValue('bottom');
+    mocks.safeInsets = { top: 0, right: 0, bottom: 24, left: 0 };
+    mocks.tvEnv = {
+      isTv: false,
+      overscan: { top: 0, right: 0, bottom: 0, left: 0 },
+      contentPaddingHorizontal: 20,
+      gridGap: 14,
+    };
     mocks.useAuth.mockReturnValue({
       user: {
         id: 7,
@@ -260,5 +296,55 @@ describe('ProfileScreen account deletion', () => {
     expect(order.slice(0, 2)).toEqual(['profile-hero', 'ProfileIdentityCard']);
     expect(order.slice(-3)).toEqual(['ProfileEditForm', 'AndroidUpdateCard', 'profile-danger']);
     expect(order.filter((entry) => entry === 'AndroidUpdateCard')).toHaveLength(1);
+  });
+
+  it('guards the bottom Android gesture bar with ProfileBottomSafeSpacer and renders a 2-column TV layout without double overscan', () => {
+    mocks.safeInsets = { top: 0, right: 0, bottom: 28, left: 0 };
+    const spacer = ProfileBottomSafeSpacer();
+    expect(spacer?.props.testID).toBe('profile-bottom-safe-spacer');
+    expect(spacer?.props.style).toMatchObject({ height: 28 });
+
+    mocks.safeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
+    expect(ProfileBottomSafeSpacer()).toBeNull();
+
+    mocks.useState.mockReset();
+    mocks.tvEnv = {
+      isTv: true,
+      overscan: { top: 27, right: 48, bottom: 27, left: 48 },
+      contentPaddingHorizontal: 28,
+      gridGap: 16,
+    };
+    const tvTree = renderDeletionState(false, false, null).tree;
+    expect(byTestId(tvTree, 'profile-tv-columns')).toBeDefined();
+    expect(JSON.stringify(byTestId(tvTree, 'profile-screen').props.style)).not.toContain('"paddingTop":27');
+    expect(byTestId(tvTree, 'profile-scroll').props.contentContainerStyle).toEqual([
+      expect.any(Object),
+      { paddingHorizontal: 28, paddingBottom: 96 },
+    ]);
+    expect(elements(tvTree).some((el) => el.type === ProfileTvFocusEffect)).toBe(true);
+  });
+
+  it('pops the tv-profile focus checkpoint on unmount and gates useTvFocusReturn on isFocused', () => {
+    let cleanup: (() => void) | undefined;
+    mocks.useEffect.mockImplementation((effect: () => (() => void) | void) => {
+      cleanup = effect() ?? undefined;
+    });
+    mocks.tvEnv = {
+      isTv: true,
+      overscan: { top: 27, right: 48, bottom: 27, left: 48 },
+      contentPaddingHorizontal: 28,
+      gridGap: 16,
+    };
+    mocks.isFocused = false;
+
+    expect(ProfileTvFocusEffect()).toBeNull();
+    expect(mocks.useTvFocusReturn).toHaveBeenCalledWith({
+      scope: 'profile',
+      active: false,
+      enabled: true,
+    });
+    expect(mocks.popAndRestore).not.toHaveBeenCalled();
+    cleanup?.();
+    expect(mocks.popAndRestore).toHaveBeenCalledOnce();
   });
 });

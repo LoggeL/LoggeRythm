@@ -4,7 +4,15 @@ import type { ImportJobStatus } from '../../api/types';
 import { isActiveImportJob } from '../../data';
 import { strings } from '../../localization';
 import { colors, layout, opacity, radii, spacing } from '../../theme';
-import { AppText, Artwork, IconButton, SectionHeader, Surface } from '../ui';
+import {
+  AppText,
+  Artwork,
+  FocusRingOverlay,
+  IconButton,
+  SectionHeader,
+  Surface,
+  createFocusRingController,
+} from '../ui';
 import {
   importJobProgressPercent,
   importJobSummary,
@@ -16,6 +24,7 @@ function ProgressBar({ percent, testID }: { percent: number; testID?: string }) 
   return (
     <View
       testID={testID}
+      focusable={false}
       accessibilityRole="progressbar"
       accessibilityLabel={strings.search.importProgressLabel}
       accessibilityValue={{ min: 0, max: 100, now: percent }}
@@ -44,6 +53,7 @@ export function SpotifyImportJobRow({
 }: SpotifyImportJobRowProps) {
   const active = isActiveImportJob(job);
   const title = importJobTitle(job);
+  const focusController = createFocusRingController();
   return (
     <View
       testID={`spotify-import-job-${job.id}`}
@@ -55,6 +65,10 @@ export function SpotifyImportJobRow({
         accessibilityLabel={strings.search.importJobOpenLabel(title)}
         accessibilityHint={importJobSummary(job)}
         accessibilityState={{ selected }}
+        focusable
+        android_ripple={{ color: colors.fillStrong }}
+        onFocus={() => focusController.setFocused(true)}
+        onBlur={() => focusController.setFocused(false)}
         onPress={onSelect}
         style={({ pressed }) => [styles.rowMain, pressed ? styles.pressed : null]}
       >
@@ -77,6 +91,7 @@ export function SpotifyImportJobRow({
         {job.status === 'done' ? (
           <AppText variant="caption" color="accent">{strings.search.importJobOpen}</AppText>
         ) : null}
+        <FocusRingOverlay controller={focusController} borderRadius={radii.sm} />
       </Pressable>
       <IconButton
         testID={`spotify-import-job-${job.id}-remove`}
@@ -120,6 +135,7 @@ export function SpotifyImportJobList({
     return (
       <View
         testID="spotify-import-jobs-loading"
+        focusable={false}
         accessibilityLabel={strings.search.importJobsLoading}
         style={styles.loading}
       >

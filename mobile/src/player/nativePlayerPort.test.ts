@@ -219,13 +219,13 @@ describe('NativeBackedPlayerPort', () => {
 
     expect(vi.mocked(module.command).mock.calls.map(([name]) => name)).toEqual([
       'setQueue',
-      'setQueue',
-      'setQueue',
+      'addQueueItems',
+      'moveQueueItem',
     ]);
     port.dispose();
   });
 
-  it('retains private Cookie sources across replace, insert, and move setQueue commands', async () => {
+  it('retains private Cookie sources across granular replace, insert, and move commands', async () => {
     const module = nativeModule();
     const port = createNativePlayerPort({ nativeModule: module, emitter });
     port.setMediaItems([remoteItem('one', 'session=alpha'), remoteItem('two', 'session=beta')]);
@@ -234,24 +234,39 @@ describe('NativeBackedPlayerPort', () => {
     port.moveMediaItem(2, 0);
     await port.flush();
 
-    const setQueuePayloads = vi.mocked(module.command).mock.calls.map(([_name, payload]) => (
-      JSON.parse(payload) as { items: { id: string; headers?: { Cookie: string } }[] }
-    ));
-    expect(setQueuePayloads).toHaveLength(4);
-    expect(setQueuePayloads[1].items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'one', headers: { Cookie: 'session=alpha' } }),
+    const calls = vi.mocked(module.command).mock.calls.map(([name, payload]) => [
+      name,
+      JSON.parse(payload) as Record<string, unknown>,
+    ]);
+    expect(calls).toHaveLength(4);
+    expect(calls[0][0]).toBe('setQueue');
+    expect(calls[1]).toEqual([
+      'replaceQueueItem',
+      expect.objectContaining({
+        index: 1,
+        item: expect.objectContaining({ id: 'two', headers: { Cookie: 'session=beta-new' } }),
+      }),
+    ]);
+    expect(calls[2]).toEqual([
+      'addQueueItems',
+      expect.objectContaining({
+        index: 1,
+        items: [expect.objectContaining({ id: 'three', headers: { Cookie: 'session=gamma' } })],
+      }),
+    ]);
+    expect(calls[3]).toEqual(['moveQueueItem', { fromIndex: 2, toIndex: 0 }]);
+
+    // A full setQueue rebuild still resolves the updated private Cookie from the vault.
+    port.setMediaItems(port.getQueue());
+    await port.flush();
+    const rebuilt = JSON.parse(vi.mocked(module.command).mock.calls[4][1]) as {
+      items: { id: string; headers?: { Cookie: string } }[];
+    };
+    expect(rebuilt.items).toEqual([
       expect.objectContaining({ id: 'two', headers: { Cookie: 'session=beta-new' } }),
-    ]));
-    expect(setQueuePayloads[2].items).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'one', headers: { Cookie: 'session=alpha' } }),
-      expect.objectContaining({ id: 'two', headers: { Cookie: 'session=beta-new' } }),
       expect.objectContaining({ id: 'three', headers: { Cookie: 'session=gamma' } }),
-    ]));
-    expect(setQueuePayloads[3].items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'one', headers: { Cookie: 'session=alpha' } }),
-      expect.objectContaining({ id: 'two', headers: { Cookie: 'session=beta-new' } }),
-      expect.objectContaining({ id: 'three', headers: { Cookie: 'session=gamma' } }),
-    ]));
+    ]);
 
     const publicJson = JSON.stringify(port.getSnapshot());
     const persistedJson = serializePersistablePlayerState(port.getSnapshot());
@@ -277,6 +292,8 @@ describe('NativeBackedPlayerPort', () => {
     await expect(port.flush()).rejects.toMatchObject({ operation: 'replaceMediaItem' });
 
     port.addMediaItem(remoteItem('two', 'session=two'));
+    await port.flush();
+    port.setMediaItems(port.getQueue());
     await port.flush();
     const payload = JSON.parse(command.mock.calls.at(-1)?.[1] ?? '{}') as {
       items: { id: string; headers?: { Cookie: string } }[];
@@ -352,21 +369,26 @@ describe('NativeBackedPlayerPort', () => {
       expect(command).toHaveBeenCalledTimes(callsBefore);
     };
 
-    await expectSourceUnavailable(() => port.addMediaItem(remoteItem('three')));
-    await expectSourceUnavailable(() => port.moveMediaItem(1, 0));
-    await expectSourceUnavailable(() => port.skipToIndex(1));
+    // Full-queue or item-payload commands must never serialize display-only placeholders.
     await expectSourceUnavailable(() => port.setMediaItems(port.getQueue()));
+    await expectSourceUnavailable(() => port.replaceQueue(port.getQueue(), 0, 0, false));
+    await expectSourceUnavailable(() => port.replaceMediaItem(0, port.getQueue()[0]));
     expect(port.getQueue().map((item) => item.mediaId)).toEqual(['one', 'two']);
     expect(JSON.stringify(rejected)).not.toContain('__loggerythm_source_unavailable__');
     expect(JSON.stringify(rejected)).not.toContain('file:');
 
-    // An explicit first-party rehydration for the exact IDs unlocks full-queue
-    // reconciliation without ever serializing the display-only placeholder.
-    port.setMediaItems([remoteItem('one'), remoteItem('two')]);
+    // Granular mutations that do not re-upload restored sources work safely on restored
+    // queues without ever serializing placeholder URLs back to native.
+    port.addMediaItem(remoteItem('three'));
+    port.moveMediaItem(2, 1);
+    port.skipToIndex(1);
     await port.flush();
-    port.moveMediaItem(1, 0);
-    await port.flush();
-    expect(command).toHaveBeenCalledTimes(2);
+    expect(command).toHaveBeenCalledTimes(3);
+    expect(command.mock.calls.map(([name]) => name)).toEqual([
+      'addQueueItems',
+      'moveQueueItem',
+      'skipToIndex',
+    ]);
     command.mock.calls.forEach(([_name, payloadJson]) => {
       expect(payloadJson).not.toContain('__loggerythm_source_unavailable__');
       expect(payloadJson).not.toContain('redacted.invalid');
@@ -974,48 +996,150 @@ describe('NativeBackedPlayerPort', () => {
     port.dispose();
   });
 
-  it('uses full-queue setQueue for index skips and restores play after live queue edits', async () => {
+  it('uses granular native mutations for live queue edits and index skips without setQueue or play', async () => {
     const module = nativeModule();
     const port = createNativePlayerPort({ nativeModule: module, emitter });
-    port.setMediaItems([remoteItem('one'), remoteItem('two')]);
+    port.setMediaItems([remoteItem('one'), remoteItem('two'), remoteItem('three')], 1);
     port.play();
-    port.addMediaItem(remoteItem('three'));
-    port.skipToIndex(2);
+    await port.flush();
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['one', 'two', 'three'], {
+        currentIndex: 1,
+        positionMs: 4_250,
+        isPlaying: true,
+      }),
+    });
+    vi.mocked(module.command).mockClear();
+
+    // Add to queue, Play Next (insert after active), reorder, remove non-active, skipToIndex.
+    port.addMediaItem(remoteItem('four'));
+    port.insertMediaItem(2, remoteItem('next'));
+    port.moveMediaItem(4, 2);
+    port.removeMediaItem(0);
+    port.removeMediaItems(2, 4);
+    expect(port.getActiveMediaItem()?.mediaId).toBe('two');
+    expect(port.getActiveMediaItemIndex()).toBe(0);
+    expect(port.isPlaying()).toBe(true);
+    expect(port.getPlaybackState()).toBe(PlaybackState.Ready);
+    expect(port.getProgress()).toEqual({
+      position: 4.25,
+      duration: 12.5,
+      buffered: 8,
+      cached: 0,
+    });
+
+    port.skipToIndex(1);
     await port.flush();
 
-    const names = vi.mocked(module.command).mock.calls.map(([name]) => name);
-    expect(names).toEqual(['setQueue', 'play', 'setQueue', 'play', 'setQueue', 'play']);
-    const lastQueuePayload = JSON.parse(vi.mocked(module.command).mock.calls[4][1]) as {
-      items: { id: string }[];
-      startIndex: number;
-    };
-    expect(lastQueuePayload.items.map((item) => item.id)).toEqual(['one', 'two', 'three']);
-    expect(lastQueuePayload.startIndex).toBe(2);
+    const calls = vi.mocked(module.command).mock.calls.map(([name, payload]) => [
+      name,
+      JSON.parse(payload) as Record<string, unknown>,
+    ]);
+    expect(calls.map(([name]) => name)).toEqual([
+      'addQueueItems',
+      'addQueueItems',
+      'moveQueueItem',
+      'removeQueueItems',
+      'removeQueueItems',
+      'skipToIndex',
+    ]);
+    expect(calls[0][1]).toMatchObject({ index: 3, items: [{ id: 'four' }] });
+    expect(calls[1][1]).toMatchObject({ index: 2, items: [{ id: 'next' }] });
+    expect(calls[2][1]).toEqual({ fromIndex: 4, toIndex: 2 });
+    expect(calls[3][1]).toEqual({ fromIndex: 0, toIndex: 1 });
+    expect(calls[4][1]).toEqual({ fromIndex: 2, toIndex: 4 });
+    expect(calls[5][1]).toEqual({ index: 1 });
+    // Never sends setQueue, stale startPositionMs, or redundant play for live queue edits.
+    expect(calls.some(([name]) => name === 'setQueue' || name === 'play')).toBe(false);
     port.dispose();
   });
 
-  it('keeps an acknowledged queue edit when only its playback resume fails', async () => {
-    let playCalls = 0;
-    const command = vi.fn(async (name: string) => {
-      if (name === 'play' && ++playCalls === 2) throw new Error('resume failed');
-      return undefined;
+  it('keeps paused playback paused at the exact position across queue edits, and transitions intentionally on active removal', async () => {
+    const module = nativeModule();
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    port.setMediaItems([remoteItem('one'), remoteItem('two'), remoteItem('three')], 1);
+    await port.flush();
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['one', 'two', 'three'], {
+        currentIndex: 1,
+        positionMs: 6_500,
+        isPlaying: false,
+      }),
     });
-    const port = createNativePlayerPort({
-      nativeModule: nativeModule({ command }),
-      emitter,
+    vi.mocked(module.command).mockClear();
+
+    port.insertMediaItem(0, remoteItem('zero'));
+    port.insertMediaItem(3, remoteItem('play-next'));
+    port.moveMediaItem(4, 3);
+    port.removeMediaItem(0);
+    expect(port.getActiveMediaItem()?.mediaId).toBe('two');
+    expect(port.getActiveMediaItemIndex()).toBe(1);
+    expect(port.isPlaying()).toBe(false);
+    expect(port.getProgress()).toEqual({
+      position: 6.5,
+      duration: 12.5,
+      buffered: 8,
+      cached: 0,
     });
-    port.setMediaItem(remoteItem('one'));
+
+    // Removing the currently active item is an intentional track change to the next item at 0s.
+    port.removeMediaItem(1);
+    expect(port.getActiveMediaItem()?.mediaId).toBe('three');
+    expect(port.getActiveMediaItemIndex()).toBe(1);
+    expect(port.isPlaying()).toBe(false);
+    expect(port.getProgress()).toEqual({
+      position: 0,
+      duration: 0,
+      buffered: 0,
+      cached: 0,
+    });
+
+    await port.flush();
+    expect(vi.mocked(module.command).mock.calls.map(([name]) => name)).toEqual([
+      'addQueueItems',
+      'addQueueItems',
+      'moveQueueItem',
+      'removeQueueItems',
+      'removeQueueItems',
+    ]);
+    port.dispose();
+  });
+
+  it('sends atomic replaceQueue with explicit resume flag and preserves active progress when unchanged', async () => {
+    const module = nativeModule();
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    port.setMediaItems([remoteItem('one'), remoteItem('two')], 1);
     port.play();
     await port.flush();
-
-    port.addMediaItem(remoteItem('two'));
-    await expect(port.flush()).rejects.toMatchObject({
-      operation: 'addMediaItem',
-      code: 'native-rejected',
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['one', 'two'], {
+        currentIndex: 1,
+        positionMs: 7_200,
+        isPlaying: true,
+      }),
     });
-    expect(port.getQueue().map((item) => item.mediaId)).toEqual(['one', 'two']);
-    expect(port.isPlaying()).toBe(false);
-    expect(JSON.stringify(port.getSnapshot())).not.toContain('session=');
+    vi.mocked(module.command).mockClear();
+
+    port.replaceQueue([remoteItem('two'), remoteItem('three')], 0, 7.2, false);
+    expect(port.getActiveMediaItem()?.mediaId).toBe('two');
+    expect(port.getActiveMediaItemIndex()).toBe(0);
+    expect(port.isPlaying()).toBe(true);
+    expect(port.getProgress()).toEqual({
+      position: 7.2,
+      duration: 12.5,
+      buffered: 8,
+      cached: 0,
+    });
+
+    await port.flush();
+    expect(vi.mocked(module.command).mock.calls).toHaveLength(1);
+    expect(vi.mocked(module.command).mock.calls[0][0]).toBe('replaceQueue');
+    expect(JSON.parse(vi.mocked(module.command).mock.calls[0][1])).toMatchObject({
+      startIndex: 0,
+      startPositionMs: 7_200,
+      resume: false,
+      items: [{ id: 'two' }, { id: 'three' }],
+    });
     port.dispose();
   });
 
@@ -1159,6 +1283,63 @@ describe('NativeBackedPlayerPort', () => {
     // Without a known source, an empty native sidecar stays empty and fails loudly downstream.
     expect(port.getQueue()[0].extras).toEqual({});
     expect(() => mediaItemToTrack(port.getQueue()[0])).toThrow(/missing Track metadata/);
+    port.dispose();
+  });
+
+  it('reuses frozen queue and active item references on progress-only 1s ticks while preserving cookie stripping', async () => {
+    const module = nativeModule();
+    const port = createNativePlayerPort({ nativeModule: module, emitter });
+    await port.setupPlayer({ sessionBinding: SESSION_BINDING });
+    const track = { id: '42', title: 'Steady', artist: 'Logge', artists: [{ id: '1', name: 'Logge' }] };
+    port.setMediaItems([{
+      mediaId: 'track:42',
+      title: 'Steady',
+      artist: 'Logge',
+      url: {
+        uri: 'https://loggerythm.logge.top/api/tracks/42/stream',
+        headers: { Cookie: 'sf_session=secret-cookie' },
+      },
+      extras: { track, radio: false, token: 'never-public' },
+    }], 0);
+    await port.flush();
+
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['track:42'], {
+        positionMs: 1_000,
+        extras: { track, radio: false },
+      }),
+    });
+    const firstSnapshot = port.getSnapshot();
+    const firstActive = port.getActiveMediaItem();
+    expect(Object.isFrozen(firstSnapshot.queue)).toBe(true);
+    expect(Object.isFrozen(firstActive)).toBe(true);
+    expect(JSON.stringify(firstSnapshot)).not.toContain('secret-cookie');
+    expect(JSON.stringify(firstSnapshot)).not.toContain('never-public');
+
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['track:42'], {
+        positionMs: 2_000,
+        extras: { track, radio: false },
+      }),
+    });
+    const secondSnapshot = port.getSnapshot();
+    expect(secondSnapshot.progress.position).toBe(2);
+    expect(secondSnapshot.queue).toBe(firstSnapshot.queue);
+    expect(secondSnapshot.queue[0]).toBe(firstSnapshot.queue[0]);
+    expect(port.getActiveMediaItem()).toBe(firstActive);
+    expect(secondSnapshot.queuePersistence).toBe(firstSnapshot.queuePersistence);
+
+    // A sensitive key or metadata change still goes through sanitization and updates the item ref.
+    emitter.emit(NATIVE_SNAPSHOT_EVENT, {
+      snapshotJson: nativeSnapshot(['track:42'], {
+        positionMs: 3_000,
+        extras: { track: { ...track, title: 'Steady (Live)' }, radio: false, secretToken: 'drop-me' },
+      }),
+    });
+    const thirdSnapshot = port.getSnapshot();
+    expect(thirdSnapshot.queue[0]).not.toBe(firstSnapshot.queue[0]);
+    expect(mediaItemToTrack(thirdSnapshot.queue[0])?.title).toBe('Steady (Live)');
+    expect(JSON.stringify(thirdSnapshot)).not.toContain('drop-me');
     port.dispose();
   });
 });

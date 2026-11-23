@@ -7,20 +7,42 @@ interface HorizontalShelfProps<T> {
   data: readonly T[];
   keyExtractor: (item: T, index: number) => string;
   renderItem: (item: T, index: number) => React.ReactElement;
+  /** Optional TV horizontal edge padding override (defaults to `layout.pagePadding`). */
+  paddingHorizontal?: number;
+  /** Optional TV card gap override (defaults to `layout.railGap`). */
+  gap?: number;
 }
 
 /** The full-bleed horizontal card rail of a Home section. */
-export function HorizontalShelf<T>({ id, data, keyExtractor, renderItem }: HorizontalShelfProps<T>) {
+export function HorizontalShelf<T>({
+  id,
+  data,
+  keyExtractor,
+  renderItem,
+  paddingHorizontal,
+  gap,
+}: HorizontalShelfProps<T>) {
+  const containerStyle =
+    paddingHorizontal === undefined && gap === undefined
+      ? styles.rail
+      : [
+          styles.rail,
+          paddingHorizontal !== undefined ? { paddingHorizontal } : null,
+          gap !== undefined ? { gap } : null,
+        ];
   return (
     <FlatList
       testID={`home-shelf-${id}`}
       horizontal
-      data={[...data]}
+      data={data}
       keyExtractor={keyExtractor}
       renderItem={({ item, index }) => renderItem(item, index)}
       showsHorizontalScrollIndicator={false}
       initialNumToRender={4}
-      contentContainerStyle={styles.rail}
+      maxToRenderPerBatch={6}
+      windowSize={5}
+      removeClippedSubviews={false}
+      contentContainerStyle={containerStyle}
     />
   );
 }

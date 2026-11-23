@@ -175,6 +175,46 @@ describe('QueueRow', () => {
     expect(dragging.props.collapsable).toBe(false);
   });
 
+  it('makes the full row body (cover + title + subtitle) the skip target', () => {
+    const rendered = row();
+    const skip = byTestId(rendered, 'queue-row-a-track');
+    expect(flatStyle(skip.props.style)).toMatchObject({
+      flex: 1,
+      flexDirection: 'row',
+    });
+    expect(byTestId(skip, 'queue-row-a-title').props.children).toBe(track.title);
+    expect(byTestId(skip, 'queue-row-a-subtitle').props.children).toContain(track.artist);
+  });
+
+  it('exposes direct D-Pad focusable move-up, move-down, and remove controls on Android TV', () => {
+    const onMoveUp = vi.fn();
+    const onMoveDown = vi.fn();
+    const onRemove = vi.fn();
+    const rendered = row({
+      isTv: true,
+      canMoveUp: true,
+      canMoveDown: true,
+      onMoveUp,
+      onMoveDown,
+      onRemove,
+    });
+
+    expect(queryByTestId(rendered, 'queue-row-a-drag-handle')).toBeNull();
+    const up = byTestId(rendered, 'queue-row-a-move-up');
+    const down = byTestId(rendered, 'queue-row-a-move-down');
+    const remove = byTestId(rendered, 'queue-row-a-remove');
+    expect(up.props.focusable).toBe(true);
+    expect(down.props.focusable).toBe(true);
+    expect(remove.props.focusable).toBe(true);
+
+    (up.props.onPress as () => void)();
+    (down.props.onPress as () => void)();
+    (remove.props.onPress as () => void)();
+    expect(onMoveUp).toHaveBeenCalledOnce();
+    expect(onMoveDown).toHaveBeenCalledOnce();
+    expect(onRemove).toHaveBeenCalledOnce();
+  });
+
   it('blocks every control while a queue mutation is running', () => {
     const dragHandlers = { onStartShouldSetResponder: vi.fn(() => true) };
     const rendered = row({

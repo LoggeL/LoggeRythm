@@ -47,6 +47,12 @@ export const NATIVE_PLAYER_EVENT = 'LoggeRythmPlayerEvent';
 
 export type NativePlayerCommandName =
   | 'setQueue'
+  | 'replaceQueue'
+  | 'addQueueItems'
+  | 'moveQueueItem'
+  | 'removeQueueItems'
+  | 'replaceQueueItem'
+  | 'skipToIndex'
   | 'play'
   | 'pause'
   | 'seekTo'
@@ -76,17 +82,17 @@ export const NATIVE_COMMAND_TRANSLATION = deepFreeze({
   seekTo: { nativeName: 'seekTo', support: 'vertical-slice' },
   skipToNext: { nativeName: 'skipToNext', support: 'vertical-slice' },
   skipToPrevious: { nativeName: 'skipToPrevious', support: 'vertical-slice' },
-  skipToIndex: { nativeName: 'setQueue', support: 'vertical-slice' },
+  skipToIndex: { nativeName: 'skipToIndex', support: 'vertical-slice' },
   setMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
   setMediaItems: { nativeName: 'setQueue', support: 'vertical-slice' },
-  addMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
-  addMediaItems: { nativeName: 'setQueue', support: 'vertical-slice' },
-  insertMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
-  removeMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
-  removeMediaItems: { nativeName: 'setQueue', support: 'vertical-slice' },
-  replaceMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
-  moveMediaItem: { nativeName: 'setQueue', support: 'vertical-slice' },
-  replaceQueue: { nativeName: 'setQueue', support: 'vertical-slice' },
+  addMediaItem: { nativeName: 'addQueueItems', support: 'vertical-slice' },
+  addMediaItems: { nativeName: 'addQueueItems', support: 'vertical-slice' },
+  insertMediaItem: { nativeName: 'addQueueItems', support: 'vertical-slice' },
+  removeMediaItem: { nativeName: 'removeQueueItems', support: 'vertical-slice' },
+  removeMediaItems: { nativeName: 'removeQueueItems', support: 'vertical-slice' },
+  replaceMediaItem: { nativeName: 'replaceQueueItem', support: 'vertical-slice' },
+  moveMediaItem: { nativeName: 'moveQueueItem', support: 'vertical-slice' },
+  replaceQueue: { nativeName: 'replaceQueue', support: 'vertical-slice' },
   clear: { nativeName: 'clearQueue', support: 'vertical-slice' },
   setRepeatMode: { nativeName: 'setRepeatMode', support: 'vertical-slice' },
   setQueuePersistenceState: {
@@ -156,7 +162,6 @@ interface PendingCommand {
   reducer: (snapshot: Readonly<PlayerSnapshot>) => Readonly<PlayerSnapshot>;
   expectedQueueIds?: readonly string[];
   payload: Readonly<Record<string, unknown>>;
-  resumeAfterQueueSet: boolean;
   conflicted: boolean;
   sourceUpdates: ReadonlyMap<string, QueueMediaItem>;
 }
@@ -302,13 +307,129 @@ function sameStrings(left: readonly string[], right: readonly string[]): boolean
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (
+    typeof left !== 'object'
+    || left === null
+    || typeof right !== 'object'
+    || right === null
+  ) {
+    return false;
+  }
+  const leftIsArray = Array.isArray(left);
+  if (leftIsArray !== Array.isArray(right)) return false;
+  if (leftIsArray) {
+    const rightArray = right as readonly unknown[];
+    if (left.length !== rightArray.length) return false;
+    for (let index = 0; index < left.length; index += 1) {
+      if (!jsonValuesEqual(left[index], rightArray[index])) return false;
+    }
+    return true;
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const leftKeys = Object.keys(leftRecord);
+  const rightKeys = Object.keys(rightRecord);
+  if (leftKeys.length !== rightKeys.length) return false;
+  for (const key of leftKeys) {
+    if (!Object.prototype.hasOwnProperty.call(rightRecord, key)) return false;
+    if (!jsonValuesEqual(leftRecord[key], rightRecord[key])) return false;
+  }
+  return true;
+}
+
+function sanitizedMediaUrlEquals(
+  candidate: MediaItem['url'] | undefined,
+  previous: MediaItem['url'] | undefined,
+): boolean {
+  if (candidate === previous) return true;
+  if (
+    typeof candidate !== 'object'
+    || candidate === null
+    || typeof previous !== 'object'
+    || previous === null
+  ) {
+    return false;
+  }
+  return candidate.uri === previous.uri && candidate.bundle === previous.bundle;
+}
+
+function matchesSanitizedQueueItem(
+  candidate: MediaItem,
+  previous: Readonly<QueueMediaItem>,
+): boolean {
+  return (
+    candidate.mediaId === previous.mediaId
+    && candidate.title === previous.title
+    && candidate.artist === previous.artist
+    && candidate.albumTitle === previous.albumTitle
+    && candidate.duration === previous.duration
+    && candidate.isLive === previous.isLive
+    && candidate.mimeType === previous.mimeType
+    && sanitizedMediaUrlEquals(candidate.url, previous.url)
+    && sanitizedMediaUrlEquals(candidate.artworkUrl, previous.artworkUrl)
+    && jsonValuesEqual(candidate.extras, previous.extras)
+  );
+}
+
+function sleepTimersEqual(left: SleepTimerState, right: SleepTimerState): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || left.type !== right.type) return false;
+  if (left.type === 'mediaItem' && right.type === 'mediaItem') {
+    return left.index === right.index;
+  }
+  if (left.type === 'time' && right.type === 'time') {
+    return (
+      left.remainingSeconds === right.remainingSeconds
+      && left.fadeOutSeconds === right.fadeOutSeconds
+    );
+  }
+  return false;
+}
+
 function snapshotsSemanticallyEqual(
   left: Readonly<PlayerSnapshot>,
   right: Readonly<PlayerSnapshot>,
 ): boolean {
-  const { revision: _leftRevision, ...leftState } = left;
-  const { revision: _rightRevision, ...rightState } = right;
-  return JSON.stringify(leftState) === JSON.stringify(rightState);
+  if (
+    left.isSetup !== right.isSetup
+    || left.activeIndex !== right.activeIndex
+    || left.playbackState !== right.playbackState
+    || left.isPlaying !== right.isPlaying
+    || left.repeatMode !== right.repeatMode
+    || left.shuffleEnabled !== right.shuffleEnabled
+    || left.playbackSpeed !== right.playbackSpeed
+    || left.volume !== right.volume
+    || left.progress.position !== right.progress.position
+    || left.progress.duration !== right.progress.duration
+    || left.progress.buffered !== right.progress.buffered
+    || left.progress.cached !== right.progress.cached
+  ) {
+    return false;
+  }
+  if (!sleepTimersEqual(left.sleepTimer, right.sleepTimer)) return false;
+  if (
+    left.queuePersistence !== right.queuePersistence
+    && (
+      left.queuePersistence.contextShuffleEnabled !== right.queuePersistence.contextShuffleEnabled
+      || !sameStrings(
+        left.queuePersistence.contextShuffleRestoreOrder,
+        right.queuePersistence.contextShuffleRestoreOrder,
+      )
+    )
+  ) {
+    return false;
+  }
+  if (left.queue === right.queue) return true;
+  if (left.queue.length !== right.queue.length) return false;
+  for (let index = 0; index < left.queue.length; index += 1) {
+    const leftItem = left.queue[index];
+    const rightItem = right.queue[index];
+    if (leftItem === rightItem) continue;
+    if (!jsonValuesEqual(leftItem, rightItem)) return false;
+  }
+  return true;
 }
 
 function secondsToMilliseconds(value: number, label: string): number {
@@ -739,8 +860,22 @@ export class NativeBackedPlayerPort implements PlayerPort {
 
   skipToIndex(index: number): void {
     requireQueueIndex(index, this.visible.queue.length, 'Skip');
-    const target = this.visible.queue as readonly MediaItem[];
-    this.enqueueQueue('skipToIndex', target, index, 0, this.visible.isPlaying);
+    const expected = queueIds(this.visible);
+    this.enqueue(
+      'skipToIndex',
+      (snapshot) => {
+        requireQueueIndex(index, snapshot.queue.length, 'Skip');
+        return nextSnapshot(snapshot, {
+          activeIndex: index,
+          playbackState: snapshot.playbackState === PlaybackState.Idle && snapshot.queue.length > 0
+            ? PlaybackState.Ready
+            : snapshot.playbackState,
+          progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
+        });
+      },
+      { index },
+      expected,
+    );
   }
 
   setMediaItem(mediaItem: MediaItem): void {
@@ -770,40 +905,12 @@ export class NativeBackedPlayerPort implements PlayerPort {
     mediaItems: readonly MediaItem[],
     logicalName: 'addMediaItems' | 'addMediaItem' = 'addMediaItems',
   ): void {
-    validateMediaItems(mediaItems);
-    if (mediaItems.length === 0) return;
-    const target = [...this.visible.queue, ...mediaItems];
-    validateMediaItems(target as MediaItem[]);
-    const activeIndex = this.visible.activeIndex ?? 0;
-    this.enqueueQueue(
-      logicalName,
-      target as MediaItem[],
-      activeIndex,
-      this.visible.progress.position,
-      this.visible.isPlaying,
-      mediaItems,
-    );
+    this.enqueueInsertQueueItems(logicalName, this.visible.queue.length, mediaItems);
   }
 
   insertMediaItem(index: number, mediaItem: MediaItem): void {
     validateMediaItem(mediaItem);
-    requireQueueIndex(index, this.visible.queue.length, 'Insert', true);
-    const target = [...this.visible.queue];
-    target.splice(index, 0, sanitizeMediaItemForPublic(mediaItem));
-    validateMediaItems(target as MediaItem[]);
-    const activeIndex = this.visible.activeIndex === null
-      ? 0
-      : index <= this.visible.activeIndex
-        ? this.visible.activeIndex + 1
-        : this.visible.activeIndex;
-    this.enqueueQueue(
-      'insertMediaItem',
-      target as MediaItem[],
-      activeIndex,
-      this.visible.progress.position,
-      this.visible.isPlaying,
-      [mediaItem],
-    );
+    this.enqueueInsertQueueItems('insertMediaItem', index, [mediaItem]);
   }
 
   removeMediaItem(index: number): void {
@@ -820,71 +927,120 @@ export class NativeBackedPlayerPort implements PlayerPort {
     if (!Number.isInteger(toIndex) || toIndex <= fromIndex || toIndex > this.visible.queue.length) {
       throw new RangeError('Remove end must be after start and inside the queue');
     }
-    const oldActiveId = this.visible.activeIndex === null
-      ? null
-      : this.visible.queue[this.visible.activeIndex].mediaId;
-    const target = this.visible.queue.filter((_item, index) => index < fromIndex || index >= toIndex);
-    if (target.length === 0) {
-      this.enqueue(logicalName, (snapshot) => nextSnapshot(snapshot, {
-        queue: [],
-        activeIndex: null,
-        isPlaying: false,
-        playbackState: PlaybackState.Idle,
-        progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
-      }), {
-        items: [],
-        startIndex: 0,
-        startPositionMs: 0,
-      }, queueIds(this.visible));
-      return;
-    }
-    const retainedActiveIndex = oldActiveId === null
-      ? 0
-      : target.findIndex((item) => item.mediaId === oldActiveId);
-    const activeIndex = retainedActiveIndex >= 0
-      ? retainedActiveIndex
-      : Math.min(fromIndex, target.length - 1);
-    this.enqueueQueue(
+    const expected = queueIds(this.visible);
+    this.enqueue(
       logicalName,
-      target as MediaItem[],
-      activeIndex,
-      retainedActiveIndex >= 0 ? this.visible.progress.position : 0,
-      this.visible.isPlaying,
+      (snapshot) => {
+        requireQueueIndex(fromIndex, snapshot.queue.length, 'Remove start');
+        if (toIndex <= fromIndex || toIndex > snapshot.queue.length) {
+          throw new RangeError('Remove end must be after start and inside the queue');
+        }
+        const oldActiveId = snapshot.activeIndex === null
+          ? null
+          : snapshot.queue[snapshot.activeIndex].mediaId;
+        const nextQueue = snapshot.queue.filter(
+          (_item, index) => index < fromIndex || index >= toIndex,
+        );
+        if (nextQueue.length === 0) {
+          return nextSnapshot(snapshot, {
+            queue: [],
+            activeIndex: null,
+            isPlaying: false,
+            playbackState: PlaybackState.Idle,
+            progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
+          });
+        }
+        const retainedActiveIndex = oldActiveId === null
+          ? 0
+          : nextQueue.findIndex((item) => item.mediaId === oldActiveId);
+        if (retainedActiveIndex >= 0) {
+          return nextSnapshot(snapshot, {
+            queue: nextQueue,
+            activeIndex: retainedActiveIndex,
+          });
+        }
+        const nextActiveIndex =
+          snapshot.repeatMode === RepeatMode.All && fromIndex >= nextQueue.length
+            ? 0
+            : Math.min(fromIndex, nextQueue.length - 1);
+        return nextSnapshot(snapshot, {
+          queue: nextQueue,
+          activeIndex: nextActiveIndex,
+          progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
+        });
+      },
+      { fromIndex, toIndex },
+      expected,
     );
   }
 
   replaceMediaItem(index: number, mediaItem: MediaItem): void {
     validateMediaItem(mediaItem);
     requireQueueIndex(index, this.visible.queue.length, 'Replace');
+    const safeItem = sanitizeMediaItemForPublic(mediaItem);
     const target = [...this.visible.queue];
-    target[index] = sanitizeMediaItemForPublic(mediaItem);
+    target[index] = safeItem;
     validateMediaItems(target as MediaItem[]);
-    this.enqueueQueue(
+    const copy = copyMediaItem(mediaItem);
+    const source = isUnavailableSourcePlaceholder(copy) ? null : copy;
+    if (source === null) {
+      this.enqueueSourceUnavailable('replaceMediaItem');
+      return;
+    }
+    const expected = queueIds(this.visible);
+    const updates = new Map<string, QueueMediaItem>([[source.mediaId, source]]);
+    this.enqueue(
       'replaceMediaItem',
-      target as MediaItem[],
-      this.visible.activeIndex ?? 0,
-      index === this.visible.activeIndex ? 0 : this.visible.progress.position,
-      this.visible.isPlaying,
-      [mediaItem],
+      (snapshot) => {
+        requireQueueIndex(index, snapshot.queue.length, 'Replace');
+        const nextQueue = [...snapshot.queue];
+        nextQueue[index] = safeItem;
+        const replacesActive = index === snapshot.activeIndex;
+        return nextSnapshot(snapshot, {
+          queue: nextQueue,
+          ...(replacesActive
+            ? {
+                playbackState: PlaybackState.Ready,
+                progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
+              }
+            : {}),
+        });
+      },
+      {
+        index,
+        item: mapMediaItemToNativeQueueItem(source),
+      },
+      expected,
+      updates,
     );
   }
 
   moveMediaItem(fromIndex: number, toIndex: number): void {
     requireQueueIndex(fromIndex, this.visible.queue.length, 'Move source');
     requireQueueIndex(toIndex, this.visible.queue.length, 'Move target');
-    const target = [...this.visible.queue];
-    const [moved] = target.splice(fromIndex, 1);
-    target.splice(toIndex, 0, moved);
-    const activeId = this.visible.activeIndex === null
-      ? null
-      : this.visible.queue[this.visible.activeIndex].mediaId;
-    const activeIndex = activeId === null ? 0 : target.findIndex((item) => item.mediaId === activeId);
-    this.enqueueQueue(
+    if (fromIndex === toIndex) return;
+    const expected = queueIds(this.visible);
+    this.enqueue(
       'moveMediaItem',
-      target as MediaItem[],
-      activeIndex,
-      this.visible.progress.position,
-      this.visible.isPlaying,
+      (snapshot) => {
+        requireQueueIndex(fromIndex, snapshot.queue.length, 'Move source');
+        requireQueueIndex(toIndex, snapshot.queue.length, 'Move target');
+        const nextQueue = [...snapshot.queue];
+        const [moved] = nextQueue.splice(fromIndex, 1);
+        nextQueue.splice(toIndex, 0, moved);
+        const activeId = snapshot.activeIndex === null
+          ? null
+          : snapshot.queue[snapshot.activeIndex].mediaId;
+        const nextActiveIndex = activeId === null
+          ? 0
+          : nextQueue.findIndex((item) => item.mediaId === activeId);
+        return nextSnapshot(snapshot, {
+          queue: nextQueue,
+          activeIndex: nextActiveIndex,
+        });
+      },
+      { fromIndex, toIndex },
+      expected,
     );
   }
 
@@ -1151,12 +1307,68 @@ export class NativeBackedPlayerPort implements PlayerPort {
     categories.forEach((category) => category.items.forEach(visit));
   }
 
+  private enqueueInsertQueueItems(
+    logicalName: 'addMediaItem' | 'addMediaItems' | 'insertMediaItem',
+    index: number,
+    mediaItems: readonly MediaItem[],
+  ): void {
+    validateMediaItems(mediaItems);
+    if (mediaItems.length === 0) return;
+    requireQueueIndex(index, this.visible.queue.length, 'Insert', true);
+    const safeAdded = sanitizeMediaItemsForPublic(mediaItems);
+    const target = [...this.visible.queue];
+    target.splice(index, 0, ...safeAdded);
+    validateMediaItems(target as MediaItem[]);
+    const expected = queueIds(this.visible);
+    const updates = new Map<string, QueueMediaItem>();
+    const rawAdded: QueueMediaItem[] = [];
+    for (const item of mediaItems) {
+      const copy = copyMediaItem(item);
+      if (isUnavailableSourcePlaceholder(copy)) {
+        this.enqueueSourceUnavailable(logicalName);
+        return;
+      }
+      updates.set(copy.mediaId, copy);
+      rawAdded.push(copy);
+    }
+    this.enqueue(
+      logicalName,
+      (snapshot) => {
+        requireQueueIndex(index, snapshot.queue.length, 'Insert', true);
+        const nextQueue = [...snapshot.queue];
+        nextQueue.splice(index, 0, ...safeAdded);
+        const wasEmpty = snapshot.queue.length === 0;
+        const nextActiveIndex = snapshot.activeIndex === null
+          ? 0
+          : index <= snapshot.activeIndex
+            ? snapshot.activeIndex + safeAdded.length
+            : snapshot.activeIndex;
+        return nextSnapshot(snapshot, {
+          queue: nextQueue,
+          activeIndex: nextActiveIndex,
+          ...(wasEmpty
+            ? {
+                playbackState: PlaybackState.Ready,
+                progress: { position: 0, duration: 0, buffered: 0, cached: 0 },
+              }
+            : {}),
+        });
+      },
+      {
+        index,
+        items: rawAdded.map(mapMediaItemToNativeQueueItem),
+      },
+      expected,
+      updates,
+    );
+  }
+
   private enqueueQueue(
-    logicalName: PendingCommand['logicalName'],
+    logicalName: 'setMediaItems' | 'setMediaItem' | 'replaceQueue',
     targetItems: readonly MediaItem[],
     activeIndex: number,
     startPosition: number,
-    resumeAfterQueueSet: boolean,
+    resume: boolean,
     sourceUpdates: readonly MediaItem[] = [],
   ): void {
     validateMediaItems(targetItems);
@@ -1165,9 +1377,10 @@ export class NativeBackedPlayerPort implements PlayerPort {
     requireQueueIndex(activeIndex, targetItems.length, 'Queue start');
     const expected = queueIds(this.visible);
     const safeItems = sanitizeMediaItemsForPublic(targetItems);
+    const visibleQueueRefs = new Set<MediaItem>(this.visible.queue);
     const updates = new Map(
       sourceUpdates
-        .filter((item) => !isUnavailableSourcePlaceholder(item))
+        .filter((item) => !isUnavailableSourcePlaceholder(item) && !visibleQueueRefs.has(item))
         .map((item) => [item.mediaId, copyMediaItem(item)] as const),
     );
     const rawItems: QueueMediaItem[] = [];
@@ -1179,27 +1392,40 @@ export class NativeBackedPlayerPort implements PlayerPort {
       }
       rawItems.push(source);
     }
-    const payload = {
+    const basePayload = {
       items: rawItems.map(mapMediaItemToNativeQueueItem),
       startIndex: activeIndex,
       startPositionMs: secondsToMilliseconds(startPosition, 'queue start position'),
     };
+    const payload = logicalName === 'replaceQueue'
+      ? { ...basePayload, resume }
+      : basePayload;
     this.enqueue(
       logicalName,
-      (snapshot) => nextSnapshot(snapshot, {
-        queue: safeItems,
-        activeIndex,
-        playbackState: PlaybackState.Ready,
-        progress: {
-          position: startPosition,
-          duration: activeIndex === snapshot.activeIndex ? snapshot.progress.duration : 0,
-          buffered: activeIndex === snapshot.activeIndex ? snapshot.progress.buffered : 0,
-          cached: activeIndex === snapshot.activeIndex ? snapshot.progress.cached : 0,
-        },
-      }),
+      (snapshot) => {
+        const previousActiveId = snapshot.activeIndex === null
+          ? null
+          : snapshot.queue[snapshot.activeIndex]?.mediaId ?? null;
+        const keepsActive = logicalName === 'replaceQueue'
+          && previousActiveId !== null
+          && safeItems[activeIndex]?.mediaId === previousActiveId;
+        return nextSnapshot(snapshot, {
+          queue: safeItems,
+          activeIndex,
+          isPlaying: resume ? true : snapshot.isPlaying,
+          playbackState: keepsActive ? snapshot.playbackState : PlaybackState.Ready,
+          progress: keepsActive
+            ? snapshot.progress
+            : {
+                position: startPosition,
+                duration: 0,
+                buffered: 0,
+                cached: 0,
+              },
+        });
+      },
       payload,
       expected,
-      resumeAfterQueueSet,
       updates,
     );
   }
@@ -1209,7 +1435,6 @@ export class NativeBackedPlayerPort implements PlayerPort {
     reducer: PendingCommand['reducer'],
     payload: Readonly<Record<string, unknown>>,
     expectedQueueIds?: readonly string[],
-    resumeAfterQueueSet = false,
     sourceUpdates: ReadonlyMap<string, QueueMediaItem> = new Map(),
   ): void {
     this.assertUsable();
@@ -1219,7 +1444,6 @@ export class NativeBackedPlayerPort implements PlayerPort {
       reducer,
       expectedQueueIds,
       payload,
-      resumeAfterQueueSet,
       conflicted: false,
       sourceUpdates,
     };
@@ -1241,23 +1465,6 @@ export class NativeBackedPlayerPort implements PlayerPort {
           : 'native-rejected';
         this.rejectCommand(entry, code);
         return;
-      }
-
-      if (translation.nativeName === 'setQueue' && entry.resumeAfterQueueSet) {
-        try {
-          const playResult = await this.dependencies.nativeModule.command('play', '{}');
-          this.settleCommand(entry, playResult);
-          return;
-        } catch {
-          // The queue command already succeeded. Keep that exact queue, reconcile
-          // its snapshot, and report only the failed resume instead of rolling the
-          // native mutation back in JS.
-          this.settleCommand(entry, result);
-          this.authoritative = nextSnapshot(this.authoritative, { isPlaying: false });
-          this.recordFailure(entry.logicalName, 'native-rejected');
-          this.recomputeVisible();
-          return;
-        }
       }
       this.settleCommand(entry, result);
     });
@@ -1495,8 +1702,17 @@ export class NativeBackedPlayerPort implements PlayerPort {
           : { duration: millisecondsToSeconds(nativeItem.durationMs) }),
         extras,
       };
+      const previousItem = fallback.queue[index];
+      if (previousItem !== undefined && matchesSanitizedQueueItem(item, previousItem)) {
+        return previousItem;
+      }
       return sanitizeMediaItemForPublic(item);
     });
+    const stableQueue =
+      queue.length === fallback.queue.length
+      && queue.every((entry, index) => entry === fallback.queue[index])
+        ? fallback.queue
+        : queue;
     const reportedCurrentIndex = exactInteger(raw.currentIndex, 'currentIndex', true);
     const currentItemId = raw.currentItemId === null
       ? null
@@ -1505,7 +1721,7 @@ export class NativeBackedPlayerPort implements PlayerPort {
     // current MediaItem. Canonicalize only that documented empty sentinel to
     // the PlayerPort's null/null representation; every other index/ID
     // contradiction remains a rejected native snapshot.
-    const currentIndex = queue.length === 0
+    const currentIndex = stableQueue.length === 0
       && reportedCurrentIndex === 0
       && currentItemId === null
       ? null
@@ -1514,8 +1730,8 @@ export class NativeBackedPlayerPort implements PlayerPort {
       throw new Error('Native current index and item ID must both be null or non-null');
     }
     if (currentIndex !== null) {
-      requireQueueIndex(currentIndex, queue.length, 'Native current');
-      if (queue[currentIndex].mediaId !== currentItemId) {
+      requireQueueIndex(currentIndex, stableQueue.length, 'Native current');
+      if (stableQueue[currentIndex].mediaId !== currentItemId) {
         throw new Error('Native current item ID does not match its exact queue index');
       }
     }
@@ -1525,8 +1741,22 @@ export class NativeBackedPlayerPort implements PlayerPort {
     if (typeof raw.shuffleEnabled !== 'boolean') {
       throw new TypeError('Native shuffle state is invalid');
     }
-    const queuePersistence = decodeNativeQueuePersistence(raw.queuePersistence, queue.length);
-    const sleepTimer = decodeNativeSleepTimer(raw.sleepTimer, queue.length);
+    const decodedQueuePersistence = decodeNativeQueuePersistence(
+      raw.queuePersistence,
+      stableQueue.length,
+    );
+    const queuePersistence =
+      decodedQueuePersistence.contextShuffleEnabled === fallback.queuePersistence.contextShuffleEnabled
+      && sameStrings(
+        decodedQueuePersistence.contextShuffleRestoreOrder,
+        fallback.queuePersistence.contextShuffleRestoreOrder,
+      )
+        ? fallback.queuePersistence
+        : decodedQueuePersistence;
+    const decodedSleepTimer = decodeNativeSleepTimer(raw.sleepTimer, stableQueue.length);
+    const sleepTimer = sleepTimersEqual(decodedSleepTimer, fallback.sleepTimer)
+      ? fallback.sleepTimer
+      : decodedSleepTimer;
     if (raw.errorCode !== null && typeof raw.errorCode !== 'string') {
       throw new TypeError('Native error code is invalid');
     }
@@ -1535,7 +1765,7 @@ export class NativeBackedPlayerPort implements PlayerPort {
       : PlaybackState.Error;
     return nextSnapshot(fallback, {
       isSetup: true,
-      queue,
+      queue: stableQueue,
       activeIndex: currentIndex,
       playbackState,
       isPlaying: raw.isPlaying,

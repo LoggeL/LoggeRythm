@@ -13,6 +13,7 @@ internal object LoggeRythmNotificationFavoriteContract {
 internal data class LoggeRythmNotificationFavoriteState(
   val mediaId: String,
   val liked: Boolean,
+  val trackId: String? = null,
 )
 
 internal enum class LoggeRythmNotificationFavoriteRequestResult {
@@ -21,9 +22,20 @@ internal enum class LoggeRythmNotificationFavoriteRequestResult {
   DELIVERY_UNAVAILABLE,
 }
 
-/** Exact-current-item state machine shared by notification publication and command admission. */
+/**
+ * Current-item favorite state machine shared by notification/car button publication and command
+ * admission.
+ *
+ * Authoritative account-scoped liked track IDs plus pending durable favorite events take
+ * precedence whenever the active item's canonical track ID is known, so car/notification controls
+ * survive track changes, pauses, backgrounding, and cold service restores without vanishing.
+ * Explicit per-mediaId [publish] remains supported as a fallback when no authoritative snapshot
+ * has been synced.
+ */
 internal class LoggeRythmNotificationFavoriteCoordinator {
   private var published: LoggeRythmNotificationFavoriteState? = null
+  private var authoritativeLikedTrackIds: Set<String>? = null
+  private var pendingFavoriteStates: Map<String, Boolean> = emptyMap()
 
   fun publish(mediaId: String?, liked: Boolean?) {
     if (mediaId == null && liked == null) {
@@ -36,8 +48,43 @@ internal class LoggeRythmNotificationFavoriteCoordinator {
     published = LoggeRythmNotificationFavoriteState(mediaId, liked)
   }
 
-  fun stateFor(activeMediaId: String?): LoggeRythmNotificationFavoriteState? =
-    published?.takeIf { activeMediaId != null && it.mediaId == activeMediaId }
+  fun syncAuthoritativeState(
+    likedTrackIds: Set<String>?,
+    pendingFavorites: Map<String, Boolean>,
+  ) {
+    authoritativeLikedTrackIds = likedTrackIds?.toSet()
+    pendingFavoriteStates = pendingFavorites.toMap()
+  }
+
+  fun clearAll() {
+    published = null
+    authoritativeLikedTrackIds = null
+    pendingFavoriteStates = emptyMap()
+  }
+
+  fun stateFor(
+    activeMediaId: String?,
+    activeTrackId: String? = null,
+  ): LoggeRythmNotificationFavoriteState? {
+    if (activeMediaId == null) return null
+    if (activeTrackId != null) {
+      pendingFavoriteStates[activeTrackId]?.let { pendingLiked ->
+        return LoggeRythmNotificationFavoriteState(
+          mediaId = activeMediaId,
+          liked = pendingLiked,
+          trackId = activeTrackId,
+        )
+      }
+      authoritativeLikedTrackIds?.let { likedIds ->
+        return LoggeRythmNotificationFavoriteState(
+          mediaId = activeMediaId,
+          liked = activeTrackId in likedIds,
+          trackId = activeTrackId,
+        )
+      }
+    }
+    return published?.takeIf { it.mediaId == activeMediaId }
+  }
 
   fun requestToggle(
     activeMediaId: String?,
@@ -54,8 +101,11 @@ internal class LoggeRythmNotificationFavoriteCoordinator {
   }
 
   @UnstableApi
-  fun buttonFor(activeMediaId: String?): List<CommandButton> {
-    val current = stateFor(activeMediaId) ?: return emptyList()
+  fun buttonFor(
+    activeMediaId: String?,
+    activeTrackId: String? = null,
+  ): List<CommandButton> {
+    val current = stateFor(activeMediaId, activeTrackId) ?: return emptyList()
     return listOf(
       CommandButton.Builder(
         if (current.liked) CommandButton.ICON_HEART_FILLED

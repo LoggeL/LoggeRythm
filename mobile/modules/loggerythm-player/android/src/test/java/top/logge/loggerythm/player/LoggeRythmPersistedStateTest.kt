@@ -68,10 +68,11 @@ class LoggeRythmPersistedStateTest {
         remove("playbackEventJournal")
         remove("lastPlayMediaId")
         remove("playbackJournalQueueGeneration")
+        remove("likedTrackIds")
       }
       .toString()
       .toByteArray(StandardCharsets.UTF_8)
-    val expected = state.copy(browseTree = null, remoteCapabilities = null)
+    val expected = state.copy(browseTree = null, remoteCapabilities = null, likedTrackIds = null)
 
     assertEquals(expected, codec.decode(legacy, binding))
     assertEquals(expected, codec.decodeAuthenticatedSelfBound(legacy))
@@ -86,6 +87,7 @@ class LoggeRythmPersistedStateTest {
         remove("playbackEventJournal")
         remove("lastPlayMediaId")
         remove("playbackJournalQueueGeneration")
+        remove("likedTrackIds")
       }
       .toString()
       .toByteArray(StandardCharsets.UTF_8)
@@ -94,7 +96,56 @@ class LoggeRythmPersistedStateTest {
 
     assertEquals(emptyList<LoggeRythmPlaybackEvent>(), restored.playbackEventJournal)
     assertEquals(null, restored.lastPlayMediaId)
-    assertEquals(state.copy(playbackEventJournal = emptyList(), lastPlayMediaId = null), restored)
+    assertEquals(null, restored.likedTrackIds)
+    assertEquals(
+      state.copy(
+        playbackEventJournal = emptyList(),
+        lastPlayMediaId = null,
+        likedTrackIds = null,
+      ),
+      restored,
+    )
+  }
+
+  @Test
+  fun migratesSchemaV3WithoutInventingLikedTrackIds() {
+    val state = sampleState().copy(likedTrackIds = setOf("100", "200"))
+    val v3 = JSONObject(String(codec.encode(state), StandardCharsets.UTF_8))
+      .put("version", 3)
+      .apply { remove("likedTrackIds") }
+      .toString()
+      .toByteArray(StandardCharsets.UTF_8)
+
+    val restored = codec.decode(v3, binding)
+
+    assertEquals(null, restored.likedTrackIds)
+    assertEquals(state.copy(likedTrackIds = null), restored)
+  }
+
+  @Test
+  fun roundTripsLikedTrackIdsIncludingEmptyDistinctionAndRejectsInvalidOrDuplicateIds() {
+    val populated = sampleState().copy(likedTrackIds = setOf("900", "42"))
+    val restoredPopulated = codec.decode(codec.encode(populated), binding)
+    assertEquals(setOf("42", "900"), restoredPopulated.likedTrackIds)
+    assertFalse(restoredPopulated.toString().contains("900"))
+
+    val syncedEmpty = sampleState().copy(likedTrackIds = emptySet())
+    assertEquals(emptySet<String>(), codec.decode(codec.encode(syncedEmpty), binding).likedTrackIds)
+
+    val unsynced = sampleState().copy(likedTrackIds = null)
+    assertEquals(null, codec.decode(codec.encode(unsynced), binding).likedTrackIds)
+
+    assertCode("liked-track-id-invalid") {
+      codec.encode(sampleState().copy(likedTrackIds = setOf("not-numeric")))
+    }
+
+    val duplicate = JSONObject(String(codec.encode(populated), StandardCharsets.UTF_8))
+      .put("likedTrackIds", JSONArray().put("42").put("42"))
+      .toString()
+      .toByteArray(StandardCharsets.UTF_8)
+    assertCode("liked-track-id-duplicate") {
+      codec.decode(duplicate, binding)
+    }
   }
 
   @Test
@@ -331,6 +382,61 @@ class LoggeRythmPersistedStateTest {
       codec.encode(
         sampleState().copy(
           queue = listOf(sampleItem("one", 0).copy(extrasJson = """{"queueOrigin":"other"}""")),
+          activeIndex = 0,
+          contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
+        ),
+      )
+    }
+  }
+
+  @Test
+  fun permitsInheritedContextOnManualQueueItemsWhileRejectingManualContextOrder() {
+    val manualWithInheritedContext = sampleItem("manual-next", 0).copy(
+      extrasJson = JSONObject()
+        .put("queueOrigin", "manual")
+        .put("queueContextType", "playlist")
+        .put("queueContextId", "playlist-42")
+        .put("queueContextLabel", "Late Night Drive")
+        .put("queueStableId", "manual:next:1:100003")
+        .toString(),
+    )
+    val state = sampleState().copy(
+      queue = listOf(sampleItem("one", 0), manualWithInheritedContext, sampleItem("two", 1)),
+      activeIndex = 0,
+      contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
+    )
+    assertEquals(state, codec.decode(codec.encode(state), binding))
+
+    assertCode("queue-context-invalid") {
+      val manualWithOrder = sampleItem("manual-bad-order", 0).copy(
+        extrasJson = JSONObject()
+          .put("queueOrigin", "manual")
+          .put("queueContextType", "playlist")
+          .put("queueContextId", "playlist-42")
+          .put("queueOriginalContextOrder", 2)
+          .put("queueStableId", "manual:bad-order")
+          .toString(),
+      )
+      codec.encode(
+        sampleState().copy(
+          queue = listOf(sampleItem("one", 0), manualWithOrder),
+          activeIndex = 0,
+          contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
+        ),
+      )
+    }
+
+    assertCode("queue-context-invalid") {
+      val manualHalfContext = sampleItem("manual-half", 0).copy(
+        extrasJson = JSONObject()
+          .put("queueOrigin", "manual")
+          .put("queueContextType", "playlist")
+          .put("queueStableId", "manual:half")
+          .toString(),
+      )
+      codec.encode(
+        sampleState().copy(
+          queue = listOf(sampleItem("one", 0), manualHalfContext),
           activeIndex = 0,
           contextShuffle = LoggeRythmPersistedContextShuffle(false, emptyList()),
         ),

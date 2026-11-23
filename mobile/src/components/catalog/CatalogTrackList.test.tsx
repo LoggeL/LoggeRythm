@@ -1,11 +1,44 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
 import {
   CatalogTrackList,
   catalogTrackOccurrenceKey,
   catalogTrackOccurrences,
 } from './CatalogTrackList';
+
+const hookMocks = vi.hoisted(() => ({
+  memoSlot: 0,
+  memoCache: new Map<number, { deps: readonly unknown[]; value: unknown }>(),
+}));
+
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    default: actual,
+    useMemo: <T,>(factory: () => T, deps: readonly unknown[]) => {
+      const slot = hookMocks.memoSlot++;
+      const prev = hookMocks.memoCache.get(slot);
+      if (
+        prev !== undefined
+        && prev.deps.length === deps.length
+        && prev.deps.every((dep, idx) => Object.is(dep, deps[idx]))
+      ) {
+        return prev.value as T;
+      }
+      const value = factory();
+      hookMocks.memoCache.set(slot, { deps, value });
+      return value;
+    },
+    useCallback: <T,>(fn: T) => fn,
+  };
+});
+
+beforeEach(() => {
+  hookMocks.memoSlot = 0;
+  hookMocks.memoCache.clear();
+});
 
 vi.mock('react-native', () => ({
   FlatList: 'FlatList',
@@ -82,7 +115,7 @@ describe('CatalogTrackList', () => {
       initialNumToRender: 12,
       maxToRenderPerBatch: 10,
       windowSize: 9,
-      removeClippedSubviews: true,
+      removeClippedSubviews: false,
     });
     // The last row clears the floating mini player instead of a hardcoded 144dp.
     expect(props.contentContainerStyle).toEqual({ paddingBottom: 96 });
@@ -108,5 +141,25 @@ describe('CatalogTrackList', () => {
     });
     (refresh.onRefresh as () => void)();
     expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('memoizes occurrence array identity across re-renders with the same tracks ref', () => {
+    const tracks = [track('1'), track('2')];
+    const baseProps = {
+      id: 'album',
+      tracks,
+      header: React.createElement('CatalogHeader'),
+      refreshing: false,
+      refreshAccessibilityLabel: 'Refresh',
+      onRefresh: vi.fn(),
+      renderTrack: (item: Track) => React.createElement('Row', { id: item.id }),
+    };
+    hookMocks.memoSlot = 0;
+    const first = CatalogTrackList(baseProps);
+    hookMocks.memoSlot = 0;
+    const second = CatalogTrackList(baseProps);
+
+    expect(propsOf(first).data).toBe(propsOf(second).data);
+    expect(propsOf(first).contentContainerStyle).toBe(propsOf(second).contentContainerStyle);
   });
 });

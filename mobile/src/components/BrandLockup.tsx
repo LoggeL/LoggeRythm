@@ -13,6 +13,9 @@ import { colors, layout, spacing, typography } from '../theme';
 type BrandLockupProps = {
   compact?: boolean;
   horizontal?: boolean;
+  accessible?: boolean;
+  focusable?: boolean;
+  importantForAccessibility?: 'auto' | 'yes' | 'no' | 'no-hide-descendants';
   accessibilityLabel?: string;
   accessibilityRole?: AccessibilityRole;
   style?: StyleProp<ViewStyle>;
@@ -25,6 +28,9 @@ type BrandLockupProps = {
 export default function BrandLockup({
   compact = false,
   horizontal = false,
+  accessible = true,
+  focusable = false,
+  importantForAccessibility,
   accessibilityLabel = 'LoggeRythm',
   accessibilityRole = 'image',
   style,
@@ -32,9 +38,11 @@ export default function BrandLockup({
   const markSize = horizontal ? spacing.xxl : compact ? layout.artwork.xs : layout.artwork.lg;
   return (
     <View
-      accessible
-      accessibilityRole={accessibilityRole}
-      accessibilityLabel={accessibilityLabel}
+      accessible={accessible}
+      focusable={focusable}
+      importantForAccessibility={importantForAccessibility}
+      accessibilityRole={accessible ? accessibilityRole : undefined}
+      accessibilityLabel={accessible ? accessibilityLabel : undefined}
       style={[styles.container, horizontal && styles.horizontal, style]}
     >
       <Image

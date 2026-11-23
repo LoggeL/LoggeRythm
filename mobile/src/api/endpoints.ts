@@ -491,12 +491,33 @@ export function getLikes(signal?: AbortSignal): Promise<Track[]> {
   return apiRequest<Track[]>('/api/me/likes', { signal, decode: decodeTrackList });
 }
 
-export function likeTrack(track: Track): Promise<void> {
-  return apiRequest<void>(`/api/me/likes/${pathSegment(track.id)}`, { method: 'PUT', body: track });
+export function likeTrack(
+  track: Track,
+  timeoutMs?: number,
+  authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
+): Promise<void> {
+  return apiRequest<void>(`/api/me/likes/${pathSegment(track.id)}`, {
+    method: 'PUT',
+    body: track,
+    timeoutMs,
+    ...(authenticatedRequestAuthority === undefined
+      ? {}
+      : { authenticatedRequestAuthority }),
+  });
 }
 
-export function unlikeTrack(deezerId: DeezerId): Promise<void> {
-  return apiRequest<void>(`/api/me/likes/${pathSegment(deezerId)}`, { method: 'DELETE' });
+export function unlikeTrack(
+  deezerId: DeezerId,
+  timeoutMs?: number,
+  authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
+): Promise<void> {
+  return apiRequest<void>(`/api/me/likes/${pathSegment(deezerId)}`, {
+    method: 'DELETE',
+    timeoutMs,
+    ...(authenticatedRequestAuthority === undefined
+      ? {}
+      : { authenticatedRequestAuthority }),
+  });
 }
 
 /** Which of the given track ids are liked, as an id→bool map. */

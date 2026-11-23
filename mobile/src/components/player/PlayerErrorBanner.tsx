@@ -32,6 +32,7 @@ export function PlayerErrorBanner({ message, onDismiss, testID, style }: PlayerE
         testID={`${testID}-dismiss`}
         icon="close"
         size="sm"
+        focusable
         accessibilityLabel={strings.player.playerErrorDismiss}
         onPress={onDismiss}
       />

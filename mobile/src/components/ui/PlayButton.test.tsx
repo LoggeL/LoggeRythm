@@ -51,4 +51,23 @@ describe('PlayButton', () => {
     const disabled = PlayButton({ onPress: vi.fn(), accessibilityLabel: 'Play', disabled: true });
     expect(flatStyle(disabled.props.style).opacity).toBe(opacity.disabled);
   });
+
+  it('forwards TV focus props and focus/blur handlers', () => {
+    const onFocus = vi.fn();
+    const onBlur = vi.fn();
+    const rendered = PlayButton({
+      onPress: vi.fn(),
+      accessibilityLabel: 'Play',
+      focusable: true,
+      hasTVPreferredFocus: true,
+      onFocus,
+      onBlur,
+    });
+    expect(rendered.props.focusable).toBe(true);
+    expect(rendered.props.hasTVPreferredFocus).toBe(true);
+    (rendered.props.onFocus as (e: unknown) => void)('in');
+    (rendered.props.onBlur as (e: unknown) => void)('out');
+    expect(onFocus).toHaveBeenCalledWith('in');
+    expect(onBlur).toHaveBeenCalledWith('out');
+  });
 });

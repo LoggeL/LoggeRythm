@@ -19,6 +19,7 @@ export interface RadioQueryStationProps {
   stationBusy: boolean;
   blocked: boolean;
   onAir?: boolean;
+  onAirPlaying?: boolean;
   loadingText: string;
   emptyText: string;
   onPress: () => void;
@@ -40,6 +41,7 @@ export function RadioQueryStation({
   stationBusy,
   blocked,
   onAir = false,
+  onAirPlaying = true,
   loadingText,
   emptyText,
   onPress,
@@ -97,6 +99,7 @@ export function RadioQueryStation({
           busy={stationBusy}
           blocked={blocked}
           onAir={onAir}
+          onAirPlaying={onAirPlaying}
           onPress={onPress}
         />
       ) : null}

@@ -1,9 +1,54 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
 import type { ArtistTrackListItem } from '../../screens/artistTrackListModel';
 import { flatStyle } from '../../test/render';
 import { ArtistVirtualizedList } from './ArtistVirtualizedList';
+
+const hookMocks = vi.hoisted(() => ({
+  reducedMotion: false,
+  memoSlot: 0,
+  memoCache: new Map<number, { deps: readonly unknown[]; value: unknown }>(),
+  listRef: { current: { scrollToLocation: vi.fn() } },
+}));
+
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    default: actual,
+    useMemo: <T,>(factory: () => T, deps: readonly unknown[]) => {
+      const slot = hookMocks.memoSlot++;
+      const prev = hookMocks.memoCache.get(slot);
+      if (
+        prev !== undefined
+        && prev.deps.length === deps.length
+        && prev.deps.every((dep, idx) => Object.is(dep, deps[idx]))
+      ) {
+        return prev.value as T;
+      }
+      const value = factory();
+      hookMocks.memoCache.set(slot, { deps, value });
+      return value;
+    },
+    useCallback: <T,>(fn: T) => fn,
+    useRef: () => hookMocks.listRef,
+    useEffect: (effect: () => void) => {
+      effect();
+    },
+  };
+});
+
+vi.mock('../../hooks/useReducedMotion', () => ({
+  useReducedMotion: () => hookMocks.reducedMotion,
+}));
+
+beforeEach(() => {
+  hookMocks.reducedMotion = false;
+  hookMocks.memoSlot = 0;
+  hookMocks.memoCache.clear();
+  hookMocks.listRef.current.scrollToLocation.mockClear();
+});
 
 vi.mock('react-native', () => ({
   RefreshControl: 'RefreshControl',
@@ -68,6 +113,7 @@ describe('ArtistVirtualizedList', () => {
       initialNumToRender: 12,
       maxToRenderPerBatch: 10,
       windowSize: 9,
+      removeClippedSubviews: false,
     });
     // The last row clears the floating mini player instead of a hardcoded 144dp.
     expect(flatStyle(rendered.props.contentContainerStyle).paddingBottom).toBe(96);
@@ -195,5 +241,52 @@ describe('ArtistVirtualizedList', () => {
       (section) => rendered.props.renderSectionHeader({ section }).props.children as unknown,
     );
     expect(headings).not.toContain(likedHeader);
+  });
+
+  it('memoizes sections identity across re-renders and honors reduced motion on jumpToSection', () => {
+    const popular = [track('1'), track('2')];
+    const search: Track[] = [];
+    let jump: ((id: 'liked' | 'popular' | 'search') => void) | null = null;
+    const baseProps = {
+      artistName: 'Artist',
+      liked: null,
+      popularTracks: popular,
+      searchTracks: search,
+      searchActive: false,
+      refreshing: false,
+      refreshAccessibilityLabel: 'Refresh',
+      onRefresh: vi.fn(),
+      header: React.createElement('MockHeader'),
+      likedHeader: React.createElement('MockHeader'),
+      popularHeader: React.createElement('MockHeader'),
+      searchHeader: React.createElement('MockHeader'),
+      footer: React.createElement('MockFooter'),
+      renderTrackItem: () => React.createElement('MockTrack'),
+      onRegisterJumpToSection: (fn: (id: 'liked' | 'popular' | 'search') => void) => {
+        jump = fn;
+      },
+    };
+    hookMocks.memoSlot = 0;
+    const first = ArtistVirtualizedList(baseProps);
+    hookMocks.memoSlot = 0;
+    const second = ArtistVirtualizedList(baseProps);
+    expect(first.props.sections).toBe(second.props.sections);
+
+    jump!('popular');
+    expect(hookMocks.listRef.current.scrollToLocation).toHaveBeenLastCalledWith({
+      sectionIndex: 0,
+      itemIndex: 0,
+      animated: true,
+    });
+
+    hookMocks.reducedMotion = true;
+    hookMocks.memoSlot = 0;
+    ArtistVirtualizedList(baseProps);
+    jump!('popular');
+    expect(hookMocks.listRef.current.scrollToLocation).toHaveBeenLastCalledWith({
+      sectionIndex: 0,
+      itemIndex: 0,
+      animated: false,
+    });
   });
 });

@@ -37,9 +37,11 @@ describe('genre browse tiles', () => {
     expect(() => genreTileTint(-1)).toThrow('non-negative');
   });
 
-  it('splits genres into two-column rows without dropping the odd last one', () => {
+  it('splits genres into two-column (or custom TV column count) rows without dropping the odd last one', () => {
     expect(genreTileRows([1, 2, 3, 4, 5])).toEqual([[1, 2], [3, 4], [5]]);
+    expect(genreTileRows([1, 2, 3, 4, 5], 4)).toEqual([[1, 2, 3, 4], [5]]);
     expect(genreTileRows([])).toEqual([]);
+    expect(() => genreTileRows([1], 0)).toThrow('positive integer');
   });
 
   it('renders one labelled button per tile with a truncating name and decorative artwork', () => {

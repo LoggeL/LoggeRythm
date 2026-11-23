@@ -5,12 +5,21 @@ import {
   type AuthoritativeSessionCleanupOperations,
 } from './authoritativeSessionCleanup';
 
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getAllKeys: vi.fn(async () => []),
+    removeItem: vi.fn(async () => undefined),
+  },
+}));
 vi.mock('../api/client', () => ({
   pendingInvalidationAuthority: vi.fn(() => null),
   retryInvalidatedSessionCleanup: vi.fn(async () => undefined),
   runWithSessionInvalidationAuthority: vi.fn(
     async (_authority: unknown, operation: () => Promise<void>) => operation(),
   ),
+}));
+vi.mock('../components/search/useRecentSearches', () => ({
+  clearAllRecentSearchesStorage: vi.fn(async () => undefined),
 }));
 vi.mock('../player/setup', () => ({
   clearPlayerSession: vi.fn(async () => undefined),
@@ -25,6 +34,7 @@ function operations(
   return {
     clearPlayerSession: vi.fn(async () => undefined),
     clearOfflineIdentity: vi.fn(async () => undefined),
+    clearRecentSearches: vi.fn(async () => undefined),
     retryInvalidatedSessionCleanup: vi.fn(async () => undefined),
     runWithSessionInvalidationAuthority: vi.fn(
       async (_authority, operation) => operation(),
@@ -60,16 +70,20 @@ describe('authoritative session cleanup', () => {
       undefined,
     ]);
     expect(boundaries.clearOfflineIdentity).toHaveBeenCalledOnce();
+    expect(boundaries.clearRecentSearches).toHaveBeenCalledOnce();
     expect(boundaries.retryInvalidatedSessionCleanup).toHaveBeenCalledOnce();
   });
 
-  it('attempts every boundary and exposes only bounded boundary names on failure', async () => {
+  it('attempts every boundary including recent-searches and exposes only bounded boundary names on failure', async () => {
     const boundaries = operations({
       clearPlayerSession: vi.fn(async () => {
         throw new Error('private player diagnostic');
       }),
       clearOfflineIdentity: vi.fn(async () => {
         throw new Error('private identity diagnostic');
+      }),
+      clearRecentSearches: vi.fn(async () => {
+        throw new Error('storage read-only');
       }),
     });
     const coordinator = new AuthoritativeSessionCleanupCoordinator(boundaries);
@@ -78,8 +92,10 @@ describe('authoritative session cleanup', () => {
       new AuthoritativeSessionCleanupError([
         'native-player-session',
         'offline-identity',
+        'recent-searches',
       ]),
     );
+    expect(boundaries.clearRecentSearches).toHaveBeenCalledOnce();
     expect(boundaries.retryInvalidatedSessionCleanup).toHaveBeenCalledOnce();
   });
 

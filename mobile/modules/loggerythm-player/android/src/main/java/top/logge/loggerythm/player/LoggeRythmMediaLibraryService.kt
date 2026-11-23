@@ -13,6 +13,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.CommandButton
@@ -288,6 +289,37 @@ internal object LoggeRythmControllerPolicy {
   )
 }
 
+/**
+ * Process-local read-only observation hook used by instrumentation tests to attach [Player.Listener]
+ * and [AnalyticsListener] directly to the service's live [ExoPlayer] (bypassing client-side
+ * [MediaController] masking) without altering playback or security behavior.
+ */
+@UnstableApi
+internal object LoggeRythmExoPlayerObservationHook {
+  private var livePlayer: ExoPlayer? = null
+
+  fun attach(player: ExoPlayer) {
+    livePlayer = player
+  }
+
+  fun detach(player: ExoPlayer) {
+    if (livePlayer === player) livePlayer = null
+  }
+
+  fun addListeners(playerListener: Player.Listener, analyticsListener: AnalyticsListener): Boolean {
+    val active = livePlayer ?: return false
+    active.addListener(playerListener)
+    active.addAnalyticsListener(analyticsListener)
+    return true
+  }
+
+  fun removeListeners(playerListener: Player.Listener, analyticsListener: AnalyticsListener) {
+    val active = livePlayer ?: return
+    active.removeListener(playerListener)
+    active.removeAnalyticsListener(analyticsListener)
+  }
+}
+
 @UnstableApi
 class LoggeRythmMediaLibraryService :
   MediaLibraryService(),
@@ -373,6 +405,8 @@ class LoggeRythmMediaLibraryService :
       context = this,
       player = player,
       clearCache = playerCache::clearCache,
+      onFavoriteStateChanged = ::syncAndRefreshNotificationFavoriteButtons,
+      onFavoriteSyncFailed = ::reportCarFavoriteUpdateFailed,
     )
     sessionActivity = LoggeRythmSessionActivity.pendingIntent(this)
     librarySession = MediaLibrarySession.Builder(this, player, LibraryCallback())
@@ -391,6 +425,7 @@ class LoggeRythmMediaLibraryService :
     LoggeRythmCacheServiceBridge.attach(cacheControl)
     LoggeRythmPersistedServiceBridge.attach(persistedCoordinator)
     LoggeRythmMediaSessionServiceBridge.attach(this)
+    LoggeRythmExoPlayerObservationHook.attach(player)
     cacheControl.onQueueGenerationChanged(LoggeRythmPlayerRuntime.currentQueueGeneration())
   }
 
@@ -457,6 +492,7 @@ class LoggeRythmMediaLibraryService :
 
   override fun onDestroy() {
     serviceDestroyed = true
+    LoggeRythmExoPlayerObservationHook.detach(player)
     LoggeRythmMediaSessionServiceBridge.detach(this)
     LoggeRythmPersistedServiceBridge.detach(persistedCoordinator)
     LoggeRythmCacheServiceBridge.detach(cacheControl)
@@ -490,7 +526,7 @@ class LoggeRythmMediaLibraryService :
     // the coordinator's committed-policy rollback behind that already-admitted write.
     persistedCoordinator.cancelPendingRemoteCommandUpdate()
     remoteCommandInstaller.reset()
-    notificationFavorite.publish(null, null)
+    notificationFavorite.clearAll()
     refreshNotificationFavoriteButtons()
   }
 
@@ -560,7 +596,38 @@ class LoggeRythmMediaLibraryService :
     autoCompanion = session.isAutoCompanionController(controller),
   )
 
+  private fun syncNotificationFavoriteProjection() {
+    if (!::persistedCoordinator.isInitialized) return
+    val (likedIds, pending) = persistedCoordinator.currentFavoriteProjection()
+    notificationFavorite.syncAuthoritativeState(likedIds, pending)
+  }
+
+  private fun syncAndRefreshNotificationFavoriteButtons() {
+    if (serviceDestroyed || !::librarySession.isInitialized) return
+    syncNotificationFavoriteProjection()
+    refreshNotificationFavoriteButtons()
+  }
+
+  private fun reportCarFavoriteUpdateFailed() {
+    if (serviceDestroyed || !::librarySession.isInitialized) return
+    val sessionError = carSessionError(LoggeRythmCarError.FAVORITE_UPDATE_FAILED, null)
+    val platformMirror = librarySession.mediaNotificationControllerInfo
+    if (platformMirror != null) {
+      librarySession.sendError(platformMirror, sessionError)
+    }
+    librarySession.connectedControllers.forEach { controller ->
+      val profile = controllerProfile(librarySession, controller)
+      val legacy = controller.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+      if (!legacy && profile == RemoteControllerProfile.CAR && controller != platformMirror) {
+        librarySession.sendError(controller, sessionError)
+      } else if (legacy && platformMirror == null && profile == RemoteControllerProfile.CAR) {
+        librarySession.sendError(controller, sessionError)
+      }
+    }
+  }
+
   private fun refreshConnectedControllerCommands() {
+    syncNotificationFavoriteProjection()
     librarySession.connectedControllers.forEach { controller ->
       val profile = controllerProfile(librarySession, controller)
       librarySession.setAvailableCommands(
@@ -568,19 +635,25 @@ class LoggeRythmMediaLibraryService :
         remoteCommandPolicy.sessionCommands(profile),
         remoteCommandPolicy.playerCommands(profile),
       )
-      librarySession.setMediaButtonPreferences(
-        controller,
-        notificationFavoriteButtons(profile),
-      )
+      if (
+        profile.supportsFavorite &&
+        controller.controllerVersion != MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+      ) {
+        librarySession.setMediaButtonPreferences(
+          controller,
+          notificationFavoriteButtons(profile),
+        )
+      }
     }
   }
 
-  private fun notificationFavoriteButtons(profile: RemoteControllerProfile): List<CommandButton> =
-    if (profile.supportsFavorite) {
-      notificationFavorite.buttonFor(player.currentMediaItem?.mediaId)
-    } else {
-      emptyList()
-    }
+  private fun notificationFavoriteButtons(profile: RemoteControllerProfile): List<CommandButton> {
+    if (!profile.supportsFavorite) return emptyList()
+    syncNotificationFavoriteProjection()
+    val activeMediaId = player.currentMediaItem?.mediaId
+    val activeTrackId = activeMediaId?.let(persistedCoordinator::resolveTrackIdForMediaId)
+    return notificationFavorite.buttonFor(activeMediaId, activeTrackId)
+  }
 
   private fun refreshNotificationFavoriteButtons(
     callback: ((Result<Unit>) -> Unit)? = null,
@@ -907,15 +980,64 @@ class LoggeRythmMediaLibraryService :
       ) {
         return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
       }
-      val result = notificationFavorite.requestToggle(
-        player.currentMediaItem?.mediaId,
-        LoggeRythmNotificationFavoriteEventBridge::emit,
+      val resultFuture = SettableFuture.create<SessionResult>()
+      Futures.addCallback(
+        afterServiceOnlyRestore { Unit },
+        object : FutureCallback<Unit> {
+          override fun onSuccess(ignored: Unit?) {
+            handleFavoriteToggleCommand(session, controller, resultFuture)
+          }
+
+          override fun onFailure(error: Throwable) {
+            reportCarError(session, controller, notReadyError())
+            resultFuture.set(SessionResult(SessionError.ERROR_INVALID_STATE))
+          }
+        },
+        MoreExecutors.directExecutor(),
       )
-      if (result != LoggeRythmNotificationFavoriteRequestResult.DELIVERED) {
-        return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+      return resultFuture
+    }
+
+    private fun handleFavoriteToggleCommand(
+      session: MediaSession,
+      controller: MediaSession.ControllerInfo,
+      resultFuture: SettableFuture<SessionResult>,
+    ) {
+      if (serviceDestroyed) {
+        resultFuture.set(SessionResult(SessionError.ERROR_INVALID_STATE))
+        return
       }
-      refreshNotificationFavoriteButtons()
-      return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+      if (playerCache.isClearing() || !persistedCoordinator.isReady()) {
+        reportCarError(session, controller, notReadyError())
+        resultFuture.set(SessionResult(SessionError.ERROR_INVALID_STATE))
+        return
+      }
+      syncNotificationFavoriteProjection()
+      val activeMediaId = player.currentMediaItem?.mediaId
+      val track = activeMediaId?.let(persistedCoordinator::resolveTrackMetadataForMediaId)
+      val current = notificationFavorite.stateFor(activeMediaId, track?.id)
+      if (activeMediaId == null || track == null || current == null) {
+        reportCarError(session, controller, LoggeRythmCarError.FAVORITE_UNAVAILABLE)
+        resultFuture.set(SessionResult(SessionError.ERROR_INVALID_STATE))
+        return
+      }
+      val requestedLiked = !current.liked
+      persistedCoordinator.enqueueFavoriteToggle(
+        mediaId = activeMediaId,
+        track = track,
+        requestedLiked = requestedLiked,
+      ) { enqueued ->
+        enqueued.fold(
+          onSuccess = {
+            syncAndRefreshNotificationFavoriteButtons()
+            resultFuture.set(SessionResult(SessionResult.RESULT_SUCCESS))
+          },
+          onFailure = {
+            reportCarError(session, controller, LoggeRythmCarError.FAVORITE_UPDATE_FAILED)
+            resultFuture.set(SessionResult(SessionError.ERROR_INVALID_STATE))
+          },
+        )
+      }
     }
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   Animated,
@@ -6,17 +6,20 @@ import {
   SectionList,
   StyleSheet,
   View,
+  type SectionListRenderItemInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useProgress } from '../player/player';
+import { useIsFocused } from '@react-navigation/native';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AppIcon, { type AppIconName } from '../components/AppIcon';
 import {
   ActionButton,
   AppText,
+  createFocusRingController,
   EmptyState,
   ErrorState,
+  FocusRingOverlay,
   TrackRowSkeleton,
 } from '../components/ui';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
@@ -25,12 +28,14 @@ import {
   QueueMetadataNoticeView,
   QueueSnapshotNoticeView,
 } from '../components/player/QueueNotices';
-import { QueueRow } from '../components/player/QueueRow';
+import { MemoQueueRow } from '../components/player/QueueRow';
 import { PartyNotice } from '../components/party/PartyParts';
 import { partyErrorDetail } from '../party/partyErrors';
 import { startPartyFromQueue, usePartySession } from '../party/partyRuntime';
 import { useTrackPresentationResolver } from '../components/player/TrackPresentationProvider';
 import { musicQueries } from '../data';
+import { useBackHandler } from '../hooks/useBackHandler';
+import { triggerHaptic } from '../hooks/useHaptics';
 import {
   clearUpcomingQueue,
   isContextShuffleEnabled,
@@ -42,8 +47,13 @@ import {
 import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/errors';
 import type { RootStackParams } from '../navigation';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
-import { strings } from '../localization';
+import { getActiveLocale, strings } from '../localization';
 import { colors, elevation, layout, metrics, opacity, radii, spacing } from '../theme';
+import { TvFocusable, TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
+import {
+  openNowPlayingCatalogAlbum,
+  openNowPlayingCatalogArtist,
+} from './nowPlayingNavigation';
 import {
   authoritativeQueueTrackPresentation,
   resolveQueueMetadataVisualState,
@@ -51,6 +61,7 @@ import {
 import {
   buildQueuePresentation,
   contextLabelForSection,
+  type IndexedQueueRow,
   type QueuePresentationSection,
   type QueueSectionKind,
 } from './queuePresentation';
@@ -113,14 +124,20 @@ function sectionTitle(kind: QueueSectionKind, rows: QueueUiSection['data']): str
   }
 }
 
+const QUEUE_TV_CLOSE_FOCUS_KEY = 'queue-close';
+
 export function QueueSurfaceHeader({
   embedded,
   upcomingCount,
   onClose,
+  isTv = false,
+  tvPreferredCloseFocus = false,
 }: {
   embedded: boolean;
   upcomingCount: number;
   onClose?: () => void;
+  isTv?: boolean;
+  tvPreferredCloseFocus?: boolean;
 }) {
   return (
     <View testID="queue-header" style={styles.header}>
@@ -137,13 +154,34 @@ export function QueueSurfaceHeader({
         </AppText>
       </View>
       {!embedded && onClose !== undefined ? (
-        <ActionButton
-          testID="queue-close"
-          variant="secondary"
-          label={strings.queue.done}
-          accessibilityLabel={strings.queue.close}
-          onPress={onClose}
-        />
+        isTv ? (
+          <TvFocusable
+            testID="queue-close"
+            focusKey={QUEUE_TV_CLOSE_FOCUS_KEY}
+            preferredFocus={tvPreferredCloseFocus}
+            ringRadius="pill"
+            accessibilityRole="button"
+            accessibilityLabel={strings.queue.close}
+            onPress={() => {
+              triggerHaptic('tap');
+              onClose();
+            }}
+            style={styles.tvCloseButton}
+          >
+            <AppText variant="label" color="primary" numberOfLines={1}>
+              {strings.queue.done}
+            </AppText>
+          </TvFocusable>
+        ) : (
+          <ActionButton
+            testID="queue-close"
+            variant="secondary"
+            label={strings.queue.done}
+            accessibilityLabel={strings.queue.close}
+            focusable
+            onPress={onClose}
+          />
+        )
       ) : null}
     </View>
   );
@@ -198,6 +236,7 @@ function QueueTool({
   onPress,
 }: QueueToolProps) {
   const foreground = checked === true ? colors.accentSoft : colors.textPrimary;
+  const focusController = useMemo(() => createFocusRingController(), []);
   return (
     <Pressable
       testID={testID}
@@ -206,7 +245,13 @@ function QueueTool({
       accessibilityHint={accessibilityHint}
       accessibilityState={checked === undefined ? { busy, disabled } : { checked, busy, disabled }}
       disabled={disabled}
-      onPress={onPress}
+      focusable={!disabled}
+      onFocus={() => focusController.setFocused(true)}
+      onBlur={() => focusController.setFocused(false)}
+      onPress={() => {
+        triggerHaptic('tap');
+        onPress();
+      }}
       style={({ pressed }) => [
         styles.tool,
         checked === true ? styles.toolChecked : null,
@@ -218,9 +263,12 @@ function QueueTool({
       <AppText variant="label" numberOfLines={1} style={[styles.toolLabel, { color: foreground }]}>
         {label}
       </AppText>
+      <FocusRingOverlay controller={focusController} borderRadius={radii.pill} disabled={disabled} />
     </Pressable>
   );
 }
+
+const keyExtractor = (entry: IndexedQueueRow<QueueSnapshotRow>) => entry.row.stableId;
 
 /** Shared queue implementation used by both the root modal and Now Playing tab. */
 export function QueueSurface({
@@ -231,13 +279,43 @@ export function QueueSurface({
   onOpenParty,
 }: QueueSurfaceProps) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
+  const tv = useTvEnvironment();
+  const tvFocusReturn = useTvFocusReturn({
+    scope: 'queue',
+    active: !embedded && isFocused,
+    fallbackKey: QUEUE_TV_CLOSE_FOCUS_KEY,
+    enabled: !embedded && tv.isTv,
+  });
+  const checkpointConsumedRef = useRef(false);
+  const standaloneTvRef = useRef(!embedded && tv.isTv);
+  const popFocusReturnRef = useRef(tvFocusReturn.popAndRestore);
+  useEffect(() => {
+    standaloneTvRef.current = !embedded && tv.isTv;
+    popFocusReturnRef.current = tvFocusReturn.popAndRestore;
+  }, [embedded, tv.isTv, tvFocusReturn.popAndRestore]);
+
+  useEffect(
+    () => () => {
+      if (standaloneTvRef.current && !checkpointConsumedRef.current) {
+        checkpointConsumedRef.current = true;
+        popFocusReturnRef.current();
+      }
+    },
+    [],
+  );
+
+  const consumeTvCheckpoint = useCallback(() => {
+    if (embedded || !tv.isTv || checkpointConsumedRef.current) return;
+    checkpointConsumedRef.current = true;
+    tvFocusReturn.popAndRestore();
+  }, [embedded, tv.isTv, tvFocusReturn]);
   const partyState = usePartySession();
   // While a party steers the player its queue is the party's: edit it there.
   const followedParty = partyState.detached ? null : partyState.party;
   const [startingParty, setStartingParty] = useState(false);
   const [partyStartError, setPartyStartError] = useState<string | null>(null);
   const playerError = usePlayerError();
-  const activeProgress = useProgress(1);
   const { presentationFor } = useTrackPresentationResolver();
   const { queue, status: snapshotStatus, shuffle, setShuffle, refresh: refreshQueue } =
     useQueueSnapshot();
@@ -264,11 +342,17 @@ export function QueueSurface({
     () => buildQueuePresentation(rows, queue.activeIndex),
     [queue.activeIndex, rows],
   );
-  // Titles are resolved per render so they follow a locale switch.
-  const sections: QueueUiSection[] = presentation.sections.map((section) => ({
-    ...section,
-    title: sectionTitle(section.kind, section.data),
-  }));
+  const locale = getActiveLocale();
+  const sections: QueueUiSection[] = useMemo(
+    () =>
+      presentation.sections.map((section) => ({
+        ...section,
+        title: sectionTitle(section.kind, section.data),
+      })),
+    // `locale` ensures memoized section titles refresh when active language switches.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [presentation.sections, locale],
+  );
   const snapshotVisual = resolveQueueSnapshotVisualState({
     hasSnapshot: snapshotStatus.hasSnapshot,
     empty: rows.length === 0,
@@ -287,7 +371,44 @@ export function QueueSurface({
       })
     : null;
 
-  const runMutation = async (context: string, action: () => Promise<string>) => {
+  const handleClose = useCallback(() => {
+    consumeTvCheckpoint();
+    onClose?.();
+  }, [consumeTvCheckpoint, onClose]);
+
+  const handleOpenAlbum = useCallback(
+    (params: AlbumRouteParams) => {
+      consumeTvCheckpoint();
+      onOpenAlbum(params);
+    },
+    [consumeTvCheckpoint, onOpenAlbum],
+  );
+
+  const handleOpenArtist = useCallback(
+    (params: ArtistRouteParams) => {
+      consumeTvCheckpoint();
+      onOpenArtist(params);
+    },
+    [consumeTvCheckpoint, onOpenArtist],
+  );
+
+  useBackHandler(
+    isFocused && (moveControlsFor !== null || (!embedded && onClose !== undefined)),
+    () => {
+      if (moveControlsFor !== null) {
+        triggerHaptic('tap');
+        setMoveControlsFor(null);
+        return true;
+      }
+      if (!embedded && onClose !== undefined) {
+        handleClose();
+        return true;
+      }
+      return false;
+    },
+  );
+
+  const runMutation = useCallback(async (context: string, action: () => Promise<string>) => {
     if (mutationLock.current) return;
     mutationLock.current = true;
     setMutationPending(true);
@@ -303,7 +424,7 @@ export function QueueSurface({
       mutationLock.current = false;
       setMutationPending(false);
     }
-  };
+  }, [refreshQueue]);
 
   // The two view refs are taken out of the controller: passing a member of an
   // object to `ref` would mark the whole object as a ref for the hooks linter.
@@ -311,7 +432,7 @@ export function QueueSurface({
   const { attachFrame, attachList, ...drag } = useQueueDrag({
     rows,
     activeIndex: queue.activeIndex,
-    disabled: editLocked,
+    disabled: editLocked || tv.isTv,
     onTap: (stableId) =>
       setMoveControlsFor((current) => (current === stableId ? null : stableId)),
     onDrop: (fromIndex, toIndex) => {
@@ -333,22 +454,21 @@ export function QueueSurface({
     },
   });
 
+  const { attachRow, canDrag, draggingId, handlersFor } = drag;
+
   /** One queue row; `floating` is the copy that follows the finger during a drag. */
-  const renderRow = (row: QueueSnapshotRow, nativeIndex: number, floating: boolean) => {
+  const renderRow = useCallback((row: QueueSnapshotRow, nativeIndex: number, floating: boolean) => {
     const active = nativeIndex === queue.activeIndex;
     const range = queueDragRange(origins, queue.activeIndex, nativeIndex);
     const title = row.track.title;
-    const resolvedPresentation = presentationFor(
-      {
-        trackId: row.track.id,
-        queueContext:
-          row.context === null ? null : { type: row.context.type, id: row.context.id },
-        originalContextOrder: row.originalContextOrder,
-      },
-      active ? { rollingDeviceCacheSeconds: activeProgress.cached } : undefined,
-    );
+    const resolvedPresentation = presentationFor({
+      trackId: row.track.id,
+      queueContext:
+        row.context === null ? null : { type: row.context.type, id: row.context.id },
+      originalContextOrder: row.originalContextOrder,
+    });
     return (
-      <QueueRow
+      <MemoQueueRow
         track={row.track}
         testID={floating ? 'queue-drag-ghost-row' : `queue-row-${testIdPart(row.stableId)}`}
         active={active}
@@ -357,17 +477,18 @@ export function QueueSurface({
         disabled={editLocked}
         canMoveUp={range !== null && nativeIndex > range.min}
         canMoveDown={range !== null && nativeIndex < range.max}
-        rowRef={floating ? undefined : drag.attachRow(row.stableId)}
+        rowRef={floating ? undefined : attachRow(row.stableId)}
         dragHandlers={
-          floating ? {} : drag.canDrag(nativeIndex) ? drag.handlersFor(row.stableId) : undefined
+          floating ? {} : canDrag(nativeIndex) ? handlersFor(row.stableId) : undefined
         }
-        dragging={!floating && drag.draggingId === row.stableId}
+        dragging={!floating && draggingId === row.stableId}
         moveControlsOpen={!floating && moveControlsFor === row.stableId}
+        isTv={tv.isTv}
         onToggleMoveControls={() =>
           setMoveControlsFor((current) => (current === row.stableId ? null : row.stableId))
         }
-        onOpenAlbum={onOpenAlbum}
-        onOpenArtist={onOpenArtist}
+        onOpenAlbum={handleOpenAlbum}
+        onOpenArtist={handleOpenArtist}
         onSkip={() =>
           void runMutation(strings.queue.skipFailed(title), async () => {
             await skipToQueueItem(nativeIndex, expectedStableIds);
@@ -394,11 +515,53 @@ export function QueueSurface({
         }
       />
     );
-  };
+  }, [
+    attachRow,
+    canDrag,
+    draggingId,
+    editLocked,
+    expectedStableIds,
+    handleOpenAlbum,
+    handleOpenArtist,
+    handlersFor,
+    moveControlsFor,
+    origins,
+    presentationFor,
+    queue.activeIndex,
+    runMutation,
+    tv.isTv,
+  ]);
+
+  const renderItem = useCallback(
+    ({ item: { row, nativeIndex } }: SectionListRenderItemInfo<IndexedQueueRow<QueueSnapshotRow>, QueueUiSection>) =>
+      renderRow(row, nativeIndex, false),
+    [renderRow],
+  );
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: QueueUiSection }) => (
+      <View testID={`queue-section-${section.kind}`} style={styles.sectionHeader}>
+        <AppText
+          accessibilityRole="header"
+          variant="overline"
+          color={section.kind === 'current' ? 'accent' : 'secondary'}
+          numberOfLines={1}
+          style={styles.sectionTitle}
+        >
+          {section.title}
+        </AppText>
+        <AppText variant="caption" color="muted">
+          {strings.common.trackCount(section.data.length)}
+        </AppText>
+      </View>
+    ),
+    [],
+  );
+
   const draggedIndex =
-    drag.draggingId === null
+    draggingId === null
       ? -1
-      : rows.findIndex((candidate) => candidate.stableId === drag.draggingId);
+      : rows.findIndex((candidate) => candidate.stableId === draggingId);
 
   const upcomingCount = presentation.upcomingCount;
   const upcomingContextCount =
@@ -407,19 +570,44 @@ export function QueueSurface({
   const canClearUpcoming = upcomingCount > 0;
   const transparent = embedded ? styles.transparent : null;
 
-  return (
+  const listEmpty = useMemo(
+    () => (
+      <EmptyState
+        layout="page"
+        testID="queue-empty"
+        icon="playlist-music-outline"
+        title={strings.queue.emptyTitle}
+        message={strings.queue.emptyDetail}
+        style={transparent}
+      />
+    ),
+    [transparent],
+  );
+
+  // TvShellLayout already applies the 5% TV overscan margins around RootStack.
+  const surfacePadding = !embedded && tv.isTv
+    ? {
+        paddingTop: spacing.sm,
+        paddingBottom: spacing.sm,
+        paddingHorizontal: tv.contentPaddingHorizontal,
+      }
+    : queueSurfacePadding(embedded, insets.top, insets.bottom);
+
+  const surface = (
     <View
       testID={embedded ? 'queue-panel' : 'queue-screen'}
       style={[
         styles.container,
         transparent,
-        queueSurfacePadding(embedded, insets.top, insets.bottom),
+        surfacePadding,
       ]}
     >
       <QueueSurfaceHeader
         embedded={embedded}
         upcomingCount={upcomingCount}
-        onClose={onClose}
+        onClose={onClose !== undefined ? handleClose : undefined}
+        isTv={tv.isTv}
+        tvPreferredCloseFocus={!embedded && tv.isTv && isFocused}
       />
 
       <View testID="queue-tools" style={styles.tools}>
@@ -533,39 +721,19 @@ export function QueueSurface({
               ref={attachList}
               testID="queue-list"
               sections={sections}
-              keyExtractor={(entry) => entry.row.stableId}
+              keyExtractor={keyExtractor}
               stickySectionHeadersEnabled={false}
+              initialNumToRender={12}
+              maxToRenderPerBatch={10}
+              windowSize={7}
+              removeClippedSubviews={false}
               onScroll={drag.onScroll}
               scrollEventThrottle={16}
               onContentSizeChange={drag.onContentSizeChange}
               contentContainerStyle={rows.length === 0 ? styles.emptyList : styles.list}
-              ListEmptyComponent={
-                <EmptyState
-                  layout="page"
-                  testID="queue-empty"
-                  icon="playlist-music-outline"
-                  title={strings.queue.emptyTitle}
-                  message={strings.queue.emptyDetail}
-                  style={transparent}
-                />
-              }
-              renderSectionHeader={({ section }) => (
-                <View testID={`queue-section-${section.kind}`} style={styles.sectionHeader}>
-                  <AppText
-                    accessibilityRole="header"
-                    variant="overline"
-                    color={section.kind === 'current' ? 'accent' : 'secondary'}
-                    numberOfLines={1}
-                    style={styles.sectionTitle}
-                  >
-                    {section.title}
-                  </AppText>
-                  <AppText variant="caption" color="muted">
-                    {strings.common.trackCount(section.data.length)}
-                  </AppText>
-                </View>
-              )}
-              renderItem={({ item: { row, nativeIndex } }) => renderRow(row, nativeIndex, false)}
+              ListEmptyComponent={listEmpty}
+              renderSectionHeader={renderSectionHeader}
+              renderItem={renderItem}
             />
             <View
               testID="queue-drag-layer"
@@ -598,6 +766,8 @@ export function QueueSurface({
       )}
     </View>
   );
+
+  return embedded ? surface : <TvFocusScope scope="queue">{surface}</TvFocusScope>;
 }
 
 /** Preserve the navigation route contract as a thin standalone wrapper. */
@@ -605,14 +775,22 @@ export default function QueueScreen({ navigation }: ScreenProps) {
   return (
     <QueueSurface
       onClose={() => navigation.goBack()}
-      onOpenAlbum={(params) => navigation.navigate('Tabs', {
-        screen: 'DiscoverTab',
-        params: { screen: 'Album', params },
-      })}
-      onOpenArtist={(params) => navigation.navigate('Tabs', {
-        screen: 'DiscoverTab',
-        params: { screen: 'Artist', params },
-      })}
+      onOpenAlbum={(params) => {
+        if (openNowPlayingCatalogAlbum(params) !== 'opened') {
+          reportPlayerError(
+            strings.trackActions.navigationUnavailable,
+            new Error(`Root navigation container is not ready to open album ${params.albumId}`),
+          );
+        }
+      }}
+      onOpenArtist={(params) => {
+        if (openNowPlayingCatalogArtist(params) !== 'opened') {
+          reportPlayerError(
+            strings.trackActions.navigationUnavailable,
+            new Error(`Root navigation container is not ready to open artist ${params.artistId}`),
+          );
+        }
+      }}
       onOpenParty={(code) => navigation.navigate('Party', { code })}
     />
   );
@@ -630,6 +808,18 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   headerCopy: { flex: 1, minWidth: 0 },
+  tvCloseButton: {
+    minHeight: metrics.minimumTouchTarget,
+    minWidth: metrics.minimumTouchTarget,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tools: {
     flexDirection: 'row',
     gap: spacing.xs,

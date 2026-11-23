@@ -4,11 +4,38 @@ import { queryKeys, type QueryScope } from './queryKeys';
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
+/**
+ * Stale-time policy aligned with `web/src/app/providers.tsx` so catalog,
+ * library, and detail views do not refetch-flicker every 30s while mutations
+ * continue to invalidate/update affected caches immediately.
+ */
+export const QUERY_STALE_TIMES = {
+  default: 2 * MINUTE,
+  home: 15 * MINUTE,
+  homePersonalized: HOUR,
+  homeMood: 30 * MINUTE,
+  charts: 15 * MINUTE,
+  newReleases: HOUR,
+  genres: 24 * HOUR,
+  genreDetail: HOUR,
+  album: HOUR,
+  artist: HOUR,
+  artistAbout: 24 * HOUR,
+  track: HOUR,
+  search: 5 * MINUTE,
+  playlists: 5 * MINUTE,
+  library: 5 * MINUTE,
+  follows: 5 * MINUTE,
+  cachedTrackIds: 5 * MINUTE,
+  playCounts: 10 * MINUTE,
+  party: 30_000,
+} as const;
+
 export function createMusicQueryClient(): QueryClient {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 30_000,
+        staleTime: QUERY_STALE_TIMES.default,
         gcTime: 30 * MINUTE,
         retry: 1,
         refetchOnMount: true,
@@ -19,12 +46,55 @@ export function createMusicQueryClient(): QueryClient {
     },
   });
 
-  client.setQueryDefaults(queryKeys.home.root(), { staleTime: 15 * MINUTE });
-  client.setQueryDefaults([...queryKeys.home.root(), 'scope'], { staleTime: HOUR });
-  client.setQueryDefaults([...queryKeys.home.root(), 'mood'], { staleTime: 30 * MINUTE });
-  client.setQueryDefaults(queryKeys.catalog.newReleases(), { staleTime: HOUR });
-  client.setQueryDefaults(queryKeys.catalog.genres(), { staleTime: 24 * HOUR });
-  client.setQueryDefaults(queryKeys.catalog.charts(), { staleTime: 15 * MINUTE });
+  client.setQueryDefaults(queryKeys.home.root(), { staleTime: QUERY_STALE_TIMES.home });
+  client.setQueryDefaults([...queryKeys.home.root(), 'scope'], {
+    staleTime: QUERY_STALE_TIMES.homePersonalized,
+  });
+  client.setQueryDefaults([...queryKeys.home.root(), 'mood'], {
+    staleTime: QUERY_STALE_TIMES.homeMood,
+  });
+  client.setQueryDefaults(queryKeys.catalog.newReleases(), {
+    staleTime: QUERY_STALE_TIMES.newReleases,
+  });
+  client.setQueryDefaults(queryKeys.catalog.genres(), {
+    staleTime: QUERY_STALE_TIMES.genres,
+  });
+  client.setQueryDefaults(queryKeys.catalog.charts(), {
+    staleTime: QUERY_STALE_TIMES.charts,
+  });
+  client.setQueryDefaults([...queryKeys.catalog.root(), 'album'], {
+    staleTime: QUERY_STALE_TIMES.album,
+  });
+  client.setQueryDefaults([...queryKeys.catalog.root(), 'artist'], {
+    staleTime: QUERY_STALE_TIMES.artist,
+  });
+  client.setQueryDefaults([...queryKeys.catalog.root(), 'artist-about'], {
+    staleTime: QUERY_STALE_TIMES.artistAbout,
+  });
+  client.setQueryDefaults([...queryKeys.catalog.root(), 'track'], {
+    staleTime: QUERY_STALE_TIMES.track,
+  });
+  client.setQueryDefaults(queryKeys.search.root(), {
+    staleTime: QUERY_STALE_TIMES.search,
+  });
+  client.setQueryDefaults(queryKeys.playlists.root(), {
+    staleTime: QUERY_STALE_TIMES.playlists,
+  });
+  client.setQueryDefaults([...queryKeys.root, 'library'], {
+    staleTime: QUERY_STALE_TIMES.library,
+  });
+  client.setQueryDefaults([...queryKeys.root, 'follows'], {
+    staleTime: QUERY_STALE_TIMES.follows,
+  });
+  client.setQueryDefaults(queryKeys.storage.cachedTrackIds(), {
+    staleTime: QUERY_STALE_TIMES.cachedTrackIds,
+  });
+  client.setQueryDefaults(queryKeys.plays.root(), {
+    staleTime: QUERY_STALE_TIMES.playCounts,
+  });
+  client.setQueryDefaults(queryKeys.party.root(), {
+    staleTime: QUERY_STALE_TIMES.party,
+  });
   return client;
 }
 

@@ -1,19 +1,27 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
+import type { TrackPresentationState } from '../../player/trackPresentation';
 import { byTestId, elements, flatStyle, queryByTestId } from '../../test/render';
 import { colors, layout, metrics } from '../../theme';
-import StandardTrackRow from './StandardTrackRow';
-import TrackShelfCard from './TrackShelfCard';
+import StandardTrackRow, {
+  areStandardTrackRowViewPropsEqual,
+  type StandardTrackRowViewProps,
+} from './StandardTrackRow';
+import TrackShelfCard, {
+  areTrackShelfCardViewPropsEqual,
+  type TrackShelfCardViewProps,
+} from './TrackShelfCard';
 
 const mocks = vi.hoisted(() => ({
-  useTrackPresentation: vi.fn(() => ({
+  presentation: {
     active: true,
-    playback: 'buffering' as const,
-    serverCache: 'cached' as const,
+    playback: 'buffering',
+    serverCache: 'cached',
     rollingDeviceCache: null,
-    explicitDownload: { kind: 'unknown' as const },
-  })),
+    explicitDownload: { kind: 'unknown' },
+  } as TrackPresentationState,
+  useTrackPresentation: vi.fn(),
 }));
 
 vi.mock('react-native', () => ({
@@ -36,10 +44,22 @@ vi.mock('../ui', async (original) => ({
   PressableScale: 'PressableScale',
 }));
 vi.mock('../TrackLikeButton', () => ({ default: 'TrackLikeButton' }));
-vi.mock('../TrackStateIndicator', () => ({ default: 'TrackStateIndicator' }));
+vi.mock('../TrackStateIndicator', () => ({
+  default: 'TrackStateIndicator',
+  MemoEqualizerBars: 'MemoEqualizerBars',
+}));
 vi.mock('./TrackIdentityLinks', () => ({ default: 'TrackIdentityLinks' }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
+
+/** Unwraps the top-level React.memo view returned by StandardTrackRow / TrackShelfCard. */
+function unwrapMemoRoot(node: React.ReactElement): React.ReactNode {
+  const type = node.type as { type?: (props: ElementProps) => React.ReactNode };
+  if (typeof type === 'object' && type !== null && typeof type.type === 'function') {
+    return type.type(node.props as ElementProps);
+  }
+  return node;
+}
 
 // The shared primitives (IconButton, Artwork, AppText) are real here, so the
 // shared helpers expand them down to host elements.
@@ -79,22 +99,36 @@ const track: Track = {
 };
 
 describe('shared track compositions', () => {
-  it('keeps exact occurrence identity and independent row actions', () => {
+  beforeEach(() => {
+    mocks.presentation = {
+      active: true,
+      playback: 'buffering',
+      serverCache: 'cached',
+      rollingDeviceCache: null,
+      explicitDownload: { kind: 'unknown' },
+    };
+    mocks.useTrackPresentation.mockReset();
+    mocks.useTrackPresentation.mockImplementation(() => mocks.presentation);
+  });
+
+  it('uses row-wide tap-to-play wrapping artwork and non-interactive identity with independent Like/Actions siblings', () => {
     const onPlay = vi.fn();
     const onActions = vi.fn();
-    const rendered = StandardTrackRow({
-      track,
-      testID: 'row-42',
-      occurrence: {
-        queueContext: { type: 'album', id: '9' },
-        originalContextOrder: 3,
-      },
-      position: 4,
-      onPlay,
-      onActions,
-      onOpenAlbum: vi.fn(),
-      onOpenArtist: vi.fn(),
-    });
+    const rendered = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        occurrence: {
+          queueContext: { type: 'album', id: '9' },
+          originalContextOrder: 3,
+        },
+        position: 4,
+        onPlay,
+        onActions,
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
 
     expect(mocks.useTrackPresentation).toHaveBeenLastCalledWith(
       {
@@ -104,12 +138,21 @@ describe('shared track compositions', () => {
       },
       { rollingDeviceCacheSeconds: undefined },
     );
-    expect(byTestID(rendered, 'row-42').props.accessibilityState).toEqual({
+    const playBody = byTestID(rendered, 'row-42');
+    expect(playBody.props.accessibilityState).toEqual({
       selected: true,
       busy: true,
     });
     expect(byTestID(rendered, 'row-42-position').props.children).toBe(4);
-    (byTestID(rendered, 'row-42').props.onPress as () => void)();
+    // Identity lives inside the row-body play target in non-interactive mode so
+    // tapping title/artist plays instead of hijacking to Album/Artist.
+    const bodyIdentity = elements(playBody).find(
+      (element) => element.type === 'TrackIdentityLinks',
+    );
+    expect(bodyIdentity?.props.interactive).toBe(false);
+    expect(bodyIdentity?.props.active).toBe(true);
+
+    (playBody.props.onPress as () => void)();
     (byTestID(rendered, 'row-42-actions').props.onPress as () => void)();
     expect(onPlay).toHaveBeenCalledOnce();
     expect(onActions).toHaveBeenCalledOnce();
@@ -117,36 +160,124 @@ describe('shared track compositions', () => {
     assertNoNestedPressables(rendered);
   });
 
-  it('keeps one row height and marks the active occurrence', () => {
-    const rendered = StandardTrackRow({
-      track,
-      testID: 'row-42',
-      onPlay: vi.fn(),
-      onOpenAlbum: vi.fn(),
-      onOpenArtist: vi.fn(),
-    });
+  it('renders EqualizerBars on active playing and paused rows, and omits it on buffering/inactive rows', () => {
+    const buffering = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
+    expect(queryByTestId(buffering, 'row-42-equalizer')).toBeNull();
 
-    const container = flatStyle(byTestID(rendered, 'row-42-container').props.style);
+    mocks.presentation = { ...mocks.presentation, active: true, playback: 'playing' };
+    const playing = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
+    expect(byTestID(playing, 'row-42-equalizer').props.isPlaying).toBe(true);
+
+    mocks.presentation = { ...mocks.presentation, active: true, playback: 'paused' };
+    const paused = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
+    expect(byTestID(paused, 'row-42-equalizer').props.isPlaying).toBe(false);
+
+    mocks.presentation = { ...mocks.presentation, active: false, playback: 'inactive' };
+    const inactive = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
+    expect(queryByTestId(inactive, 'row-42-equalizer')).toBeNull();
+  });
+
+  it('keeps one row height and marks the active occurrence', () => {
+    const rendered = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
+
+    const containerNode = byTestID(rendered, 'row-42-container');
+    expect(containerNode.props.collapsable).toBe(false);
+    const container = flatStyle(containerNode.props.style);
     expect(container.minHeight).toBe(layout.rowHeight);
     expect(container.backgroundColor).toBe(colors.accentSubtle);
+    // Regression guard for RN 0.86 Android Fabric BackgroundStyleApplicator:
+    // container must never dynamically toggle borderLeftWidth/borderWidth.
+    expect(container.borderLeftWidth).toBeUndefined();
+    expect(container.borderWidth).toBeUndefined();
+    const accentBar = byTestID(rendered, 'row-42-active-accent');
+    expect(accentBar.props).toMatchObject({
+      accessible: false,
+      focusable: false,
+      pointerEvents: 'none',
+    });
+    expect(flatStyle(accentBar.props.style)).toMatchObject({
+      position: 'absolute',
+      left: 0,
+      width: 3,
+      backgroundColor: colors.accent,
+    });
     const identity = elements(rendered).find((element) => element.type === 'TrackIdentityLinks');
     expect(identity?.props.active).toBe(true);
     // No overflow control and no supplemental line unless the owner provides them.
     expect(queryByTestId(rendered, 'row-42-actions')).toBeNull();
     expect(queryByTestId(rendered, 'row-42-metadata')).toBeNull();
     expect(queryByTestId(rendered, 'row-42-position')).toBeNull();
+
+    // Active -> inactive transition keeps container borderless and restores transparent background.
+    mocks.presentation = { ...mocks.presentation, active: false, playback: 'inactive' };
+    const inactive = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
+    const inactiveStyle = flatStyle(byTestID(inactive, 'row-42-container').props.style);
+    expect(inactiveStyle.backgroundColor).toBe('transparent');
+    expect(inactiveStyle.borderLeftWidth).toBeUndefined();
+    expect(inactiveStyle.borderWidth).toBeUndefined();
+    expect(queryByTestId(inactive, 'row-42-active-accent')).toBeNull();
   });
 
   it('renders an owner-supplied collection fact as one labelled line in the row', () => {
-    const rendered = StandardTrackRow({
-      track,
-      testID: 'row-42',
-      caption: 'New · 2 days ago',
-      highlighted: true,
-      onPlay: vi.fn(),
-      onOpenAlbum: vi.fn(),
-      onOpenArtist: vi.fn(),
-    });
+    const rendered = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        caption: 'New · 2 days ago',
+        highlighted: true,
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
 
     const fact = byTestID(rendered, 'row-42-metadata');
     expect(fact.props.children).toBe('New · 2 days ago');
@@ -155,15 +286,17 @@ describe('shared track compositions', () => {
   });
 
   it('speaks an owner-supplied label instead of an abbreviated collection fact', () => {
-    const rendered = StandardTrackRow({
-      track,
-      testID: 'row-42',
-      caption: 'New · today · Artist played 3×',
-      captionAccessibilityLabel: 'New, today, In your radar because you played Artist 3 times',
-      onPlay: vi.fn(),
-      onOpenAlbum: vi.fn(),
-      onOpenArtist: vi.fn(),
-    });
+    const rendered = unwrapMemoRoot(
+      StandardTrackRow({
+        track,
+        testID: 'row-42',
+        caption: 'New · today · Artist played 3×',
+        captionAccessibilityLabel: 'New, today, In your radar because you played Artist 3 times',
+        onPlay: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
 
     const fact = byTestID(rendered, 'row-42-metadata');
     expect(fact.props.children).toBe('New · today · Artist played 3×');
@@ -172,27 +305,93 @@ describe('shared track compositions', () => {
     );
   });
 
-  it('uses a dedicated artwork play target and sibling card controls', () => {
-    const rendered = TrackShelfCard({
+  it('memo comparators skip unchanged presentation objects and detect semantic playback transitions', () => {
+    const baseRowProps: StandardTrackRowViewProps = {
       track,
-      testID: 'card-42',
-      occurrence: {
-        queueContext: { type: 'chart', id: 'discover' },
-        originalContextOrder: 0,
-      },
-      rank: 1,
+      testID: 'row-42',
       onPlay: vi.fn(),
-      onActions: vi.fn(),
       onOpenAlbum: vi.fn(),
       onOpenArtist: vi.fn(),
-    });
+      presentation: {
+        active: false,
+        playback: 'inactive',
+        serverCache: 'cached',
+        rollingDeviceCache: null,
+        explicitDownload: { kind: 'not-downloaded' },
+      },
+    };
+    const sameRowValues: StandardTrackRowViewProps = {
+      ...baseRowProps,
+      presentation: {
+        active: false,
+        playback: 'inactive',
+        serverCache: 'cached',
+        rollingDeviceCache: null,
+        explicitDownload: { kind: 'not-downloaded' },
+      },
+    };
+    expect(areStandardTrackRowViewPropsEqual(baseRowProps, sameRowValues)).toBe(true);
+    expect(
+      areStandardTrackRowViewPropsEqual(baseRowProps, {
+        ...sameRowValues,
+        presentation: { ...sameRowValues.presentation, active: true, playback: 'playing' },
+      }),
+    ).toBe(false);
+
+    const baseCardProps: TrackShelfCardViewProps = {
+      track,
+      testID: 'card-42',
+      onPlay: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+      presentation: baseRowProps.presentation,
+    };
+    expect(
+      areTrackShelfCardViewPropsEqual(baseCardProps, {
+        ...baseCardProps,
+        presentation: { ...baseRowProps.presentation },
+      }),
+    ).toBe(true);
+    expect(
+      areTrackShelfCardViewPropsEqual(baseCardProps, {
+        ...baseCardProps,
+        presentation: { ...baseRowProps.presentation, playback: 'paused', active: true },
+      }),
+    ).toBe(false);
+  });
+
+  it('uses a dedicated artwork play target and sibling card controls with TV focus forwarding', () => {
+    const onFocus = vi.fn();
+    mocks.presentation = { ...mocks.presentation, active: true, playback: 'playing' };
+    const rendered = unwrapMemoRoot(
+      TrackShelfCard({
+        track,
+        testID: 'card-42',
+        occurrence: {
+          queueContext: { type: 'chart', id: 'discover' },
+          originalContextOrder: 0,
+        },
+        rank: 1,
+        focusable: true,
+        hasTVPreferredFocus: true,
+        onFocus,
+        onPlay: vi.fn(),
+        onActions: vi.fn(),
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      }),
+    );
 
     const play = byTestID(rendered, 'card-42');
     expect(play.type).toBe('PressableScale');
+    expect(play.props.focusable).toBe(true);
+    expect(play.props.hasTVPreferredFocus).toBe(true);
+    expect(play.props.onFocus).toBe(onFocus);
     expect(flatStyle(play.props.style)).toMatchObject({
       width: layout.artwork.card,
       height: layout.artwork.card,
     });
+    expect(byTestID(rendered, 'card-42-equalizer').props.isPlaying).toBe(true);
     expect(elements(rendered).some((element) =>
       element.type === 'TrackLikeButton' && element.props.testID === 'card-42-like')).toBe(true);
     expect(byTestID(rendered, 'card-42-actions').props.accessibilityRole).toBe('button');

@@ -46,6 +46,209 @@ internal fun normalizedCurrentItemSnapshot(
   return LoggeRythmCurrentItemSnapshot(reportedIndex, reportedMediaId)
 }
 
+/**
+ * Applies a validated [PlayerCommand] to a Media3 [Player] (either the module's [MediaController]
+ * or an in-process test [Player]). Incremental queue edits (`AddQueueItems`, `MoveQueueItem`,
+ * `RemoveQueueItems`, `ReplaceQueueItem`, `SkipToIndex`, and active-preserving `ReplaceQueue`)
+ * mutate the Media3 timeline in place so the currently active track continues playing (or stays
+ * paused at its exact position) with zero re-prepare, zero buffering, and zero discontinuity.
+ */
+internal fun applyPlayerCommand(
+  active: Player,
+  command: PlayerCommand,
+  liveUrlOf: (MediaItem) -> String? = { it.localConfiguration?.uri?.toString() },
+) {
+  when (command) {
+    is PlayerCommand.SetQueue -> {
+      val mediaItems = LoggeRythmPlayerRuntime.installQueue(command.items)
+      if (mediaItems.isEmpty()) {
+        active.stop()
+        active.clearMediaItems()
+      } else {
+        active.setMediaItems(mediaItems, command.startIndex, command.startPositionMs)
+        active.prepare()
+      }
+    }
+    is PlayerCommand.ReplaceQueue -> {
+      val currentCount = active.mediaItemCount
+      val currentIndex = active.currentMediaItemIndex
+      val currentLive = if (currentIndex in 0 until currentCount) {
+        active.getMediaItemAt(currentIndex)
+      } else {
+        null
+      }
+      val targetActive = command.items[command.startIndex]
+      val currentLiveUrl = currentLive?.let(liveUrlOf)
+      val canPreserveActive = currentLive != null &&
+        active.playbackState != Player.STATE_IDLE &&
+        active.playerError == null &&
+        currentLive.mediaId == targetActive.id &&
+        currentLiveUrl == targetActive.url &&
+        LoggeRythmPlayerRuntime.cookieFor(targetActive.url) == targetActive.cookie
+      if (canPreserveActive) {
+        val mediaItems = LoggeRythmPlayerRuntime.stagePreservedReplaceQueue(command.items)
+        try {
+          if (currentIndex + 1 < currentCount) {
+            active.removeMediaItems(currentIndex + 1, currentCount)
+          }
+          if (currentIndex > 0) {
+            active.removeMediaItems(0, currentIndex)
+          }
+          if (command.startIndex > 0) {
+            active.addMediaItems(0, mediaItems.subList(0, command.startIndex))
+          }
+          if (command.startIndex + 1 < mediaItems.size) {
+            active.addMediaItems(
+              command.startIndex + 1,
+              mediaItems.subList(command.startIndex + 1, mediaItems.size),
+            )
+          }
+        } catch (error: Throwable) {
+          LoggeRythmPlayerRuntime.unstageQueueItems(command.items)
+          throw error
+        }
+        if (command.resume && !active.playWhenReady) {
+          active.play()
+        }
+      } else {
+        val mediaItems = LoggeRythmPlayerRuntime.installQueue(command.items)
+        active.setMediaItems(mediaItems, command.startIndex, command.startPositionMs)
+        active.prepare()
+        if (command.resume) {
+          active.play()
+        }
+      }
+    }
+    is PlayerCommand.AddQueueItems -> {
+      val currentCount = active.mediaItemCount
+      if (command.index !in 0..currentCount) {
+        throw PlayerProtocolException("queue-index-invalid")
+      }
+      val existingIds = (0 until currentCount).mapTo(mutableSetOf()) { index ->
+        active.getMediaItemAt(index).mediaId
+      }
+      val mediaItems = LoggeRythmPlayerRuntime.stageAddedQueueItems(existingIds, command.items)
+      try {
+        active.addMediaItems(command.index, mediaItems)
+      } catch (error: Throwable) {
+        LoggeRythmPlayerRuntime.unstageQueueItems(command.items)
+        throw error
+      }
+      if (currentCount == 0 && active.playbackState == Player.STATE_IDLE) {
+        active.prepare()
+      }
+    }
+    is PlayerCommand.MoveQueueItem -> {
+      val currentCount = active.mediaItemCount
+      if (command.fromIndex !in 0 until currentCount || command.toIndex !in 0 until currentCount) {
+        throw PlayerProtocolException("move-index-invalid")
+      }
+      if (command.fromIndex != command.toIndex) {
+        active.moveMediaItem(command.fromIndex, command.toIndex)
+      }
+    }
+    is PlayerCommand.RemoveQueueItems -> {
+      val currentCount = active.mediaItemCount
+      if (
+        command.fromIndex !in 0 until currentCount ||
+        command.toIndex <= command.fromIndex ||
+        command.toIndex > currentCount
+      ) {
+        throw PlayerProtocolException("remove-range-invalid")
+      }
+      if (command.fromIndex == 0 && command.toIndex == currentCount) {
+        active.stop()
+        active.clearMediaItems()
+        LoggeRythmPlayerRuntime.clearQueueHeaders()
+      } else {
+        val activeIndex = active.currentMediaItemIndex
+        val removingActive = activeIndex in command.fromIndex until command.toIndex
+        val repeatMode = active.repeatMode
+        active.removeMediaItems(command.fromIndex, command.toIndex)
+        if (removingActive) {
+          val remaining = active.mediaItemCount
+          if (
+            remaining > 0 &&
+            command.fromIndex >= remaining &&
+            repeatMode != Player.REPEAT_MODE_ALL
+          ) {
+            active.seekTo(remaining - 1, 0L)
+          }
+          if (active.playbackState == Player.STATE_IDLE && active.playerError != null) {
+            active.prepare()
+          }
+        }
+      }
+    }
+    is PlayerCommand.ReplaceQueueItem -> {
+      val currentCount = active.mediaItemCount
+      if (command.index !in 0 until currentCount) {
+        throw PlayerProtocolException("replace-index-invalid")
+      }
+      val replacedId = active.getMediaItemAt(command.index).mediaId
+      for (index in 0 until currentCount) {
+        if (index != command.index && active.getMediaItemAt(index).mediaId == command.item.id) {
+          throw PlayerProtocolException("queue-item-id-duplicate")
+        }
+      }
+      val replacingActive = command.index == active.currentMediaItemIndex
+      val mediaItem = LoggeRythmPlayerRuntime.stageReplacedQueueItem(replacedId, command.item)
+      try {
+        active.replaceMediaItem(command.index, mediaItem)
+      } catch (error: Throwable) {
+        LoggeRythmPlayerRuntime.unstageQueueItems(listOf(command.item))
+        throw error
+      }
+      if (replacingActive && (active.playerError != null || active.playbackState == Player.STATE_IDLE)) {
+        active.prepare()
+      }
+    }
+    is PlayerCommand.SkipToIndex -> {
+      if (command.index !in 0 until active.mediaItemCount) {
+        throw PlayerProtocolException("skip-index-invalid")
+      }
+      active.seekTo(command.index, 0L)
+      if (active.playbackState == Player.STATE_IDLE) {
+        active.prepare()
+      }
+    }
+    PlayerCommand.Play -> {
+      if (
+        LoggeRythmSessionClosePolicy.requiresPrepareBeforePlay(
+          playbackState = active.playbackState,
+          hasPlayerError = active.playerError != null,
+          mediaItemCount = active.mediaItemCount,
+        )
+      ) {
+        active.prepare()
+      }
+      active.play()
+    }
+    PlayerCommand.Pause -> active.pause()
+    is PlayerCommand.SeekTo -> active.seekTo(command.positionMs)
+    PlayerCommand.SkipToNext -> if (active.hasNextMediaItem()) active.seekToNextMediaItem()
+    PlayerCommand.SkipToPrevious -> if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem()
+    is PlayerCommand.SetRepeatMode -> active.repeatMode = when (command.mode) {
+      "one" -> Player.REPEAT_MODE_ONE
+      "all" -> Player.REPEAT_MODE_ALL
+      else -> Player.REPEAT_MODE_OFF
+    }
+    PlayerCommand.Stop -> active.stop()
+    PlayerCommand.ClearQueue -> {
+      active.stop()
+      active.clearMediaItems()
+      LoggeRythmPlayerRuntime.clearQueueHeaders()
+    }
+    PlayerCommand.DisableGlobalShuffle,
+    is PlayerCommand.SetQueuePersistenceState,
+    is PlayerCommand.SetCommands,
+    is PlayerCommand.SleepAfterTime,
+    is PlayerCommand.SleepAfterMediaItemAtIndex,
+    PlayerCommand.CancelSleepTimer -> Unit
+    PlayerCommand.RefreshSnapshot -> Unit
+  }
+}
+
 @UnstableApi
 class LoggeRythmPlayerModule(
   reactContext: ReactApplicationContext,
@@ -164,7 +367,7 @@ class LoggeRythmPlayerModule(
           return@withController
         }
         if (
-          (parsed is PlayerCommand.SetQueue || parsed == PlayerCommand.ClearQueue) &&
+          parsed.mutatesQueueStructure() &&
           LoggeRythmPersistedServiceBridge.isQueueMutationBlocked()
         ) {
           reject(promise, PlayerProtocolException("playback-event-queue-commit-active"))
@@ -233,6 +436,24 @@ class LoggeRythmPlayerModule(
           onSuccess = { promise.resolve(null) },
           onFailure = { reject(promise, it) },
         )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setLikedTrackIds(trackIdsJson: String?, promise: Promise) {
+    parseOnWorker(promise, { protocol.parseLikedTrackIds(trackIdsJson) }) { trackIds ->
+      if (cleanupInProgress.get()) {
+        reject(promise, PlayerProtocolException("player-cleanup-active"))
+        return@parseOnWorker
+      }
+      withPlaybackEventCoordinator(promise) {
+        LoggeRythmPersistedServiceBridge.syncLikedTrackIds(trackIds) { result ->
+          result.fold(
+            onSuccess = { promise.resolve(null) },
+            onFailure = { reject(promise, it) },
+          )
+        }
       }
     }
   }
@@ -383,6 +604,44 @@ class LoggeRythmPlayerModule(
   }
 
   @ReactMethod
+  fun completeFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    promise: Promise,
+  ) {
+    withPlaybackEventCoordinator(promise) {
+      LoggeRythmPersistedServiceBridge.completeFavoritePlaybackEvent(
+        leaseId,
+        eventId,
+      ) { result ->
+        result.fold(
+          onSuccess = { promise.resolve(null) },
+          onFailure = { error -> reject(promise, error) },
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun failFavoritePlaybackEvent(
+    leaseId: String,
+    eventId: String,
+    promise: Promise,
+  ) {
+    withPlaybackEventCoordinator(promise) {
+      LoggeRythmPersistedServiceBridge.failFavoritePlaybackEvent(
+        leaseId,
+        eventId,
+      ) { result ->
+        result.fold(
+          onSuccess = { promise.resolve(null) },
+          onFailure = { error -> reject(promise, error) },
+        )
+      }
+    }
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) {
     if (eventName == SNAPSHOT_EVENT || eventName == PLAYER_EVENT || eventName == PROGRESS_EVENT) {
       listenerCount.incrementAndGet()
@@ -419,52 +678,7 @@ class LoggeRythmPlayerModule(
   }
 
   private fun applyCommand(active: MediaController, command: PlayerCommand) {
-    when (command) {
-      is PlayerCommand.SetQueue -> {
-        val mediaItems = LoggeRythmPlayerRuntime.installQueue(command.items)
-        if (mediaItems.isEmpty()) {
-          active.stop()
-          active.clearMediaItems()
-        } else {
-          active.setMediaItems(mediaItems, command.startIndex, command.startPositionMs)
-          active.prepare()
-        }
-      }
-      PlayerCommand.Play -> {
-        if (
-          LoggeRythmSessionClosePolicy.requiresPrepareBeforePlay(
-            playbackState = active.playbackState,
-            hasPlayerError = active.playerError != null,
-            mediaItemCount = active.mediaItemCount,
-          )
-        ) {
-          active.prepare()
-        }
-        active.play()
-      }
-      PlayerCommand.Pause -> active.pause()
-      is PlayerCommand.SeekTo -> active.seekTo(command.positionMs)
-      PlayerCommand.SkipToNext -> if (active.hasNextMediaItem()) active.seekToNextMediaItem()
-      PlayerCommand.SkipToPrevious -> if (active.hasPreviousMediaItem()) active.seekToPreviousMediaItem()
-      is PlayerCommand.SetRepeatMode -> active.repeatMode = when (command.mode) {
-        "one" -> Player.REPEAT_MODE_ONE
-        "all" -> Player.REPEAT_MODE_ALL
-        else -> Player.REPEAT_MODE_OFF
-      }
-      PlayerCommand.Stop -> active.stop()
-      PlayerCommand.ClearQueue -> {
-        active.stop()
-        active.clearMediaItems()
-        LoggeRythmPlayerRuntime.clearQueueHeaders()
-      }
-      PlayerCommand.DisableGlobalShuffle,
-      is PlayerCommand.SetQueuePersistenceState,
-      is PlayerCommand.SetCommands,
-      is PlayerCommand.SleepAfterTime,
-      is PlayerCommand.SleepAfterMediaItemAtIndex,
-      PlayerCommand.CancelSleepTimer -> Unit
-      PlayerCommand.RefreshSnapshot -> Unit
-    }
+    applyPlayerCommand(active, command)
   }
 
   private fun withController(promise: Promise, action: (MediaController) -> Unit) {

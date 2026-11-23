@@ -1,13 +1,25 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import type { LyricsLine, LyricsResponse, Track } from '../../api/types';
 import { musicQueries } from '../../data';
 import type { RemoteFetchStatus } from '../../data/remoteState';
+import { triggerHaptic } from '../../hooks/useHaptics';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { strings } from '../../localization';
+import { useProgress } from '../../player/player';
 import { colors, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
-import { AppText, EmptyState, ErrorState, RetryButton, Skeleton } from '../ui';
+import {
+  ActionButton,
+  AppText,
+  createFocusRingController,
+  EmptyState,
+  ErrorState,
+  FocusRingOverlay,
+  RetryButton,
+  Skeleton,
+} from '../ui';
 import {
   activeLyricIndex,
   lyricLineKey,
@@ -17,9 +29,16 @@ import {
   type LyricsFollowIdentity,
 } from '../../screens/lyricsModel';
 
+const EMPTY_LINES: readonly LyricsLine[] = Object.freeze([]);
+
 export interface LyricsPanelProps {
   track: Track;
   position: number;
+  onSeek: (seconds: number) => void;
+}
+
+export interface LiveLyricsPanelProps {
+  track: Track;
   onSeek: (seconds: number) => void;
 }
 
@@ -34,6 +53,9 @@ export interface LyricsPanelViewProps {
   onSeek: (seconds: number) => void;
   onRetry: () => void;
   listRef?: React.RefObject<FlatList<LyricsLine> | null>;
+  autoScrollPaused?: boolean;
+  onUserScrollStart?: () => void;
+  onSyncToCurrent?: () => void;
   onScrollToIndexFailed?: (info: {
     index: number;
     highestMeasuredFrameIndex: number;
@@ -80,10 +102,18 @@ function LyricsSkeleton() {
   );
 }
 
-function Badge({ testID, label }: { testID: string; label: string }) {
+function Badge({
+  testID,
+  label,
+  tone = 'accent',
+}: {
+  testID: string;
+  label: string;
+  tone?: 'accent' | 'secondary';
+}) {
   return (
     <View testID={testID} style={styles.badge}>
-      <AppText variant="micro" color="accent">{label}</AppText>
+      <AppText variant="micro" color={tone}>{label}</AppText>
     </View>
   );
 }
@@ -127,6 +157,9 @@ export function LyricsPanelView({
   onSeek,
   onRetry,
   listRef,
+  autoScrollPaused = false,
+  onUserScrollStart,
+  onSyncToCurrent,
   onScrollToIndexFailed,
 }: LyricsPanelViewProps) {
   const visual = resolveLyricsVisualState({
@@ -137,8 +170,10 @@ export function LyricsPanelView({
     isStale,
     fetchStatus,
   });
-  const lines = response?.lines ?? [];
+  const lines = response?.lines ?? EMPTY_LINES;
+  const isSynced = response?.synced === true;
   const provider = response === undefined ? null : sourceLabel(response);
+  const showSyncAction = visual.body === 'content' && isSynced && autoScrollPaused && onSyncToCurrent !== undefined;
 
   return (
     <View testID="lyrics-panel" style={styles.panel}>
@@ -148,9 +183,15 @@ export function LyricsPanelView({
         </AppText>
         {response !== undefined ? (
           <View testID="lyrics-metadata" style={styles.badges}>
-            {response.synced ? (
+            {isSynced ? (
               <Badge testID="lyrics-synced" label={strings.player.lyrics.synchronized} />
-            ) : null}
+            ) : (
+              <Badge
+                testID="lyrics-unsynced"
+                label={strings.player.lyrics.notSynchronized}
+                tone="secondary"
+              />
+            )}
             {response.ai_generated ? (
               <Badge testID="lyrics-ai-generated" label={strings.player.lyrics.aiGenerated} />
             ) : null}
@@ -158,6 +199,7 @@ export function LyricsPanelView({
               <View
                 testID="lyrics-cached"
                 accessible
+                focusable={false}
                 accessibilityRole="image"
                 accessibilityLabel={strings.player.lyrics.cached}
                 style={styles.badge}
@@ -203,38 +245,75 @@ export function LyricsPanelView({
       ) : null}
 
       {visual.body === 'content' ? (
-        <FlatList
-          ref={listRef}
-          testID="lyrics-list"
-          style={styles.list}
-          data={lines}
-          keyExtractor={lyricLineKey}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          onScrollToIndexFailed={onScrollToIndexFailed}
-          renderItem={({ item, index }) => {
-            const active = index === activeIndex;
-            const text = item.text.trim() || strings.player.lyrics.instrumentalLine;
-            return (
-              <Pressable
-                testID={`lyrics-line-${index}`}
-                accessibilityRole="button"
-                accessibilityLabel={strings.player.lyrics.lineLabel(
-                  text,
-                  formatTimestamp(item.t),
-                )}
-                accessibilityHint={strings.player.lyrics.lineSeekHint}
-                accessibilityState={{ selected: active }}
-                onPress={() => onSeek(item.t)}
-                style={({ pressed }) => [styles.line, pressed ? styles.pressed : null]}
-              >
-                <AppText variant="section" color={active ? 'primary' : 'muted'}>
-                  {text}
-                </AppText>
-              </Pressable>
-            );
-          }}
-        />
+        <View style={styles.listWrap}>
+          <FlatList
+            ref={listRef}
+            testID="lyrics-list"
+            style={styles.list}
+            data={lines as LyricsLine[]}
+            keyExtractor={lyricLineKey}
+            contentContainerStyle={isSynced ? styles.listContent : styles.unsyncedListContent}
+            showsVerticalScrollIndicator={false}
+            removeClippedSubviews={false}
+            onScrollBeginDrag={onUserScrollStart}
+            onScrollToIndexFailed={onScrollToIndexFailed}
+            renderItem={({ item, index }) => {
+              const active = isSynced && index === activeIndex;
+              const text = item.text.trim() || strings.player.lyrics.instrumentalLine;
+              if (!isSynced) {
+                return (
+                  <View testID={`lyrics-line-${index}`} style={styles.line}>
+                    <AppText variant="section" color="primary">
+                      {text}
+                    </AppText>
+                  </View>
+                );
+              }
+              const focusController = createFocusRingController();
+              return (
+                <Pressable
+                  testID={`lyrics-line-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={strings.player.lyrics.lineLabel(
+                    text,
+                    formatTimestamp(item.t),
+                  )}
+                  accessibilityHint={strings.player.lyrics.lineSeekHint}
+                  accessibilityState={{ selected: active }}
+                  focusable
+                  onFocus={() => focusController.setFocused(true)}
+                  onBlur={() => focusController.setFocused(false)}
+                  onPress={() => onSeek(item.t)}
+                  style={({ pressed }) => [styles.line, pressed ? styles.pressed : null]}
+                >
+                  <AppText variant="section" color={active ? 'primary' : 'muted'}>
+                    {text}
+                  </AppText>
+                  <FocusRingOverlay controller={focusController} borderRadius={radii.sm} />
+                </Pressable>
+              );
+            }}
+          />
+          {showSyncAction ? (
+            <View
+              testID="lyrics-auto-scroll-paused"
+              accessibilityLiveRegion="polite"
+              style={styles.syncOverlay}
+            >
+              <ActionButton
+                testID="lyrics-sync-button"
+                variant="secondary"
+                icon="crosshairs-gps"
+                label={strings.player.lyrics.syncToCurrent}
+                accessibilityLabel={strings.player.lyrics.followActiveLine}
+                accessibilityHint={strings.player.lyrics.autoScrollPaused}
+                focusable
+                onPress={onSyncToCurrent}
+                style={styles.syncButton}
+              />
+            </View>
+          ) : null}
+        </View>
       ) : null}
 
       {visual.notice === 'refreshing' ? (
@@ -286,25 +365,63 @@ export function LyricsPanelView({
   );
 }
 
+const MemoLyricsPanelView = React.memo(LyricsPanelView);
+
 /** Own the lazy lyrics query and visual auto-follow for exactly one active track. */
 export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProps) {
   const query = useQuery(musicQueries.lyrics(track.artist, track.title, track.id));
-  const lines = query.data?.lines ?? [];
-  const activeIndex = activeLyricIndex(lines, position);
+  const reducedMotion = useReducedMotion();
+  const isSynced = query.data?.synced === true;
+  const lines = useMemo(() => query.data?.lines ?? EMPTY_LINES, [query.data?.lines]);
+  const activeIndex = isSynced ? activeLyricIndex(lines, position) : -1;
   const listRef = useRef<FlatList<LyricsLine>>(null);
   const previousFollow = useRef<LyricsFollowIdentity | null>(null);
+  const [pausedTrackId, setPausedTrackId] = useState<string | null>(null);
+  const autoScrollPaused = isSynced && pausedTrackId === track.id;
 
   useEffect(() => {
+    if (!isSynced) {
+      previousFollow.current = { trackId: track.id, activeIndex: -1 };
+      return;
+    }
     const current = { trackId: track.id, activeIndex };
     const target = lyricsFollowTarget(previousFollow.current, current);
     previousFollow.current = current;
-    if (target === null) return;
+    if (target === null || autoScrollPaused) return;
     listRef.current?.scrollToIndex({
       index: target.index,
       viewPosition: 0.5,
-      animated: target.animated,
+      animated: target.animated && !reducedMotion,
     });
-  }, [activeIndex, track.id]);
+  }, [activeIndex, autoScrollPaused, isSynced, reducedMotion, track.id]);
+
+  const handleUserScrollStart = useCallback(() => {
+    if (!isSynced || activeIndex < 0) return;
+    setPausedTrackId(track.id);
+  }, [activeIndex, isSynced, track.id]);
+
+  const handleSyncToCurrent = useCallback(() => {
+    setPausedTrackId(null);
+    if (!isSynced || activeIndex < 0) return;
+    listRef.current?.scrollToIndex({
+      index: activeIndex,
+      viewPosition: 0.5,
+      animated: !reducedMotion,
+    });
+  }, [activeIndex, isSynced, reducedMotion]);
+
+  const handleSeek = useCallback(
+    (seconds: number) => {
+      triggerHaptic('tap');
+      setPausedTrackId(null);
+      onSeek(seconds);
+    },
+    [onSeek],
+  );
+
+  const handleRetry = useCallback(() => {
+    void query.refetch();
+  }, [query]);
 
   const handleScrollFailure = useCallback(
     (info: { index: number; averageItemLength: number }) => {
@@ -319,7 +436,7 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
   );
 
   return (
-    <LyricsPanelView
+    <MemoLyricsPanelView
       response={query.data}
       error={query.error}
       isPending={query.isPending}
@@ -327,13 +444,28 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
       isStale={query.isStale}
       fetchStatus={query.fetchStatus}
       activeIndex={activeIndex}
-      onSeek={onSeek}
-      onRetry={() => void query.refetch()}
+      onSeek={handleSeek}
+      onRetry={handleRetry}
       listRef={listRef}
+      autoScrollPaused={autoScrollPaused}
+      onUserScrollStart={handleUserScrollStart}
+      onSyncToCurrent={handleSyncToCurrent}
       onScrollToIndexFailed={handleScrollFailure}
     />
   );
 }
+
+/**
+ * Progress-isolated LyricsPanel wrapper. Keeps `useProgress(0.5)` strictly
+ * scoped to active-line tracking so parent screens never re-render at 1Hz.
+ */
+export const LiveLyricsPanel = React.memo(function LiveLyricsPanel({
+  track,
+  onSeek,
+}: LiveLyricsPanelProps) {
+  const { position } = useProgress(0.5);
+  return <LyricsPanel track={track} position={position} onSeek={onSeek} />;
+});
 
 const BADGE_HEIGHT = 24;
 
@@ -365,13 +497,29 @@ const styles = StyleSheet.create({
   skeleton: { flex: 1, gap: spacing.lg, paddingTop: spacing.xl },
   error: { marginTop: spacing.md },
   empty: { flex: 1, justifyContent: 'center' },
+  listWrap: { flex: 1, minHeight: 0, position: 'relative' },
   list: { flex: 1, minHeight: 0 },
   // Head and tail room lets the first and last line reach the vertical centre.
   listContent: { paddingTop: spacing.xxxl, paddingBottom: spacing.xxxl * 3 },
+  unsyncedListContent: { paddingTop: spacing.md, paddingBottom: spacing.xxxl },
   line: {
     minHeight: metrics.minimumTouchTarget,
     justifyContent: 'center',
     paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xxs,
+    borderRadius: radii.sm,
+  },
+  syncOverlay: {
+    position: 'absolute',
+    right: 0,
+    bottom: spacing.sm,
+    left: 0,
+    alignItems: 'center',
+    pointerEvents: 'box-none',
+  },
+  syncButton: {
+    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.border,
   },
   notice: {
     flexDirection: 'row',

@@ -52,7 +52,7 @@ export function SpotifyImportVirtualizedList({
     <FlatList
       testID="spotify-import-results-list"
       accessibilityLabel={accessibilityLabel}
-      data={[...rows]}
+      data={rows}
       keyExtractor={spotifyImportListRowKey}
       renderItem={renderRow}
       ListHeaderComponent={header}
@@ -62,7 +62,7 @@ export function SpotifyImportVirtualizedList({
       initialNumToRender={12}
       maxToRenderPerBatch={10}
       windowSize={9}
-      removeClippedSubviews
+      removeClippedSubviews={false}
       style={styles.list}
       contentContainerStyle={{ flexGrow: 1, paddingBottom: bottomInset }}
     />

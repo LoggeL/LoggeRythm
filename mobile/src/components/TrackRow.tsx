@@ -1,11 +1,12 @@
 import React from 'react';
 import type { Track } from '../api/types';
 import type { AlbumRouteParams, ArtistRouteParams } from '../screens/catalogModel';
+import type { TvFocusProps } from './ui';
 import StandardTrackRow, {
   type TrackOccurrenceTarget,
 } from './track/StandardTrackRow';
 
-export interface TrackRowProps {
+export interface TrackRowProps extends TvFocusProps {
   track: Track;
   testID: string;
   occurrence: TrackOccurrenceTarget;
@@ -28,9 +29,11 @@ export default function TrackRow({
   onLongPress,
   onOpenAlbum,
   onOpenArtist,
+  ...focusProps
 }: TrackRowProps) {
   return (
     <StandardTrackRow
+      {...focusProps}
       track={track}
       testID={testID}
       occurrence={occurrence}

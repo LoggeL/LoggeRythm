@@ -7,12 +7,19 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { triggerHaptic, type HapticKind } from '../../hooks/useHaptics';
+import { getReducedMotionSnapshot } from '../../hooks/useReducedMotion';
 import { colors, metrics, opacity, radii, spacing, typography } from '../../theme';
 import AppIcon, { type AppIconName } from '../AppIcon';
+import {
+  createFocusRingController,
+  FocusRingOverlay,
+  type TvFocusProps,
+} from './PressableScale';
 
 export type ActionButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger';
 
-export interface ActionButtonProps {
+export interface ActionButtonProps extends TvFocusProps {
   label: string;
   onPress: () => void;
   icon?: AppIconName;
@@ -26,6 +33,8 @@ export interface ActionButtonProps {
   busy?: boolean;
   /** Stretches to the parent's width instead of hugging the label. */
   fullWidth?: boolean;
+  /** Optional subtle Android haptic kind; pass `false` to disable. Defaults to `'tap'`. */
+  haptic?: HapticKind | false;
   testID?: string;
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
@@ -40,12 +49,20 @@ const foregrounds: Record<ActionButtonVariant, string> = {
   danger: colors.danger,
 };
 
+const rippleColors: Record<ActionButtonVariant, string> = {
+  primary: 'rgba(11,12,16,0.14)',
+  accent: 'rgba(255,255,255,0.2)',
+  secondary: colors.fillStrong,
+  ghost: colors.fillStrong,
+  danger: 'rgba(255,122,138,0.18)',
+};
+
 /**
  * ActionButton is the labelled pill button (web `.action-primary` /
  * `.action-secondary`). It is 48dp tall, shows an optional leading icon,
  * swaps the icon for a spinner while `busy`, reports disabled/busy to
- * assistive tech and applies the shared pressed feedback. One `primary` per
- * view; everything else is `secondary`, `ghost` or `danger`.
+ * assistive tech, applies native Android ripple + pressed feedback, and
+ * supports Android TV D-Pad focus rings.
  */
 export function ActionButton({
   label,
@@ -55,6 +72,13 @@ export function ActionButton({
   disabled = false,
   busy = false,
   fullWidth = false,
+  haptic = 'tap',
+  focusable,
+  hasTVPreferredFocus,
+  onFocus,
+  onBlur,
+  focused = false,
+  focusedStyle,
   testID,
   style,
   accessibilityLabel,
@@ -62,6 +86,7 @@ export function ActionButton({
 }: ActionButtonProps) {
   const unavailable = disabled || busy;
   const foreground = foregrounds[variant];
+  const focusController = createFocusRingController();
   return (
     <Pressable
       testID={testID}
@@ -70,13 +95,35 @@ export function ActionButton({
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled: unavailable, busy }}
       disabled={unavailable}
-      onPress={onPress}
+      focusable={focusable}
+      hasTVPreferredFocus={hasTVPreferredFocus}
+      android_ripple={{ color: rippleColors[variant], borderless: false }}
+      onFocus={(event) => {
+        focusController.setFocused?.(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event) => {
+        focusController.setFocused?.(false);
+        onBlur?.(event);
+      }}
+      onPress={
+        haptic === false
+          ? onPress
+          : () => {
+              triggerHaptic(haptic);
+              onPress();
+            }
+      }
       style={({ pressed }) => [
         styles.button,
         styles[variant],
         fullWidth ? styles.fullWidth : null,
         style,
-        pressed ? styles.pressed : null,
+        pressed
+          ? getReducedMotionSnapshot()
+            ? styles.pressedReduced
+            : styles.pressed
+          : null,
         unavailable ? styles.disabled : null,
       ]}
     >
@@ -86,6 +133,13 @@ export function ActionButton({
         <AppIcon name={icon} color={foreground} size={20} />
       ) : null}
       <Text numberOfLines={1} style={[styles.label, { color: foreground }]}>{label}</Text>
+      <FocusRingOverlay
+        controller={focusController}
+        borderRadius={radii.pill}
+        controlledFocused={focused}
+        disabled={unavailable}
+        focusedStyle={focusedStyle}
+      />
     </Pressable>
   );
 }
@@ -97,6 +151,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -111,5 +166,6 @@ const styles = StyleSheet.create({
   fullWidth: { alignSelf: 'stretch' },
   label: { ...typography.label, flexShrink: 1, textAlign: 'center' },
   pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
+  pressedReduced: { opacity: opacity.pressed },
   disabled: { opacity: opacity.disabled },
 });

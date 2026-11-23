@@ -254,6 +254,127 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     awaitErrorMessage(context.getString(R.string.loggerythm_player_car_error_signed_out))
   }
 
+  @Test
+  fun platformSessionMirrorsHeartButtonAndProcessesCarFavoritesAcrossPlaybackStates() {
+    val connected = connectPlatformBrowser()
+    bindPersistenceOnMain()
+    installPolicyAndTreeOnMain(favoriteLibraryTree())
+    val platformController = connectController(connected)
+
+    // Connect a real Media3 notification-profile controller (same Binder path Media3 uses for
+    // notification & car custom commands) while verifying what legacy Android Auto sees on the
+    // real Android platform MediaController (`PlaybackState.customActions`).
+    val media3ControllerFuture = androidx.media3.session.MediaController.Builder(
+      context,
+      androidx.media3.session.SessionToken(
+        context,
+        ComponentName(context, LoggeRythmMediaLibraryService::class.java),
+      ),
+    )
+      .setConnectionHints(
+        Bundle().apply {
+          putBoolean("androidx.media3.session.MediaNotificationManager", true)
+        },
+      )
+      .setApplicationLooper(thread.looper)
+      .buildAsync()
+    val media3Controller = media3ControllerFuture.get(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+    try {
+      // Unsynced likes fail closed: no heart custom action is fabricated before sync.
+      platformController.transportControls.playFromMediaId(FAVORITE_TRACK_IDS[0], null)
+      awaitQueue(FAVORITE_TRACK_IDS, currentId = FAVORITE_TRACK_IDS[0])
+      awaitState(PlaybackState.STATE_PLAYING)
+      assertTrue(favoriteCustomActions(platformController).isEmpty())
+
+      // Sync authoritative liked IDs (only track 1 is liked; track 0 is not liked).
+      syncLikedTrackIdsOnMain(setOf("1001"))
+
+      // --- Scenario 1: Active playing playback (Like + Unlike + Rollback on backend failure) ---
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+
+      // Tap Like while playing -> icon immediately flips to filled and durable FAVORITE is queued.
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+      val likeClaim = claimFavoriteEventOnMain(expectedTrackId = "1000", expectedLiked = true)
+      completeFavoriteEventOnMain(likeClaim.first, likeClaim.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+
+      // Tap Unlike while playing -> icon flips back to unfilled and converges.
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+      val unlikeClaim = claimFavoriteEventOnMain(expectedTrackId = "1000", expectedLiked = false)
+      completeFavoriteEventOnMain(unlikeClaim.first, unlikeClaim.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+
+      // Tap Like while playing, then fail backend -> icon MUST revert to unfilled AND surface car error!
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+      val failedClaim = claimFavoriteEventOnMain(expectedTrackId = "1000", expectedLiked = true)
+      failFavoriteEventOnMain(failedClaim.first, failedClaim.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+      awaitErrorMessage(context.getString(R.string.loggerythm_player_car_error_favorite_failed))
+
+      // --- Scenario 2: Paused playback (Like + Unlike) ---
+      platformController.transportControls.pause()
+      awaitState(PlaybackState.STATE_PAUSED)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+      val pausedLike = claimFavoriteEventOnMain(expectedTrackId = "1000", expectedLiked = true)
+      completeFavoriteEventOnMain(pausedLike.first, pausedLike.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+      val pausedUnlike = claimFavoriteEventOnMain(expectedTrackId = "1000", expectedLiked = false)
+      completeFavoriteEventOnMain(pausedUnlike.first, pausedUnlike.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+
+      // --- Scenario 3: After track change (skipToNext to liked track 1 -> Unlike + Like) ---
+      platformController.transportControls.skipToNext()
+      awaitQueue(FAVORITE_TRACK_IDS, currentId = FAVORITE_TRACK_IDS[1])
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+      val trackChangeUnlike = claimFavoriteEventOnMain(expectedTrackId = "1001", expectedLiked = false)
+      completeFavoriteEventOnMain(trackChangeUnlike.first, trackChangeUnlike.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = false)
+
+      sendFavoriteToggle(media3Controller)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+      val trackChangeLike = claimFavoriteEventOnMain(expectedTrackId = "1001", expectedLiked = true)
+      completeFavoriteEventOnMain(trackChangeLike.first, trackChangeLike.second)
+      awaitFavoriteCustomAction(platformController, expectedLiked = true)
+
+      // --- Cold service-only restore (no UI): persisted likedTrackIds restores heart immediately ---
+      onLooper { media3Controller.release() }
+      platformController.unregisterCallback(controllerCallback)
+      compatController?.unregisterCallback(compatCallback)
+      onLooper { requireNotNull(browser).disconnect() }
+      browser = null
+      context.stopService(serviceIntent)
+      poll("car-service-not-stopped-for-favorite-restore") {
+        LoggeRythmPlayerRuntime.currentSessionBinding() == null
+      }
+
+      val restored = connectPlatformBrowser()
+      assertNotNull(loadChildren(LoggeRythmPlayerRuntime.BROWSE_ROOT_ID))
+      val restoredController = connectController(restored)
+      awaitQueue(FAVORITE_TRACK_IDS, currentId = FAVORITE_TRACK_IDS[1])
+      awaitFavoriteCustomAction(restoredController, expectedLiked = true)
+
+      // Logout wipes likedTrackIds & removes heart button so nothing bleeds across accounts.
+      clearPersistedStateOnMain()
+      poll("favorite-action-not-cleared-on-logout") {
+        favoriteCustomActions(restoredController).isEmpty()
+      }
+    } finally {
+      runCatching { onLooper { media3Controller.release() } }
+    }
+  }
+
   private data class ConnectedPlatformBrowser(
     val root: String,
     val extras: Bundle,
@@ -483,6 +604,122 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     assertNull(LoggeRythmPlayerRuntime.currentSessionBinding())
   }
 
+  private fun syncLikedTrackIdsOnMain(trackIds: Set<String>?) {
+    val completed = CountDownLatch(1)
+    val outcome = AtomicReference<Result<Unit>>()
+    instrumentation.runOnMainSync {
+      LoggeRythmPersistedServiceBridge.syncLikedTrackIds(trackIds) { result ->
+        outcome.set(result)
+        completed.countDown()
+      }
+    }
+    assertTrue(completed.await(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    outcome.get().getOrThrow()
+  }
+
+  private fun sendFavoriteToggle(media3Controller: androidx.media3.session.MediaController) {
+    val result = onLooper {
+      media3Controller.sendCustomCommand(LoggeRythmNotificationFavoriteContract.command, Bundle.EMPTY)
+    }.get(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+    assertEquals(androidx.media3.session.SessionResult.RESULT_SUCCESS, result.resultCode)
+  }
+
+  private fun claimFavoriteEventOnMain(
+    expectedTrackId: String,
+    expectedLiked: Boolean,
+  ): Pair<String, String> {
+    val found = AtomicReference<Pair<String, String>>()
+    poll("favorite-event-not-claimed: track=$expectedTrackId liked=$expectedLiked") {
+      val completed = CountDownLatch(1)
+      val raw = AtomicReference<Result<String>>()
+      instrumentation.runOnMainSync {
+        LoggeRythmPersistedServiceBridge.claimPlaybackEvents(8, 60_000L) { result ->
+          raw.set(result)
+          completed.countDown()
+        }
+      }
+      if (!completed.await(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) return@poll false
+      val claim = org.json.JSONObject(raw.get().getOrThrow())
+      val leaseId = claim.getString("leaseId")
+      val events = claim.getJSONArray("events")
+      for (index in 0 until events.length()) {
+        val event = events.getJSONObject(index)
+        if (event.getString("type") == "FAVORITE") {
+          val trackId = event.getJSONObject("track").getString("id")
+          if (trackId == expectedTrackId && event.getBoolean("requestedLiked") == expectedLiked) {
+            found.set(leaseId to event.getString("eventId"))
+            return@poll true
+          }
+        }
+      }
+      false
+    }
+    return requireNotNull(found.get())
+  }
+
+  private fun completeFavoriteEventOnMain(leaseId: String, eventId: String) {
+    val completed = CountDownLatch(1)
+    val outcome = AtomicReference<Result<Unit>>()
+    instrumentation.runOnMainSync {
+      LoggeRythmPersistedServiceBridge.completeFavoritePlaybackEvent(leaseId, eventId) { result ->
+        outcome.set(result)
+        completed.countDown()
+      }
+    }
+    assertTrue(completed.await(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    outcome.get().getOrThrow()
+  }
+
+  private fun failFavoriteEventOnMain(leaseId: String, eventId: String) {
+    val completed = CountDownLatch(1)
+    val outcome = AtomicReference<Result<Unit>>()
+    instrumentation.runOnMainSync {
+      LoggeRythmPersistedServiceBridge.failFavoritePlaybackEvent(leaseId, eventId) { result ->
+        outcome.set(result)
+        completed.countDown()
+      }
+    }
+    assertTrue(completed.await(DEVICE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+    outcome.get().getOrThrow()
+  }
+
+  private fun favoriteCustomActions(
+    platformController: MediaController,
+  ): List<PlaybackState.CustomAction> =
+    platformController.playbackState?.customActions.orEmpty()
+      .filter { it.action == LoggeRythmNotificationFavoriteContract.ACTION }
+
+  private fun awaitFavoriteCustomAction(
+    platformController: MediaController,
+    expectedLiked: Boolean,
+  ) {
+    val expectedName = if (expectedLiked) "Remove from favorites" else "Add to favorites"
+    val expectedIcon = if (expectedLiked) {
+      androidx.media3.session.CommandButton.ICON_HEART_FILLED
+    } else {
+      androidx.media3.session.CommandButton.ICON_HEART_UNFILLED
+    }
+    poll("favorite-custom-action-timeout: expectedLiked=$expectedLiked actual=${favoriteCustomActions(platformController)}") {
+      val action = favoriteCustomActions(platformController).singleOrNull() ?: return@poll false
+      action.name.toString() == expectedName &&
+        action.icon != 0 &&
+        action.extras?.getInt("androidx.media3.session.EXTRAS_KEY_COMMAND_BUTTON_ICON_COMPAT") == expectedIcon
+    }
+  }
+
+  private fun favoriteLibraryTree(): BrowseTreeSpec {
+    val liked = FAVORITE_TRACK_IDS.mapIndexed { index, id ->
+      track(id, LIKED_TITLES[index], fixtureUrl("liked-$index.wav"))
+    }
+    return BrowseTreeSpec(
+      container(
+        LoggeRythmPlayerRuntime.BROWSE_ROOT_ID,
+        "LoggeRythm",
+        listOf(container(LIKED_ID, "Liked Songs", liked)),
+      ),
+    )
+  }
+
   private fun libraryTree(): BrowseTreeSpec {
     val liked = LIKED_TRACK_IDS.mapIndexed { index, id ->
       track(id, LIKED_TITLES[index], fixtureUrl("liked-$index.wav"))
@@ -607,8 +844,9 @@ class LoggeRythmLegacyBrowserInstrumentedTest {
     const val DEVICE_TIMEOUT_SECONDS = 10L
     const val POLL_INTERVAL_MS = 50L
     val LIKED_TITLES = listOf("First", "Second", "Third", "Fourth", "Fifth")
-    val LIKED_TRACK_IDS = LIKED_TITLES.indices.map { "liked:$it:track-$it" }
-    val ROADTRIP_TRACK_IDS = (0 until 3).map { "playlist:roadtrip:$it:road-$it" }
+    val LIKED_TRACK_IDS = LIKED_TITLES.indices.map { "liked:track-$it" }
+    val FAVORITE_TRACK_IDS = LIKED_TITLES.indices.map { "liked:$it:${1000 + it}" }
+    val ROADTRIP_TRACK_IDS = (0 until 3).map { "playlist:roadtrip:road-$it" }
     val APP_CAPABILITIES = setOf(
       RemotePlayerCapability.PLAY_PAUSE,
       RemotePlayerCapability.STOP,

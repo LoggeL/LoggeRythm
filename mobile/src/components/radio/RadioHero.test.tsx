@@ -37,4 +37,11 @@ describe('RadioHero', () => {
     const tree = RadioHero({ onAir: { label: null, playing: false } });
     expect(textContent(byTestId(tree, 'radio-on-air'))).toContain(accountStrings.radio.onAirUnnamed);
   });
+
+  it('shows paused status instead of "On air" when a named radio queue is paused', () => {
+    const tree = RadioHero({ onAir: { label: 'Chill radio', playing: false } });
+    const pill = byTestId(tree, 'radio-on-air');
+    expect(textContent(pill)).toContain(`${strings.trackPresentation.paused}: Chill radio`);
+    expect(textContent(pill)).not.toContain(accountStrings.radio.onAirStation('Chill radio'));
+  });
 });

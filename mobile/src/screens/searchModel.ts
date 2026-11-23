@@ -33,7 +33,8 @@ export interface SearchInputState {
 export type SearchInputAction =
   | { type: 'edit'; value: string }
   | { type: 'publish'; query: string }
-  | { type: 'submit' };
+  | { type: 'submit' }
+  | { type: 'select'; query: string };
 
 /** Keep the display text and published query aligned on their canonical identity. */
 export function searchInputReducer(
@@ -58,7 +59,24 @@ export function searchInputReducer(
       const query = normalizeSearchInput(state.input);
       return { ...state, publishedQuery: isSearchableQuery(query) ? query : '' };
     }
+    case 'select': {
+      const query = normalizeSearchInput(action.query);
+      return { input: query, publishedQuery: isSearchableQuery(query) ? query : '' };
+    }
   }
+}
+
+/** Extract a specific non-empty error detail without silently hiding causes. */
+export function formatSearchErrorDetail(error: unknown): string | null {
+  if (error instanceof Error) {
+    const detail = error.message.trim();
+    return detail.length > 0 ? detail : null;
+  }
+  if (typeof error === 'string') {
+    const detail = error.trim();
+    return detail.length > 0 ? detail : null;
+  }
+  return null;
 }
 
 export function isSearchableQuery(value: string): boolean {

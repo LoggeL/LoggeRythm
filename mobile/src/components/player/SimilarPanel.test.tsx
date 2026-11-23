@@ -1,9 +1,24 @@
 import React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
 import { strings } from '../../localization';
 import type { RemoteVisualState } from '../../data/remoteState';
+import { UserFacingPlayerError } from '../../player/errors';
+import { playTrackRow } from '../../player/controller';
 import SimilarPanel, { SimilarPanelView, type SimilarPanelViewProps } from './SimilarPanel';
+
+const queryHarness = vi.hoisted(() => ({
+  data: undefined as Track[] | undefined,
+  setRuntimeError: vi.fn(),
+}));
+
+vi.mock('react', async (importOriginal) => ({
+  ...await importOriginal<typeof import('react')>(),
+  useCallback: <T extends (...args: never[]) => unknown>(fn: T) => fn,
+  useEffect: vi.fn(),
+  useRef: <T,>(initial: T) => ({ current: initial }),
+  useState: (initial: unknown) => [initial, queryHarness.setRuntimeError],
+}));
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: vi.fn() },
@@ -15,11 +30,22 @@ vi.mock('react-native', () => ({
   View: 'View',
 }));
 
-vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn() }));
+vi.mock('@tanstack/react-query', () => ({
+  useQuery: () => ({
+    data: queryHarness.data,
+    isPlaceholderData: false,
+    isPending: false,
+    isFetching: false,
+    isStale: false,
+    fetchStatus: 'idle',
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
 vi.mock('../../data', () => ({
   musicQueries: { similarTracks: vi.fn((id: string) => ({ queryKey: ['similar', id] })) },
 }));
-vi.mock('../../player/controller', () => ({ playTracks: vi.fn() }));
+vi.mock('../../player/controller', () => ({ playTrackRow: vi.fn() }));
 vi.mock('../TrackRow', () => ({ default: 'TrackRow' }));
 vi.mock('../trackActions', () => ({ showTrackActions: vi.fn() }));
 
@@ -124,8 +150,9 @@ describe('SimilarPanel view', () => {
     const onOpenAlbum = vi.fn();
     const onOpenArtist = vi.fn();
     const duplicate = track('7', 'Duplicate');
+    const stableTracks = [duplicate, duplicate];
     const rendered = view({
-      tracks: [duplicate, duplicate],
+      tracks: stableTracks,
       onPlay,
       onActions,
       onOpenAlbum,
@@ -133,11 +160,13 @@ describe('SimilarPanel view', () => {
     });
     const list = byTestId(rendered, 'similar-list');
 
+    // Keeps the caller's stable array identity instead of copying every render.
+    expect(list?.props.data).toBe(stableTracks);
     expect(list?.props).toMatchObject({
       initialNumToRender: 8,
       maxToRenderPerBatch: 8,
       windowSize: 7,
-      removeClippedSubviews: true,
+      removeClippedSubviews: false,
     });
     const keyExtractor = list?.props.keyExtractor as (item: Track, index: number) => string;
     expect(keyExtractor(duplicate, 0)).toBe('seed-a:7:0');
@@ -186,5 +215,42 @@ describe('SimilarPanel view', () => {
 
     expect(first.key).toBe('seed-a');
     expect(replacement.key).toBe('seed-b');
+  });
+});
+
+describe('SimilarPanel query playback & error hygiene', () => {
+  beforeEach(() => {
+    queryHarness.data = [track('1', 'Track One'), track('2', 'Track Two')];
+    queryHarness.setRuntimeError.mockClear();
+    vi.mocked(playTrackRow).mockReset();
+  });
+
+  it('uses playTrackRow and logs/preserves caught playback errors loudly', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const cause = new UserFacingPlayerError('Offline stream missing');
+    vi.mocked(playTrackRow).mockRejectedValueOnce(cause);
+
+    try {
+      const seed = track('seed-a', 'Seed Song');
+      const outer = SimilarPanel({
+        seed,
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      });
+      const inner = (outer.type as (props: Record<string, unknown>) => React.ReactElement<ElementProps>)(
+        outer.props as Record<string, unknown>,
+      );
+      (inner.props.onPlay as (index: number) => void)(0);
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(playTrackRow).toHaveBeenCalledOnce();
+      expect(errorSpy).toHaveBeenCalledWith('[LoggeRythm] Similar playback failed:', cause);
+      expect(queryHarness.setRuntimeError).toHaveBeenLastCalledWith(
+        `${strings.player.similar.playFailed}: Offline stream missing`,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

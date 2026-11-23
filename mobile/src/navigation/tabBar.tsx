@@ -21,6 +21,14 @@ export function TabBarIcon({ focused, name }: { focused: boolean; name: AppIconN
   );
 }
 
+/**
+ * Used as `Tab.Navigator`'s `tabBar` prop in Android TV mode so no hidden
+ * phone bottom-tab pressables mount or intercept D-Pad focus.
+ */
+export function renderHiddenTabBar(): null {
+  return null;
+}
+
 /** Screen options shared by all five tabs. `bottomInset` is the bottom safe-area inset. */
 export function tabBarScreenOptions(bottomInset: number): BottomTabNavigationOptions {
   return {

@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { ArtistSummary, PlaylistSearchResult, Track } from '../api/types';
 import type { SearchIssueOwner } from '../components/search/SearchFeedback';
 import { musicQueries } from '../data';
+import type { AlbumCard } from '../domain/catalog';
 import type { AppLocale } from '../localization';
 import { withoutLibraryTracks } from './searchLibraryModel';
 import {
@@ -18,10 +20,15 @@ import {
   type SearchRemoteQueryLike,
 } from './searchRemoteState';
 
+const EMPTY_TRACKS: readonly Track[] = [];
+const EMPTY_ALBUMS: readonly AlbumCard[] = [];
+const EMPTY_ARTISTS: readonly ArtistSummary[] = [];
+const EMPTY_PLAYLISTS: readonly PlaylistSearchResult[] = [];
+
 interface SearchResultsInput {
   /** The published (debounced) query identity. */
   query: string;
-  /** The input still equals `query`; nothing is fetched or shown otherwise. */
+  /** The input still equals `query`; nothing is fetched otherwise. */
   ready: boolean;
   tab: SearchTab;
   sort: SearchSort;
@@ -38,7 +45,9 @@ interface OwnedQuery<Key extends string> {
 }
 
 function limited<T>(items: readonly T[], tab: SearchTab, entity: SearchEntity): readonly T[] {
-  return items.slice(0, resultLimit(tab, entity) ?? items.length);
+  const limit = resultLimit(tab, entity);
+  if (limit === undefined || items.length <= limit) return items;
+  return items.slice(0, limit);
 }
 
 /**
@@ -54,7 +63,7 @@ export function useSearchResults({
   locale,
   libraryTrackIds,
 }: SearchResultsInput) {
-  const wanted = wantedSearchEntities(tab);
+  const wanted = useMemo(() => wantedSearchEntities(tab), [tab]);
 
   const tracksQuery = useQuery({
     ...musicQueries.searchTracks(query),
@@ -75,7 +84,7 @@ export function useSearchResults({
 
   /** Every found track in display order, library tracks included. */
   const foundTracks = useMemo(
-    () => sortSearchTracks(tracksQuery.data ?? [], sort, locale),
+    () => sortSearchTracks(tracksQuery.data ?? EMPTY_TRACKS, sort, locale),
     [locale, sort, tracksQuery.data],
   );
   /**
@@ -87,9 +96,12 @@ export function useSearchResults({
     [foundTracks, libraryTrackIds],
   );
   const shownTracks = useMemo(() => limited(tracks, tab, 'track'), [tab, tracks]);
-  const albums = albumsQuery.data ?? [];
-  const artists = artistsQuery.data ?? [];
-  const playlists = playlistsQuery.data ?? [];
+  const albums = albumsQuery.data ?? EMPTY_ALBUMS;
+  const artists = artistsQuery.data ?? EMPTY_ARTISTS;
+  const playlists = playlistsQuery.data ?? EMPTY_PLAYLISTS;
+  const shownAlbums = useMemo(() => limited(albums, tab, 'album'), [albums, tab]);
+  const shownArtists = useMemo(() => limited(artists, tab, 'artist'), [artists, tab]);
+  const shownPlaylists = useMemo(() => limited(playlists, tab, 'playlist'), [playlists, tab]);
 
   const trackPlayRequest = useMemo(
     () => shownTracks.map(({ id, artist, title }) => ({ id, artist, title })),
@@ -170,9 +182,9 @@ export function useSearchResults({
     foundTracks,
     tracks,
     shownTracks,
-    shownAlbums: limited(albums, tab, 'album'),
-    shownArtists: limited(artists, tab, 'artist'),
-    shownPlaylists: limited(playlists, tab, 'playlist'),
+    shownAlbums,
+    shownArtists,
+    shownPlaylists,
     trackPlays: trackPlaysQuery.data,
     state,
     owners,

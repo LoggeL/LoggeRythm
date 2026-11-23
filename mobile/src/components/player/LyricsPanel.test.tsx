@@ -209,4 +209,53 @@ describe('LyricsPanelView', () => {
     expect(byTestId(stale, 'lyrics-stale')?.props.accessibilityLiveRegion).toBe('polite');
     expect(byTestId(stale, 'lyrics-refreshing')).toBeNull();
   });
+
+  it('handles non-synced lyrics clearly without misleading seek buttons', () => {
+    const onSeek = vi.fn();
+    const rendered = view({
+      response: response({ synced: false }),
+      isPending: false,
+      isFetching: false,
+      activeIndex: -1,
+      onSeek,
+    });
+
+    expect(byTestId(rendered, 'lyrics-synced')).toBeNull();
+    expect(byTestId(rendered, 'lyrics-unsynced')).not.toBeNull();
+    expect(textContent(byTestId(rendered, 'lyrics-unsynced'))).toBe(
+      strings.player.lyrics.notSynchronized,
+    );
+    const list = byTestId(rendered, 'lyrics-list');
+    const renderItem = list?.props.renderItem as (info: {
+      item: LyricsLine;
+      index: number;
+    }) => React.ReactElement<ElementProps>;
+    const row = renderItem({ item: lines[0], index: 0 });
+    expect(row.type).toBe('View');
+    expect(row.props.onPress).toBeUndefined();
+    expect(byTestId(rendered, 'lyrics-sync-button')).toBeNull();
+  });
+
+  it('exposes manual-scroll pause hook and Sync-to-current control when auto-scroll is paused', () => {
+    const onUserScrollStart = vi.fn();
+    const onSyncToCurrent = vi.fn();
+    const rendered = view({
+      response: response({ synced: true }),
+      isPending: false,
+      isFetching: false,
+      activeIndex: 0,
+      autoScrollPaused: true,
+      onUserScrollStart,
+      onSyncToCurrent,
+    });
+
+    const list = byTestId(rendered, 'lyrics-list');
+    expect(list?.props.onScrollBeginDrag).toBe(onUserScrollStart);
+    const syncBtn = byTestId(rendered, 'lyrics-sync-button');
+    expect(syncBtn).not.toBeNull();
+    expect(syncBtn?.props.accessibilityLabel).toBe(strings.player.lyrics.followActiveLine);
+    expect(syncBtn?.props.accessibilityHint).toBe(strings.player.lyrics.autoScrollPaused);
+    (syncBtn?.props.onPress as () => void)();
+    expect(onSyncToCurrent).toHaveBeenCalledOnce();
+  });
 });

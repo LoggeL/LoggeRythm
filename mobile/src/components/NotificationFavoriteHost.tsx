@@ -1,110 +1,61 @@
-import React, { useEffect } from 'react';
-import { AccessibilityInfo } from 'react-native';
-import {
-  useIsMutating,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from '@tanstack/react-query';
-import type { Track } from '../api/types';
+import React, { useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
-import {
-  createTrackLikeMutationOptions,
-  musicCacheScope,
-  musicQueries,
-  trackLikeMutationKey,
-} from '../data';
-import Player, { Event, useActiveMediaItem } from '../player/player';
-import { refreshBrowseTree } from '../player/browseTree';
-import { reportPlayerError } from '../player/errors';
-import { mediaItemToTrack } from '../player/mediaItem';
-import { reportPlayerNotice } from '../player/notices';
+import { musicCacheScope, musicQueries } from '../data';
 import { strings } from '../localization';
+import { reportPlayerError } from '../player/errors';
+import { syncNativeLikedTrackIds } from '../player/favoriteNativePort';
+import { ensurePlayer } from '../player/setup';
 
-interface ActiveFavoriteHostProps {
-  mediaId: string;
+interface AccountFavoriteSyncProps {
   scope: string;
-  track: Track;
 }
 
-function ActiveFavoriteHost({ mediaId, scope, track }: ActiveFavoriteHostProps) {
-  const queryClient = useQueryClient();
+function AccountFavoriteSync({ scope }: AccountFavoriteSyncProps) {
   const likes = useQuery({
     ...musicQueries.likes(scope),
-    select: (tracks) => tracks.some((item) => item.id === track.id),
   });
-  const matchingMutations = useIsMutating({
-    mutationKey: trackLikeMutationKey(scope, track.id),
-    exact: true,
-  });
-  const mutation = useMutation(createTrackLikeMutationOptions({
-    queryClient,
-    scope,
-    track,
-    refreshAutoBrowse: refreshBrowseTree,
-    onMutationError: () => reportPlayerError(strings.player.likeFailed, null),
-    onMutationSuccess: (nextLiked) => {
-      AccessibilityInfo.announceForAccessibility(
-        nextLiked
-          ? strings.player.likedTrack(track.title)
-          : strings.player.unlikedTrack(track.title),
-      );
-    },
-    onAutoBrowseError: () => reportPlayerNotice(
-      'bookkeeping',
-      'auto-library-refresh',
-      strings.player.autoLibraryFailed,
-      strings.player.autoLibraryRefreshFailedMessage,
-    ),
-  }));
 
-  const publishedLiked = likes.data !== undefined && matchingMutations === 0
-    ? likes.data
-    : null;
+  const likedTrackIdsKey = useMemo(() => {
+    if (likes.data === undefined) return null;
+    const unique = new Set<string>();
+    for (const track of likes.data) {
+      unique.add(String(track.id));
+    }
+    return [...unique].sort().join(',');
+  }, [likes.data]);
 
   useEffect(() => {
-    const publication = publishedLiked === null
-      ? Player.setNotificationFavoriteState(null, null)
-      : Player.setNotificationFavoriteState(mediaId, publishedLiked);
-    void publication.catch((cause) => reportPlayerError(strings.player.likeFailed, cause));
-  }, [mediaId, publishedLiked]);
-
-  useEffect(() => {
-    const subscription = Player.addEventListener(Event.RemoteToggleFavorite, (event) => {
-      if (event.mediaId !== mediaId) {
-        // Android can deliver a queued notification command from the previous
-        // media item while React is restoring the active item on app startup.
-        // It is stale input, not a failed like mutation, so ignore it silently.
-        return;
-      }
-      mutation.mutate(event.requestedLiked);
-    });
-    return () => subscription.remove();
-  }, [mediaId, mutation]);
-
-  useEffect(() => () => {
-    void Player.setNotificationFavoriteState(null, null).catch((cause) =>
-      reportPlayerError(strings.player.likeFailed, cause));
-  }, []);
+    if (likedTrackIdsKey === null) return undefined;
+    const ids = likedTrackIdsKey.length === 0 ? [] : likedTrackIdsKey.split(',');
+    let cancelled = false;
+    void ensurePlayer(scope)
+      .then(() => {
+        if (cancelled) return undefined;
+        return syncNativeLikedTrackIds(ids);
+      })
+      .catch((cause) => {
+        if (!cancelled) reportPlayerError(strings.player.likeFailed, cause);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [scope, likedTrackIdsKey]);
 
   return null;
 }
 
-/** Keeps Media3's notification heart synchronized with the account-scoped likes cache. */
+/**
+ * Synchronizes the account-scoped likes cache into the native Media3 service's encrypted
+ * liked-track snapshot. Native projects the current track's heart state across active playback,
+ * paused playback, track transitions, backgrounding, and cold Android Auto restores without ever
+ * clearing the heart button during in-flight mutations or track changes.
+ */
 export default function NotificationFavoriteHost() {
   const { user } = useAuth();
-  const item = useActiveMediaItem();
-  const track = mediaItemToTrack(item);
-  if (user === null || !user.is_approved || item?.mediaId === undefined || track === null) {
+  if (user === null || !user.is_approved) {
     return null;
   }
-  return (
-    <ActiveFavoriteHost
-      key={`${item.mediaId}:${track.id}`}
-      mediaId={item.mediaId}
-      scope={musicCacheScope(getCurrentApiBase(), user.id)}
-      track={track}
-    />
-  );
+  return <AccountFavoriteSync scope={musicCacheScope(getCurrentApiBase(), user.id)} />;
 }

@@ -3,26 +3,41 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { RemoteVisualState } from '../../data/remoteState';
 import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
-import { AppText, EmptyState } from '../ui';
+import {
+  AppText,
+  EmptyState,
+  FocusRingOverlay,
+  createFocusRingController,
+} from '../ui';
 
 interface SearchLoadingStatusProps {
   testID: string;
   label: string;
+  paddingHorizontal?: number;
 }
 
 /**
- * Inline progress line for short refreshes of content that is already on
- * screen. A first load of a list or rail uses a skeleton instead (see
+ * Inline progress line for short refreshes or debounce while typing. A first
+ * load of a list or rail uses a skeleton instead (see
  * `SearchRemoteBoundary.loadingFallback`).
  */
-export function SearchLoadingStatus({ testID, label }: SearchLoadingStatusProps) {
+export function SearchLoadingStatus({
+  testID,
+  label,
+  paddingHorizontal,
+}: SearchLoadingStatusProps) {
   return (
     <View
       testID={testID}
+      focusable={false}
       accessibilityRole="progressbar"
       accessibilityLabel={label}
       accessibilityLiveRegion="polite"
-      style={styles.loading}
+      style={
+        paddingHorizontal === undefined
+          ? styles.loading
+          : [styles.loading, { paddingHorizontal }]
+      }
     >
       <ActivityIndicator color={colors.accent} size="small" />
       <AppText variant="caption" color="secondary" style={styles.loadingLabel}>{label}</AppText>
@@ -56,6 +71,7 @@ export function SearchErrorNotice({
     throw new Error('Search error actions require both a label and callback');
   }
   const blocking = liveRegion === 'assertive';
+  const focusController = createFocusRingController();
   return (
     <View
       testID={testID}
@@ -84,6 +100,10 @@ export function SearchErrorNotice({
           accessibilityLabel={actionLabel}
           accessibilityState={{ busy: actionBusy, disabled: actionBusy }}
           disabled={actionBusy}
+          focusable={!actionBusy}
+          android_ripple={{ color: colors.fillStrong }}
+          onFocus={() => focusController.setFocused(true)}
+          onBlur={() => focusController.setFocused(false)}
           onPress={onAction}
           style={({ pressed }) => [
             styles.action,
@@ -99,6 +119,11 @@ export function SearchErrorNotice({
           <AppText variant="label" numberOfLines={2} style={styles.actionLabel}>
             {actionLabel}
           </AppText>
+          <FocusRingOverlay
+            controller={focusController}
+            borderRadius={radii.pill}
+            disabled={actionBusy}
+          />
         </Pressable>
       ) : null}
     </View>
@@ -109,23 +134,36 @@ interface SearchPoliteStatusProps {
   testID: string;
   message: string;
   compact?: boolean;
+  /** On Android TV, keep compact cache badges non-accessible so Fabric never makes them D-Pad stops. */
+  tvMode?: boolean;
 }
 
+/**
+ * Quiet status line for background refreshes or cached/stale indicators.
+ * Always pairs the icon with concise visible copy so no unlabelled mystery
+ * icon pill ever sits alone above results.
+ */
 export function SearchPoliteStatus({
   testID,
   message,
   compact = false,
+  tvMode = false,
 }: SearchPoliteStatusProps) {
   if (compact) {
     return (
       <View
         testID={testID}
-        accessible
+        accessible={!tvMode}
+        focusable={false}
+        importantForAccessibility={tvMode ? 'no-hide-descendants' : undefined}
         accessibilityLabel={message}
         accessibilityLiveRegion="polite"
         style={styles.compactStatus}
       >
         <AppIcon name="database-check-outline" color={colors.textMuted} size={14} />
+        <AppText variant="caption" color="muted" numberOfLines={1} style={styles.compactLabel}>
+          {message}
+        </AppText>
       </View>
     );
   }
@@ -156,6 +194,7 @@ interface SearchRemoteBoundaryProps {
   retryLabel: string;
   retryBusy: boolean;
   onRetry: () => void;
+  tvMode?: boolean;
   /**
    * Content-shaped placeholder for the first load. It must put `testID` and
    * `accessibilityLabel` on its labelled progressbar group. Without it the
@@ -183,6 +222,7 @@ export function SearchRemoteBoundary({
   retryLabel,
   retryBusy,
   onRetry,
+  tvMode = false,
   loadingFallback,
   children,
 }: SearchRemoteBoundaryProps) {
@@ -227,7 +267,7 @@ export function SearchRemoteBoundary({
         <SearchLoadingStatus testID={`${id}-refreshing`} label={refreshingLabel} />
       ) : null}
       {state.notice === 'stale' ? (
-        <SearchPoliteStatus testID={`${id}-stale`} message={staleLabel} compact />
+        <SearchPoliteStatus testID={`${id}-stale`} message={staleLabel} compact tvMode={tvMode} />
       ) : null}
     </>
   );
@@ -244,14 +284,17 @@ const styles = StyleSheet.create({
   loadingLabel: { flexShrink: 1 },
   statusText: { paddingHorizontal: layout.pagePadding },
   compactStatus: {
-    width: spacing.xl,
-    height: spacing.xl,
-    marginHorizontal: layout.pagePadding,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radii.sm,
+    gap: spacing.xxs + 2,
+    marginHorizontal: layout.pagePadding,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xxs,
+    borderRadius: radii.pill,
     backgroundColor: colors.fill,
   },
+  compactLabel: { flexShrink: 1 },
   notice: {
     marginHorizontal: layout.pagePadding,
     marginBottom: spacing.sm,

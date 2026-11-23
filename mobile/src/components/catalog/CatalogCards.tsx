@@ -1,5 +1,5 @@
-import React from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import React, { useCallback, useMemo } from 'react';
+import { FlatList, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import type {
   AlbumSummary,
   ArtistSummary,
@@ -49,6 +49,7 @@ interface HorizontalCatalogRailProps<T> {
   data: readonly T[];
   keyExtractor: (item: T, index: number) => string;
   renderItem: (item: T, index: number) => React.ReactElement;
+  contentContainerStyle?: StyleProp<ViewStyle>;
 }
 
 /** A full-bleed horizontal shelf on the page gutter. */
@@ -57,16 +58,30 @@ export function HorizontalCatalogRail<T>({
   data,
   keyExtractor,
   renderItem,
+  contentContainerStyle,
 }: HorizontalCatalogRailProps<T>) {
+  const items = useMemo(() => [...data], [data]);
+  const renderListItem = useCallback(
+    ({ item, index }: { item: T; index: number }) => renderItem(item, index),
+    [renderItem],
+  );
+  const railStyle = useMemo(
+    () => (contentContainerStyle === undefined ? styles.rail : [styles.rail, contentContainerStyle]),
+    [contentContainerStyle],
+  );
   return (
     <FlatList
       testID={`catalog-rail-${id}`}
       horizontal
-      data={[...data]}
+      data={items}
       keyExtractor={keyExtractor}
-      renderItem={({ item, index }) => renderItem(item, index)}
+      renderItem={renderListItem}
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.rail}
+      initialNumToRender={6}
+      maxToRenderPerBatch={6}
+      windowSize={5}
+      removeClippedSubviews={false}
+      contentContainerStyle={railStyle}
     />
   );
 }
@@ -107,21 +122,24 @@ export function CatalogTrackCard({
 export function CatalogAlbumCard({
   album,
   testID,
+  cardSize = layout.artwork.card,
   onPress,
 }: {
   album: AlbumSummary;
   testID: string;
+  cardSize?: number;
   onPress: () => void;
 }) {
   return (
     <PressableScale
       testID={testID}
+      focusable
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.common.openAlbum(album.title, album.artist)}
       onPress={onPress}
-      style={styles.tileCard}
+      style={[styles.tileCard, cardSize !== layout.artwork.card ? { width: cardSize } : null]}
     >
-      <Artwork uri={album.cover} size={layout.artwork.card} icon="album" />
+      <Artwork uri={album.cover} size={cardSize} icon="album" />
       <View>
         <AppText variant="bodyStrong" numberOfLines={1}>{album.title}</AppText>
         <AppText variant="callout" color="secondary" numberOfLines={1}>{album.artist}</AppText>
@@ -142,6 +160,7 @@ export function CatalogGenreCard({
   return (
     <PressableScale
       testID={testID}
+      focusable
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.common.openGenre(genre.name)}
       onPress={onPress}
@@ -163,23 +182,26 @@ export function CatalogGenreCard({
 export function CatalogArtistCard({
   artist,
   testID,
+  cardSize = layout.artwork.card,
   onPress,
 }: {
   artist: ArtistSummary;
   testID: string;
+  cardSize?: number;
   onPress: () => void;
 }) {
   return (
     <PressableScale
       testID={testID}
+      focusable
       accessibilityRole="button"
       accessibilityLabel={catalogStrings.common.openArtist(artist.name)}
       onPress={onPress}
-      style={styles.tileCard}
+      style={[styles.tileCard, cardSize !== layout.artwork.card ? { width: cardSize } : null]}
     >
       <Artwork
         uri={artist.picture}
-        size={layout.artwork.card}
+        size={cardSize}
         shape="round"
         icon="account-music"
       />
@@ -210,6 +232,7 @@ export function CatalogPlaylistCard({
   return (
     <PressableScale
       testID={testID}
+      focusable
       accessibilityRole="button"
       accessibilityLabel={
         own

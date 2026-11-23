@@ -9,6 +9,7 @@ import {
   useActiveMediaItem,
   useIsPlaying,
   usePlaybackState,
+  type PlaybackState,
 } from '../../player/player';
 import { useQuery } from '@tanstack/react-query';
 import { musicQueries } from '../../data';
@@ -16,6 +17,7 @@ import { useOfflineDownloads } from '../../offline/hooks';
 import {
   activeTrackOccurrenceFromMediaItem,
   resolveTrackPresentation,
+  type ActiveTrackOccurrence,
   type TrackOccurrenceIdentity,
   type TrackPresentationState,
 } from '../../player/trackPresentation';
@@ -55,10 +57,38 @@ export function TrackPresentationProvider({ children }: { children: ReactNode })
   const cachedTracksQuery = useQuery(musicQueries.cachedTrackIds());
   const offlineDownloads = useOfflineDownloads();
 
-  const activeOccurrence = useMemo(
-    () => activeTrackOccurrenceFromMediaItem(activeItem),
-    [activeItem],
-  );
+  // Memoize by primitive occurrence & playback identity so 1s progress ticks or
+  // non-identity metadata refreshes produce 0 context updates and 0 row re-renders.
+  const parsedOccurrence = activeTrackOccurrenceFromMediaItem(activeItem);
+  const activeTrackId = parsedOccurrence?.trackId ?? null;
+  const activeContextType = parsedOccurrence?.queueContext?.type ?? null;
+  const activeContextId = parsedOccurrence?.queueContext?.id ?? null;
+  const activeOriginalContextOrder = parsedOccurrence?.originalContextOrder ?? null;
+  const isBuffering = activeTrackId !== null && playbackState === 'buffering';
+  const activeIsPlaying = activeTrackId !== null && !isBuffering && isPlaying;
+  const activePlaybackState: PlaybackState = isBuffering
+    ? ('buffering' as PlaybackState)
+    : activeTrackId !== null && playbackState === 'ready'
+      ? ('ready' as PlaybackState)
+      : ('idle' as PlaybackState);
+
+  const activeOccurrence = useMemo<ActiveTrackOccurrence | null>(() => {
+    if (activeTrackId === null) return null;
+    return {
+      trackId: activeTrackId,
+      queueContext:
+        activeContextType !== null && activeContextId !== null
+          ? { type: activeContextType, id: activeContextId }
+          : null,
+      originalContextOrder: activeOriginalContextOrder,
+    };
+  }, [
+    activeTrackId,
+    activeContextType,
+    activeContextId,
+    activeOriginalContextOrder,
+  ]);
+
   const serverCachedTrackIds = useMemo<ReadonlySet<string> | null>(
     () =>
       cachedTracksQuery.data === undefined
@@ -78,17 +108,17 @@ export function TrackPresentationProvider({ children }: { children: ReactNode })
       resolveTrackPresentation({
         target,
         activeOccurrence,
-        playbackState,
-        isPlaying,
+        playbackState: activePlaybackState,
+        isPlaying: activeIsPlaying,
         serverCachedTrackIds,
         explicitDownloadedTrackIds,
         rollingDeviceCacheSeconds: options.rollingDeviceCacheSeconds,
       }),
     [
       activeOccurrence,
+      activePlaybackState,
+      activeIsPlaying,
       explicitDownloadedTrackIds,
-      isPlaying,
-      playbackState,
       serverCachedTrackIds,
     ],
   );

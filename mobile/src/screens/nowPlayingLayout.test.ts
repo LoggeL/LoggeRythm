@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   NOW_PLAYING_MAX_ARTWORK_SIZE,
+  NOW_PLAYING_TV_MAX_ARTWORK_SIZE,
   nowPlayingArtworkSize,
+  nowPlayingTvArtworkSize,
 } from './nowPlayingLayout';
 
 describe('Now Playing responsive artwork bounds', () => {
@@ -20,5 +22,12 @@ describe('Now Playing responsive artwork bounds', () => {
 
   it('fails closed for non-finite dimensions', () => {
     expect(nowPlayingArtworkSize(Number.NaN, Number.POSITIVE_INFINITY)).toBe(0);
+    expect(nowPlayingTvArtworkSize(Number.NaN, 540)).toBe(0);
+  });
+
+  it('sizes 16:9 Android TV artwork cleanly for TvShellLayout content area and 4K canvases', () => {
+    // 960x540dp TV -> TvShellLayout contentWidth 652dp, overscan-adjusted height 486dp
+    expect(nowPlayingTvArtworkSize(652, 486)).toBe(155);
+    expect(nowPlayingTvArtworkSize(1380, 972)).toBe(NOW_PLAYING_TV_MAX_ARTWORK_SIZE);
   });
 });

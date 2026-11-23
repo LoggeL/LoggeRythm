@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   RefreshControl,
   SectionList,
@@ -38,11 +38,13 @@ export const LIBRARY_FILTER_ORDER: readonly LibraryFilter[] = ['all', ...LIBRARY
 
 export type LibraryListItem =
   | { kind: 'playlist'; playlist: PlaylistSummary }
+  | { kind: 'playlist-row'; playlists: readonly PlaylistSummary[] }
   | { kind: 'liked-collection' }
   | { kind: 'liked-track'; track: Track; index: number }
   | { kind: 'recent-track'; play: RecentPlay; index: number }
   | { kind: 'downloads-policy' }
-  | { kind: 'following-artist'; artist: ArtistSummary };
+  | { kind: 'following-artist'; artist: ArtistSummary }
+  | { kind: 'following-row'; artists: readonly ArtistSummary[] };
 
 interface SharedPresentation {
   title: string;
@@ -98,9 +100,22 @@ export interface LibraryListOptions {
    * (occurrence indexes are unchanged). A focused section always lists everything.
    */
   previewCount?: number;
+  /**
+   * Optional multi-column chunking for 16:9 Android TV grids (`playlists` and
+   * `following`). Defaults to 1 (single-column phone list).
+   */
+  gridColumns?: number;
 }
 
 export type LibraryListSection = QueryListSection | PolicyListSection;
+
+function chunkItems<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
 
 function visibleItems(
   state: LibrarySectionState,
@@ -116,10 +131,13 @@ function visibleItems(
 export function createLibraryListSections(
   collections: LibraryCollections,
   presentations: LibrarySectionPresentations,
-  { filter = 'all', previewCount }: LibraryListOptions = {},
+  { filter = 'all', previewCount, gridColumns = 1 }: LibraryListOptions = {},
 ): LibraryListSection[] {
   if (previewCount !== undefined && (!Number.isInteger(previewCount) || previewCount < 1)) {
     throw new Error('Library previewCount must be a positive integer');
+  }
+  if (!Number.isInteger(gridColumns) || gridColumns < 1) {
+    throw new Error('Library gridColumns must be a positive integer');
   }
   const limit = filter === 'all' && previewCount !== undefined ? previewCount : null;
   const preview = <T,>(items: readonly T[]): readonly T[] =>
@@ -127,15 +145,28 @@ export function createLibraryListSections(
   const cut = (state: LibrarySectionState, total: number): boolean =>
     limit !== null && total > limit && librarySectionShowsContent(state);
 
+  const playlistItems: LibraryListItem[] =
+    gridColumns > 1
+      ? chunkItems(collections.playlists, gridColumns).map((playlists) => ({
+          kind: 'playlist-row',
+          playlists,
+        }))
+      : collections.playlists.map((playlist) => ({ kind: 'playlist', playlist }));
+
+  const followingItems: LibraryListItem[] =
+    gridColumns > 1
+      ? chunkItems(collections.following, gridColumns).map((artists) => ({
+          kind: 'following-row',
+          artists,
+        }))
+      : collections.following.map((artist) => ({ kind: 'following-artist', artist }));
+
   const sections: LibraryListSection[] = [
     {
       id: 'playlists',
       ...presentations.playlists,
       truncated: false,
-      data: visibleItems(
-        presentations.playlists.state,
-        collections.playlists.map((playlist) => ({ kind: 'playlist', playlist })),
-      ),
+      data: visibleItems(presentations.playlists.state, playlistItems),
     },
     {
       id: 'liked',
@@ -173,10 +204,7 @@ export function createLibraryListSections(
       id: 'following',
       ...presentations.following,
       truncated: false,
-      data: visibleItems(
-        presentations.following.state,
-        collections.following.map((artist) => ({ kind: 'following-artist', artist })),
-      ),
+      data: visibleItems(presentations.following.state, followingItems),
     },
   ];
 
@@ -188,6 +216,8 @@ export function libraryListItemKey(item: LibraryListItem): string {
   switch (item.kind) {
     case 'playlist':
       return `playlist:${item.playlist.id}`;
+    case 'playlist-row':
+      return `playlist-row:${item.playlists.map((playlist) => playlist.id).join(',')}`;
     case 'liked-collection':
       return 'liked:collection';
     case 'liked-track':
@@ -198,6 +228,8 @@ export function libraryListItemKey(item: LibraryListItem): string {
       return 'downloads:policy';
     case 'following-artist':
       return `following:${item.artist.id}`;
+    case 'following-row':
+      return `following-row:${item.artists.map((artist) => artist.id).join(',')}`;
   }
 }
 
@@ -289,21 +321,70 @@ export function LibraryVirtualizedList({
   bottomInset,
   filter,
   previewCount,
+  gridColumns,
   onShowSection,
 }: LibraryVirtualizedListProps) {
-  const sections = createLibraryListSections(collections, presentations, {
-    filter,
-    previewCount,
-  });
+  const { playlists, likedTracks, recentTracks, following } = collections;
+  const {
+    playlists: playlistsPresentation,
+    liked: likedPresentation,
+    recent: recentPresentation,
+    downloads: downloadsPresentation,
+    following: followingPresentation,
+  } = presentations;
+  const sections = useMemo(
+    () =>
+      createLibraryListSections(
+        { playlists, likedTracks, recentTracks, following },
+        {
+          playlists: playlistsPresentation,
+          liked: likedPresentation,
+          recent: recentPresentation,
+          downloads: downloadsPresentation,
+          following: followingPresentation,
+        },
+        { filter, previewCount, gridColumns },
+      ),
+    [
+      playlists,
+      likedTracks,
+      recentTracks,
+      following,
+      playlistsPresentation,
+      likedPresentation,
+      recentPresentation,
+      downloadsPresentation,
+      followingPresentation,
+      filter,
+      previewCount,
+      gridColumns,
+    ],
+  );
+  const renderListItem = useCallback(
+    ({ item }: { item: LibraryListItem }) => renderItem(item),
+    [renderItem],
+  );
+  const renderHeader = useCallback(
+    ({ section }: { section: LibraryListSection }) => sectionHeader(section, onShowSection),
+    [onShowSection],
+  );
+  const renderFooter = useCallback(
+    ({ section }: { section: LibraryListSection }) => sectionFooter(section),
+    [],
+  );
+  const contentContainerStyle = useMemo(
+    () => [styles.content, { paddingBottom: bottomInset }],
+    [bottomInset],
+  );
   return (
     <SectionList
       testID="library-list"
       accessibilityLabel={libraryStrings.library.title}
       sections={sections}
       keyExtractor={libraryListItemKey}
-      renderItem={({ item }) => renderItem(item)}
-      renderSectionHeader={({ section }) => sectionHeader(section, onShowSection)}
-      renderSectionFooter={({ section }) => sectionFooter(section)}
+      renderItem={renderListItem}
+      renderSectionHeader={renderHeader}
+      renderSectionFooter={renderFooter}
       ListHeaderComponent={header}
       refreshControl={
         <RefreshControl
@@ -322,7 +403,8 @@ export function LibraryVirtualizedList({
       initialNumToRender={14}
       maxToRenderPerBatch={12}
       windowSize={9}
-      contentContainerStyle={[styles.content, { paddingBottom: bottomInset }]}
+      removeClippedSubviews={false}
+      contentContainerStyle={contentContainerStyle}
     />
   );
 }
