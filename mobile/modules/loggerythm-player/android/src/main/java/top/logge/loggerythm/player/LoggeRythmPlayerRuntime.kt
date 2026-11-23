@@ -77,6 +77,10 @@ internal object LoggeRythmPlayerRuntime {
   private var queueExtras: Map<String, String> = emptyMap()
   private var stagedSources: LinkedHashMap<Pair<String, String>, PlayerItemSpec> = linkedMapOf()
   private var stagedExtrasById: LinkedHashMap<String, String> = linkedMapOf()
+  private var voiceSearchResultsByQuery: LinkedHashMap<String, List<MediaItem>> = linkedMapOf()
+  private var voiceSearchSourcesById: LinkedHashMap<String, PlayerItemSpec> = linkedMapOf()
+  private var voiceSearchMediaItemsById: LinkedHashMap<String, MediaItem> = linkedMapOf()
+  private var voiceSearchQueryByMediaId: LinkedHashMap<String, String> = linkedMapOf()
   private var browseTree: RuntimeBrowseTree = defaultBrowseTree()
   private var browseTreeSpec: BrowseTreeSpec? = null
 
@@ -95,6 +99,7 @@ internal object LoggeRythmPlayerRuntime {
       queueExtras = emptyMap()
       stagedSources.clear()
       stagedExtrasById.clear()
+      clearVoiceSearchCacheLocked()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
       browseTreeSpec = null
       Triple(
@@ -468,8 +473,146 @@ internal object LoggeRythmPlayerRuntime {
     cookieVault.cookieFor(url)
   }
 
+  /**
+   * Returns `(origin, cookie)` for the currently bound session when at least one authenticated
+   * HTTPS queue or browse source has vaulted a session cookie for that exact origin.
+   */
+  fun sessionCookieForCurrentOrigin(): Pair<String, String>? = synchronized(lock) {
+    val binding = sessionBinding ?: return@synchronized null
+    val cookie = cookieVault.sessionCookieForOrigin(binding.origin) ?: return@synchronized null
+    binding.origin to cookie
+  }
+
+  /**
+   * Caches validated, account-scoped live catalog search results for Android Auto `onSearch` /
+   * `onGetSearchResult` and subsequent tap-to-play selection. Automatically cleared on account
+   * switch, logout, or cache clear.
+   */
+  fun installVoiceSearchResults(
+    normalizedQueryKey: String,
+    items: List<PlayerItemSpec>,
+  ): List<MediaItem> = synchronized(lock) {
+    val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
+    val bounded = items.take(MAX_VOICE_SEARCH_ITEMS_PER_QUERY)
+    bounded.forEach { item ->
+      requireCookieMatchesBinding(item, binding)
+      if (!LoggeRythmCarLibraryState.hasPhoneTrackMetadata(item.extrasJson)) {
+        throw PlayerProtocolException("voice-search-item-metadata-invalid")
+      }
+    }
+    voiceSearchResultsByQuery.remove(normalizedQueryKey)
+    while (voiceSearchResultsByQuery.size >= MAX_VOICE_SEARCH_CACHED_QUERIES) {
+      val oldestKey = voiceSearchResultsByQuery.keys.firstOrNull() ?: break
+      voiceSearchResultsByQuery.remove(oldestKey)
+    }
+    val mediaItems = bounded.map { item ->
+      mediaItem(
+        id = item.id,
+        url = item.url,
+        title = item.title,
+        artist = item.artist,
+        album = item.album,
+        subtitle = null,
+        artworkUrl = item.artworkUrl,
+        durationMs = item.durationMs,
+        browsable = false,
+        playable = true,
+      )
+    }
+    voiceSearchResultsByQuery[normalizedQueryKey] = mediaItems
+    bounded.forEachIndexed { index, spec ->
+      voiceSearchSourcesById[spec.id] = spec
+      voiceSearchMediaItemsById[spec.id] = mediaItems[index]
+      voiceSearchQueryByMediaId[spec.id] = normalizedQueryKey
+    }
+    pruneVoiceSearchSourcesLocked()
+    rebuildSearchCookiesLocked()
+    mediaItems
+  }
+
+  fun cachedVoiceSearchResults(normalizedQueryKey: String): List<MediaItem>? = synchronized(lock) {
+    voiceSearchResultsByQuery[normalizedQueryKey]?.toList()
+  }
+
+  fun voiceSearchItem(mediaId: String): MediaItem? = synchronized(lock) {
+    voiceSearchMediaItemsById[mediaId]
+  }
+
+  fun clearVoiceSearchCache() = synchronized(lock) {
+    clearVoiceSearchCacheLocked()
+  }
+
+  fun removeVoiceSearchQuery(normalizedQueryKey: String) = synchronized(lock) {
+    if (voiceSearchResultsByQuery.remove(normalizedQueryKey) != null) {
+      pruneVoiceSearchSourcesLocked()
+      rebuildSearchCookiesLocked()
+    }
+  }
+
+  fun playableVoiceSearchSelection(mediaId: String): RuntimeBrowseSelection? = synchronized(lock) {
+    val queryKey = voiceSearchQueryByMediaId[mediaId] ?: return@synchronized null
+    val results = voiceSearchResultsByQuery[queryKey] ?: return@synchronized null
+    val selectedIndex = results.indexOfFirst { it.mediaId == mediaId }
+    if (selectedIndex < 0) return@synchronized null
+    val specs = results.map { item -> voiceSearchSourcesById[item.mediaId] ?: return@synchronized null }
+    stageVoiceSelectionLocked(specs)
+    RuntimeBrowseSelection(results, selectedIndex)
+  }
+
+  /**
+   * Stages a live voice catalog selection so `onSetMediaItems` / `captureQueue` adopts every item's
+   * validated URL, cookie, and phone-compatible `extrasJson` sidecar atomically.
+   */
+  fun stageVoiceSelection(items: List<PlayerItemSpec>): List<MediaItem> {
+    if (items.isEmpty()) throw PlayerProtocolException("queue-items-empty")
+    val (mediaItems, revision) = synchronized(lock) {
+      stageVoiceSelectionLocked(items) to queueGeneration.incrementAndGet()
+    }
+    LoggeRythmCacheServiceBridge.queueChanged(revision)
+    return mediaItems
+  }
+
+  private fun stageVoiceSelectionLocked(items: List<PlayerItemSpec>): List<MediaItem> {
+    val binding = sessionBinding ?: throw PlayerProtocolException("player-session-unbound")
+    if (items.size > LoggeRythmPlayerProtocol.MAX_QUEUE_ITEMS) {
+      throw PlayerProtocolException("queue-too-large")
+    }
+    val seenIds = mutableSetOf<String>()
+    items.forEach { item ->
+      requireCookieMatchesBinding(item, binding)
+      if (!seenIds.add(item.id)) throw PlayerProtocolException("queue-item-id-duplicate")
+      if (!LoggeRythmCarLibraryState.hasPhoneTrackMetadata(item.extrasJson)) {
+        throw PlayerProtocolException("voice-item-metadata-invalid")
+      }
+    }
+    val candidateCookies = buildList {
+      queueSources.filter { it.url.startsWith("https://") }.forEach { add(it.url to it.cookie) }
+      stagedSources.values.filter { it.url.startsWith("https://") }.forEach {
+        add(it.url to it.cookie)
+      }
+      items.filter { it.url.startsWith("https://") }.forEach { add(it.url to it.cookie) }
+    }
+    cookieVault.replaceQueue(candidateCookies)
+    return items.map { item ->
+      stagedSources[item.id to item.url] = item
+      stagedExtrasById[item.id] = item.extrasJson
+      mediaItem(
+        id = item.id,
+        url = item.url,
+        title = item.title,
+        artist = item.artist,
+        album = item.album,
+        subtitle = null,
+        artworkUrl = item.artworkUrl,
+        durationMs = item.durationMs,
+        browsable = false,
+        playable = true,
+      )
+    }
+  }
+
   fun extrasFor(mediaId: String): String = synchronized(lock) {
-    stagedExtrasById[mediaId] ?: queueExtras[mediaId] ?: "{}"
+    stagedExtrasById[mediaId] ?: queueExtras[mediaId] ?: voiceSearchSourcesById[mediaId]?.extrasJson ?: "{}"
   }
 
   fun loudnessGainFor(mediaId: String?): Float = synchronized(lock) {
@@ -502,6 +645,7 @@ internal object LoggeRythmPlayerRuntime {
         } else {
           val existing = queueById[mediaId]
             ?: browseTree.nodes[mediaId]?.source
+            ?: voiceSearchSourcesById[mediaId]
             ?: throw PlayerProtocolException("player-source-sidecar-missing")
           if (existing.url != liveUrl) throw PlayerProtocolException("player-source-uri-mismatch")
           existing
@@ -539,6 +683,7 @@ internal object LoggeRythmPlayerRuntime {
       queueExtras = emptyMap()
       stagedSources.clear()
       stagedExtrasById.clear()
+      clearVoiceSearchCacheLocked()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
       browseTreeSpec = null
       queueGeneration.incrementAndGet() to publicTreeChange(previousTree, browseTree)
@@ -556,12 +701,36 @@ internal object LoggeRythmPlayerRuntime {
       queueExtras = emptyMap()
       stagedSources.clear()
       stagedExtrasById.clear()
+      clearVoiceSearchCacheLocked()
       browseTree = defaultBrowseTree(generation.incrementAndGet())
       browseTreeSpec = null
       queueGeneration.incrementAndGet() to publicTreeChange(previousTree, browseTree)
     }
     LoggeRythmCacheServiceBridge.queueChanged(revision)
     LoggeRythmBrowseTreeServiceBridge.publish(browseChange)
+  }
+
+  private fun clearVoiceSearchCacheLocked() {
+    voiceSearchResultsByQuery.clear()
+    voiceSearchSourcesById.clear()
+    voiceSearchMediaItemsById.clear()
+    voiceSearchQueryByMediaId.clear()
+    cookieVault.clearSearch()
+  }
+
+  private fun pruneVoiceSearchSourcesLocked() {
+    val activeIds = voiceSearchResultsByQuery.values.flatten().mapTo(mutableSetOf()) { it.mediaId }
+    voiceSearchSourcesById.keys.retainAll(activeIds)
+    voiceSearchMediaItemsById.keys.retainAll(activeIds)
+    voiceSearchQueryByMediaId.keys.retainAll(activeIds)
+  }
+
+  private fun rebuildSearchCookiesLocked() {
+    cookieVault.replaceSearch(
+      voiceSearchSourcesById.values
+        .filter { it.url.startsWith("https://") }
+        .map { it.url to it.cookie },
+    )
   }
 
   private fun rebuildStagedExtrasLocked() {
@@ -678,4 +847,6 @@ internal object LoggeRythmPlayerRuntime {
   }
 
   internal const val BROWSE_ROOT_ID = "loggerythm:root"
+  private const val MAX_VOICE_SEARCH_CACHED_QUERIES = 8
+  private const val MAX_VOICE_SEARCH_ITEMS_PER_QUERY = 25
 }

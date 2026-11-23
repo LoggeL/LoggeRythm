@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        PlatformAppFunctionService (enabled on API 36+) and ExtensionAppFunctionService, along
+        with their BIND_APP_FUNCTION_SERVICE permission, intent-filter, and app_functions_v2.xml /
+        app_functions.xml / app_functions_schema.xsd metadata properties, are merged automatically
+        from androidx.appfunctions:appfunctions-service.
+    -->
+</manifest>

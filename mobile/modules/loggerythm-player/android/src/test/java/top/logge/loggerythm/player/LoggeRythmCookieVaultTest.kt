@@ -46,4 +46,42 @@ class LoggeRythmCookieVaultTest {
     vault.replaceQueue(listOf(url to null))
     assertNull(vault.cookieFor(url))
   }
+
+  @Test
+  fun searchCookiesStayBelowQueueAndBrowseAndClearOnReset() {
+    val vault = LoggeRythmCookieVault()
+    val url = "https://music.example.test/api/tracks/1/stream"
+    vault.replaceSearch(listOf(url to "search-cookie"))
+    assertEquals("search-cookie", vault.cookieFor(url))
+
+    vault.replaceBrowse(listOf(url to "browse-cookie"))
+    assertEquals("browse-cookie", vault.cookieFor(url))
+
+    vault.clearSearch()
+    assertEquals("browse-cookie", vault.cookieFor(url))
+
+    vault.replaceSearch(listOf("https://music.example.test/api/tracks/2/stream" to "search-2"))
+    vault.clearAll()
+    assertNull(vault.cookieFor("https://music.example.test/api/tracks/2/stream"))
+  }
+
+  @Test
+  fun sessionCookieForOriginMatchesCanonicalOriginAndFailsClosedOnConflict() {
+    val vault = LoggeRythmCookieVault()
+    vault.replaceBrowse(
+      listOf(
+        "https://MUSIC.EXAMPLE.TEST:443/api/tracks/1/stream" to "sf_session=primary",
+        "https://other.example.test/api/tracks/2/stream" to "sf_session=other",
+        "https://music.example.test/api/tracks/3/stream" to null,
+      ),
+    )
+    assertEquals("sf_session=primary", vault.sessionCookieForOrigin("https://music.example.test"))
+    assertNull(vault.sessionCookieForOrigin("https://unknown.example.test"))
+
+    vault.replaceQueue(listOf("https://music.example.test/api/tracks/4/stream" to "sf_session=different"))
+    val conflict = assertThrows(PlayerProtocolException::class.java) {
+      vault.sessionCookieForOrigin("https://music.example.test")
+    }
+    assertEquals("header-url-conflict", conflict.code)
+  }
 }

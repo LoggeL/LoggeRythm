@@ -3,9 +3,10 @@ package top.logge.loggerythm.player
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.Process
-import android.provider.MediaStore
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -31,6 +32,10 @@ import com.google.common.util.concurrent.FutureCallback
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import com.google.common.util.concurrent.SettableFuture
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
+import org.json.JSONObject
 
 internal data class ControllerTrustSignals(
   val self: Boolean,
@@ -320,6 +325,22 @@ internal object LoggeRythmExoPlayerObservationHook {
   }
 }
 
+/**
+ * Process-local instrumentation seam allowing device tests to supply a TLS-pinned local
+ * `MockWebServer` [LoggeRythmVoiceCatalogClient] without relaxing production redirect/TLS rules.
+ */
+internal object LoggeRythmVoiceCatalogClientHook {
+  private val lock = Any()
+  private var overrideClient: LoggeRythmVoiceCatalogClient? = null
+
+  fun setForTests(client: LoggeRythmVoiceCatalogClient?) = synchronized(lock) {
+    overrideClient = client
+  }
+
+  fun current(defaultClient: LoggeRythmVoiceCatalogClient): LoggeRythmVoiceCatalogClient =
+    synchronized(lock) { overrideClient } ?: defaultClient
+}
+
 @UnstableApi
 class LoggeRythmMediaLibraryService :
   MediaLibraryService(),
@@ -330,6 +351,19 @@ class LoggeRythmMediaLibraryService :
   private lateinit var persistedCoordinator: LoggeRythmPersistedPlayerCoordinator
   private lateinit var remoteCommandInstaller: LoggeRythmDurableRemoteCommandInstaller
   private lateinit var sessionActivity: PendingIntent
+  private val mainHandler = Handler(Looper.getMainLooper())
+  private val voiceSearchExecutor: ExecutorService = Executors.newSingleThreadExecutor { task ->
+    Thread(
+      {
+        Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+        task.run()
+      },
+      "LoggeRythmVoiceCatalog",
+    )
+  }
+  private val defaultVoiceCatalogClient = LoggeRythmVoiceCatalogClient()
+  private val voiceItemSequence = AtomicLong(0)
+  private val failedLegacySearchErrors = linkedMapOf<String, LoggeRythmCarError>()
   private val remoteCommandPolicy = LoggeRythmRemoteCommandPolicy()
   private val notificationFavorite = LoggeRythmNotificationFavoriteCoordinator()
   private var remotePolicyExplicitlyReset = false
@@ -356,6 +390,32 @@ class LoggeRythmMediaLibraryService :
       player.clearMediaItems()
       playerCache.clearCache(callback)
     }
+  }
+  private val voiceServiceControl = object : LoggeRythmVoiceServiceControl {
+    override fun executePlayMusic(
+      request: LoggeRythmVoiceQuery,
+      callback: (Result<LoggeRythmVoicePlayResult>) -> Unit,
+    ) = handleVoicePlayMusic(request, callback)
+
+    override fun executeControlPlayback(
+      action: LoggeRythmVoicePlaybackAction,
+      callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
+    ) = handleVoiceControlPlayback(action, callback)
+
+    override fun executeQueueMusic(
+      request: LoggeRythmVoiceQuery,
+      position: LoggeRythmVoiceQueuePosition,
+      callback: (Result<LoggeRythmVoiceQueueResult>) -> Unit,
+    ) = handleVoiceQueueMusic(request, position, callback)
+
+    override fun executeSetCurrentTrackFavorite(
+      liked: Boolean,
+      callback: (Result<LoggeRythmVoiceFavoriteResult>) -> Unit,
+    ) = handleVoiceSetCurrentTrackFavorite(liked, callback)
+
+    override fun executeGetNowPlaying(
+      callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
+    ) = handleVoiceGetNowPlaying(callback)
   }
   private val preloadListener = object : Player.Listener {
     override fun onEvents(player: Player, events: Player.Events) {
@@ -425,6 +485,7 @@ class LoggeRythmMediaLibraryService :
     LoggeRythmCacheServiceBridge.attach(cacheControl)
     LoggeRythmPersistedServiceBridge.attach(persistedCoordinator)
     LoggeRythmMediaSessionServiceBridge.attach(this)
+    LoggeRythmVoiceServiceBridge.attach(voiceServiceControl)
     LoggeRythmExoPlayerObservationHook.attach(player)
     cacheControl.onQueueGenerationChanged(LoggeRythmPlayerRuntime.currentQueueGeneration())
   }
@@ -492,7 +553,10 @@ class LoggeRythmMediaLibraryService :
 
   override fun onDestroy() {
     serviceDestroyed = true
+    failedLegacySearchErrors.clear()
+    voiceSearchExecutor.shutdownNow()
     LoggeRythmExoPlayerObservationHook.detach(player)
+    LoggeRythmVoiceServiceBridge.detach(voiceServiceControl)
     LoggeRythmMediaSessionServiceBridge.detach(this)
     LoggeRythmPersistedServiceBridge.detach(persistedCoordinator)
     LoggeRythmCacheServiceBridge.detach(cacheControl)
@@ -838,51 +902,84 @@ class LoggeRythmMediaLibraryService :
   }
 
   /**
-   * Resolves a car/library play request from IDs or a voice query against the native tree only.
-   * Caller-supplied URIs, metadata, start index and position are never used.
+   * Resolves a car/library play request from IDs or a voice query against the local browse tree
+   * first, then explicitly falls back to authenticated live catalog search when a session cookie
+   * is vaulted. Caller-supplied URIs, metadata, start index and position are never used.
    */
-  private fun resolveLibraryPlayRequest(
+  private fun resolveLibraryPlayRequestAsync(
     profile: RemoteControllerProfile,
     mediaItems: List<MediaItem>,
-  ): MediaItemsWithStartPosition {
-    when (profile) {
-      RemoteControllerProfile.NOTIFICATION ->
-        throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
-      RemoteControllerProfile.CAR, RemoteControllerProfile.TRUSTED_BROWSER ->
-        if (!remoteCommandPolicy.permits(profile, Player.COMMAND_SET_MEDIA_ITEM)) {
-          throw LoggeRythmCarRequestException(LoggeRythmCarError.CONTROLS_NOT_READY)
+  ): ListenableFuture<MediaItemsWithStartPosition> {
+    return try {
+      when (profile) {
+        RemoteControllerProfile.NOTIFICATION ->
+          throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
+        RemoteControllerProfile.CAR, RemoteControllerProfile.TRUSTED_BROWSER ->
+          if (!remoteCommandPolicy.permits(profile, Player.COMMAND_SET_MEDIA_ITEM)) {
+            throw LoggeRythmCarRequestException(LoggeRythmCarError.CONTROLS_NOT_READY)
+          }
+        RemoteControllerProfile.INTERNAL -> Unit
+      }
+      val requested = mediaItems.singleOrNull()
+        ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
+      rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+
+      val mediaId = requested.mediaId
+      if (mediaId != MediaItem.DEFAULT_MEDIA_ID) {
+        val localBrowse = LoggeRythmPlayerRuntime.playableBrowseSiblings(mediaId)
+          ?: LoggeRythmPlayerRuntime.playableBrowseChildren(mediaId)
+        if (localBrowse != null) {
+          return Futures.immediateFuture(validatedCarSelection(localBrowse))
         }
-      RemoteControllerProfile.INTERNAL -> Unit
-    }
-    val requested = mediaItems.singleOrNull()
-      ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
-    rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        val voiceSearch = LoggeRythmPlayerRuntime.playableVoiceSearchSelection(mediaId)
+          ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
+        return Futures.immediateFuture(
+          MediaItemsWithStartPosition(voiceSearch.mediaItems, voiceSearch.startIndex, 0L),
+        )
+      }
 
-    val mediaId = requested.mediaId
-    if (mediaId != MediaItem.DEFAULT_MEDIA_ID) {
-      val selection = LoggeRythmPlayerRuntime.playableBrowseSiblings(mediaId)
-        ?: LoggeRythmPlayerRuntime.playableBrowseChildren(mediaId)
-        ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
-      return validatedCarSelection(selection)
-    }
+      val voiceQuery = LoggeRythmVoiceQuery.fromMedia3(
+        searchQuery = requested.requestMetadata.searchQuery,
+        extras = requested.requestMetadata.extras,
+      )
+      if (requested.requestMetadata.searchQuery == null && voiceQuery.isBlank()) {
+        throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
+      }
+      if (voiceQuery.isBlank()) {
+        return Futures.immediateFuture(resumableQueue())
+      }
 
-    val query = requested.requestMetadata.searchQuery
-      ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.UNSUPPORTED_REQUEST)
-    val tree = LoggeRythmPlayerRuntime.browseTree()
-    val target = if (query.isBlank()) {
-      return resumableQueue()
-    } else {
-      val playlistFocus = requested.requestMetadata.extras
-        ?.getString(MediaStore.EXTRA_MEDIA_FOCUS) == MediaStore.Audio.Playlists.ENTRY_CONTENT_TYPE
-      LoggeRythmLibrarySearch.resolvePlayRequest(tree, query, preferContainers = playlistFocus)
-        ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.SEARCH_NO_MATCH, query)
+      val tree = LoggeRythmPlayerRuntime.browseTree()
+      val localSelection = LoggeRythmLibrarySearch.resolveStructuredLocalPlay(tree, voiceQuery)
+      if (localSelection != null) {
+        return Futures.immediateFuture(validatedCarSelection(localSelection))
+      }
+
+      val future = SettableFuture.create<MediaItemsWithStartPosition>()
+      resolveLiveCatalogPlaySelection(
+        request = voiceQuery,
+        tree = tree,
+        mediaIdPrefix = "voice:car:${voiceItemSequence.incrementAndGet()}",
+      ) { result ->
+        result.fold(
+          onSuccess = { selection ->
+            try {
+              requireQueueReplacementAdmitted()
+              val stagedItems = LoggeRythmPlayerRuntime.stageVoiceSelection(selection.items)
+              future.set(MediaItemsWithStartPosition(stagedItems, selection.startIndex, 0L))
+            } catch (error: Throwable) {
+              future.setException(error)
+            }
+          },
+          onFailure = { error ->
+            future.setException(mapVoiceErrorToCarException(error, voiceQuery.effectiveQuery()))
+          },
+        )
+      }
+      future
+    } catch (error: Throwable) {
+      Futures.immediateFailedFuture(error)
     }
-    val selection = when (target) {
-      is LoggeRythmLibraryTarget.Leaf -> LoggeRythmPlayerRuntime.playableBrowseSiblings(target.mediaId)
-      is LoggeRythmLibraryTarget.Container ->
-        LoggeRythmPlayerRuntime.playableBrowseChildren(target.mediaId)
-    } ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
-    return validatedCarSelection(selection)
   }
 
   private fun validatedCarSelection(selection: RuntimeBrowseSelection): MediaItemsWithStartPosition {
@@ -913,6 +1010,729 @@ class LoggeRythmMediaLibraryService :
     val selection = LoggeRythmPlayerRuntime.playableBrowseChildren(target.mediaId)
       ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
     return validatedCarSelection(selection)
+  }
+
+  private fun voiceCatalogClient(): LoggeRythmVoiceCatalogClient =
+    LoggeRythmVoiceCatalogClientHook.current(defaultVoiceCatalogClient)
+
+  private fun resolveLiveCatalogPlaySelection(
+    request: LoggeRythmVoiceQuery,
+    tree: RuntimeBrowseTree,
+    mediaIdPrefix: String,
+    callback: (Result<LoggeRythmVoiceCatalogSelection>) -> Unit,
+  ) {
+    val originalBinding = LoggeRythmPlayerRuntime.currentSessionBinding()
+    if (originalBinding == null) {
+      callback(
+        Result.failure(
+          LoggeRythmVoiceException(LoggeRythmVoiceErrorCode.AUTH_REQUIRED, "voice-signed-out"),
+        ),
+      )
+      return
+    }
+    val auth = try {
+      LoggeRythmPlayerRuntime.sessionCookieForCurrentOrigin()
+    } catch (error: Exception) {
+      callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      return
+    }
+    if (auth == null) {
+      val hasLocalPlayableItems = tree.nodes.values.any { it.source != null }
+      val code = if (hasLocalPlayableItems) {
+        LoggeRythmVoiceErrorCode.SEARCH_NO_MATCH
+      } else {
+        LoggeRythmVoiceErrorCode.AUTH_REQUIRED
+      }
+      callback(Result.failure(LoggeRythmVoiceException(code, "voice-no-remote-session")))
+      return
+    }
+    val (origin, cookie) = auth
+    val client = voiceCatalogClient()
+    try {
+      voiceSearchExecutor.execute {
+        val result = runCatching {
+          client.resolveForPlayback(
+            origin = origin,
+            cookie = cookie,
+            request = request,
+            mediaIdPrefix = mediaIdPrefix,
+          )
+        }
+        mainHandler.post {
+          if (serviceDestroyed) {
+            callback(
+              Result.failure(
+                LoggeRythmVoiceException(
+                  LoggeRythmVoiceErrorCode.SERVICE_UNAVAILABLE,
+                  "voice-service-destroyed",
+                ),
+              ),
+            )
+            return@post
+          }
+          if (LoggeRythmPlayerRuntime.currentSessionBinding() != originalBinding) {
+            callback(
+              Result.failure(
+                LoggeRythmVoiceException(
+                  LoggeRythmVoiceErrorCode.AUTH_REQUIRED,
+                  "voice-session-changed",
+                ),
+              ),
+            )
+            return@post
+          }
+          callback(result)
+        }
+      }
+    } catch (error: Exception) {
+      callback(
+        Result.failure(
+          LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.SERVICE_UNAVAILABLE,
+            "voice-executor-unavailable",
+            error,
+          ),
+        ),
+      )
+    }
+  }
+
+  private fun executeLiveBrowseSearch(
+    query: String,
+    callback: (Result<List<MediaItem>>) -> Unit,
+  ) {
+    val normalizedKey = LoggeRythmLibrarySearch.normalize(query)
+    if (normalizedKey.isEmpty()) {
+      callback(Result.success(emptyList()))
+      return
+    }
+    val originalBinding = LoggeRythmPlayerRuntime.currentSessionBinding()
+    if (originalBinding == null) {
+      callback(
+        Result.failure(
+          LoggeRythmVoiceException(LoggeRythmVoiceErrorCode.AUTH_REQUIRED, "search-signed-out"),
+        ),
+      )
+      return
+    }
+    val auth = try {
+      LoggeRythmPlayerRuntime.sessionCookieForCurrentOrigin()
+    } catch (error: Exception) {
+      callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      return
+    }
+    if (auth == null) {
+      val hasLocalPlayableItems = LoggeRythmPlayerRuntime.browseTree().nodes.values.any { it.source != null }
+      if (hasLocalPlayableItems) {
+        callback(Result.success(emptyList()))
+      } else {
+        callback(
+          Result.failure(
+            LoggeRythmVoiceException(LoggeRythmVoiceErrorCode.AUTH_REQUIRED, "search-no-remote-session"),
+          ),
+        )
+      }
+      return
+    }
+    val (origin, cookie) = auth
+    val client = voiceCatalogClient()
+    val prefix = "voice:search:${voiceItemSequence.incrementAndGet()}"
+    try {
+      voiceSearchExecutor.execute {
+        val fetched = runCatching {
+          client.searchTracksForBrowse(
+            origin = origin,
+            cookie = cookie,
+            query = query,
+            mediaIdPrefix = prefix,
+          )
+        }
+        mainHandler.post {
+          if (serviceDestroyed || LoggeRythmPlayerRuntime.currentSessionBinding() != originalBinding) {
+            callback(
+              Result.failure(
+                LoggeRythmVoiceException(
+                  LoggeRythmVoiceErrorCode.AUTH_REQUIRED,
+                  "search-session-changed",
+                ),
+              ),
+            )
+            return@post
+          }
+          callback(
+            fetched.mapCatching { specs ->
+              LoggeRythmPlayerRuntime.installVoiceSearchResults(normalizedKey, specs)
+            },
+          )
+        }
+      }
+    } catch (error: Exception) {
+      callback(
+        Result.failure(
+          LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.SERVICE_UNAVAILABLE,
+            "search-executor-unavailable",
+            error,
+          ),
+        ),
+      )
+    }
+  }
+
+  private fun mergeLocalAndLiveSearchResults(
+    tree: RuntimeBrowseTree,
+    localIds: List<String>,
+    liveItems: List<MediaItem>,
+  ): List<MediaItem> {
+    val merged = mutableListOf<MediaItem>()
+    val seenTrackIds = mutableSetOf<String>()
+    localIds.forEach { id ->
+      val node = tree.nodes[id] ?: return@forEach
+      merged += node.mediaItem
+      node.source?.let { source ->
+        extractTrackIdFromExtras(source.extrasJson)?.let(seenTrackIds::add)
+      }
+    }
+    liveItems.forEach { item ->
+      val trackId = extractTrackIdFromExtras(LoggeRythmPlayerRuntime.extrasFor(item.mediaId))
+      if (trackId == null || seenTrackIds.add(trackId)) {
+        merged += item
+      }
+    }
+    return merged
+  }
+
+  private fun extractTrackIdFromExtras(extrasJson: String): String? = try {
+    JSONObject(extrasJson).optJSONObject("track")?.optString("id")?.takeIf(String::isNotBlank)
+  } catch (_: Exception) {
+    null
+  }
+
+  private fun mapVoiceErrorToCarException(
+    error: Throwable,
+    queryArgument: String?,
+  ): LoggeRythmCarRequestException = when (error) {
+    is LoggeRythmCarRequestException -> error
+    is LoggeRythmVoiceException -> when (error.code) {
+      LoggeRythmVoiceErrorCode.AUTH_REQUIRED ->
+        LoggeRythmCarRequestException(LoggeRythmCarError.SIGNED_OUT)
+      LoggeRythmVoiceErrorCode.SEARCH_NO_MATCH ->
+        LoggeRythmCarRequestException(LoggeRythmCarError.SEARCH_NO_MATCH, queryArgument)
+      LoggeRythmVoiceErrorCode.NETWORK_ERROR ->
+        LoggeRythmCarRequestException(LoggeRythmCarError.SEARCH_NETWORK_ERROR)
+      LoggeRythmVoiceErrorCode.BUSY ->
+        LoggeRythmCarRequestException(LoggeRythmCarError.QUEUE_COMMIT_ACTIVE)
+      LoggeRythmVoiceErrorCode.CONTROLS_NOT_READY ->
+        LoggeRythmCarRequestException(LoggeRythmCarError.CONTROLS_NOT_READY)
+      LoggeRythmVoiceErrorCode.NOTHING_TO_PLAY ->
+        LoggeRythmCarRequestException(LoggeRythmCarError.NOTHING_TO_PLAY)
+      else -> LoggeRythmCarRequestException(LoggeRythmCarError.SESSION_NOT_READY)
+    }
+    else -> LoggeRythmCarRequestException(LoggeRythmCarError.SEARCH_NETWORK_ERROR)
+  }
+
+  private fun buildNowPlayingSnapshot(): LoggeRythmVoiceNowPlaying {
+    syncNotificationFavoriteProjection()
+    val count = player.mediaItemCount
+    val rawIndex = player.currentMediaItemIndex
+    val activeItem = player.currentMediaItem
+    val validIndex = if (count > 0 && activeItem != null && rawIndex in 0 until count) rawIndex else null
+    val activeMediaId = activeItem?.mediaId
+    val trackId = activeMediaId?.let { id ->
+      persistedCoordinator.resolveTrackIdForMediaId(id)
+        ?: extractTrackIdFromExtras(LoggeRythmPlayerRuntime.extrasFor(id))
+    }
+    val favoriteState = notificationFavorite.stateFor(activeMediaId, trackId)
+    val durationMs = player.duration.takeIf { it != C.TIME_UNSET && it >= 0L }
+      ?: activeItem?.mediaMetadata?.durationMs?.takeIf { it >= 0L }
+    val summary = if (activeItem != null) {
+      trackSummaryFromMediaItem(activeItem, trackId, durationMs)
+    } else {
+      null
+    }
+    val state = when (player.playbackState) {
+      Player.STATE_BUFFERING -> LoggeRythmVoicePlaybackState.BUFFERING
+      Player.STATE_READY -> LoggeRythmVoicePlaybackState.READY
+      Player.STATE_ENDED -> LoggeRythmVoicePlaybackState.ENDED
+      else -> LoggeRythmVoicePlaybackState.IDLE
+    }
+    return LoggeRythmVoiceNowPlaying(
+      hasActiveTrack = summary != null,
+      track = summary,
+      isPlaying = player.isPlaying,
+      playWhenReady = player.playWhenReady,
+      playbackState = state,
+      positionMs = player.currentPosition.coerceAtLeast(0L),
+      durationMs = durationMs,
+      liked = favoriteState?.liked,
+      queueSize = count,
+      currentIndex = validIndex,
+    )
+  }
+
+  private fun trackSummaryFromMediaItem(
+    item: MediaItem,
+    trackId: String?,
+    fallbackDurationMs: Long? = null,
+  ): LoggeRythmVoiceTrackSummary = LoggeRythmVoiceTrackSummary(
+    mediaId = item.mediaId,
+    trackId = trackId,
+    title = item.mediaMetadata.title?.toString().orEmpty(),
+    artist = item.mediaMetadata.artist?.toString().orEmpty(),
+    album = item.mediaMetadata.albumTitle?.toString().orEmpty(),
+    durationMs = item.mediaMetadata.durationMs?.takeIf { it >= 0L } ?: fallbackDurationMs,
+  )
+
+  private fun trackSummaryFromSpec(spec: PlayerItemSpec): LoggeRythmVoiceTrackSummary =
+    LoggeRythmVoiceTrackSummary(
+      mediaId = spec.id,
+      trackId = extractTrackIdFromExtras(spec.extrasJson),
+      title = spec.title.orEmpty(),
+      artist = spec.artist.orEmpty(),
+      album = spec.album.orEmpty(),
+      durationMs = spec.durationMs,
+    )
+
+  private fun specsFromLocalBrowseSelection(
+    selection: RuntimeBrowseSelection,
+    uniquePrefix: String,
+  ): List<PlayerItemSpec> {
+    val tree = LoggeRythmPlayerRuntime.browseTree()
+    return selection.mediaItems.mapIndexed { index, item ->
+      val source = tree.nodes[item.mediaId]?.source
+        ?: throw LoggeRythmCarRequestException(LoggeRythmCarError.MEDIA_ITEM_UNAVAILABLE)
+      if (!LoggeRythmCarLibraryState.hasPhoneTrackMetadata(source.extrasJson)) {
+        throw LoggeRythmCarRequestException(LoggeRythmCarError.LIBRARY_REFRESH_REQUIRED)
+      }
+      val trackId = extractTrackIdFromExtras(source.extrasJson) ?: "item"
+      source.copy(id = "$uniquePrefix:$index:$trackId")
+    }
+  }
+
+  private fun runAfterRestoreForVoice(
+    onFailure: (LoggeRythmVoiceException) -> Unit,
+    onReady: () -> Unit,
+  ) {
+    Futures.addCallback(
+      afterServiceOnlyRestore { Unit },
+      object : FutureCallback<Unit> {
+        override fun onSuccess(ignored: Unit?) {
+          if (serviceDestroyed) {
+            onFailure(
+              LoggeRythmVoiceException(
+                LoggeRythmVoiceErrorCode.SERVICE_UNAVAILABLE,
+                "voice-service-destroyed",
+              ),
+            )
+            return
+          }
+          onReady()
+        }
+
+        override fun onFailure(error: Throwable) {
+          onFailure(
+            LoggeRythmVoiceException(
+              LoggeRythmVoiceBridge.mapCarError(notReadyError()),
+              notReadyError().code,
+              error,
+            ),
+          )
+        }
+      },
+      MoreExecutors.directExecutor(),
+    )
+  }
+
+  private fun handleVoiceGetNowPlaying(
+    callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      val unavailable = rootUnavailable()
+      if (unavailable != null) {
+        callback(
+          Result.failure(
+            LoggeRythmVoiceException(
+              LoggeRythmVoiceBridge.mapCarError(unavailable),
+              unavailable.code,
+            ),
+          ),
+        )
+        return@runAfterRestoreForVoice
+      }
+      if (!persistedCoordinator.isReady()) {
+        val error = notReadyError()
+        callback(
+          Result.failure(
+            LoggeRythmVoiceException(LoggeRythmVoiceBridge.mapCarError(error), error.code),
+          ),
+        )
+        return@runAfterRestoreForVoice
+      }
+      callback(Result.success(buildNowPlayingSnapshot()))
+    }
+  }
+
+  private fun handleVoiceControlPlayback(
+    action: LoggeRythmVoicePlaybackAction,
+    callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      try {
+        rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        if (playerCache.isClearing()) throw LoggeRythmCarRequestException(LoggeRythmCarError.CACHE_CLEARING)
+        if (!persistedCoordinator.isReady()) throw LoggeRythmCarRequestException(notReadyError())
+        when (action) {
+          LoggeRythmVoicePlaybackAction.PLAY -> {
+            if (player.mediaItemCount == 0) {
+              requireQueueReplacementAdmitted()
+              val queue = resumableQueue()
+              player.setMediaItems(queue.mediaItems, queue.startIndex, queue.startPositionMs)
+              player.prepare()
+            } else {
+              if (player.playbackState == Player.STATE_ENDED) {
+                player.seekToDefaultPosition()
+              }
+              if (
+                LoggeRythmSessionClosePolicy.requiresPrepareBeforePlay(
+                  playbackState = player.playbackState,
+                  hasPlayerError = player.playerError != null,
+                  mediaItemCount = player.mediaItemCount,
+                )
+              ) {
+                player.prepare()
+              }
+            }
+            player.play()
+          }
+          LoggeRythmVoicePlaybackAction.PAUSE -> {
+            if (player.mediaItemCount == 0) {
+              throw LoggeRythmVoiceException(
+                LoggeRythmVoiceErrorCode.NO_ACTIVE_TRACK,
+                "voice-no-active-track",
+              )
+            }
+            player.pause()
+          }
+          LoggeRythmVoicePlaybackAction.NEXT -> {
+            if (!player.hasNextMediaItem()) {
+              throw LoggeRythmVoiceException(
+                LoggeRythmVoiceErrorCode.QUEUE_UNAVAILABLE,
+                "voice-no-next-track",
+              )
+            }
+            player.seekToNextMediaItem()
+          }
+          LoggeRythmVoicePlaybackAction.PREVIOUS -> {
+            when {
+              player.hasPreviousMediaItem() -> player.seekToPreviousMediaItem()
+              player.mediaItemCount > 0 -> player.seekTo(0L)
+              else -> throw LoggeRythmVoiceException(
+                LoggeRythmVoiceErrorCode.NO_ACTIVE_TRACK,
+                "voice-no-active-track",
+              )
+            }
+          }
+          LoggeRythmVoicePlaybackAction.STOP -> {
+            player.stop()
+          }
+        }
+        callback(Result.success(buildNowPlayingSnapshot()))
+      } catch (error: Throwable) {
+        callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      }
+    }
+  }
+
+  private fun handleVoicePlayMusic(
+    request: LoggeRythmVoiceQuery,
+    callback: (Result<LoggeRythmVoicePlayResult>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      try {
+        rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        requireQueueReplacementAdmitted()
+        if (request.isBlank()) {
+          if (player.mediaItemCount > 0) {
+            if (player.playbackState == Player.STATE_ENDED) {
+              player.seekToDefaultPosition()
+            }
+            if (
+              LoggeRythmSessionClosePolicy.requiresPrepareBeforePlay(
+                playbackState = player.playbackState,
+                hasPlayerError = player.playerError != null,
+                mediaItemCount = player.mediaItemCount,
+              )
+            ) {
+              player.prepare()
+            }
+            player.play()
+            val snapshot = buildNowPlayingSnapshot()
+            callback(
+              Result.success(
+                LoggeRythmVoicePlayResult(
+                  source = "resume",
+                  matchedTitle = snapshot.track?.title.orEmpty(),
+                  queuedCount = snapshot.queueSize,
+                  nowPlaying = snapshot,
+                ),
+              ),
+            )
+            return@runAfterRestoreForVoice
+          }
+          val queue = resumableQueue()
+          player.setMediaItems(queue.mediaItems, queue.startIndex, queue.startPositionMs)
+          player.prepare()
+          player.play()
+          val snapshot = buildNowPlayingSnapshot()
+          callback(
+            Result.success(
+              LoggeRythmVoicePlayResult(
+                source = "library",
+                matchedTitle = snapshot.track?.title.orEmpty(),
+                queuedCount = queue.mediaItems.size,
+                nowPlaying = snapshot,
+              ),
+            ),
+          )
+          return@runAfterRestoreForVoice
+        }
+
+        val tree = LoggeRythmPlayerRuntime.browseTree()
+        val local = LoggeRythmLibrarySearch.resolveStructuredLocalPlay(tree, request)
+        if (local != null) {
+          val prefix = "voice:play:${voiceItemSequence.incrementAndGet()}"
+          val specs = specsFromLocalBrowseSelection(local, prefix)
+          val mediaItems = LoggeRythmPlayerRuntime.installQueue(specs)
+          player.setMediaItems(mediaItems, local.startIndex, 0L)
+          player.prepare()
+          player.play()
+          val snapshot = buildNowPlayingSnapshot()
+          callback(
+            Result.success(
+              LoggeRythmVoicePlayResult(
+                source = "library",
+                matchedTitle = specs[local.startIndex].title.orEmpty(),
+                queuedCount = specs.size,
+                nowPlaying = snapshot,
+              ),
+            ),
+          )
+          return@runAfterRestoreForVoice
+        }
+
+        resolveLiveCatalogPlaySelection(
+          request = request,
+          tree = tree,
+          mediaIdPrefix = "voice:play:${voiceItemSequence.incrementAndGet()}",
+        ) { resolved ->
+          resolved.fold(
+            onSuccess = { selection ->
+              try {
+                requireQueueReplacementAdmitted()
+                val mediaItems = LoggeRythmPlayerRuntime.installQueue(selection.items)
+                player.setMediaItems(mediaItems, selection.startIndex, 0L)
+                player.prepare()
+                player.play()
+                val snapshot = buildNowPlayingSnapshot()
+                callback(
+                  Result.success(
+                    LoggeRythmVoicePlayResult(
+                      source = "catalog",
+                      matchedTitle = selection.matchedTitle,
+                      queuedCount = selection.items.size,
+                      nowPlaying = snapshot,
+                    ),
+                  ),
+                )
+              } catch (error: Throwable) {
+                callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+              }
+            },
+            onFailure = { error ->
+              callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+            },
+          )
+        }
+      } catch (error: Throwable) {
+        callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      }
+    }
+  }
+
+  private fun handleVoiceQueueMusic(
+    request: LoggeRythmVoiceQuery,
+    position: LoggeRythmVoiceQueuePosition,
+    callback: (Result<LoggeRythmVoiceQueueResult>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      try {
+        if (request.isBlank()) {
+          throw LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.INVALID_ARGUMENT,
+            "voice-queue-query-blank",
+          )
+        }
+        rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        requireQueueReplacementAdmitted()
+
+        fun insertGaplessly(source: String, specs: List<PlayerItemSpec>) {
+          requireQueueReplacementAdmitted()
+          if (specs.isEmpty()) {
+            throw LoggeRythmVoiceException(
+              LoggeRythmVoiceErrorCode.SEARCH_NO_MATCH,
+              "voice-queue-no-match",
+            )
+          }
+          val count = player.mediaItemCount
+          val insertIndex = when (position) {
+            LoggeRythmVoiceQueuePosition.NEXT ->
+              if (count == 0) 0 else (player.currentMediaItemIndex + 1).coerceIn(0, count)
+            LoggeRythmVoiceQueuePosition.END -> count
+          }
+          val limited = specs.take(
+            (LoggeRythmPlayerProtocol.MAX_QUEUE_ITEMS - count).coerceAtLeast(0),
+          )
+          if (limited.isEmpty()) {
+            throw LoggeRythmVoiceException(
+              LoggeRythmVoiceErrorCode.QUEUE_UNAVAILABLE,
+              "voice-queue-full",
+            )
+          }
+          // Reuse gapless in-place AddQueueItems so active playback never stutters or re-prepares.
+          applyPlayerCommand(
+            player,
+            PlayerCommand.AddQueueItems(index = insertIndex, items = limited),
+          )
+          val snapshot = buildNowPlayingSnapshot()
+          callback(
+            Result.success(
+              LoggeRythmVoiceQueueResult(
+                source = source,
+                position = position,
+                addedCount = limited.size,
+                firstAdded = trackSummaryFromSpec(limited.first()),
+                nowPlaying = snapshot,
+              ),
+            ),
+          )
+        }
+
+        val tree = LoggeRythmPlayerRuntime.browseTree()
+        val local = LoggeRythmLibrarySearch.resolveStructuredLocalPlay(tree, request)
+        if (local != null) {
+          val prefix = "voice:queue:${voiceItemSequence.incrementAndGet()}"
+          val allLocal = specsFromLocalBrowseSelection(local, prefix)
+          // For a single-song/any track match, queue the matched track (not the entire library).
+          val toQueue = when (request.mediaFocus) {
+            LoggeRythmVoiceMediaFocus.ALBUM,
+            LoggeRythmVoiceMediaFocus.PLAYLIST,
+            LoggeRythmVoiceMediaFocus.ARTIST,
+            -> allLocal
+            LoggeRythmVoiceMediaFocus.TRACK,
+            LoggeRythmVoiceMediaFocus.ANY,
+            -> listOf(allLocal[local.startIndex])
+          }
+          insertGaplessly("library", toQueue)
+          return@runAfterRestoreForVoice
+        }
+
+        resolveLiveCatalogPlaySelection(
+          request = request,
+          tree = tree,
+          mediaIdPrefix = "voice:queue:${voiceItemSequence.incrementAndGet()}",
+        ) { resolved ->
+          resolved.fold(
+            onSuccess = { selection ->
+              try {
+                val toQueue = when (request.mediaFocus) {
+                  LoggeRythmVoiceMediaFocus.ALBUM,
+                  LoggeRythmVoiceMediaFocus.PLAYLIST,
+                  LoggeRythmVoiceMediaFocus.ARTIST,
+                  -> selection.items
+                  LoggeRythmVoiceMediaFocus.TRACK,
+                  LoggeRythmVoiceMediaFocus.ANY,
+                  -> listOf(selection.items[selection.startIndex])
+                }
+                insertGaplessly("catalog", toQueue)
+              } catch (error: Throwable) {
+                callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+              }
+            },
+            onFailure = { error ->
+              callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+            },
+          )
+        }
+      } catch (error: Throwable) {
+        callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      }
+    }
+  }
+
+  private fun handleVoiceSetCurrentTrackFavorite(
+    liked: Boolean,
+    callback: (Result<LoggeRythmVoiceFavoriteResult>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      try {
+        rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        if (playerCache.isClearing()) throw LoggeRythmCarRequestException(LoggeRythmCarError.CACHE_CLEARING)
+        if (!persistedCoordinator.isReady()) throw LoggeRythmCarRequestException(notReadyError())
+        syncNotificationFavoriteProjection()
+        val activeItem = player.currentMediaItem
+          ?: throw LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.NO_ACTIVE_TRACK,
+            "voice-no-active-track",
+          )
+        val activeMediaId = activeItem.mediaId
+        val track = persistedCoordinator.resolveTrackMetadataForMediaId(activeMediaId)
+        val current = notificationFavorite.stateFor(activeMediaId, track?.id)
+        if (track == null || current == null) {
+          throw LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.FAVORITE_UNAVAILABLE,
+            LoggeRythmCarError.FAVORITE_UNAVAILABLE.code,
+          )
+        }
+        val summary = trackSummaryFromMediaItem(activeItem, track.id)
+        if (current.liked == liked) {
+          callback(
+            Result.success(
+              LoggeRythmVoiceFavoriteResult(track = summary, liked = liked, changed = false),
+            ),
+          )
+          return@runAfterRestoreForVoice
+        }
+        persistedCoordinator.enqueueFavoriteToggle(
+          mediaId = activeMediaId,
+          track = track,
+          requestedLiked = liked,
+        ) { enqueued ->
+          enqueued.fold(
+            onSuccess = {
+              syncAndRefreshNotificationFavoriteButtons()
+              callback(
+                Result.success(
+                  LoggeRythmVoiceFavoriteResult(track = summary, liked = liked, changed = true),
+                ),
+              )
+            },
+            onFailure = { error ->
+              callback(
+                Result.failure(
+                  LoggeRythmVoiceException(
+                    LoggeRythmVoiceErrorCode.FAVORITE_UPDATE_FAILED,
+                    LoggeRythmCarError.FAVORITE_UPDATE_FAILED.code,
+                    error,
+                  ),
+                ),
+              )
+            },
+          )
+        }
+      } catch (error: Throwable) {
+        callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      }
+    }
   }
 
   private fun finishServiceOnlyRestoreWaiters() {
@@ -1079,6 +1899,7 @@ class LoggeRythmMediaLibraryService :
     ): ListenableFuture<LibraryResult<MediaItem>> {
       return afterServiceOnlyRestore {
         val item = LoggeRythmPlayerRuntime.browseItem(mediaId)
+          ?: LoggeRythmPlayerRuntime.voiceSearchItem(mediaId)
         if (item == null) LibraryResult.ofError(SessionError.ERROR_BAD_VALUE)
         else LibraryResult.ofItem(item, null)
       }
@@ -1122,17 +1943,75 @@ class LoggeRythmMediaLibraryService :
       query: String,
       params: LibraryParams?,
     ): ListenableFuture<LibraryResult<Void>> {
-      return afterServiceOnlyRestore {
-        val unavailable = rootUnavailable()
-        if (unavailable != null) {
-          failLibraryRequest(session, browser, unavailable)
+      val resultFuture = SettableFuture.create<LibraryResult<Void>>()
+      val normalizedKey = LoggeRythmLibrarySearch.normalize(query)
+      fun failSearch(carError: LoggeRythmCarError) {
+        if (carError == LoggeRythmCarError.SIGNED_OUT) {
+          LoggeRythmPlayerRuntime.clearVoiceSearchCache()
+        } else if (normalizedKey.isNotEmpty()) {
+          LoggeRythmPlayerRuntime.removeVoiceSearchQuery(normalizedKey)
+        }
+        val legacy = browser.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+        if (legacy) {
+          // Media3's MediaLibraryServiceLegacyStub ignores onSearch's return future and holds the
+          // platform MediaBrowser.search() Result open until notifySearchResultChanged triggers
+          // onGetSearchResult. Record the error and wake onGetSearchResult so Android Auto gets
+          // SearchCallback.onError immediately instead of spinning forever.
+          failedLegacySearchErrors[normalizedKey] = carError
+          session.notifySearchResultChanged(browser, query, 0, params)
+          resultFuture.set(carLibraryError(carError))
         } else {
-          val count = LoggeRythmLibrarySearch.search(LoggeRythmPlayerRuntime.browseTree(), query).size
-          // Legacy hosts register the request before this callback and fetch results on notify.
-          session.notifySearchResultChanged(browser, query, count, params)
-          LibraryResult.ofVoid(params)
+          resultFuture.set(failLibraryRequest(session, browser, carError))
         }
       }
+      Futures.addCallback(
+        afterServiceOnlyRestore { Unit },
+        object : FutureCallback<Unit> {
+          override fun onSuccess(ignored: Unit?) {
+            failedLegacySearchErrors.remove(normalizedKey)
+            val unavailable = rootUnavailable()
+            if (unavailable != null) {
+              failSearch(unavailable)
+              return
+            }
+            val tree = LoggeRythmPlayerRuntime.browseTree()
+            val localIds = LoggeRythmLibrarySearch.search(tree, query)
+            executeLiveBrowseSearch(query) { liveResult ->
+              liveResult.fold(
+                onSuccess = { liveItems ->
+                  val merged = mergeLocalAndLiveSearchResults(
+                    LoggeRythmPlayerRuntime.browseTree(),
+                    localIds,
+                    liveItems,
+                  )
+                  // Legacy hosts register the request before this callback and fetch results on notify.
+                  session.notifySearchResultChanged(browser, query, merged.size, params)
+                  resultFuture.set(LibraryResult.ofVoid(params))
+                },
+                onFailure = { error ->
+                  val voiceError = error as? LoggeRythmVoiceException
+                  val isAuthFailure = voiceError?.code == LoggeRythmVoiceErrorCode.AUTH_REQUIRED
+                  if (!isAuthFailure && localIds.isNotEmpty()) {
+                    if (normalizedKey.isNotEmpty()) {
+                      LoggeRythmPlayerRuntime.removeVoiceSearchQuery(normalizedKey)
+                    }
+                    session.notifySearchResultChanged(browser, query, localIds.size, params)
+                    resultFuture.set(LibraryResult.ofVoid(params))
+                  } else {
+                    failSearch(mapVoiceErrorToCarException(error, query).error)
+                  }
+                },
+              )
+            }
+          }
+
+          override fun onFailure(error: Throwable) {
+            failSearch(notReadyError())
+          }
+        },
+        MoreExecutors.directExecutor(),
+      )
+      return resultFuture
     }
 
     override fun onGetSearchResult(
@@ -1146,19 +2025,67 @@ class LoggeRythmMediaLibraryService :
       if (page < 0 || pageSize <= 0) {
         return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
       }
-      return afterServiceOnlyRestore {
-        val unavailable = rootUnavailable()
-        if (unavailable != null) {
-          failLibraryRequest(session, browser, unavailable)
-        } else {
-          val tree = LoggeRythmPlayerRuntime.browseTree()
-          val ids = LoggeRythmLibrarySearch.search(tree, query)
-          val range = checkNotNull(LoggeRythmBrowsePaging.range(ids.size, page, pageSize))
-          val results = ids.slice(range).mapNotNull { tree.nodes[it]?.mediaItem }
-          // No match is an empty result per Media3's search contract, not an error.
-          LibraryResult.ofItemList(ImmutableList.copyOf(results), params)
-        }
-      }
+      val resultFuture = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
+      Futures.addCallback(
+        afterServiceOnlyRestore { Unit },
+        object : FutureCallback<Unit> {
+          override fun onSuccess(ignored: Unit?) {
+            val normalizedKey = LoggeRythmLibrarySearch.normalize(query)
+            val legacy = browser.controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+            if (legacy) {
+              val recordedFailure = failedLegacySearchErrors.remove(normalizedKey)
+              if (recordedFailure != null) {
+                resultFuture.set(failLibraryRequest(session, browser, recordedFailure))
+                return
+              }
+            }
+            val unavailable = rootUnavailable()
+            if (unavailable != null) {
+              resultFuture.set(failLibraryRequest(session, browser, unavailable))
+              return
+            }
+            val tree = LoggeRythmPlayerRuntime.browseTree()
+            val localIds = LoggeRythmLibrarySearch.search(tree, query)
+            val cachedLive = LoggeRythmPlayerRuntime.cachedVoiceSearchResults(normalizedKey)
+            fun deliver(liveItems: List<MediaItem>) {
+              val merged = mergeLocalAndLiveSearchResults(
+                LoggeRythmPlayerRuntime.browseTree(),
+                localIds,
+                liveItems,
+              )
+              val range = checkNotNull(LoggeRythmBrowsePaging.range(merged.size, page, pageSize))
+              // No match is an empty result per Media3's search contract, not an error.
+              resultFuture.set(LibraryResult.ofItemList(ImmutableList.copyOf(merged.slice(range)), params))
+            }
+            if (cachedLive != null || normalizedKey.isEmpty()) {
+              deliver(cachedLive.orEmpty())
+              return
+            }
+            executeLiveBrowseSearch(query) { liveResult ->
+              liveResult.fold(
+                onSuccess = ::deliver,
+                onFailure = { error ->
+                  val voiceError = error as? LoggeRythmVoiceException
+                  val isAuthFailure = voiceError?.code == LoggeRythmVoiceErrorCode.AUTH_REQUIRED
+                  if (!isAuthFailure && localIds.isNotEmpty()) {
+                    deliver(emptyList())
+                  } else {
+                    if (isAuthFailure) LoggeRythmPlayerRuntime.clearVoiceSearchCache()
+                    val carError = mapVoiceErrorToCarException(error, query).error
+                    resultFuture.set(failLibraryRequest(session, browser, carError))
+                  }
+                },
+              )
+            }
+          }
+
+          override fun onFailure(error: Throwable) {
+            resultFuture.set(failLibraryRequest(session, browser, notReadyError()))
+          }
+        },
+        MoreExecutors.directExecutor(),
+      )
+      return resultFuture
     }
 
     override fun onAddMediaItems(
@@ -1212,25 +2139,56 @@ class LoggeRythmMediaLibraryService :
       startIndex: Int,
       startPositionMs: Long,
     ): ListenableFuture<MediaItemsWithStartPosition> {
-      return afterServiceOnlyRestore {
-        val profile = controllerProfile(mediaSession, controller)
-        try {
-          requireQueueReplacementAdmitted()
-          if (
-            profile == RemoteControllerProfile.INTERNAL &&
-            mediaItems.all { it.localConfiguration != null }
-          ) {
-            MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
-          } else {
-            // A browse/voice request selects one published ID or query. Every caller-owned
-            // URI/metadata field is ignored; the native tree supplies the queue.
-            resolveLibraryPlayRequest(profile, mediaItems)
+      val resultFuture = SettableFuture.create<MediaItemsWithStartPosition>()
+      Futures.addCallback(
+        afterServiceOnlyRestore { Unit },
+        object : FutureCallback<Unit> {
+          override fun onSuccess(ignored: Unit?) {
+            val profile = controllerProfile(mediaSession, controller)
+            try {
+              requireQueueReplacementAdmitted()
+              if (
+                profile == RemoteControllerProfile.INTERNAL &&
+                mediaItems.all { it.localConfiguration != null }
+              ) {
+                resultFuture.set(MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs))
+                return
+              }
+              // A browse/voice request selects one published ID or query. Every caller-owned
+              // URI/metadata field is ignored; native library + authenticated catalog supply items.
+              Futures.addCallback(
+                resolveLibraryPlayRequestAsync(profile, mediaItems),
+                object : FutureCallback<MediaItemsWithStartPosition> {
+                  override fun onSuccess(result: MediaItemsWithStartPosition) {
+                    resultFuture.set(result)
+                  }
+
+                  override fun onFailure(error: Throwable) {
+                    if (error is LoggeRythmCarRequestException) {
+                      reportCarError(mediaSession, controller, error.error, error.messageArgument)
+                    }
+                    resultFuture.setException(error)
+                  }
+                },
+                MoreExecutors.directExecutor(),
+              )
+            } catch (error: LoggeRythmCarRequestException) {
+              reportCarError(mediaSession, controller, error.error, error.messageArgument)
+              resultFuture.setException(error)
+            } catch (error: Throwable) {
+              resultFuture.setException(error)
+            }
           }
-        } catch (error: LoggeRythmCarRequestException) {
-          reportCarError(mediaSession, controller, error.error, error.messageArgument)
-          throw error
-        }
-      }
+
+          override fun onFailure(error: Throwable) {
+            val notReady = LoggeRythmCarRequestException(notReadyError())
+            reportCarError(mediaSession, controller, notReady.error)
+            resultFuture.setException(notReady)
+          }
+        },
+        MoreExecutors.directExecutor(),
+      )
+      return resultFuture
     }
   }
 

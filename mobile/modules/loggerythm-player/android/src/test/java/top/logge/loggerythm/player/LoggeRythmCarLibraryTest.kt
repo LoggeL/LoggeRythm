@@ -175,6 +175,72 @@ class LoggeRythmCarLibraryTest {
   }
 
   @Test
+  fun structuredLocalVoiceResolutionRespectsPlaylistAlbumArtistTrackAndAnyFocus() {
+    val tree = LoggeRythmPlayerRuntime.installBrowseTree(libraryTree())
+
+    val playlist = requireNotNull(
+      LoggeRythmLibrarySearch.resolveStructuredLocalPlay(
+        tree,
+        LoggeRythmVoiceQuery("", LoggeRythmVoiceMediaFocus.PLAYLIST, playlist = "Roadtrip"),
+      ),
+    )
+    assertEquals(
+      listOf("playlist:roadtrip:0:drive", "playlist:roadtrip:1:focus", "playlist:roadtrip:2:halo"),
+      playlist.mediaItems.map { it.mediaId },
+    )
+    assertEquals(0, playlist.startIndex)
+    // Empty playlist "Focus" must not silently match the song titled "Focus" under PLAYLIST focus.
+    assertNull(
+      LoggeRythmLibrarySearch.resolveStructuredLocalPlay(
+        tree,
+        LoggeRythmVoiceQuery("", LoggeRythmVoiceMediaFocus.PLAYLIST, playlist = "Focus"),
+      ),
+    )
+
+    val artist = requireNotNull(
+      LoggeRythmLibrarySearch.resolveStructuredLocalPlay(
+        tree,
+        LoggeRythmVoiceQuery("", LoggeRythmVoiceMediaFocus.ARTIST, artist = "beyonce"),
+      ),
+    )
+    assertEquals(listOf("liked:1:halo", "liked:2:formation"), artist.mediaItems.map { it.mediaId })
+
+    val album = requireNotNull(
+      LoggeRythmLibrarySearch.resolveStructuredLocalPlay(
+        tree,
+        LoggeRythmVoiceQuery(
+          rawQuery = "",
+          mediaFocus = LoggeRythmVoiceMediaFocus.ALBUM,
+          album = "I Am... Sasha Fierce",
+          artist = "Beyoncé",
+        ),
+      ),
+    )
+    assertEquals(listOf("liked:1:halo"), album.mediaItems.map { it.mediaId })
+    assertNull(
+      LoggeRythmLibrarySearch.resolveStructuredLocalPlay(
+        tree,
+        LoggeRythmVoiceQuery(
+          rawQuery = "",
+          mediaFocus = LoggeRythmVoiceMediaFocus.ALBUM,
+          album = "I Am... Sasha Fierce",
+          artist = "Wrong Artist",
+        ),
+      ),
+    )
+
+    val track = requireNotNull(
+      LoggeRythmLibrarySearch.resolveStructuredLocalPlay(
+        tree,
+        LoggeRythmVoiceQuery("", LoggeRythmVoiceMediaFocus.TRACK, title = "Focus", artist = "Ariana Grande"),
+      ),
+    )
+    assertEquals(1, track.startIndex)
+    assertEquals("playlist:roadtrip:1:focus", track.mediaItems[track.startIndex].mediaId)
+    assertEquals("car-search-network-error", LoggeRythmCarError.SEARCH_NETWORK_ERROR.code)
+  }
+
+  @Test
   fun containerSelectionQueuesOnlyDirectlyPlayableChildrenFromTheStart() {
     LoggeRythmPlayerRuntime.installBrowseTree(libraryTree())
 

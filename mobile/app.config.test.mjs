@@ -36,6 +36,8 @@ describe('Expo API-origin policy', () => {
     expect(config.plugins).toContain('./plugins/withAndroidLauncherAssets');
     expect(config.plugins).toContain('./plugins/withAndroidTvSupport');
     expect(config.plugins.filter((entry) => entry === './plugins/withAndroidTvSupport')).toHaveLength(1);
+    expect(config.plugins).toContain('./plugins/withAndroidAppFunctions');
+    expect(config.plugins.filter((entry) => entry === './plugins/withAndroidAppFunctions')).toHaveLength(1);
     expect(config.plugins).toContain('./plugins/withNoHttpRedirects');
     expect(config.plugins).toContain('./plugins/withFirstPartyPlayer');
     expect(config.plugins).not.toContain('./plugins/withAndroidAuto');

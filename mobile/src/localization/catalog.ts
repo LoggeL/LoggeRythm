@@ -855,6 +855,17 @@ export interface StringCatalog {
     queueLocked: string;
     addedToParty: (title: string) => string;
   };
+  voice: {
+    playFromSearchFailed: string;
+    noMatchesFor: (query: string) => string;
+    noMatchesGeneric: string;
+    offlineUnavailable: string;
+    emptyLibrary: string;
+    invalidIntentPayload: string;
+    resumedPlayback: string;
+    startedPlayback: (title: string) => string;
+    searchContextLabel: (query: string) => string;
+  };
 }
 
 export const de: StringCatalog = {
@@ -1755,6 +1766,18 @@ export const de: StringCatalog = {
     queueLocked: 'Diese Warteschlange gehört zur Party. Bearbeite sie in der Party.',
     addedToParty: (title) => `„${title}“ wurde zur Party hinzugefügt.`,
   },
+  voice: {
+    playFromSearchFailed: 'Sprachsuche konnte nicht abgespielt werden',
+    noMatchesFor: (query) => `Keine Treffer für „${query}“ gefunden.`,
+    noMatchesGeneric: 'Keine passenden Titel für deine Sprachsuche gefunden.',
+    offlineUnavailable:
+      'Für die Sprachsuche besteht keine Serververbindung. Prüfe deine Verbindung.',
+    emptyLibrary: 'Keine gespeicherten oder zuletzt gehörten Titel zum Abspielen gefunden.',
+    invalidIntentPayload: 'Die empfangene Sprachanfrage war ungültig.',
+    resumedPlayback: 'Wiedergabe wird fortgesetzt.',
+    startedPlayback: (title) => `Wiedergabe von „${title}“ gestartet.`,
+    searchContextLabel: (query) => `Sprachsuche: „${query}“`,
+  },
 };
 
 export const en: StringCatalog = {
@@ -2483,5 +2506,17 @@ export const en: StringCatalog = {
     openParty: 'Open party',
     queueLocked: 'This queue belongs to the party. Edit it in the party.',
     addedToParty: (title) => `“${title}” was added to the party.`,
+  },
+  voice: {
+    playFromSearchFailed: 'Voice search playback failed',
+    noMatchesFor: (query) => `No matches found for “${query}”.`,
+    noMatchesGeneric: 'No matching music was found for your voice search.',
+    offlineUnavailable:
+      'Voice search could not reach the server. Check your connection.',
+    emptyLibrary: 'No saved or recently played music is available to play.',
+    invalidIntentPayload: 'The incoming voice search request was malformed.',
+    resumedPlayback: 'Resuming playback.',
+    startedPlayback: (title) => `Playing “${title}”.`,
+    searchContextLabel: (query) => `Voice search: “${query}”`,
   },
 };

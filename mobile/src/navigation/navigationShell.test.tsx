@@ -110,6 +110,9 @@ vi.mock('../share/sharedTextRuntime', () => ({
     attachSearchOwner: vi.fn(),
   },
 }));
+vi.mock('../voice/voicePlaybackRuntime', () => ({
+  attachMediaPlayFromSearchIntake: vi.fn(() => () => undefined),
+}));
 vi.mock('../update/androidUpdateStore', () => ({
   useAndroidUpdateSnapshot: () => ({ supported: true }),
   androidUpdateAttention: () => mocks.updateAttention,

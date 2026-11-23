@@ -49,6 +49,7 @@ import {
 import { mediaItemToTrack } from './player/mediaItem';
 import { useActiveMediaItem, useIsPlaying } from './player/player';
 import { spotifySharedTextCoordinator } from './share/sharedTextRuntime';
+import { attachMediaPlayFromSearchIntake } from './voice/voicePlaybackRuntime';
 import {
   TvShellLayout,
   tvFocusRegistry,
@@ -104,6 +105,15 @@ const renderLibraryIcon = ({ focused }: { focused: boolean }) => (
   <TabBarIcon focused={focused} name="bookshelf" />
 );
 const renderLogoutHeaderRight = () => <LogoutButton />;
+
+function openNowPlayingFromVoice(): void {
+  if (!rootNavigation.isReady()) return;
+  const activeRoute = resolveActiveTvRoute(rootNavigation.getRootState());
+  if (activeRoute !== 'NowPlaying') {
+    tvFocusRegistry.pushCheckpoint('tv-now-playing');
+  }
+  rootNavigation.navigate('NowPlaying');
+}
 
 function Tabs() {
   const localeRevision = useLocaleRevision();
@@ -292,6 +302,11 @@ export default function RootNavigator() {
   useEffect(() => {
     if (!navigationReady) return undefined;
     return spotifySharedTextCoordinator.attachNavigator(accountScope, openSpotifyImport);
+  }, [accountScope, navigationReady]);
+
+  useEffect(() => {
+    if (!navigationReady) return undefined;
+    return attachMediaPlayFromSearchIntake(accountScope, openNowPlayingFromVoice);
   }, [accountScope, navigationReady]);
 
   const retry = useCallback(() => {

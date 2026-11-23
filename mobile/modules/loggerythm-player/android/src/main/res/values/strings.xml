@@ -17,4 +17,5 @@
     <string name="loggerythm_player_car_error_refresh_required">Open LoggeRythm on your phone once to update your car library, then try again.</string>
     <string name="loggerythm_player_car_error_favorite_unavailable">Favorites aren\'t loaded yet. Open LoggeRythm on your phone once, then try again.</string>
     <string name="loggerythm_player_car_error_favorite_failed">Couldn\'t update your favorites. Check your connection and try again.</string>
+    <string name="loggerythm_player_car_error_search_network_error">Couldn\'t search LoggeRythm right now. Check your connection and try again.</string>
 </resources>

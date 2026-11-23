@@ -146,6 +146,65 @@ class LoggeRythmPlayerRuntimeBrowseTest {
     assertEquals(privateExtras, LoggeRythmPlayerRuntime.extrasFor(selected.id))
   }
 
+  @Test
+  fun voiceSearchCacheIsAccountScopedBoundedLruAndClearedOnAccountSwitchOrLogout() {
+    val cookie = "sf_session=voice-test"
+    val validExtras = """{"track":{"id":"101","title":"One More Time","artist":"Daft Punk","artists":[{"id":27,"name":"Daft Punk"}]},"radio":false}"""
+    LoggeRythmPlayerRuntime.installBrowseTree(
+      tree(
+        container(
+          "library:liked",
+          "Liked",
+          listOf(playable("liked:101", "One More Time", "/api/tracks/101/stream", cookie).copy(extrasJson = validExtras)),
+        ),
+      ),
+    )
+    assertEquals(binding.origin to cookie, LoggeRythmPlayerRuntime.sessionCookieForCurrentOrigin())
+
+    // Populate 9 distinct queries -> LRU cap (8) evicts the oldest query and its cookie/item.
+    for (i in 1..9) {
+      val spec = PlayerItemSpec(
+        id = "voice:search:$i:0:${100 + i}",
+        url = "https://music.example.test/api/tracks/${100 + i}/stream",
+        title = "Track $i",
+        artist = "Artist",
+        album = "Album",
+        artworkUrl = "https://music.example.test/art/$i.jpg",
+        durationMs = 180_000L,
+        cookie = cookie,
+        extrasJson = validExtras,
+      )
+      LoggeRythmPlayerRuntime.installVoiceSearchResults("query-$i", listOf(spec))
+    }
+
+    assertNull(LoggeRythmPlayerRuntime.cachedVoiceSearchResults("query-1"))
+    assertNull(LoggeRythmPlayerRuntime.voiceSearchItem("voice:search:1:0:101"))
+    assertNull(LoggeRythmPlayerRuntime.cookieFor("https://music.example.test/api/tracks/1010/stream"))
+
+    val latestId = "voice:search:9:0:109"
+    assertEquals(1, LoggeRythmPlayerRuntime.cachedVoiceSearchResults("query-9")?.size)
+    assertEquals(latestId, LoggeRythmPlayerRuntime.voiceSearchItem(latestId)?.mediaId)
+    assertEquals(validExtras, LoggeRythmPlayerRuntime.extrasFor(latestId))
+    assertEquals(cookie, LoggeRythmPlayerRuntime.cookieFor("https://music.example.test/api/tracks/109/stream"))
+
+    val selected = requireNotNull(LoggeRythmPlayerRuntime.playableVoiceSearchSelection(latestId))
+    assertEquals(0, selected.startIndex)
+    assertEquals(listOf(latestId), selected.mediaItems.map { it.mediaId })
+    val captured = LoggeRythmPlayerRuntime.captureQueueEntries(
+      listOf(latestId to "https://music.example.test/api/tracks/109/stream"),
+    )
+    assertEquals(listOf(latestId), captured.map(PlayerItemSpec::id))
+
+    // Account switch wipes cached voice search results and search cookies immediately.
+    LoggeRythmPlayerRuntime.bindSession(
+      LoggeRythmPersistedSessionBinding(accountScope = "user:99", origin = binding.origin),
+    )
+    assertNull(LoggeRythmPlayerRuntime.cachedVoiceSearchResults("query-9"))
+    assertNull(LoggeRythmPlayerRuntime.voiceSearchItem(latestId))
+    assertNull(LoggeRythmPlayerRuntime.cookieFor("https://music.example.test/api/tracks/109/stream"))
+    assertNull(LoggeRythmPlayerRuntime.sessionCookieForCurrentOrigin())
+  }
+
   private fun tree(vararg children: BrowseNodeSpec): BrowseTreeSpec = BrowseTreeSpec(
     root = container(
       LoggeRythmPlayerRuntime.BROWSE_ROOT_ID,

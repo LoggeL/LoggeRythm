@@ -36,6 +36,7 @@ function localApiUsesCleartext() {
 }
 
 const ANDROID_TV_PLUGIN = './plugins/withAndroidTvSupport';
+const ANDROID_APP_FUNCTIONS_PLUGIN = './plugins/withAndroidAppFunctions';
 
 function ensurePlugin(plugins, pluginName) {
   const alreadyPresent = plugins.some(
@@ -47,19 +48,22 @@ function ensurePlugin(plugins, pluginName) {
 module.exports = ({ config }) => ({
   ...config,
   plugins: ensurePlugin(
-    config.plugins.map((plugin) => {
-      if (!Array.isArray(plugin) || plugin[0] !== 'expo-build-properties') return plugin;
-      return [
-        plugin[0],
-        {
-          ...plugin[1],
-          android: {
-            ...plugin[1].android,
-            usesCleartextTraffic: localApiUsesCleartext(),
+    ensurePlugin(
+      config.plugins.map((plugin) => {
+        if (!Array.isArray(plugin) || plugin[0] !== 'expo-build-properties') return plugin;
+        return [
+          plugin[0],
+          {
+            ...plugin[1],
+            android: {
+              ...plugin[1].android,
+              usesCleartextTraffic: localApiUsesCleartext(),
+            },
           },
-        },
-      ];
-    }),
-    ANDROID_TV_PLUGIN,
+        ];
+      }),
+      ANDROID_TV_PLUGIN,
+    ),
+    ANDROID_APP_FUNCTIONS_PLUGIN,
   ),
 });

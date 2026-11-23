@@ -1,0 +1,135 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: "com.android.library"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.google.devtools.ksp"
+
+import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
+// 1.0.0-alpha08 is the latest androidx.appfunctions release compatible with AGP 8.12 + compileSdk 36
+// (1.0.0-alpha09..1.0.0 require AGP 9.1.0 + compileSdk 37 in aar-metadata.properties).
+def appFunctionsVersion = "1.0.0-alpha08"
+def coroutinesVersion = "1.10.2"
+
+abstract class SyncAppFunctionsXmlAssetsTask extends DefaultTask {
+    @InputDirectory
+    @PathSensitive(PathSensitivity.RELATIVE)
+    abstract DirectoryProperty getKspResourcesDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputAssetsDir()
+
+    @TaskAction
+    void syncXmlAssets() {
+        def sourceDir = new File(kspResourcesDir.get().asFile, "assets")
+        def v2XmlFile = new File(sourceDir, "app_functions_v2.xml")
+        if (!v2XmlFile.isFile()) {
+            throw new GradleException(
+                "Expected KSP-generated AppFunctions metadata XML at ${v2XmlFile.absolutePath}, but it was not produced."
+            )
+        }
+        def targetDir = outputAssetsDir.get().asFile
+        project.delete(targetDir)
+        targetDir.mkdirs()
+        project.copy {
+            from(sourceDir)
+            include("*.xml")
+            into(targetDir)
+        }
+    }
+}
+
+android {
+    namespace "top.logge.loggerythm.appfunctions"
+    compileSdk rootProject.ext.compileSdkVersion
+
+    defaultConfig {
+        minSdk rootProject.ext.minSdkVersion
+        targetSdk rootProject.ext.targetSdkVersion
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    testOptions {
+        unitTests.includeAndroidResources = true
+        unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        abortOnError true
+    }
+
+    packaging {
+        resources {
+            // KSP writes assets/app_functions*.xml into Java resources; SyncAppFunctionsXmlAssetsTask
+            // promotes them into real Android assets, so strip the duplicate Java-resource copies.
+            excludes += [
+                "assets/app_functions.xml",
+                "assets/app_functions_v2.xml",
+            ]
+        }
+    }
+}
+
+ksp {
+    arg("appfunctions:aggregateAppFunctions", "true")
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def variantName = variant.name
+        def capitalized = variantName.substring(0, 1).toUpperCase(Locale.ROOT) + variantName.substring(1)
+        def kspTaskName = "ksp${capitalized}Kotlin"
+        def syncTaskProvider = tasks.register(
+            "sync${capitalized}AppFunctionsAssets",
+            SyncAppFunctionsXmlAssetsTask,
+        ) { task ->
+            task.dependsOn(kspTaskName)
+            task.kspResourcesDir.set(
+                layout.buildDirectory.dir("generated/ksp/${variantName}/resources"),
+            )
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            syncTaskProvider,
+            SyncAppFunctionsXmlAssetsTask::getOutputAssetsDir,
+        )
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(":loggerythm_player-native")
+    implementation "androidx.annotation:annotation:1.9.1"
+    implementation "androidx.appfunctions:appfunctions:${appFunctionsVersion}"
+    implementation "androidx.appfunctions:appfunctions-service:${appFunctionsVersion}"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:${coroutinesVersion}"
+    ksp "androidx.appfunctions:appfunctions-compiler:${appFunctionsVersion}"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:${coroutinesVersion}"
+    testImplementation "org.robolectric:robolectric:4.16.1"
+}

@@ -150,6 +150,12 @@ internal enum class LoggeRythmCarError(
     R.string.loggerythm_player_car_error_favorite_failed,
     offersOpenApp = false,
   ),
+  SEARCH_NETWORK_ERROR(
+    "car-search-network-error",
+    SessionError.ERROR_IO,
+    R.string.loggerythm_player_car_error_search_network_error,
+    offersOpenApp = false,
+  ),
 }
 
 /**
@@ -262,6 +268,147 @@ internal object LoggeRythmLibrarySearch {
     tree.nodes.keys.firstNotNullOfOrNull { id ->
       playableTarget(tree, id) as? LoggeRythmLibraryTarget.Container
     }
+
+  /**
+   * Resolves a structured voice query (with optional `MediaStore` focus, artist, album, title,
+   * playlist fields) against the published account-bound local browse tree.
+   *
+   * - `PLAYLIST`: prefers playable containers matching the playlist title.
+   * - `ALBUM`: matches playable album containers or local tracks sharing that album title.
+   * - `ARTIST`: collects deduplicated local tracks by that artist.
+   * - `TRACK` / `ANY`: resolves exact/prefix/token matches across leaves and containers.
+   */
+  fun resolveStructuredLocalPlay(
+    tree: RuntimeBrowseTree,
+    request: LoggeRythmVoiceQuery,
+  ): RuntimeBrowseSelection? {
+    val effectiveQuery = request.effectiveQuery()
+    if (effectiveQuery.isBlank()) return null
+
+    when (request.mediaFocus) {
+      LoggeRythmVoiceMediaFocus.PLAYLIST -> {
+        val targetQuery = request.playlist?.takeIf(String::isNotBlank) ?: effectiveQuery
+        val containerTarget = resolveContainerOnly(tree, targetQuery) ?: return null
+        return playableChildrenFromTree(tree, containerTarget.mediaId)
+      }
+      LoggeRythmVoiceMediaFocus.ALBUM -> {
+        val albumQuery = normalize(request.album?.takeIf(String::isNotBlank) ?: effectiveQuery)
+        if (albumQuery.isEmpty()) return null
+        val artistQuery = request.artist?.takeIf(String::isNotBlank)?.let(::normalize).orEmpty()
+        val titleQuery = request.title?.takeIf(String::isNotBlank)?.let(::normalize).orEmpty()
+        val albumTokens = albumQuery.split(' ')
+        val artistTokens = if (artistQuery.isEmpty()) emptyList() else artistQuery.split(' ')
+        val matchedLeaves = collectMatchingLeaves(tree) { node ->
+          val album = normalize(node.mediaItem.mediaMetadata.albumTitle?.toString().orEmpty())
+          val artist = normalize(node.mediaItem.mediaMetadata.artist?.toString().orEmpty())
+          album.isNotEmpty() &&
+            albumTokens.all(album::contains) &&
+            (artistTokens.isEmpty() || artistTokens.all(artist::contains))
+        }
+        if (matchedLeaves.isNotEmpty()) {
+          val startIndex = if (titleQuery.isEmpty()) {
+            0
+          } else {
+            val titleTokens = titleQuery.split(' ')
+            matchedLeaves.indexOfFirst { node ->
+              val t = normalize(node.mediaItem.mediaMetadata.title?.toString().orEmpty())
+              titleTokens.all(t::contains)
+            }.takeIf { it >= 0 } ?: 0
+          }
+          return RuntimeBrowseSelection(matchedLeaves.map(RuntimeBrowseNode::mediaItem), startIndex)
+        }
+        val containerTarget = resolveContainerOnly(tree, request.album ?: effectiveQuery)
+          ?: return null
+        return playableChildrenFromTree(tree, containerTarget.mediaId)
+      }
+      LoggeRythmVoiceMediaFocus.ARTIST -> {
+        val artistQuery = normalize(request.artist?.takeIf(String::isNotBlank) ?: effectiveQuery)
+        if (artistQuery.isEmpty()) return null
+        val artistTokens = artistQuery.split(' ')
+        val matchedLeaves = collectMatchingLeaves(tree) { node ->
+          val artist = normalize(node.mediaItem.mediaMetadata.artist?.toString().orEmpty())
+          artist.isNotEmpty() && artistTokens.all(artist::contains)
+        }
+        if (matchedLeaves.isEmpty()) return null
+        return RuntimeBrowseSelection(matchedLeaves.map(RuntimeBrowseNode::mediaItem), 0)
+      }
+      LoggeRythmVoiceMediaFocus.TRACK -> {
+        val targetQuery = listOfNotNull(
+          request.title?.takeIf(String::isNotBlank),
+          request.artist?.takeIf(String::isNotBlank),
+          request.album?.takeIf(String::isNotBlank),
+        ).joinToString(" ").ifBlank { effectiveQuery }
+        val normalized = normalize(targetQuery)
+        if (normalized.isEmpty()) return null
+        val tokens = normalized.split(' ')
+        val leafTarget = candidates(tree, normalized, tokens)
+          .filter { it.node.source != null }
+          .sortedWith(compareBy<Candidate> { it.rank }.thenBy { it.order })
+          .firstNotNullOfOrNull { playableTarget(tree, it.id) as? LoggeRythmLibraryTarget.Leaf }
+          ?: return null
+        return playableSiblingsFromTree(tree, leafTarget.mediaId)
+      }
+      LoggeRythmVoiceMediaFocus.ANY -> {
+        val target = resolvePlayRequest(tree, effectiveQuery, preferContainers = false) ?: return null
+        return when (target) {
+          is LoggeRythmLibraryTarget.Leaf -> playableSiblingsFromTree(tree, target.mediaId)
+          is LoggeRythmLibraryTarget.Container -> playableChildrenFromTree(tree, target.mediaId)
+        }
+      }
+    }
+  }
+
+  private fun resolveContainerOnly(
+    tree: RuntimeBrowseTree,
+    query: String,
+  ): LoggeRythmLibraryTarget.Container? {
+    val normalized = normalize(query)
+    if (normalized.isEmpty()) return null
+    val tokens = normalized.split(' ')
+    return candidates(tree, normalized, tokens)
+      .filter { it.node.source == null }
+      .sortedWith(compareBy<Candidate> { it.rank }.thenBy { it.order })
+      .firstNotNullOfOrNull { playableTarget(tree, it.id) as? LoggeRythmLibraryTarget.Container }
+  }
+
+  private fun collectMatchingLeaves(
+    tree: RuntimeBrowseTree,
+    predicate: (RuntimeBrowseNode) -> Boolean,
+  ): List<RuntimeBrowseNode> {
+    val seen = mutableSetOf<List<Any?>>()
+    return tree.nodes.values.filter { node ->
+      node.source != null && predicate(node) && seen.add(publicIdentity(node))
+    }
+  }
+
+  private fun playableSiblingsFromTree(
+    tree: RuntimeBrowseTree,
+    mediaId: String,
+  ): RuntimeBrowseSelection? {
+    val selected = tree.nodes[mediaId]?.takeIf { it.source != null } ?: return null
+    val parentId = tree.parentByChildId[mediaId] ?: return null
+    val parent = tree.nodes[parentId] ?: return null
+    val playableIds = parent.childIds.filter { childId -> tree.nodes[childId]?.source != null }
+    val selectedIndex = playableIds.indexOf(mediaId)
+    if (selectedIndex < 0) return null
+    val mediaItems = playableIds.map { childId ->
+      tree.nodes[childId]?.mediaItem ?: return null
+    }
+    if (mediaItems.isEmpty() || mediaItems[selectedIndex] !== selected.mediaItem) return null
+    return RuntimeBrowseSelection(mediaItems, selectedIndex)
+  }
+
+  private fun playableChildrenFromTree(
+    tree: RuntimeBrowseTree,
+    containerId: String,
+  ): RuntimeBrowseSelection? {
+    if (containerId == tree.rootId) return null
+    val container = tree.nodes[containerId]?.takeIf { it.source == null } ?: return null
+    val mediaItems = container.childIds.mapNotNull { childId ->
+      tree.nodes[childId]?.takeIf { it.source != null }?.mediaItem
+    }
+    return if (mediaItems.isEmpty()) null else RuntimeBrowseSelection(mediaItems, 0)
+  }
 
   fun normalize(value: String): String {
     val decomposed = Normalizer.normalize(value, Normalizer.Form.NFKD)

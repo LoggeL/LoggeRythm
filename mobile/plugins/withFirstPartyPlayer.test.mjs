@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const plugin = require('./withFirstPartyPlayer');
+const sharedTextPlugin = require('./withSharedTextIntent');
 const here = path.dirname(fileURLToPath(import.meta.url));
 const moduleRoot = path.join(here, '..', 'modules', 'loggerythm-player');
 const readModuleFile = (...parts) => fs.readFileSync(path.join(moduleRoot, ...parts), 'utf8');
@@ -22,7 +23,7 @@ function createManifest() {
 }
 
 describe('withFirstPartyPlayer app integration', () => {
-  it('adds automotive metadata, production App Links, and attribution idempotently', () => {
+  it('adds automotive metadata, production App Links, MEDIA_PLAY_FROM_SEARCH, and attribution idempotently', () => {
     const manifest = createManifest();
     manifest.application[0].activity[0]['intent-filter'].push({
       action: [{ $: { 'android:name': 'android.media.action.MEDIA_PLAY_FROM_SEARCH' } }],
@@ -56,9 +57,13 @@ describe('withFirstPartyPlayer app integration', () => {
     expect(webLinks.data.every((entry) =>
       entry.$['android:scheme'] === 'https' &&
       entry.$['android:host'] === plugin.WEB_LINK_HOST)).toBe(true);
-    expect(application.activity[0]['intent-filter'].some((filter) =>
+    const mediaSearchFilters = application.activity[0]['intent-filter'].filter((filter) =>
       filter.action?.some((action) =>
-        action.$['android:name'] === 'android.media.action.MEDIA_PLAY_FROM_SEARCH'))).toBe(false);
+        action.$['android:name'] === 'android.media.action.MEDIA_PLAY_FROM_SEARCH'));
+    expect(mediaSearchFilters).toEqual([{
+      action: [{ $: { 'android:name': 'android.media.action.MEDIA_PLAY_FROM_SEARCH' } }],
+      category: [{ $: { 'android:name': 'android.intent.category.DEFAULT' } }],
+    }]);
   });
 
   it('enables verified App Links only after an explicit deployment opt-in', () => {
@@ -119,11 +124,88 @@ describe('withFirstPartyPlayer app integration', () => {
     }]);
   });
 
-  it('keeps the phone Activity search-intent lint policy idempotent', () => {
-    const once = plugin.transformAutoLint('android { }\n');
+  it('strips the obsolete MissingIntentFilterForMediaSearch lint disable idempotently', () => {
+    const legacy = `android { }
+
+// @generated begin withFirstPartyPlayer Auto lint
+android {
+    lint {
+        disable 'MissingIntentFilterForMediaSearch'
+    }
+}
+// @generated end withFirstPartyPlayer Auto lint
+`;
+    const once = plugin.transformAutoLint(legacy);
     expect(plugin.transformAutoLint(once)).toBe(once);
-    expect(once).toContain("disable 'MissingIntentFilterForMediaSearch'");
+    expect(once).toBe('android { }\n');
+    expect(once).not.toContain('MissingIntentFilterForMediaSearch');
     expect(once).not.toContain('androidx.media3:');
+  });
+
+  it('wires MainActivity and MainApplication cleanly and composes with withSharedTextIntent in both orders', () => {
+    const mainActivityTemplate = `package top.logge.loggerythm
+
+import android.os.Bundle
+import com.facebook.react.ReactActivity
+
+class MainActivity : ReactActivity() {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(null)
+  }
+
+  /**
+   * Returns the name of the main component registered from JavaScript.
+   */
+  override fun getMainComponentName(): String = "main"
+}
+`;
+    const firstPartyFirst = sharedTextPlugin.transformMainActivity(
+      plugin.transformMainActivity(mainActivityTemplate),
+    );
+    const sharedTextFirst = plugin.transformMainActivity(
+      sharedTextPlugin.transformMainActivity(mainActivityTemplate),
+    );
+
+    for (const transformed of [firstPartyFirst, sharedTextFirst]) {
+      expect(plugin.transformMainActivity(transformed)).toBe(transformed);
+      expect(transformed).toContain(
+        'if (savedInstanceState == null) MediaPlayFromSearchInbox.publishFromIntent(intent)',
+      );
+      expect(transformed).toContain('SharedTextInbox.publishFromIntent(intent)');
+      expect(transformed.match(/override fun onNewIntent\(/g)).toHaveLength(1);
+    }
+
+    const mainApplicationTemplate = `class MainApplication : Application() {
+  val list = PackageList(this).packages.apply {
+  }
+}
+`;
+    const appOnce = plugin.transformMainApplication(mainApplicationTemplate);
+    expect(plugin.transformMainApplication(appOnce)).toBe(appOnce);
+    expect(appOnce).toContain('add(MediaPlayFromSearchPackage())');
+  });
+
+  it('generates safe Kotlin MEDIA_PLAY_FROM_SEARCH intake sources without Logcat leaks', () => {
+    const sources = plugin.mediaPlayFromSearchKotlinSources('top.logge.loggerythm');
+    expect(sources.inbox).toContain('MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH');
+    expect(sources.inbox).toContain('SearchManager.QUERY');
+    expect(sources.inbox).toContain('MediaStore.EXTRA_MEDIA_FOCUS');
+    expect(sources.inbox).toContain('MediaStore.EXTRA_MEDIA_ARTIST');
+    expect(sources.inbox).toContain('MediaStore.EXTRA_MEDIA_ALBUM');
+    expect(sources.inbox).toContain('MediaStore.EXTRA_MEDIA_TITLE');
+    expect(sources.inbox).toContain('MediaStore.EXTRA_MEDIA_PLAYLIST');
+    expect(sources.inbox).toContain('MediaStore.EXTRA_MEDIA_GENRE');
+    expect(sources.inbox).toContain('FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY');
+    expect(sources.module).toContain('const val NAME = "MediaPlayFromSearchIntent"');
+    expect(sources.module).toContain('private const val EVENT_NAME = "MediaPlayFromSearchReceived"');
+    expect(sources.module).toContain('fun consumePendingSearch(promise: Promise)');
+    expect(sources.module).toContain('BaseActivityEventListener');
+    expect(sources.module).toContain('override fun onNewIntent(intent: Intent)');
+    expect(sources.module).toContain('removeActivityEventListener(activityEventListener)');
+    expect(sources.package).toContain('MediaPlayFromSearchModule(reactContext)');
+    const combined = `${sources.inbox}\n${sources.module}\n${sources.package}`;
+    expect(combined).not.toContain('Log.');
+    expect(combined).not.toMatch(/isBlockingSynchronousMethod\s*=\s*true/);
   });
 
   it('wires the separate-package hostile-controller helper idempotently', () => {
