@@ -75,23 +75,39 @@ describe('saved track collection', () => {
     expect(collected[0]).toBe(liked);
   });
 
-  it('ignores cached playlists of other users', () => {
+  it('ignores cached playlists of other users unless the user is a collaborator', () => {
     expect(collectSearchLibraryTracks({
       likes: [],
-      playlists: [{ is_owner: false, tracks: [track('1', 'Foreign')] }],
+      playlists: [
+        { is_owner: false, is_collaborator: false, tracks: [track('1', 'Foreign')] },
+        { is_owner: false, is_collaborator: true, tracks: [track('2', 'Shared')] },
+      ],
       downloads: [],
-    })).toEqual([]);
+    })).toEqual([track('2', 'Shared')]);
   });
 
-  it('returns catalog tracks without a playlist occurrence identity', () => {
+  it('returns catalog tracks without playlist occurrence or attribution metadata', () => {
     const [collected] = collectSearchLibraryTracks({
       likes: [],
-      playlists: [{ is_owner: true, tracks: [track('1', 'Entry', { playlist_entry_id: 77 })] }],
+      playlists: [
+        {
+          is_owner: true,
+          tracks: [
+            track('1', 'Entry', {
+              playlist_entry_id: 77,
+              added_by: { id: 2, display_name: 'Jule', avatar_url: null },
+              added_at: '2026-11-24T09:00:00Z',
+            }),
+          ],
+        },
+      ],
       downloads: [],
     });
 
     expect(collected).toEqual(track('1', 'Entry'));
     expect('playlist_entry_id' in collected).toBe(false);
+    expect('added_by' in collected).toBe(false);
+    expect('added_at' in collected).toBe(false);
   });
 
   it('fails loudly on a saved track without an id', () => {

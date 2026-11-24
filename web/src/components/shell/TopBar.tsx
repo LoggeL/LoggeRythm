@@ -7,7 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
 import Avatar from "@/components/Avatar";
 import Logo from "@/components/Logo";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+import { ChevronLeftIcon, ChevronRightIcon, VisualizerIcon } from "@/components/icons";
 import SearchField from "@/components/SearchField";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 
@@ -64,11 +64,27 @@ export default function TopBar() {
           }
         />
       </div>
+      {me?.is_admin && (
+        <Link
+          href="/admin/usage"
+          transitionTypes={NAV_LATERAL}
+          aria-label="Nutzungs-Dashboard"
+          title="Nutzungs-Dashboard"
+          aria-current={pathname.startsWith("/admin/usage") ? "page" : undefined}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition lg:hidden ${
+            pathname.startsWith("/admin/usage")
+              ? "border-accent/50 bg-accent/12 text-accent-soft"
+              : "border-hairline text-muted hover:border-foreground/25 hover:text-foreground"
+          }`}
+        >
+          <VisualizerIcon width={18} height={18} />
+        </Link>
+      )}
       <Link
         href="/account"
         aria-label="Konto"
         title={me?.display_name}
-        className="ml-auto flex shrink-0 items-center gap-2.5 rounded-full border border-hairline p-1 transition hover:border-foreground/25 lg:pr-3.5"
+        className={`${me?.is_admin ? "" : "ml-auto "}flex shrink-0 items-center gap-2.5 rounded-full border border-hairline p-1 transition hover:border-foreground/25 lg:ml-auto lg:pr-3.5`}
       >
         <Avatar src={me?.avatar_url} name={me?.display_name} size={32} />
         <span className="hidden max-w-28 truncate text-[13px] font-semibold lg:inline">{me?.display_name}</span>

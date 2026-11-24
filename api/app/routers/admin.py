@@ -4,7 +4,7 @@ import secrets
 import shutil
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -24,6 +24,12 @@ from ..db.models import (
     User,
 )
 from ..db.session import engine, get_db
+from ..schemas.admin_usage import (
+    AdminUsageOverviewResponse,
+    AdminUserUsageDetailResponse,
+    UsageRange,
+)
+from ..services import admin_usage as admin_usage_service
 from ..services import deezer_client, mail, storage
 from .profile import purge_user_account
 
@@ -352,3 +358,27 @@ def list_invites(
             )
         )
     return result
+
+
+@router.get("/usage", response_model=AdminUsageOverviewResponse)
+def admin_usage(
+    range: UsageRange = Query(default="all"),
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUsageOverviewResponse:
+    """Return system-wide and per-user usage metrics and disk storage attribution."""
+    return admin_usage_service.get_usage_overview(db, usage_range=range)
+
+
+@router.get("/usage/users/{user_id}", response_model=AdminUserUsageDetailResponse)
+def admin_user_usage(
+    user_id: int,
+    range: UsageRange = Query(default="all"),
+    _admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserUsageDetailResponse:
+    """Return a single user's detailed usage breakdown, history, and live devices."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return admin_usage_service.get_user_usage_detail(db, user, usage_range=range)

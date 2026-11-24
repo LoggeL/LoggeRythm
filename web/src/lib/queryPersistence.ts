@@ -6,8 +6,8 @@ import type {
 export const QUERY_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 // Bump whenever a persisted query's data shape changes, so caches written by an
 // older build are discarded instead of being rendered with missing fields.
-// v2: release-radar tracks carry `radar_reason`.
-export const QUERY_CACHE_BUSTER = "loggerhythm-ui-v2";
+// v3: playlist summaries carry collaborative metadata.
+export const QUERY_CACHE_BUSTER = "loggerhythm-ui-v3";
 
 const QUERY_CACHE_STORAGE_KEY = "loggerhythm:query-cache";
 const PERSIST_THROTTLE_MS = 1_000;
@@ -37,6 +37,8 @@ const PRIVATE_QUERY_ROOTS = new Set<string>([
   "likes",
   "playlists",
   "playlist",
+  "playlist-invite",
+  "playlist-invite-preview",
   "following",
   "playback-settings",
   "stats",
@@ -47,6 +49,9 @@ const PRIVATE_QUERY_ROOTS = new Set<string>([
   "admin-storage",
   "admin-invites",
   "admin-status",
+  "admin-usage",
+  "admin-usage-user",
+  "admin-usage-auth",
   "status-auth",
 ]);
 

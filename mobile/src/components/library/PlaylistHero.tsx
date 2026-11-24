@@ -1,7 +1,7 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors, layout, radii, spacing } from '../../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon, { type AppIconName } from '../AppIcon';
 import type { OfflinePlaylistControlState } from '../offline/OfflinePlaylistControl';
 import { AppText, Artwork, IconButton, PlayButton } from '../ui';
@@ -38,6 +38,18 @@ const downloadLook: Record<
   downloaded: { icon: 'check-circle', color: colors.success },
 };
 
+export interface PlaylistHeroCollaboratorPerson {
+  key: string;
+  name: string | null;
+  avatarUrl: string | null;
+}
+
+export interface PlaylistHeroCollaborators {
+  owner: PlaylistHeroCollaboratorPerson;
+  members: readonly PlaylistHeroCollaboratorPerson[];
+  onPress?: () => void;
+}
+
 export interface PlaylistHeroProps {
   title: string;
   /** Absolute cover URL; null shows the placeholder. */
@@ -51,6 +63,10 @@ export interface PlaylistHeroProps {
   durationSeconds: number;
   /** Owner-only visibility badge; null hides it. */
   visibility: 'public' | 'private' | null;
+  /** Shows the collaborative badge when true. */
+  collaborative?: boolean;
+  /** Collaborator avatar stack & trigger; null hides it. */
+  collaborators?: PlaylistHeroCollaborators | null;
   description: string | null;
   /** Shows the play + shuffle controls (there is something playable). */
   playable: boolean;
@@ -81,6 +97,8 @@ export function PlaylistHero({
   trackCount,
   durationSeconds,
   visibility,
+  collaborative = false,
+  collaborators = null,
   description,
   playable,
   onPlay,
@@ -91,6 +109,42 @@ export function PlaylistHero({
   preferredPlayFocus = false,
 }: PlaylistHeroProps) {
   const duration = playlistDurationLabel(durationSeconds);
+  const showCollaborators =
+    collaborators !== null && (collaborative || collaborators.members.length > 0);
+  const avatarPeople = showCollaborators
+    ? [collaborators.owner, ...collaborators.members]
+    : [];
+  const visibleAvatars = avatarPeople.slice(0, 5);
+  const overflowAvatars = Math.max(0, avatarPeople.length - visibleAvatars.length);
+  const collaboratorLabel =
+    collaborators !== null && collaborators.members.length > 0
+      ? libraryStrings.playlist.collaboratorCount(collaborators.members.length)
+      : libraryStrings.playlist.collaborators;
+  const collaboratorRowInner = showCollaborators ? (
+    <>
+      <View testID="playlist-collaborator-avatars" style={styles.avatarStack}>
+        {visibleAvatars.map((person, index) => (
+          <View
+            key={person.key}
+            style={[styles.avatarRing, index > 0 ? styles.avatarOverlap : null]}
+          >
+            <Artwork uri={person.avatarUrl} size={28} shape="round" icon="account" />
+          </View>
+        ))}
+        {overflowAvatars > 0 ? (
+          <View style={[styles.avatarRing, styles.avatarOverlap, styles.avatarOverflow]}>
+            <AppText variant="micro" color="secondary">{`+${overflowAvatars}`}</AppText>
+          </View>
+        ) : null}
+      </View>
+      <AppText variant="callout" color="accent" numberOfLines={1}>
+        {collaboratorLabel}
+      </AppText>
+      {collaborators.onPress !== undefined ? (
+        <AppIcon name="chevron-right" color={colors.accentSoft} size={18} />
+      ) : null}
+    </>
+  ) : null;
   return (
     <View style={styles.hero}>
       {liked ? (
@@ -141,7 +195,40 @@ export function PlaylistHero({
               </AppText>
             </View>
           )}
+          {collaborative ? (
+            <View testID="playlist-collaborative-badge" style={[styles.badge, styles.collabBadge]}>
+              <AppIcon
+                name="account-multiple-outline"
+                color={colors.accentSoft}
+                size={14}
+              />
+              <AppText variant="micro" color="accent">
+                {libraryStrings.playlist.collaborativeBadge}
+              </AppText>
+            </View>
+          ) : null}
         </View>
+        {showCollaborators ? (
+          collaborators.onPress !== undefined ? (
+            <Pressable
+              testID="playlist-collaborators-trigger"
+              focusable
+              accessibilityRole="button"
+              accessibilityLabel={libraryStrings.playlist.openCollaborators}
+              onPress={collaborators.onPress}
+              style={({ pressed }) => [
+                styles.collaboratorsRow,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              {collaboratorRowInner}
+            </Pressable>
+          ) : (
+            <View testID="playlist-collaborators-summary" style={styles.collaboratorsRow}>
+              {collaboratorRowInner}
+            </View>
+          )
+        ) : null}
         {description ? (
           <AppText
             testID="playlist-description"
@@ -244,6 +331,37 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     backgroundColor: colors.fill,
   },
+  collabBadge: {
+    backgroundColor: colors.accentSubtle,
+  },
+  collaboratorsRow: {
+    minHeight: metrics.minimumTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.pill,
+  },
+  avatarStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarRing: {
+    borderRadius: radii.pill,
+    borderWidth: 2,
+    borderColor: colors.background,
+    overflow: 'hidden',
+  },
+  avatarOverlap: { marginLeft: -spacing.xs },
+  avatarOverflow: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceElevated,
+  },
+  pressed: { opacity: opacity.pressed },
   actions: {
     minHeight: layout.rowHeight,
     flexDirection: 'row',

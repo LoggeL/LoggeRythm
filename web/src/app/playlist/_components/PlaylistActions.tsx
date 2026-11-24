@@ -1,8 +1,21 @@
 "use client";
 
 import { playlistExportUrl } from "@/lib/api";
+import { playlistMemberCount } from "@/lib/playlistPermissions";
 import type { ContextMenuItem } from "@/components/ContextMenu";
-import { DownloadIcon, DownloadedIcon, EditIcon, GlobeIcon, ImageIcon, ImportIcon, LockIcon, SpinnerIcon, TrashIcon } from "@/components/icons";
+import {
+  DownloadIcon,
+  DownloadedIcon,
+  EditIcon,
+  GlobeIcon,
+  ImageIcon,
+  ImportIcon,
+  LockIcon,
+  LogOutIcon,
+  SpinnerIcon,
+  TrashIcon,
+  UsersIcon,
+} from "@/components/icons";
 import type { Playlist } from "@/types";
 import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem } from "./CollectionActions";
 import { usePlaylistOffline } from "./usePlaylistOffline";
@@ -53,6 +66,8 @@ export default function PlaylistActions({
   onEdit,
   onPickCover,
   onDelete,
+  onManageCollaborators,
+  onLeave,
 }: {
   id: string;
   playlist: Playlist;
@@ -60,9 +75,14 @@ export default function PlaylistActions({
   onEdit: () => void;
   onPickCover: () => void;
   onDelete: () => void;
+  onManageCollaborators: () => void;
+  onLeave: () => void;
 }) {
   const tracks = playlist.tracks;
-  const isOwner = !!playlist.is_owner;
+  const isOwner = Boolean(playlist.is_owner);
+  const isCollaborator = Boolean(playlist.is_collaborator);
+  const isCollaborative = Boolean(playlist.is_collaborative);
+  const memberCount = playlistMemberCount(playlist);
   const offline = usePlaylistOffline(id, playlist.name, tracks);
   const visibility = usePlaylistVisibility(id, !!playlist.is_public);
   const queueAll = useQueueAllItem(tracks);
@@ -73,6 +93,7 @@ export default function PlaylistActions({
     items.push(
       { label: "Details bearbeiten", icon: <EditIcon />, separated: items.length > 0, onClick: onEdit },
       { label: coverUploading ? "Cover wird hochgeladen…" : "Cover ändern", icon: <ImageIcon />, disabled: coverUploading, onClick: onPickCover },
+      { label: "Mitwirkende & Einladung", icon: <UsersIcon />, onClick: onManageCollaborators },
       {
         label: visibility.pending ? "Sichtbarkeit wird geändert…" : playlist.is_public ? "Privat machen" : "Öffentlich machen",
         icon: playlist.is_public ? <LockIcon /> : <GlobeIcon />,
@@ -80,17 +101,55 @@ export default function PlaylistActions({
         onClick: () => void visibility.toggle(),
       },
     );
+  } else if (isCollaborator) {
+    items.push({
+      label: "Mitwirkende anzeigen",
+      icon: <UsersIcon />,
+      separated: items.length > 0,
+      onClick: onManageCollaborators,
+    });
   }
   if (tracks.length > 0) {
     items.push({ label: "Als MP3-ZIP exportieren", icon: <ImportIcon width={18} height={18} />, href: playlistExportUrl(id), download: true, onClick: () => undefined });
   }
-  if (isOwner) items.push({ label: "Playlist löschen", icon: <TrashIcon />, danger: true, separated: true, onClick: onDelete });
+  if (isOwner) {
+    items.push({ label: "Playlist löschen", icon: <TrashIcon />, danger: true, separated: true, onClick: onDelete });
+  } else if (isCollaborator) {
+    items.push({ label: "Playlist verlassen", icon: <LogOutIcon />, danger: true, separated: true, onClick: onLeave });
+  }
 
   return (
     <>
       <PlayCollectionButton tracks={tracks} context={playlist.name} />
       <ShuffleCollectionButton tracks={tracks} context={playlist.name} />
       {offline.supported && tracks.length > 0 && <OfflineButton offline={offline} />}
+      {(isOwner || isCollaborator) && (
+        <button
+          type="button"
+          onClick={onManageCollaborators}
+          aria-label={isOwner ? "Mitwirkende verwalten" : "Mitwirkende anzeigen"}
+          title={isOwner ? "Mitwirkende & Einladung" : "Mitwirkende"}
+          className={`action-secondary h-11 min-h-0 px-3.5 text-sm ${
+            isCollaborative
+              ? "border-accent/45 text-foreground hover:border-accent"
+              : ""
+          }`}
+        >
+          <UsersIcon
+            width={18}
+            height={18}
+            aria-hidden="true"
+            className={isCollaborative ? "text-accent" : "text-muted"}
+          />
+          <span>
+            {isCollaborative
+              ? `Gemeinsam (${memberCount})`
+              : isOwner
+                ? "Teilen"
+                : "Mitwirkende"}
+          </span>
+        </button>
+      )}
       <CollectionMenu label="Weitere Optionen für diese Playlist" items={items} />
     </>
   );

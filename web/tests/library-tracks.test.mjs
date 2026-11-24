@@ -18,16 +18,18 @@ const { cachedOwnPlaylists, ownPlaylistStore, useLibraryTracks } = await import(
 
 const song = (id, title) => ({ id, title, artist: "Artist", album: "Album", cover: "", duration_sec: 100 });
 
-test("only the user's own playlists that are already loaded count as library", () => {
+test("only the user's own and collaborated playlists that are already loaded count as library", () => {
   const client = new QueryClient();
   const own = { id: 1, name: "Mine", is_owner: true, tracks: [song("a", "Alpha")] };
+  const shared = { id: 6, name: "Shared", is_owner: false, is_collaborator: true, is_collaborative: true, tracks: [song("d", "Delta")] };
   client.setQueryData(["playlist", "1"], own);
-  client.setQueryData(["playlist", "2"], { id: 2, name: "Followed", is_owner: false, tracks: [song("b", "Beta")] });
+  client.setQueryData(["playlist", "6"], shared);
+  client.setQueryData(["playlist", "2"], { id: 2, name: "Followed", is_owner: false, is_collaborator: false, tracks: [song("b", "Beta")] });
   client.setQueryData(["playlists"], [{ id: 3, name: "Not loaded", track_count: 4 }]);
   client.setQueryData(["deezer-playlist", "4"], { id: 4, name: "Catalog", tracks: [song("c", "Gamma")] });
   // An observed but never fetched playlist has no data and must not be requested.
   client.getQueryCache().build(client, { queryKey: ["playlist", "5"] });
-  assert.deepEqual(cachedOwnPlaylists(client.getQueryCache()), [own]);
+  assert.deepEqual(cachedOwnPlaylists(client.getQueryCache()), [own, shared]);
   assert.equal(client.isFetching(), 0);
 });
 

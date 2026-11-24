@@ -20,15 +20,31 @@ export interface PlaylistActionsOffline {
 
 export interface PlaylistActionsOwner {
   isPublic: boolean;
+  isCollaborative?: boolean;
+  collaboratorCount?: number;
   /** A mutation is in flight: every owner action is disabled. */
   busy: boolean;
   /** Reordering needs at least one track. */
   canReorder: boolean;
   reordering: boolean;
   onVisibilityChange: (isPublic: boolean) => void;
+  onCollaborativeChange?: (isCollaborative: boolean) => void;
+  onOpenCollaborators?: () => void;
   onEdit: () => void;
   onToggleReorder: () => void;
   onDelete: () => void;
+}
+
+export interface PlaylistActionsCollaborator {
+  isCollaborative: boolean;
+  canEditTracks: boolean;
+  collaboratorCount: number;
+  busy: boolean;
+  canReorder: boolean;
+  reordering: boolean;
+  onOpenCollaborators: () => void;
+  onToggleReorder: () => void;
+  onLeave: () => void;
 }
 
 export interface PlaylistActionsSheetProps {
@@ -36,21 +52,25 @@ export interface PlaylistActionsSheetProps {
   onClose: () => void;
   /** Offline download section; null for collections that cannot be downloaded. */
   offline: PlaylistActionsOffline | null;
-  /** Owner section; null for viewers. */
+  /** Owner section; null for non-owners. */
   owner: PlaylistActionsOwner | null;
+  /** Non-owner collaborator section; null for owners and non-members. */
+  collaborator?: PlaylistActionsCollaborator | null;
   /** Explains to a viewer why there are no edit actions. */
   showViewerNotice: boolean;
 }
 
 /**
- * The playlist's overflow menu: the offline download with its live status,
- * and — for the owner — visibility, edit, reorder and delete.
+ * The playlist's overflow menu: offline download with live status,
+ * owner management (visibility, collaboration, collaborators, edit, reorder, delete),
+ * or collaborator actions (collaborators, reorder when active, leave).
  */
 export function PlaylistActionsSheet({
   visible,
   onClose,
   offline,
   owner,
+  collaborator = null,
   showViewerNotice,
 }: PlaylistActionsSheetProps) {
   return (
@@ -115,6 +135,43 @@ export function PlaylistActionsSheet({
                 />
               }
             />
+            {owner.onCollaborativeChange === undefined ? null : (
+              <SheetActionRow
+                icon="account-multiple-outline"
+                label={libraryStrings.playlist.collaborative}
+                description={owner.isCollaborative
+                  ? libraryStrings.playlist.collaborativeHint
+                  : libraryStrings.playlist.collaborativeOffHint}
+                trailing={
+                  <Switch
+                    testID="playlist-collaborative"
+                    accessibilityLabel={owner.isCollaborative
+                      ? libraryStrings.playlist.disableCollaborative
+                      : libraryStrings.playlist.makeCollaborative}
+                    accessibilityState={{ disabled: owner.busy }}
+                    disabled={owner.busy}
+                    value={owner.isCollaborative === true}
+                    onValueChange={owner.onCollaborativeChange}
+                    trackColor={{ false: colors.border, true: colors.accentSolid }}
+                    thumbColor={owner.isCollaborative ? colors.accentSoft : colors.textSecondary}
+                  />
+                }
+              />
+            )}
+            {owner.onOpenCollaborators === undefined ? null : (
+              <SheetActionRow
+                testID="playlist-collaborators"
+                icon="account-group-outline"
+                label={libraryStrings.playlist.collaborators}
+                description={
+                  owner.collaboratorCount !== undefined && owner.collaboratorCount > 0
+                    ? libraryStrings.playlist.collaboratorCount(owner.collaboratorCount)
+                    : libraryStrings.playlist.collaboratorsHint
+                }
+                disabled={owner.busy}
+                onPress={owner.onOpenCollaborators}
+              />
+            )}
             <SheetActionRow
               testID="playlist-edit"
               icon="pencil-outline"
@@ -141,6 +198,54 @@ export function PlaylistActionsSheet({
               label={libraryStrings.playlist.delete}
               disabled={owner.busy}
               onPress={owner.onDelete}
+            />
+          </View>
+        )}
+
+        {collaborator === null ? null : (
+          <View testID="playlist-collaborator-controls">
+            {offline === null ? null : <ListSeparator style={styles.separator} />}
+            <SheetActionRow
+              testID="playlist-collaborators"
+              icon="account-group-outline"
+              label={libraryStrings.playlist.collaborators}
+              description={
+                collaborator.collaboratorCount > 0
+                  ? libraryStrings.playlist.collaboratorCount(collaborator.collaboratorCount)
+                  : libraryStrings.playlist.collaboratorsViewHint
+              }
+              disabled={collaborator.busy}
+              onPress={collaborator.onOpenCollaborators}
+            />
+            {collaborator.canEditTracks && collaborator.canReorder ? (
+              <SheetActionRow
+                testID="playlist-reorder"
+                icon="swap-vertical"
+                label={collaborator.reordering
+                  ? libraryStrings.playlist.reorderDone
+                  : libraryStrings.playlist.reorder}
+                description={libraryStrings.playlist.reorderHint}
+                onPress={collaborator.onToggleReorder}
+              />
+            ) : null}
+            {!collaborator.isCollaborative ? (
+              <AppText
+                testID="playlist-frozen-notice"
+                variant="caption"
+                color="muted"
+                style={styles.viewerNotice}
+              >
+                {libraryStrings.playlist.frozenNotice}
+              </AppText>
+            ) : null}
+            <SheetActionRow
+              testID="playlist-leave"
+              icon="logout"
+              tone="danger"
+              label={libraryStrings.playlist.leave}
+              description={libraryStrings.playlist.leaveHint}
+              disabled={collaborator.busy}
+              onPress={collaborator.onLeave}
             />
           </View>
         )}

@@ -137,5 +137,5 @@ test("persisted caches from before radar reasons are discarded", () => {
   // Radar tracks cached by an older build have no `radar_reason`; a new cache
   // buster makes the persister drop them instead of restoring them.
   assert.notEqual(QUERY_CACHE_BUSTER, "loggerhythm-ui-v1");
-  assert.equal(QUERY_CACHE_BUSTER, "loggerhythm-ui-v2");
+  assert.equal(QUERY_CACHE_BUSTER, "loggerhythm-ui-v3");
 });

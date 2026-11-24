@@ -140,7 +140,18 @@ export default function DiscoverPage() {
                   </div>
                   <div className="truncate text-[0.9375rem] font-[650] leading-[1.35] tracking-[-0.01em]">{playlist.name}</div>
                   <div className="mt-[0.2rem] truncate text-[0.8125rem] leading-[1.35] text-muted">
-                    {own ? "Von dir" : playlist.owner_name ? `von ${playlist.owner_name}` : "Playlist"} · {playlist.track_count} Titel
+                    {own
+                      ? playlist.is_collaborative
+                        ? "Gemeinsam · Von dir"
+                        : "Von dir"
+                      : playlist.is_collaborative
+                        ? playlist.owner_name
+                          ? `Gemeinsam · von ${playlist.owner_name}`
+                          : "Gemeinsam"
+                        : playlist.owner_name
+                          ? `von ${playlist.owner_name}`
+                          : "Playlist"}{" "}
+                    · {playlist.track_count} Titel
                   </div>
                 </Link>
               ))}

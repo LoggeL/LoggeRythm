@@ -13,13 +13,14 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import main
-from app.db.models import Like, PlaylistTrack, StoredTrack
+from app.db.models import Like, PlaylistTrack, StoredTrack, TrackRequest
 from app.routers import home
 from app.services import radar_preload, storage
 from app.services.radar_preload import RadarPreloader
@@ -102,6 +103,7 @@ class StorageBackedTestCase(unittest.TestCase):
         StoredTrack.__table__.create(self.engine)
         Like.__table__.create(self.engine)
         PlaylistTrack.__table__.create(self.engine)
+        TrackRequest.__table__.create(self.engine)
         self.sessions = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.enterContext(patch.object(storage, "SessionLocal", self.sessions))
         self.enterContext(
@@ -406,8 +408,8 @@ class ReleaseRadarEndpointPreloadTests(StorageBackedTestCase):
         self.runs: list = []
         schedule = self.preloader.schedule
 
-        def recording_schedule(radar: list[dict]):
-            run = schedule(radar)
+        def recording_schedule(radar: list[dict], **kwargs):
+            run = schedule(radar, **kwargs)
             self.runs.append(run)
             return run
 
@@ -443,7 +445,7 @@ class ReleaseRadarEndpointPreloadTests(StorageBackedTestCase):
 
     def radar(self) -> list[dict]:
         return home.release_radar(
-            user=object(),  # type: ignore[arg-type]
+            user=SimpleNamespace(id=1),  # type: ignore[arg-type]
             db=object(),  # type: ignore[arg-type]
         )
 

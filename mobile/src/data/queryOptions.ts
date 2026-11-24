@@ -220,6 +220,22 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         queryFn: ({ signal }) => repository.getPlaylist(id, signal),
       });
     },
+    playlistInvite(scope: QueryScope, id: number) {
+      return queryOptions({
+        queryKey: queryKeys.playlists.invite(scope, id),
+        queryFn: ({ signal }) => repository.getPlaylistInvite(id, signal),
+        staleTime: 0,
+      });
+    },
+    playlistInvitePreview(scope: QueryScope, token: string) {
+      const normalized = token.trim();
+      return queryOptions({
+        queryKey: queryKeys.playlists.invitePreview(scope, normalized),
+        queryFn: ({ signal }) => repository.getPlaylistInvitePreview(normalized, signal),
+        staleTime: 0,
+        retry: false,
+      });
+    },
     likes(scope: QueryScope) {
       return queryOptions({
         queryKey: queryKeys.library.likes(scope),

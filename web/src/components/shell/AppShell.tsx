@@ -156,7 +156,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   if (!me || !me.is_approved) {
     return (
       <>
-        {me ? <PendingScreen /> : <LandingScreen />}
+        {me ? <PendingScreen /> : <LandingScreen nextPath={pathname} />}
         <Toaster />
       </>
     );

@@ -207,6 +207,18 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     expectedArguments: (signal) => [9, signal],
   },
   {
+    factory: 'playlistInvite', repositoryMethod: 'getPlaylistInvite',
+    option: (queries) => queries.playlistInvite('  account-a  ', 9),
+    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'detail', '9', 'invite'],
+    expectedArguments: (signal) => [9, signal],
+  },
+  {
+    factory: 'playlistInvitePreview', repositoryMethod: 'getPlaylistInvitePreview',
+    option: (queries) => queries.playlistInvitePreview('  account-a  ', '  invite_token_123456  '),
+    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'invite-preview', 'invite_token_123456'],
+    expectedArguments: (signal) => ['invite_token_123456', signal],
+  },
+  {
     factory: 'likes', repositoryMethod: 'getLikes',
     option: (queries) => queries.likes('  account-a  '),
     expectedKey: ['music', 'library', 'account-a', 'likes'],

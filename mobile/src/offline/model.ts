@@ -47,6 +47,12 @@ export interface OfflinePlaylistEntry {
   is_public: boolean;
   is_owner: boolean;
   owner_name: string | null;
+  /** Optional v2-compatible collaboration metadata (absent on manifests written before collaborative playlists). */
+  owner_id?: number | null;
+  owner_avatar_url?: string | null;
+  is_collaborative?: boolean;
+  is_collaborator?: boolean;
+  collaborator_count?: number;
   /**
    * The exact, ordered source IDs are the authoritative snapshot version.
    * Do not replace this array in place when the remote playlist changes.
@@ -85,7 +91,16 @@ export interface OfflinePlaylistView extends OfflinePlaylistEntry {
 type OfflinePlaylistSource = Pick<Playlist, 'id' | 'name' | 'tracks'>
   & Partial<Pick<
     Playlist,
-    'description' | 'cover_url' | 'is_public' | 'is_owner' | 'owner_name'
+    | 'description'
+    | 'cover_url'
+    | 'is_public'
+    | 'is_owner'
+    | 'owner_name'
+    | 'owner_id'
+    | 'owner_avatar_url'
+    | 'is_collaborative'
+    | 'is_collaborator'
+    | 'collaborator_count'
   >>;
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -216,9 +231,11 @@ function decodeStrictTrack(value: unknown, label: string): Track {
     'rank',
     'release_date',
   ];
-  // Offline manifest v2 predates stable playlist-entry identity. Preserve it
-  // for new playlist snapshots while continuing to decode existing manifests.
+  // Offline manifest v2 predates stable playlist-entry identity and track attribution.
+  // Preserve them for new playlist snapshots while continuing to decode legacy manifests.
   if ('playlist_entry_id' in record) keys.push('playlist_entry_id');
+  if ('added_by' in record) keys.push('added_by');
+  if ('added_at' in record) keys.push('added_at');
   // The API serialises the loudness fields on every track (usually as null),
   // so a live track always carries them while manifests written before they
   // were accepted do not. Keep them when present: offline playback derives its
@@ -231,6 +248,13 @@ function decodeStrictTrack(value: unknown, label: string): Track {
   record.artists.forEach((artist, index) => {
     exactKeys(object(artist, `${label}.artists[${index}]`), ['id', 'name'], `${label}.artists[${index}]`);
   });
+  if ('added_by' in record && record.added_by !== null) {
+    exactKeys(
+      object(record.added_by, `${label}.added_by`),
+      ['id', 'display_name', 'avatar_url'],
+      `${label}.added_by`,
+    );
+  }
   const track = decodeTrack(record, label);
   offlineTrackId(track.id);
   return track;
@@ -309,9 +333,17 @@ function decodeTrackEntry(key: string, value: unknown): OfflineTrackEntry {
   };
 }
 
+const OPTIONAL_PLAYLIST_COLLAB_KEYS = [
+  'owner_id',
+  'owner_avatar_url',
+  'is_collaborative',
+  'is_collaborator',
+  'collaborator_count',
+] as const;
+
 function decodePlaylistEntry(key: string, value: unknown): OfflinePlaylistEntry {
   const record = object(value, `Offline playlist ${key}`);
-  exactKeys(record, [
+  const expectedKeys: string[] = [
     'id',
     'name',
     'description',
@@ -325,7 +357,11 @@ function decodePlaylistEntry(key: string, value: unknown): OfflinePlaylistEntry 
     'failures',
     'completedAt',
     'updatedAt',
-  ], `Offline playlist ${key}`);
+  ];
+  for (const optionalKey of OPTIONAL_PLAYLIST_COLLAB_KEYS) {
+    if (optionalKey in record) expectedKeys.push(optionalKey);
+  }
+  exactKeys(record, expectedKeys, `Offline playlist ${key}`);
   const id = offlinePlaylistId(record.id);
   if (id !== key) throw new Error(`Offline playlist key ${key} does not match its payload`);
   if (!Array.isArray(record.sourceTrackIds) || record.sourceTrackIds.length === 0) {
@@ -382,7 +418,7 @@ function decodePlaylistEntry(key: string, value: unknown): OfflinePlaylistEntry 
   if (status === 'complete' && failures.length > 0) {
     throw new Error(`Complete offline playlist ${key} cannot contain failures`);
   }
-  return {
+  const entry: OfflinePlaylistEntry = {
     id,
     name: nonEmpty(record.name, `Offline playlist ${key} name`),
     description: nullableString(record.description, `Offline playlist ${key} description`),
@@ -398,6 +434,36 @@ function decodePlaylistEntry(key: string, value: unknown): OfflinePlaylistEntry 
       completedAt === null ? null : isoTimestamp(completedAt, `Offline playlist ${key} completion`),
     updatedAt: isoTimestamp(record.updatedAt, `Offline playlist ${key} update`),
   };
+  if ('owner_id' in record) {
+    entry.owner_id = record.owner_id === null
+      ? null
+      : nonNegativeInteger(record.owner_id, `Offline playlist ${key} owner id`);
+  }
+  if ('owner_avatar_url' in record) {
+    entry.owner_avatar_url = nullableString(
+      record.owner_avatar_url,
+      `Offline playlist ${key} owner avatar`,
+    );
+  }
+  if ('is_collaborative' in record) {
+    entry.is_collaborative = boolean(
+      record.is_collaborative,
+      `Offline playlist ${key} collaborative flag`,
+    );
+  }
+  if ('is_collaborator' in record) {
+    entry.is_collaborator = boolean(
+      record.is_collaborator,
+      `Offline playlist ${key} collaborator flag`,
+    );
+  }
+  if ('collaborator_count' in record) {
+    entry.collaborator_count = nonNegativeInteger(
+      record.collaborator_count,
+      `Offline playlist ${key} collaborator count`,
+    );
+  }
+  return entry;
 }
 
 export function decodeOfflineManifest(raw: string | null, expectedScope: string): OfflineManifest {
@@ -465,7 +531,7 @@ function playlistSnapshot(source: OfflinePlaylistSource): OfflinePlaylistEntry {
     position,
     track: decodeStrictTrack(value, `Offline source track ${position}`),
   }));
-  return {
+  const snapshot: OfflinePlaylistEntry = {
     id,
     name: nonEmpty(source.name, 'Offline playlist name'),
     description: source.description === undefined
@@ -490,6 +556,36 @@ function playlistSnapshot(source: OfflinePlaylistSource): OfflinePlaylistEntry {
     completedAt: null,
     updatedAt: '',
   };
+  if (source.owner_id !== undefined) {
+    snapshot.owner_id = source.owner_id === null
+      ? null
+      : nonNegativeInteger(source.owner_id, 'Offline playlist owner id');
+  }
+  if (source.owner_avatar_url !== undefined) {
+    snapshot.owner_avatar_url = nullableString(
+      source.owner_avatar_url,
+      'Offline playlist owner avatar',
+    );
+  }
+  if (source.is_collaborative !== undefined) {
+    snapshot.is_collaborative = boolean(
+      source.is_collaborative,
+      'Offline playlist collaborative flag',
+    );
+  }
+  if (source.is_collaborator !== undefined) {
+    snapshot.is_collaborator = boolean(
+      source.is_collaborator,
+      'Offline playlist collaborator flag',
+    );
+  }
+  if (source.collaborator_count !== undefined) {
+    snapshot.collaborator_count = nonNegativeInteger(
+      source.collaborator_count,
+      'Offline playlist collaborator count',
+    );
+  }
+  return snapshot;
 }
 
 function sameOrderedIds(left: readonly string[], right: readonly string[]): boolean {

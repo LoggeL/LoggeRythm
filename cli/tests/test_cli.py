@@ -277,3 +277,57 @@ def test_party_nonhost_and_missing_timestamp_fail_before_patch():
     with pytest.raises(CliError) as err:
         _party_playback_payload({"is_host": True, "is_playing": True, "position_sec": 3, "playback_updated_at": None}, False)
     assert err.value.code == "invalid_response"
+
+
+def test_collaborative_playlist_cli_commands():
+    api, transport = client(
+        FakeResponse([]),
+        FakeResponse({"id": 7, "is_collaborative": True}),
+        FakeResponse({"id": 7, "is_collaborative": True}),
+        FakeResponse({"token": "tok_1234567890abcdef", "created_at": "2026-11-24T10:00:00Z"}),
+        FakeResponse({"invite": {"token": "tok_1234567890abcdef", "created_at": "2026-11-24T10:00:00Z"}}),
+        FakeResponse(status=204),
+        FakeResponse({"playlist_id": 7, "name": "Mix"}),
+        FakeResponse({"playlist_id": 7, "playlist_name": "Mix", "joined": True, "already_member": False, "role": "editor"}),
+        FakeResponse({"user_id": 9, "role": "editor"}),
+        FakeResponse(status=204),
+        FakeResponse(status=204),
+    )
+    execute(build_parser().parse_args(["playlists", "list", "--scope", "collaborative"]), client=api)
+    execute(build_parser().parse_args(["playlists", "create", "Mix", "--collaborative"]), client=api)
+    execute(build_parser().parse_args(["playlists", "collaborative", "7", "on"]), client=api)
+    execute(build_parser().parse_args(["playlists", "invite", "7", "--create"]), client=api)
+    execute(build_parser().parse_args(["playlists", "invite", "7"]), client=api)
+    execute(build_parser().parse_args(["playlists", "invite", "7", "--revoke"]), client=api)
+    execute(build_parser().parse_args(["playlists", "join", "tok_1234567890abcdef", "--preview"]), client=api)
+    execute(build_parser().parse_args(["playlists", "join", "tok_1234567890abcdef"]), client=api)
+    execute(build_parser().parse_args(["playlists", "add-collaborator", "7", "friend@example.org"]), client=api)
+    execute(build_parser().parse_args(["playlists", "remove-collaborator", "7", "9"]), client=api)
+    execute(build_parser().parse_args(["playlists", "leave", "7"]), client=api)
+
+    assert [(m, u, kw.get("params"), kw.get("json")) for m, u, kw in transport.calls] == [
+        ("GET", "https://example.com/api/playlists", [("scope", "collaborative")], None),
+        ("POST", "https://example.com/api/playlists", None, {"name": "Mix", "description": None, "is_collaborative": True}),
+        ("PATCH", "https://example.com/api/playlists/7/collaborative", None, {"is_collaborative": True}),
+        ("POST", "https://example.com/api/playlists/7/invite", None, None),
+        ("GET", "https://example.com/api/playlists/7/invite", None, None),
+        ("DELETE", "https://example.com/api/playlists/7/invite", None, None),
+        ("GET", "https://example.com/api/playlists/invites/tok_1234567890abcdef", None, None),
+        ("POST", "https://example.com/api/playlists/invites/tok_1234567890abcdef/accept", None, None),
+        ("POST", "https://example.com/api/playlists/7/collaborators", None, {"email": "friend@example.org"}),
+        ("DELETE", "https://example.com/api/playlists/7/collaborators/9", None, None),
+        ("POST", "https://example.com/api/playlists/7/leave", None, None),
+    ]
+
+
+def test_collaborative_playlist_cli_rejects_bad_arguments():
+    api, _ = client()
+    with pytest.raises(CliError) as err:
+        execute(build_parser().parse_args(["playlists", "add-collaborator", "7", "not-an-email"]), client=api)
+    assert err.value.code == "invalid_argument"
+    with pytest.raises(CliError) as err:
+        execute(build_parser().parse_args(["playlists", "join", "../evil"]), client=api)
+    assert err.value.code == "invalid_argument"
+    with pytest.raises(CliError) as err:
+        execute(build_parser().parse_args(["playlists", "remove-collaborator", "7", "abc"]), client=api)
+    assert err.value.code == "invalid_argument"

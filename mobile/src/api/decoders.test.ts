@@ -21,6 +21,12 @@ import {
   decodePartyState,
   decodePlaybackSettings,
   decodePlaylist,
+  decodePlaylistCollaborator,
+  decodePlaylistInvite,
+  decodePlaylistInvitePreview,
+  decodePlaylistInviteStatus,
+  decodePlaylistJoinResult,
+  decodePlaylistSummaries,
   decodePublicProfile,
   decodeReleaseRadar,
   decodeResolveResult,
@@ -177,28 +183,127 @@ describe('API response decoders', () => {
   });
 
   it('validates the PlaylistDetail shape separately from PlaylistSummary', () => {
-    const playlist = decodePlaylist({
+    const collaborator = {
+      user_id: 9,
+      display_name: 'Jule',
+      avatar_url: '/api/users/9/avatar',
+      role: 'editor',
+      joined_at: '2026-11-24T09:00:00Z',
+    };
+    const baseDetail = {
       id: 7,
       name: 'Mix',
       description: null,
       cover_url: null,
       is_public: false,
       is_owner: true,
-      owner_name: null,
-      tracks: [{ ...track, playlist_entry_id: 91 }],
+      owner_id: 1,
+      owner_name: 'Logge',
+      owner_avatar_url: null,
+      is_collaborative: true,
+      is_collaborator: false,
+      can_edit_tracks: true,
+      collaborators: [collaborator],
+      collaborator_count: 1,
+      revision: 4,
+    };
+    const playlist = decodePlaylist({
+      ...baseDetail,
+      tracks: [
+        {
+          ...track,
+          playlist_entry_id: 91,
+          added_by: { id: 9, display_name: 'Jule', avatar_url: null },
+          added_at: '2026-11-24T09:05:00Z',
+        },
+      ],
     });
     expect(playlist.tracks[0].id).toBe('3135556');
     expect(playlist.tracks[0].playlist_entry_id).toBe(91);
+    expect(playlist.tracks[0].added_by).toEqual({ id: 9, display_name: 'Jule', avatar_url: null });
+    expect(playlist.tracks[0].added_at).toBe('2026-11-24T09:05:00Z');
+    expect(playlist.collaborators).toEqual([collaborator]);
+    expect(playlist.revision).toBe(4);
+
     expect(() => decodePlaylist({
-      id: 7,
-      name: 'Legacy server',
-      description: null,
-      cover_url: null,
-      is_public: false,
-      is_owner: true,
-      owner_name: null,
+      ...baseDetail,
       tracks: [track],
     })).toThrow(/playlist_entry_id/);
+    expect(() => decodePlaylist({
+      ...baseDetail,
+      collaborator_count: 2,
+      tracks: [],
+    })).toThrow(/collaborator_count/);
+    expect(() => decodePlaylist({
+      ...baseDetail,
+      tracks: [{ ...track, playlist_entry_id: 91 }],
+    })).toThrow(/added_by/);
+  });
+
+  it('strictly decodes collaborative playlist summaries, invites, previews, collaborators, and join results', () => {
+    const summary = {
+      id: 4,
+      name: 'WG-Küche',
+      description: 'Shared mix',
+      cover_url: null,
+      is_public: false,
+      track_count: 8,
+      owner_id: 2,
+      owner_name: 'Jule',
+      owner_avatar_url: '/api/users/2/avatar',
+      is_collaborative: true,
+      is_owner: false,
+      is_collaborator: true,
+      can_edit_tracks: true,
+      collaborator_count: 2,
+    };
+    expect(decodePlaylistSummaries([summary])).toEqual([summary]);
+    expect(() => decodePlaylistSummaries([{ ...summary, can_edit_tracks: undefined }]))
+      .toThrow(/can_edit_tracks/);
+
+    const collab = {
+      user_id: 9,
+      display_name: 'Jule',
+      avatar_url: null,
+      role: 'editor',
+      joined_at: '2026-11-24T09:00:00Z',
+    };
+    expect(decodePlaylistCollaborator(collab)).toEqual(collab);
+    expect(() => decodePlaylistCollaborator({ ...collab, role: 'viewer' })).toThrow(/role/);
+
+    const invite = {
+      token: 'abcdef1234567890_XYZ',
+      created_at: '2026-11-24T09:00:00Z',
+      expires_at: null,
+    };
+    expect(decodePlaylistInvite(invite)).toEqual(invite);
+    expect(decodePlaylistInviteStatus({ invite })).toEqual({ invite });
+    expect(decodePlaylistInviteStatus({ invite: null })).toEqual({ invite: null });
+    expect(() => decodePlaylistInvite({ ...invite, token: '   ' })).toThrow(/token/);
+
+    const preview = {
+      playlist_id: 51,
+      name: 'Kellerparty 2026',
+      description: 'Bring tracks',
+      cover_url: null,
+      track_count: 14,
+      collaborator_count: 3,
+      owner: { id: 5, display_name: 'Tariq', avatar_url: null },
+      is_owner: false,
+      already_collaborator: false,
+    };
+    expect(decodePlaylistInvitePreview(preview)).toEqual(preview);
+    expect(() => decodePlaylistInvitePreview({ ...preview, owner: null })).toThrow(/owner/);
+
+    const joined = {
+      playlist_id: 51,
+      playlist_name: 'Kellerparty 2026',
+      joined: true,
+      already_member: false,
+      role: 'editor',
+    };
+    expect(decodePlaylistJoinResult(joined)).toEqual(joined);
+    expect(() => decodePlaylistJoinResult({ ...joined, role: 'admin' })).toThrow(/role/);
   });
 
   it('decodes complete browse detail and shelf contracts', () => {

@@ -10,6 +10,7 @@ vi.mock('react-native', () => ({
   Pressable: 'Pressable',
   ScrollView: 'ScrollView',
   StyleSheet: { create: <T,>(styles: T): T => styles },
+  Switch: 'Switch',
   Text: 'Text',
   TextInput: 'TextInput',
   View: 'View',
@@ -128,5 +129,28 @@ describe('PlaylistFormSheet', () => {
     mocks.keyboardInset = 280;
     expect(flatStyle(byTestId(render().tree, 'library-create-keyboard-spacer').props.style).height)
       .toBe(280);
+  });
+
+  it('shows the optional collaborative switch only when wired and disables it while busy', () => {
+    expect(queryByTestId(render().tree, 'library-create-collaborative')).toBeNull();
+
+    const onChange = vi.fn();
+    const { tree } = render({
+      collaborative: { value: true, onChange },
+    });
+    const toggle = byTestId(tree, 'library-create-collaborative');
+    expect(toggle.props).toMatchObject({
+      value: true,
+      disabled: false,
+      accessibilityLabel: libraryStrings.library.collaborativeCreateLabel,
+    });
+    (toggle.props.onValueChange as (value: boolean) => void)(false);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(false);
+
+    const busyTree = render({
+      busy: true,
+      collaborative: { value: false, onChange },
+    }).tree;
+    expect(byTestId(busyTree, 'library-create-collaborative').props.disabled).toBe(true);
   });
 });

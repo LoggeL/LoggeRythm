@@ -149,4 +149,44 @@ describe('PlaylistHero', () => {
     expect(byType(tree, 'Image')).toHaveLength(0);
     expect(byType(tree, 'AppIcon').some((icon) => icon.props.name === 'heart')).toBe(true);
   });
+
+  it('shows collaborative badge and tappable collaborator avatar stack with overflow indicator', () => {
+    const onOpenCollaborators = vi.fn();
+    const members = [1, 2, 3, 4, 5].map((id) => ({
+      key: `member-${id}`,
+      name: `User ${id}`,
+      avatarUrl: null,
+    }));
+    const { tree } = render({
+      collaborative: true,
+      collaborators: {
+        owner: { key: 'owner-1', name: 'Logge', avatarUrl: 'https://music.test/avatar.jpg' },
+        members,
+        onPress: onOpenCollaborators,
+      },
+    });
+
+    expect(byTestId(tree, 'playlist-collaborative-badge')).toBeDefined();
+    expect(textContent(tree)).toContain(libraryStrings.playlist.collaborativeBadge);
+    expect(textContent(tree)).toContain(libraryStrings.playlist.collaboratorCount(5));
+    expect(textContent(tree)).toContain('+1');
+
+    const trigger = byTestId(tree, 'playlist-collaborators-trigger');
+    expect(trigger.props).toMatchObject({
+      accessibilityRole: 'button',
+      accessibilityLabel: libraryStrings.playlist.openCollaborators,
+    });
+    (trigger.props.onPress as () => void)();
+    expect(onOpenCollaborators).toHaveBeenCalledOnce();
+
+    const nonInteractive = render({
+      collaborative: true,
+      collaborators: {
+        owner: { key: 'owner-1', name: 'Logge', avatarUrl: null },
+        members: [],
+      },
+    }).tree;
+    expect(queryByTestId(nonInteractive, 'playlist-collaborators-trigger')).toBeNull();
+    expect(byTestId(nonInteractive, 'playlist-collaborators-summary')).toBeDefined();
+  });
 });

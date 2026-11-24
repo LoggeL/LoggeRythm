@@ -13,7 +13,7 @@ from unittest.mock import patch
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.models import Like, PlaylistTrack, StoredTrack
+from app.db.models import Like, PlaylistTrack, StoredTrack, TrackRequest
 from app.services import storage
 
 
@@ -29,6 +29,7 @@ class StorageIntegrityTests(unittest.TestCase):
         StoredTrack.__table__.create(self.engine)
         Like.__table__.create(self.engine)
         PlaylistTrack.__table__.create(self.engine)
+        TrackRequest.__table__.create(self.engine)
         self.enterContext(patch.object(storage, "_daemon_failure", None))
         self.sessions = sessionmaker(bind=self.engine, expire_on_commit=False)
         self.enterContext(patch.object(storage, "SessionLocal", self.sessions))

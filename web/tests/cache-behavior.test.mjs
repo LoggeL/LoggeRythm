@@ -47,7 +47,12 @@ test("only allowlisted content queries are persisted", () => {
   assert.equal(isPersistedQueryKey(["album", "42"]), true);
   assert.equal(isPersistedQueryKey(["me"]), false);
   assert.equal(isPersistedQueryKey(["admin-users"]), false);
+  assert.equal(isPersistedQueryKey(["admin-usage", "all"]), false);
+  assert.equal(isPersistedQueryKey(["admin-usage-user", "2", "30d"]), false);
+  assert.equal(isPersistedQueryKey(["admin-usage-auth"]), false);
   assert.equal(isPersistedQueryKey(["party", "ABCD"]), false);
+  assert.equal(isPersistedQueryKey(["playlist-invite", "1"]), false);
+  assert.equal(isPersistedQueryKey(["playlist-invite-preview", "tok"]), false);
 });
 
 test("personalized discovery queries require a user scope", () => {
@@ -98,6 +103,11 @@ test("a failed refresh persists the last good data as a reusable snapshot", () =
 
 test("an account change removes private and wrong-user cached queries", () => {
   assert.equal(shouldRemoveQueryForUserChange(["likes"], "user-b"), true);
+  assert.equal(shouldRemoveQueryForUserChange(["admin-usage", "all"], "user-b"), true);
+  assert.equal(shouldRemoveQueryForUserChange(["admin-usage-user", "1", "all"], "user-b"), true);
+  assert.equal(shouldRemoveQueryForUserChange(["admin-usage-auth"], "user-b"), true);
+  assert.equal(shouldRemoveQueryForUserChange(["playlist-invite", "1"], "user-b"), true);
+  assert.equal(shouldRemoveQueryForUserChange(["playlist-invite-preview", "tok"], "user-b"), true);
   assert.equal(
     shouldRemoveQueryForUserChange(["release-radar", "user-a"], "user-b"),
     true,

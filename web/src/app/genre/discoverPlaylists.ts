@@ -27,17 +27,21 @@ function assertUniqueIds(playlists: readonly PlaylistSummary[], source: string):
 }
 
 /**
- * The Discover playlists row: every playlist of the user (private ones
- * included) in the library's order, then the community's public ones. A
- * playlist both lists carry is the user's own and appears once, as own.
+ * The Discover playlists row: the user's library playlists (owned and
+ * collaborated) first, then the community's public ones. A playlist both lists
+ * carry appears once, preserving whether the user owns it (`own: true`) or
+ * collaborates on someone else's (`own: false`).
  */
 export function mergeDiscoverPlaylists(own: readonly PlaylistSummary[], community: readonly PlaylistSummary[]): DiscoverPlaylist[] {
   assertUniqueIds(own, "Eigene Playlists");
   assertUniqueIds(community, "Community-Playlists");
-  const ownIds = new Set(own.map((playlist) => String(playlist.id)));
+  const libraryIds = new Set(own.map((playlist) => String(playlist.id)));
   return [
-    ...own.map((playlist) => ({ playlist, own: true })),
-    ...community.filter((playlist) => !ownIds.has(String(playlist.id))).map((playlist) => ({ playlist, own: false })),
+    ...own.map((playlist) => ({
+      playlist,
+      own: typeof playlist.is_owner === "boolean" ? playlist.is_owner : !playlist.is_collaborator,
+    })),
+    ...community.filter((playlist) => !libraryIds.has(String(playlist.id))).map((playlist) => ({ playlist, own: false })),
   ];
 }
 

@@ -90,10 +90,19 @@ export function LibraryPlaylistRow({
 }: LibraryPlaylistRowProps) {
   const description = playlist.description?.trim();
   const count = libraryStrings.common.tracks(playlist.track_count);
+  const sharedOwner = !playlist.is_owner ? playlist.owner_name?.trim() || null : null;
+  const parts: string[] = [];
+  if (sharedOwner !== null) parts.push(libraryStrings.library.sharedBy(sharedOwner));
+  parts.push(count);
+  if (description) parts.push(description);
+  const subtitleText = parts.join(' · ');
+  const accessibilityLabel = sharedOwner !== null
+    ? libraryStrings.library.openSharedPlaylist(playlist.name, sharedOwner, playlist.track_count)
+    : libraryStrings.library.openPlaylist(playlist.name, playlist.track_count);
   return (
     <LibraryRow
       testID={`library-playlist-${playlist.id}`}
-      accessibilityLabel={libraryStrings.library.openPlaylist(playlist.name, playlist.track_count)}
+      accessibilityLabel={accessibilityLabel}
       onPress={() =>
         onOpenPlaylist({ kind: 'playlist', playlistId: playlist.id, name: playlist.name })
       }
@@ -105,7 +114,20 @@ export function LibraryPlaylistRow({
         />
       }
       title={playlist.name}
-      subtitle={description ? `${count} · ${description}` : count}
+      subtitle={subtitleText}
+      trailing={
+        playlist.is_collaborative ? (
+          <View style={styles.playlistTrailing}>
+            <View testID={`library-playlist-${playlist.id}-collab`} style={styles.collabBadge}>
+              <AppIcon name="account-multiple-outline" color={colors.accentSoft} size={14} />
+              <AppText variant="micro" color="accent">
+                {libraryStrings.library.collaborative}
+              </AppText>
+            </View>
+            <AppIcon name="chevron-right" color={colors.textMuted} size={CHEVRON_SIZE} />
+          </View>
+        ) : undefined
+      }
       style={style}
     />
   );
@@ -205,4 +227,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
   },
   pressed: { opacity: opacity.pressed },
+  playlistTrailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  collabBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs / 2,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xxs / 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentSubtle,
+  },
 });

@@ -28,6 +28,10 @@ export interface Track {
   loudness_peak?: number | null;
   /** Stable database identity of this exact occurrence in a playlist detail. */
   playlist_entry_id?: PlaylistEntryId;
+  /** User who added this occurrence to a playlist (present on playlist detail tracks). */
+  added_by?: PlaylistCollaboratorUser | null;
+  /** ISO-8601 UTC timestamp when this occurrence was added to a playlist. */
+  added_at?: string | null;
 }
 
 /** Fail closed when a playlist mutation is attempted with catalog-only data. */
@@ -70,6 +74,53 @@ export interface User {
   avatar_url: string | null;
 }
 
+export type PlaylistRole = 'owner' | 'editor';
+export type PlaylistListScope = 'all' | 'owned' | 'collaborative';
+
+export interface PlaylistCollaboratorUser {
+  id: number;
+  display_name: string | null;
+  avatar_url: string | null;
+}
+
+export interface PlaylistCollaborator {
+  user_id: number;
+  display_name: string | null;
+  avatar_url: string | null;
+  role: PlaylistRole;
+  joined_at: string | null;
+}
+
+export interface PlaylistInvite {
+  token: string;
+  created_at: string;
+  expires_at: string | null;
+}
+
+export interface PlaylistInviteStatus {
+  invite: PlaylistInvite | null;
+}
+
+export interface PlaylistInvitePreview {
+  playlist_id: number;
+  name: string;
+  description: string | null;
+  cover_url: string | null;
+  track_count: number;
+  collaborator_count: number;
+  owner: PlaylistCollaboratorUser;
+  is_owner: boolean;
+  already_collaborator: boolean;
+}
+
+export interface PlaylistJoinResult {
+  playlist_id: number;
+  playlist_name: string;
+  joined: boolean;
+  already_member: boolean;
+  role: PlaylistRole;
+}
+
 export interface PlaylistSummary {
   id: number;
   name: string;
@@ -77,7 +128,14 @@ export interface PlaylistSummary {
   cover_url: string | null;
   is_public: boolean;
   track_count: number;
+  owner_id: number | null;
   owner_name: string | null;
+  owner_avatar_url: string | null;
+  is_collaborative: boolean;
+  is_owner: boolean;
+  is_collaborator: boolean;
+  can_edit_tracks: boolean;
+  collaborator_count: number;
 }
 
 export interface Playlist {
@@ -87,7 +145,15 @@ export interface Playlist {
   cover_url: string | null;
   is_public: boolean;
   is_owner: boolean;
+  owner_id: number | null;
   owner_name: string | null;
+  owner_avatar_url: string | null;
+  is_collaborative: boolean;
+  is_collaborator: boolean;
+  can_edit_tracks: boolean;
+  collaborators: PlaylistCollaborator[];
+  collaborator_count: number;
+  revision: number;
   tracks: Track[];
 }
 
@@ -208,6 +274,7 @@ export interface PlaybackSettings {
 export interface PlaylistCreateRequest {
   name: string;
   description?: string | null;
+  is_collaborative?: boolean;
 }
 
 export interface PlaylistUpdateRequest {

@@ -44,7 +44,15 @@ function playlist(id: number, name: string, tracks: Track[]): Playlist {
     cover_url: `https://img.test/playlist-${id}.jpg`,
     is_public: true,
     is_owner: true,
+    owner_id: null,
     owner_name: 'Offline owner',
+    owner_avatar_url: null,
+    is_collaborative: false,
+    is_collaborator: false,
+    can_edit_tracks: false,
+    collaborators: [],
+    collaborator_count: 0,
+    revision: 0,
     tracks,
   };
 }
@@ -72,8 +80,14 @@ describe('cold offline playlist browse selectors', () => {
         cover_url: 'https://img.test/playlist-2.jpg',
         is_public: true,
         track_count: 3,
+        owner_id: null,
         owner_name: 'Offline owner',
+        owner_avatar_url: null,
+        is_collaborative: false,
         is_owner: true,
+        is_collaborator: false,
+        can_edit_tracks: false,
+        collaborator_count: 0,
         offline: {
           status: 'partial',
           downloadedOccurrences: 2,
@@ -226,5 +240,50 @@ describe('cold offline playlist browse selectors', () => {
     expect(getOfflinePlaylistBrowseDetail(manifest, scope, 5)?.occurrences.map(
       ({ track: value }) => value,
     )).toEqual([measured, unmeasured]);
+  });
+
+  it('preserves collaborative metadata and track attribution offline while keeping can_edit_tracks false', () => {
+    const attributedTrack: Track = {
+      ...track('60'),
+      added_by: { id: 9, display_name: 'Jule', avatar_url: '/api/users/9/avatar' },
+      added_at: '2026-11-24T09:00:00Z',
+    };
+    const source: Playlist = {
+      ...playlist(6, 'Shared Offline', [attributedTrack]),
+      is_owner: false,
+      owner_id: 9,
+      owner_avatar_url: '/api/users/9/avatar',
+      is_collaborative: true,
+      is_collaborator: true,
+      can_edit_tracks: true,
+      collaborator_count: 2,
+    };
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, attributedTrack, 6_000, firstTime);
+    manifest = settlePlaylistDownload(manifest, source, firstTime);
+
+    const summary = listOfflinePlaylistSummaries(manifest, scope)[0];
+    expect(summary).toMatchObject({
+      owner_id: 9,
+      owner_avatar_url: '/api/users/9/avatar',
+      is_collaborative: true,
+      is_collaborator: true,
+      collaborator_count: 2,
+      can_edit_tracks: false,
+    });
+    const reconstructed = reconstructOfflinePlaylist(manifest, scope, 6);
+    expect(reconstructed).toMatchObject({
+      owner_id: 9,
+      is_collaborative: true,
+      is_collaborator: true,
+      can_edit_tracks: false,
+      collaborator_count: 2,
+    });
+    expect(reconstructed?.tracks[0].added_by).toEqual({
+      id: 9,
+      display_name: 'Jule',
+      avatar_url: '/api/users/9/avatar',
+    });
+    expect(reconstructed?.tracks[0].added_at).toBe('2026-11-24T09:00:00Z');
   });
 });

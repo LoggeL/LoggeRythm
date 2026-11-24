@@ -35,6 +35,23 @@ test("a playlist both lists carry appears once, as the user's own, whatever type
   assert.equal(merged[0].playlist, own[0]);
 });
 
+test("shared collaborative playlists in GET /playlists are not marked as own and deduplicate against community", () => {
+  const library = [
+    playlist(1, { is_owner: true, is_collaborative: true }),
+    playlist(4, { is_owner: false, is_collaborator: true, is_collaborative: true, owner_name: "Jule" }),
+  ];
+  const community = [
+    playlist(4, { is_owner: false, is_public: true, owner_name: "Jule" }),
+    playlist(9, { is_owner: false, is_public: true, owner_name: "Sam" }),
+  ];
+  const merged = mergeDiscoverPlaylists(library, community);
+  assert.deepEqual(
+    merged.map((entry) => [entry.playlist.id, entry.own]),
+    [[1, true], [4, false], [9, false]],
+  );
+  assert.equal(merged[1].playlist, library[1]);
+});
+
 test("one empty side leaves the other, two empty sides leave an empty row", () => {
   assert.deepEqual(mergeDiscoverPlaylists([playlist(1)], []), [{ playlist: playlist(1), own: true }]);
   assert.deepEqual(mergeDiscoverPlaylists([], [playlist(2)]), [{ playlist: playlist(2), own: false }]);

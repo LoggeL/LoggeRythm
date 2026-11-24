@@ -27,6 +27,11 @@ import {
   decodePlaybackSettings,
   decodePartyState,
   decodePlaylist,
+  decodePlaylistCollaborator,
+  decodePlaylistInvite,
+  decodePlaylistInvitePreview,
+  decodePlaylistInviteStatus,
+  decodePlaylistJoinResult,
   decodePlaylistSummary,
   decodePlaylistSearchResults,
   decodePlaylistSummaries,
@@ -65,7 +70,13 @@ import type {
   PartyState,
   PlaybackSettings,
   Playlist,
+  PlaylistCollaborator,
   PlaylistCreateRequest,
+  PlaylistInvite,
+  PlaylistInvitePreview,
+  PlaylistInviteStatus,
+  PlaylistJoinResult,
+  PlaylistListScope,
   PlaylistSearchResult,
   PlaylistSummary,
   PlaylistUpdateRequest,
@@ -407,8 +418,12 @@ export function getTrackPlayCounts(
 }
 
 // --- Playlists ---
-export function getPlaylists(signal?: AbortSignal): Promise<PlaylistSummary[]> {
-  return apiRequest<PlaylistSummary[]>('/api/playlists', {
+export function getPlaylists(
+  signal?: AbortSignal,
+  scope?: PlaylistListScope,
+): Promise<PlaylistSummary[]> {
+  const query = scope === undefined ? '' : `?scope=${encodeURIComponent(scope)}`;
+  return apiRequest<PlaylistSummary[]>(`/api/playlists${query}`, {
     signal,
     decode: decodePlaylistSummaries,
   });
@@ -496,6 +511,88 @@ export function setPlaylistVisibility(id: number, isPublic: boolean): Promise<Pl
     method: 'PATCH',
     body: { is_public: isPublic },
     decode: decodePlaylistSummary,
+  });
+}
+
+export function setPlaylistCollaborative(
+  id: number,
+  isCollaborative: boolean,
+): Promise<PlaylistSummary> {
+  return apiRequest<PlaylistSummary>(`/api/playlists/${pathSegment(id)}/collaborative`, {
+    method: 'PATCH',
+    body: { is_collaborative: isCollaborative },
+    decode: decodePlaylistSummary,
+  });
+}
+
+export function getPlaylistInvite(
+  id: number,
+  signal?: AbortSignal,
+): Promise<PlaylistInviteStatus> {
+  return apiRequest<PlaylistInviteStatus>(`/api/playlists/${pathSegment(id)}/invite`, {
+    signal,
+    decode: decodePlaylistInviteStatus,
+  });
+}
+
+export function createPlaylistInvite(id: number): Promise<PlaylistInvite> {
+  return apiRequest<PlaylistInvite>(`/api/playlists/${pathSegment(id)}/invite`, {
+    method: 'POST',
+    successStatuses: [201],
+    decode: decodePlaylistInvite,
+  });
+}
+
+export function revokePlaylistInvite(id: number): Promise<void> {
+  return apiRequest<void>(`/api/playlists/${pathSegment(id)}/invite`, {
+    method: 'DELETE',
+    successStatuses: [204],
+  });
+}
+
+export function getPlaylistInvitePreview(
+  token: string,
+  signal?: AbortSignal,
+): Promise<PlaylistInvitePreview> {
+  return apiRequest<PlaylistInvitePreview>(`/api/playlists/invites/${pathSegment(token)}`, {
+    signal,
+    decode: decodePlaylistInvitePreview,
+  });
+}
+
+export function acceptPlaylistInvite(token: string): Promise<PlaylistJoinResult> {
+  return apiRequest<PlaylistJoinResult>(`/api/playlists/invites/${pathSegment(token)}/accept`, {
+    method: 'POST',
+    decode: decodePlaylistJoinResult,
+  });
+}
+
+export function addPlaylistCollaborator(
+  id: number,
+  email: string,
+): Promise<PlaylistCollaborator> {
+  return apiRequest<PlaylistCollaborator>(`/api/playlists/${pathSegment(id)}/collaborators`, {
+    method: 'POST',
+    body: { email },
+    successStatuses: [201],
+    decode: decodePlaylistCollaborator,
+  });
+}
+
+export function removePlaylistCollaborator(id: number, userId: number): Promise<void> {
+  return apiRequest<void>(
+    `/api/playlists/${pathSegment(id)}/collaborators/${pathSegment(userId)}`,
+    {
+      method: 'DELETE',
+      successStatuses: [204],
+    },
+  );
+}
+
+export function leavePlaylist(id: number): Promise<void> {
+  return apiRequest<void>(`/api/playlists/${pathSegment(id)}/leave`, {
+    method: 'POST',
+    successStatuses: [204],
   });
 }
 

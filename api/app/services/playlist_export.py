@@ -49,6 +49,8 @@ def _safe_filename_component(value: str, field: str) -> str:
 def build_playlist_archive(
     playlist_name: str,
     tracks: Sequence[PlaylistExportTrack],
+    *,
+    requested_by_user_id: int | None = None,
 ) -> tuple[str, str]:
     """Materialize every track and return ``(temp_path, download_filename)``.
 
@@ -87,7 +89,11 @@ def build_playlist_archive(
                     f"title for track {index}",
                 )
                 try:
-                    source_path = storage.materialize(track.deezer_id)
+                    source_path = storage.materialize(
+                        track.deezer_id,
+                        requested_by_user_id=requested_by_user_id,
+                        source="playlist_export",
+                    )
                     archive.write(
                         source_path,
                         arcname=f"{index:0{width}d} - {artist} - {title}.mp3",

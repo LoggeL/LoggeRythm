@@ -253,12 +253,18 @@ vi.mock('../components/library/LibraryCreatePlaylistSheet', () => ({
 vi.mock('../components/library/PlaylistActionsSheet', () => ({
   PlaylistActionsSheet: 'PlaylistActionsSheet',
 }));
+vi.mock('../components/library/PlaylistCollaboratorsSheet', () => ({
+  PlaylistCollaboratorsSheet: 'PlaylistCollaboratorsSheet',
+}));
 vi.mock('../components/library/PlaylistEditSheet', () => ({
   PlaylistEditSheet: 'PlaylistEditSheet',
   usePlaylistEditForm: mocks.usePlaylistEditForm,
 }));
 vi.mock('../components/library/PlaylistDeleteSheet', () => ({
   PlaylistDeleteSheet: 'PlaylistDeleteSheet',
+}));
+vi.mock('../components/library/PlaylistLeaveSheet', () => ({
+  PlaylistLeaveSheet: 'PlaylistLeaveSheet',
 }));
 vi.mock('../components/library/useCreatePlaylist', () => ({
   useCreatePlaylist: mocks.useCreatePlaylist,
@@ -392,10 +398,12 @@ beforeEach(() => {
     error: null,
     resetErrors: vi.fn(),
     visibility: { mutate: vi.fn() },
+    collaborative: { mutate: vi.fn() },
     update: { mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null },
     removeTrack: { mutateAsync: vi.fn() },
     reorder: { mutate: vi.fn() },
     remove: { mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null },
+    leave: { mutate: vi.fn(), reset: vi.fn(), isPending: false, error: null },
   });
   mocks.usePlaylistEditForm.mockReturnValue({
     visible: false,
@@ -447,7 +455,14 @@ describe('LibraryScreen & PlaylistScreen modernization', () => {
       cover_url: '/covers/42.jpg',
       is_public: true,
       track_count: 4,
+      owner_id: 7,
       owner_name: 'Logge',
+      owner_avatar_url: null,
+      is_collaborative: false,
+      is_owner: true,
+      is_collaborator: false,
+      can_edit_tracks: true,
+      collaborator_count: 0,
     };
     mocks.findCachedPlaylistSummary.mockReturnValue(seeded);
     mocks.useQuery
@@ -488,7 +503,15 @@ describe('LibraryScreen & PlaylistScreen modernization', () => {
         cover_url: null,
         is_public: false,
         is_owner: true,
+        owner_id: 7,
         owner_name: 'Logge',
+        owner_avatar_url: null,
+        is_collaborative: false,
+        is_collaborator: false,
+        can_edit_tracks: true,
+        collaborators: [],
+        collaborator_count: 0,
+        revision: 0,
         tracks: [{ ...sampleTrack, playlist_entry_id: 9 }],
       },
       isPending: false,
@@ -556,7 +579,14 @@ describe('LibraryScreen & PlaylistScreen modernization', () => {
       cover_url: null,
       is_public: false,
       track_count: 1,
+      owner_id: 7,
       owner_name: null,
+      owner_avatar_url: null,
+      is_collaborative: false,
+      is_owner: true,
+      is_collaborator: false,
+      can_edit_tracks: true,
+      collaborator_count: 0,
     });
     mocks.useQuery
       .mockReturnValueOnce(queryResult({ isPending: false, isFetching: false, fetchStatus: 'idle' }))
@@ -584,7 +614,15 @@ describe('LibraryScreen & PlaylistScreen modernization', () => {
           cover_url: null,
           is_public: false,
           is_owner: true,
+          owner_id: 7,
           owner_name: 'Logge',
+          owner_avatar_url: null,
+          is_collaborative: false,
+          is_collaborator: false,
+          can_edit_tracks: true,
+          collaborators: [],
+          collaborator_count: 0,
+          revision: 0,
           tracks: [{ ...sampleTrack, playlist_entry_id: 9 }],
         },
         isPending: false,

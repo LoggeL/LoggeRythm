@@ -8,6 +8,11 @@ import type {
   ArtistAbout,
   ArtistSummary,
   Playlist,
+  PlaylistCollaborator,
+  PlaylistInvite,
+  PlaylistInvitePreview,
+  PlaylistInviteStatus,
+  PlaylistJoinResult,
   PlaylistSummary,
   Genre,
   GenreDetail,
@@ -22,6 +27,7 @@ import type {
   StorageInfo,
   InviteInfo,
   SystemStatus,
+  AdminUsageRange,
   DeezerPlaylistDetail,
   PublicProfile,
   PlaybackSettings,
@@ -257,12 +263,19 @@ export const api = {
     }),
 
   // Playlists
-  playlists: () => req<PlaylistSummary[]>(`/playlists`),
+  playlists: (scope?: "all" | "owned" | "collaborative") =>
+    req<PlaylistSummary[]>(
+      scope ? `/playlists?scope=${encodeURIComponent(scope)}` : `/playlists`,
+    ),
   publicPlaylists: () => req<PlaylistSummary[]>(`/playlists/public`),
-  createPlaylist: (name: string, description?: string) =>
+  createPlaylist: (name: string, description?: string, isCollaborative?: boolean) =>
     req<PlaylistSummary>(`/playlists`, {
       method: "POST",
-      body: JSON.stringify({ name, description }),
+      body: JSON.stringify({
+        name,
+        description,
+        ...(isCollaborative !== undefined ? { is_collaborative: isCollaborative } : {}),
+      }),
     }),
   playlist: (id: string) =>
     req<Playlist>(`/playlists/${encodeURIComponent(id)}`),
@@ -288,15 +301,73 @@ export const api = {
       )}`,
       { method: "DELETE" },
     ),
+  removePlaylistEntry: (id: string, entryId: number) =>
+    req<void>(
+      `/playlists/${encodeURIComponent(id)}/tracks/entries/${encodeURIComponent(
+        String(entryId),
+      )}`,
+      { method: "DELETE" },
+    ),
   reorderPlaylistTracks: (id: string, deezerIds: string[]) =>
     req<void>(`/playlists/${encodeURIComponent(id)}/tracks/order`, {
       method: "PATCH",
       body: JSON.stringify({ deezer_ids: deezerIds }),
     }),
+  reorderPlaylistEntries: (id: string, entryIds: number[]) =>
+    req<void>(`/playlists/${encodeURIComponent(id)}/tracks/entries/order`, {
+      method: "PATCH",
+      body: JSON.stringify({ entry_ids: entryIds }),
+    }),
   addTracksBulk: (id: string, tracks: Track[]) =>
     req<{ added: number }>(`/playlists/${encodeURIComponent(id)}/tracks/bulk`, {
       method: "POST",
       body: JSON.stringify(tracks),
+    }),
+  setPlaylistCollaborative: (id: string, isCollaborative: boolean) =>
+    req<PlaylistSummary>(
+      `/playlists/${encodeURIComponent(id)}/collaborative`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ is_collaborative: isCollaborative }),
+      },
+    ),
+  playlistInvite: (id: string) =>
+    req<PlaylistInviteStatus>(`/playlists/${encodeURIComponent(id)}/invite`),
+  createPlaylistInvite: (id: string) =>
+    req<PlaylistInvite>(`/playlists/${encodeURIComponent(id)}/invite`, {
+      method: "POST",
+    }),
+  revokePlaylistInvite: (id: string) =>
+    req<void>(`/playlists/${encodeURIComponent(id)}/invite`, {
+      method: "DELETE",
+    }),
+  previewPlaylistInvite: (token: string) =>
+    req<PlaylistInvitePreview>(
+      `/playlists/invites/${encodeURIComponent(token)}`,
+    ),
+  acceptPlaylistInvite: (token: string) =>
+    req<PlaylistJoinResult>(
+      `/playlists/invites/${encodeURIComponent(token)}/accept`,
+      { method: "POST" },
+    ),
+  addPlaylistCollaborator: (id: string, email: string) =>
+    req<PlaylistCollaborator>(
+      `/playlists/${encodeURIComponent(id)}/collaborators`,
+      {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      },
+    ),
+  removePlaylistCollaborator: (id: string, userId: string | number) =>
+    req<void>(
+      `/playlists/${encodeURIComponent(id)}/collaborators/${encodeURIComponent(
+        String(userId),
+      )}`,
+      { method: "DELETE" },
+    ),
+  leavePlaylist: (id: string) =>
+    req<void>(`/playlists/${encodeURIComponent(id)}/leave`, {
+      method: "POST",
     }),
 
   uploadPlaylistCover: (id: string, file: File) => {
@@ -365,8 +436,14 @@ export const api = {
       body: JSON.stringify({ tracks }),
     }),
 
-  // Admin system status / health
+  // Admin system status / health & usage
   adminStatus: () => req<SystemStatus>(`/admin/status`),
+  adminUsage: (range: AdminUsageRange = "all") =>
+    req<unknown>(`/admin/usage?range=${encodeURIComponent(range)}`),
+  adminUsageUser: (userId: string | number, range: AdminUsageRange = "all") =>
+    req<unknown>(
+      `/admin/usage/users/${encodeURIComponent(String(userId))}?range=${encodeURIComponent(range)}`,
+    ),
 
   // Admin storage overview + invites
   adminStorage: () => req<StorageInfo>(`/admin/storage`),

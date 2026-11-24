@@ -10,7 +10,9 @@ import styles from "./cards.module.css";
 /** Playlist tile: cover, name and track count, linking to the playlist. */
 export default function PlaylistCard({ playlist }: { playlist: PlaylistSummary }) {
   const href = playlistPath(playlist);
-  const subtitle = `${playlist.track_count} Titel`;
+  const subtitle = playlist.is_collaborative
+    ? `Gemeinsam · ${playlist.track_count} Titel`
+    : `${playlist.track_count} Titel`;
   const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url, subtitle });
 
   return (

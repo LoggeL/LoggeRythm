@@ -156,6 +156,7 @@ export interface TrackActionsPlaylistRowProps extends TvFocusProps {
   testID: string;
   name: string;
   detail: string;
+  collaborative?: boolean;
   accessibilityLabel: string;
   disabled: boolean;
   busy: boolean;
@@ -167,6 +168,7 @@ export function TrackActionsPlaylistRow({
   testID,
   name,
   detail,
+  collaborative = false,
   accessibilityLabel,
   disabled,
   busy,
@@ -204,7 +206,11 @@ export function TrackActionsPlaylistRow({
         disabled && !busy ? styles.disabled : null,
       ]}
     >
-      <Artwork uri={null} size={layout.artwork.sm} icon="playlist-music" />
+      <Artwork
+        uri={null}
+        size={layout.artwork.sm}
+        icon={collaborative ? 'account-multiple-outline' : 'playlist-music'}
+      />
       <View style={styles.headerCopy}>
         <AppText variant="bodyStrong" numberOfLines={1}>{name}</AppText>
         <AppText variant="callout" color="secondary" numberOfLines={1}>{detail}</AppText>

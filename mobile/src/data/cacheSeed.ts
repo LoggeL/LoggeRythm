@@ -278,7 +278,14 @@ export function findCachedPlaylistSummary(
       cover_url: detail.cover_url,
       is_public: detail.is_public,
       track_count: detail.tracks.length,
+      owner_id: detail.owner_id,
       owner_name: detail.owner_name,
+      owner_avatar_url: detail.owner_avatar_url,
+      is_collaborative: detail.is_collaborative,
+      is_owner: detail.is_owner,
+      is_collaborator: detail.is_collaborator,
+      can_edit_tracks: detail.can_edit_tracks,
+      collaborator_count: detail.collaborator_count,
     };
   }
 

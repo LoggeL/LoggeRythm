@@ -164,7 +164,10 @@ class PartyGuestTests(unittest.TestCase):
         for deezer_id in ("10", "20", "10", "30"):
             self.add(host, deezer_id)
         party.set_current(CODE, party.CurrentUpdate(index=1), host, self.db)
-        self.schedule.assert_called_with(["20", "10", "30"])
+        self.schedule.assert_called_with(
+            ["20", "10", "30"],
+            user_ids_by_track={"20": self.host.id, "10": self.host.id, "30": self.host.id},
+        )
 
     def test_load_change_publishes_a_newer_revision_with_track_state(self):
         host = PartyActor(user=self.host)
@@ -214,7 +217,7 @@ class PartyPreloadTests(unittest.TestCase):
         self.assertEqual(len(party_preload.upcoming(ids, 0)), party_preload.PARTY_PRELOAD_AHEAD)
 
     def test_loading_reports_progress_and_ends_ready(self):
-        def materialize(deezer_id):
+        def materialize(deezer_id, **_kwargs):
             self.ready.add(deezer_id)
             return f"/x/{deezer_id}.mp3"
 

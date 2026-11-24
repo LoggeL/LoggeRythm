@@ -11,7 +11,7 @@ import type {
 import { catalogStrings } from '../../screens/catalogStrings';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { colors, layout, radii, spacing } from '../../theme';
-import type { AppIconName } from '../AppIcon';
+import AppIcon, { type AppIconName } from '../AppIcon';
 import { ActionButton, AppText, Artwork, PressableScale } from '../ui';
 import StandardTrackRow, {
   type TrackOccurrenceTarget,
@@ -226,9 +226,11 @@ export function CatalogPlaylistCard({
 }) {
   const ownerLine = own
     ? catalogStrings.discover.ownPlaylist
-    : playlist.owner_name
-      ? catalogStrings.discover.byOwner(playlist.owner_name)
-      : null;
+    : playlist.is_collaborator && playlist.owner_name
+      ? catalogStrings.discover.sharedBy(playlist.owner_name)
+      : playlist.owner_name
+        ? catalogStrings.discover.byOwner(playlist.owner_name)
+        : null;
   return (
     <PressableScale
       testID={testID}
@@ -255,9 +257,19 @@ export function CatalogPlaylistCard({
             {ownerLine}
           </AppText>
         ) : null}
-        <AppText variant="caption" color="muted" numberOfLines={1}>
-          {catalogStrings.common.tracks(playlist.track_count)}
-        </AppText>
+        <View style={styles.playlistMetaFooter}>
+          <AppText variant="caption" color="muted" numberOfLines={1}>
+            {catalogStrings.common.tracks(playlist.track_count)}
+          </AppText>
+          {playlist.is_collaborative ? (
+            <View testID={`${testID}-collaborative`} style={styles.collaborativeBadge}>
+              <AppIcon name="account-multiple-outline" color={colors.accentSoft} size={12} />
+              <AppText variant="micro" color="accent">
+                {catalogStrings.discover.collaborativeBadge}
+              </AppText>
+            </View>
+          ) : null}
+        </View>
       </View>
     </PressableScale>
   );
@@ -382,4 +394,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   playlistMeta: { flex: 1, minWidth: 0, gap: spacing.xxs / 2 },
+  playlistMetaFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  collaborativeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs / 2,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xxs / 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentSubtle,
+  },
 });

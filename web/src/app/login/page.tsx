@@ -1,19 +1,22 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import AuthCard from "@/components/AuthCard";
 import { PasswordField, SubmitButton, TextField, emailError } from "@/components/AuthFields";
+import { buildAuthHref, sanitizeNextPath } from "@/lib/authRedirect";
 import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 
 type FieldErrors = { email: string | null; password: string | null };
 const NO_ERRORS: FieldErrors = { email: null, password: null };
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextPath = sanitizeNextPath(searchParams.get("next"));
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,7 +38,7 @@ export default function LoginPage() {
       const user = await api.login(email, password);
       qc.removeQueries({ predicate: (query) => shouldRemoveQueryForUserChange(query.queryKey, String(user.id)) });
       qc.setQueryData(["me"], user);
-      router.push("/");
+      router.push(nextPath ?? "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -52,7 +55,7 @@ export default function LoginPage() {
       footer={
         <>
           <span>Noch kein Konto?</span>
-          <Link href="/register" className="action-secondary min-h-11">
+          <Link href={buildAuthHref("/register", nextPath)} className="action-secondary min-h-11">
             Registrieren
           </Link>
         </>
@@ -107,5 +110,13 @@ export default function LoginPage() {
         </SubmitButton>
       </form>
     </AuthCard>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   );
 }

@@ -16,7 +16,7 @@ from sqlalchemy.schema import CreateColumn
 
 from .api_version import API_VERSION
 from .config import APP_ENV, CORS_ORIGINS, validate_runtime_config
-from .db.models import PartySession, PartyTrack, Play, User
+from .db.models import PartySession, PartyTrack, Play, Playlist, PlaylistTrack, StoredTrack, User
 from .db.session import SessionLocal, engine, init_db
 from .openapi_security import install_auth_openapi
 from .routers import (
@@ -126,21 +126,52 @@ _PORTABLE_COLUMN_MIGRATIONS = (
     PartySession.__table__.c.guests_can_control,
     PartySession.__table__.c.playback_changed_by,
     PartySession.__table__.c.playback_revision,
+    StoredTrack.__table__.c.requested_by_user_id,
+    StoredTrack.__table__.c.request_source,
+    Playlist.__table__.c.is_collaborative,
+    Playlist.__table__.c.revision,
+    PlaylistTrack.__table__.c.added_by_user_id,
 )
-_PORTABLE_INDEX_MIGRATIONS = tuple(
-    index
-    for index in Play.__table__.indexes
-    if index.name == "uq_play_user_event_id"
+_PORTABLE_COLUMN_BACKFILLS: dict[tuple[str, str], str] = {
+    (
+        "playlist_tracks",
+        "added_by_user_id",
+    ): (
+        "UPDATE playlist_tracks "
+        "SET added_by_user_id = ("
+        "SELECT playlists.user_id FROM playlists "
+        "WHERE playlists.id = playlist_tracks.playlist_id"
+        ") "
+        "WHERE added_by_user_id IS NULL"
+    ),
+}
+_PORTABLE_INDEX_MIGRATIONS = (
+    *(
+        index
+        for index in Play.__table__.indexes
+        if index.name == "uq_play_user_event_id"
+    ),
+    *(
+        index
+        for index in StoredTrack.__table__.indexes
+        if index.name == "ix_stored_tracks_requested_by_user_id"
+    ),
+    *(
+        index
+        for index in PlaylistTrack.__table__.indexes
+        if index.name == "ix_playlist_tracks_added_by_user_id"
+    ),
 )
 
 
-def _run_column_migrations() -> None:
+def _run_column_migrations(target_engine=None) -> None:
     """Apply additive schema migrations idempotently.
 
     Historical entries are SQLite-only raw DDL. New portable entries are
     compiled by SQLAlchemy and exercised for both SQLite and PostgreSQL.
     """
-    with engine.begin() as conn:
+    active_engine = target_engine if target_engine is not None else engine
+    with active_engine.begin() as conn:
         cache: dict[str, set[str]] = {}
 
         def columns(table: str) -> set[str]:
@@ -155,7 +186,7 @@ def _run_column_migrations() -> None:
                     }
             return cache[table]
 
-        if engine.dialect.name == "sqlite":
+        if active_engine.dialect.name == "sqlite":
             for spec in _COLUMN_MIGRATIONS:
                 table, column = spec["table"], spec["column"]
                 cols = columns(table)
@@ -181,6 +212,9 @@ def _run_column_migrations() -> None:
                 f"{preparer.quote(table)} ADD COLUMN {column_ddl}"
             )
             cols.add(column.name)
+            backfill_sql = _PORTABLE_COLUMN_BACKFILLS.get((table, column.name))
+            if backfill_sql is not None:
+                conn.exec_driver_sql(backfill_sql)
 
         for index in _PORTABLE_INDEX_MIGRATIONS:
             table_name = index.table.name

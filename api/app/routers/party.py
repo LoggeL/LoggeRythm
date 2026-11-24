@@ -365,11 +365,22 @@ def _commit_state(db: Session, session: PartySession) -> party_bus.StateFrame:
 
 def _preload_upcoming(payload: dict[str, Any]) -> None:
     """Keep the playing and next tracks of the committed queue loading."""
+    tracks = payload["tracks"]
+    start = max(payload["current_index"], 0)
+    user_ids_by_track: dict[str, int | None] = {}
+    for track in tracks[start:]:
+        did = track["deezer_id"]
+        if did not in user_ids_by_track:
+            # Attribute only to authenticated accounts ("u:<id>"), never guests.
+            user_ids_by_track[did] = _user_id_from_member_key(
+                str(track.get("added_by_member") or "")
+            )
     party_preload.schedule(
         party_preload.upcoming(
-            [track["deezer_id"] for track in payload["tracks"]],
+            [track["deezer_id"] for track in tracks],
             payload["current_index"],
-        )
+        ),
+        user_ids_by_track=user_ids_by_track,
     )
 
 

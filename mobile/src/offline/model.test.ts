@@ -43,7 +43,15 @@ function playlist(id: number, name: string, tracks: Track[]): Playlist {
     cover_url: `https://img.test/${id}.jpg`,
     is_public: true,
     is_owner: false,
+    owner_id: null,
     owner_name: 'Remote owner',
+    owner_avatar_url: null,
+    is_collaborative: false,
+    is_collaborator: false,
+    can_edit_tracks: false,
+    collaborators: [],
+    collaborator_count: 0,
+    revision: 0,
     tracks,
   };
 }
@@ -656,5 +664,43 @@ describe('offline manifest loudness compatibility', () => {
     expect(() => decodeOfflineManifest(JSON.stringify(unknown), scope)).toThrow(
       'Offline track 42 metadata has unexpected fields',
     );
+  });
+
+  it('round-trips collaborative playlist metadata and track added_by/added_at fields', () => {
+    const attributed: Track = {
+      ...track('88'),
+      playlist_entry_id: 12,
+      added_by: { id: 3, display_name: 'Jule', avatar_url: null },
+      added_at: '2026-11-24T09:00:00Z',
+    };
+    const source: Playlist = {
+      ...playlist(9, 'Collab Mix', [attributed]),
+      owner_id: 3,
+      owner_avatar_url: '/api/users/3/avatar',
+      is_collaborative: true,
+      is_collaborator: true,
+      can_edit_tracks: true,
+      collaborator_count: 2,
+    };
+    let manifest = beginPlaylistDownload(createEmptyOfflineManifest(scope), source, firstTime);
+    manifest = attachDownloadedTrack(manifest, source.id, attributed, 8_000, firstTime);
+    manifest = settlePlaylistDownload(manifest, source, firstTime);
+
+    const encoded = JSON.stringify(manifest);
+    const decoded = decodeOfflineManifest(encoded, scope);
+    expect(decoded).toEqual(manifest);
+    expect(JSON.stringify(decoded)).toBe(encoded);
+    expect(decoded.playlists['9']).toMatchObject({
+      owner_id: 3,
+      owner_avatar_url: '/api/users/3/avatar',
+      is_collaborative: true,
+      is_collaborator: true,
+      collaborator_count: 2,
+    });
+    expect(decoded.playlists['9'].sourceTracks[0].track.added_by).toEqual({
+      id: 3,
+      display_name: 'Jule',
+      avatar_url: null,
+    });
   });
 });

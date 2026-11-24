@@ -95,9 +95,17 @@ def _fetch(artist: str, title: str) -> dict:
     }
 
 
-def _groq_transcription(deezer_id: str) -> list[dict]:
+def _groq_transcription(
+    deezer_id: str,
+    *,
+    user_id: int | None = None,
+) -> list[dict]:
     try:
-        path = storage.materialize(deezer_id)
+        path = storage.materialize(
+            deezer_id,
+            requested_by_user_id=user_id,
+            source="lyrics_ai",
+        )
     except Exception as exc:  # noqa: BLE001 - translate storage failure with context
         raise groq.GroqTranscriptionError(
             f"Could not materialize Deezer track {deezer_id}."
@@ -117,9 +125,13 @@ def _should_persist_lyrics(result: dict) -> bool:
     return bool(result.get("lines")) or result.get("source") == groq.LYRICS_SOURCE
 
 
-def _transcribe_or_502(deezer_id: str) -> list[dict]:
+def _transcribe_or_502(
+    deezer_id: str,
+    *,
+    user_id: int | None = None,
+) -> list[dict]:
     try:
-        return _groq_transcription(deezer_id)
+        return _groq_transcription(deezer_id, user_id=user_id)
     except Exception as exc:  # noqa: BLE001 - preserve materialize/Groq context
         print(
             f"Groq lyrics transcription failed for deezer_id={deezer_id}: "
@@ -131,7 +143,12 @@ def _transcribe_or_502(deezer_id: str) -> list[dict]:
         ) from exc
 
 
-def _ai_variant(deezer_id: str, db: Session) -> dict:
+def _ai_variant(
+    deezer_id: str,
+    db: Session,
+    *,
+    user_id: int | None = None,
+) -> dict:
     """Force the Whisper transcription, even when provider lyrics exist.
 
     Cached next to the primary result (``whisper_*`` columns) unless the
@@ -163,7 +180,7 @@ def _ai_variant(deezer_id: str, db: Session) -> dict:
             "(GROQ_API_KEY missing).",
         )
 
-    lines = _transcribe_or_502(deezer_id)
+    lines = _transcribe_or_502(deezer_id, user_id=user_id)
     lines_json = json.dumps(lines, ensure_ascii=False)
     if row is None or row.ai_generated:
         # No provider lyrics stored (or a legacy AI row needing refresh): the
@@ -195,7 +212,7 @@ def lyrics(
     title: str = Query(..., min_length=1),
     deezer_id: str | None = Query(default=None),
     variant: str = Query(default="default", pattern="^(default|ai)$"),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
     # Database access and providers are synchronous. FastAPI runs this entire
@@ -213,7 +230,7 @@ def lyrics(
                 status_code=400,
                 detail="variant=ai requires deezer_id.",
             )
-        return _ai_variant(deezer_id, db)
+        return _ai_variant(deezer_id, db, user_id=user.id)
 
 
     # Served from permanent storage if we've fetched this track before.
@@ -231,7 +248,7 @@ def lyrics(
     result = _fetch(artist, title)
 
     if deezer_id and not result.get("lines") and groq.configured():
-        lines = _transcribe_or_502(deezer_id)
+        lines = _transcribe_or_502(deezer_id, user_id=user.id)
         result = {
             "lines": lines,
             "synced": False,

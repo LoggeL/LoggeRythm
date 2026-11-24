@@ -57,16 +57,27 @@ export function foldSearchText(value: string): string {
 export interface SearchLibrarySources {
   /** Liked tracks, newest first. */
   likes: readonly Track[];
-  /** Playlist details that are already on the device; only owned ones count. */
-  playlists: readonly Pick<Playlist, 'is_owner' | 'tracks'>[];
+  /** Playlist details that are already on the device; owned and collaborated ones count. */
+  playlists: readonly (Pick<Playlist, 'is_owner' | 'tracks'> & { is_collaborator?: boolean })[];
   /** Tracks of the verified offline download manifest. */
   downloads: readonly Track[];
 }
 
 /** A saved track is a catalog identity, not one occurrence in a playlist. */
 function catalogTrack(track: Track): Track {
-  if (track.playlist_entry_id === undefined) return track;
-  const { playlist_entry_id: _entryId, ...catalog } = track;
+  if (
+    track.playlist_entry_id === undefined
+    && track.added_by === undefined
+    && track.added_at === undefined
+  ) {
+    return track;
+  }
+  const {
+    playlist_entry_id: _entryId,
+    added_by: _addedBy,
+    added_at: _addedAt,
+    ...catalog
+  } = track;
   return catalog;
 }
 
@@ -90,7 +101,7 @@ export function collectSearchLibraryTracks({
   };
   for (const track of likes) add(track, 'liked');
   for (const playlist of playlists) {
-    if (!playlist.is_owner) continue;
+    if (!playlist.is_owner && !playlist.is_collaborator) continue;
     for (const track of playlist.tracks) add(track, 'playlist');
   }
   for (const track of downloads) add(track, 'downloaded');

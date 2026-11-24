@@ -72,14 +72,27 @@ const track = (id: string, title: string, overrides: Partial<Track> = {}): Track
   ...overrides,
 });
 
-const playlist = (id: number, isOwner: boolean, tracks: Track[]): Playlist => ({
+const playlist = (
+  id: number,
+  isOwner: boolean,
+  tracks: Track[],
+  isCollaborator = false,
+): Playlist => ({
   id,
   name: `Playlist ${id}`,
   description: null,
   cover_url: null,
   is_public: false,
   is_owner: isOwner,
+  owner_id: isOwner ? 7 : 2,
   owner_name: null,
+  owner_avatar_url: null,
+  is_collaborative: isCollaborator,
+  is_collaborator: isCollaborator,
+  can_edit_tracks: isOwner || isCollaborator,
+  collaborators: [],
+  collaborator_count: isCollaborator ? 1 : 0,
+  revision: 0,
   tracks,
 });
 
@@ -133,14 +146,24 @@ describe('useSearchLibrary', () => {
       queryKeys.playlists.detail(scope, 5),
       playlist(5, false, [track('4', 'Blue Foreign', { playlist_entry_id: 13 })]),
     );
+    client.setQueryData(
+      queryKeys.playlists.detail(scope, 6),
+      playlist(
+        6,
+        false,
+        [track('6', 'Blue Shared', { playlist_entry_id: 14, added_by: { id: 2, display_name: 'Sam', avatar_url: null }, added_at: '2026-11-24T00:00:00Z' })],
+        true,
+      ),
+    );
     harness.offline = offlineSnapshot([track('3', 'Blue in Green'), track('5', 'Blue Train')]);
 
     const library = useSearchLibrary({ accountScope: scope, input: 'blue', tab: 'all' });
 
-    expect(titles(library.matches)).toEqual(['Blue Monday', 'Blue in Green', 'Blue Train']);
+    expect(titles(library.matches)).toEqual(['Blue Monday', 'Blue in Green', 'Blue Shared', 'Blue Train']);
     expect(library.shown).toEqual(library.matches);
-    expect([...library.shownIds]).toEqual(['1', '3', '5']);
+    expect([...library.shownIds]).toEqual(['1', '3', '6', '5']);
     expect(library.matches.every((item) => item.playlist_entry_id === undefined)).toBe(true);
+    expect(library.matches.every((item) => item.added_by === undefined)).toBe(true);
     // Only the likes query is observed; playlists are read from the cache.
     expect(harness.queryKeys).toEqual([queryKeys.library.likes(scope)]);
     expect(client.isFetching()).toBe(0);

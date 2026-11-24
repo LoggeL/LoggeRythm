@@ -12,11 +12,13 @@ export interface CreatePlaylistForm {
   visible: boolean;
   name: string;
   description: string;
+  isCollaborative: boolean;
   /** Localized validation or request failure; null while the form is clean. */
   error: string | null;
   busy: boolean;
   setName: (value: string) => void;
   setDescription: (value: string) => void;
+  setIsCollaborative: (value: boolean) => void;
   open: () => void;
   close: () => void;
   submit: () => void;
@@ -35,6 +37,7 @@ export function useCreatePlaylist(
   const [visible, setVisible] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [isCollaborative, setIsCollaborative] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -48,6 +51,7 @@ export function useCreatePlaylist(
       setVisible(false);
       setName('');
       setDescription('');
+      setIsCollaborative(false);
       setValidation(null);
       AccessibilityInfo.announceForAccessibility(libraryStrings.library.created(created.name));
       onCreated({ id: created.id, name: created.name });
@@ -58,10 +62,12 @@ export function useCreatePlaylist(
     visible,
     name,
     description,
+    isCollaborative,
     error: validation ?? (mutation.error !== null ? libraryStrings.library.createFailed : null),
     busy: mutation.isPending,
     setName,
     setDescription,
+    setIsCollaborative,
     open: () => {
       mutation.reset();
       setVisible(true);
@@ -69,6 +75,7 @@ export function useCreatePlaylist(
     close: () => {
       if (mutation.isPending) return;
       setVisible(false);
+      setIsCollaborative(false);
       setValidation(null);
       mutation.reset();
     },
@@ -78,7 +85,7 @@ export function useCreatePlaylist(
       if (invalid !== null) return;
       mutation.reset();
       try {
-        mutation.mutate(playlistCreateRequest(name, description));
+        mutation.mutate(playlistCreateRequest(name, description, isCollaborative));
       } catch (error) {
         setValidation(playlistFailureMessage('create', error));
       }

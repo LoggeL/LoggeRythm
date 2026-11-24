@@ -14,7 +14,11 @@ from app.db.models import (
     PartyTrack,
     Play,
     Playlist,
+    PlaylistCollaborator,
+    PlaylistInvite,
     PlaylistTrack,
+    StoredTrack,
+    TrackRequest,
     User,
 )
 from app.db.session import Base
@@ -73,6 +77,25 @@ class AccountDeletionTests(unittest.TestCase):
                 Like(user_id=deleted.id, deezer_id="102", title="Liked track"),
                 FollowedArtist(user_id=deleted.id, artist_id="103", name="Followed"),
                 Play(user_id=deleted.id, deezer_id="104", title="Played track"),
+                TrackRequest(
+                    user_id=deleted.id,
+                    deezer_id="104",
+                    source="stream",
+                    materialized=True,
+                    size_bytes=2048,
+                    title="Played track",
+                    artist="Artist",
+                ),
+                StoredTrack(
+                    deezer_id="104",
+                    file_path="/tmp/104.mp3",
+                    title="Played track",
+                    artist="Artist",
+                    size_bytes=2048,
+                    status="ready",
+                    requested_by_user_id=deleted.id,
+                    request_source="stream",
+                ),
             ]
         )
 
@@ -139,6 +162,10 @@ class AccountDeletionTests(unittest.TestCase):
         self.assertEqual(self.count(Like), 0)
         self.assertEqual(self.count(FollowedArtist), 0)
         self.assertEqual(self.count(Play), 0)
+        self.assertEqual(self.count(TrackRequest), 0)
+        surviving_stored = self.db.get(StoredTrack, "104")
+        self.assertIsNotNone(surviving_stored)
+        self.assertIsNone(surviving_stored.requested_by_user_id)
 
         self.assertIsNone(self.db.get(PartySession, hosted.code))
         self.assertIsNone(self.db.get(PartyTrack, hosted_track_id))
@@ -197,6 +224,118 @@ class AccountDeletionTests(unittest.TestCase):
         self.assertIsNone(self.db.get(User, departing.id))
         self.assertIsNotNone(self.db.get(User, surviving.id))
         self.assertTrue(self.db.get(User, surviving.id).is_admin)
+
+    def test_collaborator_deletion_unlinks_tracks_and_removes_membership(self) -> None:
+        owner = self.add_user("owner@example.test")
+        departing_collab = self.add_user("collab@example.test")
+        other_collab = self.add_user("other@example.test")
+
+        shared = Playlist(
+            user_id=owner.id, name="Shared", is_collaborative=True
+        )
+        self.db.add(shared)
+        self.db.flush()
+        collab_row = PlaylistCollaborator(
+            playlist_id=shared.id,
+            user_id=departing_collab.id,
+            role="editor",
+            added_by_user_id=owner.id,
+        )
+        other_row = PlaylistCollaborator(
+            playlist_id=shared.id,
+            user_id=other_collab.id,
+            role="editor",
+            added_by_user_id=departing_collab.id,
+        )
+        collab_track = PlaylistTrack(
+            playlist_id=shared.id,
+            deezer_id="501",
+            title="Added by departing",
+            artist="Artist",
+            position=0,
+            added_by_user_id=departing_collab.id,
+        )
+        invite = PlaylistInvite(
+            playlist_id=shared.id,
+            token="tok_collaborator_delete_123456",
+            created_by_user_id=departing_collab.id,
+        )
+        self.db.add_all([collab_row, other_row, collab_track, invite])
+        self.db.commit()
+
+        collab_row_id = collab_row.id
+        other_row_id = other_row.id
+        collab_track_id = collab_track.id
+        invite_id = invite.id
+
+        with (
+            patch.object(profile, "_remove_playlist_cover_files"),
+            patch.object(profile, "_remove_avatar_files"),
+        ):
+            profile.delete_me(response=Response(), user=departing_collab, db=self.db)
+
+        self.db.expire_all()
+        self.assertIsNotNone(self.db.get(Playlist, shared.id))
+        self.assertIsNone(self.db.get(PlaylistCollaborator, collab_row_id))
+        surviving_other = self.db.get(PlaylistCollaborator, other_row_id)
+        self.assertIsNotNone(surviving_other)
+        self.assertIsNone(surviving_other.added_by_user_id)
+        surviving_track = self.db.get(PlaylistTrack, collab_track_id)
+        self.assertIsNotNone(surviving_track)
+        self.assertIsNone(surviving_track.added_by_user_id)
+        surviving_invite = self.db.get(PlaylistInvite, invite_id)
+        self.assertIsNotNone(surviving_invite)
+        self.assertIsNone(surviving_invite.created_by_user_id)
+
+    def test_collaborative_owner_deletion_cascades_playlist_members_and_invites(self) -> None:
+        departing_owner = self.add_user("owner-del@example.test")
+        survivor = self.add_user("survivor-collab@example.test")
+
+        owned_collab = Playlist(
+            user_id=departing_owner.id, name="Owned Collab", is_collaborative=True
+        )
+        self.db.add(owned_collab)
+        self.db.flush()
+        member = PlaylistCollaborator(
+            playlist_id=owned_collab.id,
+            user_id=survivor.id,
+            role="editor",
+            added_by_user_id=departing_owner.id,
+        )
+        track = PlaylistTrack(
+            playlist_id=owned_collab.id,
+            deezer_id="601",
+            title="Collab Track",
+            artist="Artist",
+            position=0,
+            added_by_user_id=survivor.id,
+        )
+        invite = PlaylistInvite(
+            playlist_id=owned_collab.id,
+            token="tok_owner_delete_1234567890",
+            created_by_user_id=departing_owner.id,
+        )
+        self.db.add_all([member, track, invite])
+        self.db.commit()
+
+        pid = owned_collab.id
+        member_id = member.id
+        track_id = track.id
+        invite_id = invite.id
+
+        with (
+            patch.object(profile, "_remove_playlist_cover_files") as remove_cover,
+            patch.object(profile, "_remove_avatar_files"),
+        ):
+            profile.delete_me(response=Response(), user=departing_owner, db=self.db)
+
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(Playlist, pid))
+        self.assertIsNone(self.db.get(PlaylistCollaborator, member_id))
+        self.assertIsNone(self.db.get(PlaylistTrack, track_id))
+        self.assertIsNone(self.db.get(PlaylistInvite, invite_id))
+        self.assertIsNotNone(self.db.get(User, survivor.id))
+        remove_cover.assert_called_once_with(pid)
 
 
 if __name__ == "__main__":

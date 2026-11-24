@@ -62,10 +62,14 @@ function apiPlaylistId(value: string): number {
 }
 
 function cloneTrack(track: Track): Track {
-  return {
+  const cloned: Track = {
     ...track,
     artists: track.artists.map((artist) => ({ ...artist })),
   };
+  if (track.added_by !== undefined) {
+    cloned.added_by = track.added_by === null ? null : { ...track.added_by };
+  }
+  return cloned;
 }
 
 function cloneFailure(failure: OfflineTrackFailure): OfflineTrackFailure {
@@ -108,7 +112,15 @@ function playlistFromView(view: OfflinePlaylistView): Playlist {
     cover_url: view.cover_url,
     is_public: view.is_public,
     is_owner: view.is_owner,
+    owner_id: view.owner_id ?? null,
     owner_name: view.owner_name,
+    owner_avatar_url: view.owner_avatar_url ?? null,
+    is_collaborative: view.is_collaborative ?? false,
+    is_collaborator: view.is_collaborator ?? false,
+    can_edit_tracks: false,
+    collaborators: [],
+    collaborator_count: view.collaborator_count ?? 0,
+    revision: 0,
     // The source occurrence snapshot, rather than the deduplicated file table, is authoritative.
     tracks: view.sourceTracks.map(({ track }) => cloneTrack(track)),
   };
@@ -142,8 +154,14 @@ export function listOfflinePlaylistSummaries(
       cover_url: view.cover_url,
       is_public: view.is_public,
       track_count: view.totalOccurrences,
+      owner_id: view.owner_id ?? null,
       owner_name: view.owner_name,
+      owner_avatar_url: view.owner_avatar_url ?? null,
+      is_collaborative: view.is_collaborative ?? false,
       is_owner: view.is_owner,
+      is_collaborator: view.is_collaborator ?? false,
+      can_edit_tracks: false,
+      collaborator_count: view.collaborator_count ?? 0,
       offline: evidence(view),
     };
   });

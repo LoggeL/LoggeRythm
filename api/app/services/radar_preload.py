@@ -157,7 +157,12 @@ class RadarPreloader:
             self._pending.clear()
         executor.shutdown(wait=False, cancel_futures=True)
 
-    def schedule(self, radar: list[dict]) -> Future[PreloadRun] | None:
+    def schedule(
+        self,
+        radar: list[dict],
+        *,
+        user_id: int | None = None,
+    ) -> Future[PreloadRun] | None:
         """Queue the radar's new, uncached tracks; returns without downloading.
 
         Returns the background run, or None when there is nothing to do. The
@@ -187,7 +192,7 @@ class RadarPreloader:
             )
             if not queued:
                 return None
-            run = self._executor.submit(self._run_reported, queued)
+            run = self._executor.submit(self._run_reported, queued, user_id)
             self._pending.update(queued)
             return run
 
@@ -201,10 +206,14 @@ class RadarPreloader:
                 if now - failed_at < RADAR_PRELOAD_RETRY_AFTER_SEC
             ]
 
-    def _run_reported(self, track_ids: tuple[str, ...]) -> PreloadRun:
+    def _run_reported(
+        self,
+        track_ids: tuple[str, ...],
+        user_id: int | None = None,
+    ) -> PreloadRun:
         """Nobody awaits the run's future, so a crash must be logged here."""
         try:
-            return self._run(track_ids)
+            return self._run(track_ids, user_id=user_id)
         except BaseException:
             logger.critical(
                 "Release Radar preload run crashed (tracks %s)",
@@ -216,7 +225,12 @@ class RadarPreloader:
             with self._guard:
                 self._pending.difference_update(track_ids)
 
-    def _run(self, track_ids: tuple[str, ...]) -> PreloadRun:
+    def _run(
+        self,
+        track_ids: tuple[str, ...],
+        *,
+        user_id: int | None = None,
+    ) -> PreloadRun:
         stopping = self._stopping
         downloaded: list[str] = []
         already_cached: list[str] = []
@@ -232,7 +246,11 @@ class RadarPreloader:
                 if storage.is_ready(track_id):
                     already_cached.append(track_id)
                 else:
-                    storage.materialize(track_id)
+                    storage.materialize(
+                        track_id,
+                        requested_by_user_id=user_id,
+                        source="radar_preload",
+                    )
                     downloaded.append(track_id)
             except Exception as exc:  # noqa: BLE001 — logged, recorded, summarized
                 failure = PreloadFailure(
@@ -300,8 +318,12 @@ def stop() -> None:
     _preloader.stop()
 
 
-def schedule(radar: list[dict]) -> Future[PreloadRun] | None:
-    return _preloader.schedule(radar)
+def schedule(
+    radar: list[dict],
+    *,
+    user_id: int | None = None,
+) -> Future[PreloadRun] | None:
+    return _preloader.schedule(radar, user_id=user_id)
 
 
 def failures() -> list[PreloadFailure]:

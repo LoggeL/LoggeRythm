@@ -57,6 +57,21 @@ export interface PlaylistVisibilityVariables {
   isPublic: boolean;
 }
 
+export interface PlaylistCollaborativeVariables {
+  id: number;
+  isCollaborative: boolean;
+}
+
+export interface AddPlaylistCollaboratorVariables {
+  id: number;
+  email: string;
+}
+
+export interface RemovePlaylistCollaboratorVariables {
+  id: number;
+  userId: number;
+}
+
 export interface PartyTrackVariables {
   code: string;
   track: TrackInput;
@@ -133,6 +148,51 @@ export function createMusicMutationOptions(repository: MusicRepository = musicRe
         mutationKey: mutationKeys.playlist(scope, 'visibility'),
         mutationFn: ({ id, isPublic }: PlaylistVisibilityVariables) =>
           repository.setPlaylistVisibility(id, isPublic),
+      });
+    },
+    setPlaylistCollaborative(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'collaborative'),
+        mutationFn: ({ id, isCollaborative }: PlaylistCollaborativeVariables) =>
+          repository.setPlaylistCollaborative(id, isCollaborative),
+      });
+    },
+    createPlaylistInvite(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'create-invite'),
+        mutationFn: (id: number) => repository.createPlaylistInvite(id),
+      });
+    },
+    revokePlaylistInvite(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'revoke-invite'),
+        mutationFn: (id: number) => repository.revokePlaylistInvite(id),
+      });
+    },
+    acceptPlaylistInvite(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'accept-invite'),
+        mutationFn: (token: string) => repository.acceptPlaylistInvite(token),
+      });
+    },
+    addPlaylistCollaborator(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'add-collaborator'),
+        mutationFn: ({ id, email }: AddPlaylistCollaboratorVariables) =>
+          repository.addPlaylistCollaborator(id, email),
+      });
+    },
+    removePlaylistCollaborator(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'remove-collaborator'),
+        mutationFn: ({ id, userId }: RemovePlaylistCollaboratorVariables) =>
+          repository.removePlaylistCollaborator(id, userId),
+      });
+    },
+    leavePlaylist(scope: QueryScope) {
+      return mutationOptions({
+        mutationKey: mutationKeys.playlist(scope, 'leave'),
+        mutationFn: (id: number) => repository.leavePlaylist(id),
       });
     },
     preloadTrack(scope: QueryScope) {

@@ -35,7 +35,7 @@ export default function Avatar({
     );
   }
   return (
-    <div
+    <span
       aria-hidden
       style={{
         width: size,
@@ -43,9 +43,9 @@ export default function Avatar({
         background: colorFor(name),
         fontSize: Math.round(size * 0.42),
       }}
-      className={`rounded-full flex items-center justify-center font-bold text-foreground flex-shrink-0 ${className}`}
+      className={`rounded-full inline-flex items-center justify-center font-bold text-foreground flex-shrink-0 ${className}`}
     >
       {initial}
-    </div>
+    </span>
   );
 }

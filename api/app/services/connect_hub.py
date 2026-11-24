@@ -260,6 +260,15 @@ class ConnectHub:
                 return ConnectStateOut(server_time=_utcnow_iso())
             return room.snapshot()
 
+    def snapshot_all(self) -> dict[int, ConnectStateOut]:
+        """Return a consistent snapshot for every user with live connected devices."""
+        with self._lock:
+            return {
+                user_id: room.snapshot()
+                for user_id, room in self._rooms.items()
+                if room.devices
+            }
+
     def touch_activity(self, conn: DeviceConnection) -> None:
         with self._lock:
             conn.last_activity_mono = time.monotonic()

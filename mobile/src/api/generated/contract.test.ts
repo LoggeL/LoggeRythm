@@ -3,6 +3,8 @@ import {
   API_COMPATIBILITY_OPERATION,
   GENERATED_API_OPERATIONS,
   GENERATED_OPENAPI_CONTRACT_VERSION,
+  type AdminUsageOverviewResponseWire,
+  type AdminUserUsageDetailResponseWire,
   type GeneratedApiRequest,
   type GeneratedApiRequestArgs,
   type GeneratedApiResponse,
@@ -14,7 +16,7 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(97);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(108);
     expect(GENERATED_API_OPERATIONS.get_agent_manifest_api_agent_get).toEqual({
       method: 'GET',
       path: '/api/agent',
@@ -50,6 +52,59 @@ describe('generated OpenAPI contract', () => {
       requestMediaTypes: [],
       successStatuses: [200],
     });
+    expect(GENERATED_API_OPERATIONS.admin_usage_api_admin_usage_get).toEqual({
+      method: 'GET',
+      path: '/api/admin/usage',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS.admin_user_usage_api_admin_usage_users__user_id__get,
+    ).toEqual({
+      method: 'GET',
+      path: '/api/admin/usage/users/{user_id}',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS.set_collaborative_api_playlists__playlist_id__collaborative_patch,
+    ).toEqual({
+      method: 'PATCH',
+      path: '/api/playlists/{playlist_id}/collaborative',
+      auth: 'required',
+      requestMediaTypes: ['application/json'],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS
+        .create_or_rotate_playlist_invite_api_playlists__playlist_id__invite_post,
+    ).toEqual({
+      method: 'POST',
+      path: '/api/playlists/{playlist_id}/invite',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [201],
+    });
+    expect(
+      GENERATED_API_OPERATIONS.preview_playlist_invite_api_playlists_invites__token__get,
+    ).toEqual({
+      method: 'GET',
+      path: '/api/playlists/invites/{token}',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS.leave_playlist_api_playlists__playlist_id__leave_post,
+    ).toEqual({
+      method: 'POST',
+      path: '/api/playlists/{playlist_id}/leave',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [204],
+    });
   });
 
   it('provides exact request and success-response stubs', () => {
@@ -68,6 +123,11 @@ describe('generated OpenAPI contract', () => {
     expectTypeOf<GeneratedApiResponse<'delete_me_api_me_delete'>>().toEqualTypeOf<undefined>();
     expectTypeOf<GeneratedApiResponse<'get_stats_api_me_stats_get'>>()
       .toEqualTypeOf<UserStatsWire>();
+    expectTypeOf<GeneratedApiResponse<'admin_usage_api_admin_usage_get'>>()
+      .toEqualTypeOf<AdminUsageOverviewResponseWire>();
+    expectTypeOf<
+      GeneratedApiResponse<'admin_user_usage_api_admin_usage_users__user_id__get'>
+    >().toEqualTypeOf<AdminUserUsageDetailResponseWire>();
     expectTypeOf<GeneratedApiRequest<
       'reorder_playlist_entries_api_playlists__playlist_id__tracks_entries_order_patch'
     >>().toEqualTypeOf<{
@@ -77,5 +137,8 @@ describe('generated OpenAPI contract', () => {
     expectTypeOf<GeneratedApiRequestArgs<'me_api_auth_me_get'>>().toEqualTypeOf<
       [request?: Record<never, never>]
     >();
+    expectTypeOf<
+      GeneratedApiResponse<'leave_playlist_api_playlists__playlist_id__leave_post'>
+    >().toEqualTypeOf<undefined>();
   });
 });

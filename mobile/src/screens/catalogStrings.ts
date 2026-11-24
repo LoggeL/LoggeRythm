@@ -39,6 +39,8 @@ export interface CatalogScreenStrings {
     openOwnPlaylist: (name: string, count: number) => string;
     byOwner: (owner: string) => string;
     ownPlaylist: string;
+    collaborativeBadge: string;
+    sharedBy: (owner: string) => string;
   };
   album: {
     typeLabel: string;
@@ -138,6 +140,8 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       openOwnPlaylist: (name, count) => `${name} öffnen, von dir, ${count} Titel`,
       byOwner: (owner) => `von ${owner}`,
       ownPlaylist: 'Von dir',
+      collaborativeBadge: 'Gemeinsam',
+      sharedBy: (owner) => `Geteilt von ${owner}`,
     },
     album: {
       typeLabel: 'ALBUM',
@@ -240,6 +244,8 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
         `Open ${name}, by you, ${count} ${count === 1 ? 'track' : 'tracks'}`,
       byOwner: (owner) => `by ${owner}`,
       ownPlaylist: 'By you',
+      collaborativeBadge: 'Collaborative',
+      sharedBy: (owner) => `Shared by ${owner}`,
     },
     album: {
       typeLabel: 'ALBUM',

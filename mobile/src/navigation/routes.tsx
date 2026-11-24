@@ -11,7 +11,11 @@ import { AppText } from '../components/ui/AppText';
 import { strings } from '../localization';
 import { useLocaleRevision } from '../localization/LocaleProvider';
 import { navigateToSearch } from '../navigationActions';
-import { playlistIdFromRouteValue, safeRouteLabel } from '../navigationLinks';
+import {
+  playlistIdFromRouteValue,
+  playlistInviteTokenFromRouteValue,
+  safeRouteLabel,
+} from '../navigationLinks';
 import AlbumScreen from '../screens/AlbumScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import type {
@@ -24,11 +28,14 @@ import GenreScreen from '../screens/GenreScreen';
 import type { HomeMixRouteParams } from '../screens/homeModel';
 import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
-import type { LibraryPlaylistRouteParams } from '../screens/libraryModel';
+import type { LibraryPlaylistRouteParams, OwnedPlaylistRouteParams } from '../screens/libraryModel';
 import MixScreen from '../screens/MixScreen';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
 import PartyScreen, { InvalidPartyLink } from '../screens/PartyScreen';
 import { normalizePartyCode } from '../party/partyCode';
+import PlaylistInviteScreen, {
+  InvalidPlaylistInviteLink,
+} from '../screens/PlaylistInviteScreen';
 import PlaylistScreen from '../screens/PlaylistScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import QueueScreen from '../screens/QueueScreen';
@@ -344,6 +351,37 @@ export function PartyRoute({ route, navigation }: NativeStackScreenProps<RootSta
   return (
     <View style={styles.fill}>
       <PartyScreen code={code} onClose={close} />
+      <PlayerErrorBanner hasTabBar={false} />
+      <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
+      <MiniPlayer hasTabBar={false} />
+    </View>
+  );
+}
+
+/** Playlist invite links are untrusted: only a well-formed token opens the join preview. */
+export function PlaylistInviteRoute({
+  route,
+  navigation,
+}: NativeStackScreenProps<RootStackParams, 'PlaylistInvite'>) {
+  useLocaleRevision();
+  const token = playlistInviteTokenFromRouteValue(route.params?.token);
+  const close = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
+  }, [navigation]);
+  const openPlaylist = useCallback(
+    (params: OwnedPlaylistRouteParams) => {
+      navigation.navigate('Tabs', {
+        screen: 'LibraryTab',
+        params: { screen: 'Playlist', params },
+      });
+    },
+    [navigation],
+  );
+  if (token === null) return <InvalidPlaylistInviteLink onClose={close} />;
+  return (
+    <View style={styles.fill}>
+      <PlaylistInviteScreen token={token} onOpenPlaylist={openPlaylist} onClose={close} />
       <PlayerErrorBanner hasTabBar={false} />
       <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
       <MiniPlayer hasTabBar={false} />

@@ -22,8 +22,14 @@ import type {
   PartyState,
   PlaybackSettings,
   Playlist,
+  PlaylistCollaborator,
   PlaylistEntryId,
   PlaylistCreateRequest,
+  PlaylistInvite,
+  PlaylistInvitePreview,
+  PlaylistInviteStatus,
+  PlaylistJoinResult,
+  PlaylistListScope,
   PlaylistSearchResult,
   PlaylistSummary,
   PlaylistUpdateRequest,
@@ -104,7 +110,7 @@ export interface StorageRepository {
 }
 
 export interface PlaylistsRepository {
-  getPlaylists(signal?: AbortSignal): Promise<PlaylistSummary[]>;
+  getPlaylists(signal?: AbortSignal, scope?: PlaylistListScope): Promise<PlaylistSummary[]>;
   getPublicPlaylists(signal?: AbortSignal): Promise<PlaylistSummary[]>;
   getPlaylist(id: number, signal?: AbortSignal): Promise<Playlist>;
   createPlaylist(request: PlaylistCreateRequest): Promise<PlaylistSummary>;
@@ -117,6 +123,15 @@ export interface PlaylistsRepository {
   reorderPlaylistEntries(id: number, entryIds: PlaylistEntryId[]): Promise<void>;
   addTracksBulk(id: number, tracks: TrackInput[]): Promise<AddedTracksResult>;
   setPlaylistVisibility(id: number, isPublic: boolean): Promise<PlaylistSummary>;
+  setPlaylistCollaborative(id: number, isCollaborative: boolean): Promise<PlaylistSummary>;
+  getPlaylistInvite(id: number, signal?: AbortSignal): Promise<PlaylistInviteStatus>;
+  createPlaylistInvite(id: number): Promise<PlaylistInvite>;
+  revokePlaylistInvite(id: number): Promise<void>;
+  getPlaylistInvitePreview(token: string, signal?: AbortSignal): Promise<PlaylistInvitePreview>;
+  acceptPlaylistInvite(token: string): Promise<PlaylistJoinResult>;
+  addPlaylistCollaborator(id: number, email: string): Promise<PlaylistCollaborator>;
+  removePlaylistCollaborator(id: number, userId: number): Promise<void>;
+  leavePlaylist(id: number): Promise<void>;
 }
 
 export interface LibraryRepository {
@@ -257,6 +272,15 @@ export const musicRepository: MusicRepository = {
   reorderPlaylistEntries: api.reorderPlaylistEntries,
   addTracksBulk: api.addTracksBulk,
   setPlaylistVisibility: api.setPlaylistVisibility,
+  setPlaylistCollaborative: api.setPlaylistCollaborative,
+  getPlaylistInvite: api.getPlaylistInvite,
+  createPlaylistInvite: api.createPlaylistInvite,
+  revokePlaylistInvite: api.revokePlaylistInvite,
+  getPlaylistInvitePreview: api.getPlaylistInvitePreview,
+  acceptPlaylistInvite: api.acceptPlaylistInvite,
+  addPlaylistCollaborator: api.addPlaylistCollaborator,
+  removePlaylistCollaborator: api.removePlaylistCollaborator,
+  leavePlaylist: api.leavePlaylist,
   getLikes: api.getLikes,
   likeTrack: api.likeTrack,
   unlikeTrack: api.unlikeTrack,

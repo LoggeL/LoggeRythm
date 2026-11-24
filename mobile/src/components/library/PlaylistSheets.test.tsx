@@ -3,10 +3,12 @@ import { libraryStrings } from '../../screens/libraryStrings';
 import { byTestId, queryByTestId, textContent } from '../../test/render';
 import {
   PlaylistActionsSheet,
+  type PlaylistActionsCollaborator,
   type PlaylistActionsOwner,
   type PlaylistActionsSheetProps,
 } from './PlaylistActionsSheet';
 import { PlaylistDeleteSheet } from './PlaylistDeleteSheet';
+import { PlaylistLeaveSheet } from './PlaylistLeaveSheet';
 import { SheetActionRow } from './SheetActionRow';
 
 vi.mock('react-native', () => ({
@@ -164,6 +166,65 @@ describe('PlaylistActionsSheet', () => {
       .toEqual([libraryStrings.playlist.ownerOnly]);
     expect(queryByTestId(actions({ owner: owner() }), 'playlist-viewer-permissions')).toBeNull();
   });
+
+  it('wires owner collaboration switch and collaborators sheet entry', () => {
+    const onCollaborativeChange = vi.fn();
+    const onOpenCollaborators = vi.fn();
+    const sheet = actions({
+      owner: owner({
+        isCollaborative: true,
+        collaboratorCount: 2,
+        onCollaborativeChange,
+        onOpenCollaborators,
+      }),
+    });
+
+    const collabSwitch = byTestId(sheet, 'playlist-collaborative');
+    expect(collabSwitch.props).toMatchObject({
+      value: true,
+      disabled: false,
+      accessibilityLabel: libraryStrings.playlist.disableCollaborative,
+    });
+    (collabSwitch.props.onValueChange as (value: boolean) => void)(false);
+    expect(onCollaborativeChange).toHaveBeenCalledExactlyOnceWith(false);
+
+    (byTestId(sheet, 'playlist-collaborators').props.onPress as () => void)();
+    expect(onOpenCollaborators).toHaveBeenCalledOnce();
+  });
+
+  it('shows collaborator actions for active and paused collaborators without owner controls', () => {
+    const activeCollab: PlaylistActionsCollaborator = {
+      isCollaborative: true,
+      canEditTracks: true,
+      collaboratorCount: 3,
+      busy: false,
+      canReorder: true,
+      reordering: false,
+      onOpenCollaborators: vi.fn(),
+      onToggleReorder: vi.fn(),
+      onLeave: vi.fn(),
+    };
+    const activeSheet = actions({ collaborator: activeCollab });
+
+    expect(queryByTestId(activeSheet, 'playlist-owner-controls')).toBeNull();
+    expect(queryByTestId(activeSheet, 'playlist-collaborator-controls')).not.toBeNull();
+    expect(queryByTestId(activeSheet, 'playlist-frozen-notice')).toBeNull();
+    (byTestId(activeSheet, 'playlist-collaborators').props.onPress as () => void)();
+    (byTestId(activeSheet, 'playlist-reorder').props.onPress as () => void)();
+    (byTestId(activeSheet, 'playlist-leave').props.onPress as () => void)();
+    expect(activeCollab.onOpenCollaborators).toHaveBeenCalledOnce();
+    expect(activeCollab.onToggleReorder).toHaveBeenCalledOnce();
+    expect(activeCollab.onLeave).toHaveBeenCalledOnce();
+
+    const pausedSheet = actions({
+      collaborator: { ...activeCollab, isCollaborative: false, canEditTracks: false },
+    });
+    expect(queryByTestId(pausedSheet, 'playlist-reorder')).toBeNull();
+    expect(textContent(byTestId(pausedSheet, 'playlist-frozen-notice'))).toEqual([
+      libraryStrings.playlist.frozenNotice,
+    ]);
+    expect(byTestId(pausedSheet, 'playlist-leave')).toBeDefined();
+  });
 });
 
 describe('PlaylistDeleteSheet', () => {
@@ -218,5 +279,54 @@ describe('PlaylistDeleteSheet', () => {
       accessibilityLiveRegion: 'assertive',
     });
     expect(queryByTestId(render().tree, 'playlist-delete-error')).toBeNull();
+  });
+});
+
+describe('PlaylistLeaveSheet', () => {
+  function render(overrides: Partial<Parameters<typeof PlaylistLeaveSheet>[0]> = {}) {
+    const props = {
+      visible: true,
+      name: 'WG-Küche',
+      busy: false,
+      error: null,
+      onCancel: vi.fn(),
+      onConfirm: vi.fn(),
+      ...overrides,
+    };
+    return { props, tree: PlaylistLeaveSheet(props) };
+  }
+
+  it('names the shared playlist and requires explicit destructive confirmation', () => {
+    const { props, tree } = render();
+    const sheet = byTestId(tree, 'playlist-leave-sheet');
+
+    expect(sheet.props).toMatchObject({
+      visible: true,
+      title: libraryStrings.playlist.leaveTitle,
+      onClose: props.onCancel,
+    });
+    expect(textContent(byTestId(tree, 'playlist-leave-message')))
+      .toEqual([libraryStrings.playlist.leaveMessage('WG-Küche')]);
+    (byTestId(tree, 'playlist-leave-cancel').props.onPress as () => void)();
+    expect(props.onCancel).toHaveBeenCalledOnce();
+    expect(props.onConfirm).not.toHaveBeenCalled();
+
+    (byTestId(tree, 'playlist-leave-confirm').props.onPress as () => void)();
+    expect(props.onConfirm).toHaveBeenCalledOnce();
+  });
+
+  it('disables actions while leaving and renders an assertive error alert', () => {
+    const { tree } = render({ busy: true, error: libraryStrings.playlist.leaveFailed });
+
+    expect(byTestId(tree, 'playlist-leave-cancel').props.disabled).toBe(true);
+    expect(byTestId(tree, 'playlist-leave-confirm').props).toMatchObject({
+      disabled: true,
+      accessibilityState: { disabled: true, busy: true },
+    });
+    expect(byTestId(tree, 'playlist-leave-error').props).toMatchObject({
+      accessibilityRole: 'alert',
+      accessibilityLiveRegion: 'assertive',
+    });
+    expect(queryByTestId(render().tree, 'playlist-leave-error')).toBeNull();
   });
 });

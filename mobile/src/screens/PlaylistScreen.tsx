@@ -2,14 +2,16 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { playlistEntryId, type Track } from '../api/types';
+import { playlistEntryId, type Playlist, type Track } from '../api/types';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import { InlineNotice } from '../components/library/InlineNotice';
 import { PlaylistActionsSheet } from '../components/library/PlaylistActionsSheet';
+import { PlaylistCollaboratorsSheet } from '../components/library/PlaylistCollaboratorsSheet';
 import { PlaylistDeleteSheet } from '../components/library/PlaylistDeleteSheet';
 import { PlaylistEditSheet, usePlaylistEditForm } from '../components/library/PlaylistEditSheet';
 import { PlaylistHero } from '../components/library/PlaylistHero';
+import { PlaylistLeaveSheet } from '../components/library/PlaylistLeaveSheet';
 import {
   PlaylistQueryGate,
   PlaylistQueryNotice,
@@ -56,8 +58,37 @@ export { refreshOfflineAutoBrowse } from '../components/library/autoBrowse';
 
 export type PlaylistScreenProps = PlaylistScreenContract;
 
-type PlaylistSheet = 'actions' | 'delete' | null;
+type PlaylistSheet = 'actions' | 'delete' | 'collaborators' | 'leave' | null;
 const EMPTY_TRACKS: Track[] = [];
+
+export function playlistTrackAddedByLabel(
+  track: Pick<Track, 'added_by'>,
+  currentUserId: number,
+): string | undefined {
+  const addedBy = track.added_by;
+  if (addedBy === undefined || addedBy === null) return undefined;
+  if (addedBy.id === currentUserId) return libraryStrings.playlist.addedByYou;
+  const displayName = addedBy.display_name?.trim() || libraryStrings.playlist.unknownUser;
+  return libraryStrings.playlist.addedBy(displayName);
+}
+
+export function shouldShowPlaylistTrackAttribution(
+  detail: Pick<
+    Playlist,
+    'is_collaborative' | 'collaborator_count' | 'is_collaborator' | 'owner_id' | 'tracks'
+  >,
+): boolean {
+  if (detail.is_collaborative || detail.collaborator_count > 0 || detail.is_collaborator) {
+    return true;
+  }
+  if (detail.owner_id === null) return false;
+  return detail.tracks.some(
+    (track) =>
+      track.added_by !== undefined
+      && track.added_by !== null
+      && track.added_by.id !== detail.owner_id,
+  );
+}
 
 export function offlineControlCopy(
   failure: OfflineScreenFailure,
@@ -174,7 +205,11 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
       if (isTv) tvFocusRegistry.popAndRestore();
     },
   };
-  const canEdit = props.kind === 'playlist' && remoteDetail?.is_owner === true;
+  const isOwner = props.kind === 'playlist' && remoteDetail?.is_owner === true;
+  const isCollaborator = props.kind === 'playlist' && remoteDetail?.is_collaborator === true;
+  const canEditTracks = props.kind === 'playlist' && remoteDetail?.can_edit_tracks === true;
+  const isFrozenCollaborator =
+    !isOwner && isCollaborator && remoteDetail?.is_collaborative === false;
   const offlineControlState = props.kind === 'playlist'
     ? playlistOfflineControlState({
         snapshot: offlineSnapshot,
@@ -238,13 +273,19 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
   };
 
   const changeVisibility = (isPublic: boolean) => {
-    if (props.kind !== 'playlist' || !canEdit) return;
+    if (props.kind !== 'playlist' || !isOwner) return;
     mutations.resetErrors();
     mutations.visibility.mutate({ id: props.playlistId, isPublic });
   };
 
+  const changeCollaborative = (isCollaborative: boolean) => {
+    if (props.kind !== 'playlist' || !isOwner) return;
+    mutations.resetErrors();
+    mutations.collaborative.mutate({ id: props.playlistId, isCollaborative });
+  };
+
   const removeTrack = async (track: Track): Promise<void> => {
-    if (props.kind !== 'playlist' || !canEdit) {
+    if (props.kind !== 'playlist' || !canEditTracks) {
       throw new Error(libraryStrings.playlist.ownerOnly);
     }
     mutations.resetErrors();
@@ -258,7 +299,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     showTrackActions(
       track,
       (message) => setRuntimeError(playlistFailureMessage('track-action', message)),
-      canEdit && props.kind === 'playlist'
+      canEditTracks && props.kind === 'playlist'
         ? {
             authorizedRemove: {
               accountScope: scope,
@@ -270,7 +311,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
   };
 
   const moveTrack = (index: number, direction: TrackMoveDirection) => {
-    if (props.kind !== 'playlist' || !canEdit) return;
+    if (props.kind !== 'playlist' || !canEditTracks) return;
     mutations.resetErrors();
     try {
       mutations.reorder.mutate({
@@ -328,10 +369,43 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     ? (seededInitialLoading && props.kind === 'liked' ? null : tracks.length)
     : (seededSummary?.track_count ?? null);
   const playable = !seededInitialLoading && tracks.length > 0 && (!localFallback || firstLocalPlaybackIndex >= 0);
-  const showRowControls = canEdit && reordering;
-  // The delete sheet owns the failure of its own request; every other
-  // mutation failure is shown in the header.
-  const headerMutationError = sheet === 'delete' ? null : mutations.error;
+  const showRowControls = canEditTracks && reordering;
+  const isCollaborative = detail?.is_collaborative ?? seededSummary?.is_collaborative ?? false;
+  const showTrackAttribution =
+    props.kind === 'playlist'
+    && detail !== undefined
+    && shouldShowPlaylistTrackAttribution(detail);
+  // The delete and leave sheets own the failure of their own requests; every
+  // other mutation failure is shown in the header.
+  const headerMutationError =
+    sheet === 'delete' || sheet === 'leave' ? null : mutations.error;
+
+  const heroCollaborators =
+    props.kind === 'playlist' && remoteDetail !== undefined && (remoteDetail.is_collaborative || remoteDetail.collaborators.length > 0)
+      ? {
+          owner: {
+            key: `owner-${remoteDetail.owner_id ?? '0'}`,
+            name: remoteDetail.owner_name,
+            avatarUrl:
+              remoteDetail.owner_avatar_url === null
+                ? null
+                : resolveServerUrl(remoteDetail.owner_avatar_url, apiBase),
+          },
+          members: remoteDetail.collaborators.map((member) => ({
+            key: `member-${member.user_id}`,
+            name: member.display_name,
+            avatarUrl:
+              member.avatar_url === null ? null : resolveServerUrl(member.avatar_url, apiBase),
+          })),
+          onPress:
+            isOwner || isCollaborator
+              ? () => {
+                  mutations.resetErrors();
+                  openSheet('collaborators');
+                }
+              : undefined,
+        }
+      : null;
 
   const heroHeaderContent = (
     <View style={tv.isTv ? styles.tvHeroHeader : styles.header}>
@@ -343,17 +417,19 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         trackCount={trackCount}
         durationSeconds={tracks.reduce((total, track) => total + track.duration_sec, 0)}
         visibility={
-          canEdit && remoteDetail !== undefined
+          isOwner && remoteDetail !== undefined
             ? (remoteDetail.is_public ? 'public' : 'private')
             : null
         }
+        collaborative={props.kind === 'playlist' && isCollaborative}
+        collaborators={heroCollaborators}
         description={description}
         playable={playable}
         preferredPlayFocus={tv.isTv && isFocused && playable}
         onPlay={() => playContext(firstLocalPlaybackIndex)}
         onShuffle={() => playContext(firstLocalPlaybackIndex, true)}
         reorder={
-          tv.isTv && canEdit && tracks.length > 0
+          tv.isTv && canEditTracks && tracks.length > 0
             ? {
                 active: reordering,
                 disabled: mutations.pending,
@@ -381,6 +457,13 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
             : undefined
         }
       />
+
+      {isFrozenCollaborator ? (
+        <InlineNotice
+          testID="playlist-frozen-banner"
+          message={libraryStrings.playlist.frozenNotice}
+        />
+      ) : null}
 
       {runtimeError !== null ? (
         <InlineNotice
@@ -503,6 +586,9 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           }
           canEdit={showRowControls}
           controlsDisabled={mutations.pending}
+          addedByLabel={
+            showTrackAttribution ? playlistTrackAddedByLabel(item, user.id) : undefined
+          }
           onPlay={() => playRow(index)}
           onOpenActions={() => openTrackActions(item)}
           onOpenAlbum={props.onOpenAlbum}
@@ -565,13 +651,20 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
               : null
           }
           owner={
-            props.kind === 'playlist' && canEdit && remoteDetail !== undefined
+            props.kind === 'playlist' && isOwner && remoteDetail !== undefined
               ? {
                   isPublic: remoteDetail.is_public,
+                  isCollaborative: remoteDetail.is_collaborative,
+                  collaboratorCount: remoteDetail.collaborator_count,
                   busy: mutations.pending,
                   canReorder: tracks.length > 0,
                   reordering,
                   onVisibilityChange: changeVisibility,
+                  onCollaborativeChange: changeCollaborative,
+                  onOpenCollaborators: () => {
+                    mutations.resetErrors();
+                    setSheet('collaborators');
+                  },
                   onEdit: () => {
                     mutations.resetErrors();
                     setSheet(null);
@@ -588,13 +681,58 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
                 }
               : null
           }
-          showViewerNotice={props.kind === 'playlist' && remoteDetail !== undefined && !canEdit}
+          collaborator={
+            props.kind === 'playlist' && !isOwner && isCollaborator && remoteDetail !== undefined
+              ? {
+                  isCollaborative: remoteDetail.is_collaborative,
+                  canEditTracks,
+                  collaboratorCount: remoteDetail.collaborator_count,
+                  busy: mutations.pending,
+                  canReorder: tracks.length > 0,
+                  reordering,
+                  onOpenCollaborators: () => {
+                    mutations.resetErrors();
+                    setSheet('collaborators');
+                  },
+                  onToggleReorder: () => {
+                    closeSheet();
+                    setReordering((current) => !current);
+                  },
+                  onLeave: () => {
+                    mutations.resetErrors();
+                    setSheet('leave');
+                  },
+                }
+              : null
+          }
+          showViewerNotice={
+            props.kind === 'playlist'
+            && remoteDetail !== undefined
+            && !isOwner
+            && !isCollaborator
+          }
         />
+
+        {props.kind === 'playlist' && remoteDetail !== undefined && (isOwner || isCollaborator) ? (
+          <PlaylistCollaboratorsSheet
+            visible={sheet === 'collaborators'}
+            onClose={closeSheet}
+            scope={scope}
+            apiBase={apiBase}
+            playlist={remoteDetail}
+            busy={mutations.pending}
+            onToggleCollaborative={changeCollaborative}
+            onLeave={() => {
+              mutations.resetErrors();
+              setSheet('leave');
+            }}
+          />
+        ) : null}
 
         <PlaylistEditSheet
           form={editFormWithFocusReturn}
           onSubmit={() => {
-            if (props.kind === 'playlist' && canEdit) editForm.submit(props.playlistId);
+            if (props.kind === 'playlist' && isOwner) editForm.submit(props.playlistId);
           }}
         />
 
@@ -613,7 +751,28 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
             closeSheet();
           }}
           onConfirm={() => {
-            if (props.kind === 'playlist' && canEdit) mutations.remove.mutate(props.playlistId);
+            if (props.kind === 'playlist' && isOwner) mutations.remove.mutate(props.playlistId);
+          }}
+        />
+
+        <PlaylistLeaveSheet
+          visible={sheet === 'leave'}
+          name={title}
+          busy={mutations.leave.isPending}
+          error={
+            mutations.leave.error !== null
+              ? playlistFailureMessage('leave', mutations.leave.error)
+              : null
+          }
+          onCancel={() => {
+            if (mutations.leave.isPending) return;
+            mutations.leave.reset();
+            closeSheet();
+          }}
+          onConfirm={() => {
+            if (props.kind === 'playlist' && isCollaborator) {
+              mutations.leave.mutate(props.playlistId);
+            }
           }}
         />
       </View>

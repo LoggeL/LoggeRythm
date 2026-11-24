@@ -9,14 +9,14 @@ import type { Playlist } from "@/types";
 const NO_PLAYLISTS: Playlist[] = [];
 
 /**
- * The user's own playlists whose details are in the query cache right now.
- * Reads the cache only: it never requests a playlist that is not loaded.
+ * The user's own and collaborated playlists whose details are in the query
+ * cache right now. Reads the cache only: it never requests an unloaded playlist.
  */
 export function cachedOwnPlaylists(cache: QueryCache): Playlist[] {
   const own: Playlist[] = [];
   for (const query of cache.findAll({ queryKey: ["playlist"] })) {
     const playlist = query.state.data as Playlist | undefined;
-    if (playlist?.is_owner) own.push(playlist);
+    if (playlist?.is_owner || playlist?.is_collaborator) own.push(playlist);
   }
   return own;
 }

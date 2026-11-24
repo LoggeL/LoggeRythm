@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
 from fastapi import HTTPException
@@ -139,7 +140,7 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
         ):
             tracks = home.release_radar(
                 refresh=True,
-                user=object(),  # type: ignore[arg-type]
+                user=SimpleNamespace(id=1),  # type: ignore[arg-type]
                 db=object(),  # type: ignore[arg-type]
             )
 
@@ -162,7 +163,7 @@ class ReleaseRadarRefreshTests(unittest.TestCase):
             with self.assertRaises(HTTPException) as caught:
                 home.release_radar(
                     refresh=True,
-                    user=object(),  # type: ignore[arg-type]
+                    user=SimpleNamespace(id=1),  # type: ignore[arg-type]
                     db=object(),  # type: ignore[arg-type]
                 )
 

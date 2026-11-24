@@ -163,10 +163,15 @@ function normalizedDescription(description: string): string | null {
 export function playlistCreateRequest(
   name: string,
   description: string,
+  isCollaborative?: boolean,
 ): PlaylistCreateRequest {
   const normalizedName = name.trim();
   if (normalizedName.length === 0) throw new Error('Playlist name must not be empty');
-  return { name: normalizedName, description: normalizedDescription(description) };
+  return {
+    name: normalizedName,
+    description: normalizedDescription(description),
+    ...(isCollaborative ? { is_collaborative: true } : {}),
+  };
 }
 
 export function playlistUpdateRequest(

@@ -7,7 +7,11 @@ import Cover from "@/components/ui/Cover";
 import EmptyState from "@/components/ui/EmptyState";
 import { CardGridSkeleton } from "@/components/Skeleton";
 import { Morph, useMorphSource } from "@/components/motion/Morph";
-import { HeartIcon, LibraryIcon, PlusIcon } from "@/components/icons";
+import { HeartIcon, LibraryIcon, PlusIcon, UsersIcon } from "@/components/icons";
+import {
+  isOwnedLibraryPlaylist,
+  libraryPlaylistSubtitle,
+} from "@/lib/playlistPermissions";
 import { playlistPath } from "@/lib/slugs";
 import type { PlaylistSummary } from "@/types";
 import ListFilter, { NoFilterMatch } from "./ListFilter";
@@ -18,17 +22,40 @@ const GRID = "grid grid-cols-2 gap-1 sm:grid-cols-3 sm:gap-2 lg:grid-cols-4 xl:g
 const CARD = "music-card group block w-full min-w-0 p-2.5 text-left sm:p-3";
 
 type SortKey = "recent" | "name";
+type ScopeKey = "all" | "owned" | "shared";
 
 /** One playlist; its cover and name travel into the header of the playlist page. */
 function PlaylistTile({ playlist }: { playlist: PlaylistSummary }) {
   const href = playlistPath(playlist);
-  const subtitle = `Playlist · ${playlist.track_count} Titel`;
+  const subtitle = libraryPlaylistSubtitle(playlist);
   const morph = useMorphSource(href, { title: playlist.name, cover: playlist.cover_url, subtitle });
+  const sharedOrCollaborative = Boolean(
+    playlist.is_collaborative || playlist.is_collaborator,
+  );
   return (
     <Link href={href} onClick={morph.arm} transitionTypes={morph.types} className={CARD}>
-      <Morph name={morph.art} part="art">
-        <Cover src={playlist.cover_url} className="mb-3 aspect-square w-full rounded-xl" />
-      </Morph>
+      <span className="relative mb-3 block">
+        <Morph name={morph.art} part="art">
+          <Cover src={playlist.cover_url} className="aspect-square w-full rounded-xl" />
+        </Morph>
+        {sharedOrCollaborative && (
+          <span
+            title={
+              playlist.is_collaborative
+                ? "Gemeinsame Playlist"
+                : "Geteilte Playlist"
+            }
+            className="pointer-events-none absolute bottom-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full border border-hairline bg-backdrop/85 text-foreground backdrop-blur-sm"
+          >
+            <UsersIcon
+              width={14}
+              height={14}
+              aria-hidden="true"
+              className={playlist.is_collaborative ? "text-accent" : "text-muted"}
+            />
+          </span>
+        )}
+      </span>
       <Morph name={morph.title} part="title">
         <span className="block truncate text-sm font-semibold">{playlist.name}</span>
       </Morph>
@@ -42,6 +69,7 @@ function PlaylistTile({ playlist }: { playlist: PlaylistSummary }) {
 export default function PlaylistsTab({ query, likedHref, onCreate }: { query: StatefulQuery<PlaylistSummary[]>; likedHref: string; onCreate: () => void }) {
   const [term, setTerm] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
+  const [scope, setScope] = useState<ScopeKey>("all");
   const count = query.data?.length;
 
   return (
@@ -66,27 +94,78 @@ export default function PlaylistsTab({ query, likedHref, onCreate }: { query: St
         }
       >
         {(playlists) => {
-          const filtered = playlists.filter((playlist) => matchesFilter(term, playlist.name, playlist.description));
+          const hasShared = playlists.some(
+            (playlist) => !isOwnedLibraryPlaylist(playlist),
+          );
+          const scoped =
+            scope === "owned"
+              ? playlists.filter((playlist) => isOwnedLibraryPlaylist(playlist))
+              : scope === "shared"
+                ? playlists.filter(
+                    (playlist) => !isOwnedLibraryPlaylist(playlist),
+                  )
+                : playlists;
+          const filtered = scoped.filter((playlist) =>
+            matchesFilter(term, playlist.name, playlist.description, playlist.owner_name ?? undefined),
+          );
           const listed = sort === "name" ? [...filtered].sort((a, b) => a.name.localeCompare(b.name, "de")) : filtered;
-          const filtering = term.trim().length > 0;
+          const filtering = term.trim().length > 0 || scope !== "all";
           return (
             <>
-              {playlists.length > FILTER_THRESHOLD && (
-                <div className="mb-4 flex items-center gap-2">
-                  <ListFilter label="Playlists filtern" value={term} onChange={setTerm} className="flex-1 sm:max-w-64" />
-                  <select
-                    aria-label="Playlists sortieren"
-                    value={sort}
-                    onChange={(event) => setSort(event.target.value as SortKey)}
-                    className="field-input w-auto shrink-0 rounded-full py-2 pl-4 pr-3 text-xs font-semibold sm:min-h-10"
-                  >
-                    <option value="recent">Zuletzt erstellt</option>
-                    <option value="name">Name A bis Z</option>
-                  </select>
+              {(hasShared || playlists.length > FILTER_THRESHOLD) && (
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                  {hasShared && (
+                    <div role="group" aria-label="Playlist-Filter" className="flex items-center gap-1.5">
+                      {(
+                        [
+                          ["all", "Alle"],
+                          ["owned", "Eigene"],
+                          ["shared", "Geteilt"],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          aria-pressed={scope === key}
+                          onClick={() => setScope(key)}
+                          className="filter-chip"
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {playlists.length > FILTER_THRESHOLD && (
+                    <>
+                      <ListFilter label="Playlists filtern" value={term} onChange={setTerm} className="flex-1 sm:max-w-64" />
+                      <select
+                        aria-label="Playlists sortieren"
+                        value={sort}
+                        onChange={(event) => setSort(event.target.value as SortKey)}
+                        className="field-input w-auto shrink-0 rounded-full py-2 pl-4 pr-3 text-xs font-semibold sm:min-h-10"
+                      >
+                        <option value="recent">Zuletzt erstellt</option>
+                        <option value="name">Name A bis Z</option>
+                      </select>
+                    </>
+                  )}
                 </div>
               )}
               {listed.length === 0 ? (
-                <NoFilterMatch term={term} onReset={() => setTerm("")} />
+                term.trim().length > 0 ? (
+                  <NoFilterMatch term={term} onReset={() => setTerm("")} />
+                ) : (
+                  <EmptyState
+                    title="Keine Playlists in dieser Ansicht"
+                    action={
+                      <button type="button" className="action-secondary" onClick={() => setScope("all")}>
+                        Alle anzeigen
+                      </button>
+                    }
+                  >
+                    Wähle einen anderen Filter, um deine übrigen Playlists zu sehen.
+                  </EmptyState>
+                )
               ) : (
                 <ul className={GRID}>
                   {!filtering && (

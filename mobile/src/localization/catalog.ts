@@ -109,6 +109,7 @@ export interface StringCatalog {
     genre: string;
     likedSongs: string;
     playlists: string;
+    playlistInvite: string;
     openProfile: string;
     openProfileUpdateAvailable: string;
     /** The header dot stands for a final install failure the user has not seen yet. */
@@ -718,6 +719,8 @@ export interface StringCatalog {
     loadingPlaylists: string;
     noPlaylists: string;
     playlistTrackCount: (count: number) => string;
+    playlistCollaborativeCount: (count: number) => string;
+    playlistSharedTrackCount: (owner: string, count: number) => string;
     close: string;
     back: string;
     backToPlaylists: string;
@@ -1079,6 +1082,7 @@ export const de: StringCatalog = {
     genre: 'Genre',
     likedSongs: 'Lieblingstitel',
     playlists: 'Playlists',
+    playlistInvite: 'Playlist-Einladung',
     openProfile: 'Profil öffnen',
     openProfileUpdateAvailable: 'Profil öffnen, App-Update verfügbar',
     openProfileUpdateFailed: 'Profil öffnen, Update fehlgeschlagen',
@@ -1700,6 +1704,8 @@ export const de: StringCatalog = {
     loadingPlaylists: 'Playlists werden geladen…',
     noPlaylists: 'Noch keine Playlists. Erstelle oben eine neue.',
     playlistTrackCount: (count) => `${count} Titel`,
+    playlistCollaborativeCount: (count) => `Gemeinsam · ${count} Titel`,
+    playlistSharedTrackCount: (owner, count) => `Von ${owner} · ${count} Titel`,
     close: 'Titelaktionen schließen',
     back: 'Zurück',
     backToPlaylists: 'Zur Playlist-Auswahl zurückkehren',
@@ -2040,7 +2046,7 @@ export const en: StringCatalog = {
   navigation: {
     home: 'Home', search: 'Search', discover: 'Discover', radio: 'Radio', library: 'Library',
     profile: 'Profile', album: 'Album', artist: 'Artist', genre: 'Genre',
-    likedSongs: 'Liked Songs', playlists: 'Playlists', openProfile: 'Open profile',
+    likedSongs: 'Liked Songs', playlists: 'Playlists', playlistInvite: 'Playlist Invite', openProfile: 'Open profile',
     openProfileUpdateAvailable: 'Open profile, app update available',
     openProfileUpdateFailed: 'Open profile, update failed',
     profileUnavailable: 'Profile is not available right now.',
@@ -2566,6 +2572,10 @@ export const en: StringCatalog = {
     loadingPlaylists: 'Loading playlists…',
     noPlaylists: 'No playlists yet. Create one above.',
     playlistTrackCount: (count) => `${count} ${count === 1 ? 'track' : 'tracks'}`,
+    playlistCollaborativeCount: (count) =>
+      `Collaborative · ${count} ${count === 1 ? 'track' : 'tracks'}`,
+    playlistSharedTrackCount: (owner, count) =>
+      `By ${owner} · ${count} ${count === 1 ? 'track' : 'tracks'}`,
     close: 'Close track actions', back: 'Back', backToPlaylists: 'Back to playlist selection',
     playNextFailed: 'Play next failed', addToQueueFailed: 'Add to queue failed',
     startRadioFailed: 'Starting radio failed',

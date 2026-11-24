@@ -95,9 +95,14 @@ export default function StatusPage() {
 
   return (
     <div className="mx-auto w-full max-w-5xl min-w-0" aria-busy={isFetching}>
-      <Link href="/account?tab=admin" className="label-mono mb-5 inline-flex min-h-11 items-center gap-1.5 transition-colors hover:text-foreground motion-reduce:transition-none">
-        <BackIcon className="h-3.5 w-3.5" /> Verwaltung
-      </Link>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <Link href="/account?tab=admin" className="label-mono inline-flex min-h-11 items-center gap-1.5 transition-colors hover:text-foreground motion-reduce:transition-none">
+          <BackIcon className="h-3.5 w-3.5" /> Verwaltung
+        </Link>
+        <Link href="/admin/usage" className="section-link inline-flex min-h-11 items-center">
+          Nutzungs-Dashboard
+        </Link>
+      </div>
       <header className="page-header">
         <div className="min-w-0">
           <p className="page-eyebrow">Diagnose</p>

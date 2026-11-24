@@ -75,7 +75,7 @@ const stubs = {
     `export const Morph = ({children}) => children; export const useMorphSource = () => ({arm() {}});`,
   ),
   "@/components/icons": moduleUrl(
-    `export function HeartIcon() { return null; } export const DownloadIcon = HeartIcon; export const DownloadedIcon = HeartIcon; export const PlayIcon = HeartIcon; export const PlusIcon = HeartIcon; export const LibraryIcon = HeartIcon; export const ShuffleIcon = HeartIcon; export const SearchIcon = HeartIcon; export const ClockIcon = HeartIcon; export const UserIcon = HeartIcon;`,
+    `export function HeartIcon() { return null; } export const DownloadIcon = HeartIcon; export const DownloadedIcon = HeartIcon; export const PlayIcon = HeartIcon; export const PlusIcon = HeartIcon; export const LibraryIcon = HeartIcon; export const ShuffleIcon = HeartIcon; export const SearchIcon = HeartIcon; export const ClockIcon = HeartIcon; export const UserIcon = HeartIcon; export const UsersIcon = HeartIcon;`,
   ),
   "./CreatePlaylistDialog": moduleUrl(
     `export default function CreatePlaylistDialog() { return null; }`,
@@ -88,6 +88,7 @@ const stubs = {
 // hooks and Next navigation stubbed. React still renders the actual screen,
 // so errors and empty states are exercised.
 await compileInto(stubs, [
+  ["@/lib/playlistPermissions", "src/lib/playlistPermissions.ts"],
   ["@/hooks/useRecentTracks", "src/hooks/useRecentTracks.ts"],
   ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
   ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
@@ -304,7 +305,7 @@ test("playlists form a grid with the liked-songs tile, covers and a create tile"
   ]);
   const html = screen();
   assert.match(html, /1 Playlist</);
-  assert.match(html, /<a[^>]*href="\/playlist\/road"[^>]*><img src="road.jpg"/);
+  assert.match(html, /<a[^>]*href="\/playlist\/road"[^>]*>[\s\S]*?<img src="road.jpg"/);
   assert.match(html, /<a[^>]*href="\/library\?tab=liked"[^>]*>.*?Gelikte Titel/);
   assert.match(html, /Neue Playlist/);
   assert.doesNotMatch(html, /Playlists filtern/);
@@ -312,6 +313,20 @@ test("playlists form a grid with the liked-songs tile, covers and a create tile"
   const empty = screen();
   assert.match(empty, /Hier ist Platz für deine erste Playlist/);
   assert.doesNotMatch(empty, /Neue Playlist/);
+});
+
+test("collaborative and shared playlists show badges, owner context and scope filter chips", () => {
+  reset();
+  fixture.playlists = success([
+    { id: "1", name: "Eigene Liste", track_count: 4, is_owner: true, is_collaborative: true },
+    { id: "2", name: "Geteilte Liste", track_count: 7, is_owner: false, is_collaborator: true, is_collaborative: true, owner_name: "Jule" },
+  ]);
+  const html = screen();
+  assert.match(html, /aria-label="Playlist-Filter"/);
+  assert.match(html, /Eigene/);
+  assert.match(html, /Geteilt/);
+  assert.match(html, /Gemeinsam · 4 Titel/);
+  assert.match(html, /Gemeinsam · von Jule · 7 Titel/);
 });
 
 test("liked songs offer play-all and shuffle, and long lists add a filter and sort order", () => {

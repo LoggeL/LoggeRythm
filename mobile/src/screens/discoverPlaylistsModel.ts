@@ -29,11 +29,11 @@ export function mergeDiscoverPlaylists(
 ): DiscoverPlaylistEntry[] {
   assertUniquePlaylistIds(own, 'Own');
   assertUniquePlaylistIds(community, 'Community');
-  const ownIds = new Set(own.map((playlist) => playlist.id));
+  const libraryIds = new Set(own.map((playlist) => playlist.id));
   return [
-    ...own.map((playlist) => ({ playlist, own: true })),
+    ...own.map((playlist) => ({ playlist, own: playlist.is_owner })),
     ...community
-      .filter((playlist) => !ownIds.has(playlist.id))
+      .filter((playlist) => !libraryIds.has(playlist.id))
       .map((playlist) => ({ playlist, own: false })),
   ];
 }

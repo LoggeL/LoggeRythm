@@ -1,4 +1,10 @@
-export const TRANSIENT_ROOT_ROUTE_NAMES = ['Profile', 'NowPlaying', 'Queue', 'Party'] as const;
+export const TRANSIENT_ROOT_ROUTE_NAMES = [
+  'Profile',
+  'NowPlaying',
+  'Queue',
+  'Party',
+  'PlaylistInvite',
+] as const;
 
 /**
  * Tab back navigation walks recently visited tabs before leaving the app,

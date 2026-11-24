@@ -517,7 +517,7 @@ export default function TrackActionsHost() {
           <ListSeparator />
           <TrackActionsPlaylistPicker
             hasData={playlists.data !== undefined}
-            empty={(playlists.data?.length ?? 0) === 0}
+            empty={(playlists.data?.filter((playlist) => playlist.can_edit_tracks).length ?? 0) === 0}
             isPending={playlists.isPending}
             isFetching={playlists.isFetching}
             isStale={playlists.isStale}
@@ -531,24 +531,37 @@ export default function TrackActionsHost() {
               style={styles.scroll}
               contentContainerStyle={styles.list}
             >
-              {(playlists.data ?? []).map((playlist) => (
-                <TrackActionsPlaylistRow
-                  key={playlist.id}
-                  testID={`track-action-playlist-${playlist.id}`}
-                  name={playlist.name}
-                  detail={strings.trackActions.playlistTrackCount(playlist.track_count)}
-                  accessibilityLabel={strings.trackActions.addToNamedPlaylist(
-                    request?.track.title ?? '',
-                    playlist.name,
-                  )}
-                  disabled={pending}
-                  busy={addMutation.isPending && addMutation.variables?.id === playlist.id}
-                  onPress={() => {
-                    if (request === null) return;
-                    addMutation.mutate({ id: playlist.id, track: request.track });
-                  }}
-                />
-              ))}
+              {(playlists.data ?? [])
+                .filter((playlist) => playlist.can_edit_tracks)
+                .map((playlist) => {
+                  const detail = !playlist.is_owner && playlist.owner_name
+                    ? strings.trackActions.playlistSharedTrackCount(
+                        playlist.owner_name,
+                        playlist.track_count,
+                      )
+                    : playlist.is_collaborative
+                      ? strings.trackActions.playlistCollaborativeCount(playlist.track_count)
+                      : strings.trackActions.playlistTrackCount(playlist.track_count);
+                  return (
+                    <TrackActionsPlaylistRow
+                      key={playlist.id}
+                      testID={`track-action-playlist-${playlist.id}`}
+                      name={playlist.name}
+                      detail={detail}
+                      collaborative={playlist.is_collaborative}
+                      accessibilityLabel={strings.trackActions.addToNamedPlaylist(
+                        request?.track.title ?? '',
+                        playlist.name,
+                      )}
+                      disabled={pending}
+                      busy={addMutation.isPending && addMutation.variables?.id === playlist.id}
+                      onPress={() => {
+                        if (request === null) return;
+                        addMutation.mutate({ id: playlist.id, track: request.track });
+                      }}
+                    />
+                  );
+                })}
             </ScrollView>
           </TrackActionsPlaylistPicker>
         </View>

@@ -27,7 +27,14 @@ const playlist = (id: number): PlaylistSummary => ({
   cover_url: null,
   is_public: false,
   track_count: 2,
+  owner_id: 1,
   owner_name: null,
+  owner_avatar_url: null,
+  is_collaborative: false,
+  is_owner: true,
+  is_collaborator: false,
+  can_edit_tracks: true,
+  collaborator_count: 0,
 });
 
 function result(): ResolveResult {

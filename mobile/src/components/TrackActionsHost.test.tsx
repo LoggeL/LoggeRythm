@@ -1,6 +1,7 @@
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
+import { strings } from '../localization';
 import TrackActionsHost from './TrackActionsHost';
 import type { TrackActionRequest } from './trackActions';
 
@@ -65,7 +66,56 @@ vi.mock('react-native', () => ({
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({}),
   useQuery: () => ({
-    data: [{ id: 10, name: 'Roadtrip', track_count: 5 }],
+    data: [
+      {
+        id: 10,
+        name: 'Roadtrip',
+        description: null,
+        cover_url: null,
+        is_public: false,
+        track_count: 5,
+        owner_id: 7,
+        owner_name: 'Logge',
+        owner_avatar_url: null,
+        is_collaborative: false,
+        is_owner: true,
+        is_collaborator: false,
+        can_edit_tracks: true,
+        collaborator_count: 0,
+      },
+      {
+        id: 11,
+        name: 'WG-Küche',
+        description: null,
+        cover_url: null,
+        is_public: false,
+        track_count: 3,
+        owner_id: 2,
+        owner_name: 'Jule',
+        owner_avatar_url: null,
+        is_collaborative: true,
+        is_owner: false,
+        is_collaborator: true,
+        can_edit_tracks: true,
+        collaborator_count: 2,
+      },
+      {
+        id: 12,
+        name: 'Paused Shared',
+        description: null,
+        cover_url: null,
+        is_public: false,
+        track_count: 4,
+        owner_id: 3,
+        owner_name: 'Tariq',
+        owner_avatar_url: null,
+        is_collaborative: false,
+        is_owner: false,
+        is_collaborator: true,
+        can_edit_tracks: false,
+        collaborator_count: 1,
+      },
+    ],
     isPending: false,
     isFetching: false,
     isStale: false,
@@ -270,5 +320,23 @@ describe('TrackActionsHost', () => {
     mocks.request = null;
     renderHost();
     expect(mocks.popAndRestore).toHaveBeenCalledOnce();
+  });
+
+  it('shows owned and active collaborative playlists while excluding paused non-editable playlists', () => {
+    const actionsTree = renderHost();
+    (byTestId(actionsTree, 'track-action-add-playlist')?.props.onPress as () => void)();
+    const playlistsTree = renderHost();
+
+    expect(byTestId(playlistsTree, 'track-action-playlist-10')?.props).toMatchObject({
+      name: 'Roadtrip',
+      detail: strings.trackActions.playlistTrackCount(5),
+      collaborative: false,
+    });
+    expect(byTestId(playlistsTree, 'track-action-playlist-11')?.props).toMatchObject({
+      name: 'WG-Küche',
+      detail: strings.trackActions.playlistSharedTrackCount('Jule', 3),
+      collaborative: true,
+    });
+    expect(byTestId(playlistsTree, 'track-action-playlist-12')).toBeNull();
   });
 });

@@ -74,7 +74,15 @@ function playlist(id: number, tracks: Track[]): Playlist {
     cover_url: 'https://images.test/playlist.jpg',
     is_public: false,
     is_owner: true,
+    owner_id: 7,
     owner_name: 'Owner',
+    owner_avatar_url: null,
+    is_collaborative: false,
+    is_collaborator: false,
+    can_edit_tracks: true,
+    collaborators: [],
+    collaborator_count: 0,
+    revision: 0,
     tracks,
   };
 }

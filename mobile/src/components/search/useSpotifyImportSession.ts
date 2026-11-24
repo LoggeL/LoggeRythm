@@ -108,9 +108,10 @@ export function useSpotifyImportSession({ accountScope, job }: SpotifyImportSess
     fetchStatus: resultQuery.fetchStatus,
     error: resultQuery.error,
   });
+  const editablePlaylists = playlistsQuery.data?.filter((playlist) => playlist.can_edit_tracks);
   const playlistsState = resolveRemoteVisualState({
-    hasData: playlistsQuery.data !== undefined,
-    empty: playlistsQuery.data !== undefined && playlistsQuery.data.length === 0,
+    hasData: editablePlaylists !== undefined,
+    empty: editablePlaylists !== undefined && editablePlaylists.length === 0,
     pending: playlistsQuery.isPending,
     fetching: playlistsQuery.isFetching,
     stale: playlistsQuery.isStale,
@@ -208,7 +209,7 @@ export function useSpotifyImportSession({ accountScope, job }: SpotifyImportSess
     resultState,
     resolveBusy: resultQuery.fetchStatus === 'fetching',
     retryResolve: () => { void resultQuery.refetch(); },
-    playlists: playlistsQuery.data ?? [],
+    playlists: editablePlaylists ?? [],
     playlistsState,
     playlistsBusy: playlistsQuery.fetchStatus === 'fetching',
     retryPlaylists: () => { void playlistsQuery.refetch(); },

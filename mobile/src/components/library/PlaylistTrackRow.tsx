@@ -18,9 +18,11 @@ export interface PlaylistTrackRowProps {
   index: number;
   count: number;
   occurrence: LibraryTrackOccurrence;
-  /** Shows the move/remove controls (owner in reorder mode). */
+  /** Shows the move/remove controls (owner or active collaborator in reorder mode). */
   canEdit: boolean;
   controlsDisabled: boolean;
+  /** Optional contributor attribution caption for collaborative playlists. */
+  addedByLabel?: string;
   onPlay: () => void;
   onOpenActions: () => void;
   onOpenAlbum: (params: LibraryAlbumRouteParams) => void;
@@ -37,6 +39,7 @@ export function PlaylistTrackRow({
   occurrence,
   canEdit,
   controlsDisabled,
+  addedByLabel,
   onPlay,
   onOpenActions,
   onOpenAlbum,
@@ -51,6 +54,7 @@ export function PlaylistTrackRow({
       testID={rowId}
       occurrence={occurrence}
       position={index + 1}
+      caption={addedByLabel}
       onPlay={onPlay}
       onActions={onOpenActions}
       onOpenAlbum={onOpenAlbum}

@@ -361,10 +361,14 @@ def release_radar(
         per_artist[key] = per_artist.get(key, 0) + 1
         out.append(t)
     radar = out[:100]
+    if user.id is None:
+        raise RuntimeError(
+            "Release Radar preload requires a persisted user, but user.id is None"
+        )
     # Warm the server cache for the newest releases. This only queues work for
     # a background worker and returns; download failures are reported by that
     # worker (services/radar_preload.py), never through this response.
-    radar_preload.schedule(radar)
+    radar_preload.schedule(radar, user_id=user.id)
     return radar
 
 

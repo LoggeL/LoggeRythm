@@ -1,6 +1,416 @@
 {
   "components": {
     "schemas": {
+      "AdminConnectDevice": {
+        "properties": {
+          "connected_at": {
+            "format": "date-time",
+            "title": "Connected At",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_type": {
+            "enum": [
+              "web",
+              "mobile",
+              "tablet",
+              "desktop",
+              "tv",
+              "speaker",
+              "other"
+            ],
+            "title": "Device Type",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "party_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Code"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "device_type",
+          "is_active",
+          "connected_at",
+          "last_seen_at"
+        ],
+        "title": "AdminConnectDevice",
+        "type": "object"
+      },
+      "AdminOverviewStorage": {
+        "properties": {
+          "cached_tracks": {
+            "title": "Cached Tracks",
+            "type": "integer"
+          },
+          "directly_attributed_bytes": {
+            "title": "Directly Attributed Bytes",
+            "type": "integer"
+          },
+          "directly_attributed_tracks": {
+            "title": "Directly Attributed Tracks",
+            "type": "integer"
+          },
+          "disk_free": {
+            "title": "Disk Free",
+            "type": "integer"
+          },
+          "disk_total": {
+            "title": "Disk Total",
+            "type": "integer"
+          },
+          "disk_used": {
+            "title": "Disk Used",
+            "type": "integer"
+          },
+          "exclusive_audio_bytes": {
+            "title": "Exclusive Audio Bytes",
+            "type": "integer"
+          },
+          "exclusive_audio_tracks": {
+            "title": "Exclusive Audio Tracks",
+            "type": "integer"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "shared_audio_bytes": {
+            "title": "Shared Audio Bytes",
+            "type": "integer"
+          },
+          "shared_audio_tracks": {
+            "title": "Shared Audio Tracks",
+            "type": "integer"
+          },
+          "total_audio_bytes": {
+            "title": "Total Audio Bytes",
+            "type": "integer"
+          },
+          "unattributed_audio_bytes": {
+            "title": "Unattributed Audio Bytes",
+            "type": "integer"
+          },
+          "unattributed_audio_tracks": {
+            "title": "Unattributed Audio Tracks",
+            "type": "integer"
+          },
+          "upload_bytes": {
+            "title": "Upload Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cached_tracks",
+          "total_audio_bytes",
+          "exclusive_audio_bytes",
+          "exclusive_audio_tracks",
+          "shared_audio_bytes",
+          "shared_audio_tracks",
+          "unattributed_audio_bytes",
+          "unattributed_audio_tracks",
+          "directly_attributed_tracks",
+          "directly_attributed_bytes",
+          "upload_bytes",
+          "disk_total",
+          "disk_used",
+          "disk_free",
+          "retention_days"
+        ],
+        "title": "AdminOverviewStorage",
+        "type": "object"
+      },
+      "AdminRecentPlay": {
+        "properties": {
+          "album": {
+            "title": "Album",
+            "type": "string"
+          },
+          "artist": {
+            "title": "Artist",
+            "type": "string"
+          },
+          "cover": {
+            "title": "Cover",
+            "type": "string"
+          },
+          "duration_sec": {
+            "title": "Duration Sec",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "played_at": {
+            "format": "date-time",
+            "title": "Played At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "artist",
+          "album",
+          "cover",
+          "duration_sec",
+          "played_at"
+        ],
+        "title": "AdminRecentPlay",
+        "type": "object"
+      },
+      "AdminRecentTrackRequest": {
+        "properties": {
+          "artist": {
+            "title": "Artist",
+            "type": "string"
+          },
+          "cover": {
+            "title": "Cover",
+            "type": "string"
+          },
+          "deezer_id": {
+            "title": "Deezer Id",
+            "type": "string"
+          },
+          "is_currently_stored": {
+            "title": "Is Currently Stored",
+            "type": "boolean"
+          },
+          "materialized": {
+            "title": "Materialized",
+            "type": "boolean"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "stream",
+              "preload",
+              "playlist_export",
+              "party_preload",
+              "radar_preload",
+              "lyrics_ai"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deezer_id",
+          "title",
+          "artist",
+          "cover",
+          "source",
+          "materialized",
+          "size_bytes",
+          "requested_at",
+          "is_currently_stored"
+        ],
+        "title": "AdminRecentTrackRequest",
+        "type": "object"
+      },
+      "AdminRequestSourceStat": {
+        "properties": {
+          "materialized": {
+            "title": "Materialized",
+            "type": "integer"
+          },
+          "materialized_bytes": {
+            "title": "Materialized Bytes",
+            "type": "integer"
+          },
+          "requests": {
+            "title": "Requests",
+            "type": "integer"
+          },
+          "source": {
+            "enum": [
+              "stream",
+              "preload",
+              "playlist_export",
+              "party_preload",
+              "radar_preload",
+              "lyrics_ai"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "requests",
+          "materialized",
+          "materialized_bytes"
+        ],
+        "title": "AdminRequestSourceStat",
+        "type": "object"
+      },
+      "AdminUsageOverview": {
+        "properties": {
+          "active_parties": {
+            "title": "Active Parties",
+            "type": "integer"
+          },
+          "active_users": {
+            "title": "Active Users",
+            "type": "integer"
+          },
+          "approved_users": {
+            "title": "Approved Users",
+            "type": "integer"
+          },
+          "materialized_bytes": {
+            "title": "Materialized Bytes",
+            "type": "integer"
+          },
+          "online_connect_devices": {
+            "title": "Online Connect Devices",
+            "type": "integer"
+          },
+          "online_connect_users": {
+            "title": "Online Connect Users",
+            "type": "integer"
+          },
+          "pending_users": {
+            "title": "Pending Users",
+            "type": "integer"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/AdminOverviewStorage"
+          },
+          "total_listening_sec": {
+            "title": "Total Listening Sec",
+            "type": "integer"
+          },
+          "total_plays": {
+            "title": "Total Plays",
+            "type": "integer"
+          },
+          "total_users": {
+            "title": "Total Users",
+            "type": "integer"
+          },
+          "tracks_materialized": {
+            "title": "Tracks Materialized",
+            "type": "integer"
+          },
+          "tracks_requested": {
+            "title": "Tracks Requested",
+            "type": "integer"
+          },
+          "unique_tracks_played": {
+            "title": "Unique Tracks Played",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_users",
+          "approved_users",
+          "pending_users",
+          "active_users",
+          "total_plays",
+          "total_listening_sec",
+          "unique_tracks_played",
+          "tracks_requested",
+          "tracks_materialized",
+          "materialized_bytes",
+          "online_connect_devices",
+          "online_connect_users",
+          "active_parties",
+          "storage"
+        ],
+        "title": "AdminUsageOverview",
+        "type": "object"
+      },
+      "AdminUsageOverviewResponse": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "overview": {
+            "$ref": "#/components/schemas/AdminUsageOverview"
+          },
+          "range": {
+            "enum": [
+              "7d",
+              "30d",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "request_tracking_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Tracking Since"
+          },
+          "users": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserUsageSummary"
+            },
+            "title": "Users",
+            "type": "array"
+          }
+        },
+        "required": [
+          "range",
+          "generated_at",
+          "overview",
+          "users"
+        ],
+        "title": "AdminUsageOverviewResponse",
+        "type": "object"
+      },
       "AdminUser": {
         "properties": {
           "avatar_url": {
@@ -61,6 +471,426 @@
           "is_approved"
         ],
         "title": "AdminUser",
+        "type": "object"
+      },
+      "AdminUserLibrary": {
+        "properties": {
+          "follows": {
+            "title": "Follows",
+            "type": "integer"
+          },
+          "import_jobs": {
+            "title": "Import Jobs",
+            "type": "integer"
+          },
+          "import_tracks_matched": {
+            "title": "Import Tracks Matched",
+            "type": "integer"
+          },
+          "likes": {
+            "title": "Likes",
+            "type": "integer"
+          },
+          "party_hosted": {
+            "title": "Party Hosted",
+            "type": "integer"
+          },
+          "party_tracks_added": {
+            "title": "Party Tracks Added",
+            "type": "integer"
+          },
+          "playlist_tracks": {
+            "title": "Playlist Tracks",
+            "type": "integer"
+          },
+          "playlists": {
+            "title": "Playlists",
+            "type": "integer"
+          },
+          "public_playlists": {
+            "title": "Public Playlists",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "likes",
+          "playlists",
+          "public_playlists",
+          "playlist_tracks",
+          "follows",
+          "party_tracks_added",
+          "party_hosted",
+          "import_jobs",
+          "import_tracks_matched"
+        ],
+        "title": "AdminUserLibrary",
+        "type": "object"
+      },
+      "AdminUserStorage": {
+        "properties": {
+          "accessed_bytes": {
+            "title": "Accessed Bytes",
+            "type": "integer"
+          },
+          "accessed_tracks": {
+            "title": "Accessed Tracks",
+            "type": "integer"
+          },
+          "exclusive_bytes": {
+            "title": "Exclusive Bytes",
+            "type": "integer"
+          },
+          "exclusive_tracks": {
+            "title": "Exclusive Tracks",
+            "type": "integer"
+          },
+          "materialized_bytes": {
+            "title": "Materialized Bytes",
+            "type": "integer"
+          },
+          "materialized_tracks": {
+            "title": "Materialized Tracks",
+            "type": "integer"
+          },
+          "pinned_bytes": {
+            "title": "Pinned Bytes",
+            "type": "integer"
+          },
+          "pinned_tracks": {
+            "title": "Pinned Tracks",
+            "type": "integer"
+          },
+          "shared_bytes": {
+            "title": "Shared Bytes",
+            "type": "integer"
+          },
+          "shared_tracks": {
+            "title": "Shared Tracks",
+            "type": "integer"
+          },
+          "upload_bytes": {
+            "title": "Upload Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "exclusive_bytes",
+          "exclusive_tracks",
+          "shared_bytes",
+          "shared_tracks",
+          "accessed_bytes",
+          "accessed_tracks",
+          "materialized_bytes",
+          "materialized_tracks",
+          "pinned_bytes",
+          "pinned_tracks",
+          "upload_bytes"
+        ],
+        "title": "AdminUserStorage",
+        "type": "object"
+      },
+      "AdminUserStorageBreakdown": {
+        "properties": {
+          "accessed_bytes": {
+            "title": "Accessed Bytes",
+            "type": "integer"
+          },
+          "accessed_tracks": {
+            "title": "Accessed Tracks",
+            "type": "integer"
+          },
+          "exclusive_bytes": {
+            "title": "Exclusive Bytes",
+            "type": "integer"
+          },
+          "exclusive_tracks": {
+            "title": "Exclusive Tracks",
+            "type": "integer"
+          },
+          "materialized_bytes": {
+            "title": "Materialized Bytes",
+            "type": "integer"
+          },
+          "materialized_tracks": {
+            "title": "Materialized Tracks",
+            "type": "integer"
+          },
+          "pinned_bytes": {
+            "title": "Pinned Bytes",
+            "type": "integer"
+          },
+          "pinned_tracks": {
+            "title": "Pinned Tracks",
+            "type": "integer"
+          },
+          "shared_bytes": {
+            "title": "Shared Bytes",
+            "type": "integer"
+          },
+          "shared_tracks": {
+            "title": "Shared Tracks",
+            "type": "integer"
+          },
+          "total_cache_bytes": {
+            "title": "Total Cache Bytes",
+            "type": "integer"
+          },
+          "upload_bytes": {
+            "title": "Upload Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "exclusive_bytes",
+          "exclusive_tracks",
+          "shared_bytes",
+          "shared_tracks",
+          "accessed_bytes",
+          "accessed_tracks",
+          "materialized_bytes",
+          "materialized_tracks",
+          "pinned_bytes",
+          "pinned_tracks",
+          "upload_bytes",
+          "total_cache_bytes"
+        ],
+        "title": "AdminUserStorageBreakdown",
+        "type": "object"
+      },
+      "AdminUserUsageDetailResponse": {
+        "properties": {
+          "active_devices": {
+            "items": {
+              "$ref": "#/components/schemas/AdminConnectDevice"
+            },
+            "title": "Active Devices",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "range": {
+            "enum": [
+              "7d",
+              "30d",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "recent_plays": {
+            "items": {
+              "$ref": "#/components/schemas/AdminRecentPlay"
+            },
+            "title": "Recent Plays",
+            "type": "array"
+          },
+          "recent_requests": {
+            "items": {
+              "$ref": "#/components/schemas/AdminRecentTrackRequest"
+            },
+            "title": "Recent Requests",
+            "type": "array"
+          },
+          "request_tracking_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Tracking Since"
+          },
+          "requests_by_source": {
+            "items": {
+              "$ref": "#/components/schemas/AdminRequestSourceStat"
+            },
+            "title": "Requests By Source",
+            "type": "array"
+          },
+          "storage_breakdown": {
+            "$ref": "#/components/schemas/AdminUserStorageBreakdown"
+          },
+          "top_artists": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "title": "Top Artists",
+            "type": "array"
+          },
+          "top_tracks": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "title": "Top Tracks",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AdminUserUsageSummary"
+          }
+        },
+        "required": [
+          "range",
+          "generated_at",
+          "user",
+          "storage_breakdown",
+          "requests_by_source",
+          "active_devices",
+          "top_tracks",
+          "top_artists",
+          "recent_plays",
+          "recent_requests"
+        ],
+        "title": "AdminUserUsageDetailResponse",
+        "type": "object"
+      },
+      "AdminUserUsageSummary": {
+        "properties": {
+          "active_device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Device Name"
+          },
+          "active_party_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Party Code"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_admin": {
+            "title": "Is Admin",
+            "type": "boolean"
+          },
+          "is_approved": {
+            "title": "Is Approved",
+            "type": "boolean"
+          },
+          "is_playing_now": {
+            "title": "Is Playing Now",
+            "type": "boolean"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
+          },
+          "library": {
+            "$ref": "#/components/schemas/AdminUserLibrary"
+          },
+          "listening_sec": {
+            "title": "Listening Sec",
+            "type": "integer"
+          },
+          "materialized_bytes": {
+            "title": "Materialized Bytes",
+            "type": "integer"
+          },
+          "online_devices": {
+            "title": "Online Devices",
+            "type": "integer"
+          },
+          "plays": {
+            "title": "Plays",
+            "type": "integer"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/AdminUserStorage"
+          },
+          "tracks_materialized": {
+            "title": "Tracks Materialized",
+            "type": "integer"
+          },
+          "tracks_requested": {
+            "title": "Tracks Requested",
+            "type": "integer"
+          },
+          "unique_tracks": {
+            "title": "Unique Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "is_admin",
+          "is_approved",
+          "plays",
+          "listening_sec",
+          "unique_tracks",
+          "tracks_requested",
+          "tracks_materialized",
+          "materialized_bytes",
+          "storage",
+          "library",
+          "online_devices",
+          "is_playing_now"
+        ],
+        "title": "AdminUserUsageSummary",
         "type": "object"
       },
       "AgentAuth": {
@@ -1847,6 +2677,126 @@
         "title": "PlaybackUpdate",
         "type": "object"
       },
+      "PlaylistCollaborativeUpdate": {
+        "properties": {
+          "is_collaborative": {
+            "title": "Is Collaborative",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "is_collaborative"
+        ],
+        "title": "PlaylistCollaborativeUpdate",
+        "type": "object"
+      },
+      "PlaylistCollaboratorAdd": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "PlaylistCollaboratorAdd",
+        "type": "object"
+      },
+      "PlaylistCollaboratorOut": {
+        "description": "A non-owner collaborator on a playlist.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "joined_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Joined At"
+          },
+          "role": {
+            "default": "editor",
+            "enum": [
+              "owner",
+              "editor"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "PlaylistCollaboratorOut",
+        "type": "object"
+      },
+      "PlaylistCollaboratorUser": {
+        "description": "Public-safe user identity used for playlist owners and track attribution.",
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "PlaylistCollaboratorUser",
+        "type": "object"
+      },
       "PlaylistCreate": {
         "properties": {
           "description": {
@@ -1859,6 +2809,11 @@
               }
             ],
             "title": "Description"
+          },
+          "is_collaborative": {
+            "default": false,
+            "title": "Is Collaborative",
+            "type": "boolean"
           },
           "name": {
             "title": "Name",
@@ -1873,6 +2828,23 @@
       },
       "PlaylistDetail": {
         "properties": {
+          "can_edit_tracks": {
+            "default": false,
+            "title": "Can Edit Tracks",
+            "type": "boolean"
+          },
+          "collaborator_count": {
+            "default": 0,
+            "title": "Collaborator Count",
+            "type": "integer"
+          },
+          "collaborators": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistCollaboratorOut"
+            },
+            "title": "Collaborators",
+            "type": "array"
+          },
           "cover_url": {
             "anyOf": [
               {
@@ -1899,6 +2871,16 @@
             "title": "Id",
             "type": "integer"
           },
+          "is_collaborative": {
+            "default": false,
+            "title": "Is Collaborative",
+            "type": "boolean"
+          },
+          "is_collaborator": {
+            "default": false,
+            "title": "Is Collaborator",
+            "type": "boolean"
+          },
           "is_owner": {
             "default": false,
             "title": "Is Owner",
@@ -1913,6 +2895,28 @@
             "title": "Name",
             "type": "string"
           },
+          "owner_avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Avatar Url"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
           "owner_name": {
             "anyOf": [
               {
@@ -1923,6 +2927,11 @@
               }
             ],
             "title": "Owner Name"
+          },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
           },
           "tracks": {
             "items": {
@@ -1956,6 +2965,158 @@
           "entry_ids"
         ],
         "title": "PlaylistEntryReorder",
+        "type": "object"
+      },
+      "PlaylistInviteOut": {
+        "description": "Active shareable invite token for a collaborative playlist.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "created_at"
+        ],
+        "title": "PlaylistInviteOut",
+        "type": "object"
+      },
+      "PlaylistInvitePreview": {
+        "description": "Metadata shown to an authenticated account before accepting an invite link.",
+        "properties": {
+          "already_collaborator": {
+            "default": false,
+            "title": "Already Collaborator",
+            "type": "boolean"
+          },
+          "collaborator_count": {
+            "default": 0,
+            "title": "Collaborator Count",
+            "type": "integer"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_owner": {
+            "default": false,
+            "title": "Is Owner",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/PlaylistCollaboratorUser"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "integer"
+          },
+          "track_count": {
+            "default": 0,
+            "title": "Track Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "name",
+          "owner"
+        ],
+        "title": "PlaylistInvitePreview",
+        "type": "object"
+      },
+      "PlaylistInviteStatus": {
+        "description": "Owner-only view of the active invite link (or null if none/revoked).",
+        "properties": {
+          "invite": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistInviteOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "PlaylistInviteStatus",
+        "type": "object"
+      },
+      "PlaylistJoinResult": {
+        "description": "Result of accepting a collaborative playlist invite link.",
+        "properties": {
+          "already_member": {
+            "default": false,
+            "title": "Already Member",
+            "type": "boolean"
+          },
+          "joined": {
+            "title": "Joined",
+            "type": "boolean"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "integer"
+          },
+          "playlist_name": {
+            "title": "Playlist Name",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "owner",
+              "editor"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "playlist_name",
+          "joined",
+          "role"
+        ],
+        "title": "PlaylistJoinResult",
         "type": "object"
       },
       "PlaylistReorder": {
@@ -2004,6 +3165,16 @@
       },
       "PlaylistSummary": {
         "properties": {
+          "can_edit_tracks": {
+            "default": false,
+            "title": "Can Edit Tracks",
+            "type": "boolean"
+          },
+          "collaborator_count": {
+            "default": 0,
+            "title": "Collaborator Count",
+            "type": "integer"
+          },
           "cover_url": {
             "anyOf": [
               {
@@ -2030,6 +3201,21 @@
             "title": "Id",
             "type": "integer"
           },
+          "is_collaborative": {
+            "default": false,
+            "title": "Is Collaborative",
+            "type": "boolean"
+          },
+          "is_collaborator": {
+            "default": false,
+            "title": "Is Collaborator",
+            "type": "boolean"
+          },
+          "is_owner": {
+            "default": false,
+            "title": "Is Owner",
+            "type": "boolean"
+          },
           "is_public": {
             "default": false,
             "title": "Is Public",
@@ -2038,6 +3224,28 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "owner_avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Avatar Url"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
           },
           "owner_name": {
             "anyOf": [
@@ -2066,6 +3274,28 @@
       "PlaylistTrackEntry": {
         "description": "A catalog track at one stable occurrence inside a playlist.",
         "properties": {
+          "added_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added At"
+          },
+          "added_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistCollaboratorUser"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "album": {
             "default": "",
             "title": "Album",
@@ -3546,6 +4776,163 @@
           }
         ],
         "summary": "Storage Cleanup",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/usage": {
+      "get": {
+        "description": "Return system-wide and per-user usage metrics and disk storage attribution.",
+        "operationId": "admin_usage_api_admin_usage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsageOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Admin Usage",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/usage/users/{user_id}": {
+      "get": {
+        "description": "Return a single user's detailed usage breakdown, history, and live devices.",
+        "operationId": "admin_user_usage_api_admin_usage_users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserUsageDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Admin User Usage",
         "tags": [
           "admin"
         ]
@@ -6795,6 +8182,25 @@
     "/api/playlists": {
       "get": {
         "operationId": "list_playlists_api_playlists_get",
+        "parameters": [
+          {
+            "description": "Filter playlists: 'all' returns owned and collaborated playlists, 'owned' returns playlists owned by the user, and 'collaborative' returns collaborated playlists plus owned collaborative playlists.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "description": "Filter playlists: 'all' returns owned and collaborated playlists, 'owned' returns playlists owned by the user, and 'collaborative' returns collaborated playlists plus owned collaborative playlists.",
+              "enum": [
+                "all",
+                "owned",
+                "collaborative"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -6829,6 +8235,16 @@
               }
             },
             "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -6901,6 +8317,142 @@
           }
         ],
         "summary": "Create Playlist",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/invites/{token}": {
+      "get": {
+        "description": "Preview a collaborative playlist before accepting an invite link.",
+        "operationId": "preview_playlist_invite_api_playlists_invites__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistInvitePreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Preview Playlist Invite",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/invites/{token}/accept": {
+      "post": {
+        "description": "Accept a collaborative playlist invite link and join as an editor.",
+        "operationId": "accept_playlist_invite_api_playlists_invites__token__accept_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistJoinResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Accept Playlist Invite",
         "tags": [
           "playlists"
         ]
@@ -7151,6 +8703,232 @@
         ]
       }
     },
+    "/api/playlists/{playlist_id}/collaborative": {
+      "patch": {
+        "description": "Owner-only: toggle collaboration. Disabling revokes active invite links while keeping collaborators read-only.",
+        "operationId": "set_collaborative_api_playlists__playlist_id__collaborative_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistCollaborativeUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Set Collaborative",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/collaborators": {
+      "post": {
+        "description": "Owner-only: directly add an approved user as a collaborator by email.",
+        "operationId": "add_collaborator_api_playlists__playlist_id__collaborators_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistCollaboratorAdd"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistCollaboratorOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Add Collaborator",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/collaborators/{user_id}": {
+      "delete": {
+        "description": "Owner-only: remove a collaborator from this playlist.",
+        "operationId": "remove_collaborator_api_playlists__playlist_id__collaborators__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Remove Collaborator",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/playlists/{playlist_id}/cover": {
       "get": {
         "operationId": "get_cover_api_playlists__playlist_id__cover_get",
@@ -7358,6 +9136,260 @@
           }
         ],
         "summary": "Export Playlist",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/invite": {
+      "delete": {
+        "description": "Owner-only: revoke the active invite link without removing existing collaborators.",
+        "operationId": "revoke_playlist_invite_api_playlists__playlist_id__invite_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Revoke Playlist Invite",
+        "tags": [
+          "playlists"
+        ]
+      },
+      "get": {
+        "description": "Owner-only: inspect the active invite link for this playlist, if any.",
+        "operationId": "get_playlist_invite_api_playlists__playlist_id__invite_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistInviteStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Playlist Invite",
+        "tags": [
+          "playlists"
+        ]
+      },
+      "post": {
+        "description": "Owner-only: create or rotate the active invite token (revokes any previous link).",
+        "operationId": "create_or_rotate_playlist_invite_api_playlists__playlist_id__invite_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistInviteOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Create Or Rotate Playlist Invite",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/leave": {
+      "post": {
+        "description": "Leave a collaborative playlist (works even when collaboration is paused).",
+        "operationId": "leave_playlist_api_playlists__playlist_id__leave_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Leave Playlist",
         "tags": [
           "playlists"
         ]

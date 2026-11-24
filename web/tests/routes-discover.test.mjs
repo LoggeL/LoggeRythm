@@ -164,3 +164,16 @@ test("the page links to the playlists section under its new name", () => {
   assert.match(html, /<a href="#playlists"[^>]*>Playlists<\/a>/);
   assert.doesNotMatch(html, /Playlists der Community|href="#community"/);
 });
+
+test("Discover distinguishes owned collaborative and shared-with-me playlists", () => {
+  fixture.results.playlists = success([
+    { id: 1, name: "Eigenes Team", track_count: 5, is_public: true, is_owner: true, is_collaborative: true, owner_name: "Demo" },
+    { id: 4, name: "WG-Küche", track_count: 8, is_public: false, is_owner: false, is_collaborator: true, is_collaborative: true, owner_name: "Jule" },
+  ]);
+  const html = screen();
+  const section = html.match(/<section id="playlists"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(section);
+  assert.match(section, /Eigenes Team<\/div><div[^>]*>Gemeinsam · Von dir · 5 Titel/);
+  assert.match(section, /WG-Küche<\/div><div[^>]*>Gemeinsam · von Jule · 8 Titel/);
+  assert.doesNotMatch(section, /WG-Küche<\/div><div[^>]*>Von dir/);
+});

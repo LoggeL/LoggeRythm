@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from './types';
 import type { AuthenticatedRequestAuthority } from './client';
 import {
+  acceptPlaylistInvite,
+  addPlaylistCollaborator,
   addToPlaylist,
   addTracksBulk,
   approveAdminUser,
@@ -10,6 +12,7 @@ import {
   createConnectTicket,
   createParty,
   createPlaylist,
+  createPlaylistInvite,
   deleteAdminUser,
   deleteImportJob,
   deletePlaylist,
@@ -33,6 +36,9 @@ import {
   getMood,
   getPartyCachedTrackIds,
   getPlaylist,
+  getPlaylistInvite,
+  getPlaylistInvitePreview,
+  getPlaylists,
   getPublicPlaylists,
   getRadio,
   getReleaseRadar,
@@ -41,6 +47,7 @@ import {
   getTrackPlayCounts,
   joinParty,
   leaveParty,
+  leavePlaylist,
   likeTrack,
   likesContains,
   logout,
@@ -55,9 +62,12 @@ import {
   recordPlay,
   register,
   removeFromPlaylist,
+  removePlaylistCollaborator,
   removePlaylistEntry,
   reorderPlaylistEntries,
   reorderPlaylistTracks,
+  revokePlaylistInvite,
+  setPlaylistCollaborative,
   setPlaylistVisibility,
   startImportJob,
   unlikeTrack,
@@ -355,6 +365,76 @@ describe('web-parity endpoint contracts', () => {
       '/api/playlists/7/tracks/entries/order',
       { method: 'PATCH', body: { entry_ids: [92, 91] } },
     );
+  });
+
+  it('constructs every collaborative playlist endpoint with exact paths, encoding, bodies, and statuses', () => {
+    const signal = new AbortController().signal;
+    getPlaylists(signal);
+    getPlaylists(signal, 'collaborative');
+    createPlaylist({ name: 'Shared', description: null, is_collaborative: true });
+    setPlaylistCollaborative(7, true);
+    getPlaylistInvite(7, signal);
+    createPlaylistInvite(7);
+    revokePlaylistInvite(7);
+    getPlaylistInvitePreview('tok/../en?', signal);
+    acceptPlaylistInvite('tok/../en?');
+    addPlaylistCollaborator(7, 'jule@example.test');
+    removePlaylistCollaborator(7, 9);
+    leavePlaylist(7);
+
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(1, '/api/playlists', {
+      signal,
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(2, '/api/playlists?scope=collaborative', {
+      signal,
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(3, '/api/playlists', {
+      method: 'POST',
+      body: { name: 'Shared', description: null, is_collaborative: true },
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(4, '/api/playlists/7/collaborative', {
+      method: 'PATCH',
+      body: { is_collaborative: true },
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(5, '/api/playlists/7/invite', {
+      signal,
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(6, '/api/playlists/7/invite', {
+      method: 'POST',
+      successStatuses: [201],
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(7, '/api/playlists/7/invite', {
+      method: 'DELETE',
+      successStatuses: [204],
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(8, '/api/playlists/invites/tok%2F..%2Fen%3F', {
+      signal,
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(9, '/api/playlists/invites/tok%2F..%2Fen%3F/accept', {
+      method: 'POST',
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(10, '/api/playlists/7/collaborators', {
+      method: 'POST',
+      body: { email: 'jule@example.test' },
+      successStatuses: [201],
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(11, '/api/playlists/7/collaborators/9', {
+      method: 'DELETE',
+      successStatuses: [204],
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(12, '/api/playlists/7/leave', {
+      method: 'POST',
+      successStatuses: [204],
+    });
   });
 
   it('routes album search through the generated operation descriptor', () => {

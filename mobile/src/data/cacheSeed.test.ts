@@ -181,7 +181,14 @@ describe('cacheSeed', () => {
       cover_url: '/covers/12.jpg',
       is_public: false,
       track_count: 24,
+      owner_id: 1,
       owner_name: 'Alex',
+      owner_avatar_url: null,
+      is_collaborative: false,
+      is_owner: true,
+      is_collaborator: false,
+      can_edit_tracks: true,
+      collaborator_count: 0,
     };
     const community: PlaylistSummary = {
       id: 44,
@@ -190,7 +197,14 @@ describe('cacheSeed', () => {
       cover_url: null,
       is_public: true,
       track_count: 15,
+      owner_id: 2,
       owner_name: 'Sam',
+      owner_avatar_url: null,
+      is_collaborative: false,
+      is_owner: false,
+      is_collaborator: false,
+      can_edit_tracks: false,
+      collaborator_count: 0,
     };
     client.setQueryData(queryKeys.playlists.owned('scope-a'), [owned]);
     client.setQueryData(queryKeys.playlists.public('scope-a'), [community]);
@@ -208,7 +222,23 @@ describe('cacheSeed', () => {
       cover_url: '/covers/12-v2.jpg',
       is_public: true,
       is_owner: true,
+      owner_id: 1,
       owner_name: 'Alex',
+      owner_avatar_url: '/api/users/1/avatar',
+      is_collaborative: true,
+      is_collaborator: false,
+      can_edit_tracks: true,
+      collaborators: [
+        {
+          user_id: 2,
+          display_name: 'Sam',
+          avatar_url: null,
+          role: 'editor',
+          joined_at: '2026-11-24T09:00:00Z',
+        },
+      ],
+      collaborator_count: 1,
+      revision: 3,
       tracks: [sampleTrack()],
     };
     client.setQueryData(queryKeys.playlists.detail('scope-a', 12), detail);
@@ -219,7 +249,14 @@ describe('cacheSeed', () => {
       cover_url: '/covers/12-v2.jpg',
       is_public: true,
       track_count: 1,
+      owner_id: 1,
       owner_name: 'Alex',
+      owner_avatar_url: '/api/users/1/avatar',
+      is_collaborative: true,
+      is_owner: true,
+      is_collaborator: false,
+      can_edit_tracks: true,
+      collaborator_count: 1,
     });
   });
 

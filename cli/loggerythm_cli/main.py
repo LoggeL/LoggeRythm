@@ -122,10 +122,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     playlists = sub.add_parser("playlists", help="Playlists verwalten")
     pl = playlists.add_subparsers(dest="action", required=True)
-    pl.add_parser("list")
+    p = pl.add_parser("list")
+    p.add_argument("--scope", choices=("all", "owned", "collaborative"), default="all")
     p = pl.add_parser("get"); p.add_argument("id")
-    p = pl.add_parser("create"); p.add_argument("name"); p.add_argument("--description")
+    p = pl.add_parser("create"); p.add_argument("name"); p.add_argument("--description"); p.add_argument("--collaborative", action="store_true")
     p = pl.add_parser("add-track"); p.add_argument("id"); p.add_argument("track_id")
+    p = pl.add_parser("collaborative"); p.add_argument("id"); p.add_argument("state", choices=("on", "off"))
+    p = pl.add_parser("invite"); p.add_argument("id")
+    inv_mode = p.add_mutually_exclusive_group()
+    inv_mode.add_argument("--create", action="store_true", help="Einladungslink erstellen oder erneuern")
+    inv_mode.add_argument("--rotate", action="store_true", help="Einladungslink erneuern")
+    inv_mode.add_argument("--revoke", action="store_true", help="Aktiven Einladungslink widerrufen")
+    p = pl.add_parser("join"); p.add_argument("token"); p.add_argument("--preview", action="store_true", help="Einladung nur anzeigen, noch nicht beitreten")
+    p = pl.add_parser("add-collaborator"); p.add_argument("id"); p.add_argument("email")
+    p = pl.add_parser("remove-collaborator"); p.add_argument("id"); p.add_argument("user_id")
+    p = pl.add_parser("leave"); p.add_argument("id")
 
     likes = sub.add_parser("likes", help="Likes verwalten")
     li = likes.add_subparsers(dest="action", required=True)
@@ -217,14 +228,51 @@ def execute(args, *, client: Client | None = None):
         return client.request("GET", path, query=query, authenticated=False)
     if args.command == "playlists":
         if args.action == "list":
-            return client.request("GET", "/api/playlists")
-        playlist_id = path_part(args.id, "Playlist-ID", numeric=True) if args.action != "create" else None
+            query = [("scope", args.scope)] if args.scope != "all" else None
+            return client.request("GET", "/api/playlists", query=query)
+        if args.action == "create":
+            payload: dict = {"name": args.name, "description": args.description}
+            if args.collaborative:
+                payload["is_collaborative"] = True
+            return client.request("POST", "/api/playlists", payload=payload)
+        if args.action == "join":
+            token = path_part(args.token, "Einladungs-Token")
+            if args.preview:
+                return client.request("GET", f"/api/playlists/invites/{token}")
+            return client.request("POST", f"/api/playlists/invites/{token}/accept")
+        playlist_id = path_part(args.id, "Playlist-ID", numeric=True)
         if args.action == "get":
             return client.request("GET", f"/api/playlists/{playlist_id}")
-        if args.action == "create":
-            return client.request("POST", "/api/playlists", payload={"name": args.name, "description": args.description})
-        track = _track(client, args.track_id)
-        return client.request("POST", f"/api/playlists/{playlist_id}/tracks", payload=track)
+        if args.action == "add-track":
+            track = _track(client, args.track_id)
+            return client.request("POST", f"/api/playlists/{playlist_id}/tracks", payload=track)
+        if args.action == "collaborative":
+            return client.request(
+                "PATCH",
+                f"/api/playlists/{playlist_id}/collaborative",
+                payload={"is_collaborative": args.state == "on"},
+            )
+        if args.action == "invite":
+            if args.revoke:
+                return client.request("DELETE", f"/api/playlists/{playlist_id}/invite")
+            if args.create or args.rotate:
+                return client.request("POST", f"/api/playlists/{playlist_id}/invite")
+            return client.request("GET", f"/api/playlists/{playlist_id}/invite")
+        if args.action == "add-collaborator":
+            email = args.email.strip()
+            if not email or "@" not in email:
+                raise CliError("invalid_argument", "Gültige E-Mail-Adresse erforderlich.")
+            return client.request(
+                "POST",
+                f"/api/playlists/{playlist_id}/collaborators",
+                payload={"email": email},
+            )
+        if args.action == "remove-collaborator":
+            user_id = path_part(args.user_id, "Benutzer-ID", numeric=True)
+            return client.request("DELETE", f"/api/playlists/{playlist_id}/collaborators/{user_id}")
+        if args.action == "leave":
+            return client.request("POST", f"/api/playlists/{playlist_id}/leave")
+        raise CliError("invalid_argument", "Unbekannte Playlist-Aktion.")
     if args.command == "likes":
         if args.action == "list":
             return client.request("GET", "/api/me/likes")

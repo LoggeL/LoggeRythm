@@ -5,7 +5,9 @@ import { byTestId as byTestID } from '../test/render';
 import {
   offlineControlCopy,
   PlaylistTrackRow,
+  playlistTrackAddedByLabel,
   refreshOfflineAutoBrowse,
+  shouldShowPlaylistTrackAttribution,
 } from './PlaylistScreen';
 import { libraryStrings } from './libraryStrings';
 
@@ -19,11 +21,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 vi.mock('react-native', () => ({
+  ActivityIndicator: 'ActivityIndicator',
   Alert: { alert: vi.fn() },
   FlatList: 'FlatList',
   Image: 'Image',
   Modal: 'Modal',
   Pressable: 'Pressable',
+  ScrollView: 'ScrollView',
+  Share: { share: vi.fn() },
   StyleSheet: {
     create: <T,>(styles: T): T => styles,
     hairlineWidth: 1,
@@ -56,6 +61,7 @@ vi.mock('../data', () => ({
   musicQueries: {},
   optimisticallyRemovePlaylistTrack: vi.fn(),
   optimisticallyReorderPlaylistTracks: vi.fn(),
+  optimisticallySetPlaylistCollaborative: vi.fn(),
   optimisticallySetPlaylistVisibility: vi.fn(),
   optimisticallyUpdatePlaylist: vi.fn(),
   refreshLibraryAutoBrowse: mocks.refreshLibraryAutoBrowse,
@@ -209,6 +215,78 @@ describe('PlaylistTrackRow', () => {
       ...occurrence,
       originalContextOrder: 0,
     });
+  });
+
+  it('forwards collaborative addedByLabel to StandardTrackRow caption', () => {
+    const row = PlaylistTrackRow({
+      track,
+      index: 0,
+      count: 1,
+      occurrence: { ...occurrence, originalContextOrder: 0 },
+      canEdit: false,
+      controlsDisabled: false,
+      addedByLabel: libraryStrings.playlist.addedBy('Jule'),
+      onPlay: vi.fn(),
+      onOpenActions: vi.fn(),
+      onOpenAlbum: vi.fn(),
+      onOpenArtist: vi.fn(),
+      onMove: vi.fn(),
+      onRemove: vi.fn(),
+    });
+    expect(propsOf(row).caption).toBe(libraryStrings.playlist.addedBy('Jule'));
+  });
+});
+
+describe('playlistTrackAddedByLabel', () => {
+  it('formats self, named collaborator, unnamed collaborator, and absent attribution', () => {
+    expect(playlistTrackAddedByLabel({ added_by: undefined }, 7)).toBeUndefined();
+    expect(playlistTrackAddedByLabel({ added_by: null }, 7)).toBeUndefined();
+    expect(
+      playlistTrackAddedByLabel({ added_by: { id: 7, display_name: 'Logge', avatar_url: null } }, 7),
+    ).toBe(libraryStrings.playlist.addedByYou);
+    expect(
+      playlistTrackAddedByLabel({ added_by: { id: 9, display_name: '  Jule ', avatar_url: null } }, 7),
+    ).toBe(libraryStrings.playlist.addedBy('Jule'));
+    expect(
+      playlistTrackAddedByLabel({ added_by: { id: 9, display_name: '   ', avatar_url: null } }, 7),
+    ).toBe(libraryStrings.playlist.addedBy(libraryStrings.playlist.unknownUser));
+  });
+
+  it('omits track attribution on solo owner playlists and enables it for collaborative or external-contributor tracks', () => {
+    const ownerTrack: Track = {
+      ...track,
+      added_by: { id: 7, display_name: 'Logge', avatar_url: null },
+      added_at: '2026-11-24T09:00:00Z',
+    };
+    const contributorTrack: Track = {
+      ...track,
+      added_by: { id: 9, display_name: 'Jule', avatar_url: null },
+      added_at: '2026-11-24T09:05:00Z',
+    };
+
+    expect(shouldShowPlaylistTrackAttribution({
+      is_collaborative: false,
+      collaborator_count: 0,
+      is_collaborator: false,
+      owner_id: 7,
+      tracks: [ownerTrack],
+    })).toBe(false);
+
+    expect(shouldShowPlaylistTrackAttribution({
+      is_collaborative: false,
+      collaborator_count: 0,
+      is_collaborator: false,
+      owner_id: 7,
+      tracks: [ownerTrack, contributorTrack],
+    })).toBe(true);
+
+    expect(shouldShowPlaylistTrackAttribution({
+      is_collaborative: true,
+      collaborator_count: 0,
+      is_collaborator: false,
+      owner_id: 7,
+      tracks: [ownerTrack],
+    })).toBe(true);
   });
 });
 

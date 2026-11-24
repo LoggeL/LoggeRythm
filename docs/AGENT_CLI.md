@@ -66,9 +66,20 @@ Web-Proxy; sie stehen nach Deployment der Backend-Änderungen zur Verfügung.
 loggerythm search "Daft Punk" --type track
 loggerythm search "Daft Punk" --type album
 loggerythm playlists list
+loggerythm playlists list --scope collaborative
 loggerythm playlists create "Agenten-Auswahl" --description "Aus Suchergebnissen"
+loggerythm playlists create "Roadtrip" --collaborative
 loggerythm playlists add-track 12 42
 loggerythm playlists get 12
+loggerythm playlists collaborative 12 on
+loggerythm playlists invite 12 --create
+loggerythm playlists invite 12
+loggerythm playlists invite 12 --revoke
+loggerythm playlists join <TOKEN> --preview
+loggerythm playlists join <TOKEN>
+loggerythm playlists add-collaborator 12 freund@example.org
+loggerythm playlists remove-collaborator 12 7
+loggerythm playlists leave 12
 loggerythm likes add 42
 loggerythm likes list
 loggerythm likes remove 42
@@ -78,7 +89,10 @@ Die Zahlen sind Beispiele: Die Playlist-ID aus der Erstellungsantwort und die
 Deezer-Track-ID aus dem Suchergebnis übernehmen. `add-track` und `likes add` laden
 die vollständigen Track-Metadaten, damit auch mehrere beteiligte Künstler erhalten
 bleiben. Eine bereits vorhandene Track-ID wird beim Hinzufügen zur Playlist nicht
-nochmals angehängt.
+nochmals angehängt. Bei gemeinsamen Playlists (`--collaborative` bzw. `collaborative on`)
+können Mitwirkende Tracks hinzufügen, neu anordnen und entfernen; Metadaten, Cover,
+Sichtbarkeit, Einladungen und Löschung bleiben dem Eigentümer vorbehalten. Einladungslinks
+verwenden die Web-/App-Adresse `/playlist/join/<TOKEN>`.
 
 ## Downloads und Servercache
 
@@ -93,8 +107,8 @@ loggerythm download playlist 12 --output ./playlist.zip
 Track-IDs. `download track` speichert die Audiodaten auf dem Rechner, auf dem das
 CLI läuft. `download playlist` lädt ein ZIP mit MP3-Dateien in Playlist-Reihenfolge;
 die Dateinamen beginnen mit einer laufenden Nummer. Für Downloads ist eine
-freigegebene Sitzung erforderlich. Eine Playlist muss dem Konto gehören oder
-öffentlich sein. Eine leere Playlist kann nicht exportiert werden.
+freigegebene Sitzung erforderlich. Eine Playlist muss dem Konto gehören, geteilt
+(Mitwirkender) oder öffentlich sein. Eine leere Playlist kann nicht exportiert werden.
 
 Das Zielverzeichnis muss existieren. Downloads werden gestreamt, zuerst in eine
 temporäre Datei geschrieben und erst nach vollständigem Empfang übernommen.

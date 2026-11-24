@@ -3,6 +3,7 @@ import type {
   AddedTracksResult,
   Playlist,
   PlaylistCreateRequest,
+  PlaylistInviteStatus,
   PlaylistSummary,
   PlaylistUpdateRequest,
   Track,
@@ -15,6 +16,10 @@ export interface PlaylistCacheSnapshot {
   detail: Playlist | undefined;
   owned: PlaylistSummary[] | undefined;
   public: PlaylistSummary[] | undefined;
+  invite?: {
+    captured: true;
+    value: PlaylistInviteStatus | undefined;
+  };
 }
 
 export interface CreatePlaylistWithTrackRepository {
@@ -88,6 +93,15 @@ export function restorePlaylistCache(
 
   if (snapshot.public === undefined) client.removeQueries({ queryKey: queryKey.public, exact: true });
   else client.setQueryData(queryKey.public, snapshot.public);
+
+  if (snapshot.invite?.captured === true) {
+    const inviteKey = queryKeys.playlists.invite(scope, id);
+    if (snapshot.invite.value === undefined) {
+      client.removeQueries({ queryKey: inviteKey, exact: true });
+    } else {
+      client.setQueryData(inviteKey, snapshot.invite.value);
+    }
+  }
 }
 
 export function optimisticallyUpdatePlaylist(
@@ -123,6 +137,45 @@ export function optimisticallySetPlaylistVisibility(
     (playlist) => ({ ...playlist, is_public: isPublic }),
     (summary) => ({ ...summary, is_public: isPublic }),
   );
+}
+
+export async function optimisticallySetPlaylistCollaborative(
+  client: QueryClient,
+  scope: QueryScope,
+  id: number,
+  isCollaborative: boolean,
+): Promise<PlaylistCacheSnapshot> {
+  const inviteKey = queryKeys.playlists.invite(scope, id);
+  let previousInvite: PlaylistInviteStatus | undefined;
+  if (!isCollaborative) {
+    await client.cancelQueries({ queryKey: inviteKey, exact: true });
+    previousInvite = client.getQueryData<PlaylistInviteStatus>(inviteKey);
+  }
+  const snapshot = await beginOptimisticPlaylistChange(
+    client,
+    scope,
+    id,
+    (playlist) => ({
+      ...playlist,
+      is_collaborative: isCollaborative,
+      can_edit_tracks: playlist.is_owner || (playlist.is_collaborator && isCollaborative),
+    }),
+    (summary) => ({
+      ...summary,
+      is_collaborative: isCollaborative,
+      can_edit_tracks: summary.is_owner || (summary.is_collaborator && isCollaborative),
+    }),
+  );
+  if (!isCollaborative) {
+    // Disabling collaboration revokes the active invite server-side; clear it
+    // immediately so re-enabling cannot flash a revoked token from cache.
+    client.setQueryData<PlaylistInviteStatus>(inviteKey, { invite: null });
+    return {
+      ...snapshot,
+      invite: { captured: true, value: previousInvite },
+    };
+  }
+  return snapshot;
 }
 
 export function optimisticallyRemovePlaylistTrack(
@@ -306,6 +359,7 @@ export function removeDeletedPlaylistFromCache(
 ): void {
   const queryKey = keys(scope, id);
   client.removeQueries({ queryKey: queryKey.detail, exact: true });
+  client.removeQueries({ queryKey: queryKeys.playlists.invite(scope, id), exact: true });
   for (const listKey of [queryKey.owned, queryKey.public]) {
     client.setQueryData<PlaylistSummary[]>(listKey, (current) =>
       current?.filter((playlist) => playlist.id !== id),
@@ -326,6 +380,10 @@ export async function invalidatePlaylistCaches(
     invalidations.push(
       client.invalidateQueries({
         queryKey: queryKeys.playlists.detail(scope, id),
+        exact: true,
+      }),
+      client.invalidateQueries({
+        queryKey: queryKeys.playlists.invite(scope, id),
         exact: true,
       }),
     );

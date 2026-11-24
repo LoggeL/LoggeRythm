@@ -123,20 +123,118 @@ const LYRIC_LINES = ["Die Stadt atmet aus, wir atmen ein", "Laternen zählen uns
 // ------------------------------------------------------------------ state --
 
 const me = { id: 1, email: "demo@loggerythm.test", display_name: "Demo", is_admin: true, is_approved: true, avatar_url: null };
+const MOCK_USERS = [
+  me,
+  { id: 2, email: "jule@loggerythm.test", display_name: "Jule", is_admin: false, is_approved: true, avatar_url: null },
+  { id: 3, email: "tariq@loggerythm.test", display_name: "Tariq", is_admin: false, is_approved: true, avatar_url: null },
+  { id: 4, email: "neu@loggerythm.test", display_name: "Neuzugang", is_admin: false, is_approved: false, avatar_url: null },
+  { id: 5, email: "mara@loggerythm.test", display_name: "Mara", is_admin: false, is_approved: true, avatar_url: null },
+];
+const userById = (id) => MOCK_USERS.find((u) => Number(u.id) === Number(id)) ?? null;
+const userRef = (user) => ({ id: user.id, display_name: user.display_name, avatar_url: user.avatar_url ?? null });
 let loggedIn = true;
 const settings = { crossfade_enabled: false, crossfade_duration_sec: 5 };
 const likes = new Map(pick(1, 14, 5).map((track) => [track.id, track]));
 const follows = new Map(ARTISTS.slice(0, 5).map((artist) => [artist.id, artistSummary(artist)]));
-let nextPlaylistId = 4;
+let nextPlaylistId = 10;
+let nextPlaylistEntryId = 1000;
+const makePlaylistEntries = (tracks, contributors) =>
+  tracks.map((track, idx) => ({
+    ...track,
+    playlist_entry_id: nextPlaylistEntryId++,
+    added_by: userRef(contributors[idx % contributors.length]),
+    added_at: new Date(Date.now() - (tracks.length - idx) * 3600_000).toISOString(),
+  }));
 const playlists = new Map([
-  ["1", { id: 1, name: "Logge Recent", description: "Alles, was gerade läuft", is_public: true, tracks: pick(0, 42, 5), cover_url: cover("playlist", 1) }],
-  ["2", { id: 2, name: "Sonntagmorgen", description: "Kaffee, Zeitung, leise Töne", is_public: false, tracks: pick(8, 18, 9), cover_url: cover("playlist", 2) }],
-  ["3", { id: 3, name: "Roadtrip Süden", description: "", is_public: false, tracks: pick(30, 27, 4), cover_url: "" }],
+  ["1", {
+    id: 1,
+    name: "Logge Recent",
+    description: "Alles, was gerade läuft",
+    is_public: true,
+    is_collaborative: true,
+    owner_id: me.id,
+    collaborators: [
+      { user_id: 2, display_name: "Jule", avatar_url: null, role: "editor", joined_at: "2026-11-18T14:30:00Z" },
+    ],
+    invite: { token: "demo-collab-token-logge-recent-01", created_at: "2026-11-20T12:00:00Z", expires_at: null },
+    revision: 4,
+    tracks: makePlaylistEntries(pick(0, 42, 5), [me, MOCK_USERS[1]]),
+    cover_url: cover("playlist", 1),
+  }],
+  ["2", {
+    id: 2,
+    name: "Sonntagmorgen",
+    description: "Kaffee, Zeitung, leise Töne",
+    is_public: false,
+    is_collaborative: false,
+    owner_id: me.id,
+    collaborators: [],
+    invite: null,
+    revision: 1,
+    tracks: makePlaylistEntries(pick(8, 18, 9), [me]),
+    cover_url: cover("playlist", 2),
+  }],
+  ["3", {
+    id: 3,
+    name: "Roadtrip Süden",
+    description: "",
+    is_public: false,
+    is_collaborative: false,
+    owner_id: me.id,
+    collaborators: [],
+    invite: null,
+    revision: 1,
+    tracks: makePlaylistEntries(pick(30, 27, 4), [me]),
+    cover_url: "",
+  }],
 ]);
-const publicPlaylists = [
-  { id: 50, name: "Büro ohne Worte", description: "Instrumental", is_public: true, owner_name: "Jule", tracks: pick(6, 22, 8), cover_url: cover("playlist", 50) },
-  { id: 51, name: "Kellerparty 2026", description: "", is_public: true, owner_name: "Tariq", tracks: pick(15, 35, 6), cover_url: cover("playlist", 51) },
-];
+const externalPlaylists = new Map([
+  ["4", {
+    id: 4,
+    name: "WG-Küche Shared",
+    description: "Gemeinsame Favoriten zum Kochen",
+    is_public: false,
+    is_collaborative: true,
+    owner_id: 2,
+    collaborators: [
+      { user_id: me.id, display_name: me.display_name, avatar_url: me.avatar_url, role: "editor", joined_at: "2026-11-19T19:00:00Z" },
+      { user_id: 3, display_name: "Tariq", avatar_url: null, role: "editor", joined_at: "2026-11-20T09:15:00Z" },
+    ],
+    invite: { token: "demo-collab-token-wg-kueche-04", created_at: "2026-11-19T18:00:00Z", expires_at: null },
+    revision: 3,
+    tracks: makePlaylistEntries(pick(12, 16, 7), [MOCK_USERS[1], me, MOCK_USERS[2]]),
+    cover_url: cover("playlist", 4),
+  }],
+  ["50", {
+    id: 50,
+    name: "Büro ohne Worte",
+    description: "Instrumental",
+    is_public: true,
+    is_collaborative: false,
+    owner_id: 2,
+    collaborators: [],
+    invite: null,
+    revision: 1,
+    tracks: makePlaylistEntries(pick(6, 22, 8), [MOCK_USERS[1]]),
+    cover_url: cover("playlist", 50),
+  }],
+  ["51", {
+    id: 51,
+    name: "Kellerparty 2026",
+    description: "Wirf deine Lieblingssongs für Samstag rein",
+    is_public: true,
+    is_collaborative: true,
+    owner_id: 3,
+    collaborators: [
+      { user_id: 2, display_name: "Jule", avatar_url: null, role: "editor", joined_at: "2026-11-21T16:30:00Z" },
+    ],
+    invite: { token: "demo-join-token-kellerparty-2026", created_at: "2026-11-21T16:00:00Z", expires_at: null },
+    revision: 2,
+    tracks: makePlaylistEntries(pick(15, 14, 6), [MOCK_USERS[2], MOCK_USERS[1]]),
+    cover_url: cover("playlist", 51),
+  }],
+]);
+const revokedPlaylistTokens = new Set(["demo-revoked-token-expired-0001"]);
 const plays = pick(4, 12, 3);
 const parties = new Map();
 const SERVER_CACHED_IDS = new Set(pick(0, 30, 5).map((track) => track.id));
@@ -166,11 +264,44 @@ const connectHub = {
   },
 };
 
-const playlistSummary = (playlist) => ({
-  id: playlist.id, name: playlist.name, description: playlist.description, cover_url: playlist.cover_url,
-  track_count: playlist.tracks.length, is_public: playlist.is_public, owner_name: playlist.owner_name ?? me.display_name,
+const allPlaylists = () => [...playlists.values(), ...externalPlaylists.values()];
+const isOwnerOf = (playlist, user = me) => Number(playlist.owner_id) === Number(user.id);
+const isCollaboratorOf = (playlist, user = me) =>
+  (playlist.collaborators ?? []).some((c) => Number(c.user_id) === Number(user.id));
+const canEditTracksOf = (playlist, user = me) =>
+  isOwnerOf(playlist, user) || (Boolean(playlist.is_collaborative) && isCollaboratorOf(playlist, user));
+const canViewPlaylist = (playlist, user = me) =>
+  isOwnerOf(playlist, user) || isCollaboratorOf(playlist, user) || Boolean(playlist.is_public);
+const playlistSummary = (playlist) => {
+  const owner = userById(playlist.owner_id) ?? me;
+  const ownerFlag = isOwnerOf(playlist);
+  const collabFlag = !ownerFlag && isCollaboratorOf(playlist);
+  return {
+    id: playlist.id,
+    name: playlist.name,
+    description: playlist.description,
+    cover_url: playlist.cover_url,
+    track_count: playlist.tracks.length,
+    is_public: Boolean(playlist.is_public),
+    owner_id: owner.id,
+    owner_name: owner.display_name,
+    owner_avatar_url: owner.avatar_url ?? null,
+    is_collaborative: Boolean(playlist.is_collaborative),
+    is_owner: ownerFlag,
+    is_collaborator: collabFlag,
+    can_edit_tracks: canEditTracksOf(playlist),
+    collaborator_count: (playlist.collaborators ?? []).length,
+  };
+};
+const playlistDetail = (playlist) => ({
+  ...playlistSummary(playlist),
+  collaborators: (playlist.collaborators ?? []).map((c) => ({ ...c })),
+  revision: playlist.revision ?? 0,
+  tracks: playlist.tracks,
 });
-const findPlaylist = (id) => playlists.get(String(id)) ?? publicPlaylists.find((playlist) => String(playlist.id) === String(id));
+const findPlaylist = (id) => playlists.get(String(id)) ?? externalPlaylists.get(String(id));
+const findPlaylistByInviteToken = (token) =>
+  allPlaylists().find((playlist) => playlist.invite?.token === token) ?? null;
 
 // ------------------------------------------------------------- generators --
 
@@ -590,40 +721,300 @@ async function handle(req, res) {
       recent: plays.slice(0, 20).map(({ id, title, artist, artist_id, artists, album, album_id, cover: art, duration_sec }) => ({ id, title, artist, artist_id, artists, album, album_id, cover: art, duration_sec })) });
   }
   if (is("GET", "/users/[^/]+")) {
-    return send(res, 200, { id: seg[1], display_name: seg[1] === "1" ? me.display_name : "Jule", avatar_url: null,
-      playlists: [...playlists.values()].filter((playlist) => playlist.is_public).map(playlistSummary), top_artists: ARTISTS.slice(0, 6).map(artistSummary) });
+    const profileUser = userById(seg[1]) ?? { id: Number(seg[1]) || 2, display_name: "Jule", avatar_url: null };
+    return send(res, 200, {
+      id: profileUser.id,
+      display_name: profileUser.display_name,
+      avatar_url: profileUser.avatar_url ?? null,
+      playlists: allPlaylists()
+        .filter((playlist) => Number(playlist.owner_id) === Number(profileUser.id) && playlist.is_public)
+        .map(playlistSummary),
+      top_artists: ARTISTS.slice(0, 6).map(artistSummary),
+    });
   }
 
   // Playlists
-  if (is("GET", "/playlists")) return send(res, 200, [...playlists.values()].map(playlistSummary));
-  if (is("GET", "/playlists/public")) return send(res, 200, publicPlaylists.map(playlistSummary));
+  if (is("GET", "/playlists")) {
+    const scope = url.searchParams.get("scope") ?? "all";
+    const items = allPlaylists().filter((playlist) => {
+      if (scope === "owned") return isOwnerOf(playlist);
+      if (scope === "collaborative") return isCollaboratorOf(playlist) || (isOwnerOf(playlist) && playlist.is_collaborative);
+      return isOwnerOf(playlist) || isCollaboratorOf(playlist);
+    });
+    return send(res, 200, items.map(playlistSummary));
+  }
+  if (is("GET", "/playlists/public")) {
+    return send(
+      res,
+      200,
+      allPlaylists()
+        .filter((playlist) => playlist.is_public && !isOwnerOf(playlist) && !isCollaboratorOf(playlist))
+        .map(playlistSummary),
+    );
+  }
   if (is("POST", "/playlists")) {
     const body = await readJson(req);
-    const playlist = { id: nextPlaylistId++, name: body.name, description: body.description ?? "", is_public: false, tracks: [], cover_url: "" };
+    const playlist = {
+      id: nextPlaylistId++,
+      name: body.name,
+      description: body.description ?? "",
+      is_public: false,
+      is_collaborative: Boolean(body.is_collaborative),
+      owner_id: me.id,
+      collaborators: [],
+      invite: null,
+      revision: 0,
+      tracks: [],
+      cover_url: "",
+    };
     playlists.set(String(playlist.id), playlist);
-    return send(res, 200, playlistSummary(playlist));
+    return send(res, 201, playlistSummary(playlist));
+  }
+  // Static playlist invite preview / accept routes before `/{playlist_id}`.
+  if (is("GET", "/playlists/invites/[^/]+")) {
+    const token = seg[2];
+    if (revokedPlaylistTokens.has(token)) {
+      return fail(res, 410, "Dieser Einladungslink ist nicht mehr aktiv.");
+    }
+    const playlist = findPlaylistByInviteToken(token);
+    if (!playlist) return fail(res, 404, "Einladungslink nicht gefunden.");
+    if (!playlist.is_collaborative) {
+      return fail(res, 410, "Die gemeinsame Bearbeitung dieser Playlist ist deaktiviert.");
+    }
+    const owner = userById(playlist.owner_id) ?? me;
+    return send(res, 200, {
+      playlist_id: playlist.id,
+      name: playlist.name,
+      description: playlist.description || null,
+      cover_url: playlist.cover_url || null,
+      track_count: playlist.tracks.length,
+      collaborator_count: playlist.collaborators.length,
+      owner: userRef(owner),
+      is_owner: isOwnerOf(playlist),
+      already_collaborator: isCollaboratorOf(playlist),
+    });
+  }
+  if (is("POST", "/playlists/invites/[^/]+/accept")) {
+    const token = seg[2];
+    if (revokedPlaylistTokens.has(token)) {
+      return fail(res, 410, "Dieser Einladungslink ist nicht mehr aktiv.");
+    }
+    const playlist = findPlaylistByInviteToken(token);
+    if (!playlist) return fail(res, 404, "Einladungslink nicht gefunden.");
+    if (!playlist.is_collaborative) {
+      return fail(res, 410, "Die gemeinsame Bearbeitung dieser Playlist ist deaktiviert.");
+    }
+    if (isOwnerOf(playlist)) {
+      return send(res, 200, {
+        playlist_id: playlist.id,
+        playlist_name: playlist.name,
+        joined: false,
+        already_member: true,
+        role: "owner",
+      });
+    }
+    if (isCollaboratorOf(playlist)) {
+      return send(res, 200, {
+        playlist_id: playlist.id,
+        playlist_name: playlist.name,
+        joined: false,
+        already_member: true,
+        role: "editor",
+      });
+    }
+    playlist.collaborators.push({
+      user_id: me.id,
+      display_name: me.display_name,
+      avatar_url: me.avatar_url ?? null,
+      role: "editor",
+      joined_at: new Date().toISOString(),
+    });
+    playlist.revision = (playlist.revision ?? 0) + 1;
+    return send(res, 200, {
+      playlist_id: playlist.id,
+      playlist_name: playlist.name,
+      joined: true,
+      already_member: false,
+      role: "editor",
+    });
   }
   if (seg[0] === "playlists" && seg[1]) {
     const playlist = findPlaylist(seg[1]);
-    if (!playlist) return fail(res, 404, "Playlist nicht gefunden");
-    const own = playlists.has(String(playlist.id));
-    if (is("GET", "/playlists/[^/]+")) return send(res, 200, { ...playlistSummary(playlist), is_owner: own, tracks: playlist.tracks });
+    if (!playlist || !canViewPlaylist(playlist)) return fail(res, 404, "Playlist nicht gefunden");
+    const own = isOwnerOf(playlist);
+    const canEdit = canEditTracksOf(playlist);
+    if (is("GET", "/playlists/[^/]+")) return send(res, 200, playlistDetail(playlist));
     if (is("GET", "/playlists/[^/]+/export")) return send(res, 200, "mock export", { "Content-Disposition": 'attachment; filename="playlist.txt"' });
-    if (!own) return fail(res, 403, "Nur eigene Playlists können geändert werden");
-    if (is("PATCH", "/playlists/[^/]+")) return send(res, 200, playlistSummary(Object.assign(playlist, await readJson(req))));
-    if (is("DELETE", "/playlists/[^/]+")) { playlists.delete(String(playlist.id)); return send(res, 204); }
-    if (is("PATCH", "/playlists/[^/]+/visibility")) { playlist.is_public = (await readJson(req)).is_public; return send(res, 200, playlistSummary(playlist)); }
-    if (is("PUT", "/playlists/[^/]+/cover")) { playlist.cover_url = cover("playlist", `${playlist.id}-${Date.now()}`); return send(res, 200, playlistSummary(playlist)); }
-    if (is("POST", "/playlists/[^/]+/tracks")) { playlist.tracks.push(await readJson(req)); return send(res, 204); }
-    if (is("POST", "/playlists/[^/]+/tracks/bulk")) {
-      const body = await readJson(req); playlist.tracks.push(...body); return send(res, 200, { added: body.length });
-    }
-    if (is("PATCH", "/playlists/[^/]+/tracks/order")) {
-      const order = (await readJson(req)).deezer_ids;
-      playlist.tracks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    if (is("POST", "/playlists/[^/]+/leave")) {
+      if (own) return fail(res, 400, "Eigentümer können ihre eigene Playlist nicht verlassen.");
+      const before = playlist.collaborators.length;
+      playlist.collaborators = playlist.collaborators.filter((c) => Number(c.user_id) !== Number(me.id));
+      if (playlist.collaborators.length === before) return fail(res, 404, "Du bist kein Mitglied dieser Playlist.");
+      playlist.revision = (playlist.revision ?? 0) + 1;
       return send(res, 204);
     }
-    if (is("DELETE", "/playlists/[^/]+/tracks/[^/]+")) { playlist.tracks = playlist.tracks.filter((track) => track.id !== seg[3]); return send(res, 204); }
+    // Track mutations: owner OR active collaborator
+    if (is("POST", "/playlists/[^/]+/tracks")) {
+      if (!canEdit) return fail(res, 403, "Du darfst keine Titel in dieser Playlist bearbeiten.");
+      const track = await readJson(req);
+      if (!playlist.tracks.some((t) => String(t.id) === String(track.id))) {
+        playlist.tracks.push({
+          ...track,
+          playlist_entry_id: nextPlaylistEntryId++,
+          added_by: userRef(me),
+          added_at: new Date().toISOString(),
+        });
+        if (!playlist.cover_url && track.cover) playlist.cover_url = track.cover;
+        playlist.revision = (playlist.revision ?? 0) + 1;
+      }
+      return send(res, 204);
+    }
+    if (is("POST", "/playlists/[^/]+/tracks/bulk")) {
+      if (!canEdit) return fail(res, 403, "Du darfst keine Titel in dieser Playlist bearbeiten.");
+      const body = await readJson(req);
+      const existing = new Set(playlist.tracks.map((t) => String(t.id)));
+      let added = 0;
+      for (const track of body) {
+        if (existing.has(String(track.id))) continue;
+        existing.add(String(track.id));
+        playlist.tracks.push({
+          ...track,
+          playlist_entry_id: nextPlaylistEntryId++,
+          added_by: userRef(me),
+          added_at: new Date().toISOString(),
+        });
+        added += 1;
+      }
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 200, { added });
+    }
+    if (is("PATCH", "/playlists/[^/]+/tracks/entries/order")) {
+      if (!canEdit) return fail(res, 403, "Du darfst die Reihenfolge dieser Playlist nicht ändern.");
+      const requested = (await readJson(req)).entry_ids ?? [];
+      const current = playlist.tracks.map((t) => t.playlist_entry_id);
+      if (
+        requested.length !== current.length ||
+        new Set(requested).size !== requested.length ||
+        !current.every((entryId) => requested.includes(entryId))
+      ) {
+        return fail(res, 409, "Playlist entries changed; reload before reordering");
+      }
+      const byEntry = new Map(playlist.tracks.map((t) => [t.playlist_entry_id, t]));
+      playlist.tracks = requested.map((entryId) => byEntry.get(entryId));
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 204);
+    }
+    if (is("PATCH", "/playlists/[^/]+/tracks/order")) {
+      if (!canEdit) return fail(res, 403, "Du darfst die Reihenfolge dieser Playlist nicht ändern.");
+      const order = (await readJson(req)).deezer_ids;
+      playlist.tracks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 204);
+    }
+    if (is("DELETE", "/playlists/[^/]+/tracks/entries/\\d+")) {
+      if (!canEdit) return fail(res, 403, "Du darfst keine Titel aus dieser Playlist entfernen.");
+      const entryId = Number(seg[4]);
+      const before = playlist.tracks.length;
+      playlist.tracks = playlist.tracks.filter((track) => track.playlist_entry_id !== entryId);
+      if (playlist.tracks.length === before) return fail(res, 404, "Playlist-Eintrag nicht gefunden.");
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 204);
+    }
+    if (is("DELETE", "/playlists/[^/]+/tracks/[^/]+")) {
+      if (!canEdit) return fail(res, 403, "Du darfst keine Titel aus dieser Playlist entfernen.");
+      playlist.tracks = playlist.tracks.filter((track) => track.id !== seg[3]);
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 204);
+    }
+    // Owner-only management endpoints
+    if (!own) return fail(res, 403, "Nur der Eigentümer kann diese Aktion ausführen.");
+    if (is("PATCH", "/playlists/[^/]+")) {
+      Object.assign(playlist, await readJson(req));
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 200, playlistSummary(playlist));
+    }
+    if (is("DELETE", "/playlists/[^/]+")) {
+      if (playlist.invite) revokedPlaylistTokens.add(playlist.invite.token);
+      playlists.delete(String(playlist.id));
+      return send(res, 204);
+    }
+    if (is("PATCH", "/playlists/[^/]+/visibility")) {
+      playlist.is_public = Boolean((await readJson(req)).is_public);
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 200, playlistSummary(playlist));
+    }
+    if (is("PATCH", "/playlists/[^/]+/collaborative")) {
+      const next = Boolean((await readJson(req)).is_collaborative);
+      playlist.is_collaborative = next;
+      if (!next && playlist.invite) {
+        revokedPlaylistTokens.add(playlist.invite.token);
+        playlist.invite = null;
+      }
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 200, playlistSummary(playlist));
+    }
+    if (is("GET", "/playlists/[^/]+/invite")) {
+      return send(res, 200, { invite: playlist.is_collaborative ? playlist.invite : null });
+    }
+    if (is("POST", "/playlists/[^/]+/invite")) {
+      if (!playlist.is_collaborative) {
+        return fail(res, 409, "Gemeinsame Bearbeitung muss erst aktiviert werden.");
+      }
+      if (playlist.invite) revokedPlaylistTokens.add(playlist.invite.token);
+      playlist.invite = {
+        token: randomBytes(24).toString("base64url"),
+        created_at: new Date().toISOString(),
+        expires_at: null,
+      };
+      return send(res, 201, playlist.invite);
+    }
+    if (is("DELETE", "/playlists/[^/]+/invite")) {
+      if (playlist.invite) {
+        revokedPlaylistTokens.add(playlist.invite.token);
+        playlist.invite = null;
+      }
+      return send(res, 204);
+    }
+    if (is("POST", "/playlists/[^/]+/collaborators")) {
+      if (!playlist.is_collaborative) {
+        return fail(res, 409, "Gemeinsame Bearbeitung muss erst aktiviert werden.");
+      }
+      const email = String((await readJson(req)).email ?? "").trim().toLowerCase();
+      const target = MOCK_USERS.find((u) => u.email.toLowerCase() === email && u.is_approved);
+      if (!target) return fail(res, 404, `Kein freigegebenes Konto mit „${email}“ gefunden.`);
+      if (Number(target.id) === Number(playlist.owner_id)) {
+        return fail(res, 400, "Der Eigentümer ist bereits Mitglied.");
+      }
+      if (playlist.collaborators.some((c) => Number(c.user_id) === Number(target.id))) {
+        return fail(res, 409, `${target.display_name} ist bereits Mitwirkende:r.`);
+      }
+      const collab = {
+        user_id: target.id,
+        display_name: target.display_name,
+        avatar_url: target.avatar_url ?? null,
+        role: "editor",
+        joined_at: new Date().toISOString(),
+      };
+      playlist.collaborators.push(collab);
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 201, collab);
+    }
+    if (is("DELETE", "/playlists/[^/]+/collaborators/[^/]+")) {
+      const targetId = Number(seg[3]);
+      if (targetId === Number(playlist.owner_id)) {
+        return fail(res, 400, "Der Eigentümer kann nicht entfernt werden.");
+      }
+      const before = playlist.collaborators.length;
+      playlist.collaborators = playlist.collaborators.filter((c) => Number(c.user_id) !== targetId);
+      if (playlist.collaborators.length === before) return fail(res, 404, "Mitwirkende:r nicht gefunden.");
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 204);
+    }
+    if (is("PUT", "/playlists/[^/]+/cover")) {
+      playlist.cover_url = cover("playlist", `${playlist.id}-${Date.now()}`);
+      playlist.revision = (playlist.revision ?? 0) + 1;
+      return send(res, 200, playlistSummary(playlist));
+    }
   }
 
   // Connect REST helpers
@@ -809,6 +1200,361 @@ async function handle(req, res) {
       content: { playlists: playlists.size, likes: likes.size, follows: follows.size, plays: 1284, stored_lyrics: 96, parties: parties.size, invites_total: 2, invites_used: 1 },
       integrations: { spotify_configured: true, lastfm_configured: false, mail_configured: true },
       system: { app_env: "mock", database: "memory", jwt_secure: false, cookie_secure: false } });
+  }
+  if (is("GET", "/admin/usage") || is("GET", "/admin/usage/users/[^/]+")) {
+    if (!me.is_admin) return fail(res, 403, "Nur für Administratoren");
+    const range = url.searchParams.get("range") ?? "all";
+    if (!["7d", "30d", "all"].includes(range)) {
+      return fail(res, 400, `Ungültiger Zeitraum „${range}“ (erwartet: 7d, 30d oder all).`);
+    }
+    const scale = range === "7d" ? 0.2 : range === "30d" ? 0.55 : 1;
+    const now = Date.now();
+    const isoAgo = (minutes) => new Date(now - minutes * 60_000).toISOString();
+    const liveDevices = [...connectHub.devices.values()].map(({ device }) => ({
+      device_id: device.device_id,
+      name: device.name,
+      device_type: device.device_type,
+      is_active: device.device_id === connectHub.activeDeviceId,
+      party_code: device.party_code ?? null,
+      connected_at: device.connected_at,
+      last_seen_at: device.last_seen_at,
+    }));
+    const demoDevices = liveDevices.length > 0
+      ? liveDevices
+      : [{
+          device_id: "mock-web-1",
+          name: "MacBook Pro · Webplayer",
+          device_type: "web",
+          is_active: true,
+          party_code: null,
+          connected_at: isoAgo(48),
+          last_seen_at: isoAgo(1),
+        }];
+    const juleDevices = [{
+      device_id: "mock-android-jule",
+      name: "Pixel 9 · Android",
+      device_type: "mobile",
+      is_active: true,
+      party_code: [...parties.keys()][0] ?? null,
+      connected_at: isoAgo(22),
+      last_seen_at: isoAgo(2),
+    }];
+    const mockUsers = [
+      {
+        id: 1,
+        email: me.email,
+        display_name: me.display_name,
+        avatar_url: me.avatar_url,
+        is_admin: true,
+        is_approved: true,
+        created_at: "2026-01-04T10:00:00Z",
+        last_active_at: isoAgo(3),
+        plays: Math.round(842 * scale),
+        listening_sec: Math.round(176400 * scale),
+        unique_tracks: Math.round(218 * scale),
+        tracks_requested: Math.round(190 * scale),
+        tracks_materialized: Math.round(124 * scale),
+        materialized_bytes: Math.round(920_000_000 * scale),
+        storage: {
+          exclusive_bytes: 1_120_000_000,
+          exclusive_tracks: 148,
+          shared_bytes: 860_000_000,
+          shared_tracks: 112,
+          accessed_bytes: 1_980_000_000,
+          accessed_tracks: 260,
+          materialized_bytes: 1_240_000_000,
+          materialized_tracks: 164,
+          pinned_bytes: 790_000_000,
+          pinned_tracks: 104,
+          upload_bytes: 1_850_000,
+        },
+        library: {
+          likes: likes.size,
+          playlists: playlists.size,
+          public_playlists: [...playlists.values()].filter((p) => p.is_public).length,
+          playlist_tracks: [...playlists.values()].reduce((sum, p) => sum + p.tracks.length, 0),
+          follows: follows.size,
+          party_tracks_added: 19,
+          party_hosted: 4,
+          import_jobs: 3,
+          import_tracks_matched: 186,
+        },
+        online_devices: demoDevices.length,
+        is_playing_now: true,
+        active_device_name: demoDevices[0].name,
+        active_party_code: demoDevices[0].party_code,
+        _devices: demoDevices,
+      },
+      {
+        id: 2,
+        email: "jule@loggerythm.test",
+        display_name: "Jule",
+        avatar_url: null,
+        is_admin: false,
+        is_approved: true,
+        created_at: "2026-03-11T18:20:00Z",
+        last_active_at: isoAgo(14),
+        plays: Math.round(418 * scale),
+        listening_sec: Math.round(88200 * scale),
+        unique_tracks: Math.round(134 * scale),
+        tracks_requested: Math.round(115 * scale),
+        tracks_materialized: Math.round(78 * scale),
+        materialized_bytes: Math.round(580_000_000 * scale),
+        storage: {
+          exclusive_bytes: 740_000_000,
+          exclusive_tracks: 98,
+          shared_bytes: 860_000_000,
+          shared_tracks: 112,
+          accessed_bytes: 1_600_000_000,
+          accessed_tracks: 210,
+          materialized_bytes: 690_000_000,
+          materialized_tracks: 91,
+          pinned_bytes: 420_000_000,
+          pinned_tracks: 56,
+          upload_bytes: 620_000,
+        },
+        library: {
+          likes: 34,
+          playlists: 4,
+          public_playlists: 2,
+          playlist_tracks: 94,
+          follows: 9,
+          party_tracks_added: 27,
+          party_hosted: 1,
+          import_jobs: 2,
+          import_tracks_matched: 92,
+        },
+        online_devices: juleDevices.length,
+        is_playing_now: false,
+        active_device_name: juleDevices[0].name,
+        active_party_code: juleDevices[0].party_code,
+        _devices: juleDevices,
+      },
+      {
+        id: 3,
+        email: "tariq@loggerythm.test",
+        display_name: "Tariq",
+        avatar_url: null,
+        is_admin: false,
+        is_approved: true,
+        created_at: "2026-05-02T14:40:00Z",
+        last_active_at: isoAgo(60 * 52),
+        plays: Math.round(164 * scale),
+        listening_sec: Math.round(35100 * scale),
+        unique_tracks: Math.round(62 * scale),
+        tracks_requested: Math.round(48 * scale),
+        tracks_materialized: Math.round(31 * scale),
+        materialized_bytes: Math.round(230_000_000 * scale),
+        storage: {
+          exclusive_bytes: 290_000_000,
+          exclusive_tracks: 39,
+          shared_bytes: 310_000_000,
+          shared_tracks: 41,
+          accessed_bytes: 600_000_000,
+          accessed_tracks: 80,
+          materialized_bytes: 260_000_000,
+          materialized_tracks: 35,
+          pinned_bytes: 180_000_000,
+          pinned_tracks: 24,
+          upload_bytes: 0,
+        },
+        library: {
+          likes: 12,
+          playlists: 2,
+          public_playlists: 1,
+          playlist_tracks: 41,
+          follows: 4,
+          party_tracks_added: 11,
+          party_hosted: 0,
+          import_jobs: 1,
+          import_tracks_matched: 38,
+        },
+        online_devices: 0,
+        is_playing_now: false,
+        active_device_name: null,
+        active_party_code: null,
+        _devices: [],
+      },
+      {
+        id: 4,
+        email: "neu@loggerythm.test",
+        display_name: "Neuzugang",
+        avatar_url: null,
+        is_admin: false,
+        is_approved: false,
+        created_at: "2026-11-12T08:05:00Z",
+        last_active_at: null,
+        plays: 0,
+        listening_sec: 0,
+        unique_tracks: 0,
+        tracks_requested: 0,
+        tracks_materialized: 0,
+        materialized_bytes: 0,
+        storage: {
+          exclusive_bytes: 0,
+          exclusive_tracks: 0,
+          shared_bytes: 0,
+          shared_tracks: 0,
+          accessed_bytes: 0,
+          accessed_tracks: 0,
+          materialized_bytes: 0,
+          materialized_tracks: 0,
+          pinned_bytes: 0,
+          pinned_tracks: 0,
+          upload_bytes: 0,
+        },
+        library: {
+          likes: 0,
+          playlists: 0,
+          public_playlists: 0,
+          playlist_tracks: 0,
+          follows: 0,
+          party_tracks_added: 0,
+          party_hosted: 0,
+          import_jobs: 0,
+          import_tracks_matched: 0,
+        },
+        online_devices: 0,
+        is_playing_now: false,
+        active_device_name: null,
+        active_party_code: null,
+        _devices: [],
+      },
+    ];
+    const exclusiveAudioBytes = mockUsers.reduce((sum, u) => sum + u.storage.exclusive_bytes, 0);
+    const exclusiveAudioTracks = mockUsers.reduce((sum, u) => sum + u.storage.exclusive_tracks, 0);
+    const sharedAudioBytes = 860_000_000;
+    const sharedAudioTracks = 112;
+    const unattributedAudioBytes = 90_000_000;
+    const unattributedAudioTracks = 15;
+    const totalAudioBytes = exclusiveAudioBytes + sharedAudioBytes + unattributedAudioBytes;
+    const cachedTracks = exclusiveAudioTracks + sharedAudioTracks + unattributedAudioTracks;
+    const trackingSince = "2026-10-01T00:00:00Z";
+    const generatedAt = new Date().toISOString();
+
+    if (is("GET", "/admin/usage")) {
+      return send(res, 200, {
+        range,
+        generated_at: generatedAt,
+        request_tracking_since: trackingSince,
+        overview: {
+          total_users: mockUsers.length,
+          approved_users: mockUsers.filter((u) => u.is_approved).length,
+          pending_users: mockUsers.filter((u) => !u.is_approved).length,
+          active_users: mockUsers.filter((u) => u.plays > 0 || u.online_devices > 0).length,
+          total_plays: mockUsers.reduce((sum, u) => sum + u.plays, 0),
+          total_listening_sec: mockUsers.reduce((sum, u) => sum + u.listening_sec, 0),
+          unique_tracks_played: Math.round(310 * scale),
+          tracks_requested: mockUsers.reduce((sum, u) => sum + u.tracks_requested, 0),
+          tracks_materialized: mockUsers.reduce((sum, u) => sum + u.tracks_materialized, 0),
+          materialized_bytes: mockUsers.reduce((sum, u) => sum + u.materialized_bytes, 0),
+          online_connect_devices: mockUsers.reduce((sum, u) => sum + u.online_devices, 0),
+          online_connect_users: mockUsers.filter((u) => u.online_devices > 0).length,
+          active_parties: parties.size,
+          storage: {
+            cached_tracks: cachedTracks,
+            total_audio_bytes: totalAudioBytes,
+            exclusive_audio_bytes: exclusiveAudioBytes,
+            exclusive_audio_tracks: exclusiveAudioTracks,
+            shared_audio_bytes: sharedAudioBytes,
+            shared_audio_tracks: sharedAudioTracks,
+            unattributed_audio_bytes: unattributedAudioBytes,
+            unattributed_audio_tracks: unattributedAudioTracks,
+            directly_attributed_tracks: 290,
+            directly_attributed_bytes: 2_190_000_000,
+            upload_bytes: mockUsers.reduce((sum, u) => sum + u.storage.upload_bytes, 0),
+            disk_total: storage.disk_total,
+            disk_used: storage.disk_used,
+            disk_free: storage.disk_free,
+            retention_days: storage.retention_days,
+          },
+        },
+        users: mockUsers.map((entry) => {
+          const copy = { ...entry };
+          delete copy._devices;
+          return copy;
+        }),
+      });
+    }
+
+    const target = mockUsers.find((u) => String(u.id) === seg[3]);
+    if (!target) return fail(res, 404, "Benutzer nicht gefunden");
+    const { _devices, ...userSummary } = target;
+    const offset = target.id * 7;
+    const topTracks = target.plays > 0
+      ? pick(offset, 6, 5).map((track, idx) => ({
+          key: track.id,
+          label: track.title,
+          sublabel: track.artist,
+          cover: track.cover,
+          count: Math.max(1, Math.round((24 - idx * 3) * scale)),
+        }))
+      : [];
+    const topArtists = target.plays > 0
+      ? ARTISTS.slice(target.id - 1, target.id + 5).map((artist, idx) => ({
+          key: artist.id,
+          label: artist.name,
+          sublabel: "",
+          cover: cover("artist", artist.id),
+          count: Math.max(1, Math.round((48 - idx * 6) * scale)),
+        }))
+      : [];
+    const recentPlays = target.plays > 0
+      ? pick(offset + 2, 8, 3).map((track, idx) => ({
+          id: track.id,
+          title: track.title,
+          artist: track.artist,
+          album: track.album,
+          cover: track.cover,
+          duration_sec: track.duration_sec,
+          played_at: isoAgo(5 + idx * 37),
+        }))
+      : [];
+    const sources = ["stream", "preload", "party_preload", "radar_preload"];
+    const recentRequests = target.tracks_requested > 0
+      ? pick(offset + 4, 8, 5).map((track, idx) => ({
+          deezer_id: track.id,
+          title: track.title,
+          artist: track.artist,
+          cover: track.cover,
+          source: sources[idx % sources.length],
+          materialized: idx % 2 === 0,
+          size_bytes: 6_800_000 + idx * 420_000,
+          requested_at: isoAgo(8 + idx * 55),
+          is_currently_stored: idx !== 6,
+        }))
+      : [];
+    const sourceBucket = (source, reqRatio, matRatio) => {
+      const requests = Math.max(1, Math.round(target.tracks_requested * reqRatio));
+      const materialized = Math.min(requests, Math.max(0, Math.round(target.tracks_materialized * matRatio)));
+      return {
+        source,
+        requests,
+        materialized,
+        materialized_bytes: Math.round(target.materialized_bytes * matRatio),
+      };
+    };
+    const requestsBySource = target.tracks_requested > 0
+      ? [
+          sourceBucket("stream", 0.62, 0.6),
+          sourceBucket("preload", 0.2, 0.2),
+          sourceBucket("party_preload", 0.12, 0.14),
+          sourceBucket("radar_preload", 0.06, 0.06),
+        ]
+      : [];
+    return send(res, 200, {
+      range,
+      generated_at: generatedAt,
+      request_tracking_since: trackingSince,
+      user: userSummary,
+      storage_breakdown: { ...userSummary.storage, total_cache_bytes: totalAudioBytes },
+      requests_by_source: requestsBySource,
+      active_devices: _devices,
+      top_tracks: topTracks,
+      top_artists: topArtists,
+      recent_plays: recentPlays,
+      recent_requests: recentRequests,
+    });
   }
 
   return fail(res, 501, `Mock-API: ${method} ${path} ist nicht implementiert.`);

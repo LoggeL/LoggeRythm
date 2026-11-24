@@ -40,4 +40,6 @@ export type RootStackParams = {
   Queue: undefined;
   /** `code` comes from links and is validated by the route before use. */
   Party: { code: string };
+  /** `token` comes from collaborative playlist invite links and is validated before use. */
+  PlaylistInvite: { token: string };
 };

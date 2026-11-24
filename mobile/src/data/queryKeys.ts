@@ -91,6 +91,14 @@ export const queryKeys = {
     details: (scope: QueryScope) => [...queryKeys.playlists.scoped(scope), 'detail'] as const,
     detail: (scope: QueryScope, id: number) =>
       [...queryKeys.playlists.details(scope), scalar(id, 'playlist id')] as const,
+    invite: (scope: QueryScope, id: number) =>
+      [...queryKeys.playlists.detail(scope, id), 'invite'] as const,
+    invitePreview: (scope: QueryScope, token: string) =>
+      [
+        ...queryKeys.playlists.scoped(scope),
+        'invite-preview',
+        scalar(token, 'playlist invite token'),
+      ] as const,
   },
   library: {
     root: (scope: QueryScope) =>

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ArtistSummary, PlaylistSummary } from '../../api/types';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { byTestId, byType, flatStyle, textContent } from '../../test/render';
+import { byTestId, byType, flatStyle, queryByTestId, textContent } from '../../test/render';
 import { metrics } from '../../theme';
 import {
   LibraryFollowingRow,
@@ -29,7 +29,14 @@ const playlist: PlaylistSummary = {
   cover_url: '/covers/7.jpg',
   is_public: false,
   track_count: 12,
+  owner_id: 1,
   owner_name: null,
+  owner_avatar_url: null,
+  is_collaborative: false,
+  is_owner: true,
+  is_collaborator: false,
+  can_edit_tracks: true,
+  collaborator_count: 0,
 };
 
 describe('LibraryPlaylistRow', () => {
@@ -71,6 +78,38 @@ describe('LibraryPlaylistRow', () => {
     });
     expect(textContent(plain)[1]).toBe(libraryStrings.common.tracks(12));
     expect(byType(plain, 'Image')).toHaveLength(0);
+    expect(queryByTestId(plain, 'library-playlist-7-collab')).toBeNull();
+  });
+
+  it('shows the collaborative pill and shared-by metadata for shared playlists', () => {
+    const shared: PlaylistSummary = {
+      ...playlist,
+      id: 9,
+      name: 'WG-Küche',
+      description: 'Evening',
+      owner_id: 2,
+      owner_name: 'Jule',
+      is_owner: false,
+      is_collaborator: true,
+      is_collaborative: true,
+      can_edit_tracks: true,
+      collaborator_count: 2,
+    };
+    const row = LibraryPlaylistRow({
+      playlist: shared,
+      apiBase: 'https://music.test',
+      onOpenPlaylist: vi.fn(),
+    });
+
+    expect(byTestId(row, 'library-playlist-9-collab')).toBeDefined();
+    expect(byTestId(row, 'library-playlist-9').props.accessibilityLabel).toBe(
+      libraryStrings.library.openSharedPlaylist('WG-Küche', 'Jule', 12),
+    );
+    expect(textContent(row)).toEqual([
+      'WG-Küche',
+      `${libraryStrings.library.sharedBy('Jule')} · ${libraryStrings.common.tracks(12)} · Evening`,
+      libraryStrings.library.collaborative,
+    ]);
   });
 });
 

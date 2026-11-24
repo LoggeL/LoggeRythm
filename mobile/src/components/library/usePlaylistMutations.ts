@@ -4,11 +4,13 @@ import {
   musicMutations,
   optimisticallyRemovePlaylistTrack,
   optimisticallyReorderPlaylistTracks,
+  optimisticallySetPlaylistCollaborative,
   optimisticallySetPlaylistVisibility,
   optimisticallyUpdatePlaylist,
   removeDeletedPlaylistFromCache,
   restorePlaylistCache,
   type PlaylistCacheSnapshot,
+  type PlaylistCollaborativeVariables,
   type PlaylistVisibilityVariables,
   type RemovePlaylistTrackVariables,
   type ReorderPlaylistVariables,
@@ -17,12 +19,12 @@ import {
 import { refreshAutoBrowse } from './autoBrowse';
 
 export interface PlaylistMutationCallbacks {
-  /** The playlist no longer exists; the screen must leave. */
+  /** The playlist no longer exists (deleted or left); the screen must leave. */
   onDeleted: () => void;
 }
 
 /**
- * Every write of the playlist detail screen. The four in-place edits share
+ * Every write of the playlist detail screen. The in-place edits share
  * one optimistic lifecycle: apply to the cache, roll back on failure, refetch
  * and republish the car library on success, and refetch after a failure so
  * the cache never keeps a half-applied state. Failures stay on the mutation
@@ -66,6 +68,11 @@ export function usePlaylistMutations(
     ...optimistic(({ id, isPublic }: PlaylistVisibilityVariables) =>
       optimisticallySetPlaylistVisibility(queryClient, scope, id, isPublic)),
   });
+  const collaborative = useMutation({
+    ...musicMutations.setPlaylistCollaborative(scope),
+    ...optimistic(({ id, isCollaborative }: PlaylistCollaborativeVariables) =>
+      optimisticallySetPlaylistCollaborative(queryClient, scope, id, isCollaborative)),
+  });
   const removeTrack = useMutation({
     ...musicMutations.removeFromPlaylist(scope),
     ...optimistic(({ id, entryId }: RemovePlaylistTrackVariables) =>
@@ -87,18 +94,37 @@ export function usePlaylistMutations(
       onDeleted();
     },
   });
+  const leave = useMutation({
+    ...musicMutations.leavePlaylist(scope),
+    onSuccess: async (_result, id) => {
+      removeDeletedPlaylistFromCache(queryClient, scope, id);
+      await Promise.all([
+        invalidatePlaylistCaches(queryClient, scope),
+        refreshAutoBrowse(),
+      ]);
+      onDeleted();
+    },
+  });
 
-  const all = [update, visibility, removeTrack, reorder, remove] as const;
+  const all = [update, visibility, collaborative, removeTrack, reorder, remove, leave] as const;
   return {
     update,
     visibility,
+    collaborative,
     removeTrack,
     reorder,
     remove,
+    leave,
     pending: all.some((mutation) => mutation.isPending),
     /** The first failure in declaration order, or null. */
     error:
-      update.error ?? visibility.error ?? removeTrack.error ?? reorder.error ?? remove.error,
+      update.error
+      ?? visibility.error
+      ?? collaborative.error
+      ?? removeTrack.error
+      ?? reorder.error
+      ?? remove.error
+      ?? leave.error,
     resetErrors: () => all.forEach((mutation) => mutation.reset()),
   };
 }

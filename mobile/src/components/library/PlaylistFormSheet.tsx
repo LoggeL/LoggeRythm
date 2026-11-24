@@ -1,9 +1,10 @@
 import React from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { libraryStrings } from '../../screens/libraryStrings';
 import { colors, metrics, radii, spacing, typography } from '../../theme';
 import type { AppIconName } from '../AppIcon';
 import { ActionButton, AppText, BottomSheet } from '../ui';
+import { SheetActionRow } from './SheetActionRow';
 import { useKeyboardInset } from './useKeyboardInset';
 
 const NAME_MAX_LENGTH = 120;
@@ -25,6 +26,11 @@ export interface PlaylistFormSheetProps {
   submitIcon: AppIconName;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
+  /** Optional collaborative switch shown when creating a playlist. */
+  collaborative?: {
+    value: boolean;
+    onChange: (value: boolean) => void;
+  };
   onClose: () => void;
   onSubmit: () => void;
 }
@@ -48,6 +54,7 @@ export function PlaylistFormSheet({
   submitIcon,
   onNameChange,
   onDescriptionChange,
+  collaborative,
   onClose,
   onSubmit,
 }: PlaylistFormSheetProps) {
@@ -100,6 +107,26 @@ export function PlaylistFormSheet({
             style={[styles.input, styles.descriptionInput]}
           />
         </View>
+        {collaborative === undefined ? null : (
+          <SheetActionRow
+            icon="account-multiple-outline"
+            label={libraryStrings.library.collaborativeCreateLabel}
+            description={libraryStrings.library.collaborativeCreateHint}
+            disabled={busy}
+            trailing={
+              <Switch
+                testID={`${testIDPrefix}-collaborative`}
+                accessibilityLabel={libraryStrings.library.collaborativeCreateLabel}
+                accessibilityState={{ disabled: busy }}
+                disabled={busy}
+                value={collaborative.value}
+                onValueChange={collaborative.onChange}
+                trackColor={{ false: colors.border, true: colors.accentSolid }}
+                thumbColor={collaborative.value ? colors.accentSoft : colors.textSecondary}
+              />
+            }
+          />
+        )}
         {error === null ? null : (
           <AppText
             testID={`${testIDPrefix}-error`}

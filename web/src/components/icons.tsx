@@ -767,3 +767,31 @@ export function UsersIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function UserPlusIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <circle cx="9.5" cy="8" r="3.5" />
+      <path d="M3 19.5a6.5 6.5 0 0113 0" />
+      <path d="M19 7v6M16 10h6" />
+    </svg>
+  );
+}
+
+export function LinkIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M10 13a5 5 0 007.07 0l2.12-2.12a5 5 0 00-7.07-7.07L10.9 5" />
+      <path d="M14 11a5 5 0 00-7.07 0L4.8 13.12a5 5 0 007.07 7.07L13.1 19" />
+    </svg>
+  );
+}
+
+export function LogOutIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+      <path d="M16 17l5-5-5-5M21 12H9" />
+    </svg>
+  );
+}

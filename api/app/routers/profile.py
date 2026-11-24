@@ -5,7 +5,7 @@ import os
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from ..auth import clear_session_cookie, get_current_user, hash_password
@@ -19,7 +19,11 @@ from ..db.models import (
     PasswordResetToken,
     Play,
     Playlist,
+    PlaylistCollaborator,
+    PlaylistInvite,
     PlaylistTrack,
+    StoredTrack,
+    TrackRequest,
     User,
 )
 from ..db.session import get_db
@@ -28,6 +32,7 @@ from ..schemas.auth import UserOut
 from ..schemas.playlist import PlaylistSummary
 from ..schemas.track import ArtistSummary
 from ..uploads import image_extension, save_image_upload
+from .playlists import build_playlist_summaries
 
 router = APIRouter(prefix="/api", tags=["profile"])
 
@@ -173,6 +178,12 @@ def purge_user_account(db: Session, user: User) -> None:
     )
 
     db.execute(delete(Play).where(Play.user_id == user_id))
+    db.execute(delete(TrackRequest).where(TrackRequest.user_id == user_id))
+    db.execute(
+        update(StoredTrack)
+        .where(StoredTrack.requested_by_user_id == user_id)
+        .values(requested_by_user_id=None)
+    )
     db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
     db.execute(delete(ImportJob).where(ImportJob.user_id == user_id))
     db.execute(delete(PartyMember).where(PartyMember.user_id == user_id))
@@ -181,6 +192,22 @@ def purge_user_account(db: Session, user: User) -> None:
         select(PartySession).where(PartySession.host_id == user_id)
     ):
         db.delete(session)
+    db.execute(delete(PlaylistCollaborator).where(PlaylistCollaborator.user_id == user_id))
+    db.execute(
+        update(PlaylistCollaborator)
+        .where(PlaylistCollaborator.added_by_user_id == user_id)
+        .values(added_by_user_id=None)
+    )
+    db.execute(
+        update(PlaylistTrack)
+        .where(PlaylistTrack.added_by_user_id == user_id)
+        .values(added_by_user_id=None)
+    )
+    db.execute(
+        update(PlaylistInvite)
+        .where(PlaylistInvite.created_by_user_id == user_id)
+        .values(created_by_user_id=None)
+    )
     db.execute(delete(InviteCode).where(InviteCode.created_by == user_id))
     db.execute(
         update(InviteCode)
@@ -245,24 +272,14 @@ def public_profile(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    rows = db.execute(
-        select(Playlist, func.count(PlaylistTrack.id))
-        .outerjoin(PlaylistTrack, PlaylistTrack.playlist_id == Playlist.id)
-        .where(Playlist.user_id == user.id, Playlist.is_public.is_(True))
-        .group_by(Playlist.id)
-        .order_by(Playlist.created_at.desc())
-    ).all()
-    playlists = [
-        PlaylistSummary(
-            id=pl.id,
-            name=pl.name,
-            description=pl.description,
-            cover_url=pl.cover_url,
-            track_count=count,
-            is_public=pl.is_public,
-        )
-        for pl, count in rows
-    ]
+    public_rows = list(
+        db.scalars(
+            select(Playlist)
+            .where(Playlist.user_id == user.id, Playlist.is_public.is_(True))
+            .order_by(Playlist.created_at.desc(), Playlist.id.desc())
+        ).all()
+    )
+    playlists = build_playlist_summaries(db, public_rows, viewer=None)
 
     follows = db.scalars(
         select(FollowedArtist)

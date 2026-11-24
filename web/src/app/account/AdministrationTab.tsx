@@ -9,7 +9,7 @@ import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyState from "@/components/ui/EmptyState";
 import { CopyIcon } from "@/components/feedbackIcons";
-import { ChevronRightIcon, StatusIcon, UserIcon } from "@/components/icons";
+import { ChevronRightIcon, StatusIcon, UserIcon, VisualizerIcon } from "@/components/icons";
 import type { AdminUser, InviteInfo, StorageInfo } from "@/types";
 import { Badge, errorMessage, formatBytes, formatCount, Metric, RowsSkeleton, SectionError, SettingsCard, StatusBadge } from "./presentation";
 
@@ -295,20 +295,32 @@ function InvitesSection() {
   );
 }
 
-/** "Verwaltung" tab (admins only): users, storage, invites and the status page. */
+/** "Verwaltung" tab (admins only): usage dashboard, system status, users, storage and invites. */
 export default function AdministrationTab() {
   return (
     <div className="grid gap-4">
-      <Link href="/status" className="surface-card group flex items-center gap-4 p-4 transition-colors hover:bg-panel-hover sm:p-5">
-        <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/12 text-accent-soft">
-          <StatusIcon width={18} height={18} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <strong className="block text-base font-semibold">Systemstatus</strong>
-          <span className="mt-0.5 block text-sm text-muted">Deezer-Anmeldung, Speicher, Benutzer und Konfiguration live prüfen.</span>
-        </span>
-        <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
-      </Link>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Link href="/admin/usage" className="surface-card group flex items-center gap-4 p-4 transition-colors hover:bg-panel-hover sm:p-5">
+          <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/12 text-accent-soft">
+            <VisualizerIcon width={18} height={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <strong className="block text-base font-semibold">Nutzungs-Dashboard</strong>
+            <span className="mt-0.5 block text-sm text-muted">Wiedergaben, Hörzeit, angeforderte Titel und Speicher pro Benutzer.</span>
+          </span>
+          <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+        </Link>
+        <Link href="/status" className="surface-card group flex items-center gap-4 p-4 transition-colors hover:bg-panel-hover sm:p-5">
+          <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/12 text-accent-soft">
+            <StatusIcon width={18} height={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <strong className="block text-base font-semibold">Systemstatus</strong>
+            <span className="mt-0.5 block text-sm text-muted">Deezer-Anmeldung, Speicher, Benutzer und Konfiguration live prüfen.</span>
+          </span>
+          <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
+        </Link>
+      </div>
       <UsersSection />
       <StorageSection />
       <InvitesSection />

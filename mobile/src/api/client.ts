@@ -11,6 +11,7 @@ import {
   ensureApiCompatibility,
   resetApiCompatibilityCheck,
 } from './compatibility';
+import { ApiError } from './error';
 import type { DeezerId } from './types';
 import {
   decodeStoredSession,
@@ -316,17 +317,7 @@ async function invalidateSession(
   return authority;
 }
 
-export class ApiError extends Error {
-  status: number;
-  body: string;
-
-  constructor(status: number, body: string, message: string) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.body = body;
-  }
-}
+export { ApiError } from './error';
 
 export function authoritativeSessionInvalidationFor(
   error: unknown,

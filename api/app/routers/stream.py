@@ -28,11 +28,37 @@ _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 _CHUNK = 64 * 1024
 
 
-async def _materialize_track(deezer_id: str) -> str:
+def _is_initial_stream_request(request: Request) -> bool:
+    """True for full fetches or byte-0 ranges; False for continuation/seek chunks."""
+    range_header = request.headers.get("range")
+    if range_header is None:
+        return True
+    match = _RANGE_RE.fullmatch(range_header.strip())
+    if not match:
+        return False
+    start_s = match.group(1)
+    return start_s != "" and int(start_s) == 0
+
+
+async def _materialize_track(
+    deezer_id: str,
+    *,
+    requested_by_user_id: int | None = None,
+    source: str | None = None,
+    record_cache_hit: bool = True,
+) -> str:
     if not deezer_id.isdigit():
         raise HTTPException(status_code=400, detail="deezer_id must be numeric")
     try:
-        return await run_in_threadpool(storage.materialize, deezer_id)
+        if source is None:
+            return await run_in_threadpool(storage.materialize, deezer_id)
+        return await run_in_threadpool(
+            storage.materialize,
+            deezer_id,
+            requested_by_user_id=requested_by_user_id,
+            source=source,
+            record_cache_hit=record_cache_hit,
+        )
     except deezer.Deezer404Exception as exc:
         # Withdrawn catalog entries (``readable: false``) 404 on Deezer. That
         # is a client-visible fact about the track, not a gateway failure, and
@@ -132,10 +158,14 @@ def _range_response(path: str, request: Request) -> Response:
 )
 async def preload_track(
     deezer_id: str,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> Response:
     """Materialize a track without returning its audio payload."""
-    await _materialize_track(deezer_id)
+    await _materialize_track(
+        deezer_id,
+        requested_by_user_id=user.id,
+        source="preload",
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -171,7 +201,12 @@ async def preload_track(
 async def stream(
     deezer_id: str,
     request: Request,
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> Response:
-    path = await _materialize_track(deezer_id)
+    path = await _materialize_track(
+        deezer_id,
+        requested_by_user_id=user.id,
+        source="stream",
+        record_cache_hit=_is_initial_stream_request(request),
+    )
     return _range_response(path, request)

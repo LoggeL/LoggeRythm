@@ -38,6 +38,13 @@ import type {
   PartyTrack,
   PlaybackSettings,
   Playlist,
+  PlaylistCollaborator,
+  PlaylistCollaboratorUser,
+  PlaylistInvite,
+  PlaylistInvitePreview,
+  PlaylistInviteStatus,
+  PlaylistJoinResult,
+  PlaylistRole,
   PlaylistSearchResult,
   PlaylistSummary,
   PublicProfile,
@@ -198,6 +205,16 @@ export function decodeTrack(value: unknown, path = 'Track'): Track {
     if (entryId === 0) throw new Error(`${path}.playlist_entry_id must be positive`);
     track.playlist_entry_id = entryId;
   }
+  if ('added_by' in source) {
+    track.added_by = nullable(
+      source.added_by,
+      `${path}.added_by`,
+      decodePlaylistCollaboratorUser,
+    );
+  }
+  if ('added_at' in source) {
+    track.added_at = nullableString(source.added_at, `${path}.added_at`);
+  }
   return track;
 }
 
@@ -246,6 +263,95 @@ export function decodeUser(value: unknown): User {
   };
 }
 
+const PLAYLIST_ROLES = ['owner', 'editor'] as const satisfies readonly PlaylistRole[];
+
+function positiveInteger(value: unknown, path: string): number {
+  const parsed = nonNegativeInteger(value, path);
+  if (parsed === 0) throw new Error(`${path} must be positive`);
+  return parsed;
+}
+
+export function decodePlaylistCollaboratorUser(
+  value: unknown,
+  path = 'PlaylistCollaboratorUser',
+): PlaylistCollaboratorUser {
+  const source = object(value, path);
+  return {
+    id: nonNegativeInteger(source.id, `${path}.id`),
+    display_name: nullableString(source.display_name, `${path}.display_name`),
+    avatar_url: nullableString(source.avatar_url, `${path}.avatar_url`),
+  };
+}
+
+export function decodePlaylistCollaborator(
+  value: unknown,
+  path = 'PlaylistCollaborator',
+): PlaylistCollaborator {
+  const source = object(value, path);
+  return {
+    user_id: nonNegativeInteger(source.user_id, `${path}.user_id`),
+    display_name: nullableString(source.display_name, `${path}.display_name`),
+    avatar_url: nullableString(source.avatar_url, `${path}.avatar_url`),
+    role: literal(source.role, `${path}.role`, PLAYLIST_ROLES),
+    joined_at: nullableString(source.joined_at, `${path}.joined_at`),
+  };
+}
+
+export function decodePlaylistInvite(
+  value: unknown,
+  path = 'PlaylistInvite',
+): PlaylistInvite {
+  const source = object(value, path);
+  const token = string(source.token, `${path}.token`);
+  if (token.trim().length === 0) throw new Error(`${path}.token must not be empty`);
+  const createdAt = string(source.created_at, `${path}.created_at`);
+  if (createdAt.trim().length === 0) throw new Error(`${path}.created_at must not be empty`);
+  return {
+    token,
+    created_at: createdAt,
+    expires_at: nullableString(source.expires_at, `${path}.expires_at`),
+  };
+}
+
+export function decodePlaylistInviteStatus(value: unknown): PlaylistInviteStatus {
+  const source = object(value, 'PlaylistInviteStatus');
+  return {
+    invite: nullable(source.invite, 'PlaylistInviteStatus.invite', decodePlaylistInvite),
+  };
+}
+
+export function decodePlaylistInvitePreview(value: unknown): PlaylistInvitePreview {
+  const source = object(value, 'PlaylistInvitePreview');
+  return {
+    playlist_id: positiveInteger(source.playlist_id, 'PlaylistInvitePreview.playlist_id'),
+    name: string(source.name, 'PlaylistInvitePreview.name'),
+    description: nullableString(source.description, 'PlaylistInvitePreview.description'),
+    cover_url: nullableString(source.cover_url, 'PlaylistInvitePreview.cover_url'),
+    track_count: nonNegativeInteger(source.track_count, 'PlaylistInvitePreview.track_count'),
+    collaborator_count: nonNegativeInteger(
+      source.collaborator_count,
+      'PlaylistInvitePreview.collaborator_count',
+    ),
+    owner: decodePlaylistCollaboratorUser(source.owner, 'PlaylistInvitePreview.owner'),
+    is_owner: boolean(source.is_owner, 'PlaylistInvitePreview.is_owner'),
+    already_collaborator: boolean(
+      source.already_collaborator,
+      'PlaylistInvitePreview.already_collaborator',
+    ),
+  };
+}
+
+export function decodePlaylistJoinResult(value: unknown): PlaylistJoinResult {
+  const source = object(value, 'PlaylistJoinResult');
+  return {
+    playlist_id: positiveInteger(source.playlist_id, 'PlaylistJoinResult.playlist_id'),
+    playlist_name: string(source.playlist_name, 'PlaylistJoinResult.playlist_name'),
+    joined: boolean(source.joined, 'PlaylistJoinResult.joined'),
+    already_member: boolean(source.already_member, 'PlaylistJoinResult.already_member'),
+    role: literal(source.role, 'PlaylistJoinResult.role', PLAYLIST_ROLES),
+  };
+}
+
 function decodePlaylistSummaryItem(value: unknown, path: string): PlaylistSummary {
   const source = object(value, path);
   return {
@@ -255,7 +361,17 @@ function decodePlaylistSummaryItem(value: unknown, path: string): PlaylistSummar
     cover_url: nullableString(source.cover_url, `${path}.cover_url`),
     is_public: boolean(source.is_public, `${path}.is_public`),
     track_count: nonNegativeInteger(source.track_count, `${path}.track_count`),
+    owner_id: nullable(source.owner_id, `${path}.owner_id`, nonNegativeInteger),
     owner_name: nullableString(source.owner_name, `${path}.owner_name`),
+    owner_avatar_url: nullableString(source.owner_avatar_url, `${path}.owner_avatar_url`),
+    is_collaborative: boolean(source.is_collaborative, `${path}.is_collaborative`),
+    is_owner: boolean(source.is_owner, `${path}.is_owner`),
+    is_collaborator: boolean(source.is_collaborator, `${path}.is_collaborator`),
+    can_edit_tracks: boolean(source.can_edit_tracks, `${path}.can_edit_tracks`),
+    collaborator_count: nonNegativeInteger(
+      source.collaborator_count,
+      `${path}.collaborator_count`,
+    ),
   };
 }
 
@@ -274,10 +390,28 @@ export function decodePlaylist(value: unknown): Playlist {
     if (decoded.playlist_entry_id === undefined) {
       throw new Error(`${path}.playlist_entry_id must be present`);
     }
+    if (decoded.added_by === undefined) {
+      throw new Error(`${path}.added_by must be present`);
+    }
+    if (decoded.added_at === undefined) {
+      throw new Error(`${path}.added_at must be present`);
+    }
     return decoded;
   });
   if (new Set(tracks.map((track) => track.playlist_entry_id)).size !== tracks.length) {
     throw new Error('Playlist.tracks playlist_entry_id values must be unique');
+  }
+  const collaborators = array(
+    source.collaborators,
+    'Playlist.collaborators',
+    decodePlaylistCollaborator,
+  );
+  const collaboratorCount = nonNegativeInteger(
+    source.collaborator_count,
+    'Playlist.collaborator_count',
+  );
+  if (collaboratorCount !== collaborators.length) {
+    throw new Error('Playlist.collaborator_count must match Playlist.collaborators length');
   }
   return {
     id: nonNegativeInteger(source.id, 'Playlist.id'),
@@ -286,7 +420,15 @@ export function decodePlaylist(value: unknown): Playlist {
     cover_url: nullableString(source.cover_url, 'Playlist.cover_url'),
     is_public: boolean(source.is_public, 'Playlist.is_public'),
     is_owner: boolean(source.is_owner, 'Playlist.is_owner'),
+    owner_id: nullable(source.owner_id, 'Playlist.owner_id', nonNegativeInteger),
     owner_name: nullableString(source.owner_name, 'Playlist.owner_name'),
+    owner_avatar_url: nullableString(source.owner_avatar_url, 'Playlist.owner_avatar_url'),
+    is_collaborative: boolean(source.is_collaborative, 'Playlist.is_collaborative'),
+    is_collaborator: boolean(source.is_collaborator, 'Playlist.is_collaborator'),
+    can_edit_tracks: boolean(source.can_edit_tracks, 'Playlist.can_edit_tracks'),
+    collaborators,
+    collaborator_count: collaboratorCount,
+    revision: nonNegativeInteger(source.revision, 'Playlist.revision'),
     tracks,
   };
 }

@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import AuthCard from "@/components/AuthCard";
 import { PasswordField, SubmitButton, TextField, emailError } from "@/components/AuthFields";
 import { CheckCircleIcon } from "@/components/feedbackIcons";
+import { buildAuthHref, sanitizeNextPath } from "@/lib/authRedirect";
 import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 
 const PASSWORD_MIN = 8;
@@ -19,6 +20,7 @@ function RegisterForm() {
   const qc = useQueryClient();
   const searchParams = useSearchParams();
   const invite = searchParams.get("invite");
+  const nextPath = sanitizeNextPath(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -45,7 +47,7 @@ function RegisterForm() {
       const user = await api.register(email, password, displayName, invite ?? undefined);
       qc.removeQueries({ predicate: (query) => shouldRemoveQueryForUserChange(query.queryKey, String(user.id)) });
       qc.setQueryData(["me"], user);
-      router.push("/");
+      router.push(nextPath ?? "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -62,7 +64,7 @@ function RegisterForm() {
       footer={
         <>
           <span>Bereits ein Konto?</span>
-          <Link href="/login" className="action-secondary min-h-11">
+          <Link href={buildAuthHref("/login", nextPath)} className="action-secondary min-h-11">
             Anmelden
           </Link>
         </>

@@ -58,6 +58,12 @@ class Playlist(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_collaborative: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     user: Mapped["User"] = relationship(back_populates="playlists")
@@ -68,6 +74,16 @@ class Playlist(Base):
         # ties.  The immutable primary key makes reads deterministic without a
         # destructive data rewrite; every new reorder writes unique positions.
         order_by=lambda: (PlaylistTrack.position, PlaylistTrack.id),
+    )
+    collaborators: Mapped[list["PlaylistCollaborator"]] = relationship(
+        back_populates="playlist",
+        cascade="all, delete-orphan",
+        order_by=lambda: (PlaylistCollaborator.joined_at, PlaylistCollaborator.id),
+    )
+    invites: Mapped[list["PlaylistInvite"]] = relationship(
+        back_populates="playlist",
+        cascade="all, delete-orphan",
+        order_by=lambda: (PlaylistInvite.created_at, PlaylistInvite.id),
     )
 
 
@@ -88,9 +104,58 @@ class PlaylistTrack(Base):
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     added_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     playlist: Mapped["Playlist"] = relationship(back_populates="tracks")
+
+
+class PlaylistCollaborator(Base):
+    """Non-owner collaborator on a playlist (owner lives on ``Playlist.user_id``)."""
+
+    __tablename__ = "playlist_collaborators"
+    __table_args__ = (
+        UniqueConstraint("playlist_id", "user_id", name="uq_playlist_collaborator"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="editor", server_default="editor"
+    )
+    added_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    joined_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+    playlist: Mapped["Playlist"] = relationship(back_populates="collaborators")
+
+
+class PlaylistInvite(Base):
+    """Shareable invite link token allowing approved accounts to join a collaborative playlist."""
+
+    __tablename__ = "playlist_invites"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    playlist_id: Mapped[int] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    playlist: Mapped["Playlist"] = relationship(back_populates="invites")
 
 
 class Like(Base):
@@ -306,9 +371,38 @@ class StoredTrack(Base):
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ready")
+    # User whose request originally materialized this cached audio file on disk.
+    # NULL for pre-existing files from before tracking existed or anonymous party guests.
+    requested_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    request_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     # Updated on every play; tracks not accessed within the retention window are evicted.
     last_accessed: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
+
+
+class TrackRequest(Base):
+    """A recorded server-side track request or upstream Deezer materialization."""
+
+    __tablename__ = "track_requests"
+    __table_args__ = (
+        Index("ix_track_requests_user_requested_at", "user_id", "requested_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    deezer_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # stream | preload | playlist_export | party_preload | radar_preload | lyrics_ai
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    materialized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, index=True)
 
 
 class PasswordResetToken(Base):

@@ -13,6 +13,7 @@ export default function CreatePlaylistDialog({
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [isCollaborative, setIsCollaborative] = useState(false);
   const createPlaylist = useCreatePlaylist();
 
   return (
@@ -43,11 +44,16 @@ export default function CreatePlaylistDialog({
           event.preventDefault();
           if (!name.trim() || createPlaylist.isPending) return;
           createPlaylist.mutate(
-            { name: name.trim(), description: description.trim() || undefined },
+            {
+              name: name.trim(),
+              description: description.trim() || undefined,
+              is_collaborative: isCollaborative,
+            },
             {
               onSuccess: () => {
                 setName("");
                 setDescription("");
+                setIsCollaborative(false);
                 onClose();
               },
             },
@@ -85,6 +91,38 @@ export default function CreatePlaylistDialog({
             value={description}
             onChange={(event) => setDescription(event.target.value)}
           />
+        </div>
+        <div className="flex items-start justify-between gap-4 rounded-[var(--radius-control)] border border-hairline bg-foreground/[0.03] px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-foreground">
+              Gemeinsame Playlist
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted">
+              Lade andere per Link oder E-Mail ein, gemeinsam Titel zu sammeln.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isCollaborative}
+            disabled={createPlaylist.isPending}
+            onClick={() => setIsCollaborative((value) => !value)}
+            className={`relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors ${
+              isCollaborative
+                ? "border-accent bg-accent"
+                : "border-border bg-white/10"
+            }`}
+          >
+            <span className="sr-only">Gemeinsame Playlist</span>
+            <span
+              aria-hidden="true"
+              className={`h-5 w-5 rounded-full transition-transform ${
+                isCollaborative
+                  ? "translate-x-6 bg-on-accent"
+                  : "translate-x-1 bg-foreground"
+              }`}
+            />
+          </button>
         </div>
         {createPlaylist.isError && (
           <p role="alert" className="error-panel">

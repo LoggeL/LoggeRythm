@@ -5,14 +5,17 @@ import { NAV_LATERAL } from "@/lib/morph";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { usePlaylists, useDeletePlaylist } from "@/hooks/useLibrary";
-import { HeartIcon, DownloadedIcon, PlusIcon, LibraryIcon, ClockIcon } from "@/components/icons";
+import { useMe } from "@/hooks/useAuth";
+import { HeartIcon, DownloadedIcon, PlusIcon, LibraryIcon, ClockIcon, VisualizerIcon, UsersIcon, LogOutIcon, TrashIcon } from "@/components/icons";
 import Logo, { Wordmark } from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import EqualizerBars from "@/components/EqualizerBars";
 import CreatePlaylistDialog from "@/app/library/CreatePlaylistDialog";
+import LeavePlaylistDialog from "@/app/playlist/_components/LeavePlaylistDialog";
 import { NAV_ITEMS, isNavItemActive } from "@/components/shell/navigation";
 import { usePlayerStore } from "@/store/player";
+import { isOwnedLibraryPlaylist, sidebarPlaylistMeta } from "@/lib/playlistPermissions";
 import { playlistPath } from "@/lib/slugs";
 import type { PlaylistSummary } from "@/types";
 
@@ -32,6 +35,8 @@ function ActiveMarker({ travels = false }: { travels?: boolean }) {
 
 function PrimaryNav() {
   const pathname = usePathname();
+  const { data: me } = useMe();
+  const usageActive = pathname === "/admin/usage" || pathname.startsWith("/admin/usage/");
   return (
     <nav aria-label="Hauptnavigation" className="flex flex-col px-3">
       <Link href="/" transitionTypes={NAV_LATERAL} className="mb-5 flex items-center gap-2.5 px-2 pt-5 transition-opacity hover:opacity-80">
@@ -55,6 +60,18 @@ function PrimaryNav() {
           </Link>
         );
       })}
+      {me?.is_admin && (
+        <Link
+          href="/admin/usage"
+          transitionTypes={NAV_LATERAL}
+          aria-current={usageActive ? "page" : undefined}
+          className={`font-display relative mt-2 flex min-h-11 items-center gap-3.5 rounded-[var(--radius-control)] border-t border-hairline px-2 pt-2 text-[17px] font-bold tracking-tight transition-colors ${usageActive ? "text-foreground" : "text-muted hover:text-foreground"}`}
+        >
+          {usageActive && <ActiveMarker travels />}
+          <VisualizerIcon width={21} height={21} className={usageActive ? "text-accent" : ""} />
+          Nutzung
+        </Link>
+      )}
     </nav>
   );
 }
@@ -76,6 +93,9 @@ function Shortcut({ href, label, icon }: { href: string; label: string; icon: Re
 
 function PlaylistRow({ playlist, active, playing, onMenu }: { playlist: PlaylistSummary; active: boolean; playing: boolean; onMenu: (event: React.MouseEvent, path: string) => void }) {
   const path = playlistPath(playlist);
+  const sharedOrCollaborative = Boolean(
+    playlist.is_collaborative || playlist.is_collaborator,
+  );
   return (
     <li onContextMenu={(event) => onMenu(event, path)}>
       <Link href={path} transitionTypes={NAV_LATERAL} aria-current={active ? "page" : undefined} className={rowClass(active)}>
@@ -87,9 +107,19 @@ function PlaylistRow({ playlist, active, playing, onMenu }: { playlist: Playlist
           <CoverPlaceholder className="h-10 w-10 shrink-0 rounded-[var(--radius-art)]" />
         )}
         <span className="min-w-0 flex-1">
-          <span className={`block truncate text-sm font-semibold ${playing ? "text-accent" : ""}`}>{playlist.name}</span>
+          <span className="flex items-center gap-1.5">
+            <span className={`truncate text-sm font-semibold ${playing ? "text-accent" : ""}`}>{playlist.name}</span>
+            {sharedOrCollaborative && (
+              <UsersIcon
+                width={13}
+                height={13}
+                aria-label={playlist.is_collaborative ? "Gemeinsame Playlist" : "Geteilte Playlist"}
+                className={`shrink-0 ${playlist.is_collaborative ? "text-accent" : "text-muted"}`}
+              />
+            )}
+          </span>
           <span className="mt-0.5 block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle">
-            {playlist.track_count} Titel
+            {sidebarPlaylistMeta(playlist)}
           </span>
         </span>
         {playing && <EqualizerBars height={12} isPlaying />}
@@ -106,7 +136,8 @@ function LibrarySection() {
   const playingContext = usePlayerStore((s) => (s.isPlaying ? s.queueContext : null));
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("");
-  const [menu, setMenu] = useState<{ x: number; y: number; id: string; path: string } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; playlist: PlaylistSummary; path: string } | null>(null);
+  const [leaving, setLeaving] = useState<{ id: string; name: string; path: string } | null>(null);
 
   const playlists = playlistQuery.data ?? [];
   const needle = filter.trim().toLowerCase();
@@ -180,7 +211,7 @@ function LibrarySection() {
               playing={playingContext === playlist.name}
               onMenu={(event, path) => {
                 event.preventDefault();
-                setMenu({ x: event.clientX, y: event.clientY, id: String(playlist.id), path });
+                setMenu({ x: event.clientX, y: event.clientY, playlist, path });
               }}
             />
           ))}
@@ -188,6 +219,16 @@ function LibrarySection() {
       </div>
 
       <CreatePlaylistDialog open={creating} onClose={() => setCreating(false)} />
+      {leaving && (
+        <LeavePlaylistDialog
+          id={leaving.id}
+          name={leaving.name}
+          onClose={() => setLeaving(null)}
+          onLeft={() => {
+            if (pathname === leaving.path) router.push("/library");
+          }}
+        />
+      )}
       {menu && (
         <ContextMenu
           x={menu.x}
@@ -195,7 +236,26 @@ function LibrarySection() {
           onClose={() => setMenu(null)}
           items={[
             { label: "Öffnen", onClick: () => router.push(menu.path) },
-            { label: "Löschen", danger: true, onClick: () => deletePlaylist.mutate(menu.id) },
+            isOwnedLibraryPlaylist(menu.playlist)
+              ? {
+                  label: "Löschen",
+                  icon: <TrashIcon width={16} height={16} />,
+                  danger: true,
+                  separated: true,
+                  onClick: () => deletePlaylist.mutate(String(menu.playlist.id)),
+                }
+              : {
+                  label: "Playlist verlassen",
+                  icon: <LogOutIcon width={16} height={16} />,
+                  danger: true,
+                  separated: true,
+                  onClick: () =>
+                    setLeaving({
+                      id: String(menu.playlist.id),
+                      name: menu.playlist.name,
+                      path: menu.path,
+                    }),
+                },
           ]}
         />
       )}

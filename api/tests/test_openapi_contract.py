@@ -237,9 +237,21 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 78)
-        self.assertEqual(len(schema["paths"]), 85)
-        self.assertEqual(len(operation_ids), 97)
+        self.assertEqual(len(schemas), 98)
+        self.assertEqual(len(schema["paths"]), 94)
+        self.assertEqual(len(operation_ids), 108)
+        self.assertIn("/api/admin/usage", schema["paths"])
+        self.assertIn("/api/admin/usage/users/{user_id}", schema["paths"])
+        self.assertIn("/api/playlists/{playlist_id}/collaborative", schema["paths"])
+        self.assertIn("/api/playlists/{playlist_id}/invite", schema["paths"])
+        self.assertIn("/api/playlists/invites/{token}", schema["paths"])
+        self.assertIn("/api/playlists/invites/{token}/accept", schema["paths"])
+        self.assertIn("/api/playlists/{playlist_id}/collaborators", schema["paths"])
+        self.assertIn(
+            "/api/playlists/{playlist_id}/collaborators/{user_id}",
+            schema["paths"],
+        )
+        self.assertIn("/api/playlists/{playlist_id}/leave", schema["paths"])
         for schema_name in schemas:
             with self.subTest(schema=schema_name):
                 self.assertIn(f'  {json.dumps(schema_name)}:', generated)

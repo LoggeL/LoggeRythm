@@ -101,13 +101,24 @@ export function SpotifyImportDestinationRow({
         {busy ? (
           <ActivityIndicator accessible={false} color={colors.accent} size="small" />
         ) : (
-          <AppIcon name="playlist-plus" color={colors.textSecondary} size={22} />
+          <AppIcon
+            name={playlist.is_collaborative ? 'account-multiple-outline' : 'playlist-plus'}
+            color={playlist.is_collaborative ? colors.accentSoft : colors.textSecondary}
+            size={22}
+          />
         )}
       </View>
       <View style={styles.destinationCopy}>
         <AppText variant="bodyStrong" numberOfLines={1}>{playlist.name}</AppText>
         <AppText variant="caption" color="secondary" numberOfLines={1}>
-          {strings.common.trackCount(playlist.track_count)}
+          {!playlist.is_owner && playlist.owner_name
+            ? strings.trackActions.playlistSharedTrackCount(
+                playlist.owner_name,
+                playlist.track_count,
+              )
+            : playlist.is_collaborative
+              ? strings.trackActions.playlistCollaborativeCount(playlist.track_count)
+              : strings.common.trackCount(playlist.track_count)}
         </AppText>
       </View>
       <FocusRingOverlay

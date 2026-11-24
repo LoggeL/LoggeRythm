@@ -25,6 +25,7 @@ vi.mock('react-native', () => ({
 }));
 
 // PressableScale owns animation state (a hook), so it cannot be called outside a render.
+vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../ui', async (original) => ({
   ...(await original<typeof import('../ui')>()),
   PressableScale: 'PressableScale',
@@ -239,7 +240,14 @@ describe('CatalogPlaylistCard', () => {
     cover_url: null,
     is_public: false,
     track_count: 12,
+    owner_id: 1,
     owner_name: null,
+    owner_avatar_url: null,
+    is_collaborative: false,
+    is_owner: true,
+    is_collaborator: false,
+    can_edit_tracks: true,
+    collaborator_count: 0,
   };
   const texts = (card: React.ReactElement) =>
     elements(card)
@@ -248,7 +256,14 @@ describe('CatalogPlaylistCard', () => {
 
   it('names the owner of a community playlist', () => {
     const card = CatalogPlaylistCard({
-      playlist: { ...playlist, is_public: true, owner_name: 'Sam' },
+      playlist: {
+        ...playlist,
+        is_public: true,
+        is_owner: false,
+        can_edit_tracks: false,
+        owner_id: 2,
+        owner_name: 'Sam',
+      },
       coverUrl: null,
       testID: 'discover-playlist-7',
       onPress: vi.fn(),
@@ -283,5 +298,31 @@ describe('CatalogPlaylistCard', () => {
       catalogStrings.discover.openOwnPlaylist('Roadtrip', 12),
     );
     expect(card.props.onPress).toBe(onPress);
+  });
+
+  it('shows the collaborative badge and shared-by owner label for collaborative playlists', () => {
+    const card = CatalogPlaylistCard({
+      playlist: {
+        ...playlist,
+        is_owner: false,
+        is_collaborator: true,
+        is_collaborative: true,
+        can_edit_tracks: true,
+        owner_id: 2,
+        owner_name: 'Sam',
+        collaborator_count: 2,
+      },
+      own: false,
+      coverUrl: null,
+      testID: 'discover-playlist-7',
+      onPress: vi.fn(),
+    });
+
+    expect(texts(card)).toEqual([
+      'Roadtrip',
+      catalogStrings.discover.sharedBy('Sam'),
+      catalogStrings.common.tracks(12),
+      catalogStrings.discover.collaborativeBadge,
+    ]);
   });
 });

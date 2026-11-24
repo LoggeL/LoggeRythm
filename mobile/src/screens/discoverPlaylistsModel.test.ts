@@ -16,7 +16,14 @@ const playlist = (id: number, overrides: Partial<PlaylistSummary> = {}): Playlis
   cover_url: null,
   is_public: true,
   track_count: 3,
+  owner_id: 1,
   owner_name: null,
+  owner_avatar_url: null,
+  is_collaborative: false,
+  is_owner: true,
+  is_collaborator: false,
+  can_edit_tracks: true,
+  collaborator_count: 0,
   ...overrides,
 });
 
@@ -95,6 +102,24 @@ describe('mergeDiscoverPlaylists', () => {
     expect(() => mergeDiscoverPlaylists([], [playlist(6), playlist(6)])).toThrow(
       'Community playlists list playlist 6 more than once',
     );
+  });
+
+  it('marks collaborated playlists from the user list as not owned (own: false)', () => {
+    const shared = playlist(8, {
+      owner_id: 2,
+      owner_name: 'Jule',
+      is_owner: false,
+      is_collaborator: true,
+      is_collaborative: true,
+    });
+    const owned = playlist(1);
+
+    const merged = mergeDiscoverPlaylists([owned, shared], []);
+
+    expect(merged.map((entry) => [entry.playlist.id, entry.own])).toEqual([
+      [1, true],
+      [8, false],
+    ]);
   });
 });
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Literal
@@ -99,7 +99,11 @@ def upcoming(deezer_ids: list[str], current_index: int) -> list[str]:
     return picked
 
 
-def schedule(deezer_ids: Iterable[str]) -> list[str]:
+def schedule(
+    deezer_ids: Iterable[str],
+    *,
+    user_ids_by_track: Mapping[str, int | None] | None = None,
+) -> list[str]:
     """Queue the given tracks for background loading, in order.
 
     Skips tracks that are cached, already queued/loading, or failed recently.
@@ -122,17 +126,22 @@ def schedule(deezer_ids: Iterable[str]) -> list[str]:
             _queued.add(deezer_id)
             accepted.append(deezer_id)
     for deezer_id in accepted:
-        _executor.submit(_load, deezer_id)
+        requested_by = user_ids_by_track.get(deezer_id) if user_ids_by_track else None
+        _executor.submit(_load, deezer_id, requested_by)
     return accepted
 
 
-def _load(deezer_id: str) -> None:
+def _load(deezer_id: str, requested_by_user_id: int | None = None) -> None:
     with _lock:
         _queued.discard(deezer_id)
         _loading.add(deezer_id)
     _notify(deezer_id)
     try:
-        storage.materialize(deezer_id)
+        storage.materialize(
+            deezer_id,
+            requested_by_user_id=requested_by_user_id,
+            source="party_preload",
+        )
     except Exception as exc:  # noqa: BLE001 — recorded and shown per track
         logger.exception("Party preload of track %s failed", deezer_id)
         with _lock:

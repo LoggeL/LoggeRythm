@@ -12,6 +12,7 @@ import {
   optimisticallyAddPlaylistTracks,
   optimisticallyRemovePlaylistTrack,
   optimisticallyReorderPlaylistTracks,
+  optimisticallySetPlaylistCollaborative,
   optimisticallyUpdatePlaylist,
   removeDeletedPlaylistFromCache,
   restorePlaylistCache,
@@ -42,12 +43,21 @@ const summary = (id = 4): PlaylistSummary => ({
   cover_url: null,
   track_count: 3,
   is_public: false,
+  owner_id: 7,
   owner_name: null,
+  owner_avatar_url: null,
+  is_collaborative: false,
+  is_owner: true,
+  is_collaborator: false,
+  can_edit_tracks: true,
+  collaborator_count: 0,
 });
 
 const detail = (): Playlist => ({
   ...summary(),
   is_owner: true,
+  collaborators: [],
+  revision: 0,
   tracks: [track('1'), track('2'), track('3')],
 });
 
@@ -206,12 +216,50 @@ describe('playlist cache parity contract', () => {
     expect(client.getQueryData(queryKeys.playlists.detail(scope, 4))).toEqual(detail());
   });
 
-  it('removes a deleted playlist from detail, owned, and public caches', () => {
+  it('removes a deleted playlist from detail, invite, owned, and public caches', () => {
     const client = clientWithPlaylist();
+    client.setQueryData(queryKeys.playlists.invite(scope, 4), {
+      invite: { token: 'a'.repeat(24), created_at: '2026-11-24T00:00:00Z', expires_at: null },
+    });
     removeDeletedPlaylistFromCache(client, scope, 4);
     expect(client.getQueryData(queryKeys.playlists.detail(scope, 4))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.playlists.invite(scope, 4))).toBeUndefined();
     expect(client.getQueryData(queryKeys.playlists.owned(scope))).toEqual([]);
     expect(client.getQueryData(queryKeys.playlists.public(scope))).toEqual([]);
+  });
+
+  it('optimistically toggles collaborative mode, clears revoked invites on disable, and restores cleanly', async () => {
+    const client = clientWithPlaylist();
+    const activeInvite = {
+      invite: {
+        token: 'active_invite_token_123456',
+        created_at: '2026-11-24T09:00:00Z',
+        expires_at: null,
+      },
+    };
+    const enableSnapshot = await optimisticallySetPlaylistCollaborative(client, scope, 4, true);
+
+    expect(client.getQueryData<Playlist>(queryKeys.playlists.detail(scope, 4))?.is_collaborative)
+      .toBe(true);
+    expect(client.getQueryData<PlaylistSummary[]>(queryKeys.playlists.owned(scope))?.[0]?.is_collaborative)
+      .toBe(true);
+    expect(client.getQueryData<PlaylistSummary[]>(queryKeys.playlists.public(scope))?.[0]?.is_collaborative)
+      .toBe(true);
+
+    client.setQueryData(queryKeys.playlists.invite(scope, 4), activeInvite);
+    const disableSnapshot = await optimisticallySetPlaylistCollaborative(client, scope, 4, false);
+    expect(client.getQueryData<Playlist>(queryKeys.playlists.detail(scope, 4))?.is_collaborative)
+      .toBe(false);
+    expect(client.getQueryData(queryKeys.playlists.invite(scope, 4))).toEqual({ invite: null });
+
+    restorePlaylistCache(client, scope, 4, disableSnapshot);
+    expect(client.getQueryData(queryKeys.playlists.invite(scope, 4))).toEqual(activeInvite);
+
+    restorePlaylistCache(client, scope, 4, enableSnapshot);
+    expect(client.getQueryData<Playlist>(queryKeys.playlists.detail(scope, 4))?.is_collaborative)
+      .toBe(false);
+    expect(client.getQueryData<PlaylistSummary[]>(queryKeys.playlists.owned(scope))?.[0]?.is_collaborative)
+      .toBe(false);
   });
 
   it('creates then adds a track, compensating with delete when add fails', async () => {

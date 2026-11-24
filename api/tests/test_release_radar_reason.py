@@ -9,6 +9,7 @@ from __future__ import annotations
 import threading
 import unittest
 from datetime import datetime, timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import FastAPI
@@ -246,7 +247,7 @@ class RadarReasonTests(unittest.TestCase):
             patch.object(home, "_artist_new_tracks", side_effect=artist_tracks),
         ):
             return home.release_radar(
-                user=object(),  # type: ignore[arg-type]
+                user=SimpleNamespace(id=1),  # type: ignore[arg-type]
                 db=object(),  # type: ignore[arg-type]
             )
 
@@ -321,7 +322,7 @@ class RadarReasonTests(unittest.TestCase):
             patch.object(home, "_artist_new_tracks", side_effect=artist_tracks),
         ):
             tracks = home.release_radar(
-                user=object(),  # type: ignore[arg-type]
+                user=SimpleNamespace(id=1),  # type: ignore[arg-type]
                 db=object(),  # type: ignore[arg-type]
             )
 
@@ -340,7 +341,7 @@ class RadarReasonTests(unittest.TestCase):
             patch.object(home, "_artist_new_tracks", return_value=[provider_track]),
         ):
             tracks = home.release_radar(
-                user=object(),  # type: ignore[arg-type]
+                user=SimpleNamespace(id=1),  # type: ignore[arg-type]
                 db=object(),  # type: ignore[arg-type]
             )
 

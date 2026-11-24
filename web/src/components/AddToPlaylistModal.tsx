@@ -8,8 +8,9 @@ import {
   useCreatePlaylist,
 } from "@/hooks/useLibrary";
 import { useMe } from "@/hooks/useAuth";
+import { canEditPlaylistTracks, isOwnedLibraryPlaylist } from "@/lib/playlistPermissions";
 import { toast } from "@/store/toast";
-import { PlusIcon } from "@/components/icons";
+import { PlusIcon, UsersIcon } from "@/components/icons";
 import Cover from "@/components/ui/Cover";
 import QueryError from "@/components/ui/QueryError";
 import Modal from "@/components/Modal";
@@ -24,6 +25,7 @@ export default function AddToPlaylistModal() {
   const createPlaylist = useCreatePlaylist();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newCollaborative, setNewCollaborative] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const submitting = useRef(false);
   const busy = createPlaylist.isPending || addToPlaylist.isPending;
@@ -35,6 +37,7 @@ export default function AddToPlaylistModal() {
     setLastSession(session);
     setCreating(false);
     setNewName("");
+    setNewCollaborative(false);
     setActionError(null);
   }
 
@@ -64,7 +67,7 @@ export default function AddToPlaylistModal() {
     const submittedTrack = track!;
     setActionError(null);
     submitting.current = true;
-    createPlaylist.mutate({ name }, {
+    createPlaylist.mutate({ name, is_collaborative: newCollaborative }, {
       onSuccess: (playlist) => {
         if (useAddToPlaylistStore.getState().session === session) setCreating(false);
         addToPlaylist.mutate({ id: String(playlist.id), track: submittedTrack }, {
@@ -86,12 +89,13 @@ export default function AddToPlaylistModal() {
   }
 
   const list = playlistQuery.data;
+  const editable = list?.filter(canEditPlaylistTracks);
 
   return (
     <Modal open onClose={close} title="Zu Playlist hinzufügen" description={<span className="block truncate">{track.title} · {track.artist}</span>}>
       <div aria-busy={busy} className="flex flex-col">
         {creating ? (
-          <form onSubmit={createAndAdd} className="flex flex-col gap-2 border-y border-hairline py-3">
+          <form onSubmit={createAndAdd} className="flex flex-col gap-3 border-y border-hairline py-3">
             <label htmlFor="add-to-playlist-name" className="label-mono">
               Neue Playlist
             </label>
@@ -112,6 +116,16 @@ export default function AddToPlaylistModal() {
                 {busy ? "Speichert…" : "Erstellen"}
               </button>
             </div>
+            <label className="flex cursor-pointer items-center gap-2.5 text-xs text-muted">
+              <input
+                type="checkbox"
+                checked={newCollaborative}
+                onChange={(e) => setNewCollaborative(e.target.checked)}
+                disabled={busy}
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              <span>Als gemeinsame Playlist anlegen</span>
+            </label>
           </form>
         ) : (
           <div className="border-y border-hairline py-1">
@@ -143,22 +157,46 @@ export default function AddToPlaylistModal() {
             ))}
           </div>
         )}
-        {list && !playlistQuery.isError && list.length === 0 && (
-          <p className="py-8 text-center text-sm leading-relaxed text-muted">Du hast noch keine Playlist. Lege oben mit „Neue Playlist“ deine erste an.</p>
+        {editable && !playlistQuery.isError && editable.length === 0 && (
+          <p className="py-8 text-center text-sm leading-relaxed text-muted">
+            {list && list.length > 0
+              ? "Derzeit ist keine deiner Playlists bearbeitbar. Lege oben mit „Neue Playlist“ eine neue an."
+              : "Du hast noch keine Playlist. Lege oben mit „Neue Playlist“ deine erste an."}
+          </p>
         )}
-        {list && !playlistQuery.isError && list.length > 0 && (
+        {editable && !playlistQuery.isError && editable.length > 0 && (
           <>
             <p className="label-mono flex items-center justify-between pb-1 pt-4">
               <span>Deine Playlists</span>
-              <span className="tabular-nums">{list.length}</span>
+              <span className="tabular-nums">{editable.length}</span>
             </p>
-            {list.map((p) => (
-              <button key={p.id} type="button" onClick={() => addTo(String(p.id), p.name)} disabled={busy} className={ROW}>
-                <Cover src={p.cover_url} className="h-11 w-11 rounded-art" />
-                <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{p.name}</span>
-                <span className="label-mono shrink-0 tabular-nums">{p.track_count} Titel</span>
-              </button>
-            ))}
+            {editable.map((p) => {
+              const owned = isOwnedLibraryPlaylist(p);
+              const sublabel = !owned
+                ? p.owner_name
+                  ? `Gemeinsam · von ${p.owner_name}`
+                  : "Gemeinsam"
+                : p.is_collaborative
+                  ? "Gemeinsam"
+                  : null;
+              return (
+                <button key={p.id} type="button" onClick={() => addTo(String(p.id), p.name)} disabled={busy} className={ROW}>
+                  <Cover src={p.cover_url} className="h-11 w-11 rounded-art" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-[15px] font-medium">{p.name}</span>
+                      {p.is_collaborative && (
+                        <UsersIcon width={14} height={14} aria-label="Gemeinsame Playlist" className="shrink-0 text-accent" />
+                      )}
+                    </span>
+                    {sublabel && (
+                      <span className="mt-0.5 block truncate text-xs text-muted">{sublabel}</span>
+                    )}
+                  </span>
+                  <span className="label-mono shrink-0 tabular-nums">{p.track_count} Titel</span>
+                </button>
+              );
+            })}
           </>
         )}
       </div>

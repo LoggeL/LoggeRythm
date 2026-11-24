@@ -19,6 +19,10 @@ export function LibraryCreatePlaylistSheet({ form }: { form: CreatePlaylistForm 
       submitIcon="plus"
       onNameChange={form.setName}
       onDescriptionChange={form.setDescription}
+      collaborative={{
+        value: form.isCollaborative,
+        onChange: form.setIsCollaborative,
+      }}
       onClose={form.close}
       onSubmit={form.submit}
     />

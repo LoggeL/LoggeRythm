@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import type { Track } from "@/types";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import type { PlaylistTrack } from "@/types";
 import TrackRow from "@/components/TrackRow";
 import { GripIcon } from "@/components/icons";
 import trackStyles from "@/components/trackList.module.css";
@@ -36,18 +36,24 @@ function scrollParent(element: HTMLElement): HTMLElement {
  * grip, and through "Nach oben/unten verschieben" in the row's menu. The move
  * is reported once, on drop; the caller applies it and reports failures.
  */
-export default function SortableTracks({
+export default function SortableTracks<T extends PlaylistTrack = PlaylistTrack>({
   tracks,
   onPlay,
   onRemove,
+  canRemove,
   onReorder,
+  renderNote,
   showAlbum = true,
 }: {
-  tracks: Track[];
+  tracks: T[];
   onPlay: (index: number) => void;
-  onRemove?: (track: Track) => void;
+  onRemove?: (track: T) => void;
+  /** Optional per-row predicate gating removal when `onRemove` is provided. */
+  canRemove?: (track: T) => boolean;
   /** Move the track at index `from` so that it ends up at index `to`. */
   onReorder?: (from: number, to: number) => void;
+  /** Optional per-row note column (e.g. contributor attribution). */
+  renderNote?: (track: T, index: number) => ReactNode;
   showAlbum?: boolean;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -172,41 +178,50 @@ export default function SortableTracks({
           </p>
         </>
       )}
-      {tracks.map((track, index) => (
-        <div key={track.id} data-sort-row className={`relative ${drag?.from === index ? "opacity-40" : ""}`}>
-          {showsDrop && drag.slot === index && <DropLine edge="top" />}
-          {showsDrop && drag.slot === tracks.length && index === tracks.length - 1 && <DropLine edge="bottom" />}
-          <TrackRow
-            track={track}
-            index={index}
-            showAlbum={showAlbum}
-            onPlay={() => onPlay(index)}
-            onRemove={onRemove ? () => onRemove(track) : undefined}
-            onMoveUp={onReorder && index > 0 ? () => move(index, index - 1) : undefined}
-            onMoveDown={onReorder && index < tracks.length - 1 ? () => move(index, index + 1) : undefined}
-            dragHandle={
-              onReorder ? (
-                <button
-                  type="button"
-                  data-drag-handle
-                  aria-label={`„${track.title}“ verschieben`}
-                  aria-describedby={hintId}
-                  title="Ziehen zum Sortieren (oder ↑ ↓)"
-                  className={trackStyles.handle}
-                  onPointerDown={(event) => handlePointerDown(event, index)}
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={handlePointerUp}
-                  onPointerCancel={() => setDrag(null)}
-                  onLostPointerCapture={() => setDrag(null)}
-                  onKeyDown={(event) => handleKeyDown(event, index)}
-                >
-                  <GripIcon aria-hidden="true" />
-                </button>
-              ) : undefined
-            }
-          />
-        </div>
-      ))}
+      {tracks.map((track, index) => {
+        const rowKey =
+          track.playlist_entry_id !== undefined
+            ? `entry-${track.playlist_entry_id}`
+            : String(track.id);
+        const removable =
+          onRemove !== undefined && (canRemove ? canRemove(track) : true);
+        return (
+          <div key={rowKey} data-sort-row className={`relative ${drag?.from === index ? "opacity-40" : ""}`}>
+            {showsDrop && drag.slot === index && <DropLine edge="top" />}
+            {showsDrop && drag.slot === tracks.length && index === tracks.length - 1 && <DropLine edge="bottom" />}
+            <TrackRow
+              track={track}
+              index={index}
+              showAlbum={showAlbum}
+              note={renderNote ? renderNote(track, index) : undefined}
+              onPlay={() => onPlay(index)}
+              onRemove={removable ? () => onRemove(track) : undefined}
+              onMoveUp={onReorder && index > 0 ? () => move(index, index - 1) : undefined}
+              onMoveDown={onReorder && index < tracks.length - 1 ? () => move(index, index + 1) : undefined}
+              dragHandle={
+                onReorder ? (
+                  <button
+                    type="button"
+                    data-drag-handle
+                    aria-label={`„${track.title}“ verschieben`}
+                    aria-describedby={hintId}
+                    title="Ziehen zum Sortieren (oder ↑ ↓)"
+                    className={trackStyles.handle}
+                    onPointerDown={(event) => handlePointerDown(event, index)}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={() => setDrag(null)}
+                    onLostPointerCapture={() => setDrag(null)}
+                    onKeyDown={(event) => handleKeyDown(event, index)}
+                  >
+                    <GripIcon aria-hidden="true" />
+                  </button>
+                ) : undefined
+              }
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
