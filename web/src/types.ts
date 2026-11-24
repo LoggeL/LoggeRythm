@@ -243,6 +243,10 @@ export interface PartyTrack {
   added_by: string;
   /** Member key of whoever added it; equals `PartyState.viewer_key` for your own. */
   added_by_member: string;
+  /** Avatar URL of the contributor when they have an account avatar. */
+  added_by_avatar_url?: string | null;
+  /** Authoritative server-cache status (`storage.is_ready(deezer_id)`). */
+  is_stored?: boolean;
   /** Server cache state of the audio, kept warm in the background. */
   load_state: PartyLoadState;
   /** Why the last background load failed (only for `failed`). */
@@ -252,10 +256,14 @@ export interface PartyTrack {
 export type PartyLoadState = "ready" | "loading" | "queued" | "failed" | "idle";
 
 export interface PartyMember {
+  /** Stable actor key (`u:<id>` or `g:<id>`), used by host kick actions. */
+  key?: string;
   name: string;
   avatar_url?: string | null;
   /** Joined anonymously with a nickname. */
   is_guest: boolean;
+  /** True for the Jam host. */
+  is_host?: boolean;
 }
 
 export interface PartyState {
@@ -269,6 +277,25 @@ export interface PartyState {
   viewer_key: string;
   viewer_name: string;
   viewer_is_guest: boolean;
+  /** When true, participants may also control playback and reorder/remove upcoming tracks. */
+  guests_can_control?: boolean;
+  /** Actor key of whoever last changed playback/current track. */
+  playback_changed_by?: string;
+  /** Monotonic revision incremented on explicit playback/current mutations. */
+  playback_revision?: number;
+  /** Terminal frame sent when the host ends the Jam. */
+  ended?: boolean;
+  is_playing: boolean;
+  position_sec: number;
+  /** ISO-8601 timestamp of the last playback update, or null. */
+  playback_updated_at: string | null;
+  /** Server UTC timestamp for drift compensation. */
+  server_time?: string | null;
+}
+
+export interface PartySettingsUpdate {
+  name?: string | null;
+  guests_can_control?: boolean | null;
 }
 
 /** The host's player queue and playhead a new party continues from. */
@@ -277,7 +304,82 @@ export interface PartyStart {
   current_index: number;
   is_playing: boolean;
   position_sec: number;
+  guests_can_control?: boolean;
 }
+
+export type DeviceType =
+  | "web"
+  | "mobile"
+  | "tablet"
+  | "desktop"
+  | "tv"
+  | "speaker"
+  | "other";
+
+export interface DeviceCapabilities {
+  can_play_audio: boolean;
+  can_control_volume: boolean;
+}
+
+export interface ConnectDevice {
+  device_id: string;
+  name: string;
+  device_type: DeviceType;
+  capabilities: DeviceCapabilities;
+  volume: number;
+  muted: boolean;
+  is_active: boolean;
+  party_code: string | null;
+  connected_at: string;
+  last_seen_at: string;
+}
+
+export interface ConnectPlaybackState {
+  queue: Track[];
+  origins: ("manual" | "context")[];
+  queue_context: string | null;
+  current_index: number;
+  is_playing: boolean;
+  position_sec: number;
+  duration_sec: number;
+  shuffle: boolean;
+  repeat: "off" | "all" | "one";
+  volume: number;
+  muted: boolean;
+  updated_at: string | null;
+}
+
+export interface ConnectState {
+  revision: number;
+  active_device_id: string | null;
+  devices: ConnectDevice[];
+  playback: ConnectPlaybackState;
+  server_time?: string;
+}
+
+export interface ConnectTicket {
+  ticket: string;
+  expires_in_sec: number;
+}
+
+export type ConnectCommandAction =
+  | "play"
+  | "pause"
+  | "toggle"
+  | "next"
+  | "prev"
+  | "clear_queue"
+  | "seek"
+  | "set_volume"
+  | "set_mute"
+  | "set_shuffle"
+  | "set_repeat"
+  | "play_tracks"
+  | "queue_add"
+  | "queue_play_next"
+  | "queue_remove"
+  | "queue_reorder"
+  | "select_index";
 
 export interface StorageItem {
   deezer_id: string;

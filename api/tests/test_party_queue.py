@@ -72,7 +72,7 @@ class PartyQueueTests(unittest.TestCase):
 
     def reorder(self, ids: list[int]):
         return party.reorder_tracks(
-            self.session.code, party.OrderUpdate(ids=ids), self.host, self.db
+            self.session.code, party.OrderUpdate(ids=ids), PartyActor(user=self.host), self.db
         )
 
     def test_removing_earlier_track_preserves_active_occurrence_and_playback_clock(self):
@@ -163,7 +163,10 @@ class PartyQueueTests(unittest.TestCase):
             with self.subTest(index=index):
                 with self.assertRaises(HTTPException) as raised:
                     party.set_current(
-                        self.session.code, party.CurrentUpdate(index=index), self.host, self.db
+                        self.session.code,
+                        party.CurrentUpdate(index=index),
+                        PartyActor(user=self.host),
+                        self.db,
                     )
                 self.assertEqual(raised.exception.status_code, 422)
                 self.assertEqual(self.session.current_index, 1)
@@ -172,7 +175,10 @@ class PartyQueueTests(unittest.TestCase):
 
     def test_deselecting_current_track_stops_playback(self):
         party.set_current(
-            self.session.code, party.CurrentUpdate(index=-1), self.host, self.db
+            self.session.code,
+            party.CurrentUpdate(index=-1),
+            PartyActor(user=self.host),
+            self.db,
         )
         self.assertEqual(self.session.current_index, -1)
         self.assertFalse(self.session.is_playing)
@@ -185,7 +191,7 @@ class PartyQueueTests(unittest.TestCase):
                     party.set_playback(
                         self.session.code,
                         party.PlaybackUpdate(is_playing=False, position_sec=position),
-                        self.host,
+                        PartyActor(user=self.host),
                         self.db,
                     )
                 self.assertEqual(raised.exception.status_code, 422)
@@ -201,7 +207,7 @@ class PartyQueueTests(unittest.TestCase):
             party.set_playback(
                 self.session.code,
                 party.PlaybackUpdate(is_playing=True, position_sec=0.0),
-                self.host,
+                PartyActor(user=self.host),
                 self.db,
             )
         self.assertEqual(raised.exception.status_code, 409)
@@ -209,23 +215,24 @@ class PartyQueueTests(unittest.TestCase):
         self.publish.assert_not_called()
 
     def test_guest_cannot_mutate_queue_or_playback(self):
+        guest_actor = PartyActor(user=self.guest)
         mutations = (
             lambda: party.remove_track(
-                self.session.code, self.first.id, PartyActor(user=self.guest), self.db
+                self.session.code, self.first.id, guest_actor, self.db
             ),
             lambda: party.reorder_tracks(
                 self.session.code,
                 party.OrderUpdate(ids=[self.last.id, self.current.id, self.first.id]),
-                self.guest,
+                guest_actor,
                 self.db,
             ),
             lambda: party.set_current(
-                self.session.code, party.CurrentUpdate(index=0), self.guest, self.db
+                self.session.code, party.CurrentUpdate(index=0), guest_actor, self.db
             ),
             lambda: party.set_playback(
                 self.session.code,
                 party.PlaybackUpdate(is_playing=False, position_sec=0.0),
-                self.guest,
+                guest_actor,
                 self.db,
             ),
         )

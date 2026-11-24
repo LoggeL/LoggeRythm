@@ -9,6 +9,7 @@
 // audio, and keeps likes/playlists/party state in memory. It is a development
 // tool only; unknown routes answer 501 loudly instead of pretending to work.
 
+import { createHash, randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 
 const PORT = Number(process.env.MOCK_API_PORT ?? 8000);
@@ -138,6 +139,32 @@ const publicPlaylists = [
 ];
 const plays = pick(4, 12, 3);
 const parties = new Map();
+const SERVER_CACHED_IDS = new Set(pick(0, 30, 5).map((track) => track.id));
+const partyStreams = new Map(); // code -> Set<{ res, viewer }>
+
+// Connect multi-device hub state (in-memory for offline UI development)
+const connectHub = {
+  revision: 0,
+  activeDeviceId: null,
+  devices: new Map(), // device_id -> { device, socket }
+  tickets: new Map(), // ticket -> expiresAt
+  pendingCommands: new Map(), // command_id -> { senderSocket, requestId }
+  commandCounter: 0,
+  playback: {
+    queue: [],
+    origins: [],
+    queue_context: null,
+    current_index: -1,
+    is_playing: false,
+    position_sec: 0,
+    duration_sec: 0,
+    shuffle: false,
+    repeat: "off",
+    volume: 0.8,
+    muted: false,
+    updated_at: null,
+  },
+};
 
 const playlistSummary = (playlist) => ({
   id: playlist.id, name: playlist.name, description: playlist.description, cover_url: playlist.cover_url,
@@ -242,24 +269,127 @@ const HOST_VIEWER = { key: "u:1", name: "Demo", guest: false };
 
 // Simulated background preload: from the playing track on, one track loads
 // every few seconds; the fifth upcoming track fails like an unavailable one.
-function partyLoad(party, index) {
+function partyLoad(party, index, deezerId) {
+  if (SERVER_CACHED_IDS.has(String(deezerId))) {
+    return { is_stored: true, load_state: "ready", load_error: null };
+  }
   const ahead = index - Math.max(party.current_index, 0);
-  if (ahead < 0) return { load_state: "ready", load_error: null };
-  if (ahead === 4) return { load_state: "failed", load_error: "Deezer403Exception: Titel in dieser Region nicht verfügbar (Demo)" };
+  if (ahead < 0) return { is_stored: true, load_state: "ready", load_error: null };
+  if (ahead === 4) return { is_stored: false, load_state: "failed", load_error: "Deezer403Exception: Titel in dieser Region nicht verfügbar (Demo)" };
   const done = Math.floor((Date.now() - party.loadStart) / 4000);
-  if (ahead < done) return { load_state: "ready", load_error: null };
-  if (ahead === done) return { load_state: "loading", load_error: null };
-  return { load_state: ahead < 15 ? "queued" : "idle", load_error: null };
+  if (ahead < done) return { is_stored: true, load_state: "ready", load_error: null };
+  if (ahead === done) return { is_stored: false, load_state: "loading", load_error: null };
+  return { is_stored: false, load_state: ahead < 15 ? "queued" : "idle", load_error: null };
 }
 
-function partyState(party, viewer = HOST_VIEWER) {
-  return { code: party.code, name: party.name, host_name: me.display_name, is_host: !viewer.guest,
+function partyState(party, viewer = HOST_VIEWER, ended = false) {
+  return {
+    code: party.code,
+    name: party.name,
+    host_name: me.display_name,
+    is_host: !viewer.guest,
     current_index: party.current_index,
-    members: [{ name: me.display_name, avatar_url: null, is_guest: false }, { name: "Jule", is_guest: false },
-      ...[...party.guests.values()].map((guest) => ({ name: guest.name, avatar_url: null, is_guest: true }))],
-    tracks: party.tracks.map((track, index) => ({ added_by_member: "", ...track, ...partyLoad(party, index) })),
-    is_playing: party.is_playing, position_sec: party.position_sec, playback_updated_at: party.updated,
-    viewer_key: viewer.key, viewer_name: viewer.name, viewer_is_guest: viewer.guest };
+    members: [
+      { key: "u:1", name: me.display_name, avatar_url: me.avatar_url, is_guest: false, is_host: true },
+      ...party.extraMembers,
+      ...[...party.guests.values()].map((guest) => ({ key: guest.key, name: guest.name, avatar_url: null, is_guest: true, is_host: false })),
+    ],
+    tracks: party.tracks.map((track, index) => ({
+      added_by_member: "",
+      added_by_avatar_url: null,
+      ...track,
+      ...partyLoad(party, index, track.deezer_id),
+    })),
+    guests_can_control: Boolean(party.guests_can_control),
+    playback_changed_by: party.playback_changed_by ?? "",
+    playback_revision: party.playback_revision ?? 0,
+    ended,
+    is_playing: ended ? false : party.is_playing,
+    position_sec: party.position_sec,
+    playback_updated_at: party.updated,
+    server_time: new Date().toISOString(),
+    viewer_key: viewer.key,
+    viewer_name: viewer.name,
+    viewer_is_guest: viewer.guest,
+  };
+}
+
+function broadcastParty(party, ended = false) {
+  const subs = partyStreams.get(party.code);
+  if (!subs) return;
+  for (const sub of subs) {
+    try {
+      sub.res.write(`data: ${JSON.stringify(partyState(party, sub.viewer, ended))}\n\n`);
+      if (ended) sub.res.end();
+    } catch {
+      subs.delete(sub);
+    }
+  }
+  if (ended) partyStreams.delete(party.code);
+}
+
+function connectStateSnapshot() {
+  const devices = [...connectHub.devices.values()].map(({ device }) => ({
+    ...device,
+    is_active: device.device_id === connectHub.activeDeviceId,
+  }));
+  return {
+    revision: connectHub.revision,
+    active_device_id: connectHub.activeDeviceId,
+    devices,
+    playback: connectHub.playback,
+    server_time: new Date().toISOString(),
+  };
+}
+
+function wsEncodeFrame(opcode, payloadBuf) {
+  const len = payloadBuf.length;
+  let header;
+  if (len < 126) {
+    header = Buffer.from([0x80 | opcode, len]);
+  } else if (len < 65536) {
+    header = Buffer.alloc(4);
+    header[0] = 0x80 | opcode;
+    header[1] = 126;
+    header.writeUInt16BE(len, 2);
+  } else {
+    header = Buffer.alloc(10);
+    header[0] = 0x80 | opcode;
+    header[1] = 127;
+    header.writeBigUInt64BE(BigInt(len), 2);
+  }
+  return Buffer.concat([header, payloadBuf]);
+}
+
+function wsSendJson(socket, obj) {
+  if (socket.destroyed) return;
+  socket.write(wsEncodeFrame(0x1, Buffer.from(JSON.stringify(obj), "utf8")));
+}
+
+function wsClose(socket, code = 1000, reason = "") {
+  if (socket.destroyed) return;
+  const reasonBuf = Buffer.from(reason, "utf8");
+  const payload = Buffer.alloc(2 + reasonBuf.length);
+  payload.writeUInt16BE(code, 0);
+  reasonBuf.copy(payload, 2);
+  socket.write(wsEncodeFrame(0x8, payload));
+  socket.end();
+}
+
+function broadcastConnectState() {
+  connectHub.revision += 1;
+  const state = connectStateSnapshot();
+  for (const entry of connectHub.devices.values()) {
+    wsSendJson(entry.socket, { type: "state", state });
+  }
+}
+
+function interpolatedMockPosition() {
+  const pb = connectHub.playback;
+  if (!pb.is_playing || !pb.updated_at) return pb.position_sec;
+  const elapsed = Math.max(0, (Date.now() - Date.parse(pb.updated_at)) / 1000);
+  const next = pb.position_sec + elapsed;
+  return pb.duration_sec > 0 ? Math.min(pb.duration_sec, next) : next;
 }
 
 function partyGuest(req, party) {
@@ -400,7 +530,7 @@ async function handle(req, res) {
     const body = await readJson(req);
     return send(res, 200, Object.fromEntries((body.tracks ?? []).map((track) => [track.id, { plays: 20000 + hash(track.id) % 4000000, listeners: 3000 + hash(track.id) % 300000 }])));
   }
-  if (is("GET", "/cached-tracks")) return send(res, 200, { ids: pick(0, 30, 5).map((track) => track.id) });
+  if (is("GET", "/cached-tracks")) return send(res, 200, { ids: [...SERVER_CACHED_IDS] });
   // Spotify import jobs: progress is derived from the time since the start, so
   // a job visibly moves queued → running → done. A link containing "fehler"
   // fails after the Spotify phase, to show the failure state.
@@ -496,75 +626,165 @@ async function handle(req, res) {
     if (is("DELETE", "/playlists/[^/]+/tracks/[^/]+")) { playlist.tracks = playlist.tracks.filter((track) => track.id !== seg[3]); return send(res, 204); }
   }
 
+  // Connect REST helpers
+  if (is("POST", "/connect/ticket")) {
+    const ticket = randomBytes(24).toString("hex");
+    connectHub.tickets.set(ticket, Date.now() + 30_000);
+    return send(res, 200, { ticket, expires_in_sec: 30 });
+  }
+  if (is("GET", "/connect/state")) {
+    return send(res, 200, connectStateSnapshot());
+  }
+
   // Party
+  if (is("GET", "/party/active")) {
+    const active = [...parties.values()][0];
+    return send(res, 200, active ? partyState(active) : null);
+  }
   if (is("POST", "/party")) {
     const code = "DEMO42";
     const body = await readJson(req);
-    const party = { code, name: body.name || "Demo-Party", current_index: 0, is_playing: false, position_sec: 0, updated: null, nextId: 1, tracks: [],
-      guests: new Map(), loadStart: Date.now() };
-    // Like the real API, a party started from a queue continues it.
+    const party = {
+      code,
+      name: body.name || "Demo-Jam",
+      current_index: 0,
+      is_playing: false,
+      position_sec: 0,
+      updated: new Date().toISOString(),
+      guests_can_control: Boolean(body.guests_can_control),
+      playback_changed_by: "u:1",
+      playback_revision: 1,
+      nextId: 1,
+      tracks: [],
+      extraMembers: [{ key: "u:2", name: "Jule", avatar_url: null, is_guest: false, is_host: false }],
+      guests: new Map(),
+      loadStart: Date.now(),
+    };
     const seed = body.tracks?.length ? body.tracks : pick(5, 6, 8);
     for (const track of seed) party.tracks.push({ ...track, id: party.nextId++, deezer_id: track.id, added_by: "Demo", added_by_member: "u:1" });
-    if (body.tracks?.length) Object.assign(party, { current_index: body.current_index, is_playing: body.is_playing, position_sec: body.position_sec, updated: new Date().toISOString() });
+    if (body.tracks?.length) {
+      Object.assign(party, {
+        current_index: body.current_index,
+        is_playing: body.is_playing,
+        position_sec: body.position_sec,
+        updated: new Date().toISOString(),
+      });
+    }
     parties.set(code, party);
     return send(res, 200, partyState(party));
   }
   if (seg[0] === "party" && seg[1]) {
     const party = parties.get(seg[1].toUpperCase());
-    if (!party) return fail(res, 404, "Party nicht gefunden");
+    if (!party) return fail(res, 404, "Jam nicht gefunden");
     if (is("POST", "/party/[^/]+/guest")) {
       const nickname = String((await readJson(req)).nickname ?? "").trim().replace(/\s+/g, " ");
       if (!nickname) return fail(res, 422, "Der Nickname darf nicht nur aus Leerzeichen bestehen.");
-      const taken = [me.display_name, "Jule", ...[...party.guests.values()].map((guest) => guest.name)];
-      if (taken.some((name) => name.toLowerCase() === nickname.toLowerCase())) return fail(res, 409, `Der Nickname „${nickname}“ ist in dieser Party schon vergeben.`);
+      const taken = [me.display_name, ...party.extraMembers.map((m) => m.name), ...[...party.guests.values()].map((guest) => guest.name)];
+      if (taken.some((name) => name.toLowerCase() === nickname.toLowerCase())) return fail(res, 409, `Der Nickname „${nickname}“ ist in dieser Jam schon vergeben.`);
       const token = `guest${party.guests.size + 1}x${Date.now()}`;
       const guest = { key: `g:${party.guests.size + 1}`, name: nickname, guest: true };
       party.guests.set(token, guest);
+      broadcastParty(party);
       return send(res, 200, partyState(party, guest), { "Set-Cookie": `sf_party_guest=${token}; Path=/api/party/${party.code}; HttpOnly; SameSite=Lax` });
     }
     const guest = partyGuest(req, party);
     const viewer = loggedIn ? HOST_VIEWER : guest;
     if (!viewer) return fail(res, 401, "Not authenticated: sign in or join this party as a guest with a nickname");
     if (is("GET", "/party/[^/]+") || is("POST", "/party/[^/]+/join")) return send(res, 200, partyState(party, viewer));
+    if (is("GET", "/party/[^/]+/cached-tracks")) return send(res, 200, { ids: [...SERVER_CACHED_IDS] });
     if (is("GET", "/party/[^/]+/events")) {
-      // Same headers as the real API: without no-transform the Next proxy
-      // gzips the stream for browsers and holds frames back.
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive" });
+      const entry = { res, viewer };
+      if (!partyStreams.has(party.code)) partyStreams.set(party.code, new Set());
+      partyStreams.get(party.code).add(entry);
       const push = () => res.write(`data: ${JSON.stringify(partyState(party, viewer))}\n\n`);
       push();
       const timer = setInterval(push, 2000);
-      req.on("close", () => clearInterval(timer));
+      req.on("close", () => {
+        clearInterval(timer);
+        partyStreams.get(party.code)?.delete(entry);
+      });
       return;
     }
     if (is("POST", "/party/[^/]+/leave")) {
       if (!viewer.guest) return send(res, 204);
       for (const [token, entry] of party.guests) if (entry === viewer) party.guests.delete(token);
+      broadcastParty(party);
       return send(res, 204, undefined, { "Set-Cookie": `sf_party_guest=""; Path=/api/party/${party.code}; Max-Age=0` });
     }
     if (is("POST", "/party/[^/]+/tracks")) {
       const track = await readJson(req);
-      party.tracks.push({ ...track, id: party.nextId++, deezer_id: track.id, added_by: viewer.name, added_by_member: viewer.key });
+      const item = { ...track, id: party.nextId++, deezer_id: track.id, added_by: viewer.name, added_by_member: viewer.key };
+      if (url.searchParams.get("insert") === "next" && party.current_index >= 0) {
+        party.tracks.splice(party.current_index + 1, 0, item);
+      } else {
+        party.tracks.push(item);
+      }
+      broadcastParty(party);
       return send(res, 204);
     }
     if (is("DELETE", "/party/[^/]+/tracks/\\d+")) {
       const index = party.tracks.findIndex((track) => track.id === Number(seg[3]));
       if (index < 0) return fail(res, 404, "Party track not found");
-      if (viewer.guest && party.tracks[index].added_by_member !== viewer.key) return fail(res, 403, "Du kannst nur Titel entfernen, die du selbst hinzugefügt hast.");
-      if (viewer.guest && index === party.current_index) return fail(res, 403, "Der Titel läuft gerade; nur der Host kann ihn jetzt entfernen.");
+      const canRemoveAnyUpcoming = !viewer.guest || party.guests_can_control;
+      if (!canRemoveAnyUpcoming && party.tracks[index].added_by_member !== viewer.key) {
+        return fail(res, 403, "Du kannst nur Titel entfernen, die du selbst hinzugefügt hast.");
+      }
+      if (viewer.guest && index === party.current_index) {
+        return fail(res, 403, "Der Titel läuft gerade; nur der Host kann ihn jetzt entfernen.");
+      }
       party.tracks.splice(index, 1);
       if (index < party.current_index) party.current_index -= 1;
+      broadcastParty(party);
       return send(res, 204);
     }
-    if (viewer.guest) return fail(res, 403, "Nur der Host kann die Wiedergabe steuern.");
+    if (is("PATCH", "/party/[^/]+/settings")) {
+      if (viewer.guest) return fail(res, 403, "Nur der Host kann Jam-Einstellungen ändern.");
+      const body = await readJson(req);
+      if (typeof body.name === "string") party.name = body.name.trim();
+      if (typeof body.guests_can_control === "boolean") party.guests_can_control = body.guests_can_control;
+      broadcastParty(party);
+      return send(res, 200, partyState(party, viewer));
+    }
+    if (is("DELETE", "/party/[^/]+")) {
+      if (viewer.guest) return fail(res, 403, "Nur der Host kann die Jam beenden.");
+      broadcastParty(party, true);
+      parties.delete(party.code);
+      return send(res, 204);
+    }
+    if (is("DELETE", "/party/[^/]+/members/[^/]+")) {
+      if (viewer.guest) return fail(res, 403, "Nur der Host kann Teilnehmer entfernen.");
+      const key = seg[3];
+      if (key === "u:1") return fail(res, 400, "Der Host kann nicht entfernt werden.");
+      party.extraMembers = party.extraMembers.filter((m) => m.key !== key);
+      for (const [token, g] of party.guests) if (g.key === key) party.guests.delete(token);
+      broadcastParty(party);
+      return send(res, 204);
+    }
+    if (viewer.guest && !party.guests_can_control) return fail(res, 403, "Nur der Host kann die Wiedergabe steuern.");
     if (is("PATCH", "/party/[^/]+/tracks/order")) {
       const order = (await readJson(req)).ids;
       party.tracks.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+      broadcastParty(party);
       return send(res, 204);
     }
-    if (is("PATCH", "/party/[^/]+/current")) { party.current_index = (await readJson(req)).index; return send(res, 204); }
+    if (is("PATCH", "/party/[^/]+/current")) {
+      party.current_index = (await readJson(req)).index;
+      party.playback_changed_by = viewer.key;
+      party.playback_revision += 1;
+      broadcastParty(party);
+      return send(res, 204);
+    }
     if (is("PATCH", "/party/[^/]+/playback")) {
       const body = await readJson(req);
-      Object.assign(party, { is_playing: body.is_playing, position_sec: body.position_sec, updated: new Date().toISOString() });
+      Object.assign(party, {
+        is_playing: body.is_playing,
+        position_sec: body.position_sec,
+        updated: new Date().toISOString(),
+        playback_changed_by: viewer.key,
+        playback_revision: party.playback_revision + 1,
+      });
+      broadcastParty(party);
       return send(res, 204);
     }
   }
@@ -594,11 +814,284 @@ async function handle(req, res) {
   return fail(res, 501, `Mock-API: ${method} ${path} ist nicht implementiert.`);
 }
 
-createServer((req, res) => {
+const server = createServer((req, res) => {
   handle(req, res).catch((error) => {
     console.error(`${req.method} ${req.url}`, error);
     fail(res, 500, `Mock-API-Fehler: ${error instanceof Error ? error.message : String(error)}`);
   });
-}).listen(PORT, "127.0.0.1", () => {
-  console.log(`LoggeRythm mock API on http://127.0.0.1:${PORT} (${TRACKS.length} tracks, no credentials needed)`);
+});
+
+// Minimal RFC 6455 WebSocket handler for `/api/connect/ws` (zero dependencies).
+server.on("upgrade", (req, socket) => {
+  const url = new URL(req.url, "http://mock");
+  if (url.pathname !== "/api/connect/ws") {
+    socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  const wsKey = req.headers["sec-websocket-key"];
+  if (!wsKey) {
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+  const accept = createHash("sha1")
+    .update(`${wsKey}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest("base64");
+  socket.write(
+    `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+  );
+
+  const ticket = url.searchParams.get("ticket");
+  const validTicket = ticket && (connectHub.tickets.get(ticket) ?? 0) > Date.now();
+  if (ticket) connectHub.tickets.delete(ticket);
+  if (!loggedIn && !validTicket) {
+    wsClose(socket, 4401, "Not authenticated");
+    return;
+  }
+
+  let registeredId = null;
+  let buffer = Buffer.alloc(0);
+
+  const onMessage = (text) => {
+    let msg;
+    try {
+      msg = JSON.parse(text);
+    } catch {
+      wsSendJson(socket, { type: "error", code: "invalid_json", detail: "Malformed JSON", request_id: null });
+      return;
+    }
+
+    if (msg.type === "ping") {
+      wsSendJson(socket, { type: "pong", ts: new Date().toISOString() });
+      return;
+    }
+    if (msg.type === "pong") return;
+
+    if (msg.type === "register") {
+      const deviceId = String(msg.device_id || "").trim();
+      if (!deviceId) {
+        wsSendJson(socket, { type: "error", code: "invalid_payload", detail: "device_id required", request_id: null });
+        return;
+      }
+      const existing = connectHub.devices.get(deviceId);
+      if (existing && existing.socket !== socket) {
+        wsClose(existing.socket, 4409, "Replaced by newer connection");
+      }
+      const now = new Date().toISOString();
+      const device = {
+        device_id: deviceId,
+        name: String(msg.name || "Webplayer"),
+        device_type: msg.device_type || "web",
+        capabilities: {
+          can_play_audio: msg.capabilities?.can_play_audio ?? true,
+          can_control_volume: msg.capabilities?.can_control_volume ?? true,
+        },
+        volume: typeof msg.volume === "number" ? msg.volume : 0.8,
+        muted: Boolean(msg.muted),
+        is_active: false,
+        party_code: msg.party_code ?? null,
+        connected_at: now,
+        last_seen_at: now,
+      };
+      registeredId = deviceId;
+      connectHub.devices.set(deviceId, { device, socket });
+      if (msg.take_active) {
+        const oldActive = connectHub.activeDeviceId;
+        connectHub.activeDeviceId = deviceId;
+        if (msg.playback) connectHub.playback = { ...connectHub.playback, ...msg.playback, updated_at: now };
+        if (oldActive && oldActive !== deviceId) {
+          const oldEntry = connectHub.devices.get(oldActive);
+          if (oldEntry) {
+            wsSendJson(oldEntry.socket, {
+              type: "deactivated",
+              new_active_device_id: deviceId,
+              reason: "claimed_by_other_device",
+            });
+          }
+        }
+      }
+      connectHub.revision += 1;
+      const state = connectStateSnapshot();
+      wsSendJson(socket, { type: "welcome", self_device_id: deviceId, heartbeat_interval_sec: 20, state });
+      for (const [id, entry] of connectHub.devices.entries()) {
+        if (id !== deviceId) wsSendJson(entry.socket, { type: "state", state });
+      }
+      return;
+    }
+
+    if (!registeredId) {
+      wsSendJson(socket, { type: "error", code: "not_registered", detail: "Register first", request_id: msg.request_id ?? null });
+      return;
+    }
+
+    const selfEntry = connectHub.devices.get(registeredId);
+    if (selfEntry) selfEntry.device.last_seen_at = new Date().toISOString();
+
+    if (msg.type === "update_device" && selfEntry) {
+      if (typeof msg.name === "string" && msg.name.trim()) selfEntry.device.name = msg.name.trim();
+      if (typeof msg.volume === "number") selfEntry.device.volume = msg.volume;
+      if (typeof msg.muted === "boolean") selfEntry.device.muted = msg.muted;
+      if ("party_code" in msg) selfEntry.device.party_code = msg.party_code ?? null;
+      broadcastConnectState();
+      return;
+    }
+
+    if (msg.type === "playback_state") {
+      if (connectHub.activeDeviceId !== registeredId) {
+        if (!msg.claim_active) {
+          wsSendJson(socket, { type: "error", code: "not_active_device", detail: "Only active device may update playback state", request_id: null });
+          return;
+        }
+        const prevId = connectHub.activeDeviceId;
+        connectHub.activeDeviceId = registeredId;
+        if (prevId && prevId !== registeredId) {
+          const prev = connectHub.devices.get(prevId);
+          if (prev) wsSendJson(prev.socket, { type: "deactivated", new_active_device_id: registeredId, reason: "claimed_by_other_device" });
+        }
+      }
+      connectHub.playback = { ...connectHub.playback, ...msg.state, updated_at: new Date().toISOString() };
+      if (selfEntry) {
+        selfEntry.device.volume = connectHub.playback.volume;
+        selfEntry.device.muted = connectHub.playback.muted;
+      }
+      broadcastConnectState();
+      return;
+    }
+
+    if (msg.type === "transfer") {
+      const target = connectHub.devices.get(msg.target_device_id);
+      if (!target) {
+        wsSendJson(socket, { type: "error", code: "device_not_found", detail: "Zielgerät nicht verbunden.", request_id: msg.request_id ?? null });
+        return;
+      }
+      if (!target.device.capabilities.can_play_audio) {
+        wsSendJson(socket, { type: "error", code: "unsupported_capability", detail: "Zielgerät kann kein Audio abspielen.", request_id: msg.request_id ?? null });
+        return;
+      }
+      const prevId = connectHub.activeDeviceId;
+      const now = new Date().toISOString();
+      const pos = interpolatedMockPosition();
+      connectHub.playback = {
+        ...connectHub.playback,
+        position_sec: pos,
+        is_playing: typeof msg.play === "boolean" ? msg.play : connectHub.playback.is_playing,
+        updated_at: now,
+      };
+      connectHub.activeDeviceId = target.device.device_id;
+      if (prevId && prevId !== target.device.device_id) {
+        const prev = connectHub.devices.get(prevId);
+        if (prev) wsSendJson(prev.socket, { type: "deactivated", new_active_device_id: target.device.device_id, reason: "transferred" });
+      }
+      wsSendJson(target.socket, { type: "activate", from_device_id: prevId, playback: connectHub.playback });
+      broadcastConnectState();
+      return;
+    }
+
+    if (msg.type === "command") {
+      const targetId = msg.target_device_id || connectHub.activeDeviceId;
+      if (!targetId) {
+        wsSendJson(socket, { type: "error", code: "no_active_device", detail: "Kein aktives Gerät vorhanden.", request_id: msg.request_id ?? null });
+        return;
+      }
+      const target = connectHub.devices.get(targetId);
+      if (!target) {
+        wsSendJson(socket, { type: "error", code: "device_not_found", detail: "Zielgerät nicht verbunden.", request_id: msg.request_id ?? null });
+        return;
+      }
+      if ((msg.action === "set_volume" || msg.action === "set_mute") && !target.device.capabilities.can_control_volume) {
+        wsSendJson(socket, { type: "error", code: "unsupported_capability", detail: "Zielgerät unterstützt keine Lautstärke-Steuerung.", request_id: msg.request_id ?? null });
+        return;
+      }
+      const commandId = `cmd-${++connectHub.commandCounter}`;
+      connectHub.pendingCommands.set(commandId, { senderSocket: socket, requestId: msg.request_id ?? null });
+      wsSendJson(target.socket, {
+        type: "command",
+        command_id: commandId,
+        request_id: msg.request_id ?? null,
+        from_device_id: registeredId,
+        action: msg.action,
+        payload: msg.payload ?? {},
+      });
+      return;
+    }
+
+    if (msg.type === "command_ack") {
+      const pending = connectHub.pendingCommands.get(msg.command_id);
+      if (pending) {
+        connectHub.pendingCommands.delete(msg.command_id);
+        wsSendJson(pending.senderSocket, {
+          type: "command_result",
+          request_id: pending.requestId,
+          command_id: msg.command_id,
+          ok: Boolean(msg.ok),
+          error: msg.error ?? null,
+        });
+      }
+      return;
+    }
+  };
+
+  socket.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    while (buffer.length >= 2) {
+      const b0 = buffer[0];
+      const b1 = buffer[1];
+      const opcode = b0 & 0x0f;
+      const masked = (b1 & 0x80) !== 0;
+      let payloadLen = b1 & 0x7f;
+      let offset = 2;
+      if (payloadLen === 126) {
+        if (buffer.length < 4) return;
+        payloadLen = buffer.readUInt16BE(2);
+        offset = 4;
+      } else if (payloadLen === 127) {
+        if (buffer.length < 10) return;
+        payloadLen = Number(buffer.readBigUInt64BE(2));
+        offset = 10;
+      }
+      const frameLen = offset + (masked ? 4 : 0) + payloadLen;
+      if (buffer.length < frameLen) return;
+      let payload = buffer.subarray(offset + (masked ? 4 : 0), frameLen);
+      if (masked) {
+        const mask = buffer.subarray(offset, offset + 4);
+        const unmasked = Buffer.alloc(payloadLen);
+        for (let i = 0; i < payloadLen; i++) unmasked[i] = payload[i] ^ mask[i % 4];
+        payload = unmasked;
+      }
+      buffer = buffer.subarray(frameLen);
+
+      if (opcode === 0x8) {
+        socket.end();
+        return;
+      }
+      if (opcode === 0x9) {
+        socket.write(wsEncodeFrame(0xA, payload));
+        continue;
+      }
+      if (opcode === 0x1) {
+        onMessage(payload.toString("utf8"));
+      }
+    }
+  });
+
+  const cleanup = () => {
+    if (!registeredId) return;
+    const entry = connectHub.devices.get(registeredId);
+    if (entry && entry.socket === socket) {
+      connectHub.devices.delete(registeredId);
+      if (connectHub.activeDeviceId === registeredId) {
+        connectHub.activeDeviceId = null;
+        connectHub.playback = { ...connectHub.playback, is_playing: false, updated_at: new Date().toISOString() };
+      }
+      broadcastConnectState();
+    }
+    registeredId = null;
+  };
+  socket.on("close", cleanup);
+  socket.on("error", cleanup);
+});
+
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(`LoggeRythm mock API on http://127.0.0.1:${PORT} (${TRACKS.length} tracks, WS Connect + Jam ready)`);
 });

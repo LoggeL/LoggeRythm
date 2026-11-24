@@ -38,17 +38,18 @@ export interface PlayerSessionSource {
   shuffle: boolean;
   radioActive: boolean;
   partyBridge: object | null;
+  remoteBridge?: object | null;
 }
 
 /**
- * Snapshot of the current session, or `null` while a party owns the queue:
- * that queue is server state and is re-synced by the party page itself.
+ * Snapshot of the current session, or `null` while a party or remote Connect
+ * device owns the queue: that queue is server/remote state.
  */
 export function capturePlayerSession(
   state: PlayerSessionSource,
   userId: string,
 ): PlayerSessionSnapshot | null {
-  if (state.partyBridge) return null;
+  if (state.partyBridge || state.remoteBridge) return null;
   return {
     version: PLAYER_SESSION_VERSION,
     userId,

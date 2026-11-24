@@ -2,6 +2,7 @@ import { AccessibilityInfo } from 'react-native';
 import type { Track } from '../api/types';
 import { strings } from '../localization';
 import { addToQueue, playNext, startRadio } from '../player/controller';
+import { activeConnectRouter } from '../connect/activeConnect';
 import { activePartyRouter } from '../party/activeParty';
 import { trackActionFailureMessage } from './trackActionFeedback';
 
@@ -110,8 +111,24 @@ function actionContract(action: TrackQueueAction, track: Track) {
   const party = activePartyRouter();
   if ((action === 'play-next' || action === 'add-to-queue') && party?.isFollowingParty() === true) {
     return {
-      succeeded: strings.party.addedToParty(track.title),
-      run: () => party.addTrack(track),
+      succeeded:
+        action === 'play-next'
+          ? strings.party.playNextAdded(track.title)
+          : strings.party.addedToParty(track.title),
+      run: () => party.addTrack(track, action === 'play-next' ? 'next' : 'end'),
+    };
+  }
+  const connect = activeConnectRouter();
+  if ((action === 'play-next' || action === 'add-to-queue') && connect?.isControllingRemote() === true) {
+    return {
+      succeeded:
+        action === 'play-next'
+          ? strings.trackActions.playNextSucceeded(track.title)
+          : strings.trackActions.addToQueueSucceeded(track.title),
+      run: () =>
+        action === 'play-next'
+          ? connect.sendCommand('queue_play_next', { track })
+          : connect.sendCommand('queue_add', { track }),
     };
   }
   switch (action) {

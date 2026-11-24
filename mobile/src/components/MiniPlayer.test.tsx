@@ -1,6 +1,10 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { byTestId, queryByTestId } from '../test/render';
+import type { ConnectDevice, ConnectState, PartyState } from '../api/types';
+import { IDLE_CONNECT_SNAPSHOT, type ConnectSessionSnapshot } from '../connect/connectModel';
+import { IDLE_PARTY_SNAPSHOT } from '../party/activeParty';
+import type { PartySessionSnapshot } from '../party/partySession';
+import { byTestId, queryByTestId, textContent } from '../test/render';
 import MiniPlayer, {
   MiniPlayerProgressBar,
   miniPlayerDragOffset,
@@ -12,6 +16,11 @@ const harness = vi.hoisted(() => ({
   next: vi.fn(),
   prev: vi.fn(),
   togglePlay: vi.fn(),
+  showDevicePicker: vi.fn(),
+  transferPlayback: vi.fn(async () => undefined),
+  sendConnectCommand: vi.fn(async () => undefined),
+  connectSnapshot: null as ConnectSessionSnapshot | null,
+  partySnapshot: null as PartySessionSnapshot | null,
   useProgress: vi.fn(() => ({ position: 45, duration: 180 })),
   hapticTrigger: vi.fn(() => true),
   pushCheckpoint: vi.fn(),
@@ -121,10 +130,31 @@ vi.mock('./TrackLikeButton', () => ({ default: 'TrackLikeButton' }));
 vi.mock('./PlayerNoticeBanner', () => ({ default: 'PlayerNoticeBanner' }));
 vi.mock('./AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('./ui/Artwork', () => ({ Artwork: 'Artwork' }));
+vi.mock('./connect/devicePicker', () => ({ showDevicePicker: harness.showDevicePicker }));
+vi.mock('../connect/activeConnect', () => ({
+  useActiveConnectSnapshot: () => harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT,
+  transferActiveConnectPlayback: harness.transferPlayback,
+  activeConnectRouter: () => ({
+    isControllingRemote: () => (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).isControllingRemote,
+    activeDevice: () => (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).activeDevice,
+    remotePlayback: () => (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).state?.playback ?? null,
+    sendCommand: harness.sendConnectCommand,
+  }),
+}));
+vi.mock('../party/activeParty', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../party/activeParty')>(),
+  useActivePartySnapshot: () => harness.partySnapshot ?? IDLE_PARTY_SNAPSHOT,
+  activePartyRouter: () => null,
+}));
 
 describe('MiniPlayer', () => {
   beforeEach(() => {
     harness.reducedMotion = false;
+    harness.connectSnapshot = IDLE_CONNECT_SNAPSHOT;
+    harness.partySnapshot = IDLE_PARTY_SNAPSHOT;
+    harness.showDevicePicker.mockClear();
+    harness.transferPlayback.mockClear();
+    harness.sendConnectCommand.mockClear();
     harness.tv = {
       isTv: false,
       isWidescreen: false,
@@ -223,5 +253,124 @@ describe('MiniPlayer', () => {
     (open.props.onPress as () => void)();
     expect(harness.pushCheckpoint).toHaveBeenCalledWith('mini-player');
     expect(harness.navigate).toHaveBeenCalledWith('NowPlaying');
+  });
+
+  it('hides the device selector for a single device and shows it for >1 devices, remote playback, or an active Jam', () => {
+    const phone: ConnectDevice = {
+      device_id: 'dev-phone',
+      name: 'Pixel 9',
+      device_type: 'mobile',
+      is_active: true,
+      volume: 1,
+      muted: false,
+      connected_at: '2026-11-24T00:00:00Z',
+      last_seen_at: '2026-11-24T00:00:00Z',
+      capabilities: { can_play_audio: true, can_control_volume: false },
+      party_code: null,
+    };
+    const web: ConnectDevice = {
+      device_id: 'dev-web',
+      name: 'Chrome',
+      device_type: 'web',
+      is_active: false,
+      volume: 0.7,
+      muted: false,
+      connected_at: '2026-11-24T00:00:00Z',
+      last_seen_at: '2026-11-24T00:00:00Z',
+      capabilities: { can_play_audio: true, can_control_volume: true },
+      party_code: null,
+    };
+    const baseState = (devices: ConnectDevice[], activeId: string): ConnectState => ({
+      revision: 1,
+      active_device_id: activeId,
+      devices,
+      playback: {
+        queue: [harness.track],
+        origins: ['context'],
+        queue_context: 'Mix',
+        current_index: 0,
+        is_playing: true,
+        position_sec: 10,
+        duration_sec: 180,
+        shuffle: false,
+        repeat: 'off',
+        volume: 0.7,
+        muted: false,
+        updated_at: '2026-11-24T00:00:00Z',
+      },
+      server_time: '2026-11-24T00:00:00Z',
+    });
+
+    // 1 device, local playback, no Jam -> device button hidden.
+    harness.connectSnapshot = {
+      ...IDLE_CONNECT_SNAPSHOT,
+      phase: 'connected',
+      selfDeviceId: 'dev-phone',
+      activeDevice: phone,
+      isSelfActive: true,
+      state: baseState([phone], 'dev-phone'),
+    };
+    expect(queryByTestId(MiniPlayer({ hasTabBar: true }), 'mini-player-devices')).toBeNull();
+
+    // >1 devices -> device button shown and opens DevicePicker.
+    harness.connectSnapshot = {
+      ...harness.connectSnapshot,
+      state: baseState([phone, web], 'dev-phone'),
+    };
+    const multi = MiniPlayer({ hasTabBar: true });
+    const devicesBtn = byTestId(multi, 'mini-player-devices');
+    (devicesBtn.props.onPress as () => void)();
+    expect(harness.showDevicePicker).toHaveBeenCalledWith('devices');
+    expect(queryByTestId(multi, 'mini-player-remote-strip')).toBeNull();
+
+    // Remote playback -> shows device button, "Listening on Chrome" strip, and Play Here button.
+    harness.connectSnapshot = {
+      ...harness.connectSnapshot,
+      activeDevice: { ...web, is_active: true },
+      isSelfActive: false,
+      isControllingRemote: true,
+      state: baseState([phone, { ...web, is_active: true }], 'dev-web'),
+    };
+    const remote = MiniPlayer({ hasTabBar: true });
+    expect(byTestId(remote, 'mini-player-devices')).toBeDefined();
+    expect(textContent(byTestId(remote, 'mini-player-remote-strip')).join(' ')).toContain('Chrome');
+    (byTestId(remote, 'mini-player-play-here').props.onPress as () => void)();
+    expect(harness.transferPlayback).toHaveBeenCalledWith('dev-phone');
+    (byTestId(remote, 'mini-player-play-pause').props.onPress as () => void)();
+    expect(harness.sendConnectCommand).toHaveBeenCalledWith('toggle', {});
+
+    // Active Jam (local playback, single device) -> shows device button + Jam strip.
+    harness.connectSnapshot = IDLE_CONNECT_SNAPSHOT;
+    const activeParty: PartyState = {
+      code: 'JAM123',
+      name: 'Friday Jam',
+      host_name: 'Host',
+      is_host: true,
+      current_index: 0,
+      is_playing: true,
+      position_sec: 0,
+      playback_updated_at: null,
+      server_time: '2026-11-24T00:00:00Z',
+      guests_can_control: true,
+      playback_changed_by: 'u:1',
+      playback_revision: 1,
+      ended: false,
+      members: [{ key: 'u:1', name: 'Host', avatar_url: null, is_guest: false, is_host: true }],
+      tracks: [],
+      viewer_key: 'u:1',
+      viewer_name: 'Host',
+      viewer_is_guest: false,
+    };
+    harness.partySnapshot = {
+      ...IDLE_PARTY_SNAPSHOT,
+      code: 'JAM123',
+      phase: 'live',
+      party: activeParty,
+    };
+    const jam = MiniPlayer({ hasTabBar: true });
+    expect(byTestId(jam, 'mini-player-devices')).toBeDefined();
+    const jamStrip = byTestId(jam, 'mini-player-jam-strip');
+    (jamStrip.props.onPress as () => void)();
+    expect(harness.navigate).toHaveBeenCalledWith('Party', { code: 'JAM123' });
   });
 });

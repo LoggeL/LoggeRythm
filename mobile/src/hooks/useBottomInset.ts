@@ -1,7 +1,12 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useHasActiveTrack } from '../player/player';
+import { useActiveConnectSnapshot } from '../connect/activeConnect';
+import { useHasEffectiveActiveTrack } from '../connect/effectivePlaybackState';
+import { useActivePartySnapshot } from '../party/activeParty';
 import { layout, metrics, spacing } from '../theme';
 import { useTvEnvironment } from '../tv/tvEnvironment';
+
+/** Extra height occupied by the MiniPlayer output strip (remote Connect or active Jam). */
+export const MINI_PLAYER_OUTPUT_STRIP_HEIGHT = 32;
 
 /** TV MiniPlayer surface (76dp) + bottom margin (16dp) = 92dp clearance. */
 export const TV_MINI_PLAYER_SURFACE_HEIGHT = 76;
@@ -57,15 +62,20 @@ export interface UseBottomInsetOptions {
  * the taller 92dp footprint on Android TV) and, outside the phone tabs, the
  * bottom safe area.
  */
-export function useBottomInset({ hasTabBar = true, extra }: UseBottomInsetOptions = {}): number {
+export function useBottomInset({ hasTabBar = true, extra = 0 }: UseBottomInsetOptions = {}): number {
   const insets = useSafeAreaInsets();
-  const miniPlayerVisible = useHasActiveTrack();
+  const miniPlayerVisible = useHasEffectiveActiveTrack();
+  const connect = useActiveConnectSnapshot();
+  const party = useActivePartySnapshot();
   const { isTv } = useTvEnvironment();
+  const hasOutputStrip =
+    miniPlayerVisible
+    && (connect.isControllingRemote || (party.party !== null && !party.detached));
   return bottomInset({
     safeAreaBottom: insets.bottom,
     hasTabBar,
     miniPlayerVisible,
     isTv,
-    extra,
+    extra: extra + (hasOutputStrip ? MINI_PLAYER_OUTPUT_STRIP_HEIGHT : 0),
   });
 }

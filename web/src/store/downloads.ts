@@ -27,6 +27,7 @@ interface DownloadedState {
   serverError: Error | null;
   refresh: () => Promise<void>;
   refreshServer: () => Promise<void>;
+  mergeServerIds: (ids: string[]) => void;
 }
 
 let inflight: Promise<void> | null = null;
@@ -100,6 +101,26 @@ export const useDownloadedTracks = create<DownloadedState>((set) => ({
     });
     return serverInflight;
   },
+  mergeServerIds: (ids) => {
+    if (!ids.length) return;
+    set((state) => {
+      let changed = false;
+      for (const raw of ids) {
+        const id = String(raw);
+        if (id && !state.serverIds.has(id)) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) return state;
+      const next = new Set(state.serverIds);
+      for (const raw of ids) {
+        const id = String(raw);
+        if (id) next.add(id);
+      }
+      return { serverIds: next };
+    });
+  },
 }));
 
 /** Re-read the local cached-track set; call after a download or removal. */
@@ -112,11 +133,17 @@ export function refreshServerCachedTracks() {
   return useDownloadedTracks.getState().refreshServer();
 }
 
+/** Record track ids confirmed as stored on the server (e.g. from live Party updates). */
+export function mergeServerCachedTrackIds(ids: string[]) {
+  useDownloadedTracks.getState().mergeServerIds(ids);
+}
+
 /**
  * Availability of a single track: "local" (offline on this device) takes
- * precedence over "server" (stored server-side). Lazily loads both sets once.
+ * precedence over "server" (stored server-side). Lazily loads both sets once
+ * when `enabled` is true.
  */
-export function useTrackCacheState(trackId: string | number): TrackCacheState {
+export function useTrackCacheState(trackId: string | number, enabled = true): TrackCacheState {
   const id = String(trackId);
   const loaded = useDownloadedTracks((s) => s.loaded);
   const serverLoaded = useDownloadedTracks((s) => s.serverLoaded);
@@ -127,11 +154,13 @@ export function useTrackCacheState(trackId: string | number): TrackCacheState {
   const local = useDownloadedTracks((s) => s.ids.has(id));
   const onServer = useDownloadedTracks((s) => s.serverIds.has(id));
   useEffect(() => {
+    if (!enabled) return;
     // The store records a failed attempt, preventing render-driven retry loops.
     // Every marker can expose that state and trigger an explicit retry.
     if (!loaded && !error) void refresh().catch(reportTrackCacheFailure);
     if (!serverLoaded && !serverError) void refreshServer().catch(reportTrackCacheFailure);
-  }, [loaded, serverLoaded, error, serverError, refresh, refreshServer]);
+  }, [enabled, loaded, serverLoaded, error, serverError, refresh, refreshServer]);
+  if (!enabled) return null;
   return local ? "local" : onServer ? "server" : null;
 }
 

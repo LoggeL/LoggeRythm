@@ -150,6 +150,39 @@ vi.mock('../tv', () => ({
   },
 }));
 vi.mock('../components/AppIcon', () => ({ default: 'AppIcon' }));
+vi.mock('../components/connect/devicePicker', () => ({ showDevicePicker: vi.fn() }));
+vi.mock('../connect/activeConnect', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../connect/activeConnect')>(),
+  useActiveConnectSnapshot: () => ({
+    phase: 'idle',
+    enabled: true,
+    selfDeviceId: null,
+    selfDeviceName: '',
+    selfDeviceType: 'mobile',
+    state: null,
+    activeDevice: null,
+    isSelfActive: false,
+    isControllingRemote: false,
+    transferringToDeviceId: null,
+    error: null,
+  }),
+  activeConnectRouter: () => null,
+  transferActiveConnectPlayback: vi.fn(async () => undefined),
+}));
+vi.mock('../party/activeParty', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../party/activeParty')>(),
+  useActivePartySnapshot: () => ({
+    code: null,
+    party: null,
+    phase: 'idle',
+    error: null,
+    detached: false,
+    controlOnly: false,
+    playbackError: null,
+    endedNotice: null,
+  }),
+  activePartyRouter: () => null,
+}));
 vi.mock('../components/TrackLikeButton', () => ({ default: 'TrackLikeButton' }));
 vi.mock('../components/PlayerNoticeBanner', () => ({ default: 'PlayerNoticeBanner' }));
 vi.mock('../components/player/NowPlayingArtwork', () => ({

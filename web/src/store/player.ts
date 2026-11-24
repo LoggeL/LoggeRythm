@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { PartyStart, Track } from "@/types";
+import type { ConnectPlaybackState, PartyStart, Track } from "@/types";
 import { readLocalJsonSnapshot, writeLocalJsonValue } from "@/hooks/useLocalJson";
 import {
   clearUpcomingItems,
@@ -18,9 +18,36 @@ export type RepeatMode = "off" | "all" | "one";
 
 export interface PartyBridge {
   addToQueue: (t: Track) => void;
+  playNext?: (t: Track) => void;
   removeAt: (i: number) => void;
   reorder: (from: number, to: number) => void;
   setCurrent: (i: number) => void;
+  /** Optional playback interceptors used for non-host Jam participants. */
+  toggle?: () => void;
+  play?: () => void;
+  pause?: () => void;
+  seek?: (t: number) => void;
+}
+
+export interface RemotePlaybackBridge {
+  playTrack: (track: Track) => void;
+  playQueue: (tracks: Track[], startIndex?: number, context?: string) => void;
+  addToQueue: (track: Track) => void;
+  playNext: (track: Track) => void;
+  removeFromQueue: (i: number) => void;
+  clearQueue: () => void;
+  reorderQueue: (from: number, to: number) => void;
+  jumpTo: (i: number) => void;
+  toggle: () => void;
+  play: () => void;
+  pause: () => void;
+  next: () => void;
+  prev: () => void;
+  seek: (t: number) => void;
+  setVolume: (v: number) => void;
+  toggleMute: () => void;
+  toggleShuffle: () => void;
+  cycleRepeat: () => void;
 }
 
 const RECENT_KEY = "sf_recent_tracks";
@@ -128,12 +155,24 @@ interface PlayerState {
   setSleepTimer: (minutes: number | null) => void;
   setSleepAfterTrack: (v: boolean) => void;
 
-  // party mode bridge: when set, queue edits route to the party
+  // party mode bridge: when set, queue (and optionally playback) edits route to the party
   partyBridge: PartyBridge | null;
   partyQueueItemIds: number[]; // stable server entry IDs; duplicate songs have different entries
 
+  // personal multi-device Connect bridge: when set (and no partyBridge), all
+  // playback & queue actions send WebSocket commands to the active remote device.
+  remoteBridge: RemotePlaybackBridge | null;
+  /** True while local <audio> playback must stay silent (remote Connect controller or Jam control-only mode). */
+  suppressLocalAudio: boolean;
+
   // actions
   setPartyBridge: (b: PartyBridge | null) => void;
+  setRemoteBridge: (b: RemotePlaybackBridge | null) => void;
+  setSuppressLocalAudio: (v: boolean) => void;
+  /** Mirror an active remote device's Connect state into the player UI without touching local audio. */
+  applyRemotePlaybackState: (playback: ConnectPlaybackState, positionSec?: number) => void;
+  /** Take over playback on THIS browser when Connect transfers audio here. */
+  activateConnectPlayback: (playback: ConnectPlaybackState) => void;
   setPartyQueue: (tracks: Track[], index: number, itemIds: number[]) => void;
   /** Snapshot of the queue and playhead a new party should continue from. */
   partyStartSnapshot: () => PartyStart;
@@ -218,6 +257,8 @@ export const usePlayerStore = create<PlayerState>()(
       seekTo: null,
       partyBridge: null,
       partyQueueItemIds: [],
+      remoteBridge: null,
+      suppressLocalAudio: false,
 
       radioActive: false,
       radioSession: 0,
@@ -236,6 +277,84 @@ export const usePlayerStore = create<PlayerState>()(
           partyBridge: b,
           ...(b ? { radioActive: false, radioSession: s.radioSession + 1 } : {}),
         })),
+      setRemoteBridge: (b) =>
+        set((s) => ({
+          remoteBridge: b,
+          ...(b ? { radioActive: false, radioSession: s.radioSession + 1 } : {}),
+        })),
+      setSuppressLocalAudio: (v) => set({ suppressLocalAudio: v }),
+      applyRemotePlaybackState: (playback, positionSec) => {
+        const queue = playback.queue.map((track) => ({ ...track }));
+        const origins = [...playback.origins];
+        const index =
+          playback.current_index >= 0 && playback.current_index < queue.length
+            ? playback.current_index
+            : -1;
+        const pos = Math.max(0, positionSec ?? playback.position_sec);
+        const dur =
+          playback.duration_sec > 0
+            ? playback.duration_sec
+            : index >= 0
+              ? queue[index].duration_sec || 0
+              : 0;
+        set({
+          queue,
+          origins,
+          originalQueue: [...queue],
+          originalOrigins: [...origins],
+          queueContext: playback.queue_context,
+          index,
+          isPlaying: index >= 0 && playback.is_playing,
+          currentTime: index >= 0 ? (dur > 0 ? Math.min(pos, dur) : pos) : 0,
+          duration: dur,
+          shuffle: playback.shuffle,
+          repeat: playback.repeat,
+          volume: playback.volume,
+          muted: playback.muted,
+          seekTo: null,
+          isBuffering: false,
+          error: null,
+          partyQueueItemIds: [],
+        });
+      },
+      activateConnectPlayback: (playback) => {
+        const queue = playback.queue.map((track) => ({ ...track }));
+        const origins = [...playback.origins];
+        const index =
+          playback.current_index >= 0 && playback.current_index < queue.length
+            ? playback.current_index
+            : -1;
+        const pos = Math.max(0, playback.position_sec);
+        const dur =
+          playback.duration_sec > 0
+            ? playback.duration_sec
+            : index >= 0
+              ? queue[index].duration_sec || 0
+              : 0;
+        set((s) => ({
+          remoteBridge: null,
+          suppressLocalAudio: false,
+          queue,
+          origins,
+          originalQueue: [...queue],
+          originalOrigins: [...origins],
+          queueContext: playback.queue_context,
+          index,
+          isPlaying: index >= 0 && playback.is_playing,
+          currentTime: index >= 0 ? pos : 0,
+          duration: dur,
+          seekTo: index >= 0 ? pos : null,
+          shuffle: playback.shuffle,
+          repeat: playback.repeat,
+          volume: playback.volume,
+          muted: playback.muted,
+          isBuffering: false,
+          error: null,
+          radioActive: false,
+          radioSession: s.radioSession + 1,
+          partyQueueItemIds: [],
+        }));
+      },
       setPartyQueue: (tracks, index, itemIds) => {
         if (
           itemIds.length !== tracks.length ||
@@ -339,6 +458,11 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       playTrack: (track) => {
+        const remote = !get().partyBridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.playTrack(track);
+          return;
+        }
         const queueTrack = { ...track };
         pushRecent(queueTrack);
         set({
@@ -356,6 +480,11 @@ export const usePlayerStore = create<PlayerState>()(
 
       playQueue: (tracks, startIndex = 0, context) => {
         if (!tracks.length) return;
+        const remote = !get().partyBridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.playQueue(tracks, startIndex, context);
+          return;
+        }
         const idx = Math.max(0, Math.min(startIndex, tracks.length - 1));
         const queue = tracks.map((track) => ({ ...track }));
         const origins = fillOrigins(queue.length, "context");
@@ -387,6 +516,11 @@ export const usePlayerStore = create<PlayerState>()(
           bridge.addToQueue(track);
           return;
         }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.addToQueue(track);
+          return;
+        }
         if (get().index < 0) {
           get().playTrack(track);
           return;
@@ -397,7 +531,13 @@ export const usePlayerStore = create<PlayerState>()(
       playNext: (track) => {
         const bridge = get().partyBridge;
         if (bridge) {
-          bridge.addToQueue(track);
+          if (bridge.playNext) bridge.playNext(track);
+          else bridge.addToQueue(track);
+          return;
+        }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.playNext(track);
           return;
         }
         if (get().index < 0) {
@@ -413,12 +553,22 @@ export const usePlayerStore = create<PlayerState>()(
           bridge.removeAt(i);
           return;
         }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.removeFromQueue(i);
+          return;
+        }
         if (i < 0 || i >= get().queue.length) return;
         set(removeQueueItem(get(), i));
       },
       clearQueue: () => {
         // Party queues are shared/host-managed — don't clear from a member view.
         if (get().partyBridge) return;
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.clearQueue();
+          return;
+        }
         const { queue, index } = get();
         if (index >= 0 && index < queue.length) {
           set({
@@ -447,6 +597,11 @@ export const usePlayerStore = create<PlayerState>()(
           bridge.reorder(from, to);
           return;
         }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.reorderQueue(from, to);
+          return;
+        }
         const { queue } = get();
         if (from < 0 || from >= queue.length || to < 0 || to >= queue.length) return;
         set(moveQueueItem(get(), from, to));
@@ -456,6 +611,11 @@ export const usePlayerStore = create<PlayerState>()(
         const bridge = get().partyBridge;
         if (bridge) {
           bridge.setCurrent(i);
+          return;
+        }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.jumpTo(i);
           return;
         }
         const state = get();
@@ -476,23 +636,60 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       toggle: () => {
+        const bridge = get().partyBridge;
+        if (bridge?.toggle) {
+          bridge.toggle();
+          return;
+        }
+        const remote = !bridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.toggle();
+          return;
+        }
         const { index, isPlaying } = get();
         if (index < 0) return;
         set({ isPlaying: !isPlaying });
       },
 
       play: () => {
+        const bridge = get().partyBridge;
+        if (bridge?.play) {
+          bridge.play();
+          return;
+        }
+        const remote = !bridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.play();
+          return;
+        }
         if (get().index < 0) return;
         set({ isPlaying: true });
       },
 
-      pause: () => set({ isPlaying: false }),
+      pause: () => {
+        const bridge = get().partyBridge;
+        if (bridge?.pause) {
+          bridge.pause();
+          return;
+        }
+        const remote = !bridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.pause();
+          return;
+        }
+        set({ isPlaying: false });
+      },
 
       next: () => {
         const bridge = get().partyBridge;
         if (bridge) {
           const { index, queue } = get();
           if (index + 1 < queue.length) bridge.setCurrent(index + 1);
+          return;
+        }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.next();
           return;
         }
         const { index, queue, repeat, radioActive, radioSession } = get();
@@ -518,6 +715,11 @@ export const usePlayerStore = create<PlayerState>()(
           if (get().index > 0) bridge.setCurrent(get().index - 1);
           return;
         }
+        const remote = get().remoteBridge;
+        if (remote) {
+          remote.prev();
+          return;
+        }
         const { index, currentTime } = get();
         if (index < 0) return;
         // If more than 3s in, restart current track
@@ -536,6 +738,16 @@ export const usePlayerStore = create<PlayerState>()(
         if (!Number.isFinite(t)) {
           throw new RangeError(`Seek position must be finite; received ${t}.`);
         }
+        const bridge = get().partyBridge;
+        if (bridge?.seek) {
+          bridge.seek(t);
+          return;
+        }
+        const remote = !bridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.seek(t);
+          return;
+        }
         const { index, duration } = get();
         if (index < 0) return;
         const target = Math.max(0, duration > 0 ? Math.min(t, duration) : t);
@@ -544,10 +756,20 @@ export const usePlayerStore = create<PlayerState>()(
 
       setVolume: (v) => {
         const vol = Math.max(0, Math.min(1, v));
+        const remote = !get().partyBridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.setVolume(vol);
+          return;
+        }
         set({ volume: vol, muted: vol === 0, lastVolume: vol > 0 ? vol : get().lastVolume });
       },
 
       toggleMute: () => {
+        const remote = !get().partyBridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.toggleMute();
+          return;
+        }
         const { muted, volume, lastVolume } = get();
         if (muted || volume === 0) {
           const restore = lastVolume > 0 ? lastVolume : 0.8;
@@ -558,10 +780,20 @@ export const usePlayerStore = create<PlayerState>()(
       },
 
       toggleShuffle: () => {
+        const remote = !get().partyBridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.toggleShuffle();
+          return;
+        }
         set(toggleQueueShuffle(get()));
       },
 
       cycleRepeat: () => {
+        const remote = !get().partyBridge ? get().remoteBridge : null;
+        if (remote) {
+          remote.cycleRepeat();
+          return;
+        }
         const order: RepeatMode[] = ["off", "all", "one"];
         const cur = get().repeat;
         set({ repeat: order[(order.indexOf(cur) + 1) % order.length] });

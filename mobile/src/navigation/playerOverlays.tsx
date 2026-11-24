@@ -8,8 +8,8 @@ import {
   FocusRingOverlay,
 } from '../components/ui/PressableScale';
 import { strings } from '../localization';
+import { useHasEffectiveActiveTrack } from '../connect/effectivePlaybackState';
 import { clearPlayerError, usePlayerError } from '../player/errors';
-import { useHasActiveTrack } from '../player/player';
 import { colors, elevation, metrics, opacity, radii, spacing, typography } from '../theme';
 import { useTvEnvironment } from '../tv';
 
@@ -91,7 +91,7 @@ export function PlayerErrorBanner({ hasTabBar = true }: { hasTabBar?: boolean })
 
 /** Non-fatal notices while nothing is loaded; MiniPlayer hosts them otherwise. */
 export function PlayerNoticeWithoutMiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
-  const hasActiveTrack = useHasActiveTrack();
+  const hasActiveTrack = useHasEffectiveActiveTrack();
   const insets = useSafeAreaInsets();
   const tv = useTvEnvironment();
   if (hasActiveTrack) return null;

@@ -570,6 +570,229 @@
         "title": "Body_set_cover_api_playlists__playlist_id__cover_put",
         "type": "object"
       },
+      "ConnectDeviceOut": {
+        "properties": {
+          "capabilities": {
+            "$ref": "#/components/schemas/DeviceCapabilities"
+          },
+          "connected_at": {
+            "title": "Connected At",
+            "type": "string"
+          },
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "device_type": {
+            "enum": [
+              "web",
+              "mobile",
+              "tablet",
+              "desktop",
+              "tv",
+              "speaker",
+              "other"
+            ],
+            "title": "Device Type",
+            "type": "string"
+          },
+          "is_active": {
+            "default": false,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "last_seen_at": {
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "muted": {
+            "default": false,
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "party_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Code"
+          },
+          "volume": {
+            "default": 1.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "device_type",
+          "connected_at",
+          "last_seen_at"
+        ],
+        "title": "ConnectDeviceOut",
+        "type": "object"
+      },
+      "ConnectPlaybackState": {
+        "properties": {
+          "current_index": {
+            "default": -1,
+            "title": "Current Index",
+            "type": "integer"
+          },
+          "duration_sec": {
+            "default": 0.0,
+            "title": "Duration Sec",
+            "type": "number"
+          },
+          "is_playing": {
+            "default": false,
+            "title": "Is Playing",
+            "type": "boolean"
+          },
+          "muted": {
+            "default": false,
+            "title": "Muted",
+            "type": "boolean"
+          },
+          "origins": {
+            "items": {
+              "enum": [
+                "manual",
+                "context"
+              ],
+              "type": "string"
+            },
+            "title": "Origins",
+            "type": "array"
+          },
+          "position_sec": {
+            "default": 0.0,
+            "title": "Position Sec",
+            "type": "number"
+          },
+          "queue": {
+            "items": {
+              "$ref": "#/components/schemas/Track"
+            },
+            "title": "Queue",
+            "type": "array"
+          },
+          "queue_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Context"
+          },
+          "repeat": {
+            "default": "off",
+            "enum": [
+              "off",
+              "all",
+              "one"
+            ],
+            "title": "Repeat",
+            "type": "string"
+          },
+          "shuffle": {
+            "default": false,
+            "title": "Shuffle",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "volume": {
+            "default": 1.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Volume",
+            "type": "number"
+          }
+        },
+        "title": "ConnectPlaybackState",
+        "type": "object"
+      },
+      "ConnectStateOut": {
+        "properties": {
+          "active_device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Device Id"
+          },
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectDeviceOut"
+            },
+            "title": "Devices",
+            "type": "array"
+          },
+          "playback": {
+            "$ref": "#/components/schemas/ConnectPlaybackState"
+          },
+          "revision": {
+            "default": 0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "server_time": {
+            "title": "Server Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_time"
+        ],
+        "title": "ConnectStateOut",
+        "type": "object"
+      },
+      "ConnectTicketOut": {
+        "properties": {
+          "expires_in_sec": {
+            "title": "Expires In Sec",
+            "type": "integer"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_in_sec"
+        ],
+        "title": "ConnectTicketOut",
+        "type": "object"
+      },
       "ContentStatus": {
         "properties": {
           "follows": {
@@ -652,6 +875,22 @@
           "quality"
         ],
         "title": "DeezerStatus",
+        "type": "object"
+      },
+      "DeviceCapabilities": {
+        "properties": {
+          "can_control_volume": {
+            "default": true,
+            "title": "Can Control Volume",
+            "type": "boolean"
+          },
+          "can_play_audio": {
+            "default": true,
+            "title": "Can Play Audio",
+            "type": "boolean"
+          }
+        },
+        "title": "DeviceCapabilities",
         "type": "object"
       },
       "Genre": {
@@ -1129,6 +1368,19 @@
         "title": "OrderUpdate",
         "type": "object"
       },
+      "PartyCachedTracks": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "title": "PartyCachedTracks",
+        "type": "object"
+      },
       "PartyCreate": {
         "description": "New party, optionally seeded with the host's current player queue.\n\n``current_index``/``is_playing``/``position_sec`` describe the host's\nplayhead inside ``tracks`` so the party continues exactly where the host's\nown playback was instead of starting from an empty queue.",
         "properties": {
@@ -1136,6 +1388,11 @@
             "default": -1,
             "title": "Current Index",
             "type": "integer"
+          },
+          "guests_can_control": {
+            "default": false,
+            "title": "Guests Can Control",
+            "type": "boolean"
           },
           "is_playing": {
             "default": false,
@@ -1202,6 +1459,16 @@
             "title": "Is Guest",
             "type": "boolean"
           },
+          "is_host": {
+            "default": false,
+            "title": "Is Host",
+            "type": "boolean"
+          },
+          "key": {
+            "default": "",
+            "title": "Key",
+            "type": "string"
+          },
           "name": {
             "default": "",
             "title": "Name",
@@ -1209,6 +1476,35 @@
           }
         },
         "title": "PartyMemberOut",
+        "type": "object"
+      },
+      "PartySettingsUpdate": {
+        "properties": {
+          "guests_can_control": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guests Can Control"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "PartySettingsUpdate",
         "type": "object"
       },
       "PartyState": {
@@ -1221,6 +1517,16 @@
             "default": -1,
             "title": "Current Index",
             "type": "integer"
+          },
+          "ended": {
+            "default": false,
+            "title": "Ended",
+            "type": "boolean"
+          },
+          "guests_can_control": {
+            "default": false,
+            "title": "Guests Can Control",
+            "type": "boolean"
           },
           "host_name": {
             "default": "",
@@ -1249,6 +1555,16 @@
             "title": "Name",
             "type": "string"
           },
+          "playback_changed_by": {
+            "default": "",
+            "title": "Playback Changed By",
+            "type": "string"
+          },
+          "playback_revision": {
+            "default": 0,
+            "title": "Playback Revision",
+            "type": "integer"
+          },
           "playback_updated_at": {
             "anyOf": [
               {
@@ -1264,6 +1580,11 @@
             "default": 0.0,
             "title": "Position Sec",
             "type": "number"
+          },
+          "server_time": {
+            "default": "",
+            "title": "Server Time",
+            "type": "string"
           },
           "tracks": {
             "items": {
@@ -1300,6 +1621,17 @@
             "default": "",
             "title": "Added By",
             "type": "string"
+          },
+          "added_by_avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added By Avatar Url"
           },
           "added_by_member": {
             "default": "",
@@ -1350,6 +1682,11 @@
           "id": {
             "title": "Id",
             "type": "integer"
+          },
+          "is_stored": {
+            "default": false,
+            "title": "Is Stored",
+            "type": "boolean"
           },
           "load_error": {
             "anyOf": [
@@ -3837,6 +4174,100 @@
         ]
       }
     },
+    "/api/connect/state": {
+      "get": {
+        "description": "Return the authenticated user's currently connected devices, active device, and live playback state.",
+        "operationId": "get_connect_state_api_connect_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Connect State",
+        "tags": [
+          "connect"
+        ]
+      }
+    },
+    "/api/connect/ticket": {
+      "post": {
+        "description": "Issue a short-lived single-use WebSocket authentication ticket for clients that cannot attach the session cookie directly to a WebSocket handshake.",
+        "operationId": "create_connect_ticket_api_connect_ticket_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectTicketOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Create Connect Ticket",
+        "tags": [
+          "connect"
+        ]
+      }
+    },
     "/api/deezer-playlist/{playlist_id}": {
       "get": {
         "operationId": "deezer_playlist_api_deezer_playlist__playlist_id__get",
@@ -5310,7 +5741,121 @@
         ]
       }
     },
+    "/api/party/active": {
+      "get": {
+        "description": "Return the authenticated user's currently active party (as host or member), or null when the user is not in any party.",
+        "operationId": "get_active_party_api_party_active_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/PartyState"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Get Active Party Api Party Active Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Active Party",
+        "tags": [
+          "party"
+        ]
+      }
+    },
     "/api/party/{code}": {
+      "delete": {
+        "description": "Host-only: end the party for everyone, broadcasting a terminal state frame with ended=true before removing the session.",
+        "operationId": "end_party_api_party__code__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "End Party",
+        "tags": [
+          "party"
+        ]
+      },
       "get": {
         "description": "Read party state and register or refresh the requesting user as a party member. Anonymous guests of this party (guest cookie) can read it too.",
         "operationId": "get_party_api_party__code__get",
@@ -5381,6 +5926,77 @@
         ]
       }
     },
+    "/api/party/{code}/cached-tracks": {
+      "get": {
+        "description": "Return server-cached track IDs for any valid party participant (including anonymous party guests).",
+        "operationId": "party_cached_tracks_api_party__code__cached_tracks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyCachedTracks"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          },
+          {
+            "sf_party_guest": []
+          }
+        ],
+        "summary": "Party Cached Tracks",
+        "tags": [
+          "party"
+        ]
+      }
+    },
     "/api/party/{code}/current": {
       "patch": {
         "operationId": "set_current_api_party__code__current_patch",
@@ -5443,6 +6059,9 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Set Current",
@@ -5453,7 +6072,7 @@
     },
     "/api/party/{code}/events": {
       "get": {
-        "description": "SSE stream of the latest full party state, with idle heartbeats.\n\nEventSource cannot set headers, but auth is cookie-based so the session\ncookie rides along automatically through the Next proxy. Subscribe before\na worker loads the initial canonical state so mutations\nduring connection setup cannot disappear. No DB connection stays open for\nthe stream's lifetime; revisions order subsequent in-memory frames.",
+        "description": "SSE stream of the latest full party state, with idle heartbeats.\n\nEventSource cannot set headers, but auth is cookie-based so the session\ncookie rides along automatically through the proxy. Subscribe before\na worker loads the initial canonical state so mutations during connection\nsetup cannot disappear. No DB connection stays open for the stream's\nlifetime; revisions order subsequent in-memory frames.",
         "operationId": "party_events_api_party__code__events_get",
         "parameters": [
           {
@@ -5718,9 +6337,79 @@
         ]
       }
     },
+    "/api/party/{code}/members/{member_key}": {
+      "delete": {
+        "description": "Host-only: remove a member ('u:<id>') or guest ('g:<id>') from the party.",
+        "operationId": "kick_member_api_party__code__members__member_key__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_key",
+            "required": true,
+            "schema": {
+              "title": "Member Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Kick Member",
+        "tags": [
+          "party"
+        ]
+      }
+    },
     "/api/party/{code}/playback": {
       "patch": {
-        "description": "Host-only: set play/pause + position and stamp a server timestamp.\n\nGuests use ``position_sec`` together with the elapsed time since\n``playback_updated_at`` to keep their local player in sync.",
+        "description": "Set play/pause + position (host, or any participant when guests_can_control is on).\n\nListeners use ``position_sec`` together with elapsed time since\n``playback_updated_at`` to stay in sync. ``playback_changed_by`` and\n``playback_revision`` let the host apply remote participant changes cleanly.",
         "operationId": "set_playback_api_party__code__playback_patch",
         "parameters": [
           {
@@ -5781,9 +6470,90 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Set Playback",
+        "tags": [
+          "party"
+        ]
+      }
+    },
+    "/api/party/{code}/settings": {
+      "patch": {
+        "description": "Host-only: update party name and/or shared guest playback controls.",
+        "operationId": "update_party_settings_api_party__code__settings_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartySettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Update Party Settings",
         "tags": [
           "party"
         ]
@@ -5799,6 +6569,20 @@
             "required": true,
             "schema": {
               "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "insert",
+            "required": false,
+            "schema": {
+              "default": "end",
+              "enum": [
+                "end",
+                "next"
+              ],
+              "title": "Insert",
               "type": "string"
             }
           }
@@ -5924,6 +6708,9 @@
         "security": [
           {
             "sf_session": []
+          },
+          {
+            "sf_party_guest": []
           }
         ],
         "summary": "Reorder Tracks",
@@ -5934,7 +6721,7 @@
     },
     "/api/party/{code}/tracks/{item_id}": {
       "delete": {
-        "description": "The host removes any track; everyone else only their own upcoming ones.",
+        "description": "The host removes any track; participants remove own (or any upcoming when guests_can_control).",
         "operationId": "remove_track_api_party__code__tracks__item_id__delete",
         "parameters": [
           {

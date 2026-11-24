@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -176,6 +177,19 @@ class PartySession(Base):
     position_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     playback_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
+    )
+    # Spotify Jam-style permission: allow non-host participants to control
+    # playback, reorder the queue, and remove upcoming non-playing tracks.
+    guests_can_control: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    # Member key ("u:<id>" or "g:<id>") of whoever last changed playback/current.
+    playback_changed_by: Mapped[str] = mapped_column(
+        String(24), nullable=False, default="", server_default=""
+    )
+    # Strictly monotonic counter incremented on explicit playback/current changes.
+    playback_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)

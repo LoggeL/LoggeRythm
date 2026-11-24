@@ -16,6 +16,9 @@ import type {
   ImportJobStatus,
   PartyState,
   PartyStart,
+  PartySettingsUpdate,
+  ConnectState,
+  ConnectTicket,
   StorageInfo,
   InviteInfo,
   SystemStatus,
@@ -374,7 +377,9 @@ export const api = {
   adminInvites: () => req<InviteInfo[]>(`/admin/invites`),
   adminCreateInvite: () => req<InviteInfo>(`/admin/invites`, { method: "POST" }),
 
-  // Party mode (collaborative shared queue)
+  // Party mode (collaborative Jam shared queue)
+  /** Return the signed-in user's active Jam session, or null. */
+  activeParty: () => req<PartyState | null>(`/party/active`),
   /** Start a party; `start` seeds it with the host's queue and playhead. */
   createParty: (name?: string, start?: PartyStart) =>
     req<PartyState>(`/party`, {
@@ -382,6 +387,9 @@ export const api = {
       body: JSON.stringify({ name: name ?? "", ...start }),
     }),
   getParty: (code: string) => req<PartyState>(`/party/${encodeURIComponent(code)}`),
+  /** Track ids stored on the server, scoped to any valid party actor (including anonymous guests). */
+  partyCachedTracks: (code: string) =>
+    req<{ ids: string[] }>(`/party/${encodeURIComponent(code)}/cached-tracks`),
   joinParty: (code: string) =>
     req<PartyState>(`/party/${encodeURIComponent(code)}/join`, { method: "POST" }),
   /** Join anonymously with a nickname; the server sets a party-scoped cookie. */
@@ -390,11 +398,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ nickname }),
     }),
-  partyAddTrack: (code: string, track: Track) =>
-    req<void>(`/party/${encodeURIComponent(code)}/tracks`, {
-      method: "POST",
-      body: JSON.stringify(track),
+  partyUpdateSettings: (code: string, patch: PartySettingsUpdate) =>
+    req<PartyState>(`/party/${encodeURIComponent(code)}/settings`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
     }),
+  partyAddTrack: (code: string, track: Track, insert: "end" | "next" = "end") =>
+    req<void>(
+      `/party/${encodeURIComponent(code)}/tracks${insert === "next" ? "?insert=next" : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify(track),
+      },
+    ),
   partyRemoveTrack: (code: string, itemId: number) =>
     req<void>(`/party/${encodeURIComponent(code)}/tracks/${itemId}`, {
       method: "DELETE",
@@ -409,8 +425,24 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ index }),
     }),
+  partyPatchPlayback: (code: string, isPlaying: boolean, positionSec: number) =>
+    req<void>(`/party/${encodeURIComponent(code)}/playback`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_playing: isPlaying, position_sec: positionSec }),
+    }),
   leaveParty: (code: string) =>
     req<void>(`/party/${encodeURIComponent(code)}/leave`, { method: "POST" }),
+  endParty: (code: string) =>
+    req<void>(`/party/${encodeURIComponent(code)}`, { method: "DELETE" }),
+  kickPartyMember: (code: string, memberKey: string) =>
+    req<void>(
+      `/party/${encodeURIComponent(code)}/members/${encodeURIComponent(memberKey)}`,
+      { method: "DELETE" },
+    ),
+
+  // Personal multi-device Connect mode (Spotify Connect-like WS)
+  connectTicket: () => req<ConnectTicket>(`/connect/ticket`, { method: "POST" }),
+  connectState: () => req<ConnectState>(`/connect/state`),
 
   // Playlist visibility
   setPlaylistVisibility: (id: string, isPublic: boolean) =>

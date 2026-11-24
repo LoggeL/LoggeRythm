@@ -16,7 +16,7 @@ from sqlalchemy.schema import CreateColumn
 
 from .api_version import API_VERSION
 from .config import APP_ENV, CORS_ORIGINS, validate_runtime_config
-from .db.models import PartyTrack, Play, User
+from .db.models import PartySession, PartyTrack, Play, User
 from .db.session import SessionLocal, engine, init_db
 from .openapi_security import install_auth_openapi
 from .routers import (
@@ -25,6 +25,7 @@ from .routers import (
     auth,
     browse,
     compatibility,
+    connect,
     follows,
     home,
     likes,
@@ -122,6 +123,9 @@ _COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
 _PORTABLE_COLUMN_MIGRATIONS = (
     Play.__table__.c.event_id,
     PartyTrack.__table__.c.added_by_member,
+    PartySession.__table__.c.guests_can_control,
+    PartySession.__table__.c.playback_changed_by,
+    PartySession.__table__.c.playback_revision,
 )
 _PORTABLE_INDEX_MIGRATIONS = tuple(
     index
@@ -266,6 +270,7 @@ app.include_router(resolve.router)
 app.include_router(lyrics.router)
 app.include_router(admin.router)
 app.include_router(party.router)
+app.include_router(connect.router)
 app.include_router(profile.router)
 app.include_router(radio.router)
 app.include_router(stats.router)

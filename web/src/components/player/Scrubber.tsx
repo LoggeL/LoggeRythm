@@ -19,7 +19,15 @@ export function rangeFill(pct: number, color = "var(--accent-soft)"): string {
  * change (keyboard, assistive technology) seeks at once, because no release
  * event is guaranteed to follow it.
  */
-export default function Scrubber({ showTimes = true, className = "" }: { showTimes?: boolean; className?: string }) {
+export default function Scrubber({
+  showTimes = true,
+  className = "",
+  disabled = false,
+}: {
+  showTimes?: boolean;
+  className?: string;
+  disabled?: boolean;
+}) {
   const currentTime = usePlayerStore((s) => s.currentTime);
   const duration = usePlayerStore((s) => s.duration);
   const trackKey = usePlayerStore(scrubTrackKey);
@@ -80,7 +88,7 @@ export default function Scrubber({ showTimes = true, className = "" }: { showTim
         onPointerCancel={release}
         onLostPointerCapture={release}
         onBlur={release}
-        disabled={trackKey === null || !max}
+        disabled={disabled || trackKey === null || !max}
         className="min-w-0 flex-1"
         style={{ background: rangeFill(max ? (position / max) * 100 : 0) }}
         aria-label="Fortschritt"

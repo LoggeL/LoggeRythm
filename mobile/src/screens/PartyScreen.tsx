@@ -2,13 +2,16 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Track } from '../api/types';
+import type { PartyMember, Track } from '../api/types';
+import {
+  ConnectedPartyNowPlayingCard,
+  ConnectedPartyQueueRow,
+  ConnectedPartySearchResultRow,
+} from '../components/party/ConnectedPartyParts';
 import {
   PartyHeader,
   PartyMembers,
   PartyNotice,
-  PartyQueueRow,
-  PartySearchResultRow,
 } from '../components/party/PartyParts';
 import { spotifyImportInputStyle } from '../components/search/SpotifyImportForm';
 import { ActionButton, AppText, EmptyState, ErrorState, SectionHeader } from '../components/ui';
@@ -18,7 +21,12 @@ import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { partyErrorDetail } from '../party/partyErrors';
-import { movedPartyIds, partyDisplayName, partyInviteUrl } from '../party/partyModel';
+import {
+  canControlPartyPlayback,
+  movedPartyIds,
+  partyDisplayName,
+  partyInviteUrl,
+} from '../party/partyModel';
 import { partySession, usePartySession } from '../party/partyRuntime';
 import { PlaybackState, usePlaybackState } from '../player/player';
 import { colors, layout, spacing } from '../theme';
@@ -99,6 +107,7 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [reloading, setReloading] = useState(false);
   const busy = useRef(false);
 
@@ -109,8 +118,30 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   });
 
   useEffect(() => {
+    if (session.endedNotice !== null) return;
     partySession().enter(code);
-  }, [code]);
+  }, [code, session.endedNotice]);
+
+  if (session.endedNotice !== null && session.party === null) {
+    return (
+      <View testID="party-ended" style={styles.centered}>
+        <AppText variant="title" align="center" accessibilityRole="header">
+          {strings.party.defaultName}
+        </AppText>
+        <AppText color="secondary" align="center" accessibilityRole="alert">
+          {session.endedNotice}
+        </AppText>
+        <ActionButton
+          testID="party-ended-close"
+          label={strings.party.back}
+          onPress={() => {
+            partySession().dismissEndedNotice();
+            onClose();
+          }}
+        />
+      </View>
+    );
+  }
 
   if (session.code !== code || session.phase === 'joining' || session.phase === 'idle') {
     return (
@@ -136,7 +167,7 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   }
   const party = session.party;
   if (party === null) throw new Error(`Party session in phase ${session.phase} has no party state`);
-  const locked = pending !== null || leaving;
+  const locked = pending !== null || leaving || ending;
 
   /** Party edits run one at a time; the live stream brings the result back. */
   const run = (key: string, failure: (detail: string) => string, operation: () => Promise<void>, success?: string) => {
@@ -194,6 +225,57 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
     );
   };
 
+  const endJam = () => {
+    Alert.alert(
+      strings.party.endConfirmTitle,
+      strings.party.endConfirmBody,
+      [
+        { text: strings.party.leaveStay, style: 'cancel' },
+        {
+          text: strings.party.endConfirm,
+          style: 'destructive',
+          onPress: () => {
+            if (busy.current) return;
+            busy.current = true;
+            setEnding(true);
+            setActionError(null);
+            partySession().end().then(
+              () => {
+                busy.current = false;
+                onClose();
+              },
+              (error: unknown) => {
+                busy.current = false;
+                setEnding(false);
+                setActionError(strings.party.endFailed(partyErrorDetail(error)));
+              },
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  const kickMember = (member: PartyMember) => {
+    Alert.alert(
+      strings.party.kickConfirmTitle,
+      strings.party.kickConfirmBody(member.name),
+      [
+        { text: strings.party.leaveStay, style: 'cancel' },
+        {
+          text: strings.party.kickConfirm,
+          style: 'destructive',
+          onPress: () =>
+            run(
+              `kick:${member.key}`,
+              (detail) => strings.party.kickFailed(member.name, detail),
+              () => partySession().kickMember(member.key),
+            ),
+        },
+      ],
+    );
+  };
+
   const reload = () => {
     setReloading(true);
     partySession().reload().catch(() => {
@@ -202,7 +284,54 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   };
 
   const ids = party.tracks.map((entry) => entry.id);
-  const buffering = playbackState === PlaybackState.Buffering && !session.detached;
+  const buffering = playbackState === PlaybackState.Buffering && !session.detached && !session.controlOnly;
+  const hasCurrent = party.current_index >= 0 && party.tracks[party.current_index] !== undefined;
+  const indexedTracks = party.tracks.map((entry, index) => ({ entry, index }));
+  const upcomingEntries = hasCurrent
+    ? indexedTracks.filter(({ index }) => index > party.current_index)
+    : indexedTracks;
+  const historyEntries = hasCurrent
+    ? indexedTracks.filter(({ index }) => index < party.current_index)
+    : [];
+  const sharedControl = canControlPartyPlayback(party);
+
+  const renderQueueRow = (entryId: number, index: number, title: string) => (
+    <ConnectedPartyQueueRow
+      key={entryId}
+      party={party}
+      index={index}
+      buffering={buffering}
+      locked={locked}
+      onPlay={() =>
+        run(
+          `play:${entryId}`,
+          (detail) => strings.party.playFailed(title, detail),
+          () => musicRepository.partySetCurrent(party.code, index),
+        )
+      }
+      onMoveUp={() =>
+        run(
+          `move:${entryId}`,
+          (detail) => strings.party.moveFailed(title, detail),
+          () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index - 1)),
+        )
+      }
+      onMoveDown={() =>
+        run(
+          `move:${entryId}`,
+          (detail) => strings.party.moveFailed(title, detail),
+          () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index + 1)),
+        )
+      }
+      onRemove={() =>
+        run(
+          `remove:${entryId}`,
+          (detail) => strings.party.removeFailed(title, detail),
+          () => musicRepository.partyRemoveTrack(party.code, entryId),
+        )
+      }
+    />
+  );
 
   const headerAndNotices = (
     <>
@@ -210,9 +339,41 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         party={party}
         phase={session.phase}
         leaving={leaving}
+        ending={ending}
         locked={locked}
+        controlOnly={session.controlOnly}
         onShare={share}
         onLeave={leave}
+        onEnd={party.is_host ? endJam : undefined}
+        onRename={
+          party.is_host
+            ? (nextName) =>
+                run(
+                  'rename',
+                  strings.party.renameFailed,
+                  async () => {
+                    await partySession().updateSettings({ name: nextName });
+                  },
+                )
+            : undefined
+        }
+        onToggleGuestsCanControl={
+          party.is_host
+            ? (enabled) =>
+                run(
+                  'guests-control',
+                  strings.party.settingsFailed,
+                  async () => {
+                    await partySession().updateSettings({ guests_can_control: enabled });
+                  },
+                )
+            : undefined
+        }
+        onToggleControlOnly={
+          !party.is_host
+            ? (enabled) => partySession().setControlOnly(enabled)
+            : undefined
+        }
       />
       {session.phase === 'stale' && session.error !== null ? (
         <PartyNotice
@@ -243,10 +404,75 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
       {feedback !== null ? (
         <PartyNotice testID="party-feedback" tone="info" message={feedback} />
       ) : null}
-      {!party.is_host && !session.detached ? (
-        <PartyNotice testID="party-follow-hint" tone="info" message={strings.party.followHint(party.host_name)} />
+      {!party.is_host && !session.detached && !session.controlOnly ? (
+        <PartyNotice
+          testID="party-follow-hint"
+          tone="info"
+          message={sharedControl ? strings.party.sharedControlHint : strings.party.followHint(party.host_name)}
+        />
       ) : null}
     </>
+  );
+
+  const nowPlayingSection = hasCurrent ? (
+    <ConnectedPartyNowPlayingCard
+      party={party}
+      buffering={buffering}
+      locked={locked}
+      onPrev={() =>
+        run(
+          'control:prev',
+          strings.party.playbackControlFailed,
+          () => partySession().controlPrev(),
+        )
+      }
+      onTogglePlay={() =>
+        run(
+          'control:toggle',
+          strings.party.playbackControlFailed,
+          () => partySession().controlTogglePlay(),
+        )
+      }
+      onNext={() =>
+        run(
+          'control:next',
+          strings.party.playbackControlFailed,
+          () => partySession().controlNext(),
+        )
+      }
+    />
+  ) : null;
+
+  const queueSection = (
+    <View style={styles.section}>
+      {nowPlayingSection}
+      <View style={[styles.sectionHeader, hasCurrent ? styles.upNextHeader : null]}>
+        <SectionHeader
+          title={hasCurrent ? strings.party.upNextTitle : strings.party.queueTitle}
+          padded={false}
+        />
+      </View>
+      {party.tracks.length === 0 ? (
+        <EmptyState
+          testID="party-queue-empty"
+          layout="inline"
+          icon="playlist-music"
+          title={strings.party.queueEmpty}
+        />
+      ) : (
+        <>
+          {upcomingEntries.map(({ entry, index }) => renderQueueRow(entry.id, index, entry.title))}
+          {historyEntries.length > 0 ? (
+            <View style={styles.historyBlock}>
+              <View style={styles.sectionHeader}>
+                <SectionHeader title={strings.party.playedEarlierTitle} padded={false} />
+              </View>
+              {historyEntries.map(({ entry, index }) => renderQueueRow(entry.id, index, entry.title))}
+            </View>
+          ) : null}
+        </>
+      )}
+    </View>
   );
 
   const searchSection = (
@@ -288,16 +514,25 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         </AppText>
       ) : null}
       {search.results.map((track) => (
-        <PartySearchResultRow
+        <ConnectedPartySearchResultRow
           key={track.id}
           track={track}
           locked={locked}
           adding={pending === `add:${track.id}`}
+          addingNext={pending === `next:${track.id}`}
+          onPlayNext={() =>
+            run(
+              `next:${track.id}`,
+              (detail) => strings.party.playNextFailed(track.title, detail),
+              () => musicRepository.partyAddTrack(party.code, track, 'next'),
+              strings.party.playNextAdded(track.title),
+            )
+          }
           onAdd={() =>
             run(
               `add:${track.id}`,
               (detail) => strings.party.addFailed(track.title, detail),
-              () => musicRepository.partyAddTrack(party.code, track),
+              () => musicRepository.partyAddTrack(party.code, track, 'end'),
               strings.party.added(track.title),
             )
           }
@@ -306,66 +541,17 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
     </View>
   );
 
-  const queueSection = (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <SectionHeader title={strings.party.queueTitle} padded={false} />
-      </View>
-      {party.tracks.length === 0 ? (
-        <EmptyState
-          testID="party-queue-empty"
-          layout="inline"
-          icon="playlist-music"
-          title={strings.party.queueEmpty}
-        />
-      ) : (
-        party.tracks.map((entry, index) => (
-          <PartyQueueRow
-            key={entry.id}
-            party={party}
-            index={index}
-            buffering={buffering}
-            locked={locked}
-            onPlay={() =>
-              run(
-                `play:${entry.id}`,
-                (detail) => strings.party.playFailed(entry.title, detail),
-                () => musicRepository.partySetCurrent(party.code, index),
-              )
-            }
-            onMoveUp={() =>
-              run(
-                `move:${entry.id}`,
-                (detail) => strings.party.moveFailed(entry.title, detail),
-                () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index - 1)),
-              )
-            }
-            onMoveDown={() =>
-              run(
-                `move:${entry.id}`,
-                (detail) => strings.party.moveFailed(entry.title, detail),
-                () => musicRepository.partyReorder(party.code, movedPartyIds(ids, index, index + 1)),
-              )
-            }
-            onRemove={() =>
-              run(
-                `remove:${entry.id}`,
-                (detail) => strings.party.removeFailed(entry.title, detail),
-                () => musicRepository.partyRemoveTrack(party.code, entry.id),
-              )
-            }
-          />
-        ))
-      )}
-    </View>
-  );
-
   const membersSection = (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <SectionHeader title={strings.party.membersTitle} padded={false} />
       </View>
-      <PartyMembers members={party.members} hostName={party.host_name} />
+      <PartyMembers
+        members={party.members}
+        isHost={party.is_host}
+        locked={locked}
+        onKick={party.is_host ? kickMember : undefined}
+      />
     </View>
   );
 
@@ -415,8 +601,8 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         keyboardShouldPersistTaps="handled"
       >
         {headerAndNotices}
-        {searchSection}
         {queueSection}
+        {searchSection}
         {membersSection}
       </ScrollView>
       <PartyBottomSafeSpacer />
@@ -450,6 +636,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   section: { paddingTop: layout.sectionGap },
+  upNextHeader: { paddingTop: layout.stackGap },
+  historyBlock: { paddingTop: layout.stackGap },
   sectionHeader: { paddingHorizontal: layout.pagePadding, paddingBottom: layout.headerGap },
   searchInput: { marginHorizontal: layout.pagePadding },
   inlineStatus: {

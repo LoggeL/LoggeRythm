@@ -10,15 +10,16 @@ import { SpinnerIcon } from "@/components/icons";
 import MembersCard from "./MembersCard";
 import PartyQueue from "./PartyQueue";
 import PartySearch from "./PartySearch";
-import { PartyBlocked, PartySkeleton } from "./PartyStates";
+import { PartyBlocked, PartyEnded, PartySkeleton } from "./PartyStates";
 import { useGuestParty } from "./useGuestParty";
 import { usePartySearch } from "./usePartySearch";
 
 const NICKNAME_MAX = 40;
 
 /**
- * A party for people without an account: pick a nickname, then watch the
- * queue live, add songs and remove your own. Playback happens at the host.
+ * A Jam for people without an account: pick a nickname, then watch the queue
+ * live, add songs, see normal server-stored track markers, and control playback
+ * when the host allows it.
  */
 export default function GuestParty({ code }: { code: string }) {
   const guest = useGuestParty(code);
@@ -33,14 +34,21 @@ export default function GuestParty({ code }: { code: string }) {
       </GuestFrame>
     );
   }
+  if (phase.kind === "ended") {
+    return (
+      <GuestFrame>
+        <PartyEnded reason={phase.reason} homeHref="/login" homeLabel="Anmelden" />
+      </GuestFrame>
+    );
+  }
   if (phase.kind === "error") {
     return (
       <GuestFrame>
         <PartyBlocked
-          title="Party nicht verfügbar"
+          title="Jam nicht verfügbar"
           message={phase.message}
           retryLabel="Erneut laden"
-          busyLabel="Party wird geladen…"
+          busyLabel="Jam wird geladen…"
           busy={false}
           onRetry={() => void guest.reload()}
         />
@@ -48,16 +56,26 @@ export default function GuestParty({ code }: { code: string }) {
     );
   }
   if (phase.kind === "nickname" || phase.kind === "left") {
-    return <NicknameForm code={code} left={phase.kind === "left"} joining={guest.joining} error={guest.joinError} onJoin={guest.join} />;
+    return (
+      <NicknameForm
+        code={code}
+        left={phase.kind === "left"}
+        joining={guest.joining}
+        error={guest.joinError}
+        onJoin={guest.join}
+      />
+    );
   }
 
   const { party } = phase;
+  const guestsCanControl = Boolean(party.guests_can_control);
+
   return (
     <GuestFrame>
       <div className="animate-in">
         <header className="mb-8">
-          <p className="page-eyebrow">Gemeinsam hören · Party {party.code}</p>
-          <h1 className="page-title">{party.name || "Party"}</h1>
+          <p className="page-eyebrow">Gemeinsam hören · Jam {party.code}</p>
+          <h1 className="page-title">{party.name || "Jam"}</h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
             <p className="label-mono flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
               <span className="flex items-center gap-2 text-accent">
@@ -74,7 +92,7 @@ export default function GuestParty({ code }: { code: string }) {
               </span>
             </p>
             <button type="button" onClick={() => setConfirmLeave(true)} disabled={guest.queueLocked} className="action-secondary">
-              {guest.leaving ? "Party wird verlassen…" : "Party verlassen"}
+              {guest.leaving ? "Jam wird verlassen…" : "Jam verlassen"}
             </button>
           </div>
         </header>
@@ -82,22 +100,45 @@ export default function GuestParty({ code }: { code: string }) {
         <p className="mb-8 flex items-start gap-3 border-l-2 border-border py-0.5 pl-4 text-sm leading-relaxed text-muted">
           <InfoCircleIcon width={18} height={18} className="mt-0.5 shrink-0 text-muted" />
           <span>
-            <span className="font-medium text-foreground">Die Musik läuft bei {party.host_name}.</span> Du kannst Songs zur Warteschlange
-            hinzufügen und deine eigenen wieder entfernen, solange sie noch nicht laufen.
+            <span className="font-medium text-foreground">Die Musik läuft bei {party.host_name}.</span>{" "}
+            {guestsCanControl
+              ? "Der Host erlaubt allen die Wiedergabe-Steuerung – du kannst Songs starten, pausieren, umsortieren und entfernen."
+              : "Du kannst Songs zur Warteschlange hinzufügen und deine eigenen wieder entfernen, solange sie noch nicht laufen."}
           </span>
         </p>
 
         <div className="grid items-start gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_19rem]">
           <div className="min-w-0 space-y-10">
-            <PartySearch search={search} disabled={guest.queueLocked} onAdd={guest.addTrack} />
+            <PartySearch
+              search={search}
+              disabled={guest.queueLocked}
+              isGuest
+              guestCachedIds={guest.cachedIds}
+              cacheError={guest.cacheError}
+              onRetryCache={guest.retryCache}
+              onAdd={guest.addTrack}
+              onAddNext={guest.addTrackNext}
+            />
             <PartyQueue
               tracks={party.tracks}
               currentIndex={party.current_index}
               isHost={false}
+              guestsCanControl={guestsCanControl}
+              isPlaying={party.is_playing}
               viewerKey={party.viewer_key}
+              hostName={party.host_name}
+              isGuest
+              guestCachedIds={guest.cachedIds}
+              cacheError={guest.cacheError}
+              onRetryCache={guest.retryCache}
               pending={guest.queuePending}
               locked={guest.queueLocked}
               error={guest.queueError}
+              onPlay={guestsCanControl ? guest.playAt : undefined}
+              onTogglePlayback={guestsCanControl ? guest.togglePlayback : undefined}
+              onNext={guestsCanControl ? guest.nextTrack : undefined}
+              onPrev={guestsCanControl ? guest.prevTrack : undefined}
+              onMove={guestsCanControl ? guest.moveTrack : undefined}
               onRemove={guest.removeTrack}
             />
           </div>
@@ -108,7 +149,7 @@ export default function GuestParty({ code }: { code: string }) {
 
         <ConfirmDialog
           open={confirmLeave}
-          title="Party verlassen?"
+          title="Jam verlassen?"
           confirmLabel="Verlassen"
           cancelLabel="Bleiben"
           destructive
@@ -155,9 +196,9 @@ function NicknameForm({
   return (
     <AuthShell compact>
       <form onSubmit={submit} aria-labelledby="guest-join-title">
-        <p className="page-eyebrow">{left ? "Du hast die Party verlassen" : `Einladung · Party ${code}`}</p>
+        <p className="page-eyebrow">{left ? "Du hast die Jam verlassen" : `Einladung · Jam ${code}`}</p>
         <h1 id="guest-join-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [text-wrap:balance]">
-          {left ? "Wieder mitmachen?" : "Bei der Party mitmachen"}
+          {left ? "Wieder mitmachen?" : "Bei der Jam mitmachen"}
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-muted">
           Ohne Konto: Gib einen Nickname ein, dann siehst du die Warteschlange live und kannst Songs hinzufügen.
@@ -172,7 +213,7 @@ function NicknameForm({
             autoFocus
             required
             error={error}
-            hint={`Für alle in der Party sichtbar · max. ${NICKNAME_MAX} Zeichen`}
+            hint={`Für alle in der Jam sichtbar · max. ${NICKNAME_MAX} Zeichen`}
           />
         </div>
         <button type="submit" disabled={!trimmed || joining} aria-busy={joining} className="action-primary mt-6 min-h-12 w-full text-[15px]">

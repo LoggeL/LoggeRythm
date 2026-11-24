@@ -12,6 +12,8 @@ import { useVisualizerScene } from "@/hooks/useVisualizerScene";
 import { ChevronDownIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
 import Scrubber from "@/components/player/Scrubber";
+import { DeviceSelectorTrigger } from "@/components/player/DeviceSelector";
+import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
 import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
 import SceneVisualizer from "@/components/SceneVisualizer";
 import Stage, { VisualizerControls } from "./Stage";
@@ -202,10 +204,13 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         <button data-dialog-autofocus type="button" onClick={onClose} aria-label="Schließen" title="Schließen (Esc)" className="action-icon h-11 w-11 text-foreground">
           <ChevronDownIcon width={26} height={26} />
         </button>
-        <p className="flex min-w-0 flex-1 items-baseline gap-2.5 max-lg:flex-col max-lg:items-center max-lg:gap-0 max-lg:pr-11 max-lg:text-center">
+        <p className="flex min-w-0 flex-1 items-baseline gap-2.5 max-lg:flex-col max-lg:items-center max-lg:gap-0 max-lg:text-center">
           <span className="label-mono flex-shrink-0">{queueContext ? "Wiedergabe aus" : "Jetzt läuft"}</span>
           {queueContext && <span className="max-w-full truncate text-sm font-semibold">{queueContext}</span>}
         </p>
+        <div className="lg:hidden">
+          <DeviceSelectorTrigger forceVisible compact />
+        </div>
       </header>
 
       {error && (
@@ -238,7 +243,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {/* Console: seek across the full width, transport centred beneath it. */}
+      {/* Console: active output strip, seek across the full width, transport centred beneath it. */}
+      <ActiveOutputBanner onNavigate={onClose} />
       <div className={`${styles.console} like-celebration-surface relative flex-shrink-0 px-5 pb-4 pt-3 lg:px-10 lg:pb-6 lg:pt-4 xl:px-14`}>
         {!split && (
           <div className="mb-3">
@@ -253,7 +259,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
               {visualizerControls}
             </div>
             <TransportRow />
-            <div className="flex justify-end">
+            <div className="flex items-center justify-end gap-2">
+              <DeviceSelectorTrigger forceVisible />
               <VolumeRow />
             </div>
           </div>

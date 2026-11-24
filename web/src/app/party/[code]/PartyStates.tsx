@@ -1,4 +1,6 @@
-/** Full-page states shown before the party itself can be rendered. */
+import Link from "next/link";
+
+/** Full-page states shown before the party itself can be rendered or after it ended. */
 
 export function PartySkeleton() {
   return (
@@ -52,7 +54,7 @@ export function PartyBlocked({
 }) {
   return (
     <div className="animate-in max-w-2xl py-6 sm:py-10">
-      <p className="page-eyebrow">Gemeinsam hören</p>
+      <p className="page-eyebrow">Gemeinsam hören · Jam</p>
       <h1 className="font-display text-[clamp(2rem,5vw,3.25rem)] font-extrabold leading-none tracking-[-0.04em] text-balance">{title}</h1>
       <p role="alert" className="error-panel mt-6">
         {message}
@@ -60,6 +62,31 @@ export function PartyBlocked({
       <button type="button" onClick={onRetry} disabled={busy} className="action-primary mt-5">
         {busy ? busyLabel : retryLabel}
       </button>
+    </div>
+  );
+}
+
+export function PartyEnded({
+  reason,
+  homeHref = "/",
+  homeLabel = "Zur Startseite",
+}: {
+  reason: string;
+  homeHref?: string;
+  homeLabel?: string;
+}) {
+  return (
+    <div className="animate-in max-w-2xl py-6 sm:py-10">
+      <p className="page-eyebrow">Gemeinsam hören · Jam</p>
+      <h1 className="font-display text-[clamp(2rem,5vw,3.25rem)] font-extrabold leading-none tracking-[-0.04em] text-balance">
+        Jam beendet
+      </h1>
+      <p role="status" className="mt-5 text-[15px] leading-relaxed text-muted">
+        {reason}
+      </p>
+      <Link href={homeHref} className="action-primary mt-6 inline-flex">
+        {homeLabel}
+      </Link>
     </div>
   );
 }

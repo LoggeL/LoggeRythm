@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
+import { usePartyStore } from "@/store/party";
 import { toast } from "@/store/toast";
 import { startTrackRadio } from "@/lib/radio";
 import { useMe } from "@/hooks/useAuth";
@@ -26,23 +27,24 @@ export function useTrackMenuItems(
   const router = useRouter();
   const playNext = usePlayerStore((s) => s.playNext);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
+  const partyActive = usePartyStore((s) => s.active);
   const { data: me } = useMe();
 
   const items: ContextMenuItem[] = [
     {
-      label: "Als Nächstes spielen",
+      label: partyActive ? "Als Nächstes in Jam" : "Als Nächstes spielen",
       icon: <NextIcon {...ICON} />,
       onClick: () => {
         playNext(track);
-        toast.info("Wird als Nächstes gespielt.");
+        toast.info(partyActive ? "Wird als Nächstes in der Jam gespielt." : "Wird als Nächstes gespielt.");
       },
     },
     {
-      label: "Zur Warteschlange",
+      label: partyActive ? "Zur Jam-Warteschlange" : "Zur Warteschlange",
       icon: <QueueIcon {...ICON} />,
       onClick: () => {
         addToQueue(track);
-        toast.info("Zur Warteschlange hinzugefügt.");
+        toast.info(partyActive ? "Zur Jam-Warteschlange hinzugefügt." : "Zur Warteschlange hinzugefügt.");
       },
     },
     {

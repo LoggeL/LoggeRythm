@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePlayerStore } from "@/store/player";
+import { useConnectStore } from "@/store/connect";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
-import { ClockIcon, VisualizerIcon } from "@/components/icons";
+import { ClockIcon, DevicesIcon, RefreshIcon, VisualizerIcon } from "@/components/icons";
 import type { PlaybackSettings } from "@/types";
 import { errorMessage, SectionError, SettingsCard, SettingsRow, Switch } from "./presentation";
 
@@ -182,12 +183,117 @@ function SleepTimer() {
   );
 }
 
-/** "Wiedergabe" tab: crossfade and sleep timer. */
+function ConnectSettings() {
+  const enabled = useConnectStore((s) => s.enabled);
+  const status = useConnectStore((s) => s.status);
+  const error = useConnectStore((s) => s.error);
+  const deviceName = useConnectStore((s) => s.deviceName);
+  const devices = useConnectStore((s) => s.devices);
+  const actions = useConnectStore((s) => s.actions);
+  const setEnabled = useConnectStore((s) => s.setEnabled);
+
+  const [draftName, setDraftName] = useState<string | null>(null);
+  const inputValue = draftName ?? deviceName;
+  const trimmed = inputValue.trim();
+  const dirty = draftName !== null && trimmed !== "" && trimmed !== deviceName;
+
+  const saveName = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!dirty) return;
+    try {
+      if (actions) await actions.renameDevice(trimmed);
+      else useConnectStore.getState().setDeviceNameLocal(trimmed);
+      setDraftName(null);
+      toast.success("Gerätename aktualisiert.");
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause));
+    }
+  };
+
+  const statusText =
+    status === "connected"
+      ? `Verbunden · ${devices.length} ${devices.length === 1 ? "Gerät" : "Geräte"} online`
+      : status === "connecting"
+        ? "Verbindet mit Connect-Hub…"
+        : status === "reconnecting"
+          ? "Verbindung wird wiederhergestellt…"
+          : status === "disabled"
+            ? "Deaktiviert"
+            : "Verbindungsfehler";
+
+  return (
+    <SettingsCard
+      title="Geräte & Connect"
+      description="Steuere alle angemeldeten Geräte per WebSocket und übertrage die Wiedergabe nahtlos."
+      icon={<DevicesIcon width={18} height={18} />}
+    >
+      <SettingsRow
+        label="Multi-Device Connect"
+        description="Dieses Browser-Fenster als steuerbares Gerät im eigenen Konto anmelden."
+      >
+        <Switch
+          label="Multi-Device Connect aktivieren"
+          checked={enabled}
+          onChange={(checked) => setEnabled(checked)}
+        />
+      </SettingsRow>
+      <SettingsRow label="Status" description="Echtzeit-Verbindung über WebSocket.">
+        <div className="flex items-center gap-2 text-xs">
+          <span
+            aria-hidden="true"
+            className={`h-2 w-2 rounded-full ${
+              status === "connected"
+                ? "bg-accent"
+                : status === "error"
+                  ? "bg-danger"
+                  : "bg-muted"
+            }`}
+          />
+          <span className="font-mono text-muted">{statusText}</span>
+        </div>
+      </SettingsRow>
+      {error && (
+        <div role="alert" className="error-panel mt-3 flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs">
+          <span className="min-w-0">{error}</span>
+          {actions && (
+            <button type="button" onClick={actions.reconnect} className="action-secondary min-h-8 gap-1.5 px-3 text-xs">
+              <RefreshIcon width={14} height={14} />
+              Erneut verbinden
+            </button>
+          )}
+        </div>
+      )}
+      <form onSubmit={(e) => void saveName(e)} className="mt-4 flex flex-wrap items-end gap-2 border-t border-hairline pt-4">
+        <div className="min-w-0 flex-1">
+          <label htmlFor="connect-device-name" className="label-mono mb-1.5 block text-[10px]">
+            Gerätename
+          </label>
+          <input
+            id="connect-device-name"
+            type="text"
+            value={inputValue}
+            onChange={(event) => setDraftName(event.target.value)}
+            maxLength={60}
+            className="field-input min-h-10 text-sm"
+          />
+        </div>
+        <button type="submit" disabled={!dirty} className="action-primary min-h-10 px-4 text-sm">
+          Speichern
+        </button>
+      </form>
+    </SettingsCard>
+  );
+}
+
+/** "Wiedergabe" tab: crossfade, sleep timer, and WebSocket multi-device Connect settings. */
 export default function PlaybackTab() {
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
       <CrossfadeSettings />
       <SleepTimer />
+      <div className="lg:col-span-2">
+        <ConnectSettings />
+      </div>
     </div>
   );
 }

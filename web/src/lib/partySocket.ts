@@ -1,80 +1,95 @@
 "use client";
 
+import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
 import type { PartyState } from "@/types";
 
-// The SSE payload is the REST PartyState plus host-authoritative playback
-// fields. Co-located here because src/types.ts is off-limits.
-export interface PartyPlayback {
-  is_playing: boolean;
-  position_sec: number;
-  /** ISO-8601 timestamp of the last playback update, or null. */
-  playback_updated_at: string | null;
-}
+export type PartyLiveState = PartyState;
 
-export type PartyLiveState = PartyState & PartyPlayback;
+export type PartyStreamStatus = "connecting" | "live" | "reconnecting" | "error";
 
-/**
- * Host-only: broadcast play/pause + playhead position to the party. Lives here
- * (not in lib/api.ts, which this task must not edit) but mirrors its contract —
- * same-origin, cookie auth, and a loud throw on any non-2xx response.
- */
 export async function patchPartyPlayback(
   code: string,
   isPlaying: boolean,
   positionSec: number,
 ): Promise<void> {
-  const res = await fetch(`/api/party/${encodeURIComponent(code)}/playback`, {
-    method: "PATCH",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ is_playing: isPlaying, position_sec: positionSec }),
-  });
-  if (!res.ok) {
+  await api.partyPatchPlayback(code, isPlaying, positionSec);
+}
+
+/** Validate an incoming SSE PartyState frame loudly instead of accepting corrupt data. */
+function parsePartyFrame(raw: string): PartyLiveState {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
     throw new Error(
-      `Wiedergabe-Update fehlgeschlagen (${res.status} ${res.statusText}).`,
+      `Ungültiger Party-Stream-Frame (kein JSON): ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
     );
   }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed) ||
+    typeof (parsed as Record<string, unknown>).code !== "string" ||
+    !Array.isArray((parsed as Record<string, unknown>).tracks) ||
+    !Array.isArray((parsed as Record<string, unknown>).members)
+  ) {
+    throw new Error("Ungültiger Party-Stream-Frame: code, tracks und members werden erwartet.");
+  }
+  return parsed as PartyLiveState;
 }
 
 /**
  * Open an SSE connection to the party event stream. Returns a disposer that
- * closes the stream. The browser's EventSource auto-reconnects on transient
- * errors; we surface a toast when the link drops and again once it recovers, so
- * a broken live connection is never silently hidden.
+ * closes the stream. Connection drops and frame parse failures are surfaced
+ * loudly via callbacks and toasts so broken live sync is never hidden.
  */
 export function openPartyStream(
   code: string,
   onState: (state: PartyLiveState) => void,
+  options?: {
+    onStatus?: (status: PartyStreamStatus, error?: string | null) => void;
+    onFrameError?: (error: Error) => void;
+  },
 ): () => void {
   const url = `/api/party/${encodeURIComponent(code)}/events`;
   const source = new EventSource(url);
-  // Track whether we're currently in a dropped state to avoid toast spam and to
-  // announce recovery exactly once.
   let dropped = false;
+  options?.onStatus?.("connecting", null);
 
   source.onopen = () => {
+    options?.onStatus?.("live", null);
     if (dropped) {
       dropped = false;
-      toast.success("Live-Verbindung zur Party wiederhergestellt.");
+      toast.success("Live-Verbindung zur Jam wiederhergestellt.");
     }
   };
 
   source.onmessage = (ev: MessageEvent<string>) => {
-    // Let a malformed frame throw loudly rather than swallow it — the browser
-    // console will surface the parse error with the offending payload.
-    const state = JSON.parse(ev.data) as PartyLiveState;
+    let state: PartyLiveState;
+    try {
+      state = parsePartyFrame(ev.data);
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      options?.onStatus?.("error", error.message);
+      options?.onFrameError?.(error);
+      toast.error(error.message);
+      throw error;
+    }
+    options?.onStatus?.("live", null);
     onState(state);
   };
 
   source.onerror = () => {
-    // EventSource keeps retrying while readyState === CONNECTING; it only stops
-    // at CLOSED. Either way, warn the user once that live updates paused.
+    const closed = source.readyState === EventSource.CLOSED;
+    const message = closed
+      ? "Live-Verbindung zur Jam wurde beendet."
+      : "Live-Verbindung zur Jam unterbrochen – versuche erneut zu verbinden…";
+    options?.onStatus?.(closed ? "error" : "reconnecting", message);
     if (!dropped) {
       dropped = true;
-      toast.error(
-        "Live-Verbindung zur Party unterbrochen – versuche erneut zu verbinden…",
-      );
+      toast.error(message);
     }
   };
 

@@ -50,16 +50,41 @@ export function expectedHostPosition(party: PartyState, nowMs: number): number {
   return Math.max(0, party.position_sec + (nowMs - updatedAt) / 1000);
 }
 
-/** The host removes anything; everyone else only their own upcoming additions. */
+/** Whether the current viewer can control playback, track selection, and queue order. */
+export function canControlPartyPlayback(party: Pick<PartyState, 'is_host' | 'guests_can_control'>): boolean {
+  return party.is_host || party.guests_can_control;
+}
+
+/**
+ * The host removes anything; when guests_can_control is enabled any participant
+ * may remove any upcoming (non-playing) track; otherwise members only remove
+ * their own upcoming additions.
+ */
 export function canRemovePartyTrack(party: PartyState, index: number): boolean {
   const entry = party.tracks[index];
   if (entry === undefined) return false;
   if (party.is_host) return true;
+  if (index === party.current_index) return false;
+  if (party.guests_can_control) return true;
   return (
-    entry.added_by_member !== '' &&
-    entry.added_by_member === party.viewer_key &&
-    index !== party.current_index
+    entry.added_by_member !== ''
+    && entry.added_by_member === party.viewer_key
   );
+}
+
+/** Whether this viewer is still listed among active party members (false when kicked). */
+export function isViewerKickedFromParty(party: Pick<PartyState, 'is_host' | 'viewer_key' | 'members'>): boolean {
+  if (party.is_host || party.viewer_key === '' || party.members.length === 0) return false;
+  const keyedMembers = party.members.filter(
+    (member) => typeof member.key === 'string' && member.key !== '',
+  );
+  if (keyedMembers.length === 0) return false;
+  return !keyedMembers.some((member) => member.key === party.viewer_key);
+}
+
+/** True when a party entry is stored on the server cache. */
+export function isPartyTrackStored(entry: Pick<PartyTrack, 'is_stored' | 'load_state'>): boolean {
+  return entry.is_stored || entry.load_state === 'ready';
 }
 
 export function partyLoadLabel(entry: Pick<PartyTrack, 'load_state' | 'load_error'>): string {

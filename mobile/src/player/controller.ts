@@ -9,7 +9,9 @@ import Player, {
   type PlaybackErrorEvent,
   type PlaybackProgressUpdatedEvent,
 } from './player';
-import type { Track } from '../api/types';
+import type { ConnectPlaybackState, Track } from '../api/types';
+import { activeConnectRouter } from '../connect/activeConnect';
+import { activeRemoteTrack, connectRepeatToPlayer } from '../connect/connectModel';
 import {
   authenticatedHeadersFor,
   authoritativeSessionInvalidationFor,
@@ -216,6 +218,8 @@ export interface PlayTracksOptions {
   radio?: boolean;
   /** Fail closed unless every queue occurrence is a currently verified explicit download. */
   requireExplicitDownloads?: boolean;
+  /** Execute directly on this device's native player (used by Connect command execution). */
+  localOnly?: boolean;
 }
 
 function nextMediaId(prefix: string, track: Track): string {
@@ -433,6 +437,21 @@ export async function playTracks(
   startIndex = 0,
   opts: PlayTracksOptions,
 ): Promise<void> {
+  if (!opts.localOnly && !opts.requireExplicitDownloads) {
+    const connect = activeConnectRouter();
+    if (connect?.isControllingRemote() === true) {
+      if (tracks.length === 0) throw new Error('playTracks called with an empty track list');
+      if (!Number.isInteger(startIndex) || startIndex < 0 || startIndex >= tracks.length) {
+        throw new Error(`playTracks startIndex ${startIndex} is outside a ${tracks.length}-track queue`);
+      }
+      await connect.sendCommand('play_tracks', {
+        tracks,
+        start_index: startIndex,
+        queue_context: opts.context.label,
+      });
+      return;
+    }
+  }
   await replaceQueueAndPlay(tracks, startIndex, opts);
 }
 
@@ -494,6 +513,23 @@ export async function playTrackRow(
     );
   }
 
+  if (!opts.localOnly && !opts.requireExplicitDownloads) {
+    const connect = activeConnectRouter();
+    if (connect?.isControllingRemote() === true) {
+      const remoteTrack = activeRemoteTrack(connect.remotePlayback());
+      if (remoteTrack?.id === tracks[startIndex].id) {
+        await connect.sendCommand('toggle', {});
+        return 'toggled-current';
+      }
+      await connect.sendCommand('play_tracks', {
+        tracks,
+        start_index: startIndex,
+        queue_context: opts.context.label,
+      });
+      return 'started-context';
+    }
+  }
+
   const activeItem = Player.getActiveMediaItem();
   const activeTrack = activeItem === null ? null : mediaItemToTrack(activeItem);
   if (activeTrack?.id === tracks[startIndex].id) {
@@ -549,6 +585,38 @@ function trackRadioContext(seed: Track): QueueContext {
 export async function playTrackWithRadio(
   seed: Track,
 ): Promise<'toggled-current' | 'started-radio'> {
+  const connect = activeConnectRouter();
+  if (connect?.isControllingRemote() === true) {
+    const remoteTrack = activeRemoteTrack(connect.remotePlayback());
+    if (remoteTrack?.id === seed.id) {
+      await connect.sendCommand('toggle', {});
+      return 'toggled-current';
+    }
+    const context = trackRadioContext(seed);
+    let queue: Track[] = [seed];
+    let radioError: TrackRadioError | null = null;
+    try {
+      const similar = await musicRepository.getRadio(seed.id);
+      queue = [
+        seed,
+        ...uniqueTracksNotInQueue(similar, new Set([seed.id]), similar.length),
+      ];
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      radioError = new TrackRadioError(
+        `Track radio for ${seed.id} could not be loaded: ${detail}`,
+        cause,
+      );
+    }
+    await connect.sendCommand('play_tracks', {
+      tracks: queue,
+      start_index: 0,
+      queue_context: context.label,
+    });
+    if (radioError !== null) throw radioError;
+    return 'started-radio';
+  }
+
   const activeItem = Player.getActiveMediaItem();
   const activeTrack = activeItem === null ? null : mediaItemToTrack(activeItem);
   if (activeTrack?.id === seed.id) {
@@ -1140,6 +1208,91 @@ export async function syncPartyQueue(target: PartyQueueTarget): Promise<PartyQue
   });
   persistContextShuffleState();
   return 'replaced';
+}
+
+/**
+ * Hydrate this device's native player from a Connect `activate` transfer frame.
+ * Replaces the full queue in one native step, preserves manual/context origins,
+ * restores repeat mode, and starts at the server-interpolated position.
+ */
+export async function syncConnectQueue(playback: ConnectPlaybackState): Promise<void> {
+  const { queue, origins, current_index: currentIndex, position_sec: positionSec } = playback;
+  if (!Number.isInteger(currentIndex) || currentIndex < -1 || currentIndex >= queue.length) {
+    throw new Error(
+      `Connect playback current_index ${currentIndex} is outside a ${queue.length}-track queue`,
+    );
+  }
+  if (!Number.isFinite(positionSec) || positionSec < 0) {
+    throw new Error(`Connect playback position_sec must be finite and non-negative, got ${positionSec}`);
+  }
+  Player.setRepeatMode(connectRepeatToPlayer(playback.repeat));
+
+  if (queue.length === 0 || currentIndex === -1) {
+    queueGeneration += 1;
+    resetContextShuffleState();
+    Player.clear();
+    await waitForNativeQueueMutation('Connect queue clear', () => getQueueSnapshot().items.length === 0);
+    persistContextShuffleState();
+    return;
+  }
+
+  const sources = await mediaSources(queue);
+  assertNativeShuffleDisabledForQueueContract();
+  const generation = ++queueGeneration;
+  const contextLabel = playback.queue_context?.trim() || strings.connect.title;
+  const context: QueueContext = {
+    type: 'collection',
+    id: `connect:${generation}`,
+    label: contextLabel,
+  };
+  let contextOrder = 0;
+  const items = queue.map((track, index) => {
+    const isManual = origins[index] === 'manual';
+    if (isManual) {
+      const mediaId = nextMediaId('added', track);
+      return queueMediaItem(track, sources[index], {
+        mediaId,
+        origin: 'manual',
+        radio: false,
+        context,
+        stableId: `manual:${stableIdPart(mediaId)}`,
+      });
+    }
+    const order = contextOrder++;
+    return queueMediaItem(track, sources[index], {
+      mediaId: `queue:${generation}:${index}:${track.id}`,
+      origin: 'context',
+      radio: false,
+      context,
+      originalContextOrder: order,
+      stableId: contextStableId(context, order, track),
+    });
+  });
+  const targetStableIds = items.map(queueStableIdOf);
+  resetContextShuffleState();
+  clearPlayerError();
+  Player.replaceQueue(items, currentIndex, positionSec, playback.is_playing);
+  if (!playback.is_playing) Player.pause();
+  await waitForNativeQueueMutation('Connect playback transfer', () => {
+    const snapshot = getQueueSnapshot();
+    return (
+      snapshot.activeIndex === currentIndex
+      && sameIds(snapshot.items.map(queueStableIdOf), targetStableIds)
+    );
+  });
+  persistContextShuffleState();
+}
+
+export function setRepeatMode(mode: RepeatMode): void {
+  Player.setRepeatMode(mode);
+}
+
+export async function clearLocalQueue(): Promise<void> {
+  queueGeneration += 1;
+  resetContextShuffleState();
+  Player.clear();
+  await waitForNativeQueueMutation('Clear queue', () => getQueueSnapshot().items.length === 0);
+  persistContextShuffleState();
 }
 
 /** Cycle Off → All → One → Off, returning the new mode. */

@@ -11,6 +11,8 @@ import type {
   ArtistDetail,
   ArtistSummary,
   CachedTrackIds,
+  ConnectState,
+  ConnectTicket,
   DeezerPlaylistDetail,
   DeezerId,
   Genre,
@@ -44,6 +46,8 @@ import type {
   MeUpdateRequest,
   PartyCreateRequest,
   PartyPlaybackUpdate,
+  PartySettingsUpdateRequest,
+  PartyTrackInsertMode,
   PlaybackSettingsUpdate,
 } from '../api/endpoints';
 import type { AuthenticatedRequestAuthority } from '../api/client';
@@ -147,14 +151,24 @@ export interface ProfileRepository {
 
 export interface PartyRepository {
   createParty(request?: PartyCreateRequest): Promise<PartyState>;
+  getActiveParty(signal?: AbortSignal): Promise<PartyState | null>;
   getParty(code: string, signal?: AbortSignal): Promise<PartyState>;
   joinParty(code: string): Promise<PartyState>;
-  partyAddTrack(code: string, track: TrackInput): Promise<void>;
+  partyAddTrack(code: string, track: TrackInput, insert?: PartyTrackInsertMode): Promise<void>;
   partyRemoveTrack(code: string, itemId: number): Promise<void>;
   partyReorder(code: string, ids: number[]): Promise<void>;
   partySetCurrent(code: string, index: number): Promise<void>;
   partySetPlayback(code: string, update: PartyPlaybackUpdate): Promise<void>;
+  partyUpdateSettings(code: string, patch: PartySettingsUpdateRequest): Promise<PartyState>;
+  endParty(code: string): Promise<void>;
+  partyKickMember(code: string, memberKey: string): Promise<void>;
+  getPartyCachedTrackIds(code: string, signal?: AbortSignal): Promise<CachedTrackIds>;
   leaveParty(code: string): Promise<void>;
+}
+
+export interface ConnectRepository {
+  createConnectTicket(): Promise<ConnectTicket>;
+  getConnectState(signal?: AbortSignal): Promise<ConnectState>;
 }
 
 export interface AdminRepository {
@@ -194,6 +208,7 @@ export interface MusicRepository
     FollowsRepository,
     ProfileRepository,
     PartyRepository,
+    ConnectRepository,
     AdminRepository,
     PlayerRepository {}
 
@@ -256,6 +271,7 @@ export const musicRepository: MusicRepository = {
   getPlaybackSettings: api.getPlaybackSettings,
   updatePlaybackSettings: api.updatePlaybackSettings,
   createParty: api.createParty,
+  getActiveParty: api.getActiveParty,
   getParty: api.getParty,
   joinParty: api.joinParty,
   partyAddTrack: api.partyAddTrack,
@@ -263,7 +279,13 @@ export const musicRepository: MusicRepository = {
   partyReorder: api.partyReorder,
   partySetCurrent: api.partySetCurrent,
   partySetPlayback: api.partySetPlayback,
+  partyUpdateSettings: api.partyUpdateSettings,
+  endParty: api.endParty,
+  partyKickMember: api.partyKickMember,
+  getPartyCachedTrackIds: api.getPartyCachedTrackIds,
   leaveParty: api.leaveParty,
+  createConnectTicket: api.createConnectTicket,
+  getConnectState: api.getConnectState,
   getAdminUsers: api.getAdminUsers,
   approveAdminUser: api.approveAdminUser,
   deleteAdminUser: api.deleteAdminUser,

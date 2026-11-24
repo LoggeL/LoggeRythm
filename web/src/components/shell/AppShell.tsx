@@ -7,6 +7,9 @@ import TopBar from "@/components/shell/TopBar";
 import MobileNav from "@/components/shell/MobileNav";
 import PlayerBar from "@/components/player/PlayerBar";
 import PlaybackEngine from "@/components/player/PlaybackEngine";
+import ConnectEngine from "@/components/player/ConnectEngine";
+import { DeviceSelectorHost } from "@/components/player/DeviceSelector";
+import PartySessionManager from "@/components/party/PartySessionManager";
 import Toaster from "@/components/Toast";
 import PwaBanner from "@/components/PwaBanner";
 import QueueSidebar from "@/components/QueueSidebar";
@@ -99,10 +102,13 @@ function Workspace({ children }: { children: React.ReactNode }) {
             <QueueSidebar />
           </div>
           <PlaybackEngine />
+          <PartySessionManager />
+          <ConnectEngine />
           <PlayerBar />
           <MobileNav />
           <CommandPalette />
           <AddToPlaylistModal />
+          <DeviceSelectorHost />
           <Toaster />
           <ImportJobWatcher />
         </div>

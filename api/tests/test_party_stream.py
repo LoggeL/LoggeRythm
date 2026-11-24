@@ -24,7 +24,7 @@ CODE = "STREAM"
 STAMP = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
 
 
-def frame(version: int, name: str | None = None) -> party_bus.StateFrame:
+def frame(version: int, name: str | None = None, *, ended: bool = False) -> party_bus.StateFrame:
     return party_bus.StateFrame(
         STAMP + timedelta(microseconds=version),
         {
@@ -32,10 +32,15 @@ def frame(version: int, name: str | None = None) -> party_bus.StateFrame:
             "name": name if name is not None else str(version),
             "host_name": "Host",
             "is_host": False,
+            "guests_can_control": False,
             "current_index": -1,
             "is_playing": False,
             "position_sec": 0.0,
             "playback_updated_at": None,
+            "playback_changed_by": "",
+            "playback_revision": 0,
+            "ended": ended,
+            "server_time": STAMP.isoformat(),
             "members": [],
             "tracks": [],
             "viewer_key": "",
@@ -402,7 +407,7 @@ class PartyCanonicalRevisionTests(unittest.TestCase):
                 party.set_playback(
                     CODE,
                     party.PlaybackUpdate(is_playing=False, position_sec=7),
-                    self.host,
+                    PartyActor(user=self.host),
                     self.db,
                 )
                 playback_revision = self.revision()

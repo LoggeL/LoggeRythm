@@ -181,6 +181,7 @@ export default function PlaybackEngine() {
   const duration = usePlayerStore((s) => s.duration);
   const seekTo = usePlayerStore((s) => s.seekTo);
   const repeat = usePlayerStore((s) => s.repeat);
+  const suppressLocalAudio = usePlayerStore((s) => s.suppressLocalAudio);
 
   const next = usePlayerStore((s) => s.next);
   const _setCurrentTime = usePlayerStore((s) => s._setCurrentTime);
@@ -289,6 +290,7 @@ export default function PlaybackEngine() {
   // browser request cannot stop the backend worker; the cached file stays useful.
   useEffect(() => {
     if (
+      suppressLocalAudio ||
       !preloadKey ||
       readyTrackId !== currentTrackId ||
       !nextTrackId ||
@@ -318,14 +320,29 @@ export default function PlaybackEngine() {
     return () => {
       relevant = false;
     };
-  }, [currentTrackId, nextTrackId, nextTrackTitle, preloadKey, readyTrackId]);
+  }, [suppressLocalAudio, currentTrackId, nextTrackId, nextTrackTitle, preloadKey, readyTrackId]);
 
 
   // Load the current track into the active deck — unless that deck is already
-  // playing it, which is the case right after a crossfade handoff.
+  // playing it, which is the case right after a crossfade handoff. When local
+  // audio is suppressed (controlling a remote device or Jam control-only mode),
+  // release both decks immediately so no audio buffers or plays locally.
   useEffect(() => {
     const el = (activeIdx === 0 ? deckA : deckB).current;
+    const idle = (activeIdx === 0 ? deckB : deckA).current;
     if (!el) return;
+    if (suppressLocalAudio) {
+      cancelCrossfade();
+      clearErrorRetry();
+      clearErrorSkip();
+      pendingSeekCancel.current?.();
+      pendingSeekCancel.current = null;
+      pendingRetrySeekCancel.current?.();
+      pendingRetrySeekCancel.current = null;
+      if (el.dataset.trackId || el.hasAttribute("src")) releaseMedia(el);
+      if (idle && (idle.dataset.trackId || idle.hasAttribute("src"))) releaseMedia(idle);
+      return;
+    }
     const id = trackId ? String(trackId) : "";
     if (el.dataset.trackId !== id) {
       // Changing the active track invalidates every pending operation tied to
@@ -350,7 +367,6 @@ export default function PlaybackEngine() {
       }
     }
     // No inactive deck should retain a previous download outside a handoff.
-    const idle = (activeIdx === 0 ? deckB : deckA).current;
     if (
       idle &&
       !crossfadeRun.current &&
@@ -358,12 +374,17 @@ export default function PlaybackEngine() {
     ) {
       releaseMedia(idle);
     }
-  }, [activeIdx, trackId, trackLoudnessGain, cancelCrossfade]);
+  }, [suppressLocalAudio, activeIdx, trackId, trackLoudnessGain, cancelCrossfade, clearErrorRetry, clearErrorSkip]);
 
   // Reflect play/pause on the active deck.
   useEffect(() => {
     const el = (activeIdx === 0 ? deckA : deckB).current;
     if (!el) return;
+    if (suppressLocalAudio) {
+      cancelCrossfade();
+      el.pause();
+      return;
+    }
     if (isPlaying) {
       // Lazily wire the analyser on play (a user gesture, so the AudioContext
       // may start) — powers the visualizers.
@@ -378,6 +399,7 @@ export default function PlaybackEngine() {
       el.pause();
     }
   }, [
+    suppressLocalAudio,
     isPlaying,
     trackId,
     activeIdx,
@@ -402,6 +424,7 @@ export default function PlaybackEngine() {
       ? settings.crossfade_duration_sec
       : 0;
     const eligible =
+      !suppressLocalAudio &&
       seconds > 0 &&
       !!track &&
       isPlaying &&
@@ -550,6 +573,7 @@ export default function PlaybackEngine() {
     repeat,
     settings?.crossfade_duration_sec,
     settings?.crossfade_enabled,
+    suppressLocalAudio,
     track,
     trackLoudnessGain,
     activeIdx,
@@ -562,6 +586,10 @@ export default function PlaybackEngine() {
   // metadata is ready when the deck is still loading.
   useEffect(() => {
     if (seekTo == null) return;
+    if (suppressLocalAudio) {
+      _clearSeek();
+      return;
+    }
     // Seeking during a handoff keeps one authoritative playhead.
     cancelCrossfade();
     pendingSeekCancel.current?.();
@@ -618,7 +646,7 @@ export default function PlaybackEngine() {
       }
     }
     _clearSeek();
-  }, [seekTo, _clearSeek, activeIdx, cancelCrossfade, prepareFailedDeckReload, reportPlayFailure]);
+  }, [seekTo, suppressLocalAudio, _clearSeek, activeIdx, cancelCrossfade, prepareFailedDeckReload, reportPlayFailure]);
 
 
   // A new track (manual skip, queue advance) invalidates any pending

@@ -7,6 +7,7 @@ import type { MeUpdateRequest } from '../api/endpoints';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
+import ConnectSettingsPanel from '../components/profile/ConnectSettingsPanel';
 import LanguageSelector from '../components/profile/LanguageSelector';
 import { ProfileGroup } from '../components/profile/ProfileGroup';
 import { useAndroidUpdatePlacement } from '../components/profile/useAndroidUpdatePlacement';
@@ -150,6 +151,7 @@ export default function ProfileScreen() {
     />
   );
   const sleepPanel = <SleepTimerPanel />;
+  const connectPanel = <ConnectSettingsPanel />;
   const languagePanel = <LanguageSelector />;
   const editForm = (
     <ProfileEditForm
@@ -244,6 +246,7 @@ export default function ProfileScreen() {
               <View style={styles.tvColumn}>
                 {identityCard}
                 {sleepPanel}
+                {connectPanel}
                 {languagePanel}
                 {dangerGroup}
               </View>
@@ -288,6 +291,7 @@ export default function ProfileScreen() {
         {identityCard}
         {statsPanel}
         {sleepPanel}
+        {connectPanel}
         {languagePanel}
         {editForm}
         {updatePlacement === 'bottom' ? <AndroidUpdateCard /> : null}

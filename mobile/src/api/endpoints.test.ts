@@ -7,12 +7,15 @@ import {
   approveAdminUser,
   cleanupAdminStorage,
   createAdminInvite,
+  createConnectTicket,
   createParty,
   createPlaylist,
   deleteAdminUser,
   deleteImportJob,
   deletePlaylist,
   DISCOVERY_TIMEOUT_MS,
+  endParty,
+  getActiveParty,
   getAdminInvites,
   getAdminStatus,
   getAdminStorage,
@@ -20,6 +23,7 @@ import {
   getAlbum,
   getBecauseYouListened,
   getCachedTrackIds,
+  getConnectState,
   getDeezerPlaylist,
   getHomeChartCollections,
   getHomeMixes,
@@ -27,6 +31,7 @@ import {
   getImportJobs,
   getLyrics,
   getMood,
+  getPartyCachedTrackIds,
   getPlaylist,
   getPublicPlaylists,
   getRadio,
@@ -40,10 +45,12 @@ import {
   likesContains,
   logout,
   partyAddTrack,
+  partyKickMember,
   partyRemoveTrack,
   partyReorder,
   partySetCurrent,
   partySetPlayback,
+  partyUpdateSettings,
   preloadTrack,
   recordPlay,
   register,
@@ -463,6 +470,48 @@ describe('web-parity endpoint contracts', () => {
     });
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(8, '/api/party/AB%2FC%3F/leave', {
       method: 'POST',
+    });
+  });
+
+  it('constructs Jam management and Connect REST requests with exact paths and queries', () => {
+    getActiveParty();
+    partyAddTrack('AB/C?', { id: '12' }, 'next');
+    partyUpdateSettings('AB/C?', { name: 'Friday Jam', guests_can_control: true });
+    endParty('AB/C?');
+    partyKickMember('AB/C?', 'u:9/test');
+    getPartyCachedTrackIds('AB/C?');
+    createConnectTicket();
+    getConnectState();
+
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(1, '/api/party/active', {
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(2, '/api/party/AB%2FC%3F/tracks?insert=next', {
+      method: 'POST',
+      body: { id: '12' },
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(3, '/api/party/AB%2FC%3F/settings', {
+      method: 'PATCH',
+      body: { name: 'Friday Jam', guests_can_control: true },
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(4, '/api/party/AB%2FC%3F', {
+      method: 'DELETE',
+      successStatuses: [204],
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(5, '/api/party/AB%2FC%3F/members/u%3A9%2Ftest', {
+      method: 'DELETE',
+      successStatuses: [204],
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(6, '/api/party/AB%2FC%3F/cached-tracks', {
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(7, '/api/connect/ticket', {
+      method: 'POST',
+      decode: expect.any(Function),
+    });
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(8, '/api/connect/state', {
+      decode: expect.any(Function),
     });
   });
 

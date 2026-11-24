@@ -854,6 +854,98 @@ export interface StringCatalog {
     openParty: string;
     queueLocked: string;
     addedToParty: (title: string) => string;
+    endJam: string;
+    endingJam: string;
+    endConfirmTitle: string;
+    endConfirmBody: string;
+    endConfirm: string;
+    endFailed: (detail: string) => string;
+    endedNotice: string;
+    kickedNotice: string;
+    renameLabel: string;
+    renamePlaceholder: string;
+    renameSave: string;
+    renameFailed: (detail: string) => string;
+    guestsCanControlLabel: string;
+    guestsCanControlHint: string;
+    settingsFailed: (detail: string) => string;
+    sharedControlHint: string;
+    listenOnDevice: string;
+    controlOnly: string;
+    controlOnlyHint: string;
+    kickMember: (name: string) => string;
+    kickConfirmTitle: string;
+    kickConfirmBody: (name: string) => string;
+    kickConfirm: string;
+    kickFailed: (name: string, detail: string) => string;
+    playNext: (title: string) => string;
+    playNextAdded: (title: string) => string;
+    playNextFailed: (title: string, detail: string) => string;
+    upNextTitle: string;
+    playedEarlierTitle: string;
+    joinByCodeTitle: string;
+    joinCodeLabel: string;
+    joinCodePlaceholder: string;
+    joinSubmit: string;
+    joinInvalidCode: string;
+    inJamStrip: (name: string, count: number) => string;
+    controlledByHost: (host: string) => string;
+    playbackControlFailed: (detail: string) => string;
+    restoreActiveFailed: (detail: string) => string;
+  };
+  connect: {
+    title: string;
+    connectToDevice: string;
+    thisDevice: string;
+    activeDevice: string;
+    otherDevices: string;
+    listeningOn: (deviceName: string) => string;
+    playHere: string;
+    transferring: string;
+    transferFailed: (detail: string) => string;
+    noOtherDevices: string;
+    deviceNameLabel: string;
+    deviceNamePlaceholder: string;
+    deviceNameSave: string;
+    deviceNameSaved: string;
+    deviceNameEmpty: string;
+    deviceNameFailed: (detail: string) => string;
+    syncEnabledLabel: string;
+    syncEnabledHint: string;
+    syncDisabledNotice: string;
+    enableSync: string;
+    connecting: string;
+    connected: (count: number) => string;
+    reconnecting: string;
+    disconnected: string;
+    connectionFailed: (detail: string) => string;
+    retry: string;
+    volumeLabel: string;
+    mute: string;
+    unmute: string;
+    volumeUnsupported: string;
+    commandFailed: (detail: string) => string;
+    remoteQueueSubtitle: (deviceName: string) => string;
+    leaveJamToSwitchTitle: string;
+    leaveJamToSwitchBody: (deviceName: string) => string;
+    leaveJamAndSwitch: string;
+    jamSectionTitle: string;
+    startJam: string;
+    joinJam: string;
+    openJam: string;
+    devicesButton: (deviceName: string | null) => string;
+    closeSheet: string;
+    settingsTitle: string;
+    settingsDescription: string;
+    deviceTypes: {
+      web: string;
+      mobile: string;
+      tablet: string;
+      desktop: string;
+      tv: string;
+      speaker: string;
+      other: string;
+    };
   };
   voice: {
     playFromSearchFailed: string;
@@ -1758,13 +1850,108 @@ export const de: StringCatalog = {
     membersTitle: 'Dabei',
     hostBadge: 'Host',
     guestBadge: 'Gast',
-    startParty: 'Party starten',
-    startingParty: 'Party wird gestartet…',
-    startPartyFailed: (detail) => `Die Party konnte nicht gestartet werden: ${detail}`,
-    activeTitle: (name) => (name === null ? 'Party läuft' : `Party „${name}“ läuft`),
-    openParty: 'Zur Party',
-    queueLocked: 'Diese Warteschlange gehört zur Party. Bearbeite sie in der Party.',
-    addedToParty: (title) => `„${title}“ wurde zur Party hinzugefügt.`,
+    startParty: 'Jam starten',
+    startingParty: 'Jam wird gestartet…',
+    startPartyFailed: (detail) => `Die Jam konnte nicht gestartet werden: ${detail}`,
+    activeTitle: (name) => (name === null ? 'Jam läuft' : `Jam „${name}“ läuft`),
+    openParty: 'Zur Jam',
+    queueLocked: 'Diese Warteschlange gehört zur Jam. Bearbeite sie in der Jam.',
+    addedToParty: (title) => `„${title}“ wurde zur Jam hinzugefügt.`,
+    endJam: 'Jam beenden',
+    endingJam: 'Jam wird beendet…',
+    endConfirmTitle: 'Jam für alle beenden?',
+    endConfirmBody: 'Die Jam wird sofort beendet und alle Teilnehmenden werden getrennt.',
+    endConfirm: 'Beenden',
+    endFailed: (detail) => `Die Jam konnte nicht beendet werden: ${detail}`,
+    endedNotice: 'Der Host hat diese Jam beendet.',
+    kickedNotice: 'Du wurdest aus dieser Jam entfernt.',
+    renameLabel: 'Jam-Name',
+    renamePlaceholder: 'Name der Jam',
+    renameSave: 'Speichern',
+    renameFailed: (detail) => `Der Jam-Name konnte nicht geändert werden: ${detail}`,
+    guestsCanControlLabel: 'Andere dürfen Wiedergabe steuern',
+    guestsCanControlHint: 'Teilnehmende können pausieren, überspringen und die Warteschlange sortieren.',
+    settingsFailed: (detail) => `Jam-Einstellungen konnten nicht gespeichert werden: ${detail}`,
+    sharedControlHint: 'Alle Teilnehmenden können Wiedergabe und Warteschlange steuern.',
+    listenOnDevice: 'Auf diesem Gerät mithören',
+    controlOnly: 'Nur steuern (ohne Audio)',
+    controlOnlyHint: 'Audio bleibt hier stumm – ideal, wenn du im selben Raum die Anlage steuerst.',
+    kickMember: (name) => `${name} aus der Jam entfernen`,
+    kickConfirmTitle: 'Teilnehmende entfernen?',
+    kickConfirmBody: (name) => `${name} wird aus dieser Jam getrennt.`,
+    kickConfirm: 'Entfernen',
+    kickFailed: (name, detail) => `${name} konnte nicht entfernt werden: ${detail}`,
+    playNext: (title) => `„${title}“ als Nächstes in der Jam spielen`,
+    playNextAdded: (title) => `„${title}“ läuft als Nächstes in der Jam.`,
+    playNextFailed: (title, detail) => `„${title}“ konnte nicht als Nächstes eingereiht werden: ${detail}`,
+    upNextTitle: 'Als Nächstes in der Jam',
+    playedEarlierTitle: 'Bereits gespielt',
+    joinByCodeTitle: 'Einer Jam beitreten',
+    joinCodeLabel: '6-stelliger Jam-Code',
+    joinCodePlaceholder: 'z. B. ABC123',
+    joinSubmit: 'Beitreten',
+    joinInvalidCode: 'Bitte gib einen gültigen 6-stelligen Code ein.',
+    inJamStrip: (name, count) =>
+      `${name} · ${count === 1 ? '1 Person' : `${count} Personen`}`,
+    controlledByHost: (host) => `Wiedergabe wird von ${host} gesteuert`,
+    playbackControlFailed: (detail) => `Wiedergabe-Befehl fehlgeschlagen: ${detail}`,
+    restoreActiveFailed: (detail) => `Aktive Jam konnte nicht wiederhergestellt werden: ${detail}`,
+  },
+  connect: {
+    title: 'Geräte',
+    connectToDevice: 'Mit einem Gerät verbinden',
+    thisDevice: 'Dieses Gerät',
+    activeDevice: 'Aktives Gerät',
+    otherDevices: 'Gerät auswählen',
+    listeningOn: (deviceName) => `Wiedergabe auf ${deviceName}`,
+    playHere: 'Hier abspielen',
+    transferring: 'Wird übertragen…',
+    transferFailed: (detail) => `Wiedergabe konnte nicht übertragen werden: ${detail}`,
+    noOtherDevices: 'Keine weiteren Geräte verbunden. Öffne LoggeRythm auf einem anderen Gerät mit demselben Konto.',
+    deviceNameLabel: 'Gerätename',
+    deviceNamePlaceholder: 'Name dieses Geräts',
+    deviceNameSave: 'Speichern',
+    deviceNameSaved: 'Gerätename gespeichert.',
+    deviceNameEmpty: 'Bitte gib einen Gerätenamen ein.',
+    deviceNameFailed: (detail) => `Gerätename konnte nicht aktualisiert werden: ${detail}`,
+    syncEnabledLabel: 'Geräte-Steuerung (Connect)',
+    syncEnabledHint: 'Verbindet dieses Gerät per WebSocket, um die Wiedergabe geräteübergreifend zu steuern.',
+    syncDisabledNotice: 'Die Geräte-Steuerung ist deaktiviert.',
+    enableSync: 'Aktivieren',
+    connecting: 'Verbinde…',
+    connected: (count) => (count === 1 ? '1 Gerät verbunden' : `${count} Geräte verbunden`),
+    reconnecting: 'Verbindung wird wiederhergestellt…',
+    disconnected: 'Nicht verbunden',
+    connectionFailed: (detail) => `Geräte-Verbindung fehlgeschlagen: ${detail}`,
+    retry: 'Erneut versuchen',
+    volumeLabel: 'Lautstärke',
+    mute: 'Stummschalten',
+    unmute: 'Stummschaltung aufheben',
+    volumeUnsupported: 'Die Lautstärke dieses Geräts kann nicht aus der Ferne geändert werden.',
+    commandFailed: (detail) => `Geräte-Befehl fehlgeschlagen: ${detail}`,
+    remoteQueueSubtitle: (deviceName) => `Warteschlange auf ${deviceName}`,
+    leaveJamToSwitchTitle: 'Jam verlassen?',
+    leaveJamToSwitchBody: (deviceName) =>
+      `Möchtest du die aktive Jam verlassen und die Wiedergabe auf „${deviceName}“ übertragen?`,
+    leaveJamAndSwitch: 'Jam verlassen & wechseln',
+    jamSectionTitle: 'Gemeinsam hören (Jam)',
+    startJam: 'Jam starten',
+    joinJam: 'Mit Code beitreten',
+    openJam: 'Aktive Jam öffnen',
+    devicesButton: (deviceName) =>
+      deviceName === null ? 'Geräte auswählen' : `Geräte · Aktiv: ${deviceName}`,
+    closeSheet: 'Geräte-Auswahl schließen',
+    settingsTitle: 'Geräte & Connect',
+    settingsDescription: 'Steuere alle verbundenen Geräte deines Kontos in Echtzeit.',
+    deviceTypes: {
+      web: 'Webplayer',
+      mobile: 'Smartphone',
+      tablet: 'Tablet',
+      desktop: 'Computer',
+      tv: 'TV',
+      speaker: 'Lautsprecher',
+      other: 'Gerät',
+    },
   },
   voice: {
     playFromSearchFailed: 'Sprachsuche konnte nicht abgespielt werden',
@@ -2499,13 +2686,108 @@ export const en: StringCatalog = {
     membersTitle: 'Listening',
     hostBadge: 'Host',
     guestBadge: 'Guest',
-    startParty: 'Start party',
-    startingParty: 'Starting party…',
-    startPartyFailed: (detail) => `Starting the party failed: ${detail}`,
-    activeTitle: (name) => (name === null ? 'Party is on' : `Party “${name}” is on`),
-    openParty: 'Open party',
-    queueLocked: 'This queue belongs to the party. Edit it in the party.',
-    addedToParty: (title) => `“${title}” was added to the party.`,
+    startParty: 'Start Jam',
+    startingParty: 'Starting Jam…',
+    startPartyFailed: (detail) => `Starting the Jam failed: ${detail}`,
+    activeTitle: (name) => (name === null ? 'Jam is on' : `Jam “${name}” is on`),
+    openParty: 'Open Jam',
+    queueLocked: 'This queue belongs to the Jam. Edit it inside the Jam.',
+    addedToParty: (title) => `“${title}” was added to the Jam.`,
+    endJam: 'End Jam',
+    endingJam: 'Ending Jam…',
+    endConfirmTitle: 'End Jam for everyone?',
+    endConfirmBody: 'This will end the Jam immediately and disconnect all participants.',
+    endConfirm: 'End Jam',
+    endFailed: (detail) => `Ending the Jam failed: ${detail}`,
+    endedNotice: 'The host ended this Jam.',
+    kickedNotice: 'You were removed from this Jam.',
+    renameLabel: 'Jam name',
+    renamePlaceholder: 'Name this Jam',
+    renameSave: 'Save',
+    renameFailed: (detail) => `Renaming the Jam failed: ${detail}`,
+    guestsCanControlLabel: 'Let others control playback',
+    guestsCanControlHint: 'Participants can play, pause, skip, and reorder the queue.',
+    settingsFailed: (detail) => `Saving Jam settings failed: ${detail}`,
+    sharedControlHint: 'Everyone in this Jam can control playback and the queue.',
+    listenOnDevice: 'Listen on this device',
+    controlOnly: 'Control only (muted here)',
+    controlOnlyHint: 'Audio stays paused here so you can control playback in the same room without echo.',
+    kickMember: (name) => `Remove ${name} from the Jam`,
+    kickConfirmTitle: 'Remove participant?',
+    kickConfirmBody: (name) => `${name} will be disconnected from this Jam.`,
+    kickConfirm: 'Remove',
+    kickFailed: (name, detail) => `Removing ${name} failed: ${detail}`,
+    playNext: (title) => `Play “${title}” next in the Jam`,
+    playNextAdded: (title) => `“${title}” will play next in the Jam.`,
+    playNextFailed: (title, detail) => `Queueing “${title}” next failed: ${detail}`,
+    upNextTitle: 'Next in Jam',
+    playedEarlierTitle: 'Played earlier',
+    joinByCodeTitle: 'Join a Jam',
+    joinCodeLabel: '6-character Jam code',
+    joinCodePlaceholder: 'e.g. ABC123',
+    joinSubmit: 'Join',
+    joinInvalidCode: 'Enter a valid 6-character code.',
+    inJamStrip: (name, count) =>
+      `${name} · ${count === 1 ? '1 listening' : `${count} listening`}`,
+    controlledByHost: (host) => `Playback controlled by ${host}`,
+    playbackControlFailed: (detail) => `Playback control failed: ${detail}`,
+    restoreActiveFailed: (detail) => `Restoring active Jam failed: ${detail}`,
+  },
+  connect: {
+    title: 'Devices',
+    connectToDevice: 'Connect to a device',
+    thisDevice: 'This device',
+    activeDevice: 'Current device',
+    otherDevices: 'Select a device',
+    listeningOn: (deviceName) => `Listening on ${deviceName}`,
+    playHere: 'Play here',
+    transferring: 'Transferring…',
+    transferFailed: (detail) => `Transferring playback failed: ${detail}`,
+    noOtherDevices: 'No other devices connected. Open LoggeRythm on another device signed into the same account.',
+    deviceNameLabel: 'Device name',
+    deviceNamePlaceholder: 'Name this device',
+    deviceNameSave: 'Save',
+    deviceNameSaved: 'Device name saved.',
+    deviceNameEmpty: 'Enter a device name.',
+    deviceNameFailed: (detail) => `Updating device name failed: ${detail}`,
+    syncEnabledLabel: 'Multi-device control (Connect)',
+    syncEnabledHint: 'Connect this device over WebSocket to control playback across all your devices.',
+    syncDisabledNotice: 'Multi-device control is turned off.',
+    enableSync: 'Turn on',
+    connecting: 'Connecting…',
+    connected: (count) => (count === 1 ? '1 device connected' : `${count} devices connected`),
+    reconnecting: 'Reconnecting…',
+    disconnected: 'Disconnected',
+    connectionFailed: (detail) => `Device connection failed: ${detail}`,
+    retry: 'Retry',
+    volumeLabel: 'Volume',
+    mute: 'Mute',
+    unmute: 'Unmute',
+    volumeUnsupported: 'Remote volume control is not supported on this device.',
+    commandFailed: (detail) => `Device command failed: ${detail}`,
+    remoteQueueSubtitle: (deviceName) => `Queue on ${deviceName}`,
+    leaveJamToSwitchTitle: 'Leave Jam?',
+    leaveJamToSwitchBody: (deviceName) =>
+      `Leave the active Jam and transfer playback to “${deviceName}”?`,
+    leaveJamAndSwitch: 'Leave Jam & switch',
+    jamSectionTitle: 'Listening together (Jam)',
+    startJam: 'Start a Jam',
+    joinJam: 'Join with code',
+    openJam: 'Open active Jam',
+    devicesButton: (deviceName) =>
+      deviceName === null ? 'Select device' : `Devices · Active: ${deviceName}`,
+    closeSheet: 'Close device selector',
+    settingsTitle: 'Devices & Connect',
+    settingsDescription: 'Control playback across every connected device on your account.',
+    deviceTypes: {
+      web: 'Web player',
+      mobile: 'Phone',
+      tablet: 'Tablet',
+      desktop: 'Computer',
+      tv: 'TV',
+      speaker: 'Speaker',
+      other: 'Device',
+    },
   },
   voice: {
     playFromSearchFailed: 'Voice search playback failed',

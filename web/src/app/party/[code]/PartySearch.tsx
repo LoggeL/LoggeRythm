@@ -1,21 +1,31 @@
 import SearchField from "@/components/SearchField";
 import EmptyState from "@/components/ui/EmptyState";
-import { PlusIcon, SearchIcon } from "@/components/icons";
+import { NextIcon, PlusIcon, SearchIcon } from "@/components/icons";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import type { Track } from "@/types";
 import PartyTrackRow, { PartyTrackRowsSkeleton } from "./PartyTrackRow";
 import type { PartySearch as PartySearchState } from "./usePartySearch";
 
-/** Search the catalogue and add hits to the shared queue. */
+/** Search the catalogue and add hits to the shared Jam queue. */
 export default function PartySearch({
   search,
   disabled,
+  isGuest = false,
+  guestCachedIds,
+  cacheError = null,
+  onRetryCache,
   onAdd,
+  onAddNext,
 }: {
   search: PartySearchState;
   /** Blocks adding while another queue change is still being saved. */
   disabled: boolean;
+  isGuest?: boolean;
+  guestCachedIds?: ReadonlySet<string>;
+  cacheError?: string | null;
+  onRetryCache?: () => void | Promise<void>;
   onAdd: (track: Track) => void | Promise<void>;
+  onAddNext?: (track: Track) => void | Promise<void>;
 }) {
   const { query, results, searching, searchedTerm, error } = search;
   return (
@@ -24,14 +34,14 @@ export default function PartySearch({
         <h2 id="party-search-title" className="font-display text-[1.625rem] font-bold leading-tight tracking-tight">
           Songs hinzufügen
         </h2>
-        <p className="text-sm text-muted">Jeder in der Party kann Titel zur gemeinsamen Warteschlange beisteuern.</p>
+        <p className="text-sm text-muted">Jeder in der Jam kann Titel zur gemeinsamen Warteschlange beisteuern.</p>
       </div>
       <SearchField
         value={query}
         onValueChange={search.change}
         onSubmit={search.run}
         onClear={search.clear}
-        label="Nach Titeln für die Party suchen"
+        label="Nach Titeln für die Jam suchen"
         placeholder="Nach Titeln suchen…"
         className="min-h-14! pr-2!"
         inputProps={{ "aria-busy": searching, enterKeyHint: "search" }}
@@ -67,17 +77,42 @@ export default function PartySearch({
             </p>
             <ul aria-label="Suchergebnisse" className="-mx-2 flex flex-col gap-0.5 sm:-mx-3">
               {results.map((track) => (
-                <PartyTrackRow key={track.id} cover={track.cover} title={track.title} subtitle={trackArtistLabel(track)}>
-                  <button
-                    type="button"
-                    onClick={() => onAdd(track)}
-                    disabled={disabled}
-                    aria-label={`"${track.title}" zur Party hinzufügen`}
-                    className="action-secondary min-h-11 min-w-11 shrink-0 px-3 sm:min-h-9 sm:px-4 sm:text-xs"
-                  >
-                    <PlusIcon width={16} height={16} aria-hidden="true" />
-                    <span className="hidden sm:inline">Hinzufügen</span>
-                  </button>
+                <PartyTrackRow
+                  key={track.id}
+                  trackId={track.id}
+                  cover={track.cover}
+                  title={track.title}
+                  subtitle={trackArtistLabel(track)}
+                  serverStored={guestCachedIds?.has(String(track.id)) ?? false}
+                  isGuest={isGuest}
+                  cacheError={cacheError}
+                  onRetryCache={onRetryCache}
+                >
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {onAddNext && (
+                      <button
+                        type="button"
+                        onClick={() => onAddNext(track)}
+                        disabled={disabled}
+                        title="Als Nächstes spielen"
+                        aria-label={`"${track.title}" als Nächstes in die Jam einreihen`}
+                        className="action-secondary min-h-11 min-w-11 shrink-0 px-2.5 sm:min-h-9 sm:px-3 sm:text-xs"
+                      >
+                        <NextIcon width={15} height={15} aria-hidden="true" />
+                        <span className="hidden md:inline">Als Nächstes</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onAdd(track)}
+                      disabled={disabled}
+                      aria-label={`"${track.title}" zur Party hinzufügen`}
+                      className="action-secondary min-h-11 min-w-11 shrink-0 px-3 sm:min-h-9 sm:px-4 sm:text-xs"
+                    >
+                      <PlusIcon width={16} height={16} aria-hidden="true" />
+                      <span className="hidden sm:inline">Hinzufügen</span>
+                    </button>
+                  </div>
                 </PartyTrackRow>
               ))}
             </ul>

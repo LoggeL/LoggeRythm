@@ -9,10 +9,15 @@ import {
   decodeAlbumSummaries,
   decodeArtistDetail,
   decodeCachedTrackIds,
+  decodeConnectDevice,
+  decodeConnectServerFrame,
+  decodeConnectState,
+  decodeConnectTicket,
   decodeDeezerPlaylistDetail,
   decodeGenreDetail,
   decodeHomeShelves,
   decodeLyricsResponse,
+  decodeNullablePartyState,
   decodePartyState,
   decodePlaybackSettings,
   decodePlaylist,
@@ -335,7 +340,7 @@ describe('API response decoders', () => {
     );
   });
 
-  it('decodes the complete REST party state including host playback fields', () => {
+  it('decodes the complete REST party state including host playback and Jam fields', () => {
     const state = decodePartyState({
       code: 'ABC123',
       name: 'Party',
@@ -345,7 +350,12 @@ describe('API response decoders', () => {
       is_playing: false,
       position_sec: 0,
       playback_updated_at: null,
-      members: [{ name: 'Host', avatar_url: null, is_guest: false }],
+      server_time: '2026-11-24T00:00:00Z',
+      guests_can_control: true,
+      playback_changed_by: 'u:1',
+      playback_revision: 3,
+      ended: false,
+      members: [{ key: 'u:1', name: 'Host', avatar_url: null, is_guest: false, is_host: true }],
       viewer_key: 'u:1',
       viewer_name: 'Host',
       viewer_is_guest: false,
@@ -363,19 +373,148 @@ describe('API response decoders', () => {
           duration_sec: 180,
           added_by: 'Host',
           added_by_member: 'u:1',
+          added_by_avatar_url: null,
+          is_stored: false,
           load_state: 'failed',
           load_error: 'Deezer: 404',
         },
       ],
     });
-    expect(state).toMatchObject({ code: 'ABC123', current_index: -1, is_host: true, viewer_key: 'u:1' });
-    expect(state.tracks[0]).toMatchObject({ load_state: 'failed', load_error: 'Deezer: 404' });
+    expect(state).toMatchObject({
+      code: 'ABC123',
+      current_index: -1,
+      is_host: true,
+      viewer_key: 'u:1',
+      guests_can_control: true,
+      playback_revision: 3,
+      ended: false,
+    });
+    expect(state.tracks[0]).toMatchObject({
+      is_stored: false,
+      load_state: 'failed',
+      load_error: 'Deezer: 404',
+    });
+    expect(decodeNullablePartyState(null)).toBeNull();
+    expect(decodeNullablePartyState(state)?.code).toBe('ABC123');
     expect(() => decodePartyState({ ...state, position_sec: -1 })).toThrow(/position_sec/);
     expect(() => decodePartyState({
       ...state,
       tracks: [{ ...state.tracks[0], load_state: 'cached' }],
     })).toThrow(/load_state/);
     expect(() => decodePartyState({ ...state, viewer_key: undefined })).toThrow(/viewer_key/);
+    expect(() => decodePartyState({ ...state, playback_revision: -1 })).toThrow(/playback_revision/);
+  });
+
+  it('strictly decodes Connect devices, state, tickets, and WebSocket server frames', () => {
+    const device = {
+      device_id: 'dev-1',
+      name: 'Pixel 9',
+      device_type: 'mobile',
+      is_active: true,
+      volume: 1,
+      muted: false,
+      connected_at: '2026-11-24T00:00:00Z',
+      last_seen_at: '2026-11-24T00:00:10Z',
+      capabilities: { can_play_audio: true, can_control_volume: false },
+      party_code: null,
+    };
+    const playback = {
+      queue: [track],
+      origins: ['context'],
+      queue_context: 'Mix',
+      current_index: 0,
+      is_playing: true,
+      position_sec: 12.5,
+      duration_sec: 180,
+      shuffle: false,
+      repeat: 'off',
+      volume: 0.8,
+      muted: false,
+      updated_at: '2026-11-24T00:00:10Z',
+    };
+    const state = {
+      revision: 4,
+      active_device_id: 'dev-1',
+      devices: [device],
+      playback,
+      server_time: '2026-11-24T00:00:10Z',
+    };
+
+    expect(decodeConnectDevice(device)).toEqual(device);
+    expect(decodeConnectState(state)).toEqual(state);
+    expect(decodeConnectTicket({ ticket: 'abc', expires_in_sec: 60 })).toEqual({
+      ticket: 'abc',
+      expires_in_sec: 60,
+    });
+    expect(
+      decodeConnectServerFrame({
+        type: 'welcome',
+        self_device_id: 'dev-1',
+        heartbeat_interval_sec: 15,
+        state,
+      }),
+    ).toMatchObject({
+      type: 'welcome',
+      self_device_id: 'dev-1',
+      heartbeat_interval_sec: 15,
+    });
+    expect(decodeConnectServerFrame({ type: 'pong', ts: '2026-11-24T00:00:10Z' })).toEqual({
+      type: 'pong',
+      ts: '2026-11-24T00:00:10Z',
+    });
+    expect(
+      decodeConnectServerFrame({
+        type: 'deactivated',
+        new_active_device_id: 'dev-2',
+        reason: 'transferred',
+      }),
+    ).toEqual({
+      type: 'deactivated',
+      new_active_device_id: 'dev-2',
+      reason: 'transferred',
+    });
+    expect(
+      decodeConnectServerFrame({
+        type: 'command',
+        command_id: 'cmd-1',
+        request_id: 'req-1',
+        from_device_id: 'dev-2',
+        action: 'seek',
+        payload: { position_sec: 42 },
+      }),
+    ).toMatchObject({ type: 'command', command_id: 'cmd-1', action: 'seek' });
+    expect(
+      decodeConnectServerFrame({
+        type: 'command_result',
+        command_id: 'cmd-1',
+        request_id: 'req-1',
+        ok: false,
+        error: 'Volume unsupported',
+      }),
+    ).toEqual({
+      type: 'command_result',
+      command_id: 'cmd-1',
+      request_id: 'req-1',
+      ok: false,
+      error: 'Volume unsupported',
+    });
+    expect(
+      decodeConnectServerFrame({
+        type: 'error',
+        code: 'device_unreachable',
+        detail: 'Gone',
+        request_id: null,
+      }),
+    ).toEqual({
+      type: 'error',
+      code: 'device_unreachable',
+      detail: 'Gone',
+      request_id: null,
+    });
+
+    expect(() => decodeConnectDevice({ ...device, device_type: 'fridge' })).toThrow(/device_type/);
+    expect(() => decodeConnectState({ ...state, playback: { ...playback, volume: 2 } })).toThrow(/volume/);
+    expect(() => decodeConnectServerFrame({ type: 'mystery' })).toThrow(/unknown value/);
   });
 
   it('decodes explicit admin users, storage, status, invites, and cleanup contracts', () => {

@@ -29,21 +29,23 @@ import {
   QueueSnapshotNoticeView,
 } from '../components/player/QueueNotices';
 import { MemoQueueRow } from '../components/player/QueueRow';
+import { showDevicePicker } from '../components/connect/devicePicker';
 import { PartyNotice } from '../components/party/PartyParts';
+import { useActiveConnectSnapshot } from '../connect/activeConnect';
+import {
+  effectiveClearUpcoming,
+  effectiveMoveQueueItem,
+  effectiveRemoveQueueItem,
+  effectiveSkipToIndex,
+  effectiveToggleShuffle,
+} from '../connect/effectivePlayback';
 import { partyErrorDetail } from '../party/partyErrors';
 import { startPartyFromQueue, usePartySession } from '../party/partyRuntime';
 import { useTrackPresentationResolver } from '../components/player/TrackPresentationProvider';
 import { musicQueries } from '../data';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { triggerHaptic } from '../hooks/useHaptics';
-import {
-  clearUpcomingQueue,
-  isContextShuffleEnabled,
-  moveQueueItem,
-  removeQueueItem,
-  skipToQueueItem,
-  toggleShuffle,
-} from '../player/controller';
+import { isContextShuffleEnabled } from '../player/controller';
 import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/errors';
 import type { RootStackParams } from '../navigation';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
@@ -311,14 +313,39 @@ export function QueueSurface({
     tvFocusReturn.popAndRestore();
   }, [embedded, tv.isTv, tvFocusReturn]);
   const partyState = usePartySession();
+  const connectState = useActiveConnectSnapshot();
   // While a party steers the player its queue is the party's: edit it there.
   const followedParty = partyState.detached ? null : partyState.party;
+  const remoteActiveDevice = connectState.isControllingRemote ? connectState.activeDevice : null;
+  const remotePlayback =
+    connectState.isControllingRemote && connectState.state !== null
+      ? connectState.state.playback
+      : null;
   const [startingParty, setStartingParty] = useState(false);
   const [partyStartError, setPartyStartError] = useState<string | null>(null);
   const playerError = usePlayerError();
   const { presentationFor } = useTrackPresentationResolver();
-  const { queue, status: snapshotStatus, shuffle, setShuffle, refresh: refreshQueue } =
+  const { queue: localQueue, status: snapshotStatus, shuffle: localShuffle, setShuffle, refresh: refreshQueue } =
     useQueueSnapshot();
+  const queue = useMemo(() => {
+    if (remotePlayback === null) return localQueue;
+    const remoteRows: QueueSnapshotRow[] = remotePlayback.queue.map((track, idx) => ({
+      stableId: `remote:${idx}:${track.id}`,
+      track,
+      origin: remotePlayback.origins[idx] === 'manual' ? 'manual' : 'context',
+      context:
+        remotePlayback.queue_context !== null
+          ? { type: 'collection', id: 'connect', label: remotePlayback.queue_context }
+          : null,
+      originalContextOrder: idx,
+    }));
+    const activeIdx =
+      remotePlayback.current_index >= 0 && remotePlayback.current_index < remoteRows.length
+        ? remotePlayback.current_index
+        : null;
+    return { rows: remoteRows, activeIndex: activeIdx };
+  }, [localQueue, remotePlayback]);
+  const shuffle = remotePlayback !== null ? remotePlayback.shuffle : localShuffle;
   const [mutationPending, setMutationPending] = useState(false);
   const mutationLock = useRef(false);
   // A dropped row is shown at its new place while the native move is being
@@ -443,7 +470,7 @@ export function QueueSurface({
         async () => {
           setDroppedOrder({ snapshot: queue.rows, rows: moveRow(rows, fromIndex, toIndex) });
           try {
-            await moveQueueItem(fromIndex, toIndex, expectedStableIds);
+            await effectiveMoveQueueItem(fromIndex, toIndex, expectedStableIds);
           } catch (cause) {
             setDroppedOrder(null);
             throw cause;
@@ -491,25 +518,25 @@ export function QueueSurface({
         onOpenArtist={handleOpenArtist}
         onSkip={() =>
           void runMutation(strings.queue.skipFailed(title), async () => {
-            await skipToQueueItem(nativeIndex, expectedStableIds);
+            await effectiveSkipToIndex(nativeIndex, expectedStableIds);
             return strings.queue.skippedTo(title);
           })
         }
         onMoveUp={() =>
           void runMutation(strings.queue.moveUpFailed(title), async () => {
-            await moveQueueItem(nativeIndex, nativeIndex - 1, expectedStableIds);
+            await effectiveMoveQueueItem(nativeIndex, nativeIndex - 1, expectedStableIds);
             return strings.queue.movedUp(title);
           })
         }
         onMoveDown={() =>
           void runMutation(strings.queue.moveDownFailed(title), async () => {
-            await moveQueueItem(nativeIndex, nativeIndex + 1, expectedStableIds);
+            await effectiveMoveQueueItem(nativeIndex, nativeIndex + 1, expectedStableIds);
             return strings.queue.movedDown(title);
           })
         }
         onRemove={() =>
           void runMutation(strings.queue.removeFailed(title), async () => {
-            await removeQueueItem(nativeIndex, expectedStableIds);
+            await effectiveRemoveQueueItem(nativeIndex, expectedStableIds);
             return strings.queue.removed(title);
           })
         }
@@ -623,7 +650,7 @@ export function QueueSurface({
           disabled={editLocked || !canToggleShuffle}
           onPress={() =>
             void runMutation(strings.player.shuffleFailed, async () => {
-              const enabled = await toggleShuffle(expectedStableIds);
+              const enabled = await effectiveToggleShuffle(expectedStableIds);
               setShuffle(enabled);
               return enabled ? strings.queue.shuffleEnabled : strings.queue.orderRestored;
             })
@@ -639,13 +666,23 @@ export function QueueSurface({
           disabled={editLocked || !canClearUpcoming}
           onPress={() =>
             void runMutation(strings.queue.clearUpcomingFailed, async () => {
-              await clearUpcomingQueue(expectedStableIds);
+              await effectiveClearUpcoming(expectedStableIds);
               setShuffle(isContextShuffleEnabled());
               return strings.queue.clearedUpcoming(upcomingCount);
             })
           }
         />
       </View>
+
+      {remoteActiveDevice !== null ? (
+        <PartyNotice
+          testID="queue-connect-remote"
+          tone="info"
+          message={strings.connect.remoteQueueSubtitle(remoteActiveDevice.name)}
+          actionLabel={strings.connect.title}
+          onAction={() => showDevicePicker('devices')}
+        />
+      ) : null}
 
       {followedParty !== null ? (
         <PartyNotice
@@ -676,6 +713,15 @@ export function QueueSurface({
                   setPartyStartError(strings.party.startPartyFailed(partyErrorDetail(error))),
               ).finally(() => setStartingParty(false));
             }}
+          />
+          <QueueTool
+            testID="queue-join-party"
+            icon="key-variant"
+            label={strings.connect.joinJam}
+            accessibilityLabel={strings.connect.joinJam}
+            busy={false}
+            disabled={startingParty || mutationPending}
+            onPress={() => showDevicePicker('jam')}
           />
         </View>
       )}

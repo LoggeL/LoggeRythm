@@ -93,6 +93,43 @@ vi.mock('../config', () => ({
   PRODUCTION_API_BASE: 'https://loggerythm.logge.top',
 }));
 vi.mock('../components/MiniPlayer', () => ({ default: 'MiniPlayer' }));
+vi.mock('../components/connect/DevicePickerSheet', () => ({ default: 'DevicePickerHost' }));
+vi.mock('../connect/connectRuntime', () => ({
+  connectSession: () => ({ start: vi.fn(), stop: vi.fn() }),
+}));
+vi.mock('../connect/activeConnect', () => ({
+  useActiveConnectSnapshot: () => ({
+    phase: 'idle',
+    enabled: true,
+    selfDeviceId: null,
+    selfDeviceName: '',
+    selfDeviceType: 'mobile',
+    state: null,
+    activeDevice: null,
+    isSelfActive: false,
+    isControllingRemote: false,
+    transferringToDeviceId: null,
+    error: null,
+  }),
+  activeConnectRouter: () => null,
+}));
+vi.mock('../party/partyErrors', () => ({ partyErrorDetail: (e: unknown) => String(e) }));
+vi.mock('../party/partyRuntime', () => ({
+  partySession: () => ({ restoreActive: vi.fn(async () => null) }),
+}));
+vi.mock('../party/activeParty', () => ({
+  useActivePartySnapshot: () => ({
+    code: null,
+    party: null,
+    phase: 'idle',
+    error: null,
+    detached: false,
+    controlOnly: false,
+    playbackError: null,
+    endedNotice: null,
+  }),
+  activePartyRouter: () => null,
+}));
 vi.mock('../components/player/TrackPresentationProvider', () => ({
   TrackPresentationProvider: 'TrackPresentationProvider',
 }));
@@ -101,8 +138,10 @@ vi.mock('../components/AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../hooks/useReducedMotion', () => ({ useReducedMotion: () => false }));
 vi.mock('../localization/LocaleProvider', () => ({ useLocaleRevision: () => 0 }));
 vi.mock('../player/player', () => ({
+  PlaybackState: { Buffering: 'buffering', Playing: 'playing', Paused: 'paused' },
   useActiveMediaItem: () => mocks.activeItem,
   useIsPlaying: () => mocks.isPlaying,
+  usePlaybackState: () => (mocks.isPlaying ? 'playing' : 'paused'),
 }));
 vi.mock('../share/sharedTextRuntime', () => ({
   spotifySharedTextCoordinator: {

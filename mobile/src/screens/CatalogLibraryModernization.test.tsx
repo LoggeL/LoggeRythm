@@ -96,6 +96,11 @@ vi.mock('react-native', () => ({
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
+vi.mock('../components/party/ConnectedPartyParts', () => ({
+  ConnectedPartyNowPlayingCard: 'ConnectedPartyNowPlayingCard',
+  ConnectedPartyQueueRow: 'ConnectedPartyQueueRow',
+  ConnectedPartySearchResultRow: 'ConnectedPartySearchResultRow',
+}));
 vi.mock('../components/party/PartyParts', () => ({
   PartyHeader: 'PartyHeader',
   PartyMembers: 'PartyMembers',
@@ -119,23 +124,42 @@ vi.mock('../party/partyErrors', () => ({
   partyErrorDetail: (error: unknown) => String(error),
 }));
 vi.mock('../party/partyModel', () => ({
+  canControlPartyPlayback: () => true,
   movedPartyIds: () => [],
   partyDisplayName: () => 'Friday Mix',
   partyInviteUrl: () => 'https://music.example.test/party/ABCD',
 }));
 vi.mock('../party/partyRuntime', () => ({
-  partySession: () => ({ enter: vi.fn(), retryJoin: vi.fn(), leave: vi.fn(), reload: vi.fn(), rejoinPlayback: vi.fn() }),
+  partySession: () => ({
+    enter: vi.fn(),
+    retryJoin: vi.fn(),
+    leave: vi.fn(),
+    end: vi.fn(),
+    updateSettings: vi.fn(),
+    kickMember: vi.fn(),
+    setControlOnly: vi.fn(),
+    dismissEndedNotice: vi.fn(),
+    controlTogglePlay: vi.fn(),
+    controlNext: vi.fn(),
+    controlPrev: vi.fn(),
+    reload: vi.fn(),
+    rejoinPlayback: vi.fn(),
+  }),
   usePartySession: () => ({
     code: 'ABCD',
     phase: 'connected',
     detached: false,
+    controlOnly: false,
     error: null,
     playbackError: null,
+    endedNotice: null,
     party: {
       code: 'ABCD',
       name: 'Friday Mix',
       is_host: true,
       host_name: 'Logge',
+      guests_can_control: false,
+      ended: false,
       current_index: 0,
       tracks: [],
       members: [],

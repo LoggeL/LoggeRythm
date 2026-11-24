@@ -11,11 +11,17 @@ import {
   type BottomTabNavigationOptions,
 } from '@react-navigation/bottom-tabs';
 import { trackArtistLabel } from './api/trackArtists';
+import DevicePickerHost from './components/connect/DevicePickerSheet';
 import MiniPlayer from './components/MiniPlayer';
 import { TrackPresentationProvider } from './components/player/TrackPresentationProvider';
+import { connectSession } from './connect/connectRuntime';
+import { useEffectivePlayback } from './connect/effectivePlaybackState';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { strings } from './localization';
 import { useLocaleRevision } from './localization/LocaleProvider';
+import { partyErrorDetail } from './party/partyErrors';
+import { partySession } from './party/partyRuntime';
+import { reportPlayerNotice } from './player/notices';
 import {
   LogoutButton,
   buildSectionScreenOptions,
@@ -46,8 +52,6 @@ import {
   TAB_BACK_BEHAVIOR,
   buildTransientModalScreenOptions,
 } from './navigationPolicy';
-import { mediaItemToTrack } from './player/mediaItem';
-import { useActiveMediaItem, useIsPlaying } from './player/player';
 import { spotifySharedTextCoordinator } from './share/sharedTextRuntime';
 import { attachMediaPlayFromSearchIntake } from './voice/voicePlaybackRuntime';
 import {
@@ -213,19 +217,18 @@ interface TvShellChromeProps {
  * to `rootNavigation` and preserves D-Pad focus checkpoints across modals.
  */
 function TvShellChrome({ activeRoute, children }: TvShellChromeProps) {
-  const activeItem = useActiveMediaItem();
-  const isPlaying = useIsPlaying();
+  const effective = useEffectivePlayback();
   const updateAttention = androidUpdateAttention(useAndroidUpdateSnapshot());
 
   const nowPlaying = useMemo<TvNavNowPlayingSummary | null>(() => {
-    const track = mediaItemToTrack(activeItem);
+    const track = effective.track;
     if (track === null) return null;
     return {
       title: track.title,
       artist: trackArtistLabel(track),
-      isPlaying,
+      isPlaying: effective.playing,
     };
-  }, [activeItem, isPlaying]);
+  }, [effective.playing, effective.track]);
 
   const handleSelectTab = useCallback((tab: TvNavPrimaryKey) => {
     if (!rootNavigation.isReady()) return;
@@ -287,6 +290,35 @@ export function TvShellHost({
     return <>{children}</>;
   }
   return <TvShellChrome activeRoute={activeRoute}>{children}</TvShellChrome>;
+}
+
+function openPartyFromRoot(code: string): void {
+  if (!rootNavigation.isReady()) return;
+  rootNavigation.navigate('Party', { code });
+}
+
+/**
+ * Starts the personal Connect WebSocket session and restores any active Jam
+ * once the authenticated player is ready. Failures surface as visible notices.
+ */
+function RealtimeSessionsHost({ accountScope }: { accountScope: string }) {
+  useEffect(() => {
+    void connectSession().start();
+    void partySession()
+      .restoreActive()
+      .catch((error: unknown) => {
+        reportPlayerNotice(
+          'bookkeeping',
+          'party-restore',
+          strings.party.defaultName,
+          strings.party.restoreActiveFailed(partyErrorDetail(error)),
+        );
+      });
+    return () => {
+      connectSession().stop();
+    };
+  }, [accountScope]);
+  return null;
 }
 
 /** Authenticated navigator, gated until the native MediaController is connected. */
@@ -358,6 +390,7 @@ export default function RootNavigator() {
   return (
     <View style={styles.fill}>
       <TrackPresentationProvider>
+        <RealtimeSessionsHost accountScope={accountScope} />
         <NavigationContainer
           ref={rootNavigation}
           theme={navTheme}
@@ -392,6 +425,7 @@ export default function RootNavigator() {
             </RootStack.Navigator>
           </TvShellHost>
         </NavigationContainer>
+        <DevicePickerHost onOpenParty={openPartyFromRoot} />
       </TrackPresentationProvider>
     </View>
   );

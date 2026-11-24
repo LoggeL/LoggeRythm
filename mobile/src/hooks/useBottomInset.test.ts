@@ -1,15 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { IDLE_CONNECT_SNAPSHOT } from '../connect/connectModel';
+import { IDLE_PARTY_SNAPSHOT } from '../party/activeParty';
 import { layout } from '../theme';
-import { bottomInset, TV_MINI_PLAYER_HEIGHT, useBottomInset } from './useBottomInset';
+import {
+  bottomInset,
+  MINI_PLAYER_OUTPUT_STRIP_HEIGHT,
+  TV_MINI_PLAYER_HEIGHT,
+  useBottomInset,
+} from './useBottomInset';
 
 const mocks = vi.hoisted(() => ({
   hasActiveTrack: false,
   isTv: false,
+  controllingRemote: false,
+  partyActive: false,
   insets: { top: 0, right: 0, bottom: 34, left: 0 },
 }));
 
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => mocks.insets }));
 vi.mock('../player/player', () => ({ useHasActiveTrack: () => mocks.hasActiveTrack }));
+vi.mock('../connect/activeConnect', () => ({
+  useActiveConnectSnapshot: () => ({
+    ...IDLE_CONNECT_SNAPSHOT,
+    isControllingRemote: mocks.controllingRemote,
+  }),
+}));
+vi.mock('../party/activeParty', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../party/activeParty')>(),
+  useActivePartySnapshot: () => ({
+    ...IDLE_PARTY_SNAPSHOT,
+    party: mocks.partyActive ? ({ code: 'JAM123' } as never) : null,
+  }),
+}));
 vi.mock('../tv/tvEnvironment', () => ({
   useTvEnvironment: () => ({ isTv: mocks.isTv }),
 }));
@@ -17,6 +39,8 @@ vi.mock('../tv/tvEnvironment', () => ({
 beforeEach(() => {
   mocks.hasActiveTrack = false;
   mocks.isTv = false;
+  mocks.controllingRemote = false;
+  mocks.partyActive = false;
   mocks.insets = { top: 0, right: 0, bottom: 34, left: 0 };
 });
 
@@ -61,5 +85,13 @@ describe('useBottomInset', () => {
     expect(useBottomInset()).toBe(92 + layout.scrollEndGap);
     mocks.hasActiveTrack = false;
     expect(useBottomInset()).toBe(layout.scrollEndGap);
+
+    // Output strip (active Jam or remote Connect) adds clearance only while MiniPlayer is visible.
+    mocks.isTv = false;
+    mocks.hasActiveTrack = true;
+    mocks.partyActive = true;
+    expect(useBottomInset()).toBe(
+      layout.miniPlayerHeight + layout.scrollEndGap + MINI_PLAYER_OUTPUT_STRIP_HEIGHT,
+    );
   });
 });

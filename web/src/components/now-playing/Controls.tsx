@@ -1,6 +1,8 @@
 "use client";
 
 import { usePlayerStore } from "@/store/player";
+import { canControlActiveVolume, useConnectStore } from "@/store/connect";
+import { canControlPartyPlayback, usePartyStore } from "@/store/party";
 import { rangeFill } from "@/components/player/Scrubber";
 import {
   PlayIcon,
@@ -31,6 +33,16 @@ export function TransportRow({ className = "" }: { className?: string }) {
   const prev = usePlayerStore((s) => s.prev);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
+  const partyActive = usePartyStore((s) => s.active);
+  const partyIsHost = usePartyStore((s) => s.isHost);
+  const partyGuestsCanControl = usePartyStore((s) => s.guestsCanControl);
+  const partyHostName = usePartyStore((s) => s.hostName);
+  const locked = !canControlPartyPlayback({
+    active: partyActive,
+    isHost: partyIsHost,
+    guestsCanControl: partyGuestsCanControl,
+  });
+  const lockTip = locked ? `${partyHostName || "Host"} steuert die Wiedergabe` : undefined;
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
 
   return (
@@ -38,9 +50,10 @@ export function TransportRow({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={toggleShuffle}
+        disabled={locked}
         aria-label="Zufallswiedergabe"
         aria-pressed={shuffle}
-        title={shuffle ? "Zufallswiedergabe ausschalten" : "Zufallswiedergabe einschalten"}
+        title={lockTip ?? (shuffle ? "Zufallswiedergabe ausschalten" : "Zufallswiedergabe einschalten")}
         className="action-icon h-11 w-11"
       >
         <ShuffleIcon width={22} height={22} />
@@ -48,6 +61,8 @@ export function TransportRow({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={prev}
+        disabled={locked}
+        title={lockTip}
         aria-label="Vorheriger Titel"
         className="action-icon h-12 w-12 text-foreground"
       >
@@ -56,9 +71,10 @@ export function TransportRow({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={toggle}
+        disabled={locked}
         aria-label={isPlaying ? "Pause" : "Abspielen"}
         aria-busy={isBuffering}
-        title={isBuffering ? "Wiedergabe wird geladen" : isPlaying ? "Pause" : "Abspielen"}
+        title={lockTip ?? (isBuffering ? "Wiedergabe wird geladen" : isPlaying ? "Pause" : "Abspielen")}
         className="play-fab h-16 w-16"
       >
         {isBuffering ? (
@@ -72,6 +88,8 @@ export function TransportRow({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={next}
+        disabled={locked}
+        title={lockTip}
         aria-label="Nächster Titel"
         className="action-icon h-12 w-12 text-foreground"
       >
@@ -80,6 +98,8 @@ export function TransportRow({ className = "" }: { className?: string }) {
       <button
         type="button"
         onClick={cycleRepeat}
+        disabled={locked}
+        title={lockTip}
         aria-label={repeat === "one" ? "Wiederholen: ein Titel" : repeat === "all" ? "Wiederholen: alle Titel" : "Wiederholen: aus"}
         aria-pressed={repeat !== "off"}
         className="action-icon h-11 w-11"
@@ -95,11 +115,20 @@ export function VolumeRow() {
   const muted = usePlayerStore((s) => s.muted);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
+  const enabled = useConnectStore((s) => s.enabled);
+  const status = useConnectStore((s) => s.status);
+  const activeDeviceId = useConnectStore((s) => s.activeDeviceId);
+  const deviceId = useConnectStore((s) => s.deviceId);
+  const devices = useConnectStore((s) => s.devices);
+  const canControlVolume = canControlActiveVolume({ enabled, status, activeDeviceId, deviceId, devices });
+  const tip = !canControlVolume ? "Lautstärke wird direkt am aktiven Gerät geregelt" : undefined;
   return (
-    <div className="flex w-full max-w-60 items-center gap-1">
+    <div className="flex w-full max-w-60 items-center gap-1" title={tip}>
       <button
         type="button"
         onClick={toggleMute}
+        disabled={!canControlVolume}
+        title={tip}
         aria-label={muted ? "Ton an" : "Stummschalten"}
         aria-pressed={muted}
         className="action-icon h-11 w-11"
@@ -112,6 +141,7 @@ export function VolumeRow() {
         max={1}
         step={0.01}
         value={muted ? 0 : volume}
+        disabled={!canControlVolume}
         onChange={(e) => setVolume(Number(e.target.value))}
         className="min-w-0 flex-1"
         style={{ background: rangeFill((muted ? 0 : volume) * 100) }}

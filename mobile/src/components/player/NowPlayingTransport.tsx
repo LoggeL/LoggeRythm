@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { triggerHaptic } from '../../hooks/useHaptics';
 import { strings } from '../../localization';
-import { useProgress } from '../../player/player';
+import { useEffectiveProgress } from '../../connect/effectivePlaybackState';
 import { colors, elevation, metrics, radii, spacing } from '../../theme';
 import { TvFocusable } from '../../tv';
 import AppIcon from '../AppIcon';
@@ -304,7 +304,7 @@ const LiveTransportScrubber = React.memo(function LiveTransportScrubber({
   testIDPrefix: string;
   onSeek: (seconds: number) => void;
 }) {
-  const { position, duration } = useProgress(0.5);
+  const { position, duration } = useEffectiveProgress(0.5);
   const [seekState, setSeekState] = useState<{ trackId: string; value: number } | null>(null);
   const sliderPosition = seekState?.trackId === trackId ? seekState.value : position;
 

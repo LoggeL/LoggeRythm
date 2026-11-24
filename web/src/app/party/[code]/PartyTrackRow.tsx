@@ -1,17 +1,24 @@
 import type { ReactNode } from "react";
+import CacheMarker from "@/components/CacheMarker";
 import Cover from "@/components/ui/Cover";
 
 const currentBand =
   "bg-[linear-gradient(to_right,color-mix(in_srgb,var(--accent)_13%,transparent),rgb(244_240_230/0.03)_62%)] shadow-[inset_3px_0_0_var(--accent)]";
 
 /**
- * One track line in the party: artwork, title, a secondary line and trailing
- * controls. `onActivate` turns the artwork/title block into a button.
+ * One track line in the party: artwork, title, normal stored/downloaded
+ * CacheMarker + secondary line, and trailing controls. `onActivate` turns the
+ * artwork/title block into a button.
  */
 export default function PartyTrackRow({
+  trackId,
   cover,
   title,
   subtitle,
+  serverStored = false,
+  isGuest = false,
+  cacheError = null,
+  onRetryCache,
   current = false,
   position,
   played = false,
@@ -20,9 +27,16 @@ export default function PartyTrackRow({
   activateDisabled = false,
   children,
 }: {
+  trackId: string | number;
   cover: string;
   title: string;
-  subtitle: string;
+  subtitle: ReactNode;
+  /** Authoritative server-stored status (`PartyTrack.is_stored` or `/party/{code}/cached-tracks`). */
+  serverStored?: boolean;
+  /** Anonymous party guests use party-scoped cache state instead of `/api/cached-tracks`. */
+  isGuest?: boolean;
+  cacheError?: string | null;
+  onRetryCache?: () => void | Promise<void>;
   /** Highlights the row as the track that is playing right now. */
   current?: boolean;
   /** 1-based place in the queue, shown as a mono index from 640px. */
@@ -46,7 +60,7 @@ export default function PartyTrackRow({
         </span>
       )}
       <Cover src={cover} className={`rounded-art ${current ? "h-14 w-14" : "h-11 w-11"} ${played ? "opacity-60" : ""}`} />
-      <span className="min-w-0">
+      <span className="min-w-0 flex-1">
         {current && (
           <span className="mb-1 flex items-center gap-2 font-mono text-[0.625rem] font-medium uppercase leading-none tracking-[0.16em] text-accent">
             <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-accent" />
@@ -60,7 +74,16 @@ export default function PartyTrackRow({
         >
           {title}
         </span>
-        <span className={`block truncate text-xs ${played ? "text-subtle" : "text-muted"}`}>{subtitle}</span>
+        <span className={`mt-0.5 flex min-w-0 items-center gap-1.5 text-xs ${played ? "text-subtle" : "text-muted"}`}>
+          <CacheMarker
+            trackId={trackId}
+            serverStored={serverStored}
+            skipStoreFetch={isGuest}
+            externalError={cacheError}
+            onRetryExternal={onRetryCache}
+          />
+          <span className="min-w-0 truncate">{subtitle}</span>
+        </span>
       </span>
     </>
   );

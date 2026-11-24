@@ -85,14 +85,15 @@ function usePlayerSession() {
   }, [userId]);
 }
 
-/** Record a play once per (new) track for approved, logged-in users. */
+/** Record a play once per (new) track for approved, logged-in users playing locally. */
 function usePlayRecorder() {
   const track = usePlayerStore(currentTrack);
+  const suppressLocalAudio = usePlayerStore((s) => s.suppressLocalAudio);
   const { data: me } = useMe();
   const recorded = useRef<string | null>(null);
   const trackId = track?.id ?? null;
   useEffect(() => {
-    if (!track || !trackId || !me?.is_approved) return;
+    if (suppressLocalAudio || !track || !trackId || !me?.is_approved) return;
     if (recorded.current === trackId) return;
     recorded.current = trackId;
     // Only the first entry after a restore can be the one already counted.
@@ -103,7 +104,7 @@ function usePlayRecorder() {
       if (recorded.current === trackId) recorded.current = null;
       toast.error(`Hörverlauf konnte nicht gespeichert werden: ${error instanceof Error ? error.message : String(error)}`);
     });
-  }, [trackId, track, me?.is_approved]);
+  }, [suppressLocalAudio, trackId, track, me?.is_approved]);
 }
 
 /** Reflect the current song in the browser tab title. */
@@ -123,6 +124,7 @@ function useTabTitle() {
  */
 function useRadioTopUp() {
   const track = usePlayerStore(currentTrack);
+  const suppressLocalAudio = usePlayerStore((s) => s.suppressLocalAudio);
   const radioActive = usePlayerStore((s) => s.radioActive);
   const radioSession = usePlayerStore((s) => s.radioSession);
   const queueLen = usePlayerStore((s) => s.queue.length);
@@ -132,7 +134,7 @@ function useRadioTopUp() {
   const fetchingSession = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!radioActive || !track) return;
+    if (suppressLocalAudio || !radioActive || !track) return;
     if (queueLen - index > 2) return; // still have a buffer
     if (fetchingSession.current === radioSession) return;
     fetchingSession.current = radioSession;
@@ -161,7 +163,7 @@ function useRadioTopUp() {
       .finally(() => {
         if (fetchingSession.current === requestSession) fetchingSession.current = null;
       });
-  }, [radioActive, radioSession, index, queueLen, track]);
+  }, [suppressLocalAudio, radioActive, radioSession, index, queueLen, track]);
 }
 
 const MEDIA_SESSION_ACTIONS: MediaSessionAction[] = [

@@ -49,6 +49,22 @@ vi.mock('../player/errors', () => ({
 vi.mock('../player/player', () => ({
   useHasActiveTrack: () => mocks.hasActiveTrack,
 }));
+vi.mock('../connect/activeConnect', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../connect/activeConnect')>(),
+  useActiveConnectSnapshot: () => ({
+    phase: 'idle',
+    enabled: true,
+    selfDeviceId: null,
+    selfDeviceName: '',
+    selfDeviceType: 'mobile',
+    state: null,
+    activeDevice: null,
+    isSelfActive: false,
+    isControllingRemote: false,
+    transferringToDeviceId: null,
+    error: null,
+  }),
+}));
 vi.mock('../tv', () => ({
   useTvEnvironment: () => mocks.tvEnv,
 }));

@@ -124,7 +124,7 @@ class PartyGuestTests(unittest.TestCase):
         playing_own = self.add(mia, "30")
         self.assertEqual(own_track.added_by, "Mia")
         self.assertEqual(own_track.added_by_member, f"g:{mia.guest.id}")
-        party.set_current(CODE, party.CurrentUpdate(index=2), self.host, self.db)
+        party.set_current(CODE, party.CurrentUpdate(index=2), host, self.db)
 
         for item, detail in ((hosts_track, "selbst hinzugefügt"), (playing_own, "läuft gerade")):
             with self.assertRaises(HTTPException) as raised:
@@ -163,7 +163,7 @@ class PartyGuestTests(unittest.TestCase):
         host = PartyActor(user=self.host)
         for deezer_id in ("10", "20", "10", "30"):
             self.add(host, deezer_id)
-        party.set_current(CODE, party.CurrentUpdate(index=1), self.host, self.db)
+        party.set_current(CODE, party.CurrentUpdate(index=1), host, self.db)
         self.schedule.assert_called_with(["20", "10", "30"])
 
     def test_load_change_publishes_a_newer_revision_with_track_state(self):

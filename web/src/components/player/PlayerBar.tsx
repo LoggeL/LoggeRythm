@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { usePlayerStore, currentTrack } from "@/store/player";
+import { canControlActiveVolume, useConnectStore } from "@/store/connect";
+import { canControlPartyPlayback, usePartyStore } from "@/store/party";
 import LikeButton from "@/components/LikeButton";
 import EqualizerBars from "@/components/EqualizerBars";
 import NowPlaying from "@/components/now-playing/NowPlaying";
@@ -10,6 +12,8 @@ import CacheMarker from "@/components/CacheMarker";
 import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Scrubber, { ProgressLine, rangeFill } from "@/components/player/Scrubber";
+import { DeviceSelectorTrigger } from "@/components/player/DeviceSelector";
+import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
 import { formatTime } from "@/lib/format";
 import { NAV_FORWARD } from "@/lib/morph";
 import { setNowPlayingOpen } from "@/components/player/usePlayerSideEffects";
@@ -42,13 +46,30 @@ function Cover({ track, className }: { track: Track; className: string }) {
   );
 }
 
+function usePlaybackLock(): { locked: boolean; reason?: string } {
+  const active = usePartyStore((s) => s.active);
+  const isHost = usePartyStore((s) => s.isHost);
+  const guestsCanControl = usePartyStore((s) => s.guestsCanControl);
+  const hostName = usePartyStore((s) => s.hostName);
+  const allowed = canControlPartyPlayback({ active, isHost, guestsCanControl });
+  return allowed ? { locked: false } : { locked: true, reason: `${hostName || "Host"} steuert die Wiedergabe` };
+}
+
 function PlayPauseButton({ className, iconSize }: { className: string; iconSize: number }) {
   const hasTrack = usePlayerStore((s) => s.index >= 0);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const isBuffering = usePlayerStore((s) => s.isBuffering);
   const toggle = usePlayerStore((s) => s.toggle);
+  const lock = usePlaybackLock();
   return (
-    <button type="button" onClick={toggle} disabled={!hasTrack} aria-label={isPlaying ? "Pause" : "Abspielen"} className={className}>
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={!hasTrack || lock.locked}
+      title={lock.reason ?? (isPlaying ? "Pause" : "Abspielen")}
+      aria-label={isPlaying ? "Pause" : "Abspielen"}
+      className={className}
+    >
       {isBuffering ? (
         <SpinnerIcon width={iconSize} height={iconSize} className="animate-spin" />
       ) : isPlaying ? (
@@ -68,23 +89,24 @@ function Transport() {
   const prev = usePlayerStore((s) => s.prev);
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
+  const lock = usePlaybackLock();
   const RepeatGlyph = repeat === "one" ? RepeatOneIcon : RepeatIcon;
   const repeatLabel = repeat === "one" ? "Titel wiederholen" : repeat === "all" ? "Alle wiederholen" : "Wiederholen aus";
 
   return (
     <div className="flex items-center justify-center gap-1.5">
-      <button type="button" onClick={toggleShuffle} disabled={!hasTrack} aria-label="Zufallswiedergabe" aria-pressed={shuffle} title="Zufallswiedergabe" className="action-icon relative h-10 w-10">
+      <button type="button" onClick={toggleShuffle} disabled={!hasTrack || lock.locked} aria-label="Zufallswiedergabe" aria-pressed={shuffle} title={lock.reason ?? "Zufallswiedergabe"} className="action-icon relative h-10 w-10">
         <ShuffleIcon width={18} height={18} />
         {shuffle && <ActiveDot />}
       </button>
-      <button type="button" onClick={prev} disabled={!hasTrack} aria-label="Vorheriger Titel" title="Vorheriger Titel (Shift+P)" className="action-icon h-11 w-11 text-foreground">
+      <button type="button" onClick={prev} disabled={!hasTrack || lock.locked} aria-label="Vorheriger Titel" title={lock.reason ?? "Vorheriger Titel (Shift+P)"} className="action-icon h-11 w-11 text-foreground">
         <PrevIcon width={24} height={24} />
       </button>
       <PlayPauseButton iconSize={24} className="play-fab mx-1.5 h-12 w-12" />
-      <button type="button" onClick={next} disabled={!hasTrack} aria-label="Nächster Titel" title="Nächster Titel (Shift+N)" className="action-icon h-11 w-11 text-foreground">
+      <button type="button" onClick={next} disabled={!hasTrack || lock.locked} aria-label="Nächster Titel" title={lock.reason ?? "Nächster Titel (Shift+N)"} className="action-icon h-11 w-11 text-foreground">
         <NextIcon width={24} height={24} />
       </button>
-      <button type="button" onClick={cycleRepeat} disabled={!hasTrack} aria-label="Wiederholen" aria-pressed={repeat !== "off"} title={repeatLabel} className="action-icon relative h-10 w-10">
+      <button type="button" onClick={cycleRepeat} disabled={!hasTrack || lock.locked} aria-label="Wiederholen" aria-pressed={repeat !== "off"} title={lock.reason ?? repeatLabel} className="action-icon relative h-10 w-10">
         <RepeatGlyph width={18} height={18} />
         {repeat !== "off" && <ActiveDot />}
       </button>
@@ -112,10 +134,24 @@ function VolumeControl() {
   const muted = usePlayerStore((s) => s.muted);
   const setVolume = usePlayerStore((s) => s.setVolume);
   const toggleMute = usePlayerStore((s) => s.toggleMute);
+  const enabled = useConnectStore((s) => s.enabled);
+  const status = useConnectStore((s) => s.status);
+  const activeDeviceId = useConnectStore((s) => s.activeDeviceId);
+  const deviceId = useConnectStore((s) => s.deviceId);
+  const devices = useConnectStore((s) => s.devices);
+  const canControlVolume = canControlActiveVolume({ enabled, status, activeDeviceId, deviceId, devices });
   const level = muted ? 0 : volume;
+  const disabledTip = !canControlVolume ? "Lautstärke wird direkt am aktiven Gerät geregelt" : undefined;
   return (
-    <div className="flex items-center gap-1">
-      <button type="button" onClick={toggleMute} aria-label={muted ? "Ton an" : "Stummschalten"} title="Stummschalten (M)" className="action-icon h-9 w-9">
+    <div className="flex items-center gap-1" title={disabledTip}>
+      <button
+        type="button"
+        onClick={toggleMute}
+        disabled={!canControlVolume}
+        aria-label={muted ? "Ton an" : "Stummschalten"}
+        title={disabledTip ?? "Stummschalten (M)"}
+        className="action-icon h-9 w-9"
+      >
         {level === 0 ? <VolumeMutedIcon width={18} height={18} /> : <VolumeIcon width={18} height={18} />}
       </button>
       <input
@@ -124,6 +160,7 @@ function VolumeControl() {
         max={1}
         step={0.01}
         value={level}
+        disabled={!canControlVolume}
         onChange={(e) => setVolume(Number(e.target.value))}
         className="w-20 xl:w-28"
         style={{ background: rangeFill(level * 100) }}
@@ -150,6 +187,7 @@ function PanelToggles() {
         <QueueIcon width={18} height={18} />
         {queueOpen && <ActiveDot />}
       </button>
+      <DeviceSelectorTrigger />
       <VolumeControl />
       <button type="button" onClick={openNowPlaying} disabled={!hasTrack} aria-label="Jetzt läuft öffnen" title="Jetzt läuft (F)" className="action-icon h-9 w-9">
         <ExpandIcon width={18} height={18} />
@@ -202,10 +240,11 @@ function PlayerErrors() {
  * track, the transport with a time readout, and the panel toggles.
  */
 function DesktopBar({ track }: { track: Track | null }) {
+  const lock = usePlaybackLock();
   return (
     <div className="relative hidden border-t border-hairline bg-backdrop lg:block">
       <div className="seek-edge absolute inset-x-0 top-0 z-10 -translate-y-1/2">
-        <Scrubber showTimes={false} />
+        <Scrubber showTimes={false} disabled={lock.locked} />
       </div>
       <div className="grid h-[84px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-5">
         {track ? <TrackSummary track={track} /> : <p className="label-mono">Wähle einen Titel zum Abspielen.</p>}
@@ -217,6 +256,7 @@ function DesktopBar({ track }: { track: Track | null }) {
           <PanelToggles />
         </div>
       </div>
+      <ActiveOutputBanner />
     </div>
   );
 }
@@ -224,21 +264,26 @@ function DesktopBar({ track }: { track: Track | null }) {
 /** Mobile mini player: a floating card that opens the fullscreen view. */
 function MiniPlayer({ track }: { track: Track }) {
   const next = usePlayerStore((s) => s.next);
+  const lock = usePlaybackLock();
   return (
-    <div className="relative mx-2 mb-2 flex items-center gap-3 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-panel p-1.5 pr-2 shadow-[0_10px_30px_rgb(0_0_0/0.55)] lg:hidden" style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.3), rgb(var(--ambient) / 0.06))" }}>
-      <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <Cover track={track} className="h-12 w-12 shrink-0 rounded-[var(--radius-art)]" />
-        <span className="min-w-0">
-          <span className="font-display block truncate text-sm font-bold tracking-tight">{track.title}</span>
-          <span className="block truncate text-xs text-muted">{track.artist}</span>
-        </span>
-      </button>
-      <LikeButton key={track.id} track={track} />
-      <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
-      <button type="button" onClick={next} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground">
-        <NextIcon width={22} height={22} />
-      </button>
-      <ProgressLine />
+    <div className="lg:hidden">
+      <ActiveOutputBanner compact />
+      <div className="relative mx-2 mb-2 flex items-center gap-2 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-panel p-1.5 pr-2 shadow-[0_10px_30px_rgb(0_0_0/0.55)]" style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.3), rgb(var(--ambient) / 0.06))" }}>
+        <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <Cover track={track} className="h-12 w-12 shrink-0 rounded-[var(--radius-art)]" />
+          <span className="min-w-0">
+            <span className="font-display block truncate text-sm font-bold tracking-tight">{track.title}</span>
+            <span className="block truncate text-xs text-muted">{track.artist}</span>
+          </span>
+        </button>
+        <DeviceSelectorTrigger compact />
+        <LikeButton key={track.id} track={track} />
+        <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
+        <button type="button" onClick={next} disabled={lock.locked} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground disabled:opacity-40">
+          <NextIcon width={22} height={22} />
+        </button>
+        <ProgressLine />
+      </div>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import {
   Animated,
   PanResponder,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   useWindowDimensions,
@@ -13,13 +14,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import Player, {
   Event,
-  PlaybackState,
   RepeatMode,
   useActiveMediaItem,
-  useIsPlaying,
-  usePlaybackState,
 } from '../player/player';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import AppIcon from '../components/AppIcon';
+import { showDevicePicker } from '../components/connect/devicePicker';
 import TrackLikeButton from '../components/TrackLikeButton';
 import PlayerNoticeBanner from '../components/PlayerNoticeBanner';
 import {
@@ -39,16 +39,23 @@ import { PlayerErrorBanner } from '../components/player/PlayerErrorBanner';
 import { PlayerToggleButton } from '../components/player/PlayerToggleButton';
 import SimilarPanel from '../components/player/SimilarPanel';
 import { QueueSurface } from './QueueScreen';
-import { mediaItemToTrack } from '../player/mediaItem';
 import {
-  cycleRepeat,
-  isContextShuffleEnabled,
-  next,
-  prev,
-  seekTo,
-  toggleShuffle,
-  togglePlay,
-} from '../player/controller';
+  transferActiveConnectPlayback,
+  useActiveConnectSnapshot,
+} from '../connect/activeConnect';
+import { deviceTypeIcon } from '../connect/connectModel';
+import {
+  effectiveCycleRepeat,
+  effectiveNext,
+  effectivePrev,
+  effectiveSeekTo,
+  effectiveTogglePlay,
+  effectiveToggleShuffle,
+  useEffectivePlayback,
+} from '../connect/effectivePlayback';
+import { useActivePartySnapshot } from '../party/activeParty';
+import { partyDisplayName } from '../party/partyModel';
+import { isContextShuffleEnabled } from '../player/controller';
 import { clearPlayerError, reportPlayerError, usePlayerError } from '../player/errors';
 import { isPlayerReady } from '../player/setup';
 import { useBackHandler } from '../hooks/useBackHandler';
@@ -57,7 +64,7 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { RootStackParams } from '../navigation';
 import { strings } from '../localization';
 import { AppText, EmptyState, IconButton, Skeleton } from '../components/ui';
-import { colors, layout, metrics, radii, spacing } from '../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../theme';
 import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 import type { AlbumRouteParams, ArtistRouteParams } from './catalogModel';
 import { nowPlayingArtworkSize, nowPlayingTvArtworkSize } from './nowPlayingLayout';
@@ -101,9 +108,12 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const reducedMotion = useReducedMotion();
   const haptics = useHaptics();
   const item = useActiveMediaItem();
-  const playing = useIsPlaying();
-  const playbackState = usePlaybackState();
-  const track = mediaItemToTrack(item);
+  const effective = useEffectivePlayback();
+  const connect = useActiveConnectSnapshot();
+  const party = useActivePartySnapshot();
+  const playing = effective.playing;
+  const buffering = effective.buffering;
+  const track = effective.track;
   const body = resolveNowPlayingBody(isPlayerReady(), track !== null);
   const playerError = usePlayerError();
 
@@ -250,7 +260,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
     setShufflePending(true);
     clearPlayerError();
     try {
-      const enabled = await toggleShuffle();
+      const enabled = await effectiveToggleShuffle();
       setShuffle(enabled);
       AccessibilityInfo.announceForAccessibility(
         enabled ? strings.queue.shuffleEnabled : strings.queue.orderRestored,
@@ -263,8 +273,11 @@ export default function NowPlayingScreen({ navigation }: Props) {
   }, [shufflePending]);
 
   const contextLabel = useMemo(
-    () => resolveNowPlayingContextLabel(item, strings.queue.legacyContextLabel),
-    [item],
+    () =>
+      effective.mode === 'remote'
+        ? effective.contextLabel
+        : resolveNowPlayingContextLabel(item, strings.queue.legacyContextLabel),
+    [effective.contextLabel, effective.mode, item],
   );
 
   const openAlbum = useCallback(() => {
@@ -337,12 +350,12 @@ export default function NowPlayingScreen({ navigation }: Props) {
   );
 
   const commitSeek = useCallback(
-    (seconds: number) => run(strings.player.seekFailed, () => seekTo(seconds)),
+    (seconds: number) => run(strings.player.seekFailed, () => effectiveSeekTo(seconds)),
     [run],
   );
-  const playPrevious = useCallback(() => run(strings.player.previousFailed, prev), [run]);
-  const togglePlayback = useCallback(() => run(strings.player.playPauseFailed, togglePlay), [run]);
-  const playNext = useCallback(() => run(strings.player.nextFailed, next), [run]);
+  const playPrevious = useCallback(() => run(strings.player.previousFailed, effectivePrev), [run]);
+  const togglePlayback = useCallback(() => run(strings.player.playPauseFailed, effectiveTogglePlay), [run]);
+  const playNext = useCallback(() => run(strings.player.nextFailed, effectiveNext), [run]);
 
   const topBar = (
     <View style={styles.topBar}>
@@ -462,18 +475,135 @@ export default function NowPlayingScreen({ navigation }: Props) {
     );
   }
 
-  const buffering = playbackState === PlaybackState.Buffering;
+  const displayedShuffle = effective.shuffle ?? shuffle;
+  const displayedRepeat = effective.repeatMode ?? repeat;
   const artworkSize = loadingCoverSize;
+  const activeParty = party.party !== null && !party.detached ? party.party : null;
+  const isRemote = effective.mode === 'remote' && effective.activeDevice !== null;
+  const deviceLabel = isRemote && effective.activeDevice !== null
+    ? effective.activeDevice.name
+    : activeParty !== null
+      ? partyDisplayName(activeParty)
+      : connect.activeDevice?.name ?? strings.connect.title;
+  const deviceCount = connect.state?.devices.length ?? 0;
+
+  const connectUtilityBar = (
+    <View testID="now-playing-connect-bar" style={styles.connectBar}>
+      <Pressable
+        testID="now-playing-devices"
+        accessibilityRole="button"
+        accessibilityLabel={strings.connect.devicesButton(effective.activeDevice?.name ?? null)}
+        focusable
+        onPress={() => {
+          haptics.trigger('tap');
+          showDevicePicker('devices');
+        }}
+        style={({ pressed }) => [
+          styles.connectPill,
+          isRemote ? styles.connectPillActive : null,
+          pressed ? styles.pressed : null,
+        ]}
+      >
+        <AppIcon
+          name={
+            effective.activeDevice !== null
+              ? deviceTypeIcon(effective.activeDevice.device_type)
+              : 'speaker-wireless'
+          }
+          size={18}
+          color={isRemote ? colors.accentSoft : colors.textSecondary}
+        />
+        <AppText
+          variant="caption"
+          color={isRemote ? 'accent' : 'secondary'}
+          numberOfLines={1}
+          style={styles.connectPillText}
+        >
+          {deviceCount > 1 && !isRemote ? `${deviceLabel} (${deviceCount})` : deviceLabel}
+        </AppText>
+      </Pressable>
+      <Pressable
+        testID="now-playing-jam"
+        accessibilityRole="button"
+        accessibilityLabel={activeParty !== null ? strings.party.openParty : strings.connect.startJam}
+        focusable
+        onPress={() => {
+          haptics.trigger('tap');
+          if (activeParty !== null) openParty(activeParty.code);
+          else showDevicePicker('jam');
+        }}
+        style={({ pressed }) => [
+          styles.connectPill,
+          activeParty !== null ? styles.connectPillActive : null,
+          pressed ? styles.pressed : null,
+        ]}
+      >
+        <AppIcon
+          name="account-group-outline"
+          size={18}
+          color={activeParty !== null ? colors.accentSoft : colors.textSecondary}
+        />
+        <AppText
+          variant="caption"
+          color={activeParty !== null ? 'accent' : 'secondary'}
+          numberOfLines={1}
+        >
+          {activeParty !== null ? partyDisplayName(activeParty) : strings.connect.startJam}
+        </AppText>
+      </Pressable>
+    </View>
+  );
+
+  const remoteOutputBanner = isRemote && effective.activeDevice !== null ? (
+    <View testID="now-playing-remote-banner" style={styles.remoteBanner}>
+      <Pressable
+        testID="now-playing-remote-banner-open"
+        accessibilityRole="button"
+        accessibilityLabel={strings.connect.listeningOn(effective.activeDevice.name)}
+        focusable
+        onPress={() => showDevicePicker('devices')}
+        style={({ pressed }) => [styles.remoteBannerMain, pressed ? styles.pressed : null]}
+      >
+        <AppIcon
+          name={deviceTypeIcon(effective.activeDevice.device_type)}
+          size={16}
+          color={colors.accentSoft}
+        />
+        <AppText variant="label" color="accent" numberOfLines={1} style={styles.connectPillText}>
+          {strings.connect.listeningOn(effective.activeDevice.name)}
+        </AppText>
+      </Pressable>
+      {connect.selfDeviceId !== null ? (
+        <Pressable
+          testID="now-playing-play-here"
+          accessibilityRole="button"
+          accessibilityLabel={strings.connect.playHere}
+          focusable
+          onPress={() => {
+            const selfId = connect.selfDeviceId;
+            if (selfId === null) return;
+            void transferActiveConnectPlayback(selfId).catch((cause) => {
+              reportPlayerError(strings.connect.transferFailed(String(cause)), cause);
+            });
+          }}
+          style={({ pressed }) => [styles.playHereChip, pressed ? styles.pressed : null]}
+        >
+          <AppText variant="micro" color="onAccent">{strings.connect.playHere}</AppText>
+        </Pressable>
+      ) : null}
+    </View>
+  ) : null;
+
   const shuffleButton = (
     <PlayerToggleButton
       testID="now-playing-shuffle"
       icon="shuffle-variant"
-      checked={shuffle}
+      checked={displayedShuffle}
       busy={shufflePending}
       haptic="tap"
       focusable
       accessibilityLabel={
-        shuffle ? strings.player.disableShuffle : strings.player.enableShuffle
+        displayedShuffle ? strings.player.disableShuffle : strings.player.enableShuffle
       }
       onPress={() => void toggleContextShuffle()}
     />
@@ -481,15 +611,15 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const repeatButton = (
     <PlayerToggleButton
       testID="now-playing-repeat"
-      icon={repeat === RepeatMode.One ? 'repeat-once' : 'repeat'}
-      checked={repeat !== RepeatMode.Off}
+      icon={displayedRepeat === RepeatMode.One ? 'repeat-once' : 'repeat'}
+      checked={displayedRepeat !== RepeatMode.Off}
       haptic="tap"
       focusable
-      accessibilityLabel={repeatModeLabel(repeat)}
+      accessibilityLabel={repeatModeLabel(displayedRepeat)}
       accessibilityHint={strings.player.changeRepeatMode}
       onPress={() =>
         run(strings.player.repeatFailed, () => {
-          const nextMode = cycleRepeat();
+          const nextMode = effectiveCycleRepeat(displayedRepeat);
           setRepeat(nextMode);
           AccessibilityInfo.announceForAccessibility(repeatModeLabel(nextMode));
         })
@@ -527,6 +657,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
             style={styles.playerError}
           />
         ) : null}
+        {remoteOutputBanner}
         <PlayerNoticeBanner />
 
         {isTvSplit ? (
@@ -565,6 +696,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
                 leadingControl={shuffleButton}
                 trailingControl={repeatButton}
               />
+              {connectUtilityBar}
             </View>
 
             <View
@@ -665,6 +797,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
               leadingControl={shuffleButton}
               trailingControl={repeatButton}
             />
+            {connectUtilityBar}
           </ScrollView>
         )}
       </Animated.View>
@@ -772,4 +905,52 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 0,
   },
+  connectBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+  },
+  connectPill: {
+    minHeight: 40,
+    maxWidth: '54%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.pill,
+    backgroundColor: colors.fill,
+  },
+  connectPillActive: {
+    backgroundColor: colors.accentSubtle,
+  },
+  connectPillText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  remoteBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.md,
+    backgroundColor: colors.accentSubtle,
+  },
+  remoteBannerMain: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  playHereChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+  },
+  pressed: { opacity: opacity.pressed },
 });

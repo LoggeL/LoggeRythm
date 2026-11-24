@@ -3,7 +3,29 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
-const fixture = { hooks: [], cursor: 0, requests: [], added: [] };
+const fixture = {
+  hooks: [],
+  cursor: 0,
+  requests: [],
+  added: [],
+  addedNext: [],
+  party: {
+    code: "SEARCH",
+    name: "Party",
+    is_host: false,
+    host_name: "Host",
+    guests_can_control: false,
+    is_playing: false,
+    position_sec: 0,
+    playback_updated_at: null,
+    viewer_key: "u:2",
+    viewer_name: "Listener",
+    viewer_is_guest: false,
+    tracks: [],
+    members: [],
+    current_index: -1,
+  },
+};
 globalThis.__partySearchFixture = fixture;
 const moduleUrl = (source) => `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
 const reactStub = moduleUrl(`
@@ -14,16 +36,34 @@ const reactStub = moduleUrl(`
   export function useRef(value) { const f = globalThis.__partySearchFixture; const index = f.cursor++; return f.hooks[index] ??= {current: value}; }
   export function useState(initial) { const f = globalThis.__partySearchFixture; const index = f.cursor++; if (!(index in f.hooks)) f.hooks[index] = typeof initial === 'function' ? initial() : initial; return [f.hooks[index], (value) => {f.hooks[index] = typeof value === 'function' ? value(f.hooks[index]) : value;}]; }
 `);
-const iconStub = moduleUrl("export function PlayIcon() {return null;} export const SearchIcon = PlayIcon; export const CloseIcon = PlayIcon; export const PlusIcon = PlayIcon; export const ChevronDownIcon = PlayIcon; export const QueueIcon = PlayIcon;");
-const feedbackIconStub = moduleUrl("export function CopyIcon() {return null;} export const CheckCircleIcon = CopyIcon; export const InfoCircleIcon = CopyIcon;");
+const iconStub = moduleUrl(`
+  export function PlayIcon() {return null;}
+  export const PauseIcon = PlayIcon;
+  export const NextIcon = PlayIcon;
+  export const PrevIcon = PlayIcon;
+  export const SearchIcon = PlayIcon;
+  export const CloseIcon = PlayIcon;
+  export const PlusIcon = PlayIcon;
+  export const ChevronDownIcon = PlayIcon;
+  export const QueueIcon = PlayIcon;
+  export const EditIcon = PlayIcon;
+  export const ClockIcon = PlayIcon;
+  export const SpinnerIcon = PlayIcon;
+`);
+const feedbackIconStub = moduleUrl(
+  "export function CopyIcon() {return null;} export const CheckCircleIcon = CopyIcon; export const InfoCircleIcon = CopyIcon; export const AlertCircleIcon = CopyIcon;",
+);
 const nullStub = moduleUrl("export default function Placeholder() { return null; }");
+const cacheMarkerStub = moduleUrl(
+  `export default function CacheMarker(props) { return { $$typeof: Symbol.for("react.transitional.element"), type: "cache-marker", props }; }`,
+);
 
 async function compile(path, substitutions) {
   const source = await readFile(new URL(path, import.meta.url), "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext },
   }).outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
-    assert.ok(substitutions[name], `Unmocked party search import: ${name}`);
+    assert.ok(substitutions[name], `Unmocked party search import: ${name} (in ${path})`);
     return `from ${JSON.stringify(substitutions[name])}`;
   });
   return moduleUrl(compiled);
@@ -35,35 +75,50 @@ const fieldUrl = await compile("../src/components/SearchField.tsx", {
   "@/components/icons": iconStub,
 });
 const { default: SearchField } = await import(fieldUrl);
-// The page is split into hooks and presentational components that live next
-// to it. Each local module is compiled through the same strict import map so
-// an unexpected dependency in any of them fails the suite.
+
 const party = (file) => `../src/app/party/[code]/${file}`;
 const jsxRuntime = import.meta.resolve("react/jsx-runtime");
 const requestsUrl = new URL("../src/app/party/requests.ts", import.meta.url).href;
 const toastStub = moduleUrl("export const toast = {error() {}, success() {}};");
-const playerStub = moduleUrl("export const usePlayerStore = (selector) => selector({followHostPlayback() {}, isBuffering: false});");
+const playerStub = moduleUrl(
+  "export const usePlayerStore = Object.assign((selector) => selector({followHostPlayback() {}, isBuffering: false}), { getState: () => ({ toggle() {}, currentTime: 0 }) });",
+);
+const partyStoreStub = moduleUrl(
+  "export const usePartyStore = (selector) => selector({listenLocally: true, setListenLocally() {}});",
+);
 const formatStub = moduleUrl("export const formatTime = (value) => String(value);");
 const artistsStub = moduleUrl("export const trackArtistLabel = (track) => track.artist;");
+const linkStub = moduleUrl("export default function Link({ children }) { return children ?? null; }");
 
-const playbackSyncUrl = await compile(party("usePartyPlaybackSync.ts"), {
-  react: reactStub,
-  "@/store/player": playerStub,
-  "@/store/party": moduleUrl("export const usePartyStore = (selector) => selector({isPlaying: false, positionSec: 0, playbackUpdatedAt: null});"),
-  "@/store/toast": toastStub,
-  "../requests": requestsUrl,
-});
 const sessionUrl = await compile(party("usePartySession.ts"), {
   react: reactStub,
   "next/navigation": moduleUrl("export function useRouter() { return {push() {}}; }"),
   "@/hooks/useParty": moduleUrl(`export function useParty() { return {
-    party: {code: 'SEARCH', name: 'Party', is_host: false, host_name: 'Host', tracks: [], members: [], current_index: -1},
-    add: async (track) => {globalThis.__partySearchFixture.added.push(track);},
-    join: async () => {}, leave: async () => {},
+    party: globalThis.__partySearchFixture.party,
+    ended: false,
+    endedReason: null,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: async () => {},
+    add: async (track, insert) => {
+      if (insert === "next") globalThis.__partySearchFixture.addedNext.push(track);
+      else globalThis.__partySearchFixture.added.push(track);
+    },
+    remove: async () => {},
+    reorder: async () => {},
+    setCurrent: async () => {},
+    setPlayback: async () => {},
+    updateSettings: async () => {},
+    kickMember: async () => {},
+    join: async () => {},
+    leave: async () => {},
+    end: async () => {},
   }; }`),
+  "@/store/party": partyStoreStub,
+  "@/store/player": playerStub,
   "@/store/toast": toastStub,
   "../requests": requestsUrl,
-  "./usePartyPlaybackSync": playbackSyncUrl,
 });
 const searchUrl = await compile(party("usePartySearch.ts"), {
   react: reactStub,
@@ -80,8 +135,14 @@ const shareLinkUrl = await compile(party("useShareLink.ts"), {
   "@/store/toast": toastStub,
   "../requests": requestsUrl,
 });
+const loadBadgeUrl = await compile(party("PartyLoadBadge.tsx"), {
+  "react/jsx-runtime": jsxRuntime,
+  "@/components/icons": iconStub,
+  "@/components/feedbackIcons": feedbackIconStub,
+});
 const trackRowUrl = await compile(party("PartyTrackRow.tsx"), {
   "react/jsx-runtime": jsxRuntime,
+  "@/components/CacheMarker": cacheMarkerStub,
   "@/components/ui/Cover": nullStub,
 });
 const searchPanelUrl = await compile(party("PartySearch.tsx"), {
@@ -94,11 +155,15 @@ const searchPanelUrl = await compile(party("PartySearch.tsx"), {
 });
 const queueUrl = await compile(party("PartyQueue.tsx"), {
   "react/jsx-runtime": jsxRuntime,
+  "@/components/Avatar": nullStub,
+  "@/components/CacheMarker": cacheMarkerStub,
+  "@/components/EqualizerBars": nullStub,
+  "@/components/ui/Cover": nullStub,
   "@/components/ui/EmptyState": nullStub,
   "@/components/icons": iconStub,
   "@/lib/format": formatStub,
   "@/lib/trackArtists": artistsStub,
-  "./PartyLoadBadge": nullStub,
+  "./PartyLoadBadge": loadBadgeUrl,
   "./PartyTrackRow": trackRowUrl,
 });
 const shareCardUrl = await compile(party("ShareCard.tsx"), {
@@ -109,15 +174,18 @@ const shareCardUrl = await compile(party("ShareCard.tsx"), {
 const membersUrl = await compile(party("MembersCard.tsx"), {
   "react/jsx-runtime": jsxRuntime,
   "@/components/Avatar": nullStub,
+  "@/components/icons": iconStub,
 });
 const statesUrl = await compile(party("PartyStates.tsx"), {
   "react/jsx-runtime": jsxRuntime,
+  "next/link": linkStub,
 });
 const pageUrl = await compile(party("page.tsx"), {
   react: reactStub,
   "react/jsx-runtime": jsxRuntime,
   "@/components/ConfirmDialog": nullStub,
   "@/components/feedbackIcons": feedbackIconStub,
+  "@/components/icons": iconStub,
   "@/hooks/useAuth": moduleUrl("export function useMe() { return {data: {is_approved: true}}; }"),
   "@/store/player": playerStub,
   "./GuestParty": nullStub,
@@ -131,24 +199,45 @@ const pageUrl = await compile(party("page.tsx"), {
   "./useShareLink": shareLinkUrl,
 });
 const { default: PartyPage } = await import(pageUrl);
+const { default: PartyLoadBadge } = await import(loadBadgeUrl);
 
-function setup() {
-  Object.assign(fixture, {hooks: [], cursor: 0, requests: [], added: [], input: null});
+function setup(partyOverride = {}) {
+  Object.assign(fixture, {
+    hooks: [],
+    cursor: 0,
+    requests: [],
+    added: [],
+    addedNext: [],
+    input: null,
+    party: {
+      code: "SEARCH",
+      name: "Party",
+      is_host: false,
+      host_name: "Host",
+      guests_can_control: false,
+      is_playing: false,
+      position_sec: 0,
+      playback_updated_at: null,
+      viewer_key: "u:2",
+      viewer_name: "Listener",
+      viewer_is_guest: false,
+      tracks: [],
+      members: [],
+      current_index: -1,
+      ...partyOverride,
+    },
+  });
 }
 function nodes(node, predicate, found = []) {
   if (!node || typeof node !== "object") return found;
   if (Array.isArray(node)) {for (const child of node) nodes(child, predicate, found); return found;}
   if (predicate(node)) found.push(node);
-  // The page composes hook-free section components; expand them the way React
-  // would. SearchField keeps its own refs and is rendered explicitly by render().
   if (typeof node.type === "function" && node.type !== SearchField) return nodes(node.type(node.props), predicate, found);
   nodes(node.props?.children, predicate, found);
   return found;
 }
 function render() {
   fixture.cursor = 0;
-  // PartyPage only picks the member or guest view; render the member view's
-  // hooks exactly once per render like React would.
   const view = PartyPage({params: {code: "SEARCH"}});
   const tree = view.type(view.props);
   const field = nodes(tree, (node) => node.type === SearchField)[0].props;
@@ -157,8 +246,13 @@ function render() {
   fixture.input ??= {dataset: {}, focus() {}};
   input.ref.current = fixture.input;
   return {
-    tree, field, form: form.props, input,
+    tree,
+    field,
+    form: form.props,
+    input,
     actions: nodes(tree, (node) => node.type === "button" && node.props["aria-label"]?.endsWith("zur Party hinzufügen")),
+    nextActions: nodes(tree, (node) => node.type === "button" && node.props["aria-label"]?.endsWith("als Nächstes in die Jam einreihen")),
+    cacheMarkers: nodes(tree, (node) => node.type === "cache-marker"),
     alerts: nodes(tree, (node) => node.props?.role === "alert"),
   };
 }
@@ -170,7 +264,7 @@ function submit(screen) {
 const flush = () => new Promise(setImmediate);
 const track = {id: "song", title: "Song", artist: "Artist", cover: "", duration_sec: 100};
 
-test("party field retains explicit submit and starts the trimmed term immediately", async () => {
+test("party field retains explicit submit, renders CacheMarker on hits, and supports add + play-next", async () => {
   setup();
   render().field.onValueChange("  Queen  ");
   assert.deepEqual(fixture.requests, []);
@@ -184,8 +278,39 @@ test("party field retains explicit submit and starts the trimmed term immediatel
   assert.equal(render().field.inputProps["aria-busy"], true);
   fixture.requests[0].resolve([track]);
   await flush();
-  await render().actions[0].props.onClick();
+  const after = render();
+  assert.equal(after.cacheMarkers.some((m) => m.props.trackId === "song"), true);
+  await after.actions[0].props.onClick();
+  await after.nextActions[0].props.onClick();
   assert.deepEqual(fixture.added, [track]);
+  assert.deepEqual(fixture.addedNext, [track]);
+});
+
+test("party queue renders normal CacheMarker icons in Now Playing and Next in Jam without static ready text pills", () => {
+  setup({
+    is_host: true,
+    is_playing: true,
+    current_index: 0,
+    tracks: [
+      { id: 1, deezer_id: "101", title: "Now Song", artist: "A", album: "", cover: "", duration_sec: 180, added_by: "Host", added_by_member: "u:1", is_stored: true, load_state: "ready", load_error: null },
+      { id: 2, deezer_id: "102", title: "Next Song", artist: "B", album: "", cover: "", duration_sec: 200, added_by: "Jule", added_by_member: "u:2", is_stored: true, load_state: "ready", load_error: null },
+      { id: 3, deezer_id: "103", title: "Loading Song", artist: "C", album: "", cover: "", duration_sec: 210, added_by: "Jule", added_by_member: "u:2", is_stored: false, load_state: "loading", load_error: null },
+    ],
+  });
+  const screen = render();
+  const markerIds = screen.cacheMarkers.map((m) => [m.props.trackId, m.props.serverStored]);
+  assert.deepEqual(markerIds, [
+    ["101", true],
+    ["102", true],
+    ["103", false],
+  ]);
+  // PartyLoadBadge returns null for ready & idle, spinner for loading, alert for failed.
+  assert.equal(PartyLoadBadge({ state: "ready", error: null }), null);
+  assert.equal(PartyLoadBadge({ state: "idle", error: null }), null);
+  assert.equal(PartyLoadBadge({ state: "loading", error: null }).props["data-load-state"], "loading");
+  const failed = PartyLoadBadge({ state: "failed", error: "Region blocked" });
+  assert.equal(failed.props["data-load-state"], "failed");
+  assert.match(failed.props.title, /Region blocked/);
 });
 
 test("party clear immediately aborts a pending request and rejects its late results", async () => {

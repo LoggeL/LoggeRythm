@@ -42,3 +42,37 @@ test("failed unknown availability is explicit without a successful availability 
   fixture.error = null;
   assert.equal(renderToStaticMarkup(createElement(CacheMarker, { trackId: "1" })), "");
 });
+
+test("party serverStored flag displays the muted server icon while local offline state keeps precedence", () => {
+  fixture.error = null;
+  fixture.state = null;
+  const serverHtml = renderToStaticMarkup(createElement(CacheMarker, { trackId: "1", serverStored: true }));
+  assert.match(serverHtml, /aria-label="Auf dem Server gespeichert"/);
+  assert.match(serverHtml, /text-subtle/);
+
+  fixture.state = "local";
+  const localHtml = renderToStaticMarkup(createElement(CacheMarker, { trackId: "1", serverStored: true }));
+  assert.match(localHtml, /aria-label="Offline verfügbar"/);
+  assert.match(localHtml, /text-success/);
+});
+
+test("anonymous party guests skip authenticated store fetch and still surface party cache errors loudly", () => {
+  fixture.state = "local";
+  fixture.error = "401 Unauthorized";
+  const storedHtml = renderToStaticMarkup(
+    createElement(CacheMarker, { trackId: "1", serverStored: true, skipStoreFetch: true }),
+  );
+  assert.match(storedHtml, /aria-label="Auf dem Server gespeichert"/);
+  assert.doesNotMatch(storedHtml, /401 Unauthorized/);
+
+  const errHtml = renderToStaticMarkup(
+    createElement(CacheMarker, {
+      trackId: "1",
+      serverStored: false,
+      skipStoreFetch: true,
+      externalError: "Server-Cache konnte nicht geladen werden: 503",
+    }),
+  );
+  assert.match(errHtml, /Server-Cache konnte nicht geladen werden: 503/);
+  assert.match(errHtml, /Erneut versuchen/);
+});

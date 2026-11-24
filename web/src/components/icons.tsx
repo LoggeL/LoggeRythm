@@ -696,3 +696,74 @@ export function ImageIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Spotify Connect-style multi-device glyph (screen + speaker). */
+export function DevicesIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M4 6a2 2 0 012-2h9a2 2 0 012 2v2" />
+      <path d="M4 6v9a2 2 0 002 2h3" />
+      <path d="M2 17h7" />
+      <rect x="13" y="8.5" width="8" height="12" rx="1.75" />
+      <circle cx="17" cy="16" r="2" />
+      <circle cx="17" cy="11.5" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function LaptopIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="4" y="5" width="16" height="11" rx="2" />
+      <path d="M2 19h20" />
+    </svg>
+  );
+}
+
+export function PhoneIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="7" y="2.5" width="10" height="19" rx="2.2" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+
+export function TabletIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="4.5" y="3" width="15" height="18" rx="2" />
+      <path d="M11 17.5h2" />
+    </svg>
+  );
+}
+
+export function TvIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="2.5" y="4.5" width="19" height="12.5" rx="2" />
+      <path d="M8 20h8M12 17v3" />
+    </svg>
+  );
+}
+
+export function SpeakerIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="5" y="2.5" width="14" height="19" rx="2.5" />
+      <circle cx="12" cy="14.5" r="3.5" />
+      <circle cx="12" cy="7.5" r="1.25" />
+    </svg>
+  );
+}
+
+export function UsersIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <circle cx="9" cy="8" r="3.25" />
+      <path d="M3 19a6 6 0 0112 0" />
+      <circle cx="16.5" cy="9" r="2.5" />
+      <path d="M16.5 14.5a4.5 4.5 0 014.5 4.5" />
+    </svg>
+  );
+}

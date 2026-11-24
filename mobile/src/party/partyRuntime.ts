@@ -1,4 +1,5 @@
 import type { PartyState } from '../api/types';
+import { musicQueryClient, queryKeys } from '../data';
 import { musicRepository } from '../data/repositories';
 import Player, { PlaybackState } from '../player/player';
 import { activePartyItemId, getQueueSnapshot, syncPartyQueue } from '../player/controller';
@@ -8,6 +9,14 @@ import { openPartyStream } from './partyStream';
 import { PartySession, usePartySessionSnapshot, type PartySessionSnapshot } from './partySession';
 
 let instance: PartySession | null = null;
+const partyCodeListeners = new Set<(code: string | null) => void>();
+
+export function subscribePartyCodeChanges(listener: (code: string | null) => void): () => void {
+  partyCodeListeners.add(listener);
+  return () => {
+    partyCodeListeners.delete(listener);
+  };
+}
 
 /** The app-wide party session, wired to the real API, live stream and player. */
 export function partySession(): PartySession {
@@ -23,6 +32,15 @@ export function partySession(): PartySession {
       clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
       setInterval: (callback, ms) => setInterval(callback, ms),
       clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+      onTracksStored: () => {
+        void musicQueryClient.invalidateQueries({
+          queryKey: queryKeys.storage.cachedTrackIds(),
+          exact: true,
+        });
+      },
+      onPartyCodeChange: (code) => {
+        for (const listener of [...partyCodeListeners]) listener(code);
+      },
     });
     installActivePartyRouter(instance);
   }

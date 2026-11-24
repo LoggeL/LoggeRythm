@@ -12,6 +12,16 @@ import type {
   ArtistRef,
   ArtistSummary,
   CachedTrackIds,
+  ConnectCommandAction,
+  ConnectDevice,
+  ConnectDeviceCapabilities,
+  ConnectDeviceType,
+  ConnectPlaybackState,
+  ConnectQueueOrigin,
+  ConnectRepeatMode,
+  ConnectServerFrame,
+  ConnectState,
+  ConnectTicket,
   DeezerPlaylistDetail,
   DeezerPlaylistTrack,
   Genre,
@@ -596,17 +606,21 @@ function decodePartyTrack(value: unknown, path: string): PartyTrack {
     duration_sec: nonNegativeInteger(source.duration_sec, `${path}.duration_sec`),
     added_by: string(source.added_by, `${path}.added_by`),
     added_by_member: string(source.added_by_member, `${path}.added_by_member`),
+    added_by_avatar_url: nullableString(source.added_by_avatar_url, `${path}.added_by_avatar_url`),
     load_state: literal(source.load_state, `${path}.load_state`, PARTY_LOAD_STATES),
     load_error: nullableString(source.load_error, `${path}.load_error`),
+    is_stored: boolean(source.is_stored, `${path}.is_stored`),
   };
 }
 
 function decodePartyMember(value: unknown, path: string): PartyMember {
   const source = object(value, path);
   return {
+    key: string(source.key, `${path}.key`),
     name: string(source.name, `${path}.name`),
     avatar_url: nullableString(source.avatar_url, `${path}.avatar_url`),
     is_guest: boolean(source.is_guest, `${path}.is_guest`),
+    is_host: boolean(source.is_host, `${path}.is_host`),
   };
 }
 
@@ -624,12 +638,223 @@ export function decodePartyState(value: unknown): PartyState {
       source.playback_updated_at,
       'PartyState.playback_updated_at',
     ),
+    server_time: string(source.server_time, 'PartyState.server_time'),
+    guests_can_control: boolean(source.guests_can_control, 'PartyState.guests_can_control'),
+    playback_changed_by: string(source.playback_changed_by, 'PartyState.playback_changed_by'),
+    playback_revision: nonNegativeInteger(source.playback_revision, 'PartyState.playback_revision'),
+    ended: boolean(source.ended, 'PartyState.ended'),
     members: array(source.members, 'PartyState.members', decodePartyMember),
     tracks: array(source.tracks, 'PartyState.tracks', decodePartyTrack),
     viewer_key: string(source.viewer_key, 'PartyState.viewer_key'),
     viewer_name: string(source.viewer_name, 'PartyState.viewer_name'),
     viewer_is_guest: boolean(source.viewer_is_guest, 'PartyState.viewer_is_guest'),
   };
+}
+
+export function decodeNullablePartyState(value: unknown): PartyState | null {
+  return value === null ? null : decodePartyState(value);
+}
+
+const CONNECT_DEVICE_TYPES = [
+  'web',
+  'mobile',
+  'tablet',
+  'desktop',
+  'tv',
+  'speaker',
+  'other',
+] as const satisfies readonly ConnectDeviceType[];
+
+const CONNECT_QUEUE_ORIGINS = [
+  'manual',
+  'context',
+] as const satisfies readonly ConnectQueueOrigin[];
+
+const CONNECT_REPEAT_MODES = [
+  'off',
+  'all',
+  'one',
+] as const satisfies readonly ConnectRepeatMode[];
+
+const CONNECT_COMMAND_ACTIONS = [
+  'play',
+  'pause',
+  'toggle',
+  'next',
+  'prev',
+  'clear_queue',
+  'seek',
+  'set_volume',
+  'set_mute',
+  'set_shuffle',
+  'set_repeat',
+  'play_tracks',
+  'queue_add',
+  'queue_play_next',
+  'queue_remove',
+  'queue_reorder',
+  'select_index',
+] as const satisfies readonly ConnectCommandAction[];
+
+function unitInterval(value: unknown, path: string): number {
+  const parsed = number(value, path);
+  if (parsed < 0 || parsed > 1) {
+    throw new Error(`${path} must be between 0 and 1`);
+  }
+  return parsed;
+}
+
+function decodeConnectDeviceCapabilities(
+  value: unknown,
+  path: string,
+): ConnectDeviceCapabilities {
+  const source = object(value, path);
+  return {
+    can_play_audio: boolean(source.can_play_audio, `${path}.can_play_audio`),
+    can_control_volume: boolean(source.can_control_volume, `${path}.can_control_volume`),
+  };
+}
+
+export function decodeConnectDevice(value: unknown, path = 'ConnectDevice'): ConnectDevice {
+  const source = object(value, path);
+  return {
+    device_id: string(source.device_id, `${path}.device_id`),
+    name: string(source.name, `${path}.name`),
+    device_type: literal(source.device_type, `${path}.device_type`, CONNECT_DEVICE_TYPES),
+    capabilities: decodeConnectDeviceCapabilities(source.capabilities, `${path}.capabilities`),
+    volume: unitInterval(source.volume, `${path}.volume`),
+    muted: boolean(source.muted, `${path}.muted`),
+    is_active: boolean(source.is_active, `${path}.is_active`),
+    party_code: nullableString(source.party_code, `${path}.party_code`),
+    connected_at: string(source.connected_at, `${path}.connected_at`),
+    last_seen_at: string(source.last_seen_at, `${path}.last_seen_at`),
+  };
+}
+
+export function decodeConnectPlaybackState(
+  value: unknown,
+  path = 'ConnectPlaybackState',
+): ConnectPlaybackState {
+  const source = object(value, path);
+  return {
+    queue: array(source.queue, `${path}.queue`, decodeTrack),
+    origins: array(source.origins, `${path}.origins`, (item, itemPath) =>
+      literal(item, itemPath, CONNECT_QUEUE_ORIGINS),
+    ),
+    queue_context: nullableString(source.queue_context, `${path}.queue_context`),
+    current_index: integer(source.current_index, `${path}.current_index`),
+    is_playing: boolean(source.is_playing, `${path}.is_playing`),
+    position_sec: nonNegativeNumber(source.position_sec, `${path}.position_sec`),
+    duration_sec: nonNegativeNumber(source.duration_sec, `${path}.duration_sec`),
+    shuffle: boolean(source.shuffle, `${path}.shuffle`),
+    repeat: literal(source.repeat, `${path}.repeat`, CONNECT_REPEAT_MODES),
+    volume: unitInterval(source.volume, `${path}.volume`),
+    muted: boolean(source.muted, `${path}.muted`),
+    updated_at: nullableString(source.updated_at, `${path}.updated_at`),
+  };
+}
+
+export function decodeConnectState(value: unknown, path = 'ConnectState'): ConnectState {
+  const source = object(value, path);
+  return {
+    revision: nonNegativeInteger(source.revision, `${path}.revision`),
+    active_device_id: nullableString(source.active_device_id, `${path}.active_device_id`),
+    devices: array(source.devices, `${path}.devices`, decodeConnectDevice),
+    playback: decodeConnectPlaybackState(source.playback, `${path}.playback`),
+    server_time: string(source.server_time, `${path}.server_time`),
+  };
+}
+
+export function decodeConnectTicket(value: unknown): ConnectTicket {
+  const source = object(value, 'ConnectTicket');
+  const ticket = string(source.ticket, 'ConnectTicket.ticket');
+  if (ticket.trim().length === 0) {
+    throw new Error('ConnectTicket.ticket must not be empty');
+  }
+  const expiresIn = nonNegativeInteger(source.expires_in_sec, 'ConnectTicket.expires_in_sec');
+  if (expiresIn <= 0) {
+    throw new Error('ConnectTicket.expires_in_sec must be positive');
+  }
+  return { ticket, expires_in_sec: expiresIn };
+}
+
+export function decodeConnectServerFrame(value: unknown): ConnectServerFrame {
+  const source = object(value, 'ConnectServerFrame');
+  const type = string(source.type, 'ConnectServerFrame.type');
+  switch (type) {
+    case 'welcome': {
+      const interval = nonNegativeInteger(
+        source.heartbeat_interval_sec,
+        'ConnectServerFrame.heartbeat_interval_sec',
+      );
+      if (interval <= 0) {
+        throw new Error('ConnectServerFrame.heartbeat_interval_sec must be positive');
+      }
+      return {
+        type: 'welcome',
+        self_device_id: string(source.self_device_id, 'ConnectServerFrame.self_device_id'),
+        heartbeat_interval_sec: interval,
+        state: decodeConnectState(source.state, 'ConnectServerFrame.state'),
+      };
+    }
+    case 'state':
+      return {
+        type: 'state',
+        state: decodeConnectState(source.state, 'ConnectServerFrame.state'),
+      };
+    case 'activate':
+      return {
+        type: 'activate',
+        from_device_id: nullableString(source.from_device_id, 'ConnectServerFrame.from_device_id'),
+        playback: decodeConnectPlaybackState(source.playback, 'ConnectServerFrame.playback'),
+      };
+    case 'deactivated':
+      return {
+        type: 'deactivated',
+        new_active_device_id: string(
+          source.new_active_device_id,
+          'ConnectServerFrame.new_active_device_id',
+        ),
+        reason: literal(source.reason, 'ConnectServerFrame.reason', [
+          'transferred',
+          'claimed_by_other_device',
+        ] as const),
+      };
+    case 'command':
+      return {
+        type: 'command',
+        command_id: string(source.command_id, 'ConnectServerFrame.command_id'),
+        request_id: nullableString(source.request_id, 'ConnectServerFrame.request_id'),
+        from_device_id: string(source.from_device_id, 'ConnectServerFrame.from_device_id'),
+        action: literal(source.action, 'ConnectServerFrame.action', CONNECT_COMMAND_ACTIONS),
+        payload: source.payload === undefined || source.payload === null
+          ? {}
+          : object(source.payload, 'ConnectServerFrame.payload'),
+      };
+    case 'command_result':
+      return {
+        type: 'command_result',
+        request_id: nullableString(source.request_id, 'ConnectServerFrame.request_id'),
+        command_id: string(source.command_id, 'ConnectServerFrame.command_id'),
+        ok: boolean(source.ok, 'ConnectServerFrame.ok'),
+        error: nullableString(source.error, 'ConnectServerFrame.error'),
+      };
+    case 'ping':
+    case 'pong':
+      return {
+        type,
+        ts: string(source.ts, 'ConnectServerFrame.ts'),
+      };
+    case 'error':
+      return {
+        type: 'error',
+        code: string(source.code, 'ConnectServerFrame.code'),
+        detail: string(source.detail, 'ConnectServerFrame.detail'),
+        request_id: nullableString(source.request_id, 'ConnectServerFrame.request_id'),
+      };
+    default:
+      throw new Error(`ConnectServerFrame.type has unknown value "${type}"`);
+  }
 }
 
 function decodeAdminUser(value: unknown, path: string): AdminUser {

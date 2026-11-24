@@ -75,6 +75,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
   ProfileIdentityCard: 'ProfileIdentityCard',
   SleepTimerPanel: 'SleepTimerPanel',
 }));
+vi.mock('../components/profile/ConnectSettingsPanel', () => ({ default: 'ConnectSettingsPanel' }));
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
 vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
 // Owns the latched slot's useState; covered by useAndroidUpdatePlacement.test.ts.

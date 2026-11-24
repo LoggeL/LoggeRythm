@@ -10,7 +10,9 @@ import {
   subscribeTrackActions,
   trackActionIdsForRequest,
 } from './trackActions';
-import { installActivePartyRouter } from '../party/activeParty';
+import { installActiveConnectRouter } from '../connect/activeConnect';
+import { IDLE_CONNECT_SNAPSHOT } from '../connect/connectModel';
+import { IDLE_PARTY_SNAPSHOT, installActivePartyRouter } from '../party/activeParty';
 
 const mocks = vi.hoisted(() => ({
   announce: vi.fn(),
@@ -31,8 +33,35 @@ vi.mock('../player/controller', () => ({
 
 const party = { following: false, addTrack: vi.fn(async () => undefined) };
 installActivePartyRouter({
+  subscribe: () => () => undefined,
+  getSnapshot: () => IDLE_PARTY_SNAPSHOT,
+  activePartyCode: () => (party.following ? 'ABC123' : null),
+  isHost: () => false,
   isFollowingParty: () => party.following,
+  isControlOnly: () => false,
+  canControlPlayback: () => false,
   addTrack: party.addTrack,
+  controlTogglePlay: vi.fn(async () => undefined),
+  controlNext: vi.fn(async () => undefined),
+  controlPrev: vi.fn(async () => undefined),
+  controlSeek: vi.fn(async () => undefined),
+  leave: vi.fn(async () => undefined),
+  end: vi.fn(async () => undefined),
+  reset: vi.fn(),
+});
+
+const connect = {
+  controllingRemote: false,
+  sendCommand: vi.fn(async () => undefined),
+};
+installActiveConnectRouter({
+  subscribe: () => () => undefined,
+  getSnapshot: () => IDLE_CONNECT_SNAPSHOT,
+  isControllingRemote: () => connect.controllingRemote,
+  activeDevice: () => null,
+  remotePlayback: () => null,
+  transferPlayback: vi.fn(async () => undefined),
+  sendCommand: connect.sendCommand,
   reset: vi.fn(),
 });
 
@@ -88,21 +117,46 @@ describe('track action sheet contract', () => {
     expect(getTrackActionRequest()).toBeNull();
   });
 
-  it.each(['play-next', 'add-to-queue'] as const)(
-    'adds the song to the followed party instead of the local queue for %s',
-    async (action) => {
+  it.each([
+    ['play-next', 'next', strings.party.playNextAdded(track.title)],
+    ['add-to-queue', 'end', strings.party.addedToParty(track.title)],
+  ] as const)(
+    'routes %s to the followed party with insert=%s instead of the local queue',
+    async (action, insert, announcement) => {
       party.following = true;
       try {
         showTrackActions(track, vi.fn());
         const request = getTrackActionRequest();
         if (request === null) throw new Error('Expected active track action request');
         await expect(runTrackQueueAction(request, action)).resolves.toBe(true);
-        expect(party.addTrack).toHaveBeenCalledWith(track);
+        expect(party.addTrack).toHaveBeenCalledWith(track, insert);
         expect(mocks.playNext).not.toHaveBeenCalled();
         expect(mocks.addToQueue).not.toHaveBeenCalled();
-        expect(mocks.announce).toHaveBeenCalledWith(strings.party.addedToParty(track.title));
+        expect(mocks.announce).toHaveBeenCalledWith(announcement);
       } finally {
         party.following = false;
+      }
+    },
+  );
+
+  it.each([
+    ['play-next', 'queue_play_next', strings.trackActions.playNextSucceeded(track.title)],
+    ['add-to-queue', 'queue_add', strings.trackActions.addToQueueSucceeded(track.title)],
+  ] as const)(
+    'routes %s to the active remote Connect device over WebSocket',
+    async (action, command, announcement) => {
+      connect.controllingRemote = true;
+      try {
+        showTrackActions(track, vi.fn());
+        const request = getTrackActionRequest();
+        if (request === null) throw new Error('Expected active track action request');
+        await expect(runTrackQueueAction(request, action)).resolves.toBe(true);
+        expect(connect.sendCommand).toHaveBeenCalledWith(command, { track });
+        expect(mocks.playNext).not.toHaveBeenCalled();
+        expect(mocks.addToQueue).not.toHaveBeenCalled();
+        expect(mocks.announce).toHaveBeenCalledWith(announcement);
+      } finally {
+        connect.controllingRemote = false;
       }
     },
   );

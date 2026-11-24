@@ -76,6 +76,26 @@ vi.mock('../party/partyRuntime', () => ({
   startPartyFromQueue: vi.fn(),
   usePartySession: vi.fn(() => ({ party: null, detached: false })),
 }));
+vi.mock('../components/connect/devicePicker', () => ({ showDevicePicker: vi.fn() }));
+vi.mock('../connect/activeConnect', () => ({
+  useActiveConnectSnapshot: () => ({
+    phase: 'idle',
+    enabled: true,
+    selfDeviceId: null,
+    selfDeviceName: '',
+    selfDeviceType: 'mobile',
+    state: null,
+    activeDevice: null,
+    isSelfActive: false,
+    isControllingRemote: false,
+    transferringToDeviceId: null,
+    error: null,
+  }),
+  activeConnectRouter: () => null,
+}));
+vi.mock('../components/player/TrackPresentationProvider', () => ({
+  useTrackPresentationResolver: () => ({ presentationFor: vi.fn() }),
+}));
 vi.mock('../tv', () => ({
   TvFocusable: 'TvFocusable',
   TvFocusScope: 'TvFocusScope',

@@ -1,27 +1,31 @@
-"""Collaborative party sessions: shared queue and host-authoritative playback.
+"""Collaborative party sessions: shared queue and live Jam playback.
 
 Real-time updates are delivered over Server-Sent Events (SSE) — a plain HTTP
-``text/event-stream`` GET that survives the Next.js dev proxy (WebSockets do
-not). Every mutation fans a full state frame out to connected clients via the
-in-process :mod:`app.services.party_bus`.
+``text/event-stream`` GET that survives proxies cleanly. Every mutation fans a
+full state frame out to connected clients via the in-process
+:mod:`app.services.party_bus`.
 
 Participants are approved accounts or anonymous guests who joined with a
-nickname (:mod:`app.party_auth`). Everyone can add tracks and remove their own
-not-yet-playing additions; playback, order and removing others' tracks stay
-with the host. Queued tracks are pre-loaded into the server cache in the
-background (:mod:`app.services.party_preload`) and every frame carries each
-track's load state.
+nickname (:mod:`app.party_auth`). Everyone can add tracks (append or play next)
+and remove their own not-yet-playing additions; host controls playback, order,
+settings, kicking, and ending the Jam, and may optionally toggle
+``guests_can_control`` to let participants share playback & queue controls
+(Spotify Jam-style). Queued tracks are pre-loaded into the server cache in the
+background (:mod:`app.services.party_preload`) and every frame carries both
+each track's authoritative server-cache availability (``is_stored``) and its
+live preload state.
 """
-import logging
 import asyncio
 import json
+import logging
 import math
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator
+from typing import Annotated, Any, AsyncIterator, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import set_committed_value
@@ -39,10 +43,16 @@ from ..party_auth import (
     new_guest_token,
     set_guest_cookie,
 )
-from ..schemas.party import PartyGuestJoin, PartyMemberOut, PartyState, PartyTrackOut
+from ..schemas.party import (
+    PartyCachedTracks,
+    PartyGuestJoin,
+    PartyMemberOut,
+    PartySettingsUpdate,
+    PartyState,
+    PartyTrackOut,
+)
 from ..schemas.track import Track, dump_artists, load_artists
-from ..services import party_bus, party_preload
-from pydantic import BaseModel, Field
+from ..services import party_bus, party_preload, storage
 
 # Seconds between SSE heartbeat comments that keep idle connections alive.
 _HEARTBEAT_SEC = 20.0
@@ -64,6 +74,25 @@ def _utcnow() -> datetime:
 
 def _member_display(user: User) -> str:
     return user.display_name or user.email
+
+
+def _user_id_from_member_key(member_key: str) -> int | None:
+    if member_key.startswith("u:") and member_key[2:].isdigit():
+        return int(member_key[2:])
+    return None
+
+
+def _parse_member_key(member_key: str) -> tuple[Literal["u", "g"], int]:
+    if len(member_key) >= 3 and member_key[1] == ":" and member_key[2:].isdigit():
+        prefix = member_key[0]
+        if prefix == "u":
+            return "u", int(member_key[2:])
+        if prefix == "g":
+            return "g", int(member_key[2:])
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=f"Invalid party member key {member_key!r}; expected 'u:<id>' or 'g:<id>'",
+    )
 
 
 def _generate_code(db: Session) -> str:
@@ -159,9 +188,22 @@ def _is_host(session: PartySession, actor: PartyActor) -> bool:
     return actor.user is not None and actor.user.id == session.host_id
 
 
+def _can_control(session: PartySession, actor: PartyActor) -> bool:
+    return _is_host(session, actor) or bool(session.guests_can_control)
+
+
 def _require_host(session: PartySession, actor: PartyActor) -> None:
-    """Reject non-host mutations to host-authoritative state (playback/order)."""
+    """Reject non-host mutations to strictly host-owned operations."""
     if not _is_host(session, actor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Nur der Host kann diese Aktion ausführen.",
+        )
+
+
+def _require_control(session: PartySession, actor: PartyActor) -> None:
+    """Reject mutations to playback/queue order when the caller lacks control."""
+    if not _can_control(session, actor):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Nur der Host kann die Wiedergabe steuern.",
@@ -185,7 +227,12 @@ def _current_track(
     return tracks[session.current_index]
 
 
-def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
+def _state_dict(
+    db: Session,
+    session: PartySession,
+    *,
+    ended: bool = False,
+) -> dict[str, Any]:
     """Build the canonical, user-independent party state as a JSON-ready dict.
 
     ``is_host`` is left ``False`` here; each SSE connection (and the REST
@@ -194,12 +241,18 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
     db.refresh(session)
     host = db.get(User, session.host_id)
     host_name = _member_display(host) if host is not None else ""
+    ordered_tracks = _ordered_tracks(session)
+
+    avatar_user_ids: set[int] = {m.user_id for m in session.members}
+    for track in ordered_tracks:
+        uid = _user_id_from_member_key(track.added_by_member)
+        if uid is not None:
+            avatar_user_ids.add(uid)
+
     avatars = {
         u.id: u.avatar_url
         for u in db.scalars(
-            select(User).where(
-                User.id.in_([m.user_id for m in session.members] or [0])
-            )
+            select(User).where(User.id.in_(avatar_user_ids or {0}))
         ).all()
     }
     updated_at = session.playback_updated_at
@@ -216,15 +269,35 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
         name=session.name,
         host_name=host_name,
         is_host=False,
+        guests_can_control=bool(session.guests_can_control),
         current_index=session.current_index,
-        is_playing=session.is_playing,
+        is_playing=False if ended else session.is_playing,
         position_sec=session.position_sec,
         playback_updated_at=updated_at.isoformat() if updated_at else None,
+        playback_changed_by=session.playback_changed_by or "",
+        playback_revision=session.playback_revision or 0,
+        ended=ended,
+        server_time=_utcnow().isoformat(),
         members=[
-            PartyMemberOut(name=m.display_name, avatar_url=avatars.get(m.user_id))
+            PartyMemberOut(
+                key=f"u:{m.user_id}",
+                name=m.display_name,
+                avatar_url=avatars.get(m.user_id),
+                is_guest=False,
+                is_host=(m.user_id == session.host_id),
+            )
             for m in session.members
         ]
-        + [PartyMemberOut(name=g.nickname, is_guest=True) for g in session.guests],
+        + [
+            PartyMemberOut(
+                key=f"g:{g.id}",
+                name=g.nickname,
+                avatar_url=None,
+                is_guest=True,
+                is_host=False,
+            )
+            for g in session.guests
+        ],
         tracks=[
             PartyTrackOut(
                 id=t.id,
@@ -239,9 +312,12 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
                 duration_sec=t.duration_sec,
                 added_by=t.added_by,
                 added_by_member=t.added_by_member,
+                added_by_avatar_url=avatars.get(
+                    _user_id_from_member_key(t.added_by_member) or -1
+                ),
                 **_load_fields(t.deezer_id),
             )
-            for t in _ordered_tracks(session)
+            for t in ordered_tracks
         ],
     )
     return state.model_dump(mode="json")
@@ -249,7 +325,11 @@ def _state_dict(db: Session, session: PartySession) -> dict[str, Any]:
 
 def _load_fields(deezer_id: str) -> dict[str, Any]:
     load_state, load_error = party_preload.load_state(deezer_id)
-    return {"load_state": load_state, "load_error": load_error}
+    return {
+        "is_stored": load_state == "ready",
+        "load_state": load_state,
+        "load_error": load_error,
+    }
 
 
 def _viewer_fields(host_id: int, actor: PartyActor) -> dict[str, Any]:
@@ -400,6 +480,7 @@ class PartyCreate(BaseModel):
     current_index: int = -1
     is_playing: bool = False
     position_sec: float = 0.0
+    guests_can_control: bool = False
 
 
 class CurrentUpdate(BaseModel):
@@ -443,6 +524,7 @@ def create_party(
         _require_numeric_track_id(track)
     code = _generate_code(db)
     selected = body.current_index != -1
+    host = PartyActor(user=user)
     session = PartySession(
         code=code,
         name=body.name or "",
@@ -451,16 +533,44 @@ def create_party(
         is_playing=body.is_playing,
         position_sec=body.position_sec if selected else 0.0,
         playback_updated_at=_utcnow() if selected else None,
+        guests_can_control=body.guests_can_control,
+        playback_changed_by=host.key if selected else "",
+        playback_revision=1 if selected else 0,
     )
     db.add(session)
     db.flush()
-    host = PartyActor(user=user)
     db.add_all(
         _party_track_row(session.code, track, position, host)
         for position, track in enumerate(body.tracks)
     )
     _upsert_member(db, session, user)
     return _commit_state_for(db, session, host)
+
+
+@router.get(
+    "/active",
+    response_model=PartyState | None,
+    description=(
+        "Return the authenticated user's currently active party (as host or "
+        "member), or null when the user is not in any party."
+    ),
+)
+def get_active_party(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PartyState | None:
+    session = db.scalar(
+        select(PartySession)
+        .join(PartyMember, PartyMember.session_code == PartySession.code)
+        .where(PartyMember.user_id == user.id)
+        .order_by(PartySession.updated_at.desc())
+        .limit(1)
+    )
+    if session is None:
+        return None
+    actor = PartyActor(user=user)
+    payload = _state_dict(db, session)
+    return PartyState(**{**payload, **_viewer_fields(session.host_id, actor)})
 
 
 @router.get(
@@ -480,6 +590,118 @@ def get_party(
     if actor.user is not None:
         _upsert_member(db, session, actor.user)
     return _commit_state_for(db, session, actor)
+
+
+@router.get(
+    "/{code}/cached-tracks",
+    response_model=PartyCachedTracks,
+    description=(
+        "Return server-cached track IDs for any valid party participant "
+        "(including anonymous party guests)."
+    ),
+)
+def party_cached_tracks(
+    code: str,
+    actor: PartyActor = Depends(get_party_actor),
+    db: Session = Depends(get_db),
+) -> PartyCachedTracks:
+    _get_session(db, code)
+    return PartyCachedTracks(ids=storage.cached_ids())
+
+
+@router.patch(
+    "/{code}/settings",
+    response_model=PartyState,
+    description="Host-only: update party name and/or shared guest playback controls.",
+)
+def update_party_settings(
+    code: str,
+    body: PartySettingsUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PartyState:
+    if body.name is None and body.guests_can_control is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="At least one party setting (name or guests_can_control) must be provided",
+        )
+    session = _get_session(db, code)
+    host = PartyActor(user=user)
+    _require_host(session, host)
+    if body.name is not None:
+        session.name = body.name.strip()
+    if body.guests_can_control is not None:
+        session.guests_can_control = body.guests_can_control
+    _touch_session(db, session)
+    return _commit_state_for(db, session, host)
+
+
+@router.delete(
+    "/{code}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    description=(
+        "Host-only: end the party for everyone, broadcasting a terminal state "
+        "frame with ended=true before removing the session."
+    ),
+)
+def end_party(
+    code: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    session = _get_session(db, code)
+    _require_host(session, PartyActor(user=user))
+    _touch_session(db, session)
+    revision = party_bus.utc_revision(session.updated_at)
+    terminal_payload = _state_dict(db, session, ended=True)
+    db.delete(session)
+    db.commit()
+    party_bus.publish(code, party_bus.StateFrame(revision, terminal_payload))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/{code}/members/{member_key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    description="Host-only: remove a member ('u:<id>') or guest ('g:<id>') from the party.",
+)
+def kick_member(
+    code: str,
+    member_key: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    session = _get_session(db, code)
+    _require_host(session, PartyActor(user=user))
+    kind, target_id = _parse_member_key(member_key)
+    if kind == "u" and target_id == session.host_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Der Host kann sich nicht selbst aus der Party entfernen.",
+        )
+    if kind == "u":
+        member = db.scalar(
+            select(PartyMember).where(
+                PartyMember.session_code == session.code,
+                PartyMember.user_id == target_id,
+            )
+        )
+        if member is None:
+            raise HTTPException(status_code=404, detail="Party member not found")
+        db.delete(member)
+    else:
+        guest = db.scalar(
+            select(PartyGuest).where(
+                PartyGuest.session_code == session.code,
+                PartyGuest.id == target_id,
+            )
+        )
+        if guest is None:
+            raise HTTPException(status_code=404, detail="Party guest not found")
+        db.delete(guest)
+    _touch_session(db, session)
+    _commit_state(db, session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{code}/join", response_model=PartyState)
@@ -547,22 +769,34 @@ def add_track(
     track: Track,
     actor: PartyActor = Depends(get_party_actor),
     db: Session = Depends(get_db),
+    insert: Annotated[Literal["end", "next"], Query()] = "end",
 ) -> Response:
     _require_numeric_track_id(track)
     session = _get_session(db, code)
-    next_pos = db.scalar(
-        select(func.coalesce(func.max(PartyTrack.position), -1)).where(
-            PartyTrack.session_code == session.code
+    if insert == "next":
+        tracks = _ordered_tracks(session)
+        target_pos = (
+            session.current_index + 1
+            if 0 <= session.current_index < len(tracks)
+            else 0
         )
-    )
-    db.add(
-        _party_track_row(
-            session.code,
-            track,
-            (next_pos if next_pos is not None else -1) + 1,
-            actor,
+        for idx, existing in enumerate(tracks):
+            existing.position = idx if idx < target_pos else idx + 1
+        db.add(_party_track_row(session.code, track, target_pos, actor))
+    else:
+        next_pos = db.scalar(
+            select(func.coalesce(func.max(PartyTrack.position), -1)).where(
+                PartyTrack.session_code == session.code
+            )
         )
-    )
+        db.add(
+            _party_track_row(
+                session.code,
+                track,
+                (next_pos if next_pos is not None else -1) + 1,
+                actor,
+            )
+        )
     _touch_session(db, session)
     _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -575,7 +809,7 @@ def remove_track(
     actor: PartyActor = Depends(get_party_actor),
     db: Session = Depends(get_db),
 ) -> Response:
-    """The host removes any track; everyone else only their own upcoming ones."""
+    """The host removes any track; participants remove own (or any upcoming when guests_can_control)."""
     session = _get_session(db, code)
     tracks = _ordered_tracks(session)
     current = _current_track(session, tracks)
@@ -583,15 +817,15 @@ def remove_track(
     if removed is None:
         raise HTTPException(status_code=404, detail="Party track not found")
     if not _is_host(session, actor):
-        if removed.added_by_member != actor.key:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Du kannst nur Titel entfernen, die du selbst hinzugefügt hast.",
-            )
         if removed is current:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Der Titel läuft gerade; nur der Host kann ihn jetzt entfernen.",
+            )
+        if not session.guests_can_control and removed.added_by_member != actor.key:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Du kannst nur Titel entfernen, die du selbst hinzugefügt hast.",
             )
     remaining = [track for track in tracks if track.id != item_id]
     for position, track in enumerate(remaining):
@@ -603,6 +837,8 @@ def remove_track(
         session.current_index = min(session.current_index, len(remaining) - 1)
         session.position_sec = 0.0
         session.playback_updated_at = now
+        session.playback_changed_by = actor.key
+        session.playback_revision = (session.playback_revision or 0) + 1
         if not remaining:
             session.is_playing = False
     elif current is not None:
@@ -616,11 +852,11 @@ def remove_track(
 def reorder_tracks(
     code: str,
     body: OrderUpdate,
-    user: User = Depends(get_current_user),
+    actor: PartyActor = Depends(get_party_actor),
     db: Session = Depends(get_db),
 ) -> Response:
     session = _get_session(db, code)
-    _require_host(session, PartyActor(user=user))
+    _require_control(session, actor)
     tracks = _ordered_tracks(session)
     current_ids = {track.id for track in tracks}
     if (
@@ -647,11 +883,11 @@ def reorder_tracks(
 def set_current(
     code: str,
     body: CurrentUpdate,
-    user: User = Depends(get_current_user),
+    actor: PartyActor = Depends(get_party_actor),
     db: Session = Depends(get_db),
 ) -> Response:
     session = _get_session(db, code)
-    _require_host(session, PartyActor(user=user))
+    _require_control(session, actor)
     if body.index < -1 or body.index >= len(session.tracks):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -660,9 +896,11 @@ def set_current(
     session.current_index = body.index
     if body.index == -1:
         session.is_playing = False
-    # A track change resets the playback clock so guests re-sync from the top.
+    # A track change resets the playback clock so listeners re-sync from the top.
     session.position_sec = 0.0
     session.playback_updated_at = _utcnow()
+    session.playback_changed_by = actor.key
+    session.playback_revision = (session.playback_revision or 0) + 1
     _touch_session(db, session)
     _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -672,16 +910,17 @@ def set_current(
 def set_playback(
     code: str,
     body: PlaybackUpdate,
-    user: User = Depends(get_current_user),
+    actor: PartyActor = Depends(get_party_actor),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Host-only: set play/pause + position and stamp a server timestamp.
+    """Set play/pause + position (host, or any participant when guests_can_control is on).
 
-    Guests use ``position_sec`` together with the elapsed time since
-    ``playback_updated_at`` to keep their local player in sync.
+    Listeners use ``position_sec`` together with elapsed time since
+    ``playback_updated_at`` to stay in sync. ``playback_changed_by`` and
+    ``playback_revision`` let the host apply remote participant changes cleanly.
     """
     session = _get_session(db, code)
-    _require_host(session, PartyActor(user=user))
+    _require_control(session, actor)
     if not math.isfinite(body.position_sec) or body.position_sec < 0:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -695,6 +934,8 @@ def set_playback(
     session.is_playing = body.is_playing
     session.position_sec = body.position_sec
     session.playback_updated_at = _utcnow()
+    session.playback_changed_by = actor.key
+    session.playback_revision = (session.playback_revision or 0) + 1
     _touch_session(db, session)
     _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -721,10 +962,10 @@ async def party_events(
     """SSE stream of the latest full party state, with idle heartbeats.
 
     EventSource cannot set headers, but auth is cookie-based so the session
-    cookie rides along automatically through the Next proxy. Subscribe before
-    a worker loads the initial canonical state so mutations
-    during connection setup cannot disappear. No DB connection stays open for
-    the stream's lifetime; revisions order subsequent in-memory frames.
+    cookie rides along automatically through the proxy. Subscribe before
+    a worker loads the initial canonical state so mutations during connection
+    setup cannot disappear. No DB connection stays open for the stream's
+    lifetime; revisions order subsequent in-memory frames.
     """
     # Read the actor's identity now; the stream outlives its DB session.
     viewer = _viewer_fields(-1, actor)
@@ -742,6 +983,8 @@ async def party_events(
             latest = subscription.take_latest(initial)
             frame = {**latest.payload, **viewer}
             yield f"data: {json.dumps(frame)}\n\n"
+            if frame.get("ended"):
+                return
             while True:
                 try:
                     incoming = await asyncio.wait_for(
@@ -757,6 +1000,8 @@ async def party_events(
                 latest = incoming
                 frame = {**latest.payload, **viewer}
                 yield f"data: {json.dumps(frame)}\n\n"
+                if frame.get("ended"):
+                    return
         finally:
             # Runs on client disconnect (generator cancelled) — no leak.
             party_bus.unsubscribe(code, subscription)

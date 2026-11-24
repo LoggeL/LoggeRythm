@@ -15,11 +15,14 @@ import {
   decodeArtistSummaries,
   decodeBooleanMap,
   decodeCachedTrackIds,
+  decodeConnectState,
+  decodeConnectTicket,
   decodeDeezerPlaylistDetail,
   decodeGenreDetail,
   decodeGenres,
   decodeHomeShelves,
   decodeLyricsResponse,
+  decodeNullablePartyState,
   decodeOk,
   decodePlaybackSettings,
   decodePartyState,
@@ -51,6 +54,8 @@ import type {
   ArtistDetail,
   ArtistSummary,
   CachedTrackIds,
+  ConnectState,
+  ConnectTicket,
   DeezerPlaylistDetail,
   DeezerId,
   Genre,
@@ -110,7 +115,15 @@ export interface PartyCreateRequest {
   current_index?: number;
   is_playing?: boolean;
   position_sec?: number;
+  guests_can_control?: boolean;
 }
+
+export interface PartySettingsUpdateRequest {
+  name?: string | null;
+  guests_can_control?: boolean | null;
+}
+
+export type PartyTrackInsertMode = 'end' | 'next';
 
 export interface PartyPlaybackUpdate {
   is_playing: boolean;
@@ -639,6 +652,13 @@ export function createParty(request: PartyCreateRequest = {}): Promise<PartyStat
   });
 }
 
+export function getActiveParty(signal?: AbortSignal): Promise<PartyState | null> {
+  return apiRequest<PartyState | null>('/api/party/active', {
+    signal,
+    decode: decodeNullablePartyState,
+  });
+}
+
 export function getParty(code: string, signal?: AbortSignal): Promise<PartyState> {
   return apiRequest<PartyState>(`/api/party/${pathSegment(code)}`, {
     signal,
@@ -653,8 +673,13 @@ export function joinParty(code: string): Promise<PartyState> {
   });
 }
 
-export function partyAddTrack(code: string, track: TrackInput): Promise<void> {
-  return apiRequest<void>(`/api/party/${pathSegment(code)}/tracks`, {
+export function partyAddTrack(
+  code: string,
+  track: TrackInput,
+  insert?: PartyTrackInsertMode,
+): Promise<void> {
+  const query = insert === 'next' ? '?insert=next' : '';
+  return apiRequest<void>(`/api/party/${pathSegment(code)}/tracks${query}`, {
     method: 'POST',
     body: track,
   });
@@ -688,8 +713,61 @@ export function partySetPlayback(code: string, update: PartyPlaybackUpdate): Pro
   });
 }
 
+export function partyUpdateSettings(
+  code: string,
+  patch: PartySettingsUpdateRequest,
+): Promise<PartyState> {
+  return apiRequest<PartyState>(`/api/party/${pathSegment(code)}/settings`, {
+    method: 'PATCH',
+    body: patch,
+    decode: decodePartyState,
+  });
+}
+
+export function endParty(code: string): Promise<void> {
+  return apiRequest<void>(`/api/party/${pathSegment(code)}`, {
+    method: 'DELETE',
+    successStatuses: [204],
+  });
+}
+
+export function partyKickMember(code: string, memberKey: string): Promise<void> {
+  return apiRequest<void>(
+    `/api/party/${pathSegment(code)}/members/${pathSegment(memberKey)}`,
+    {
+      method: 'DELETE',
+      successStatuses: [204],
+    },
+  );
+}
+
+export function getPartyCachedTrackIds(
+  code: string,
+  signal?: AbortSignal,
+): Promise<CachedTrackIds> {
+  return apiRequest<CachedTrackIds>(`/api/party/${pathSegment(code)}/cached-tracks`, {
+    signal,
+    decode: decodeCachedTrackIds,
+  });
+}
+
 export function leaveParty(code: string): Promise<void> {
   return apiRequest<void>(`/api/party/${pathSegment(code)}/leave`, { method: 'POST' });
+}
+
+// --- Personal multi-device Connect ---
+export function createConnectTicket(): Promise<ConnectTicket> {
+  return apiRequest<ConnectTicket>('/api/connect/ticket', {
+    method: 'POST',
+    decode: decodeConnectTicket,
+  });
+}
+
+export function getConnectState(signal?: AbortSignal): Promise<ConnectState> {
+  return apiRequest<ConnectState>('/api/connect/state', {
+    signal,
+    decode: decodeConnectState,
+  });
 }
 
 // --- Admin ---

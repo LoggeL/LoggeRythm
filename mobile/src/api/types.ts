@@ -323,19 +323,25 @@ export interface PartyTrack {
   added_by: string;
   /** Member key of whoever added it; equals `PartyState.viewer_key` for your own additions. */
   added_by_member: string;
+  /** Optional contributor avatar URL for Jam queue rows. */
+  added_by_avatar_url: string | null;
   /** Server cache state of the audio, kept warm in the background. */
   load_state: PartyLoadState;
   /** Why the last background load failed (only for `failed`). */
   load_error: string | null;
+  /** Authoritative server-stored boolean from backend storage. */
+  is_stored: boolean;
 }
 
 export type PartyLoadState = 'ready' | 'loading' | 'queued' | 'failed' | 'idle';
 
 export interface PartyMember {
+  key: string;
   name: string;
   avatar_url: string | null;
   /** Joined anonymously with a nickname (web guests without an account). */
   is_guest: boolean;
+  is_host: boolean;
 }
 
 export interface PartyState {
@@ -347,6 +353,11 @@ export interface PartyState {
   is_playing: boolean;
   position_sec: number;
   playback_updated_at: string | null;
+  server_time: string;
+  guests_can_control: boolean;
+  playback_changed_by: string;
+  playback_revision: number;
+  ended: boolean;
   members: PartyMember[];
   tracks: PartyTrack[];
   /** Member key of the requesting account ("u:<id>"). */
@@ -354,6 +365,204 @@ export interface PartyState {
   viewer_name: string;
   viewer_is_guest: boolean;
 }
+
+export type ConnectDeviceType =
+  | 'web'
+  | 'mobile'
+  | 'tablet'
+  | 'desktop'
+  | 'tv'
+  | 'speaker'
+  | 'other';
+
+export interface ConnectDeviceCapabilities {
+  can_play_audio: boolean;
+  can_control_volume: boolean;
+}
+
+export interface ConnectDevice {
+  device_id: string;
+  name: string;
+  device_type: ConnectDeviceType;
+  capabilities: ConnectDeviceCapabilities;
+  volume: number;
+  muted: boolean;
+  is_active: boolean;
+  party_code: string | null;
+  connected_at: string;
+  last_seen_at: string;
+}
+
+export type ConnectQueueOrigin = 'manual' | 'context';
+export type ConnectRepeatMode = 'off' | 'all' | 'one';
+
+export interface ConnectPlaybackState {
+  queue: Track[];
+  origins: ConnectQueueOrigin[];
+  queue_context: string | null;
+  current_index: number;
+  is_playing: boolean;
+  position_sec: number;
+  duration_sec: number;
+  shuffle: boolean;
+  repeat: ConnectRepeatMode;
+  volume: number;
+  muted: boolean;
+  updated_at: string | null;
+}
+
+export interface ConnectState {
+  revision: number;
+  active_device_id: string | null;
+  devices: ConnectDevice[];
+  playback: ConnectPlaybackState;
+  server_time: string;
+}
+
+export interface ConnectTicket {
+  ticket: string;
+  expires_in_sec: number;
+}
+
+export type ConnectCommandAction =
+  | 'play'
+  | 'pause'
+  | 'toggle'
+  | 'next'
+  | 'prev'
+  | 'clear_queue'
+  | 'seek'
+  | 'set_volume'
+  | 'set_mute'
+  | 'set_shuffle'
+  | 'set_repeat'
+  | 'play_tracks'
+  | 'queue_add'
+  | 'queue_play_next'
+  | 'queue_remove'
+  | 'queue_reorder'
+  | 'select_index';
+
+export interface ConnectCommandPayloadMap {
+  play: Record<string, never>;
+  pause: Record<string, never>;
+  toggle: Record<string, never>;
+  next: Record<string, never>;
+  prev: Record<string, never>;
+  clear_queue: Record<string, never>;
+  seek: { position_sec: number };
+  set_volume: { volume: number };
+  set_mute: { muted: boolean };
+  set_shuffle: { shuffle: boolean };
+  set_repeat: { repeat: ConnectRepeatMode };
+  play_tracks: {
+    tracks: Track[];
+    start_index: number;
+    queue_context?: string | null;
+    origins?: ConnectQueueOrigin[];
+  };
+  queue_add: { track: Track };
+  queue_play_next: { track: Track };
+  queue_remove: { index: number };
+  queue_reorder: { from_index: number; to_index: number };
+  select_index: { index: number };
+}
+
+export type ConnectPlaybackInput = Omit<ConnectPlaybackState, 'updated_at'>;
+
+export type ConnectClientFrame =
+  | {
+      type: 'register';
+      device_id: string;
+      name: string;
+      device_type: ConnectDeviceType;
+      capabilities?: ConnectDeviceCapabilities;
+      volume?: number;
+      muted?: boolean;
+      party_code?: string | null;
+      take_active?: boolean;
+      playback?: ConnectPlaybackInput;
+    }
+  | { type: 'ping' }
+  | { type: 'pong' }
+  | {
+      type: 'update_device';
+      name?: string;
+      volume?: number;
+      muted?: boolean;
+      party_code?: string | null;
+    }
+  | {
+      type: 'playback_state';
+      claim_active?: boolean;
+      state: ConnectPlaybackInput;
+    }
+  | {
+      type: 'transfer';
+      target_device_id: string;
+      play?: boolean;
+      request_id?: string;
+    }
+  | {
+      type: 'command';
+      request_id?: string;
+      target_device_id?: string | null;
+      action: ConnectCommandAction;
+      payload?: Record<string, unknown>;
+    }
+  | {
+      type: 'command_ack';
+      command_id: string;
+      ok: boolean;
+      error?: string | null;
+    };
+
+export type ConnectServerFrame =
+  | {
+      type: 'welcome';
+      self_device_id: string;
+      heartbeat_interval_sec: number;
+      state: ConnectState;
+    }
+  | {
+      type: 'state';
+      state: ConnectState;
+    }
+  | {
+      type: 'activate';
+      from_device_id: string | null;
+      playback: ConnectPlaybackState;
+    }
+  | {
+      type: 'deactivated';
+      new_active_device_id: string;
+      reason: 'transferred' | 'claimed_by_other_device';
+    }
+  | {
+      type: 'command';
+      command_id: string;
+      request_id: string | null;
+      from_device_id: string;
+      action: ConnectCommandAction;
+      payload: Record<string, unknown>;
+    }
+  | {
+      type: 'command_result';
+      request_id: string | null;
+      command_id: string;
+      ok: boolean;
+      error: string | null;
+    }
+  | {
+      type: 'ping' | 'pong';
+      ts: string;
+    }
+  | {
+      type: 'error';
+      code: string;
+      detail: string;
+      request_id: string | null;
+    };
 
 export interface AdminUser {
   id: number;

@@ -611,6 +611,42 @@ export async function authenticatedHeadersFor(
 }
 
 /**
+ * Resolve an authenticated WebSocket URL and Cookie header bound to the exact
+ * stored session origin and TLS requirement.
+ */
+export async function authenticatedWebSocketConnection(
+  path: string,
+  authority?: AuthenticatedRequestAuthority,
+): Promise<{ url: string; headers: Record<string, string> }> {
+  if (!path.startsWith('/')) {
+    throw new Error(`WebSocket path must start with '/': ${path}`);
+  }
+  await ensureLoaded();
+  const base = await getApiBase();
+  await ensureApiCompatibility(base);
+  const httpUrl = `${base}${path}`;
+  const exactAuthority = authority === undefined
+    ? requireCurrentSessionAuthority()
+    : resolveAuthenticatedRequestAuthority(authority);
+  if (exactAuthority.storedSession === null) {
+    throw new Error(`Cannot open WebSocket ${path}: no local session`);
+  }
+  const cookie = sessionCookieHeader(exactAuthority.storedSession, httpUrl);
+  const parsed = new URL(httpUrl);
+  if (parsed.protocol === 'https:') {
+    parsed.protocol = 'wss:';
+  } else if (parsed.protocol === 'http:') {
+    if (exactAuthority.storedSession.secure) {
+      throw new Error(`Refusing to open insecure ws:// connection for Secure session to ${parsed.host}`);
+    }
+    parsed.protocol = 'ws:';
+  } else {
+    throw new Error(`Unsupported protocol for WebSocket connection: ${parsed.protocol}`);
+  }
+  return { url: parsed.toString(), headers: { Cookie: cookie } };
+}
+
+/**
  * Cold Headless JS must restore the session-bound origin before any controller
  * path reads the synchronous runtime base.
  */

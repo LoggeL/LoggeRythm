@@ -12,12 +12,31 @@ import { reportTrackCacheFailure, retryTrackCacheStatus, useTrackCacheError, use
 export default function CacheMarker({
   trackId,
   className = "",
+  serverStored = false,
+  skipStoreFetch = false,
+  externalError = null,
+  onRetryExternal,
 }: {
   trackId: string | number;
   className?: string;
+  /** Authoritative server-stored flag (e.g. `PartyTrack.is_stored` or guest party cached-tracks). */
+  serverStored?: boolean;
+  /** Anonymous party guests cannot call `/api/cached-tracks`; use party-scoped status instead. */
+  skipStoreFetch?: boolean;
+  /** Explicit cache-lookup failure from an external source (e.g. `/api/party/{code}/cached-tracks`). */
+  externalError?: string | null;
+  onRetryExternal?: () => void | Promise<void>;
 }) {
-  const state = useTrackCacheState(trackId);
-  const error = useTrackCacheError();
+  const storeState = useTrackCacheState(trackId, !skipStoreFetch);
+  const storeError = useTrackCacheError();
+  const state = skipStoreFetch
+    ? (serverStored ? "server" : null)
+    : storeState === "local"
+      ? "local"
+      : storeState === "server" || serverStored
+        ? "server"
+        : null;
+  const error = skipStoreFetch ? externalError : (externalError ?? storeError);
   if (!state && !error) return null;
   const local = state === "local";
   return (
@@ -30,18 +49,24 @@ export default function CacheMarker({
           <DownloadedIcon aria-label={local ? "Offline verfügbar" : "Auf dem Server gespeichert"} />
         </span>
       )}
-      {error && <button
-        type="button"
-        title={`${error} Erneut versuchen.`}
-        aria-label={`Cache-Status fehlgeschlagen: ${error}. Erneut versuchen.`}
-        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-danger/40 text-xs font-semibold text-danger"
-        onClick={(event) => {
-          event.stopPropagation();
-          void retryTrackCacheStatus().catch(reportTrackCacheFailure);
-        }}
-      >
-        !
-      </button>}
+      {error && (
+        <button
+          type="button"
+          title={`${error} Erneut versuchen.`}
+          aria-label={`Cache-Status fehlgeschlagen: ${error}. Erneut versuchen.`}
+          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-danger/40 text-xs font-semibold text-danger"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (skipStoreFetch && onRetryExternal) {
+              void Promise.resolve(onRetryExternal()).catch(reportTrackCacheFailure);
+            } else {
+              void retryTrackCacheStatus().catch(reportTrackCacheFailure);
+            }
+          }}
+        >
+          !
+        </button>
+      )}
     </span>
   );
 }

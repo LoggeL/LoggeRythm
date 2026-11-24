@@ -13,14 +13,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import {
-  PlaybackState,
-  useActiveMediaItem,
-  useIsPlaying,
-  usePlaybackState,
-  useProgress,
-} from '../player/player';
-import { mediaItemToTrack } from '../player/mediaItem';
-import { next, prev, togglePlay } from '../player/controller';
+  transferActiveConnectPlayback,
+  useActiveConnectSnapshot,
+} from '../connect/activeConnect';
+import {
+  deviceTypeIcon,
+  shouldShowDeviceSelectorInBar,
+} from '../connect/connectModel';
+import {
+  effectiveNext,
+  effectivePrev,
+  effectiveTogglePlay,
+  useEffectivePlayback,
+  useEffectiveProgress,
+} from '../connect/effectivePlayback';
 import { reportPlayerError } from '../player/errors';
 import {
   resolveMiniPlayerSwipe,
@@ -31,8 +37,11 @@ import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { RootStackParams } from '../navigation';
 import { trackArtistLabel } from '../api/trackArtists';
 import { strings } from '../localization';
+import { useActivePartySnapshot } from '../party/activeParty';
+import { partyDisplayName } from '../party/partyModel';
 import { colors, elevation, metrics, opacity, radii, spacing, typography } from '../theme';
 import { tvFocusRegistry, useTvEnvironment } from '../tv';
+import { showDevicePicker } from './connect/devicePicker';
 import TrackLikeButton from './TrackLikeButton';
 import PlayerNoticeBanner from './PlayerNoticeBanner';
 import AppIcon from './AppIcon';
@@ -42,6 +51,8 @@ import { createFocusRingController, FocusRingOverlay } from './ui/PressableScale
 export const TAB_BAR_HEIGHT = metrics.tabBarHeight;
 /** Content reserves the surface and the gap above the tab bar or safe area. */
 export const MINI_PLAYER_HEIGHT = metrics.miniPlayerSurfaceHeight + metrics.miniPlayerGap;
+/** Extra height occupied by the Spotify-style remote-output / Jam strip when active. */
+export const MINI_PLAYER_OUTPUT_STRIP_HEIGHT = 32;
 
 const MAX_DRAG_X = 96;
 const MAX_DRAG_Y = 56;
@@ -80,7 +91,7 @@ export function miniPlayerDragOffset(dx: number, dy: number): { x: number; y: nu
  * never trigger Yoga layout passes or re-render `MiniPlayer` / `TrackLikeButton`.
  */
 export const MiniPlayerProgressBar = React.memo(function MiniPlayerProgressBar() {
-  const { position, duration } = useProgress(1);
+  const { position, duration } = useEffectiveProgress(1);
   const reducedMotion = useReducedMotion();
   const ratio = miniPlayerProgressRatio(position, duration);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -138,10 +149,11 @@ export const MiniPlayerProgressBar = React.memo(function MiniPlayerProgressBar()
 
 /**
  * The floating playback card above the tab bar (or the safe area outside the
- * tabs): artwork, title/artist, like, play/pause, next and a native-driver
- * progress line along its bottom edge. Tap opens Now Playing; finger-tracking
- * horizontal swipes skip, an upward swipe expands. Renders nothing while no
- * track is loaded — pair scroll views with `useBottomInset()` so content clears it.
+ * tabs): artwork, title/artist, like, conditional Spotify-style device selector
+ * (visible when multiple devices are connected, playing remotely, or in a Jam),
+ * play/pause, next and a native-driver progress line along its bottom edge.
+ * When controlling another device remotely or participating in a Jam, renders a
+ * Spotify-style output strip directly beneath the main row.
  */
 export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
   const insets = useSafeAreaInsets();
@@ -149,15 +161,18 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
   const tv = useTvEnvironment();
   const reducedMotion = useReducedMotion();
   const haptics = useHaptics();
-  const item = useActiveMediaItem();
-  const playing = useIsPlaying();
-  const playbackState = usePlaybackState();
-  const track = mediaItemToTrack(item);
+  const effective = useEffectivePlayback();
+  const connect = useActiveConnectSnapshot();
+  const party = useActivePartySnapshot();
+  const track = effective.track;
+  const playing = effective.playing;
+  const buffering = effective.buffering;
 
   const [translateX] = useState(() => new Animated.Value(0));
   const [translateY] = useState(() => new Animated.Value(0));
 
   const openFocus = useMemo(() => createFocusRingController(), []);
+  const devicesFocus = useMemo(() => createFocusRingController(), []);
   const playPauseFocus = useMemo(() => createFocusRingController(), []);
   const nextFocus = useMemo(() => createFocusRingController(), []);
 
@@ -216,11 +231,11 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
       const action = resolveMiniPlayerSwipe(gesture);
       if (action === 'next') {
         haptics.trigger('commit');
-        run(strings.player.nextFailed, next);
+        run(strings.player.nextFailed, effectiveNext);
         resetDragPosition(false);
       } else if (action === 'previous') {
         haptics.trigger('commit');
-        run(strings.player.previousFailed, prev);
+        run(strings.player.previousFailed, effectivePrev);
         resetDragPosition(false);
       } else if (action === 'expand') {
         resetDragPosition(true);
@@ -235,17 +250,24 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
 
   if (!track) return null;
   const artistLabel = trackArtistLabel(track);
-  const buffering = playbackState === PlaybackState.Buffering;
+  const activeParty = party.party !== null && !party.detached ? party.party : null;
+  const showDeviceSelector = shouldShowDeviceSelectorInBar(connect, activeParty !== null);
+  const showRemoteStrip = effective.mode === 'remote' && effective.activeDevice !== null;
+  const showJamStrip = !showRemoteStrip && activeParty !== null;
+  const hasOutputStrip = showRemoteStrip || showJamStrip;
+
   const dockBottom = (hasTabBar && !tv.isTv ? TAB_BAR_HEIGHT : 0) + insets.bottom;
   const barBottom = tv.isTv
     ? Math.max(spacing.md, insets.bottom + metrics.miniPlayerGap)
     : dockBottom + metrics.miniPlayerGap;
-  const barHeight = tv.isTv ? TV_BAR_HEIGHT : metrics.miniPlayerSurfaceHeight;
+  const baseBarHeight = tv.isTv ? TV_BAR_HEIGHT : metrics.miniPlayerSurfaceHeight;
+  const barHeight = baseBarHeight + (hasOutputStrip ? MINI_PLAYER_OUTPUT_STRIP_HEIGHT : 0);
   const artworkSize = tv.isTv ? TV_ARTWORK_SIZE : ARTWORK_SIZE;
   const shieldHeight = hasTabBar
     ? metrics.miniPlayerGap + radii.panel
     : insets.bottom + metrics.miniPlayerGap + radii.panel;
   const shieldBottom = hasTabBar ? dockBottom : 0;
+  const deviceAccent = showRemoteStrip || showJamStrip;
 
   return (
     <>
@@ -279,85 +301,181 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
         ]}
         {...(tv.isTv ? null : swipeResponder.panHandlers)}
       >
-        <Pressable
-          testID="mini-player-open"
-          accessibilityRole="button"
-          accessibilityLabel={strings.player.openNowPlaying(track.title, artistLabel)}
-          focusable
-          onFocus={() => openFocus.setFocused(true)}
-          onBlur={() => openFocus.setFocused(false)}
-          style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
-          onPress={openNowPlaying}
-        >
-          <Artwork uri={track.cover} size={artworkSize} />
-          <View style={styles.meta}>
-            <Text
-              style={[
-                styles.title,
-                tv.isTv ? { fontSize: tv.typography.label.fontSize, lineHeight: tv.typography.label.lineHeight } : null,
+        <View style={[styles.mainRow, { height: baseBarHeight }]}>
+          <Pressable
+            testID="mini-player-open"
+            accessibilityRole="button"
+            accessibilityLabel={strings.player.openNowPlaying(track.title, artistLabel)}
+            focusable
+            onFocus={() => openFocus.setFocused(true)}
+            onBlur={() => openFocus.setFocused(false)}
+            style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
+            onPress={openNowPlaying}
+          >
+            <Artwork uri={track.cover} size={artworkSize} />
+            <View style={styles.meta}>
+              <Text
+                style={[
+                  styles.title,
+                  tv.isTv ? { fontSize: tv.typography.label.fontSize, lineHeight: tv.typography.label.lineHeight } : null,
+                ]}
+                numberOfLines={1}
+              >
+                {track.title}
+              </Text>
+              <Text
+                style={[
+                  styles.artist,
+                  tv.isTv ? { fontSize: tv.typography.caption.fontSize, lineHeight: tv.typography.caption.lineHeight } : null,
+                ]}
+                numberOfLines={1}
+              >
+                {artistLabel}
+              </Text>
+            </View>
+            <FocusRingOverlay controller={openFocus} borderRadius={radii.md} />
+          </Pressable>
+          <TrackLikeButton track={track} testID="mini-player-like" />
+          {showDeviceSelector ? (
+            <Pressable
+              testID="mini-player-devices"
+              accessibilityRole="button"
+              accessibilityLabel={strings.connect.devicesButton(effective.activeDevice?.name ?? null)}
+              focusable
+              onFocus={() => devicesFocus.setFocused(true)}
+              onBlur={() => devicesFocus.setFocused(false)}
+              onPress={() => {
+                haptics.trigger('tap');
+                showDevicePicker('devices');
+              }}
+              style={({ pressed }) => [
+                styles.btn,
+                pressed && (reducedMotion ? styles.pressed : styles.pressedControl),
               ]}
-              numberOfLines={1}
             >
-              {track.title}
-            </Text>
-            <Text
-              style={[
-                styles.artist,
-                tv.isTv ? { fontSize: tv.typography.caption.fontSize, lineHeight: tv.typography.caption.lineHeight } : null,
-              ]}
-              numberOfLines={1}
+              <AppIcon
+                name={
+                  effective.activeDevice !== null
+                    ? deviceTypeIcon(effective.activeDevice.device_type)
+                    : 'speaker-wireless'
+                }
+                color={deviceAccent ? colors.accent : colors.textPrimary}
+                size={22}
+              />
+              {deviceAccent ? (
+                <View
+                  testID="mini-player-devices-dot"
+                  accessible={false}
+                  pointerEvents="none"
+                  style={styles.deviceDot}
+                />
+              ) : null}
+              <FocusRingOverlay controller={devicesFocus} borderRadius={radii.pill} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            testID="mini-player-play-pause"
+            accessibilityRole="button"
+            accessibilityLabel={playing ? strings.common.pause : strings.common.play}
+            accessibilityState={{ busy: buffering }}
+            focusable
+            onFocus={() => playPauseFocus.setFocused(true)}
+            onBlur={() => playPauseFocus.setFocused(false)}
+            onPress={() => {
+              haptics.trigger('commit');
+              run(strings.player.playPauseFailed, effectiveTogglePlay);
+            }}
+            style={({ pressed }) => [
+              styles.btn,
+              pressed && (reducedMotion ? styles.pressed : styles.pressedControl),
+            ]}
+          >
+            <View style={styles.playDisc}>
+              {buffering ? (
+                <ActivityIndicator color={colors.onLight} size="small" />
+              ) : (
+                <AppIcon name={playing ? 'pause' : 'play'} color={colors.onLight} size={24} />
+              )}
+            </View>
+            <FocusRingOverlay controller={playPauseFocus} borderRadius={radii.pill} />
+          </Pressable>
+          <Pressable
+            testID="mini-player-next"
+            accessibilityRole="button"
+            accessibilityLabel={strings.common.nextTrack}
+            focusable
+            onFocus={() => nextFocus.setFocused(true)}
+            onBlur={() => nextFocus.setFocused(false)}
+            onPress={() => {
+              haptics.trigger('commit');
+              run(strings.player.nextFailed, effectiveNext);
+            }}
+            style={({ pressed }) => [
+              styles.btn,
+              pressed && (reducedMotion ? styles.pressed : styles.pressedControl),
+            ]}
+          >
+            <AppIcon name="skip-next" color={colors.textPrimary} size={28} />
+            <FocusRingOverlay controller={nextFocus} borderRadius={radii.pill} />
+          </Pressable>
+        </View>
+
+        {showRemoteStrip && effective.activeDevice !== null ? (
+          <View testID="mini-player-remote-strip" style={styles.outputStrip}>
+            <Pressable
+              testID="mini-player-remote-strip-open"
+              accessibilityRole="button"
+              accessibilityLabel={strings.connect.listeningOn(effective.activeDevice.name)}
+              onPress={() => showDevicePicker('devices')}
+              style={({ pressed }) => [styles.outputStripMain, pressed && styles.pressed]}
             >
-              {artistLabel}
-            </Text>
+              <AppIcon
+                name={deviceTypeIcon(effective.activeDevice.device_type)}
+                size={14}
+                color={colors.accentSoft}
+              />
+              <Text numberOfLines={1} style={styles.outputStripText}>
+                {strings.connect.listeningOn(effective.activeDevice.name)}
+              </Text>
+            </Pressable>
+            {connect.selfDeviceId !== null ? (
+              <Pressable
+                testID="mini-player-play-here"
+                accessibilityRole="button"
+                accessibilityLabel={strings.connect.playHere}
+                onPress={() => {
+                  const selfId = connect.selfDeviceId;
+                  if (selfId === null) return;
+                  void transferActiveConnectPlayback(selfId).catch((error) => {
+                    reportPlayerError(strings.connect.transferFailed(String(error)), error);
+                  });
+                }}
+                style={({ pressed }) => [styles.playHereButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.playHereText}>{strings.connect.playHere}</Text>
+              </Pressable>
+            ) : null}
           </View>
-          <FocusRingOverlay controller={openFocus} borderRadius={radii.md} />
-        </Pressable>
-        <TrackLikeButton track={track} testID="mini-player-like" />
-        <Pressable
-          testID="mini-player-play-pause"
-          accessibilityRole="button"
-          accessibilityLabel={playing ? strings.common.pause : strings.common.play}
-          accessibilityState={{ busy: buffering }}
-          focusable
-          onFocus={() => playPauseFocus.setFocused(true)}
-          onBlur={() => playPauseFocus.setFocused(false)}
-          onPress={() => {
-            haptics.trigger('commit');
-            run(strings.player.playPauseFailed, togglePlay);
-          }}
-          style={({ pressed }) => [
-            styles.btn,
-            pressed && (reducedMotion ? styles.pressed : styles.pressedControl),
-          ]}
-        >
-          <View style={styles.playDisc}>
-            {buffering ? (
-              <ActivityIndicator color={colors.onLight} size="small" />
-            ) : (
-              <AppIcon name={playing ? 'pause' : 'play'} color={colors.onLight} size={24} />
+        ) : null}
+
+        {showJamStrip && activeParty !== null ? (
+          <Pressable
+            testID="mini-player-jam-strip"
+            accessibilityRole="button"
+            accessibilityLabel={strings.party.inJamStrip(
+              partyDisplayName(activeParty),
+              activeParty.members.length,
             )}
-          </View>
-          <FocusRingOverlay controller={playPauseFocus} borderRadius={radii.pill} />
-        </Pressable>
-        <Pressable
-          testID="mini-player-next"
-          accessibilityRole="button"
-          accessibilityLabel={strings.common.nextTrack}
-          focusable
-          onFocus={() => nextFocus.setFocused(true)}
-          onBlur={() => nextFocus.setFocused(false)}
-          onPress={() => {
-            haptics.trigger('commit');
-            run(strings.player.nextFailed, next);
-          }}
-          style={({ pressed }) => [
-            styles.btn,
-            pressed && (reducedMotion ? styles.pressed : styles.pressedControl),
-          ]}
-        >
-          <AppIcon name="skip-next" color={colors.textPrimary} size={28} />
-          <FocusRingOverlay controller={nextFocus} borderRadius={radii.pill} />
-        </Pressable>
+            onPress={() => navigation.navigate('Party', { code: activeParty.code })}
+            style={({ pressed }) => [styles.outputStrip, pressed && styles.pressed]}
+          >
+            <AppIcon name="account-group-outline" size={14} color={colors.accentSoft} />
+            <Text numberOfLines={1} style={styles.outputStripText}>
+              {strings.party.inJamStrip(partyDisplayName(activeParty), activeParty.members.length)}
+            </Text>
+          </Pressable>
+        ) : null}
+
         <MiniPlayerProgressBar />
       </Animated.View>
     </>
@@ -381,23 +499,23 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.xs,
     right: spacing.xs,
-    height: metrics.miniPlayerSurfaceHeight,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
     backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: radii.panel,
-    paddingLeft: spacing.xs + 1,
-    paddingRight: spacing.xxs,
     overflow: 'hidden',
     zIndex: 2,
     ...elevation.floating,
   },
   tvBar: {
-    paddingLeft: spacing.sm,
-    paddingRight: spacing.sm,
-    gap: spacing.xs,
+    paddingHorizontal: spacing.xxs,
+  },
+  mainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingLeft: spacing.xs + 1,
+    paddingRight: spacing.xxs,
   },
   trackButton: {
     minWidth: 0,
@@ -419,6 +537,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  deviceDot: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 7,
+    height: 7,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+  },
   playDisc: {
     width: PLAY_DISC_SIZE,
     height: PLAY_DISC_SIZE,
@@ -426,6 +553,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.textPrimary,
+  },
+  outputStrip: {
+    height: MINI_PLAYER_OUTPUT_STRIP_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.accentSubtle,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  outputStripMain: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  outputStripText: {
+    ...typography.caption,
+    color: colors.accentSoft,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  playHereButton: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 3,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+  },
+  playHereText: {
+    ...typography.micro,
+    color: colors.onAccent,
   },
   pressed: { opacity: opacity.pressed },
   pressedControl: { opacity: opacity.pressed, transform: [{ scale: 0.92 }] },

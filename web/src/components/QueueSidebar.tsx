@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { usePlayerStore } from "@/store/player";
+import { usePartyStore } from "@/store/party";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
-import { CloseIcon } from "@/components/icons";
+import { CloseIcon, UsersIcon } from "@/components/icons";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import QueueList, { useUpcomingQueue } from "@/components/queue/QueueList";
 import { useClearQueueWithUndo } from "@/components/queue/useClearQueueWithUndo";
@@ -27,11 +28,16 @@ const serverDockSnapshot = () => false;
 export default function QueueSidebar() {
   const open = usePlayerStore((s) => s.queueOpen);
   const setOpen = usePlayerStore((s) => s.setQueueOpen);
+  const partyActive = usePartyStore((s) => s.active);
+  const partyCode = usePartyStore((s) => s.code);
+  const partyName = usePartyStore((s) => s.name);
   const { upcoming } = useUpcomingQueue();
   const clearing = useClearQueueWithUndo();
 
   const router = useRouter();
   const [startingParty, setStartingParty] = useState(false);
+  const [showJoinForm, setShowJoinForm] = useState(false);
+  const [joinCode, setJoinCode] = useState("");
   const docked = useSyncExternalStore(subscribeDock, dockSnapshot, serverDockSnapshot);
   const panelRef = useRef<HTMLElement>(null);
   const closeQueue = useCallback(() => setOpen(false), [setOpen]);
@@ -46,7 +52,7 @@ export default function QueueSidebar() {
   const startParty = async () => {
     setStartingParty(true);
     try {
-      // The party continues the host's current queue right where it is.
+      // The Jam continues the host's current queue right where it is.
       const party = await api.createParty(undefined, usePlayerStore.getState().partyStartSnapshot());
       try {
         usePlayerStore.getState().adoptPartyQueue(
@@ -54,14 +60,25 @@ export default function QueueSidebar() {
           party.tracks.map((entry) => entry.id),
         );
       } finally {
-        // The party exists either way; its page takes over the server state.
+        usePartyStore.getState().setActiveCode(party.code);
+        usePartyStore.getState().applyPartyState(party);
         router.push(`/party/${party.code}`);
       }
     } catch (error) {
-      toast.error(`Party konnte nicht gestartet werden: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error(`Jam konnte nicht gestartet werden: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setStartingParty(false);
     }
+  };
+
+  const joinPartyByCode = (event: FormEvent) => {
+    event.preventDefault();
+    const cleaned = joinCode.trim().toUpperCase();
+    if (!cleaned) return;
+    setJoinCode("");
+    setShowJoinForm(false);
+    if (!docked) closeQueue();
+    router.push(`/party/${encodeURIComponent(cleaned)}`);
   };
 
   return (
@@ -103,14 +120,57 @@ export default function QueueSidebar() {
             </button>
           </header>
 
-          <div className="flex flex-shrink-0 items-center gap-2 px-4 pb-4">
-            <button type="button" onClick={startParty} disabled={startingParty} className="action-secondary min-h-9 flex-1 px-4 text-[13px]">
-              {startingParty ? "Wird gestartet…" : "Party starten"}
-            </button>
-            {clearing.canClear && upcoming.length > 0 && (
-              <button type="button" onClick={clearing.clear} className="action-secondary min-h-9 px-4 text-[13px]">
-                Leeren
-              </button>
+          <div className="flex flex-shrink-0 flex-col gap-2 px-4 pb-4">
+            <div className="flex items-center gap-2">
+              {partyActive && partyCode ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!docked) closeQueue();
+                    router.push(`/party/${encodeURIComponent(partyCode)}`);
+                  }}
+                  className="action-primary min-h-9 flex-1 px-4 text-[13px]"
+                >
+                  <UsersIcon width={15} height={15} />
+                  <span className="truncate">Zur Jam ({partyName || partyCode})</span>
+                </button>
+              ) : (
+                <>
+                  <button type="button" onClick={startParty} disabled={startingParty} className="action-secondary min-h-9 flex-1 px-3 text-[13px]">
+                    <UsersIcon width={15} height={15} />
+                    {startingParty ? "Wird gestartet…" : "Jam starten"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowJoinForm((v) => !v)}
+                    aria-expanded={showJoinForm}
+                    className="action-secondary min-h-9 px-3 text-[13px]"
+                  >
+                    Code
+                  </button>
+                </>
+              )}
+              {clearing.canClear && upcoming.length > 0 && (
+                <button type="button" onClick={clearing.clear} className="action-secondary min-h-9 px-3 text-[13px]">
+                  Leeren
+                </button>
+              )}
+            </div>
+            {showJoinForm && !partyActive && (
+              <form onSubmit={joinPartyByCode} className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value)}
+                  placeholder="Jam-Code…"
+                  aria-label="Jam-Code eingeben"
+                  maxLength={16}
+                  className="field-input min-h-9 flex-1 px-3 py-1.5 font-mono text-xs uppercase"
+                />
+                <button type="submit" disabled={!joinCode.trim()} className="action-primary min-h-9 px-3 text-xs">
+                  Beitreten
+                </button>
+              </form>
             )}
           </div>
 
