@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Track } from "@/types";
 import { useMe } from "@/hooks/useAuth";
-import { useLikedIds, useLikePending, useToggleLike } from "@/hooks/useLibrary";
+import { useLikedTrack, useLikePending, useToggleLike } from "@/hooks/useLibrary";
 import { HeartIcon } from "@/components/icons";
 import { LIKE_BURST_DURATION, getLikeBurstGeometry, type LikeBurstGeometry } from "./LikeButton.motion";
 import styles from "./LikeButton.module.css";
@@ -66,9 +66,10 @@ export default function LikeButton({ track }: { track: Track }) {
   const router = useRouter();
   const { data: me } = useMe();
   const trackId = String(track.id);
-  const liked = useLikedIds(!!me).has(trackId);
-  const toggleLike = useToggleLike(track.id);
-  const pending = useLikePending(track.id) || toggleLike.isPending;
+  const matchedLike = useLikedTrack(track, !!me);
+  const liked = matchedLike !== undefined;
+  const toggleLike = useToggleLike(track);
+  const pending = useLikePending(track) || toggleLike.isPending;
   const gradientId = useId();
   const request = useRef<symbol | null>(null);
   const sequence = useRef(0);
@@ -107,7 +108,7 @@ export default function LikeButton({ track }: { track: Track }) {
     const operation = Symbol("like operation");
     request.current = operation;
     setAnimation({ owner: trackId, celebration: null });
-    toggleLike.mutate({ track, liked }, {
+    toggleLike.mutate({ track, liked, matchedLikeId: matchedLike?.id }, {
       onSuccess: () => {
         // Optimistic cache updates still provide immediate heart feedback. The
         // large celebration is reserved for a like the server actually saved.

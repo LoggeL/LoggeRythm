@@ -25,6 +25,7 @@ import type {
   ConnectState,
   ConnectTicket,
   StorageInfo,
+  LikesDeduplicationResult,
   InviteInfo,
   SystemStatus,
   AdminUsageRange,
@@ -450,6 +451,11 @@ export const api = {
   adminStorageCleanup: () =>
     req<{ removed: number; freed_bytes: number }>(`/admin/storage/cleanup`, {
       method: "POST",
+    }),
+  adminDeduplicateLikes: () =>
+    req<LikesDeduplicationResult>(`/admin/likes/deduplicate`, {
+      method: "POST",
+      timeoutMs: 300_000,
     }),
   adminInvites: () => req<InviteInfo[]>(`/admin/invites`),
   adminCreateInvite: () => req<InviteInfo>(`/admin/invites`, { method: "POST" }),

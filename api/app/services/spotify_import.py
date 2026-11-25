@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from . import deezer_client as dc
 from . import spotify
+from .track_identity import TrackDescriptor, descriptor_from_mapping, same_recording
 
 # Modest concurrency + backoff (in deezer_client._public_get) keeps big imports
 # under Deezer's public rate limit.
@@ -126,7 +127,7 @@ def resolve_link(
 
     matched: list[dict] = []
     unmatched: list[dict] = []
-    seen_deezer: set[str] = set()
+    seen_descs: list[TrackDescriptor] = []
     if sp_tracks:
         pool = ThreadPoolExecutor(max_workers=MATCH_WORKERS)
         try:
@@ -138,10 +139,12 @@ def resolve_link(
                 sp, deezer, exc = future.result()
                 if exc is not None:
                     failures.record(sp, exc)
-                if deezer and deezer["id"] not in seen_deezer:
-                    seen_deezer.add(deezer["id"])
-                    matched.append(deezer)
-                elif not deezer:
+                if deezer:
+                    desc = descriptor_from_mapping(deezer)
+                    if not any(same_recording(existing, desc) for existing in seen_descs):
+                        seen_descs.append(desc)
+                        matched.append(deezer)
+                else:
                     unmatched.append(
                         {"title": sp.get("title", ""), "artist": sp.get("artist", "")}
                     )

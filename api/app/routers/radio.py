@@ -20,6 +20,11 @@ from ..services import deezer_client as dc
 from ..services import recommend
 from ..services.discovery import DiscoveryError
 from ..services.lastfm_client import LastfmError
+from ..services.track_identity import (
+    TrackDescriptor,
+    descriptor_from_mapping,
+    same_recording,
+)
 from .errors import to_http
 
 router = APIRouter(prefix="/api", tags=["radio"])
@@ -105,13 +110,21 @@ def _genre_charts(album_id) -> list[dict]:
     return dc.normalize_public_tracks(raw[:_MIX_SIZE])
 
 
-def _merge(pool: list[dict], extra: list[dict], seen: set[str]) -> list[dict]:
-    """Append `extra` to `pool`, skipping ids already taken (or the seed)."""
+def _merge(
+    pool: list[dict],
+    extra: list[dict],
+    seen: set[str],
+    seed_desc: TrackDescriptor | None = None,
+) -> list[dict]:
+    """Append `extra` to `pool`, skipping ids already taken (or matching the seed)."""
     for t in extra:
         tid = str(t.get("id", ""))
-        if tid and tid not in seen:
-            seen.add(tid)
-            pool.append(t)
+        if not tid or tid in seen:
+            continue
+        if seed_desc is not None and same_recording(seed_desc, descriptor_from_mapping(t)):
+            continue
+        seen.add(tid)
+        pool.append(t)
     return pool
 
 
@@ -170,18 +183,20 @@ def _radio(deezer_id: str) -> list[dict]:
 
     pool: list[dict] = []
     seen: set[str] = {str(deezer_id)}
+    seed_desc = descriptor_from_mapping(seed)
 
     # 1) External similarity (Last.fm) → Deezer-playable.
-    _merge(pool, _lastfm_similar(artist, title), seen)
+    _merge(pool, _lastfm_similar(artist, title), seen, seed_desc)
     # 2) Deezer's own mix — artist radio + related artists.
     if _other_artist_slots(pool, artist_id) < _MIN_OTHER_ARTIST_SLOTS:
-        _merge(pool, _deezer_mix(deezer_id, artist_id), seen)
+        _merge(pool, _deezer_mix(deezer_id, artist_id), seen, seed_desc)
     # 3) Genre charts of the seed album.
     if _other_artist_slots(pool, artist_id) < _MIN_OTHER_ARTIST_SLOTS:
-        _merge(pool, _genre_charts(album_id), seen)
+        _merge(pool, _genre_charts(album_id), seen, seed_desc)
     # 4) Last resort: global charts.
     if _other_artist_slots(pool, artist_id) < _MIN_OTHER_ARTIST_SLOTS:
-        _merge(pool, dc.charts(), seen)
+        _merge(pool, dc.charts(), seen, seed_desc)
+    pool = dc.dedupe_public_tracks(pool)
     if not pool:
         raise dc.DeezerClientError(
             f"All radio recommendation sources returned no tracks for seed {deezer_id}"

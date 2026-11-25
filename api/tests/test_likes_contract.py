@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import unittest
+from unittest.mock import patch
 
 from fastapi import FastAPI
 from sqlalchemy import create_engine, select
@@ -13,6 +14,7 @@ from app.auth import get_current_user
 from app.db.models import Like, User
 from app.db.session import Base, get_db
 from app.routers import likes
+from app.services import deezer_client as dc
 
 
 def _ghostkid_start_a_fight_payload(**overrides: object) -> dict[str, object]:
@@ -108,8 +110,11 @@ class LikesApiContractTests(unittest.TestCase):
         self.api.include_router(likes.router)
         self.api.dependency_overrides[get_current_user] = lambda: self.user
         self.api.dependency_overrides[get_db] = lambda: self.db
+        self._isrc_patch = patch.object(dc, "track_isrc", return_value="DEQ322000111")
+        self._isrc_patch.start()
 
     def tearDown(self) -> None:
+        self._isrc_patch.stop()
         self.db.close()
         self.engine.dispose()
 

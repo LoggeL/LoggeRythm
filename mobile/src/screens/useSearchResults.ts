@@ -35,6 +35,8 @@ interface SearchResultsInput {
   locale: AppLocale;
   /** Tracks the library section already shows; never repeated in the track list. */
   libraryTrackIds: ReadonlySet<string>;
+  /** Full library tracks shown above; enables ISRC/recording dedupe across releases. */
+  libraryTracks?: readonly Track[];
 }
 
 interface OwnedQuery<Key extends string> {
@@ -62,6 +64,7 @@ export function useSearchResults({
   sort,
   locale,
   libraryTrackIds,
+  libraryTracks,
 }: SearchResultsInput) {
   const wanted = useMemo(() => wantedSearchEntities(tab), [tab]);
 
@@ -92,8 +95,8 @@ export function useSearchResults({
    * positions, `play(index)` and occurrence indices all refer to this list.
    */
   const tracks = useMemo(
-    () => withoutLibraryTracks(foundTracks, libraryTrackIds),
-    [foundTracks, libraryTrackIds],
+    () => withoutLibraryTracks(foundTracks, libraryTrackIds, libraryTracks),
+    [foundTracks, libraryTrackIds, libraryTracks],
   );
   const shownTracks = useMemo(() => limited(tracks, tab, 'track'), [tab, tracks]);
   const albums = albumsQuery.data ?? EMPTY_ALBUMS;

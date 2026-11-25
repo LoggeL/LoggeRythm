@@ -1,5 +1,6 @@
 import type { Playlist, Track } from '../api/types';
 import { trackArtistCredits } from '../api/trackArtists';
+import { isTrackLiked, normalizeIsrc } from '../data/trackIdentity';
 import { isSearchableQuery, normalizeSearchInput, type SearchTab } from './searchModel';
 
 /** Rows of the "In your library" section per tab; other tabs do not show it. */
@@ -82,21 +83,24 @@ function catalogTrack(track: Track): Track {
 }
 
 /**
- * Every saved track the device already knows, once per track id. Source order
- * (likes, own playlists, downloads) is the tie-break order of equal matches.
+ * Every saved track the device already knows, once per track id (or ISRC).
+ * Source order (likes, own playlists, downloads) is the tie-break order.
  */
 export function collectSearchLibraryTracks({
   likes,
   playlists,
   downloads,
 }: SearchLibrarySources): Track[] {
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenIsrcs = new Set<string>();
   const tracks: Track[] = [];
   const add = (track: Track, source: string) => {
     const id = String(track.id).trim();
     if (id.length === 0) throw new Error(`Saved ${source} track "${track.title}" has no id`);
-    if (seen.has(id)) return;
-    seen.add(id);
+    const isrc = normalizeIsrc(track.isrc);
+    if (seenIds.has(id) || (isrc.length > 0 && seenIsrcs.has(isrc))) return;
+    seenIds.add(id);
+    if (isrc.length > 0) seenIsrcs.add(isrc);
     tracks.push(catalogTrack(track));
   };
   for (const track of likes) add(track, 'liked');
@@ -194,13 +198,23 @@ export function matchSearchLibrary(
 }
 
 /**
- * Remote tracks minus the ones the library section already shows. Order is
+ * Remote tracks minus the ones the library section already shows (matching by
+ * ID or recording identity when `libraryTracks` is provided). Order is
  * preserved, so the result is both the visible "Songs" list and its queue.
  */
 export function withoutLibraryTracks(
   tracks: readonly Track[],
   libraryTrackIds: ReadonlySet<string>,
+  libraryTracks?: readonly Track[],
 ): Track[] {
-  if (libraryTrackIds.size === 0) return [...tracks];
-  return tracks.filter((track) => !libraryTrackIds.has(track.id));
+  if (libraryTrackIds.size === 0 && (libraryTracks === undefined || libraryTracks.length === 0)) {
+    return [...tracks];
+  }
+  return tracks.filter((track) => {
+    if (libraryTrackIds.has(track.id)) return false;
+    if (libraryTracks !== undefined && libraryTracks.length > 0) {
+      return !isTrackLiked(libraryTracks, track);
+    }
+    return true;
+  });
 }

@@ -49,6 +49,7 @@ from ..services.playlist_export import (
     PlaylistExportTrack,
     build_playlist_archive,
 )
+from ..services.track_identity import normalize_isrc
 from ..uploads import image_extension, save_image_upload
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
@@ -199,6 +200,7 @@ def _pt_to_track(
         cover=pt.cover_url or "",
         duration_sec=pt.duration_sec,
         preview_url=None,
+        isrc=pt.isrc or "",
         playlist_entry_id=pt.id,
         added_by=added_by,
         added_at=_as_utc(pt.added_at),
@@ -995,6 +997,7 @@ def add_track(
         PlaylistTrack(
             playlist_id=pl.id,
             deezer_id=track.id,
+            isrc=normalize_isrc(track.isrc),
             title=track.title,
             artist=track.artist,
             artists_json=dump_artists(track),
@@ -1043,6 +1046,7 @@ def add_tracks_bulk(
             PlaylistTrack(
                 playlist_id=pl.id,
                 deezer_id=track.id,
+                isrc=normalize_isrc(track.isrc),
                 title=track.title,
                 artist=track.artist,
                 artists_json=dump_artists(track),

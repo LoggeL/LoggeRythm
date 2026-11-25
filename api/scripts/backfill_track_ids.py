@@ -54,6 +54,8 @@ def main() -> None:
             if meta.get("artist"):
                 row.artist = meta["artist"]
             row.artists_json = json.dumps(meta.get("artists") or [], ensure_ascii=False)
+            if hasattr(row, "isrc") and meta.get("isrc"):
+                row.isrc = str(meta["isrc"])
             updated += 1
             if i % 25 == 0:
                 print(f"  …{i}/{len(todo)}")

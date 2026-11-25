@@ -27,6 +27,11 @@ from ..services import radar_preload, recommend
 from ..services.discovery import DiscoveryError, run_jobs
 from ..services.lastfm_client import LastfmError
 from ..services.singleflight_cache import SingleFlightTtlCache
+from ..services.track_identity import (
+    TrackDescriptor,
+    descriptor_from_mapping,
+    same_recording,
+)
 from .errors import to_http
 
 router = APIRouter(prefix="/api/home", tags=["home"])
@@ -80,18 +85,12 @@ def _chart_tracks(genre_id: int) -> list[dict]:
             raise dc.DeezerClientError(
                 f"Chart {genre_id} has a non-object track at index {index}"
             )
-    return dc.normalize_public_tracks(tracks)
+    return dc.dedupe_public_tracks(dc.normalize_public_tracks(tracks))
 
 
 def _dedupe(tracks: list[dict]) -> list[dict]:
-    seen: set[str] = set()
-    out: list[dict] = []
-    for t in tracks:
-        tid = str(t.get("id", ""))
-        if tid and tid not in seen:
-            seen.add(tid)
-            out.append(t)
-    return out
+    valid = [t for t in tracks if str(t.get("id", ""))]
+    return dc.dedupe_public_tracks(valid)
 
 
 def _user_seed_tracks(db: Session, user: User, limit: int = 5) -> list[tuple[str, str]]:
@@ -268,14 +267,19 @@ def _artist_new_tracks(
         reverse=True,
     )
     tracks: list[dict] = []
+    collected_descs: list[TrackDescriptor] = []
     for al in recent:
         # Full albums can have dozens of songs. Only the remaining radar slots
         # need performer-credit lookups, so trim before normalizing metadata.
         detail = dc.album_detail(al["id"], track_limit=_RADAR_TRACKS_PER_ARTIST - len(tracks))
         for t in detail.get("tracks", []):
+            desc = descriptor_from_mapping(t)
+            if any(same_recording(existing, desc) for existing in collected_descs):
+                continue
             # Real Track field (survives serialization) + drives global sort.
             t["release_date"] = detail.get("release_date", "")
             tracks.append(t)
+            collected_descs.append(desc)
             if len(tracks) >= _RADAR_TRACKS_PER_ARTIST:
                 return tracks
     return tracks
@@ -345,19 +349,18 @@ def release_radar(
             tracks.append({**t, "radar_reason": dict(reason)})
 
     tracks.sort(key=lambda t: t.get("release_date", ""), reverse=True)
-    seen: set[str] = set()
+    valid_tracks = [t for t in tracks if t.get("id", "")]
+    # Merge identical recordings across Single / EP / Album releases (preferring
+    # Album > EP > Single) while keeping the first watched artist's radar_reason.
+    deduped = dc.dedupe_public_tracks(valid_tracks, preserve_fields=("radar_reason",))
     per_artist: dict[str, int] = {}
     out: list[dict] = []
-    for t in tracks:
-        tid = t.get("id", "")
-        if not tid or tid in seen:
-            continue
+    for t in deduped:
         # Cap at two songs per primary artist, even when collaborations surface
         # the same artist across several source artists' albums.
         key = str(t.get("artist_id") or t.get("artist") or "")
         if per_artist.get(key, 0) >= _RADAR_TRACKS_PER_ARTIST:
             continue
-        seen.add(tid)
         per_artist[key] = per_artist.get(key, 0) + 1
         out.append(t)
     radar = out[:100]

@@ -10,7 +10,15 @@ export type LibraryMatchTrack = {
   artist: string;
   artists?: readonly { name: string }[];
   album: string;
+  isrc?: string;
+  duration_sec?: number;
 };
+
+function normalizeIsrc(raw?: string): string {
+  if (typeof raw !== "string") return "";
+  const cleaned = raw.replace(/[^A-Za-z0-9]+/g, "").toUpperCase();
+  return cleaned.length < 4 || /^0+$/.test(cleaned) ? "" : cleaned;
+}
 
 export type LibraryEntry<T> = {
   track: T;
@@ -49,16 +57,20 @@ export function foldSearchText(value: string): string {
 }
 
 /**
- * Prepares saved tracks for matching. The first occurrence of a track id wins,
- * so list the sources in the order their tracks should rank on a tie.
+ * Prepares saved tracks for matching. The first occurrence of a track id (or
+ * matching ISRC recording) wins, so list the sources in the order their tracks
+ * should rank on a tie.
  */
 export function indexLibraryTracks<T extends LibraryMatchTrack>(tracks: readonly T[]): LibraryEntry<T>[] {
-  const seen = new Set<string>();
+  const seenIds = new Set<string>();
+  const seenIsrcs = new Set<string>();
   const entries: LibraryEntry<T>[] = [];
   for (const track of tracks) {
     const id = String(track.id);
-    if (seen.has(id)) continue;
-    seen.add(id);
+    const isrc = normalizeIsrc(track.isrc);
+    if (seenIds.has(id) || (isrc && seenIsrcs.has(isrc))) continue;
+    seenIds.add(id);
+    if (isrc) seenIsrcs.add(isrc);
     const title = foldSearchText(track.title);
     const artists = [...new Set([track.artist, ...(track.artists ?? []).map((artist) => artist.name)].map(foldSearchText))].filter(Boolean);
     entries.push({ track, title, artists, text: [title, ...artists, foldSearchText(track.album)].join("\n") });
@@ -105,9 +117,19 @@ export function matchLibraryTracks<T>(index: readonly LibraryEntry<T>[], input: 
  * `tracks` without those already shown elsewhere, in unchanged order. Returns
  * the same array when nothing is removed, so positions in it stay valid.
  */
-export function withoutTracks<T extends { id: string | number }>(tracks: T[], shown: readonly { id: string | number }[]): T[] {
+export function withoutTracks<T extends { id: string | number; isrc?: string }>(
+  tracks: T[],
+  shown: readonly { id: string | number; isrc?: string }[],
+): T[] {
   if (shown.length === 0) return tracks;
-  const hidden = new Set(shown.map((track) => String(track.id)));
-  const rest = tracks.filter((track) => !hidden.has(String(track.id)));
+  const hiddenIds = new Set(shown.map((track) => String(track.id)));
+  const hiddenIsrcs = new Set(
+    shown.map((track) => normalizeIsrc(track.isrc)).filter(Boolean),
+  );
+  const rest = tracks.filter((track) => {
+    if (hiddenIds.has(String(track.id))) return false;
+    const isrc = normalizeIsrc(track.isrc);
+    return !(isrc && hiddenIsrcs.has(isrc));
+  });
   return rest.length === tracks.length ? tracks : rest;
 }

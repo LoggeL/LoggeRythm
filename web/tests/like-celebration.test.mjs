@@ -20,6 +20,7 @@ const stubs = {
   "@/hooks/useAuth": moduleUrl("export function useMe() { return {data: globalThis.__likeCelebrationFixture.me}; }"),
   "@/hooks/useLibrary": moduleUrl(`
     export function useLikedIds() { const f = globalThis.__likeCelebrationFixture; return new Set(f.liked ? [String(f.track.id)] : []); }
+    export function useLikedTrack() { const f = globalThis.__likeCelebrationFixture; return f.liked ? (f.matchedLike ?? f.track) : undefined; }
     export function useLikePending() { return globalThis.__likeCelebrationFixture.pending; }
     export function useToggleLike() { const f = globalThis.__likeCelebrationFixture; return {isPending: f.mutationPending, mutate: (variables, callbacks) => f.requests.push({variables, callbacks})}; }
   `),

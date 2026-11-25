@@ -20,6 +20,8 @@ export interface Track {
   rank?: number;
   /** Release date (YYYY-MM-DD); set by the release radar, empty elsewhere. */
   release_date?: string;
+  /** International Standard Recording Code (uppercase alphanumeric); empty when unknown. */
+  isrc?: string;
   /** ReplayGain/R128 track gain adjustment in dB when upstream metadata provides it. */
   loudness_gain_db?: number | null;
   /** Integrated track loudness in LUFS/LKFS when measured or supplied by the backend. */
@@ -465,6 +467,17 @@ export interface StorageInfo {
   disk_free: number;
   retention_days: number;
   tracks: StorageItem[];
+}
+
+export interface LikesDeduplicationResult {
+  users_processed: number;
+  likes_scanned: number;
+  isrc_backfilled: number;
+  duplicate_groups_merged: number;
+  likes_removed: number;
+  playlist_tracks_backfilled: number;
+  unresolved_tracks: string[];
+  errors: string[];
 }
 
 export interface InviteInfo {

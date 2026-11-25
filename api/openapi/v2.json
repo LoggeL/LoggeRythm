@@ -2118,6 +2118,60 @@
         "title": "InviteInfo",
         "type": "object"
       },
+      "LikesDeduplicationResult": {
+        "properties": {
+          "duplicate_groups_merged": {
+            "title": "Duplicate Groups Merged",
+            "type": "integer"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "isrc_backfilled": {
+            "title": "Isrc Backfilled",
+            "type": "integer"
+          },
+          "likes_removed": {
+            "title": "Likes Removed",
+            "type": "integer"
+          },
+          "likes_scanned": {
+            "title": "Likes Scanned",
+            "type": "integer"
+          },
+          "playlist_tracks_backfilled": {
+            "title": "Playlist Tracks Backfilled",
+            "type": "integer"
+          },
+          "unresolved_tracks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unresolved Tracks",
+            "type": "array"
+          },
+          "users_processed": {
+            "title": "Users Processed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "users_processed",
+          "likes_scanned",
+          "isrc_backfilled",
+          "duplicate_groups_merged",
+          "likes_removed",
+          "playlist_tracks_backfilled",
+          "unresolved_tracks",
+          "errors"
+        ],
+        "title": "LikesDeduplicationResult",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -3351,6 +3405,11 @@
             "title": "Id",
             "type": "string"
           },
+          "isrc": {
+            "default": "",
+            "title": "Isrc",
+            "type": "string"
+          },
           "loudness_gain_db": {
             "anyOf": [
               {
@@ -3606,6 +3665,11 @@
           },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "isrc": {
+            "default": "",
+            "title": "Isrc",
             "type": "string"
           },
           "loudness_gain_db": {
@@ -4229,6 +4293,11 @@
             "title": "Id",
             "type": "string"
           },
+          "isrc": {
+            "default": "",
+            "title": "Isrc",
+            "type": "string"
+          },
           "loudness_gain_db": {
             "anyOf": [
               {
@@ -4634,6 +4703,53 @@
           }
         ],
         "summary": "Create Invite",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/likes/deduplicate": {
+      "post": {
+        "description": "Backfill ISRCs and merge duplicate likes across Singles/EPs/Albums for all users.",
+        "operationId": "deduplicate_likes_api_admin_likes_deduplicate_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LikesDeduplicationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Deduplicate Likes",
         "tags": [
           "admin"
         ]

@@ -189,6 +189,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     sort,
     locale,
     libraryTrackIds: library.shownIds,
+    libraryTracks: library.shown,
   });
   const { wanted, tracks, state: searchState } = results;
 

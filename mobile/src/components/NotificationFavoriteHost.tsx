@@ -1,38 +1,80 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { Track } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries } from '../data';
+import { getLikedTrackIndex, isTrackLiked } from '../data/trackIdentity';
 import { strings } from '../localization';
 import { reportPlayerError } from '../player/errors';
 import { syncNativeLikedTrackIds } from '../player/favoriteNativePort';
+import { mediaItemToTrack } from '../player/mediaItem';
+import Player, { Event, type MediaItem } from '../player/player';
 import { ensurePlayer } from '../player/setup';
 
 interface AccountFavoriteSyncProps {
   scope: string;
 }
 
+/**
+ * Derive the sorted numeric track IDs for the native Media3 favorite snapshot:
+ * every liked track ID plus any queued track ID whose recording (ISRC/fallback)
+ * matches a liked song, so Android Auto / lockscreen hearts match across Singles,
+ * EPs, Albums, and Deluxe editions.
+ */
+export function collectNativeLikedTrackIds(
+  likes: readonly Track[],
+  queueItems: readonly MediaItem[] = [],
+): string[] {
+  const unique = new Set<string>();
+  for (const track of likes) {
+    unique.add(String(track.id));
+  }
+  if (likes.length > 0 && queueItems.length > 0) {
+    const likedIndex = getLikedTrackIndex(likes);
+    for (const item of queueItems) {
+      const queuedTrack = mediaItemToTrack(item);
+      if (queuedTrack !== null && isTrackLiked(likedIndex, queuedTrack)) {
+        unique.add(String(queuedTrack.id));
+      }
+    }
+  }
+  return [...unique].sort();
+}
+
 function AccountFavoriteSync({ scope }: AccountFavoriteSyncProps) {
   const likes = useQuery({
     ...musicQueries.likes(scope),
   });
-
-  const likedTrackIdsKey = useMemo(() => {
-    if (likes.data === undefined) return null;
-    const unique = new Set<string>();
-    for (const track of likes.data) {
-      unique.add(String(track.id));
-    }
-    return [...unique].sort().join(',');
-  }, [likes.data]);
+  const [queueVersion, setQueueVersion] = useState(0);
 
   useEffect(() => {
-    if (likedTrackIdsKey === null) return undefined;
-    const ids = likedTrackIdsKey.length === 0 ? [] : likedTrackIdsKey.split(',');
+    const bump = () => setQueueVersion((current) => current + 1);
+    const queueSub = Player.addEventListener(Event.QueueChanged, bump);
+    const transitionSub = Player.addEventListener(Event.MediaItemTransition, bump);
+    return () => {
+      queueSub.remove();
+      transitionSub.remove();
+    };
+  }, []);
+
+  const likesSnapshot = likes.data;
+  const likedTrackSignature = useMemo(() => {
+    if (likesSnapshot === undefined) return null;
+    const unique = new Set<string>();
+    for (const track of likesSnapshot) {
+      unique.add(`${String(track.id)}:${track.isrc ?? ''}`);
+    }
+    return [...unique].sort().join(',');
+  }, [likesSnapshot]);
+
+  useEffect(() => {
+    if (likedTrackSignature === null || likesSnapshot === undefined) return undefined;
     let cancelled = false;
     void ensurePlayer(scope)
       .then(() => {
         if (cancelled) return undefined;
+        const ids = collectNativeLikedTrackIds(likesSnapshot, Player.getQueue());
         return syncNativeLikedTrackIds(ids);
       })
       .catch((cause) => {
@@ -41,7 +83,7 @@ function AccountFavoriteSync({ scope }: AccountFavoriteSyncProps) {
     return () => {
       cancelled = true;
     };
-  }, [scope, likedTrackIdsKey]);
+  }, [scope, likedTrackSignature, likesSnapshot, queueVersion]);
 
   return null;
 }

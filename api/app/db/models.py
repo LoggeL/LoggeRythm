@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     false,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -95,6 +96,7 @@ class PlaylistTrack(Base):
         ForeignKey("playlists.id"), nullable=False, index=True
     )
     deezer_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    isrc: Mapped[str] = mapped_column(String(32), nullable=False, default="", server_default="")
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     # Full performer credit list as a JSON string (see schemas.track helpers).
@@ -160,11 +162,23 @@ class PlaylistInvite(Base):
 
 class Like(Base):
     __tablename__ = "likes"
-    __table_args__ = (UniqueConstraint("user_id", "deezer_id", name="uq_like_user_track"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "deezer_id", name="uq_like_user_track"),
+        Index("ix_likes_user_isrc", "user_id", "isrc"),
+        Index(
+            "uq_like_user_isrc",
+            "user_id",
+            "isrc",
+            unique=True,
+            sqlite_where=text("isrc != ''"),
+            postgresql_where=text("isrc != ''"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     deezer_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    isrc: Mapped[str] = mapped_column(String(32), nullable=False, default="", server_default="")
     title: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     artist: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     # Full performer credit list as a JSON string (see schemas.track helpers).

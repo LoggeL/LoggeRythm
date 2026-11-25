@@ -13,6 +13,7 @@ from ..config import LASTFM_API_KEY
 from . import deezer_client as dc
 from .discovery import run_jobs
 from .lastfm_client import LastfmError, get_json, list_objects, object_field, text_field
+from .track_identity import TrackDescriptor, descriptor_from_mapping, same_recording
 
 _DEEZER_RESOLVE_SLOTS = threading.BoundedSemaphore(1)
 
@@ -60,11 +61,15 @@ def _resolve_queries(queries: list[str], limit: int) -> list[dict]:
         max_workers=8,
     )
     out: list[dict] = []
-    seen: set[str] = set()
+    seen_descs: list[TrackDescriptor] = []
     for hit in hits.values():
-        if hit is not None and hit["id"] not in seen:
-            seen.add(hit["id"])
-            out.append(hit)
+        if hit is None:
+            continue
+        desc = descriptor_from_mapping(hit)
+        if any(same_recording(existing, desc) for existing in seen_descs):
+            continue
+        seen_descs.append(desc)
+        out.append(hit)
     return out
 
 
@@ -149,7 +154,7 @@ def tag_track_draw(
         pool = _track_queries(data, "tracks", context=f"Tag {tag!r}")[:pool_size]
         candidates = _draw_order(pool, seed)[:max_resolves]
         drawn: list[dict] = []
-        seen: set[str] = set()
+        seen_descs: list[TrackDescriptor] = []
         attempted = 0
         while len(drawn) < limit and attempted < len(candidates):
             # Resolve exactly as many names as tracks are still missing, so a
@@ -157,9 +162,11 @@ def tag_track_draw(
             batch = candidates[attempted:attempted + limit - len(drawn)]
             attempted += len(batch)
             for hit in _resolve_queries(batch, len(batch)):
-                if hit["id"] not in seen:
-                    seen.add(hit["id"])
-                    drawn.append(hit)
+                desc = descriptor_from_mapping(hit)
+                if any(same_recording(existing, desc) for existing in seen_descs):
+                    continue
+                seen_descs.append(desc)
+                drawn.append(hit)
         if drawn:
             return drawn
     return []

@@ -39,6 +39,33 @@ class SingleFlightTtlCache(Generic[K, V]):
         self.cache: dict[K, tuple[float, V]] = {}
         self.inflight: dict[K, Future[V]] = {}
 
+    def peek(self, key: K) -> tuple[bool, V | None]:
+        """Return ``(True, value)`` on a live cache hit without invoking a loader."""
+        with self._capacity:
+            hit = self.cache.get(key)
+            if hit is None:
+                return False, None
+            if self._clock() - hit[0] < self.ttl_seconds:
+                return True, hit[1]
+            del self.cache[key]
+            return False, None
+
+    def put(self, key: K, value: V) -> None:
+        """Store an already-loaded value while respecting TTL and max_entries."""
+        with self._capacity:
+            now = self._clock()
+            expired = [
+                cached_key
+                for cached_key, (cached_at, _) in self.cache.items()
+                if now - cached_at >= self.ttl_seconds
+            ]
+            for cached_key in expired:
+                del self.cache[cached_key]
+            while len(self.cache) >= self.max_entries and key not in self.cache:
+                oldest_key = min(self.cache, key=lambda k: self.cache[k][0])
+                del self.cache[oldest_key]
+            self.cache[key] = (now, value)
+
     def get(self, key: K, loader: Callable[[], V]) -> V:
         with self._capacity:
             while True:

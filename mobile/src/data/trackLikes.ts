@@ -3,6 +3,11 @@ import type { DeezerId, Track } from '../api/types';
 import { refreshLibraryAutoBrowse } from './autoBrowseRefresh';
 import { musicRepository, type MusicRepository } from './repositories';
 import { queryKeys, type QueryScope } from './queryKeys';
+import {
+  findLikedTrack,
+  isSameRecording,
+  trackLikeIdentityKey,
+} from './trackIdentity';
 
 type LikeRepository = Pick<MusicRepository, 'likeTrack' | 'unlikeTrack'>;
 
@@ -45,16 +50,16 @@ export function withTrackLiked(
   track: Track,
   nextLiked: boolean,
 ): Track[] {
-  const withoutTrack = current.filter((item) => item.id !== track.id);
+  const withoutTrack = current.filter((item) => !isSameRecording(item, track));
   return nextLiked ? [track, ...withoutTrack] : withoutTrack;
 }
 
 function restorePreviousTrack(
   current: readonly Track[],
-  trackId: DeezerId,
+  track: Track,
   context: TrackLikeMutationContext,
 ): Track[] {
-  const withoutTrack = current.filter((item) => item.id !== trackId);
+  const withoutTrack = current.filter((item) => !isSameRecording(item, track));
   if (context.previousTrack === null) return withoutTrack;
 
   const insertionIndex = Math.min(
@@ -93,18 +98,25 @@ export function createTrackLikeMutationOptions({
   onAutoBrowseError,
 }: TrackLikeMutationDependencies) {
   const likesKey = queryKeys.library.likes(scope);
+  // Snapshot the matched liked row before optimistic cache mutation so unliking
+  // an alternate release (e.g. Single when Album is stored) hits the fast path.
+  let matchedUnlikeId: DeezerId = track.id;
 
   return mutationOptions({
-    mutationKey: trackLikeMutationKey(scope, track.id),
+    mutationKey: trackLikeMutationKey(scope, trackLikeIdentityKey(track)),
     mutationFn: async (nextLiked: boolean) => {
       if (nextLiked) await repository.likeTrack(track);
-      else await repository.unlikeTrack(track.id);
+      else await repository.unlikeTrack(matchedUnlikeId);
       return nextLiked;
     },
     onMutate: async (nextLiked): Promise<TrackLikeMutationContext> => {
       await queryClient.cancelQueries({ queryKey: likesKey, exact: true });
       const current = queryClient.getQueryData<Track[]>(likesKey);
-      const previousIndex = current?.findIndex((item) => item.id === track.id) ?? -1;
+      const matched = current !== undefined ? findLikedTrack(current, track) : undefined;
+      matchedUnlikeId = matched?.id ?? track.id;
+      const previousIndex = matched !== undefined && current !== undefined
+        ? current.findIndex((item) => item.id === matched.id)
+        : -1;
       const previousTrack =
         current !== undefined && previousIndex >= 0 ? current[previousIndex] : null;
 
@@ -124,7 +136,7 @@ export function createTrackLikeMutationOptions({
     onError: (error, _nextLiked, context) => {
       if (context?.hadCachedLikes) {
         queryClient.setQueryData<Track[]>(likesKey, (current = []) =>
-          restorePreviousTrack(current, track.id, context),
+          restorePreviousTrack(current, track, context),
         );
       }
       safelyNotify(onMutationError, error);

@@ -27,6 +27,11 @@ import {
   musicQueries,
   trackLikeMutationKey,
 } from '../data';
+import {
+  getLikedTrackIndex,
+  isTrackLiked,
+  trackLikeIdentityKey,
+} from '../data/trackIdentity';
 import { resolveRemoteVisualState } from '../data/remoteState';
 import { useHaptics } from '../hooks/useHaptics';
 import { useReducedMotion } from '../hooks/useReducedMotion';
@@ -306,15 +311,15 @@ export default function TrackLikeButton({
       ? 'signed-out'
       : musicCacheScope(getCurrentApiBase(), user.id);
   const selectLiked = useCallback(
-    (tracks: readonly Track[]) => getLikedTrackIdSet(tracks).has(trackId),
-    [trackId],
+    (tracks: readonly Track[]) => isTrackLiked(getLikedTrackIndex(tracks), track),
+    [track],
   );
   const likes = useQuery({
     ...musicQueries.likes(scope),
     enabled: user !== null,
     select: selectLiked,
   });
-  const mutationKey = trackLikeMutationKey(scope, track.id);
+  const mutationKey = trackLikeMutationKey(scope, trackLikeIdentityKey(track));
   const matchingMutations = useIsMutating({ mutationKey, exact: true });
   const mutation = useMutation(
     createTrackLikeMutationOptions({

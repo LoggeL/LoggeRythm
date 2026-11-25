@@ -16,7 +16,7 @@ from sqlalchemy.schema import CreateColumn
 
 from .api_version import API_VERSION
 from .config import APP_ENV, CORS_ORIGINS, validate_runtime_config
-from .db.models import PartySession, PartyTrack, Play, Playlist, PlaylistTrack, StoredTrack, User
+from .db.models import Like, PartySession, PartyTrack, Play, Playlist, PlaylistTrack, StoredTrack, User
 from .db.session import SessionLocal, engine, init_db
 from .openapi_security import install_auth_openapi
 from .routers import (
@@ -38,7 +38,7 @@ from .routers import (
     stats,
     stream,
 )
-from .services import deezer_client, import_jobs, radar_preload, storage
+from .services import deezer_client, import_jobs, likes_dedup, radar_preload, storage
 
 app = FastAPI(title="LoggeRythm API", version=API_VERSION)
 
@@ -131,6 +131,8 @@ _PORTABLE_COLUMN_MIGRATIONS = (
     Playlist.__table__.c.is_collaborative,
     Playlist.__table__.c.revision,
     PlaylistTrack.__table__.c.added_by_user_id,
+    PlaylistTrack.__table__.c.isrc,
+    Like.__table__.c.isrc,
 )
 _PORTABLE_COLUMN_BACKFILLS: dict[tuple[str, str], str] = {
     (
@@ -160,6 +162,11 @@ _PORTABLE_INDEX_MIGRATIONS = (
         index
         for index in PlaylistTrack.__table__.indexes
         if index.name == "ix_playlist_tracks_added_by_user_id"
+    ),
+    *(
+        index
+        for index in Like.__table__.indexes
+        if index.name in {"ix_likes_user_isrc", "uq_like_user_isrc"}
     ),
 )
 
@@ -277,6 +284,7 @@ def _startup() -> None:
     storage.cleanup_old()  # evict stale tracks on boot
     threading.Thread(target=_cleanup_loop, daemon=True).start()
     radar_preload.start()  # background worker that pre-caches new radar tracks
+    likes_dedup.start()  # background worker that backfills ISRCs and merges duplicate likes
     print("LoggeRythm API started: DB ready, Deezer session initialized.")
 
 
@@ -285,6 +293,7 @@ def _shutdown() -> None:
     # Drop queued radar preloads so a restart does not wait for them; the one
     # download in flight finishes its track (materialize publishes atomically).
     radar_preload.stop()
+    likes_dedup.stop()
 
 
 @app.get("/")

@@ -16,7 +16,16 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(108);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(109);
+    expect(
+      GENERATED_API_OPERATIONS.deduplicate_likes_api_admin_likes_deduplicate_post,
+    ).toEqual({
+      method: 'POST',
+      path: '/api/admin/likes/deduplicate',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
     expect(GENERATED_API_OPERATIONS.get_agent_manifest_api_agent_get).toEqual({
       method: 'GET',
       path: '/api/agent',

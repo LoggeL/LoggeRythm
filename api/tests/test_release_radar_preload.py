@@ -502,15 +502,19 @@ class ApiLifecycleTests(unittest.TestCase):
             patch.object(main.deezer_client, "init_session"),
             patch.object(main.storage, "reconcile"),
             patch.object(main.storage, "cleanup_old"),
+            patch.object(main.likes_dedup, "start") as likes_dedup_start,
+            patch.object(main.likes_dedup, "stop") as likes_dedup_stop,
             patch("threading.Thread") as cleanup_daemon,
             patch.object(main, "print", create=True),
         ):
             main._startup()
             cleanup_daemon.assert_called_once()
+            likes_dedup_start.assert_called_once()
             # Running: an empty radar is accepted (nothing to queue).
             self.assertIsNone(radar_preload.schedule([]))
 
             main._shutdown()
+            likes_dedup_stop.assert_called_once()
             with self.assertRaisesRegex(RuntimeError, "preloader is not running"):
                 radar_preload.schedule([])
 

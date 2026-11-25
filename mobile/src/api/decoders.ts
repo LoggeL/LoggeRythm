@@ -193,6 +193,9 @@ export function decodeTrack(value: unknown, path = 'Track'): Track {
     rank: number(source.rank, `${path}.rank`),
     release_date: string(source.release_date, `${path}.release_date`),
   };
+  if ('isrc' in source) {
+    track.isrc = string(source.isrc, `${path}.isrc`);
+  }
   for (const key of ['loudness_gain_db', 'loudness_lufs', 'loudness_peak'] as const) {
     const decoded = optionalNullableNumber(source, key, path);
     if (decoded !== undefined) track[key] = decoded;

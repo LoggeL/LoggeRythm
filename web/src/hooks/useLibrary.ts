@@ -7,6 +7,12 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import {
+  findLikedTrack,
+  getLikedTrackIndex,
+  isSameRecording,
+  trackLikeIdentityKey,
+} from "@/lib/trackIdentity";
 import { toast } from "@/store/toast";
 import type {
   Track,
@@ -34,25 +40,43 @@ export function useLikedIds(enabled = true) {
   return new Set((data ?? []).map((t) => String(t.id)));
 }
 
-function toggleLikeMutationKey(trackId: Track["id"]) {
-  return ["toggle-like", String(trackId)] as const;
+/**
+ * Find the user's liked row matching `track` by ID, ISRC, or fallback metadata
+ * so Single / EP / Album / Deluxe releases share one heart state.
+ */
+export function useLikedTrack(track: Track, enabled = true): Track | undefined {
+  const { data } = useLikes(enabled);
+  if (!data || data.length === 0) return undefined;
+  return findLikedTrack(getLikedTrackIndex(data), track);
 }
 
-export function useLikePending(trackId: Track["id"]) {
+function toggleLikeMutationKey(trackOrId: Track | Track["id"]) {
+  return ["toggle-like", trackLikeIdentityKey(trackOrId)] as const;
+}
+
+export function useLikePending(trackOrId: Track | Track["id"]) {
   return (
     useIsMutating({
-      mutationKey: toggleLikeMutationKey(trackId),
+      mutationKey: toggleLikeMutationKey(trackOrId),
       exact: true,
     }) > 0
   );
 }
 
-export function useToggleLike(trackId: Track["id"]) {
+export function useToggleLike(trackOrId: Track | Track["id"]) {
   const qc = useQueryClient();
   return useMutation({
-    mutationKey: toggleLikeMutationKey(trackId),
-    mutationFn: async ({ track, liked }: { track: Track; liked: boolean }) => {
-      if (liked) await api.unlike(String(track.id));
+    mutationKey: toggleLikeMutationKey(trackOrId),
+    mutationFn: async ({
+      track,
+      liked,
+      matchedLikeId,
+    }: {
+      track: Track;
+      liked: boolean;
+      matchedLikeId?: Track["id"];
+    }) => {
+      if (liked) await api.unlike(String(matchedLikeId ?? track.id));
       else await api.like(track);
       return { track, liked };
     },
@@ -61,8 +85,8 @@ export function useToggleLike(trackId: Track["id"]) {
       const prev = qc.getQueryData<Track[]>(["likes"]);
       qc.setQueryData<Track[]>(["likes"], (old = []) =>
         liked
-          ? old.filter((t) => String(t.id) !== String(track.id))
-          : [track, ...old.filter((t) => String(t.id) !== String(track.id))],
+          ? old.filter((t) => !isSameRecording(t, track))
+          : [track, ...old.filter((t) => !isSameRecording(t, track))],
       );
       return { prev };
     },

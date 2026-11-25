@@ -44,6 +44,9 @@ class Track(BaseModel):
     rank: int = 0
     # Release date (YYYY-MM-DD) — populated by the release radar; "" elsewhere.
     release_date: str = ""
+    # International Standard Recording Code (uppercase alphanumeric); "" when unknown.
+    # Shared across Single, EP, Album, and Deluxe releases of the same recording.
+    isrc: str = ""
     # ReplayGain/R128-compatible loudness metadata, optional because most catalog
     # responses do not include it. Clients apply a bounded attenuation-only gain.
     loudness_gain_db: float | None = None

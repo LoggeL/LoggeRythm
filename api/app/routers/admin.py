@@ -30,7 +30,7 @@ from ..schemas.admin_usage import (
     UsageRange,
 )
 from ..services import admin_usage as admin_usage_service
-from ..services import deezer_client, mail, storage
+from ..services import deezer_client, likes_dedup, mail, storage
 from .profile import purge_user_account
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -225,10 +225,39 @@ def storage_info(
     )
 
 
+class LikesDeduplicationResult(BaseModel):
+    users_processed: int
+    likes_scanned: int
+    isrc_backfilled: int
+    duplicate_groups_merged: int
+    likes_removed: int
+    playlist_tracks_backfilled: int
+    unresolved_tracks: list[str]
+    errors: list[str]
+
+
 @router.post("/storage/cleanup")
 def storage_cleanup(_admin: User = Depends(require_admin)) -> dict:
     """Evict stored tracks that are past the retention window now."""
     return storage.cleanup_old()
+
+
+@router.post("/likes/deduplicate", response_model=LikesDeduplicationResult)
+def deduplicate_likes(
+    _admin: User = Depends(require_admin),
+) -> LikesDeduplicationResult:
+    """Backfill ISRCs and merge duplicate likes across Singles/EPs/Albums for all users."""
+    report = likes_dedup.merge_existing_library_duplicates()
+    return LikesDeduplicationResult(
+        users_processed=report.users_processed,
+        likes_scanned=report.likes_scanned,
+        isrc_backfilled=report.isrc_backfilled,
+        duplicate_groups_merged=report.duplicate_groups_merged,
+        likes_removed=report.likes_removed,
+        playlist_tracks_backfilled=report.playlist_tracks_backfilled,
+        unresolved_tracks=report.unresolved_tracks,
+        errors=report.errors,
+    )
 
 
 @router.get("/status", response_model=StatusInfo)

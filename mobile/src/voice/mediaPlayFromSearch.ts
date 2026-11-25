@@ -16,6 +16,7 @@ import type {
 } from '../api/types';
 import type { AlbumCard } from '../domain/catalog';
 import type { RecentPlay, UserStats } from '../domain/listeningStats';
+import { getLikedTrackIndex, isTrackLiked, trackLikeIdentityKey } from '../data/trackIdentity';
 import { strings } from '../localization';
 import { UserFacingPlayerError } from '../player/errors';
 import type { PlayTracksOptions } from '../player/controller';
@@ -581,20 +582,22 @@ async function resolveTrackOrUnstructuredRequest(
   }
 
   const likedTracks = likesResult.status === 'fulfilled' ? likesResult.value : [];
-  const likedIds = new Set(likedTracks.map((track) => track.id));
+  const likedIndex = getLikedTrackIndex(likedTracks);
   const remoteTracks = tracksResult.status === 'fulfilled' ? tracksResult.value : [];
 
   const candidates = new Map<string, { track: Track; order: number; fromRemote: boolean }>();
   remoteTracks.forEach((track, index) => {
-    if (!candidates.has(track.id)) {
-      candidates.set(track.id, { track, order: index, fromRemote: true });
+    const key = trackLikeIdentityKey(track);
+    if (!candidates.has(key)) {
+      candidates.set(key, { track, order: index, fromRemote: true });
     }
   });
   likedTracks.forEach((track, index) => {
-    if (candidates.has(track.id)) return;
+    const key = trackLikeIdentityKey(track);
+    if (candidates.has(key)) return;
     const score = scoreTrackCandidate(track, request, searchQuery, true);
     if (score >= 70) {
-      candidates.set(track.id, {
+      candidates.set(key, {
         track,
         order: remoteTracks.length + index,
         fromRemote: false,
@@ -605,7 +608,12 @@ async function resolveTrackOrUnstructuredRequest(
   const ranked = [...candidates.values()]
     .map((entry) => ({
       ...entry,
-      score: scoreTrackCandidate(entry.track, request, searchQuery, likedIds.has(entry.track.id)),
+      score: scoreTrackCandidate(
+        entry.track,
+        request,
+        searchQuery,
+        isTrackLiked(likedIndex, entry.track),
+      ),
     }))
     .sort((left, right) => right.score - left.score || left.order - right.order);
 

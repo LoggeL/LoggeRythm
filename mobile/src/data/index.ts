@@ -4,6 +4,7 @@ export * from './queryClient';
 export * from './repositories';
 export * from './mutationOptions';
 export * from './accountStorage';
+export * from './trackIdentity';
 export * from './trackLikes';
 export * from './playlistCache';
 export * from './artistFollows';

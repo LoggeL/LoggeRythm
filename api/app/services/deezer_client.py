@@ -22,6 +22,7 @@ import requests
 from ..config import DEEZER_ARL, DEEZER_PUBLIC_API, DEEZER_QUALITY
 from . import deezer
 from .singleflight_cache import SingleFlightTtlCache
+from .track_identity import dedupe_tracks, normalize_isrc
 
 
 # --- error taxonomy -------------------------------------------------------
@@ -134,6 +135,7 @@ def normalize_search_item(item: dict) -> dict:
         "cover": item.get("img_url", "") or "",
         "duration_sec": int(item.get("duration", 0) or 0),
         "preview_url": item.get("preview_url") or None,
+        "isrc": normalize_isrc(item.get("isrc")),
         **_loudness_fields(item),
     }
 
@@ -178,6 +180,7 @@ def normalize_public_track(t: dict) -> dict:
         "duration_sec": int(t.get("duration", 0) or 0),
         "preview_url": t.get("preview") or None,
         "rank": int(t.get("rank", 0) or 0),
+        "isrc": normalize_isrc(t.get("isrc")),
         **_loudness_fields(t),
     }
 
@@ -246,6 +249,7 @@ def track_metadata(deezer_id: str) -> dict:
         "cover": _cover_from_picture(song.get("ALB_PICTURE")),
         "duration_sec": int(song.get("DURATION", 0) or 0),
         "preview_url": None,
+        "isrc": normalize_isrc(song.get("ISRC")),
         **_loudness_fields(song),
     }
 
@@ -308,6 +312,36 @@ _track_artists_flights = SingleFlightTtlCache[str, list[dict]](
 _track_artists_cache = _track_artists_flights.cache
 _track_artists_lock = _track_artists_flights.lock
 
+_track_isrc_flights = SingleFlightTtlCache[str, str](
+    ttl_seconds=_TRACK_ARTISTS_TTL_SEC,
+    max_entries=_TRACK_ARTISTS_CACHE_MAX,
+    max_inflight=512,
+)
+_ALBUM_RECORD_TYPE_TTL_SEC = 7 * 24 * 3600
+_album_record_type_flights = SingleFlightTtlCache[str, str](
+    ttl_seconds=_ALBUM_RECORD_TYPE_TTL_SEC,
+    max_entries=2048,
+    max_inflight=64,
+)
+
+
+def _validated_track_detail(track_id: str, *, context: str) -> dict:
+    try:
+        detail = _public_get(f"/track/{track_id}")
+    except DeezerClientError as e:
+        raise type(e)(f"{context}: {e}") from e
+
+    if not isinstance(detail, dict):
+        raise DeezerClientError(
+            f"{context}: Deezer returned {type(detail).__name__}; expected an object"
+        )
+    returned_id = str(detail.get("id", "") or "")
+    if returned_id != track_id:
+        raise DeezerClientError(
+            f"{context}: Deezer returned track {returned_id or '<missing>'}"
+        )
+    return detail
+
 
 def _full_public_artist_refs(track_id: str) -> list[dict]:
     """Load and cache the authoritative performer credits for one track.
@@ -318,24 +352,10 @@ def _full_public_artist_refs(track_id: str) -> list[dict]:
     item's primary artist here would silently lose data.
     """
     def load() -> list[dict]:
-        try:
-            detail = _public_get(f"/track/{track_id}")
-        except DeezerClientError as e:
-            raise type(e)(
-                f"Could not load complete artist credits for track {track_id}: {e}"
-            ) from e
-
-        if not isinstance(detail, dict):
-            raise DeezerClientError(
-                f"Could not load complete artist credits for track {track_id}: "
-                f"Deezer returned {type(detail).__name__}; expected an object"
-            )
-        returned_id = str(detail.get("id", "") or "")
-        if returned_id != track_id:
-            raise DeezerClientError(
-                "Could not load complete artist credits for track "
-                f"{track_id}: Deezer returned track {returned_id or '<missing>'}"
-            )
+        detail = _validated_track_detail(
+            track_id,
+            context=f"Could not load complete artist credits for track {track_id}",
+        )
         contributors = detail.get("contributors")
         if contributors is not None and (
             not isinstance(contributors, list)
@@ -350,12 +370,72 @@ def _full_public_artist_refs(track_id: str) -> list[dict]:
                 f"Deezer track {track_id} has no contributor list; "
                 "complete artist credits cannot be determined"
             )
+        _track_isrc_flights.put(track_id, normalize_isrc(detail.get("isrc")))
         return refs
 
     return _track_artists_flights.get(track_id, load)
 
 
-def normalize_public_tracks(items: list[dict]) -> list[dict]:
+def track_isrc(track_id: str) -> str:
+    """Load and cache the normalized ISRC for one track (``""`` if Deezer has none)."""
+    tid = str(track_id or "").strip()
+    if not tid or not tid.isdigit():
+        return ""
+
+    def load() -> str:
+        detail = _validated_track_detail(
+            tid,
+            context=f"Could not load ISRC for track {tid}",
+        )
+        refs = _artist_refs(detail, {})
+        if refs:
+            _track_artists_flights.put(tid, refs)
+        return normalize_isrc(detail.get("isrc"))
+
+    return _track_isrc_flights.get(tid, load)
+
+
+def album_record_type(album_id: str) -> str:
+    """Return Deezer's album ``record_type`` (``album``/``ep``/``single``/``compile``)."""
+    aid = str(album_id or "").strip()
+    if not aid or not aid.isdigit():
+        return ""
+
+    def load() -> str:
+        try:
+            detail = _public_get(f"/album/{aid}")
+        except DeezerClientError as e:
+            raise type(e)(
+                f"Could not load release type for album {aid}: {e}"
+            ) from e
+        if not isinstance(detail, dict):
+            raise DeezerClientError(
+                f"Could not load release type for album {aid}: "
+                f"Deezer returned {type(detail).__name__}; expected an object"
+            )
+        return str(detail.get("record_type") or "").strip().lower()
+
+    return _album_record_type_flights.get(aid, load)
+
+
+def dedupe_public_tracks(
+    tracks: list[dict],
+    *,
+    preserve_fields: tuple[str, ...] = (),
+) -> list[dict]:
+    """Merge duplicate recordings across Singles/EPs/Albums (Album > EP > Single)."""
+    return dedupe_tracks(
+        tracks,
+        resolve_record_type=album_record_type,
+        preserve_fields=preserve_fields,
+    )
+
+
+def normalize_public_tracks(
+    items: list[dict],
+    *,
+    require_isrc: bool = False,
+) -> list[dict]:
     """Normalize track summaries without losing secondary performers.
 
     Inline ``contributors`` are used when an endpoint supplies them. Missing
@@ -367,17 +447,32 @@ def normalize_public_tracks(items: list[dict]) -> list[dict]:
         return []
 
     inline_refs: dict[str, list[dict]] = {}
+    inline_isrcs: dict[str, str] = {}
     missing_ids: list[str] = []
     seen_missing: set[str] = set()
+    missing_isrc_ids: list[str] = []
+    seen_missing_isrc: set[str] = set()
+
     for item in items:
         track_id = str(item.get("id", "") or "")
         if not track_id:
             raise DeezerClientError(
                 "Cannot normalize public track list: an item has no track id"
             )
+        isrc = normalize_isrc(item.get("isrc"))
+        if isrc:
+            inline_isrcs[track_id] = isrc
+            _track_isrc_flights.put(track_id, isrc)
         refs = _artist_refs(item, {})
         if refs:
             inline_refs[track_id] = refs
+            if require_isrc and not isrc and track_id not in seen_missing_isrc:
+                hit, cached_isrc = _track_isrc_flights.peek(track_id)
+                if hit and cached_isrc is not None:
+                    inline_isrcs[track_id] = cached_isrc
+                else:
+                    seen_missing_isrc.add(track_id)
+                    missing_isrc_ids.append(track_id)
         elif track_id not in seen_missing:
             seen_missing.add(track_id)
             missing_ids.append(track_id)
@@ -393,11 +488,29 @@ def normalize_public_tracks(items: list[dict]) -> list[dict]:
             ):
                 fetched_refs[track_id] = refs
 
+    fetched_isrcs: dict[str, str] = {}
+    if missing_isrc_ids:
+        worker_count = min(8, len(missing_isrc_ids))
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            for track_id, isrc in zip(
+                missing_isrc_ids,
+                pool.map(track_isrc, missing_isrc_ids),
+                strict=True,
+            ):
+                fetched_isrcs[track_id] = isrc
+
     normalized: list[dict] = []
     for item in items:
         track_id = str(item["id"])
         enriched = dict(item)
         enriched["contributors"] = inline_refs.get(track_id) or fetched_refs[track_id]
+        resolved_isrc = inline_isrcs.get(track_id) or fetched_isrcs.get(track_id, "")
+        if not resolved_isrc:
+            hit, cached_isrc = _track_isrc_flights.peek(track_id)
+            if hit and cached_isrc:
+                resolved_isrc = cached_isrc
+        if resolved_isrc:
+            enriched["isrc"] = resolved_isrc
         normalized.append(normalize_public_track(enriched))
     return normalized
 
@@ -424,7 +537,7 @@ def search_tracks_public(query: str, limit: int = 40) -> list[dict]:
             raise DeezerClientError(
                 f"Public Deezer track search returned invalid data for query {query!r}"
             )
-        return normalize_public_tracks(items)
+        return dedupe_public_tracks(normalize_public_tracks(items))
 
     # A normalized response can be enriched by several track-detail requests.
     # Cache the complete result briefly and keep each caller's copy independent.
@@ -538,7 +651,7 @@ def search_playlists(query: str) -> list[dict]:
 def charts() -> list[dict]:
     data = _public_get("/chart")
     tracks = (data.get("tracks") or {}).get("data") or []
-    return normalize_public_tracks(tracks)
+    return dedupe_public_tracks(normalize_public_tracks(tracks))
 
 
 def genres() -> list[dict]:
@@ -650,6 +763,10 @@ def _album_release_date(album_id: str) -> date:
             raise type(e)(
                 f"Could not load the release date of editorial pick album {album_id}: {e}"
             ) from e
+        if detail.get("record_type"):
+            _album_record_type_flights.put(
+                str(album_id), str(detail["record_type"]).strip().lower()
+            )
         value = detail.get("release_date")
         if isinstance(value, str):
             try:
@@ -730,7 +847,7 @@ def genre_detail(genre_id: str) -> dict:
         or info.get("picture_big")
         or info.get("picture", "")
         or "",
-        "tracks": normalize_public_tracks(tracks),
+        "tracks": dedupe_public_tracks(normalize_public_tracks(tracks)),
         "albums": [normalize_album_summary(a) for a in albums],
         "artists": [normalize_artist_summary(a) for a in artists],
     }
@@ -837,6 +954,11 @@ def album_detail(album_id: str, *, track_limit: int | None = None) -> dict:
     if track_limit is not None and track_limit < 1:
         raise ValueError("Album track_limit must be positive")
     data = _public_get(f"/album/{album_id}")
+    if data.get("record_type"):
+        _album_record_type_flights.put(
+            str(data.get("id") or album_id),
+            str(data["record_type"]).strip().lower(),
+        )
     artist = data.get("artist") or {}
     tracks = (data.get("tracks") or {}).get("data") or []
     if track_limit is not None:
@@ -899,7 +1021,7 @@ def artist_detail(artist_id: str) -> dict:
         or "",
         "fans": data.get("nb_fan", 0) or 0,
         "albums_count": data.get("nb_album", 0) or 0,
-        "top": normalize_public_tracks(tracks),
+        "top": dedupe_public_tracks(normalize_public_tracks(tracks, require_isrc=True)),
         "albums": albums,
         "related": related,
     }

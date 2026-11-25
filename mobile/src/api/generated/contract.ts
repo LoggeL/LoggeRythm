@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "6a1b956105b8b7895bc2ff294c8c371bfe9b6ae98aefde32b5879920b4ef36d6" as const;
+export const GENERATED_OPENAPI_SHA256 = "9d6552fa363b7422d3946ec7dd650453e01b7f78368b75e23f0060a5877c1456" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -386,6 +386,16 @@ export interface InviteInfoWire {
   url: string;
   used_by_name?: string | null;
 }
+export interface LikesDeduplicationResultWire {
+  duplicate_groups_merged: number;
+  errors: string[];
+  isrc_backfilled: number;
+  likes_removed: number;
+  likes_scanned: number;
+  playlist_tracks_backfilled: number;
+  unresolved_tracks: string[];
+  users_processed: number;
+}
 export interface LoginRequestWire {
   email: string;
   password: string;
@@ -591,6 +601,7 @@ export interface PlaylistTrackEntryWire {
   cover?: string;
   duration_sec?: number;
   id: string;
+  isrc?: string;
   loudness_gain_db?: number | null;
   loudness_lufs?: number | null;
   loudness_peak?: number | null;
@@ -629,6 +640,7 @@ export interface RadarTrackWire {
   cover?: string;
   duration_sec?: number;
   id: string;
+  isrc?: string;
   loudness_gain_db?: number | null;
   loudness_lufs?: number | null;
   loudness_peak?: number | null;
@@ -732,6 +744,7 @@ export interface TrackWire {
   cover?: string;
   duration_sec?: number;
   id: string;
+  isrc?: string;
   loudness_gain_db?: number | null;
   loudness_lufs?: number | null;
   loudness_peak?: number | null;
@@ -821,6 +834,7 @@ export interface GeneratedApiSchemas {
   "ImportJobStatus": ImportJobStatusWire;
   "IntegrationsStatus": IntegrationsStatusWire;
   "InviteInfo": InviteInfoWire;
+  "LikesDeduplicationResult": LikesDeduplicationResultWire;
   "LoginRequest": LoginRequestWire;
   "MeUpdate": MeUpdateWire;
   "OrderUpdate": OrderUpdateWire;
@@ -1141,6 +1155,15 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: PlaylistSummaryWire;
+  };
+  "deduplicate_likes_api_admin_likes_deduplicate_post": {
+    request: Record<never, never>;
+    responses: {
+      "200": LikesDeduplicationResultWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+    };
+    response: LikesDeduplicationResultWire;
   };
   "deezer_playlist_api_deezer_playlist__playlist_id__get": {
     request: {
@@ -2392,6 +2415,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "required",
     requestMediaTypes: ["application/json"],
     successStatuses: [201],
+  },
+  "deduplicate_likes_api_admin_likes_deduplicate_post": {
+    method: "POST",
+    path: "/api/admin/likes/deduplicate",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
   },
   "deezer_playlist_api_deezer_playlist__playlist_id__get": {
     method: "GET",

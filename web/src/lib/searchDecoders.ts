@@ -46,7 +46,7 @@ export function decodeSearchTracks(value: unknown): Track[] {
   return rows(value, (row, path) => {
     identifier(row.id, `${path}.id`, true);
     text(row.title, `${path}.title`, true);
-    for (const field of ["artist", "album", "cover", "release_date"]) {
+    for (const field of ["artist", "album", "cover", "release_date", "isrc"]) {
       text(row[field], `${path}.${field}`);
     }
     for (const field of ["artist_id", "album_id"]) {

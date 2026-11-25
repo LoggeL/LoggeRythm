@@ -9,8 +9,8 @@ import Avatar from "@/components/Avatar";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EmptyState from "@/components/ui/EmptyState";
 import { CopyIcon } from "@/components/feedbackIcons";
-import { ChevronRightIcon, StatusIcon, UserIcon, VisualizerIcon } from "@/components/icons";
-import type { AdminUser, InviteInfo, StorageInfo } from "@/types";
+import { ChevronRightIcon, HeartIcon, StatusIcon, UserIcon, VisualizerIcon } from "@/components/icons";
+import type { AdminUser, InviteInfo, LikesDeduplicationResult, StorageInfo } from "@/types";
 import { Badge, errorMessage, formatBytes, formatCount, Metric, RowsSkeleton, SectionError, SettingsCard, StatusBadge } from "./presentation";
 
 function UsersSection() {
@@ -295,6 +295,58 @@ function InvitesSection() {
   );
 }
 
+function LikesDeduplicationSection() {
+  const qc = useQueryClient();
+  const [lastResult, setLastResult] = useState<LikesDeduplicationResult | null>(null);
+  const run = useMutation({
+    mutationFn: api.adminDeduplicateLikes,
+    onSuccess: (result) => {
+      setLastResult(result);
+      qc.invalidateQueries({ queryKey: ["likes"] });
+      qc.invalidateQueries({ queryKey: ["playlists"] });
+      if (result.errors.length > 0) {
+        toast.error(
+          `Zusammenführung mit ${result.errors.length} Fehler(n) abgeschlossen (${result.likes_removed} Duplikate entfernt).`,
+        );
+      } else if (result.likes_removed > 0) {
+        toast.success(
+          `${result.likes_removed} doppelte Likes in ${result.duplicate_groups_merged} Song-Gruppe(n) zusammengeführt.`,
+        );
+      } else {
+        toast.success("Keine doppelten Likes gefunden.");
+      }
+    },
+    onError: (err) => toast.error(`Zusammenführen fehlgeschlagen: ${errorMessage(err)}`),
+  });
+
+  return (
+    <SettingsCard
+      title="Song-Duplikate zusammenführen"
+      description="Führt doppelte Likes desselben Songs über Singles, EPs und Alben per ISRC zusammen (bevorzugt Album vor EP vor Single) und ergänzt fehlende ISRCs."
+      icon={<HeartIcon width={18} height={18} />}
+      action={
+        <button type="button" onClick={() => run.mutate()} disabled={run.isPending} className="action-secondary">
+          {run.isPending ? "Wird geprüft…" : "Jetzt zusammenführen"}
+        </button>
+      }
+    >
+      {lastResult && (
+        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Metric value={formatCount(lastResult.likes_scanned)} label="Likes geprüft" />
+          <Metric value={formatCount(lastResult.likes_removed)} label="Duplikate entfernt" />
+          <Metric value={formatCount(lastResult.isrc_backfilled)} label="Like-ISRCs ergänzt" />
+          <Metric value={formatCount(lastResult.playlist_tracks_backfilled)} label="Playlist-ISRCs" />
+        </dl>
+      )}
+      {lastResult && lastResult.errors.length > 0 && (
+        <p role="alert" className="mt-3 text-xs text-danger">
+          {lastResult.errors.length} Fehler bei Deezer-Abfragen (erster Fehler: {lastResult.errors[0]})
+        </p>
+      )}
+    </SettingsCard>
+  );
+}
+
 /** "Verwaltung" tab (admins only): usage dashboard, system status, users, storage and invites. */
 export default function AdministrationTab() {
   return (
@@ -323,6 +375,7 @@ export default function AdministrationTab() {
       </div>
       <UsersSection />
       <StorageSection />
+      <LikesDeduplicationSection />
       <InvitesSection />
     </div>
   );

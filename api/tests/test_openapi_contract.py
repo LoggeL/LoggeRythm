@@ -237,9 +237,10 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 98)
-        self.assertEqual(len(schema["paths"]), 94)
-        self.assertEqual(len(operation_ids), 108)
+        self.assertEqual(len(schemas), 99)
+        self.assertEqual(len(schema["paths"]), 95)
+        self.assertEqual(len(operation_ids), 109)
+        self.assertIn("/api/admin/likes/deduplicate", schema["paths"])
         self.assertIn("/api/admin/usage", schema["paths"])
         self.assertIn("/api/admin/usage/users/{user_id}", schema["paths"])
         self.assertIn("/api/playlists/{playlist_id}/collaborative", schema["paths"])

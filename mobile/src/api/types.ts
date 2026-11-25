@@ -20,6 +20,8 @@ export interface Track {
   preview_url: string | null;
   rank: number;
   release_date: string;
+  /** International Standard Recording Code (uppercase alphanumeric); empty when unknown. */
+  isrc?: string;
   /** ReplayGain/R128 track gain adjustment in dB when upstream metadata provides it. */
   loudness_gain_db?: number | null;
   /** Integrated track loudness in LUFS/LKFS when measured or supplied by the backend. */
@@ -59,6 +61,7 @@ export interface TrackInput {
   preview_url?: string | null;
   rank?: number;
   release_date?: string;
+  isrc?: string;
   loudness_gain_db?: number | null;
   loudness_lufs?: number | null;
   loudness_peak?: number | null;
