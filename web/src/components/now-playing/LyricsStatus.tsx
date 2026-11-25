@@ -8,10 +8,10 @@ export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
   if (lyrics.isError) {
     if (!lyrics.error) throw new Error("Songtext-Anfrage fehlgeschlagen, aber die Fehlerursache fehlt.");
     return (
-      <div role="alert" className="error-panel w-full max-w-md">
+      <div role="alert" className="error-panel w-full max-w-md bg-[#1a1114]/88 shadow-[0_14px_36px_rgb(0_0_0/0.45)] backdrop-blur-md">
         <p className="font-medium">Der Songtext konnte nicht geladen werden.</p>
         <p className="mt-1 break-words text-xs">{lyrics.error.message}</p>
-        <button type="button" onClick={lyrics.retry} disabled={lyrics.isFetching} className="action-secondary mt-3 min-h-9 px-4 text-xs">
+        <button type="button" onClick={lyrics.retry} disabled={lyrics.isFetching} className="action-secondary mt-3 min-h-9 bg-[#0f0e11]/75 px-4 text-xs hover:bg-[#0f0e11]/95">
           {lyrics.isFetching ? "Wird geladen…" : "Erneut versuchen"}
         </button>
       </div>
@@ -30,12 +30,12 @@ export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
 
   if (lyrics.instrumental) {
     return (
-      <div role="status" className="flex flex-col items-center text-center">
-        <span className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-accent/35 bg-accent/12 text-accent">
+      <div role="status" className="flex max-w-sm flex-col items-center rounded-2xl border border-white/12 bg-[#0f0e11]/64 px-6 py-6 text-center shadow-[0_14px_36px_rgb(0_0_0/0.4)] backdrop-blur-md">
+        <span className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-accent/40 bg-accent/15 text-accent-soft">
           <MusicNoteIcon width={24} height={24} />
         </span>
-        <p className="font-display text-lg font-extrabold tracking-tight">Instrumental</p>
-        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted">
+        <p className="font-display text-lg font-extrabold tracking-tight text-foreground">Instrumental</p>
+        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">
           Dieser Titel ist rein instrumental – lehne dich zurück und genieße die Musik.
         </p>
       </div>
@@ -43,12 +43,12 @@ export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
   }
 
   return (
-    <div role="status" className="flex flex-col items-center text-center">
-      <span className="mb-4 grid h-14 w-14 place-items-center rounded-full bg-white/[0.07] text-muted">
+    <div role="status" className="flex max-w-sm flex-col items-center rounded-2xl border border-white/12 bg-[#0f0e11]/64 px-6 py-6 text-center shadow-[0_14px_36px_rgb(0_0_0/0.4)] backdrop-blur-md">
+      <span className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.08] text-foreground/80">
         <LyricsIcon width={24} height={24} />
       </span>
-      <p className="text-base font-semibold">Kein Songtext verfügbar</p>
-      <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted">Für diesen Titel haben wir keinen Text gefunden. Unter „Ähnliche Titel“ geht die Musik weiter.</p>
+      <p className="text-base font-semibold text-foreground">Kein Songtext verfügbar</p>
+      <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">Für diesen Titel haben wir keinen Text gefunden. Unter „Ähnliche Titel“ geht die Musik weiter.</p>
     </div>
   );
 }

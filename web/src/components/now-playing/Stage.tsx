@@ -64,7 +64,7 @@ export function VisualizerControls({
   const label = preferences.enabled ? "Visualizer ausschalten" : "Visualizer einschalten";
   const auto = choice.decision;
   return (
-    <div className="flex min-w-0 items-center gap-1">
+    <div className="flex min-w-0 items-center gap-1.5">
       <button
         type="button"
         onClick={() => onChange({ ...preferences, enabled: !preferences.enabled })}
@@ -72,7 +72,7 @@ export function VisualizerControls({
         aria-label={label}
         title={label}
         data-audio-signal={signalStatus}
-        className="action-icon h-9 w-9 flex-shrink-0 opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100"
+        className="action-icon h-9 w-9 flex-shrink-0 border border-white/12 bg-[#0f0e11]/72 text-foreground/88 backdrop-blur-md transition-colors hover:border-white/25 hover:bg-[#0f0e11]/88 hover:text-foreground focus-visible:border-white/30"
       >
         <VisualizerIcon width={18} height={18} />
       </button>
@@ -84,11 +84,11 @@ export function VisualizerControls({
           value={preferences.scene}
           onChange={(event) => onChange({ ...preferences, scene: event.target.value as ScenePreference })}
           data-scene-source={auto.source}
-          className="label-mono h-8 min-w-0 max-w-60 cursor-pointer truncate rounded-full border border-white/15 bg-black/25 px-3 text-[11px] text-foreground/80 backdrop-blur transition-colors hover:border-white/30 hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--accent-soft)]"
+          className="label-mono h-8 min-w-0 max-w-60 cursor-pointer truncate rounded-full border border-white/15 bg-[#0f0e11]/78 px-3 text-[11px] text-foreground/92 shadow-[0_6px_18px_rgb(0_0_0/0.4)] backdrop-blur-md transition-colors hover:border-white/30 hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--accent-soft)]"
         >
-          <option value="auto">Auto · {SCENE_LABELS[auto.scene]}</option>
+          <option value="auto" className="bg-[#151418] text-foreground">Auto · {SCENE_LABELS[auto.scene]}</option>
           {SCENE_KEYS.map((key) => (
-            <option key={key} value={key}>{SCENE_LABELS[key]}</option>
+            <option key={key} value={key} className="bg-[#151418] text-foreground">{SCENE_LABELS[key]}</option>
           ))}
         </select>
       )}

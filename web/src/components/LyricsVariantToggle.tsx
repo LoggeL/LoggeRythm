@@ -17,7 +17,7 @@ export default function LyricsVariantToggle({ lyrics }: { lyrics: LyricsData }) 
   if (!canToggle) {
     if (!isAiGenerated) return null;
     return (
-      <span title="KI-Transkription" className={`${BADGE} bg-accent/15 text-accent-soft`}>
+      <span title="KI-Transkription" className={`${BADGE} border border-accent/40 bg-[#0f0e11]/75 text-accent-soft`}>
         ✦ KI
       </span>
     );
@@ -41,8 +41,12 @@ export default function LyricsVariantToggle({ lyrics }: { lyrics: LyricsData }) 
       title={title}
       aria-label={title}
       aria-pressed={showingAi}
-      className={`${BADGE} relative transition-colors before:absolute before:-inset-3 before:content-[''] ${
-        showingAi || aiLoading ? "bg-accent/15 text-accent-soft" : aiFailed ? "bg-danger/15 text-danger" : "bg-white/10 text-muted hover:text-foreground"
+      className={`${BADGE} relative border transition-colors before:absolute before:-inset-3 before:content-[''] ${
+        showingAi || aiLoading
+          ? "border-accent/40 bg-[#0f0e11]/75 text-accent-soft"
+          : aiFailed
+            ? "border-danger/40 bg-[#1a1114]/80 text-danger"
+            : "border-white/14 bg-[#0f0e11]/70 text-foreground/80 hover:text-foreground"
       } ${aiLoading ? "animate-pulse motion-reduce:animate-none" : ""}`}
     >
       ✦ KI

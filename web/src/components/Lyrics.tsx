@@ -73,7 +73,7 @@ export default function Lyrics() {
                       aria-current={isActive ? "true" : undefined}
                       style={{ height: LINE_H }}
                       className={`block w-full truncate px-2 text-center transition-colors duration-300 motion-reduce:transition-none ${
-                        isActive ? "font-display text-base font-bold text-foreground" : "text-sm text-subtle enabled:hover:text-foreground"
+                        isActive ? "font-display text-base font-bold text-foreground" : "text-sm text-foreground/58 enabled:hover:text-foreground"
                       }`}
                     >
                       {hasTimedLines ? (

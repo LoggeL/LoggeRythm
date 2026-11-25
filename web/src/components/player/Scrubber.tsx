@@ -237,7 +237,7 @@ export default function Scrubber({
 
   return (
     <div className={`flex w-full items-center gap-2 ${className}`}>
-      {showTimes && <span className="w-10 text-right font-mono text-[11px] tabular-nums text-muted">{formatTime(position)}</span>}
+      {showTimes && <span className="w-10 text-right font-mono text-[11px] tabular-nums text-foreground/80 [text-shadow:0_1px_6px_rgb(0_0_0/0.7)]">{formatTime(position)}</span>}
       <div
         ref={rail}
         data-scrubber-rail=""
@@ -256,7 +256,7 @@ export default function Scrubber({
           <span
             aria-hidden="true"
             style={{ left: `clamp(2rem, ${(hoverPreview.ratio * 100).toFixed(2)}%, calc(100% - 2rem))` }}
-            className="pointer-events-none absolute -top-7 z-20 -translate-x-1/2 rounded-md border border-hairline bg-panel px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-foreground shadow-[0_6px_18px_rgb(0_0_0/0.55)]"
+            className="pointer-events-none absolute -top-7 z-20 -translate-x-1/2 rounded-md border border-white/15 bg-[#0f0e11]/92 px-1.5 py-0.5 font-mono text-[11px] font-semibold tabular-nums text-foreground shadow-[0_6px_18px_rgb(0_0_0/0.6)] backdrop-blur-md"
           >
             {formatTime(dragging ? position : hoverPreview.sec)}
           </span>
@@ -298,7 +298,7 @@ export default function Scrubber({
           aria-valuetext={`${formatTime(position)} von ${formatTime(max)}`}
         />
       </div>
-      {showTimes && <span className="w-10 font-mono text-[11px] tabular-nums text-muted">{formatTime(max)}</span>}
+      {showTimes && <span className="w-10 font-mono text-[11px] tabular-nums text-foreground/80 [text-shadow:0_1px_6px_rgb(0_0_0/0.7)]">{formatTime(max)}</span>}
     </div>
   );
 }

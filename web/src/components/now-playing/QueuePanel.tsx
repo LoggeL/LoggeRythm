@@ -32,20 +32,20 @@ export default function QueuePanel({ onClose }: { onClose: () => void }) {
                   tracks: queue,
                 })
               }
-              className="action-secondary min-h-9 px-3 text-xs"
+              className="action-secondary min-h-9 border-white/15 bg-[#0f0e11]/68 px-3 text-xs hover:bg-[#0f0e11]/88"
             >
               <SavePlaylistIcon width={15} height={15} />
               Als Playlist speichern
             </button>
           )}
           {clearing.undo ? (
-            <button type="button" onClick={clearing.undo} className="action-secondary min-h-9 px-4 text-xs text-accent-soft">
+            <button type="button" onClick={clearing.undo} className="action-secondary min-h-9 border-accent/45 bg-[#0f0e11]/75 px-4 text-xs text-accent-soft hover:bg-[#0f0e11]/92">
               Leeren rückgängig
             </button>
           ) : (
             clearing.canClear &&
             upcoming.length > 0 && (
-              <button type="button" onClick={clearing.clear} className="action-secondary min-h-9 px-4 text-xs">
+              <button type="button" onClick={clearing.clear} className="action-secondary min-h-9 border-white/15 bg-[#0f0e11]/68 px-4 text-xs hover:bg-[#0f0e11]/88">
                 Leeren
               </button>
             )

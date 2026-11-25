@@ -51,7 +51,7 @@ export default function QueueItem({
       data-queue-index={index}
       tabIndex={0}
       aria-label={`${track.title}, ${track.artist}. Mit Alt und Pfeiltasten verschieben.`}
-      className={`group relative flex flex-wrap items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/[0.05] focus-within:bg-white/[0.05] ${dragging ? "opacity-40" : ""}`}
+      className={`group relative flex flex-wrap items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/[0.08] focus-within:bg-white/[0.08] ${dragging ? "opacity-40" : ""}`}
     >
       {dropEdge && (
         <span

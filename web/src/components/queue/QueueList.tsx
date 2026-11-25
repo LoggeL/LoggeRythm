@@ -38,7 +38,7 @@ function NowPlayingCard({ track, onNavigate }: { track: Track; onNavigate?: () =
     <section aria-label="Jetzt läuft" className="mb-5 px-2">
       <h3 className="mb-2 px-1 text-xs font-semibold text-muted">Jetzt läuft</h3>
       <div
-        className="flex items-center gap-3 rounded-xl border border-hairline p-2.5"
+        className="flex items-center gap-3 rounded-xl border border-white/12 bg-[#0f0e11]/62 p-2.5 backdrop-blur-sm"
         style={{ backgroundImage: "linear-gradient(100deg, rgb(var(--ambient) / 0.26), rgb(var(--ambient) / 0.07))" }}
       >
         <Cover src={track.cover} className="h-12 w-12 rounded-lg" />

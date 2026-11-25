@@ -49,7 +49,7 @@ export default function WaveformScrubber({
     return (
       <div className={className}>
         {metaQuery.isError && (
-          <p role="status" className="label-mono mb-1 text-[10px] text-danger">
+          <p role="status" className="label-mono mb-1.5 rounded-md border border-danger/30 bg-[#1a1114]/85 px-2.5 py-1 text-[10px] text-danger backdrop-blur-sm">
             Wellenform nicht verfügbar: {metaQuery.error instanceof Error ? metaQuery.error.message : String(metaQuery.error)}
           </p>
         )}
@@ -143,7 +143,7 @@ export default function WaveformScrubber({
           if (!drag) setHover(null);
         }}
         onKeyDown={handleKeyDown}
-        className={`group relative flex h-12 w-full items-center gap-[2px] rounded-md px-0.5 outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        className={`group relative flex h-12 w-full items-center gap-[2px] rounded-lg bg-[#0f0e11]/45 px-1.5 ring-1 ring-white/[0.08] outline-none focus-visible:ring-2 focus-visible:ring-accent ${
           disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
         }`}
       >
@@ -151,7 +151,7 @@ export default function WaveformScrubber({
           <span
             aria-hidden="true"
             style={{ left: `${Math.max(4, Math.min(96, hover.pct))}%` }}
-            className="pointer-events-none absolute -top-7 z-20 -translate-x-1/2 rounded-full border border-hairline bg-panel px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground shadow-[0_6px_18px_rgb(0_0_0/0.55)]"
+            className="pointer-events-none absolute -top-7 z-20 -translate-x-1/2 rounded-full border border-white/15 bg-[#0f0e11]/92 px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground shadow-[0_6px_18px_rgb(0_0_0/0.6)] backdrop-blur-md"
           >
             {formatTime(hover.time)}
           </span>
@@ -162,7 +162,7 @@ export default function WaveformScrubber({
             aria-hidden="true"
             title={`Intro-Ende ${formatTime(meta!.intro_end_sec!)}`}
             style={{ left: `${introPct}%` }}
-            className="pointer-events-none absolute inset-y-1 z-10 w-px bg-foreground/20"
+            className="pointer-events-none absolute inset-y-1 z-10 w-px bg-foreground/35"
           />
         )}
         {outroPct !== null && (
@@ -170,7 +170,7 @@ export default function WaveformScrubber({
             aria-hidden="true"
             title={`Outro-Start ${formatTime(meta!.outro_start_sec!)}`}
             style={{ left: `${outroPct}%` }}
-            className="pointer-events-none absolute inset-y-1 z-10 w-px bg-accent/35"
+            className="pointer-events-none absolute inset-y-1 z-10 w-px bg-accent/60"
           />
         )}
 
@@ -187,20 +187,20 @@ export default function WaveformScrubber({
               style={{ height: `${heightPct}%` }}
               className={`min-w-0 flex-1 rounded-full transition-colors duration-100 motion-reduce:transition-none ${
                 played
-                  ? "bg-[var(--accent-soft)] shadow-[0_0_8px_rgb(214_255_75/0.22)]"
+                  ? "bg-[var(--accent-soft)] shadow-[0_0_8px_rgb(214_255_75/0.28)]"
                   : hovered
-                    ? "bg-foreground/45"
-                    : "bg-foreground/18 group-hover:bg-foreground/26"
+                    ? "bg-foreground/60"
+                    : "bg-foreground/30 group-hover:bg-foreground/44"
               }`}
             />
           );
         })}
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] tabular-nums text-muted">
+      <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] tabular-nums text-foreground/82 [text-shadow:0_1px_6px_rgb(0_0_0/0.8)]">
         <span>{formatTime(displayTime)}</span>
         {meta?.bpm != null && meta.bpm > 0 && (
-          <span className="text-[10px] tracking-[0.08em] text-subtle">
+          <span className="rounded-full border border-white/12 bg-[#0f0e11]/76 px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-foreground/88">
             {Math.round(meta.bpm)} BPM
           </span>
         )}

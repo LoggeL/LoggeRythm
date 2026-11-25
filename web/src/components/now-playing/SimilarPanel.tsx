@@ -39,7 +39,7 @@ export default function SimilarPanel({ seedId, onClose }: { seedId: string | num
       <div className="flex min-h-9 flex-shrink-0 items-center justify-between gap-3 pb-2">
         <h2 className="label-mono">Radio zu diesem Titel</h2>
         {tracks && tracks.length > 0 && (
-          <button type="button" onClick={() => playSimilarRadio(0)} className="action-secondary min-h-9 px-4 text-xs">
+          <button type="button" onClick={() => playSimilarRadio(0)} className="action-secondary min-h-9 border-white/15 bg-[#0f0e11]/68 px-4 text-xs hover:bg-[#0f0e11]/88">
             <PlayIcon width={14} height={14} />
             Alle abspielen
           </button>
@@ -61,18 +61,18 @@ export default function SimilarPanel({ seedId, onClose }: { seedId: string | num
         )}
         <QueryError label="Ähnliche Titel" query={query} />
         {tracks && tracks.length === 0 && (
-          <div className="flex flex-col items-center px-4 py-12 text-center">
-            <span className="mb-4 grid h-14 w-14 place-items-center rounded-full bg-white/[0.07] text-muted">
+          <div className="mx-auto my-6 flex max-w-sm flex-col items-center rounded-2xl border border-white/12 bg-[#0f0e11]/58 px-5 py-10 text-center backdrop-blur-md">
+            <span className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-white/10 bg-white/[0.08] text-foreground/80">
               <RadioIcon width={24} height={24} />
             </span>
-            <p className="text-base font-semibold">Nichts Ähnliches gefunden</p>
-            <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted">Zu diesem Titel gibt es noch keine Empfehlungen. Probier es mit dem nächsten Song.</p>
+            <p className="text-base font-semibold text-foreground">Nichts Ähnliches gefunden</p>
+            <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">Zu diesem Titel gibt es noch keine Empfehlungen. Probier es mit dem nächsten Song.</p>
           </div>
         )}
         {tracks && tracks.length > 0 && (
           <ul className="flex flex-col gap-0.5">
             {tracks.map((t, i) => (
-              <li key={`${t.id}-${i}`} className="group flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/[0.06] focus-within:bg-white/[0.06]">
+              <li key={`${t.id}-${i}`} className="group flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/[0.08] focus-within:bg-white/[0.08]">
                 <button
                   type="button"
                   onClick={() => playSimilarRadio(i)}

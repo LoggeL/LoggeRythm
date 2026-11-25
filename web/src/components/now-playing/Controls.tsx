@@ -56,7 +56,7 @@ export function TransportRow({ className = "" }: { className?: string }) {
         aria-label="Zufallswiedergabe"
         aria-pressed={shuffle}
         title={lockTip ?? (shuffle ? "Zufallswiedergabe ausschalten" : "Zufallswiedergabe einschalten")}
-        className="action-icon h-11 w-11"
+        className="action-icon h-11 w-11 text-foreground/82 [filter:drop-shadow(0_1px_6px_rgb(0_0_0/0.75))] hover:text-foreground"
       >
         <ShuffleIcon width={22} height={22} />
       </button>
@@ -66,7 +66,7 @@ export function TransportRow({ className = "" }: { className?: string }) {
         disabled={locked}
         title={lockTip}
         aria-label="Vorheriger Titel"
-        className="action-icon h-12 w-12 text-foreground"
+        className="action-icon h-12 w-12 text-foreground [filter:drop-shadow(0_1px_6px_rgb(0_0_0/0.75))]"
       >
         <PrevIcon width={30} height={30} />
       </button>
@@ -93,7 +93,7 @@ export function TransportRow({ className = "" }: { className?: string }) {
         disabled={locked}
         title={lockTip}
         aria-label="Nächster Titel"
-        className="action-icon h-12 w-12 text-foreground"
+        className="action-icon h-12 w-12 text-foreground [filter:drop-shadow(0_1px_6px_rgb(0_0_0/0.75))]"
       >
         <NextIcon width={30} height={30} />
       </button>
@@ -104,7 +104,7 @@ export function TransportRow({ className = "" }: { className?: string }) {
         title={lockTip}
         aria-label={repeat === "one" ? "Wiederholen: ein Titel" : repeat === "all" ? "Wiederholen: alle Titel" : "Wiederholen: aus"}
         aria-pressed={repeat !== "off"}
-        className="action-icon h-11 w-11"
+        className="action-icon h-11 w-11 text-foreground/82 [filter:drop-shadow(0_1px_6px_rgb(0_0_0/0.75))] hover:text-foreground"
       >
         <RepeatGlyph width={22} height={22} />
       </button>
@@ -133,7 +133,7 @@ export function VolumeRow() {
         title={tip}
         aria-label={muted ? "Ton an" : "Stummschalten"}
         aria-pressed={muted}
-        className="action-icon h-11 w-11"
+        className="action-icon h-11 w-11 text-foreground/85 hover:text-foreground"
       >
         {muted || volume === 0 ? <VolumeMutedIcon /> : <VolumeIcon />}
       </button>

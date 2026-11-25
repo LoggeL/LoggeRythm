@@ -184,7 +184,12 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   if (!track) return null;
 
   const tablist = (
-    <div data-np-scroll role="tablist" aria-label="Playeransicht" className="no-scrollbar flex flex-shrink-0 gap-6 overflow-x-auto border-b border-hairline max-lg:-mx-5 max-lg:px-5">
+    <div
+      data-np-scroll
+      role="tablist"
+      aria-label="Playeransicht"
+      className="no-scrollbar flex flex-shrink-0 gap-6 overflow-x-auto border-b border-white/10 max-lg:-mx-5 max-lg:bg-[#0f0e11]/72 max-lg:px-5 max-lg:backdrop-blur-lg"
+    >
       {tabs.map(({ key, label }) => {
         const active = view === key;
         return (
@@ -199,7 +204,9 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             onClick={() => select(key)}
             onKeyDown={moveTab}
             className={`font-display relative -mb-px min-h-11 whitespace-nowrap border-b-2 pb-2 text-[17px] font-bold tracking-tight transition-colors lg:text-xl ${
-              active ? "border-[var(--accent-soft)] text-foreground" : "border-transparent text-foreground/45 hover:text-foreground/80"
+              active
+                ? "border-[var(--accent-soft)] text-foreground [text-shadow:0_1px_12px_rgb(0_0_0/0.85)]"
+                : "border-transparent text-foreground/65 [text-shadow:0_1px_10px_rgb(0_0_0/0.8)] hover:text-foreground/95"
             }`}
           >
             {label}
@@ -262,61 +269,67 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         />
       ))}
 
-      {/* Drag affordance for the swipe-down gesture (touch layouts) */}
-      <div aria-hidden className={`relative mx-auto mt-2 h-1 w-9 flex-shrink-0 rounded-full bg-white/30 transition-opacity duration-500 lg:hidden ${chromeFadeClass}`} />
+      {/* Top chrome: drag handle (touch) + header bar on a frosted dark-ink scrim */}
+      <div className={`${styles.header} relative flex-shrink-0 transition-opacity duration-500 motion-reduce:transition-none ${chromeFadeClass}`}>
+        <div aria-hidden className="mx-auto mt-2 h-1 w-9 rounded-full bg-white/35 lg:hidden" />
 
-      <header className={`relative flex h-14 flex-shrink-0 items-center gap-2 px-3 transition-opacity duration-500 motion-reduce:transition-none lg:h-16 lg:gap-3 lg:px-6 ${chromeFadeClass}`}>
-        <button data-dialog-autofocus type="button" onClick={onClose} aria-label="Schließen" title="Schließen (Esc)" className="action-icon h-11 w-11 text-foreground">
-          <ChevronDownIcon width={26} height={26} />
-        </button>
-        <p className="flex min-w-0 flex-1 items-baseline gap-2.5 max-lg:flex-col max-lg:items-center max-lg:gap-0 max-lg:text-center">
-          <span className="label-mono flex-shrink-0">{queueContext ? "Wiedergabe aus" : "Jetzt läuft"}</span>
-          {queueContext && <span className="max-w-full truncate text-sm font-semibold">{queueContext}</span>}
-        </p>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={toggleCinemaMode}
-            aria-pressed={cinemaMode}
-            aria-label={cinemaMode ? "Kino-Modus beenden" : "Kino-Modus (Vollbild-Visualizer)"}
-            title={cinemaMode ? "Kino-Modus beenden (C)" : "Kino-Modus (C)"}
-            className={`action-icon h-10 w-10 ${cinemaMode ? "text-accent" : ""}`}
-          >
-            <CinemaIcon width={18} height={18} />
+        <header className="flex h-14 items-center gap-2 px-3 lg:h-16 lg:gap-3 lg:px-6">
+          <button data-dialog-autofocus type="button" onClick={onClose} aria-label="Schließen" title="Schließen (Esc)" className="action-icon h-11 w-11 text-foreground">
+            <ChevronDownIcon width={26} height={26} />
           </button>
-          <div className="flex items-center gap-0.5 lg:hidden">
-            <SleepTimerTrigger compact />
-            <AudioEffectsTrigger compact />
-            <DeviceSelectorTrigger forceVisible compact />
+          <p className="flex min-w-0 flex-1 items-baseline gap-2.5 max-lg:flex-col max-lg:items-center max-lg:gap-0 max-lg:text-center">
+            <span className="label-mono flex-shrink-0">{queueContext ? "Wiedergabe aus" : "Jetzt läuft"}</span>
+            {queueContext && (
+              <span className="max-w-full truncate text-sm font-semibold text-foreground [text-shadow:0_1px_10px_rgb(0_0_0/0.85)]">
+                {queueContext}
+              </span>
+            )}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={toggleCinemaMode}
+              aria-pressed={cinemaMode}
+              aria-label={cinemaMode ? "Kino-Modus beenden" : "Kino-Modus (Vollbild-Visualizer)"}
+              title={cinemaMode ? "Kino-Modus beenden (C)" : "Kino-Modus (C)"}
+              className={`action-icon h-10 w-10 ${cinemaMode ? "text-accent" : "text-foreground/85"}`}
+            >
+              <CinemaIcon width={18} height={18} />
+            </button>
+            <div className="flex items-center gap-0.5 lg:hidden">
+              <SleepTimerTrigger compact />
+              <AudioEffectsTrigger compact />
+              <DeviceSelectorTrigger forceVisible compact />
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
+      </div>
 
       {error && (
-        <p role="alert" className="error-panel relative mx-5 mb-3 max-h-28 flex-shrink-0 overflow-y-auto lg:mx-10">
+        <p role="alert" className="error-panel relative mx-5 mb-3 max-h-28 flex-shrink-0 overflow-y-auto bg-[#1a1114]/88 shadow-[0_12px_30px_rgb(0_0_0/0.5)] backdrop-blur-md lg:mx-10">
           {error}
         </p>
       )}
 
       {split ? (
         cinemaMode ? (
-          <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center px-10 pb-2 xl:px-14">
-            <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-6">
+          <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center px-10 pb-3 xl:px-14">
+            <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-5">
               {stage}
-              <div className={`flex-shrink-0 transition-opacity duration-500 ${cinemaIdle ? "opacity-75" : "opacity-100"}`}>
+              <div className={`flex-shrink-0 transition-opacity duration-500 ${cinemaIdle ? "opacity-85" : "opacity-100"}`}>
                 <TrackHeading track={track} onNavigate={onClose} variant="display" />
               </div>
             </div>
           </div>
         ) : (
-          <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-10 px-10 pb-2 xl:gap-16 xl:px-14">
-            <div className="flex min-h-0 flex-col gap-6">
+          <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-10 px-10 pb-3 xl:gap-16 xl:px-14">
+            <div className="flex min-h-0 flex-col gap-5">
               {stage}
               <div className="flex-shrink-0">
                 <TrackHeading track={track} onNavigate={onClose} variant="display" />
               </div>
             </div>
-            <div className="flex min-h-0 flex-col">
+            <div className={`${styles.panelSurface} flex min-h-0 flex-col rounded-[var(--radius-panel)] px-6 pt-3.5 pb-2 xl:px-7`}>
               {tablist}
               <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
                 {panelContent}
@@ -327,7 +340,16 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col px-5">
           {!cinemaMode && tablist}
-          <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
+          <div
+            role="tabpanel"
+            id="now-playing-panel"
+            aria-labelledby={`now-playing-tab-${view}`}
+            className={`flex min-h-0 flex-1 flex-col ${
+              view === "stage" || cinemaMode
+                ? "pt-3"
+                : `${styles.panelSurface} mt-3 mb-2 rounded-[var(--radius-panel)] px-4 pt-3 pb-2`
+            }`}
+          >
             {view === "stage" || cinemaMode ? stage : panelContent}
           </div>
         </div>

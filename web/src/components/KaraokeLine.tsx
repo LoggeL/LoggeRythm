@@ -35,7 +35,7 @@ export default function KaraokeLine({
         const sep = idx < words.length - 1 ? " " : "";
         if (progress <= 0 && !isPast) {
           return (
-            <span key={`${word.t}-${idx}`} className="text-foreground/38">
+            <span key={`${word.t}-${idx}`} className="text-foreground/55">
               {word.text}
               {sep}
             </span>
@@ -51,13 +51,15 @@ export default function KaraokeLine({
         }
         return (
           <span key={`${word.t}-${idx}`}>
-            <span
-              className="bg-clip-text text-transparent"
-              style={{
-                backgroundImage: `linear-gradient(90deg, var(--foreground) 0%, var(--foreground) ${pct}%, rgb(244 240 230 / 0.36) ${pct}%, rgb(244 240 230 / 0.36) 100%)`,
-              }}
-            >
-              {word.text}
+            <span className="inline-block [filter:drop-shadow(0_2px_10px_rgb(0_0_0/0.85))]">
+              <span
+                className="bg-clip-text text-transparent [text-shadow:none]"
+                style={{
+                  backgroundImage: `linear-gradient(90deg, var(--foreground) 0%, var(--foreground) ${pct}%, rgb(244 240 230 / 0.54) ${pct}%, rgb(244 240 230 / 0.54) 100%)`,
+                }}
+              >
+                {word.text}
+              </span>
             </span>
             {sep}
           </span>

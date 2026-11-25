@@ -192,7 +192,13 @@ export default function PartyScreenKiosk({
       role="dialog"
       aria-modal="true"
       aria-label="Party-Screen Kiosk"
-      style={fullscreenTheme(palette) as CSSProperties}
+      style={
+        {
+          "--muted": "rgb(244 240 230 / 0.8)",
+          "--subtle": "rgb(244 240 230 / 0.64)",
+          ...fullscreenTheme(palette),
+        } as CSSProperties
+      }
       className="fixed inset-0 z-[110] flex h-dvh flex-col overflow-hidden bg-backdrop text-foreground"
     >
       {track?.cover && (
@@ -234,26 +240,26 @@ export default function PartyScreenKiosk({
           <div
             key={item.uid}
             style={{ left: `${item.leftPct}%` }}
-            className="animate-[sheetUp_.45s_var(--ease-out)] absolute bottom-28 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-backdrop/80 px-3.5 py-1.5 shadow-[0_12px_32px_rgb(0_0_0/0.6)] backdrop-blur-md"
+            className="animate-[sheetUp_.45s_var(--ease-out)] absolute bottom-28 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/20 bg-[#0f0e11]/88 px-3.5 py-1.5 shadow-[0_14px_34px_rgb(0_0_0/0.72)] backdrop-blur-xl"
           >
             <span className="text-2xl leading-none">{item.emoji}</span>
-            <span className="text-xs font-semibold text-foreground">{item.sender}</span>
+            <span className="text-xs font-semibold text-foreground [text-shadow:0_1px_6px_rgb(0_0_0/0.8)]">{item.sender}</span>
           </div>
         ))}
       </div>
 
       {/* Top kiosk header */}
-      <header className="relative z-10 flex items-center justify-between gap-4 px-6 py-4 lg:px-10">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent/15 px-3 py-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-accent">
+      <header className="relative z-10 flex items-center justify-between gap-4 border-b border-white/[0.08] bg-gradient-to-b from-[#0f0e11]/86 via-[#0f0e11]/68 to-[#0f0e11]/38 px-6 py-4 backdrop-blur-xl lg:px-10">
+        <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+          <span className="inline-flex items-center gap-2 rounded-full border border-accent/45 bg-[#0f0e11]/84 px-3.5 py-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] text-accent-soft shadow-[0_6px_20px_rgb(0_0_0/0.45)]">
             <span aria-hidden="true" className="h-2 w-2 rounded-full bg-accent animate-pulse" />
             Party-Screen · {party.name || party.code}
           </span>
-          <span className="label-mono hidden sm:inline">
+          <span className="label-mono hidden rounded-full border border-white/14 bg-[#0f0e11]/75 px-3 py-1 text-foreground/88 sm:inline">
             {party.members.length} {party.members.length === 1 ? "Person" : "Personen"}
           </span>
           {party.auto_dj && (
-            <span className="label-mono rounded-full border border-hairline bg-white/[0.06] px-2.5 py-0.5 text-[10px] text-foreground">
+            <span className="label-mono rounded-full border border-white/16 bg-[#0f0e11]/80 px-2.5 py-1 text-[10px] text-foreground">
               Auto-DJ
             </span>
           )}
@@ -262,7 +268,7 @@ export default function PartyScreenKiosk({
           data-dialog-autofocus
           type="button"
           onClick={onClose}
-          className="action-secondary min-h-10 gap-2 bg-backdrop/75 px-4 text-xs backdrop-blur"
+          className="action-secondary min-h-10 gap-2 border-white/18 bg-[#0f0e11]/84 px-4 text-xs shadow-[0_6px_18px_rgb(0_0_0/0.45)] backdrop-blur-md hover:bg-[#0f0e11]/95"
         >
           <CloseIcon width={16} height={16} />
           Schließen
@@ -270,7 +276,7 @@ export default function PartyScreenKiosk({
       </header>
 
       {/* Main kiosk stage: cover + live lyrics */}
-      <div className="relative z-10 grid min-h-0 flex-1 items-center gap-8 px-6 pb-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-14 lg:px-12">
+      <div className="relative z-10 grid min-h-0 flex-1 items-center gap-8 px-6 py-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-14 lg:px-12">
         <div className="flex min-w-0 flex-col items-center text-center lg:items-start lg:text-left">
           <div ref={artworkRef} className="cover-shadow relative aspect-square w-full max-w-[18rem] overflow-hidden rounded-[var(--radius-panel)] sm:max-w-[22rem] lg:max-w-[26rem]">
             {track?.cover ? (
@@ -285,28 +291,30 @@ export default function PartyScreenKiosk({
             )}
           </div>
           {track && currentItem ? (
-            <div className="mt-6 min-w-0 max-w-full">
-              <h1 className="font-display line-clamp-2 text-[clamp(1.75rem,3.6vw,3.25rem)] font-extrabold leading-[1.04] tracking-[-0.04em]">
+            <div className="mt-5 w-full max-w-[26rem] min-w-0 rounded-2xl border border-white/12 bg-[#0f0e11]/74 px-5 py-4 shadow-[0_18px_44px_rgb(0_0_0/0.52)] backdrop-blur-xl">
+              <h1 className="font-display line-clamp-2 text-[clamp(1.75rem,3.6vw,3.25rem)] font-extrabold leading-[1.04] tracking-[-0.04em] text-foreground [text-shadow:0_2px_14px_rgb(0_0_0/0.82)]">
                 {track.title}
               </h1>
-              <p className="mt-2 truncate text-lg font-medium text-foreground/75 lg:text-xl">
+              <p className="mt-2 truncate text-lg font-medium text-foreground/85 [text-shadow:0_1px_10px_rgb(0_0_0/0.78)] lg:text-xl">
                 {trackArtistLabel(track)}
               </p>
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/[0.06] py-1 pl-1.5 pr-3.5 text-xs backdrop-blur">
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/16 bg-[#0f0e11]/85 py-1 pl-1.5 pr-3.5 text-xs shadow-[0_4px_14px_rgb(0_0_0/0.4)] backdrop-blur-md">
                 <Avatar src={currentItem.added_by_avatar_url} name={currentItem.added_by} size={22} />
-                <span className="text-muted">Hinzugefügt von</span>
+                <span className="text-foreground/75">Hinzugefügt von</span>
                 <span className="font-semibold text-foreground">{currentItem.added_by}</span>
               </div>
             </div>
           ) : (
-            <p className="mt-6 text-lg text-muted">Noch kein Song in der Jam – scanne den QR-Code und füge Titel hinzu!</p>
+            <p className="mt-6 max-w-md rounded-2xl border border-white/12 bg-[#0f0e11]/76 px-5 py-3.5 text-base font-medium text-foreground/90 shadow-[0_14px_36px_rgb(0_0_0/0.45)] backdrop-blur-xl">
+              Noch kein Song in der Jam – scanne den QR-Code und füge Titel hinzu!
+            </p>
           )}
         </div>
 
         {/* Live karaoke lyrics column */}
-        <div className="hidden min-h-0 flex-col justify-center gap-4 lg:flex">
+        <div className="hidden min-h-0 flex-col justify-center gap-3.5 overflow-x-hidden rounded-[var(--radius-panel)] border border-white/12 bg-[#0f0e11]/70 px-7 py-7 shadow-[0_20px_50px_rgb(0_0_0/0.48)] backdrop-blur-xl lg:flex">
           {lyrics.instrumental ? (
-            <p className="font-display text-3xl font-extrabold tracking-tight text-accent/85">
+            <p className="font-display text-3xl font-extrabold tracking-tight text-accent-soft [text-shadow:0_2px_14px_rgb(0_0_0/0.8)]">
               ♪ Instrumental
             </p>
           ) : visibleLyricLines.length > 0 ? (
@@ -316,25 +324,31 @@ export default function PartyScreenKiosk({
               return (
                 <p
                   key={index}
-                  className={`font-display text-[clamp(1.6rem,2.8vw,2.9rem)] font-extrabold leading-[1.14] tracking-[-0.03em] transition-all duration-300 ${
+                  className={`font-display rounded-xl text-[clamp(1.6rem,2.8vw,2.9rem)] font-extrabold leading-[1.14] tracking-[-0.03em] transition-[color,background-color] duration-300 ${
                     isActive
-                      ? "scale-[1.02] text-foreground"
+                      ? "-mx-3 bg-white/[0.07] px-3 py-1.5 text-foreground ring-1 ring-white/[0.09] [text-shadow:0_2px_16px_rgb(0_0_0/0.88)]"
                       : isPast
-                        ? "text-foreground/30"
-                        : "text-foreground/45"
+                        ? "text-foreground/50 [text-shadow:0_1px_10px_rgb(0_0_0/0.75)]"
+                        : "text-foreground/70 [text-shadow:0_1px_10px_rgb(0_0_0/0.78)]"
                   }`}
                 >
-                  <KaraokeLine
-                    line={line}
-                    isActive={isActive}
-                    isPast={isPast}
-                    currentTime={liveTime}
-                  />
+                  <span
+                    className={`block origin-left transition-transform duration-300 motion-reduce:transition-none ${
+                      isActive ? "max-w-[97%] scale-[1.02]" : ""
+                    }`}
+                  >
+                    <KaraokeLine
+                      line={line}
+                      isActive={isActive}
+                      isPast={isPast}
+                      currentTime={liveTime}
+                    />
+                  </span>
                 </p>
               );
             })
           ) : (
-            <p className="label-mono text-sm text-foreground/50">
+            <p className="label-mono text-sm text-foreground/80 [text-shadow:0_1px_8px_rgb(0_0_0/0.75)]">
               {lyrics.isLoading ? "Songtext wird geladen…" : "Live-Visualisierung aktiv"}
             </p>
           )}
@@ -342,7 +356,7 @@ export default function PartyScreenKiosk({
       </div>
 
       {/* Bottom kiosk dock: Up Next ticker + reactions/controls + permanent corner QR */}
-      <footer className="relative z-10 flex flex-wrap items-end justify-between gap-4 border-t border-white/10 bg-backdrop/75 px-6 py-4 backdrop-blur-md lg:px-10">
+      <footer className="relative z-10 flex flex-wrap items-end justify-between gap-4 border-t border-white/12 bg-[#0f0e11]/86 px-6 py-4 shadow-[0_-14px_40px_rgb(0_0_0/0.52)] backdrop-blur-xl lg:px-10">
         <div className="min-w-0 flex-1 space-y-2.5">
           <div className="flex flex-wrap items-center gap-2">
             {canControl && (
@@ -359,20 +373,20 @@ export default function PartyScreenKiosk({
                   type="button"
                   onClick={onNext}
                   aria-label="Nächster Titel"
-                  className="action-icon h-11 w-11 border border-hairline"
+                  className="action-icon h-11 w-11 border border-white/15 bg-[#0f0e11]/72 text-foreground hover:bg-[#0f0e11]/92"
                 >
                   <NextIcon width={20} height={20} />
                 </button>
               </>
             )}
-            <div className="flex items-center gap-1 rounded-full border border-hairline bg-white/[0.04] px-2 py-1" role="group" aria-label="Reaktion senden">
+            <div className="flex items-center gap-1 rounded-full border border-white/15 bg-[#0f0e11]/78 px-2 py-1 backdrop-blur-md" role="group" aria-label="Reaktion senden">
               {PARTY_REACTION_EMOJIS.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
                   onClick={() => onReact(emoji)}
                   aria-label={`Reaktion ${emoji} senden`}
-                  className="grid h-9 w-9 place-items-center rounded-full text-lg transition-transform hover:scale-125 hover:bg-white/10 active:scale-95"
+                  className="grid h-9 w-9 place-items-center rounded-full text-lg transition-transform hover:scale-125 hover:bg-white/12 active:scale-95"
                 >
                   {emoji}
                 </button>
@@ -381,12 +395,14 @@ export default function PartyScreenKiosk({
           </div>
 
           {upNext.length > 0 && (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
-              <span className="label-mono text-[10px] text-accent">Als Nächstes</span>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
+              <span className="label-mono rounded-full border border-accent/35 bg-accent/15 px-2.5 py-0.5 text-[10px] font-semibold text-accent-soft">
+                Als Nächstes
+              </span>
               {upNext.map((item) => (
-                <span key={item.id} className="truncate text-foreground/85">
-                  <strong className="font-semibold">{item.title}</strong>{" "}
-                  <span className="text-muted">· {item.artist} ({item.added_by})</span>
+                <span key={item.id} className="truncate text-foreground/95 [text-shadow:0_1px_6px_rgb(0_0_0/0.75)]">
+                  <strong className="font-semibold text-foreground">{item.title}</strong>{" "}
+                  <span className="text-foreground/78">· {item.artist} ({item.added_by})</span>
                 </span>
               ))}
             </div>
@@ -394,7 +410,7 @@ export default function PartyScreenKiosk({
         </div>
 
         {/* Permanent corner QR code for guests */}
-        <div className="flex shrink-0 items-center gap-3.5 rounded-[var(--radius-card)] border border-white/15 bg-panel/90 p-2.5 pr-4 shadow-[0_12px_32px_rgb(0_0_0/0.55)]">
+        <div className="flex shrink-0 items-center gap-3.5 rounded-[var(--radius-card)] border border-white/18 bg-[#0f0e11]/94 p-2.5 pr-4 shadow-[0_16px_38px_rgb(0_0_0/0.65)] backdrop-blur-xl">
           <div className="rounded-lg bg-white p-1.5">
             {shareUrl ? (
               <QRCodeSVG value={shareUrl} size={76} level="M" bgColor="#ffffff" fgColor="#0a0b0d" />
@@ -403,8 +419,8 @@ export default function PartyScreenKiosk({
             )}
           </div>
           <div>
-            <p className="label-mono text-[10px]">Scannen & Songs hinzufügen</p>
-            <p className="mt-1 font-mono text-2xl font-bold tracking-[0.12em] text-accent tabular-nums">
+            <p className="label-mono text-[10px] text-foreground/82">Scannen & Songs hinzufügen</p>
+            <p className="mt-1 font-mono text-2xl font-bold tracking-[0.12em] text-accent-soft tabular-nums [text-shadow:0_2px_12px_rgb(0_0_0/0.6)]">
               {party.code}
             </p>
           </div>

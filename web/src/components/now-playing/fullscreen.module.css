@@ -1,12 +1,23 @@
 /* Inside the fullscreen player the accent follows the cover (see
-   fullscreenTheme): the play button, progress and pressed toggles take its colour. */
+   fullscreenTheme): the play button, progress and pressed toggles take its colour.
+   Secondary paper tokens are lifted slightly so metadata stays crisp over
+   translucent dark-ink scrims and glowing audio-reactive visualizers. */
+.scope {
+  --muted: rgb(244 240 230 / 0.8);
+  --subtle: rgb(244 240 230 / 0.64);
+}
+
 .scope :global(.text-accent) {
   color: var(--accent-soft);
 }
 
+.scope :global(.label-mono) {
+  text-shadow: 0 1px 8px rgb(9 9 11 / 0.85);
+}
+
 .scope :global(.action-icon[aria-pressed="true"]) {
   color: var(--accent-soft);
-  background: color-mix(in srgb, var(--accent-soft) 14%, transparent);
+  background: color-mix(in srgb, var(--accent-soft) 18%, rgb(15 14 17 / 0.72));
 }
 
 /* Backdrop: the cover, heavily blurred, lit from the stage side and falling
@@ -18,10 +29,37 @@
     linear-gradient(to bottom, transparent 55%, rgb(9 9 11 / 0.85));
 }
 
-/* The console sits on a hairline, like the deck in the main shell. */
+/* Top chrome frosted bar above the visualizer canvas, finished with a subtle
+   paper hairline matching `.console` so the blur boundary stays crisp. */
+.header {
+  border-bottom: 1px solid rgb(244 240 230 / 0.08);
+  background: linear-gradient(
+    to bottom,
+    rgb(15 14 17 / 0.84) 0%,
+    rgb(15 14 17 / 0.64) 100%
+  );
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+}
+
+/* Frosted dark-ink reading pane for lyrics, queue and similar tracks: lets the
+   visualizer glow through atmospherically while keeping every text line sharp. */
+.panelSurface {
+  background: rgb(15 14 17 / 0.68);
+  border: 1px solid rgb(244 240 230 / 0.11);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.42);
+}
+
+/* The console sits on a frosted dark-ink deck above the visualizer across both
+   desktop and mobile so timestamps, waveforms and controls never wash out. */
 .console {
-  border-top: 1px solid var(--hairline);
-  background: rgb(9 9 11 / 0.35);
+  border-top: 1px solid rgb(244 240 230 / 0.11);
+  background: linear-gradient(to bottom, rgb(15 14 17 / 0.76), rgb(9 9 11 / 0.88));
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow: 0 -14px 40px rgb(0 0 0 / 0.42);
 }
 
 @media (max-width: 1023px) {
@@ -32,7 +70,6 @@
   }
 
   .console {
-    border-top: 0;
-    background: none;
+    background: linear-gradient(to bottom, rgb(15 14 17 / 0.78), rgb(9 9 11 / 0.92));
   }
 }

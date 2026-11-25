@@ -25,16 +25,16 @@ export function TrackHeading({
 }) {
   if (variant === "display") {
     return (
-      <div className="min-w-0 text-center">
+      <div className="mx-auto w-fit max-w-full rounded-2xl border border-white/12 bg-[#0f0e11]/72 px-6 py-3.5 text-center shadow-[0_16px_42px_rgb(0_0_0/0.48)] backdrop-blur-xl">
         <TrackTitle
           track={track}
           onNavigate={onNavigate}
-          className="font-display line-clamp-2 text-[clamp(2rem,3.4vw,3.5rem)] font-extrabold leading-[1.02] tracking-[-0.04em] hover:underline"
+          className="font-display line-clamp-2 text-[clamp(2rem,3.4vw,3.5rem)] font-extrabold leading-[1.02] tracking-[-0.04em] text-foreground [text-shadow:0_2px_14px_rgb(0_0_0/0.82)] hover:underline"
         />
         <ArtistLinks
           track={track}
           onNavigate={onNavigate}
-          className="mt-2 block truncate text-lg text-muted xl:text-xl"
+          className="mt-2 block truncate text-lg text-foreground/82 [text-shadow:0_1px_10px_rgb(0_0_0/0.8)] xl:text-xl"
           linkClassName="hover:text-foreground hover:underline"
         />
       </div>
@@ -44,8 +44,17 @@ export function TrackHeading({
     <div className="flex items-center gap-2.5">
       {thumbnail && <Cover src={track.cover} className="h-12 w-12 rounded-[var(--radius-art)]" eager />}
       <div className="min-w-0 flex-1">
-        <TrackTitle track={track} onNavigate={onNavigate} className="font-display block truncate text-xl font-bold tracking-tight hover:underline" />
-        <ArtistLinks track={track} onNavigate={onNavigate} className="block truncate text-sm text-muted" linkClassName="hover:text-foreground hover:underline" />
+        <TrackTitle
+          track={track}
+          onNavigate={onNavigate}
+          className="font-display block truncate text-xl font-bold tracking-tight text-foreground [text-shadow:0_1px_8px_rgb(0_0_0/0.8)] hover:underline"
+        />
+        <ArtistLinks
+          track={track}
+          onNavigate={onNavigate}
+          className="block truncate text-sm text-foreground/80 [text-shadow:0_1px_8px_rgb(0_0_0/0.75)]"
+          linkClassName="hover:text-foreground hover:underline"
+        />
       </div>
       <LikeButton key={track.id} track={track} />
       <TrackMenu track={track} />
