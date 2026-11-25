@@ -9,6 +9,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 const require = createRequire(import.meta.url);
 const plugin = require('./withAndroidLauncherAssets');
 
+const MOBILE_ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ADAPTIVE_ICON_XML = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/iconBackground"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
+</adaptive-icon>`;
+
 const PNG_BYTES = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   Buffer.from('fixture'),
@@ -85,5 +93,32 @@ describe('withAndroidLauncherAssets generated-resource contract', () => {
     const unknownRoot = fixtureRoot();
     fs.writeFileSync(path.join(unknownRoot, 'mipmap-mdpi', 'ic_launcher.webp'), 'not-an-image');
     expect(() => plugin.normalizeAndroidLauncherAssets(unknownRoot)).toThrow('unknown encoding');
+  });
+
+  it('installs and verifies 108dp adaptive foreground and monochrome VectorDrawables in mipmap-anydpi-v26', () => {
+    const root = fixtureRoot();
+    const anyDpiDir = path.join(root, plugin.ADAPTIVE_ANYDPI_DIR);
+    fs.mkdirSync(anyDpiDir, { recursive: true });
+    for (const xmlFile of plugin.ADAPTIVE_XML_FILES) {
+      fs.writeFileSync(path.join(anyDpiDir, xmlFile), ADAPTIVE_ICON_XML);
+    }
+
+    plugin.writeAdaptiveLauncherVectors(MOBILE_ROOT, root);
+    plugin.verifyAdaptiveLauncherVectors(MOBILE_ROOT, root);
+
+    for (const vectorFile of plugin.ADAPTIVE_VECTOR_FILES) {
+      const installed = fs.readFileSync(path.join(anyDpiDir, vectorFile), 'utf8');
+      const source = fs.readFileSync(path.join(MOBILE_ROOT, 'plugins', 'brand', vectorFile), 'utf8');
+      expect(installed).toBe(source);
+    }
+
+    // Drift or missing monochrome layer in ic_launcher_round.xml must fail loudly.
+    fs.writeFileSync(
+      path.join(anyDpiDir, 'ic_launcher_round.xml'),
+      '<adaptive-icon><background android:drawable="@color/iconBackground"/><foreground android:drawable="@mipmap/ic_launcher_foreground"/></adaptive-icon>',
+    );
+    expect(() => plugin.verifyAdaptiveLauncherVectors(MOBILE_ROOT, root)).toThrow(
+      'must declare background, foreground, and monochrome layers',
+    );
   });
 });

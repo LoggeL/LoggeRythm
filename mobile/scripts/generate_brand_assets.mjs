@@ -25,6 +25,21 @@ const GRID_CENTER = GRID_MIN + GRID_SIZE / 2;
 const SVG_DENSITY = 384;
 
 /**
+ * Android adaptive icon geometry (dp):
+ *  - 108 dp full layer canvas (with 18 dp bleed per side)
+ *  -  72 dp visible launcher mask (circle on Pixel / round launchers)
+ *  -  66 dp official safe-zone circle (never clipped by any OEM / icon-pack mask)
+ *  -  42 dp step-grid width -> circumscribed diameter 42 * (8*sqrt(2)+1)/9 ≈ 57.5 dp,
+ *           leaving >4 dp radial margin inside the 66 dp safe circle (and >7 dp
+ *           inside a 72 dp circle mask) so round icons, teardrops, ringed icon packs,
+ *           and Material You themed icons never clip the corner tiles.
+ */
+export const ADAPTIVE_CANVAS_DP = 108;
+export const ADAPTIVE_MASK_DP = 72;
+export const ADAPTIVE_SAFE_DIAMETER_DP = 66;
+export const ADAPTIVE_GRID_DP = 42;
+
+/**
  * Every derived raster: where it lives, its pixel size, how large the step
  * grid is relative to the canvas, and what sits behind it.
  *  - transparent: just the mark
@@ -35,15 +50,20 @@ const SVG_DENSITY = 384;
 export const BRAND_ASSETS = Object.freeze({
   androidForeground: {
     file: path.join(MOBILE_ASSETS, 'android-icon-foreground.png'),
-    size: 1024, grid: 560 / 1024, backdrop: 'transparent',
+    size: 1024, grid: ADAPTIVE_GRID_DP / ADAPTIVE_CANVAS_DP, backdrop: 'transparent',
   },
   androidMonochrome: {
     file: path.join(MOBILE_ASSETS, 'android-icon-monochrome.png'),
-    size: 1024, grid: 560 / 1024, backdrop: 'transparent', monochrome: true,
+    size: 1024, grid: ADAPTIVE_GRID_DP / ADAPTIVE_CANVAS_DP, backdrop: 'transparent', monochrome: true,
   },
   androidLegacy: {
     file: path.join(MOBILE_ASSETS, 'android-icon-legacy.png'),
-    size: 1024, grid: 600 / 1024, backdrop: 'circle',
+    size: 1024, grid: ADAPTIVE_GRID_DP / ADAPTIVE_MASK_DP, backdrop: 'circle',
+  },
+  /** Transparent mark at Logo.svg framing for in-app headers and auth lockups. */
+  brandMark: {
+    file: path.join(MOBILE_ASSETS, 'brand-mark.png'),
+    size: 512, grid: GRID_SIZE / LOGO_BOX, backdrop: 'transparent',
   },
   expoIcon: {
     file: path.join(MOBILE_ASSETS, 'icon.png'),
@@ -61,9 +81,17 @@ export const BRAND_ASSETS = Object.freeze({
     file: path.join(WEB_ROOT, 'public', 'icon-512.png'),
     size: 512, grid: 0.6, backdrop: 'tile',
   },
+  webIconMaskable192: {
+    file: path.join(WEB_ROOT, 'public', 'icon-maskable-192.png'),
+    size: 192, grid: 0.46, backdrop: 'square',
+  },
   webIconMaskable: {
     file: path.join(WEB_ROOT, 'public', 'icon-maskable-512.png'),
-    size: 512, grid: 0.5, backdrop: 'square',
+    size: 512, grid: 0.46, backdrop: 'square',
+  },
+  webIconMonochrome: {
+    file: path.join(WEB_ROOT, 'public', 'icon-monochrome-512.png'),
+    size: 512, grid: 0.46, backdrop: 'transparent', monochrome: true,
   },
   webAppIcon: {
     file: path.join(WEB_ROOT, 'src', 'app', 'icon.png'),
@@ -86,6 +114,25 @@ export const BRAND_ASSETS = Object.freeze({
  * (SPLASH_IMAGE_WIDTH_DP * grid * sqrt 2) must stay below 192 dp.
  */
 export const SPLASH_IMAGE_WIDTH_DP = 132;
+
+/**
+ * Resolution-independent Android adaptive-icon VectorDrawables (API 26+ foreground
+ * and API 33+ monochrome). Installed into mipmap-anydpi-v26 by withAndroidLauncherAssets
+ * so launchers, Material You dynamic theming, and adaptive icon packs always render
+ * crisp vector geometry at any scale or mask shape.
+ */
+export const ADAPTIVE_LAUNCHER_VECTORS = Object.freeze({
+  viewport: 1620,
+  sizeDp: ADAPTIVE_CANVAS_DP,
+  foreground: {
+    file: path.join(MOBILE_ROOT, 'plugins', 'brand', 'ic_launcher_foreground.xml'),
+    fillColor: BRAND_FILL,
+  },
+  monochrome: {
+    file: path.join(MOBILE_ROOT, 'plugins', 'brand', 'ic_launcher_monochrome.xml'),
+    fillColor: '#FFFFFF',
+  },
+});
 
 /**
  * Status-bar/media-notification icon (Android tints it). Only the eight set
@@ -158,6 +205,7 @@ export function composeAssetSvg(productionLogo, { size, grid, backdrop, monochro
 }
 
 const RECT_PATTERN = /<rect x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)" rx="(\d+)"\/>/g;
+const CIRCLE_PATTERN = /<circle cx="(\d+)" cy="(\d+)" r="(\d+)"\/>/g;
 
 /** The filled steps of Logo.svg as {x, y, width, height, radius}, in logo units. */
 export function logoSteps(productionLogo) {
@@ -169,7 +217,7 @@ export function logoSteps(productionLogo) {
   const rectCount = (body.match(/<rect\b/g) ?? []).length;
   if (steps.length === 0 || steps.length !== rectCount) {
     throw new Error(
-      `Cannot derive the notification icon: expected every <rect> in Logo.svg as ` +
+      `Cannot derive vector icon: expected every <rect> in Logo.svg as ` +
         `x/y/width/height/rx integers, matched ${steps.length} of ${rectCount}`,
     );
   }
@@ -182,6 +230,29 @@ export function logoSteps(productionLogo) {
   return steps;
 }
 
+/** The empty-step dots of Logo.svg as {cx, cy, r}, in logo units. */
+export function logoDots(productionLogo) {
+  const body = logoBody(productionLogo);
+  const dots = [...body.matchAll(CIRCLE_PATTERN)].map((match) => {
+    const [cx, cy, r] = match.slice(1).map(Number);
+    return { cx, cy, r };
+  });
+  const circleCount = (body.match(/<circle\b/g) ?? []).length;
+  if (dots.length === 0 || dots.length !== circleCount) {
+    throw new Error(
+      `Cannot derive vector icon: expected every <circle> in Logo.svg as ` +
+        `cx/cy/r integers, matched ${dots.length} of ${circleCount}`,
+    );
+  }
+  for (const dot of dots) {
+    if (dot.cx - dot.r < GRID_MIN || dot.cy - dot.r < GRID_MIN ||
+        dot.cx + dot.r > GRID_MIN + GRID_SIZE || dot.cy + dot.r > GRID_MIN + GRID_SIZE) {
+      throw new Error(`Logo.svg dot at ${dot.cx},${dot.cy} lies outside the ${GRID_SIZE}-unit grid`);
+    }
+  }
+  return dots;
+}
+
 function roundedRectPath({ x, y, width, height, radius }) {
   const right = x + width;
   const bottom = y + height;
@@ -190,6 +261,73 @@ function roundedRectPath({ x, y, width, height, radius }) {
     `V${bottom - radius}A${radius},${radius} 0,0 1,${right - radius},${bottom}` +
     `H${x + radius}A${radius},${radius} 0,0 1,${x},${bottom - radius}` +
     `V${y + radius}A${radius},${radius} 0,0 1,${x + radius},${y}Z`
+  );
+}
+
+function circlePath({ cx, cy, r }) {
+  return `M${cx - r},${cy}a${r},${r} 0,1 0,${2 * r},0a${r},${r} 0,1 0,-${2 * r},0Z`;
+}
+
+function assertExactInteger(value, label) {
+  if (!Number.isInteger(value)) {
+    throw new Error(`Adaptive vector coordinate ${label} must be an exact integer, got ${value}`);
+  }
+  return value;
+}
+
+/**
+ * 108dp VectorDrawable of the full 4x4 step-sequencer mark (8 set steps + 8
+ * empty-step dots) scaled inside Android's 66dp circular safe zone. Split into
+ * two paths so each pathData stays well below Android Lint's 800-char limit.
+ */
+export function adaptiveLauncherVectorXml(productionLogo, { fillColor }) {
+  const { viewport, sizeDp } = ADAPTIVE_LAUNCHER_VECTORS;
+  const gridUnits = assertExactInteger((viewport * ADAPTIVE_GRID_DP) / ADAPTIVE_CANVAS_DP, 'gridUnits');
+  const scale = gridUnits / GRID_SIZE;
+  const origin = assertExactInteger((viewport - gridUnits) / 2, 'origin');
+
+  const stepPaths = logoSteps(productionLogo).map((step) =>
+    roundedRectPath({
+      x: assertExactInteger(origin + (step.x - GRID_MIN) * scale, 'step.x'),
+      y: assertExactInteger(origin + (step.y - GRID_MIN) * scale, 'step.y'),
+      width: assertExactInteger(step.width * scale, 'step.width'),
+      height: assertExactInteger(step.height * scale, 'step.height'),
+      radius: assertExactInteger(step.radius * scale, 'step.radius'),
+    }),
+  );
+  // Keep every <path> well below Android Lint's 800-char VectorPath threshold.
+  const stepChunks = [];
+  for (let i = 0; i < stepPaths.length; i += 4) {
+    stepChunks.push(stepPaths.slice(i, i + 4).join(''));
+  }
+
+  const dotsPathData = logoDots(productionLogo)
+    .map((dot) => circlePath({
+      cx: assertExactInteger(origin + (dot.cx - GRID_MIN) * scale, 'dot.cx'),
+      cy: assertExactInteger(origin + (dot.cy - GRID_MIN) * scale, 'dot.cy'),
+      r: assertExactInteger(dot.r * scale, 'dot.r'),
+    }))
+    .join('');
+
+  const pathElements = [...stepChunks, dotsPathData]
+    .map(
+      (pathData) =>
+        '  <path\n' +
+        `      android:fillColor="${fillColor}"\n` +
+        `      android:pathData="${pathData}" />`,
+    )
+    .join('\n');
+
+  return (
+    '<?xml version="1.0" encoding="utf-8"?>\n' +
+    '<!-- Generated from web/public/Logo.svg by mobile/scripts/generate_brand_assets.mjs. Do not edit. -->\n' +
+    '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n' +
+    `    android:width="${sizeDp}dp"\n` +
+    `    android:height="${sizeDp}dp"\n` +
+    `    android:viewportWidth="${viewport}"\n` +
+    `    android:viewportHeight="${viewport}">\n` +
+    `${pathElements}\n` +
+    '</vector>\n'
   );
 }
 
@@ -270,6 +408,10 @@ export async function renderBrandAssets() {
     rasters: rendered,
     favicon: await renderFavicon(productionLogo),
     notificationIcon: notificationIconXml(productionLogo),
+    adaptiveVectors: {
+      foreground: adaptiveLauncherVectorXml(productionLogo, ADAPTIVE_LAUNCHER_VECTORS.foreground),
+      monochrome: adaptiveLauncherVectorXml(productionLogo, ADAPTIVE_LAUNCHER_VECTORS.monochrome),
+    },
   };
 }
 
@@ -301,7 +443,7 @@ async function readCommitted(filePath) {
 }
 
 export async function checkBrandAssets() {
-  const { rasters, favicon, notificationIcon } = await renderBrandAssets();
+  const { rasters, favicon, notificationIcon, adaptiveVectors } = await renderBrandAssets();
   const stale = [];
   for (const [name, spec] of Object.entries(BRAND_ASSETS)) {
     const actual = await readCommitted(spec.file);
@@ -316,6 +458,13 @@ export async function checkBrandAssets() {
   if (!committedFavicon.equals(favicon)) stale.push(path.relative(REPOSITORY_ROOT, FAVICON_ICO.file));
   const committedIcon = (await readCommitted(NOTIFICATION_ICON.file)).toString('utf8');
   if (committedIcon !== notificationIcon) stale.push(path.relative(REPOSITORY_ROOT, NOTIFICATION_ICON.file));
+  for (const layer of ['foreground', 'monochrome']) {
+    const spec = ADAPTIVE_LAUNCHER_VECTORS[layer];
+    const committedVector = (await readCommitted(spec.file)).toString('utf8');
+    if (committedVector !== adaptiveVectors[layer]) {
+      stale.push(path.relative(REPOSITORY_ROOT, spec.file));
+    }
+  }
   if (stale.length > 0) {
     throw new Error(
       `Brand assets are stale (${stale.join(', ')}). Run npm run generate:brand-assets in mobile/.`,
@@ -324,12 +473,14 @@ export async function checkBrandAssets() {
 }
 
 export async function writeBrandAssets() {
-  const { rasters, favicon, notificationIcon } = await renderBrandAssets();
+  const { rasters, favicon, notificationIcon, adaptiveVectors } = await renderBrandAssets();
   await mkdir(path.dirname(NOTIFICATION_ICON.file), { recursive: true });
   await Promise.all([
     ...Object.entries(BRAND_ASSETS).map(([name, spec]) => writeFile(spec.file, rasters[name])),
     writeFile(FAVICON_ICO.file, favicon),
     writeFile(NOTIFICATION_ICON.file, notificationIcon),
+    writeFile(ADAPTIVE_LAUNCHER_VECTORS.foreground.file, adaptiveVectors.foreground),
+    writeFile(ADAPTIVE_LAUNCHER_VECTORS.monochrome.file, adaptiveVectors.monochrome),
   ]);
 }
 
