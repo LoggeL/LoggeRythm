@@ -19,6 +19,7 @@ import AppIcon from '../components/AppIcon';
 import AuthBackdrop from '../components/AuthBackdrop';
 import BrandLockup from '../components/BrandLockup';
 import { FormField, PasswordField } from '../components/FormField';
+import { GuestJamEntry } from '../components/party/GuestJamEntry';
 import { ActionButton, AppText } from '../components/ui';
 import {
   getCurrentApiBase,
@@ -373,6 +374,7 @@ export default function LoginScreen() {
                 {creatingAccount ? strings.auth.existingAccountPrompt : strings.auth.newAccountPrompt}
               </AppText>
             </Pressable>
+            <GuestJamEntry serverUrl={serverUrl} disabled={busy} />
           </View>
         </View>
       </ScrollView>

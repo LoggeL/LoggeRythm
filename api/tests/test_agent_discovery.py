@@ -86,18 +86,23 @@ class AgentDiscoveryTests(unittest.TestCase):
     def test_binary_and_event_responses_have_correct_media_types(self) -> None:
         paths = app.openapi()["paths"]
         expected = {
-            "/api/tracks/{deezer_id}/stream": {"200": "audio/mpeg", "206": "audio/mpeg"},
-            "/api/playlists/{playlist_id}/export": {"200": "application/zip"},
-            "/api/party/{code}/events": {"200": "text/event-stream"},
+            "/api/tracks/{deezer_id}/stream": {
+                "200": ["audio/mpeg", "audio/flac"],
+                "206": ["audio/mpeg", "audio/flac"],
+            },
+            "/api/playlists/{playlist_id}/export": {"200": ["application/zip"]},
+            "/api/party/{code}/events": {"200": ["text/event-stream"]},
+            "/api/playlists/{playlist_id}/events": {"200": ["text/event-stream"]},
+            "/api/social/activity/events": {"200": ["text/event-stream"]},
         }
         for path, statuses in expected.items():
-            for status, media_type in statuses.items():
+            for status, media_types in statuses.items():
                 with self.subTest(path=path, status=status):
                     content = paths[path]["get"]["responses"][status]["content"]
-                    self.assertEqual(list(content), [media_type])
+                    self.assertEqual(list(content), media_types)
         self.assertIn(
             "materializes",
-            paths["/api/tracks/{deezer_id}/stream"]["get"]["description"],
+            paths["/api/tracks/{deezer_id}/stream"]["get"]["description"].lower(),
         )
         self.assertIn(
             "register or refresh",

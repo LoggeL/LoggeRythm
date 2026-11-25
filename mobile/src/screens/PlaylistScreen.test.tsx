@@ -21,8 +21,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
 vi.mock('react-native', () => ({
+  AccessibilityInfo: { announceForAccessibility: vi.fn() },
   ActivityIndicator: 'ActivityIndicator',
   Alert: { alert: vi.fn() },
+  Animated: { View: 'AnimatedView' },
   FlatList: 'FlatList',
   Image: 'Image',
   Modal: 'Modal',
@@ -53,12 +55,22 @@ vi.mock('../components/track/StandardTrackRow', () => ({
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: vi.fn() }));
 vi.mock('../components/trackActions', () => ({ showTrackActions: vi.fn() }));
+vi.mock('../components/library/PlaylistDuplicatesSheet', () => ({
+  PlaylistDuplicatesSheet: 'PlaylistDuplicatesSheet',
+}));
+vi.mock('../components/library/PlaylistLiveSyncBanner', () => ({
+  PlaylistLiveSyncBanner: 'PlaylistLiveSyncBanner',
+}));
 vi.mock('../data', () => ({
   findCachedPlaylistSummary: vi.fn(() => null),
   invalidatePlaylistCaches: vi.fn(),
   musicCacheScope: vi.fn(),
   musicMutations: {},
   musicQueries: {},
+  musicRepository: {
+    getPlaylistSyncManifest: vi.fn(),
+    seedRadio: vi.fn(),
+  },
   optimisticallyRemovePlaylistTrack: vi.fn(),
   optimisticallyReorderPlaylistTracks: vi.fn(),
   optimisticallySetPlaylistCollaborative: vi.fn(),

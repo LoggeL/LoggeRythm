@@ -36,6 +36,7 @@ import top.logge.loggerythm.player.LoggeRythmVoicePlaybackAction
 import top.logge.loggerythm.player.LoggeRythmVoicePlaybackState
 import top.logge.loggerythm.player.LoggeRythmVoiceQueuePosition
 import top.logge.loggerythm.player.LoggeRythmVoiceQueueResult
+import top.logge.loggerythm.player.LoggeRythmVoiceSleepTimerResult
 import top.logge.loggerythm.player.LoggeRythmVoiceTrackSummary
 
 @RunWith(RobolectricTestRunner::class)
@@ -106,6 +107,16 @@ class LoggeRythmAppFunctionsTest {
         private val nowPlayingHandler: () -> CompletableFuture<LoggeRythmVoiceNowPlaying> = {
             throw AssertionError("Unexpected getNowPlaying invocation")
         },
+        private val startRadioHandler: (
+            moodOrGenre: String?,
+        ) -> CompletableFuture<LoggeRythmVoicePlayResult> = { _ ->
+            throw AssertionError("Unexpected startRadio invocation")
+        },
+        private val sleepTimerHandler: (
+            minutes: Int,
+        ) -> CompletableFuture<LoggeRythmVoiceSleepTimerResult> = { _ ->
+            throw AssertionError("Unexpected setSleepTimer invocation")
+        },
     ) : LoggeRythmVoiceCommandExecutor {
         override fun playMusic(
             context: Context,
@@ -148,6 +159,20 @@ class LoggeRythmAppFunctionsTest {
 
         override fun getNowPlaying(context: Context): CompletableFuture<LoggeRythmVoiceNowPlaying> {
             return nowPlayingHandler()
+        }
+
+        override fun startRadio(
+            context: Context,
+            moodOrGenre: String?,
+        ): CompletableFuture<LoggeRythmVoicePlayResult> {
+            return startRadioHandler(moodOrGenre)
+        }
+
+        override fun setSleepTimer(
+            context: Context,
+            minutes: Int,
+        ): CompletableFuture<LoggeRythmVoiceSleepTimerResult> {
+            return sleepTimerHandler(minutes)
         }
     }
 
@@ -465,6 +490,8 @@ class LoggeRythmAppFunctionsTest {
             "top.logge.loggerythm.appfunctions.LoggeRythmAppFunctions#queueMusic",
             "top.logge.loggerythm.appfunctions.LoggeRythmAppFunctions#setCurrentTrackFavorite",
             "top.logge.loggerythm.appfunctions.LoggeRythmAppFunctions#getNowPlaying",
+            "top.logge.loggerythm.appfunctions.LoggeRythmAppFunctions#startRadio",
+            "top.logge.loggerythm.appfunctions.LoggeRythmAppFunctions#setSleepTimer",
         )
 
         val inventoryClass = Class.forName(
@@ -499,5 +526,93 @@ class LoggeRythmAppFunctionsTest {
         assertEquals(AppFunctionAppUnknownException::class.java, mapped::class.java)
         assertTrue(mapped.errorMessage?.contains("IllegalStateException") == true)
         assertTrue(mapped.errorMessage?.contains("bridge exploded") == true)
+    }
+
+    @Test
+    fun startRadioHandlesPersonalAndMoodStationsAndPropagatesErrors() = runTest {
+        val seenMoods = mutableListOf<String?>()
+        val functions = LoggeRythmAppFunctions(
+            FakeVoiceExecutor(
+                startRadioHandler = { mood ->
+                    seenMoods += mood
+                    CompletableFuture.completedFuture(
+                        LoggeRythmVoicePlayResult(
+                            source = if (mood == null) "radio:personal" else "radio:mood",
+                            matchedTitle = mood ?: "Personal Radio",
+                            queuedCount = 20,
+                            nowPlaying = sampleNowPlaying,
+                        ),
+                    )
+                },
+            ),
+        )
+
+        val personal = functions.startRadio(testContext, "   ")
+        assertEquals("radio:personal", personal.source)
+        assertEquals("Personal Radio", personal.matchedTitle)
+        assertEquals(20, personal.queuedCount)
+
+        val mood = functions.startRadio(testContext, "  chill  ")
+        assertEquals("radio:mood", mood.source)
+        assertEquals("chill", mood.matchedTitle)
+        assertEquals(listOf(null, "chill"), seenMoods)
+
+        val failedFuture = CompletableFuture<LoggeRythmVoicePlayResult>().apply {
+            completeExceptionally(
+                LoggeRythmVoiceException(
+                    LoggeRythmVoiceErrorCode.SEARCH_NO_MATCH,
+                    "radio-mood-no-match",
+                ),
+            )
+        }
+        val failing = LoggeRythmAppFunctions(FakeVoiceExecutor(startRadioHandler = { failedFuture }))
+        try {
+            failing.startRadio(testContext, "unknown-mood")
+            fail("Expected AppFunctionElementNotFoundException")
+        } catch (error: AppFunctionElementNotFoundException) {
+            assertTrue(error.errorMessage?.contains("SEARCH_NO_MATCH") == true)
+        }
+    }
+
+    @Test
+    fun setSleepTimerSupportsArmingCancellingAndRejectsOutOfRangeMinutesLoudly() = runTest {
+        val seenMinutes = mutableListOf<Int>()
+        val functions = LoggeRythmAppFunctions(
+            FakeVoiceExecutor(
+                sleepTimerHandler = { minutes ->
+                    seenMinutes += minutes
+                    CompletableFuture.completedFuture(
+                        LoggeRythmVoiceSleepTimerResult(
+                            active = minutes > 0,
+                            minutesRequested = minutes,
+                            remainingMs = minutes * 60_000L,
+                            fadeOutMs = if (minutes > 0) 15_000L else 0L,
+                        ),
+                    )
+                },
+            ),
+        )
+
+        val armed = functions.setSleepTimer(testContext, 30)
+        assertTrue(armed.active)
+        assertEquals(30, armed.minutesRequested)
+        assertEquals(1_800_000L, armed.remainingMs)
+        assertEquals(15_000L, armed.fadeOutMs)
+
+        val cancelled = functions.setSleepTimer(testContext, 0)
+        assertFalse(cancelled.active)
+        assertEquals(0, cancelled.minutesRequested)
+        assertEquals(0L, cancelled.remainingMs)
+        assertEquals(0L, cancelled.fadeOutMs)
+        assertEquals(listOf(30, 0), seenMinutes)
+
+        for (invalid in listOf(-1, -15, 1441, 10_000)) {
+            try {
+                functions.setSleepTimer(testContext, invalid)
+                fail("Expected AppFunctionInvalidArgumentException for minutes=$invalid")
+            } catch (error: AppFunctionInvalidArgumentException) {
+                assertTrue(error.errorMessage?.contains(invalid.toString()) == true)
+            }
+        }
     }
 }

@@ -327,6 +327,37 @@ export class ConnectSession {
     }
   }
 
+  /** Report local Android hardware/system volume changes to Connect peers. */
+  reportLocalVolume(volume: number, muted: boolean): void {
+    if (this.socket === null || this.snapshot.phase !== 'connected') return;
+    if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
+      throw new Error(`Connect local volume must be between 0 and 1, got ${String(volume)}`);
+    }
+    try {
+      this.socket.send({ type: 'update_device', volume, muted });
+    } catch (error) {
+      this.publish({
+        ...this.currentBase(),
+        error: strings.connect.connectionFailed(
+          error instanceof Error ? error.message : String(error),
+        ),
+      });
+    }
+  }
+
+  /**
+   * Resume server-persisted cross-device playback when no device is currently active
+   * (async Connect continuity across sessions).
+   */
+  async resumePersistedPlayback(): Promise<void> {
+    const selfId = this.snapshot.selfDeviceId;
+    const playback = this.snapshot.state?.playback ?? null;
+    if (selfId === null || playback === null || playback.queue.length === 0) {
+      throw new Error('No persisted Connect playback session is available to resume');
+    }
+    await this.transferPlayback(selfId, true);
+  }
+
   /** Transfer active playback to `targetDeviceId` (or pull to this device). */
   async transferPlayback(targetDeviceId: string, play?: boolean): Promise<void> {
     const socket = this.requireConnectedSocket();
@@ -788,11 +819,6 @@ export class ConnectSession {
         });
       }
     };
-
-    if (action === 'set_volume' || action === 'set_mute') {
-      sendAck(false, strings.connect.volumeUnsupported);
-      return;
-    }
 
     const party = this.deps.getActivePartyState();
     if (party.code !== null && !party.isHost && !party.controlOnly) {

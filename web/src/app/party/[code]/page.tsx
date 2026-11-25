@@ -1,11 +1,16 @@
 "use client";
 
-import { use, useState, type FormEvent } from "react";
+import { use, useEffect, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
 import { usePlayerStore } from "@/store/player";
+import { playlistPath } from "@/lib/slugs";
+import { toast } from "@/store/toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import Modal from "@/components/Modal";
+import PartyScreenKiosk, { PARTY_REACTION_EMOJIS } from "@/components/party/PartyScreenKiosk";
 import { CheckCircleIcon, CopyIcon, InfoCircleIcon } from "@/components/feedbackIcons";
-import { EditIcon } from "@/components/icons";
+import { CinemaIcon, EditIcon, NextIcon, SavePlaylistIcon, SparklesIcon } from "@/components/icons";
 import MembersCard from "./MembersCard";
 import PartyQueue from "./PartyQueue";
 import PartySearch from "./PartySearch";
@@ -25,17 +30,55 @@ export default function PartyPage({ params }: { params: Promise<{ code: string }
 
 /** Spotify Jam-aligned party view for signed-in accounts. */
 function MemberParty({ code }: { code: string }) {
+  const router = useRouter();
   const session = usePartySession(code);
   const buffering = usePlayerStore((s) => s.isBuffering);
   const search = usePartySearch();
   const share = useShareLink(code);
   const [confirmExit, setConfirmExit] = useState<"leave" | "end" | null>(null);
+  const [confirmTransfer, setConfirmTransfer] = useState<{ key: string; name: string } | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [kioskOpen, setKioskOpen] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saveCollaborative, setSaveCollaborative] = useState(true);
+  const [savingPlaylist, setSavingPlaylist] = useState(false);
+  const [recentReaction, setRecentReaction] = useState<{ id: string; emoji: string; name: string } | null>(null);
+  const lastReactionId = useRef<string | null>(null);
+  const reactionTimersRef = useRef<Set<number>>(new Set());
   const { party, isHost, guestsCanControl } = session;
+
+  useEffect(() => {
+    const timers = reactionTimersRef.current;
+    return () => {
+      for (const id of timers) window.clearTimeout(id);
+      timers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const latest = party?.latest_reaction;
+    if (!latest || latest.id === lastReactionId.current) return;
+    lastReactionId.current = latest.id;
+    const timers = reactionTimersRef.current;
+    const showTimer = window.setTimeout(() => {
+      timers.delete(showTimer);
+      setRecentReaction({ id: latest.id, emoji: latest.emoji, name: latest.member_name });
+    }, 0);
+    timers.add(showTimer);
+    const hideTimer = window.setTimeout(() => {
+      timers.delete(hideTimer);
+      setRecentReaction((cur) => (cur?.id === latest.id ? null : cur));
+    }, 3200);
+    timers.add(hideTimer);
+  }, [party?.latest_reaction]);
 
   if (session.ended) {
     return <PartyEnded reason={session.endedReason ?? "Diese Jam wurde beendet."} />;
+  }
+  if (session.hasLeft && !party) {
+    return <PartySkeleton />;
   }
   if (session.joinError) {
     return (
@@ -75,6 +118,38 @@ function MemberParty({ code }: { code: string }) {
     setEditingName(false);
     void session.saveSettings({ name: trimmed }, "Jam umbenannt.");
   };
+
+  const openSaveDialog = () => {
+    setSaveName(party.name ? `Jam: ${party.name}` : `Jam ${party.code}`);
+    setSaveCollaborative(true);
+    setSaveDialogOpen(true);
+  };
+
+  const submitSavePlaylist = async (event: FormEvent) => {
+    event.preventDefault();
+    if (savingPlaylist) return;
+    setSavingPlaylist(true);
+    try {
+      const created = await session.savePartyAsPlaylist({
+        name: saveName.trim() || undefined,
+        collaborative: saveCollaborative,
+      });
+      setSaveDialogOpen(false);
+      router.push(playlistPath(created));
+    } catch (cause) {
+      toast.error(
+        `Playlist konnte nicht gespeichert werden: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setSavingPlaylist(false);
+    }
+  };
+
+  const autoDj = Boolean(party.auto_dj);
+  const skipVotes = party.skip_votes ?? [];
+  const skipVotesNeeded = party.skip_votes_needed ?? 0;
+  const hasVotedSkip = skipVotes.includes(party.viewer_key);
+  const hasCurrentTrack = party.current_index >= 0 && party.current_index < party.tracks.length;
 
   return (
     <div className="animate-in">
@@ -148,6 +223,24 @@ function MemberParty({ code }: { code: string }) {
               </span>
             </p>
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setKioskOpen(true)}
+                className="action-primary"
+              >
+                <CinemaIcon width={16} height={16} />
+                Party-Screen
+              </button>
+              {party.tracks.length > 0 && (
+                <button
+                  type="button"
+                  onClick={openSaveDialog}
+                  className="action-secondary"
+                >
+                  <SavePlaylistIcon width={16} height={16} />
+                  Als Playlist speichern
+                </button>
+              )}
               {isHost ? (
                 <>
                   <button
@@ -208,6 +301,25 @@ function MemberParty({ code }: { code: string }) {
         <p role="alert" className="error-panel mb-4">
           {session.leaveError}
         </p>
+      )}
+      {session.detached && (
+        <div
+          role="status"
+          data-testid="party-detached-banner"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-panel)] border border-accent/35 bg-[color-mix(in_srgb,var(--accent)_10%,var(--panel))] px-4 py-3 text-sm"
+        >
+          <p className="min-w-0 text-foreground">
+            <strong className="font-semibold">Wiedergabe getrennt.</strong>{" "}
+            <span className="text-muted">Du hörst gerade andere Musik – die Jam läuft unabhängig weiter.</span>
+          </p>
+          <button
+            type="button"
+            onClick={session.rejoinPlayback}
+            className="action-primary min-h-9 shrink-0 px-4 text-xs"
+          >
+            Wieder mit Jam verbinden
+          </button>
+        </div>
       )}
       {session.isStale && (
         <div className="error-panel mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -302,6 +414,84 @@ function MemberParty({ code }: { code: string }) {
         )}
       </div>
 
+      {/* Live Jam 2.0 interaction bar: Emoji reactions, Vote-to-Skip, and Auto-DJ */}
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-panel)] border border-hairline bg-panel/55 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1" role="group" aria-label="Reaktion senden">
+            {PARTY_REACTION_EMOJIS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => void session.sendReaction(emoji)}
+                aria-label={`Reaktion ${emoji} senden`}
+                className="grid h-9 w-9 place-items-center rounded-full border border-transparent text-lg transition hover:scale-110 hover:border-hairline hover:bg-white/[0.06] active:scale-95"
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+          {recentReaction && (
+            <span
+              role="status"
+              aria-live="polite"
+              className="animate-in inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/12 px-3 py-1 text-xs font-medium text-foreground"
+            >
+              <span className="text-base leading-none">{recentReaction.emoji}</span>
+              <span>{recentReaction.name}</span>
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {hasCurrentTrack && (
+            <button
+              type="button"
+              disabled={session.queueLocked}
+              onClick={() => void session.voteSkip()}
+              aria-pressed={hasVotedSkip}
+              className={`action-secondary min-h-9 gap-1.5 px-3 text-xs ${
+                hasVotedSkip ? "border-accent/45 text-accent" : ""
+              }`}
+            >
+              <NextIcon width={14} height={14} />
+              <span>
+                Skip abstimmen
+                {skipVotesNeeded > 0 ? ` (${skipVotes.length}/${skipVotesNeeded})` : ""}
+              </span>
+            </button>
+          )}
+          {(isHost || guestsCanControl) && (
+            <button
+              type="button"
+              disabled={session.queueLocked}
+              onClick={() => void session.fillAutoDj()}
+              className="action-secondary min-h-9 gap-1.5 px-3 text-xs"
+            >
+              <SparklesIcon width={14} height={14} className={autoDj ? "text-accent" : undefined} />
+              Auto-DJ auffüllen
+            </button>
+          )}
+          {isHost && (
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-hairline bg-white/[0.03] px-3 py-1.5 text-xs font-medium text-foreground">
+              <input
+                type="checkbox"
+                checked={autoDj}
+                disabled={session.settingsPending}
+                onChange={(e) =>
+                  void session.saveSettings(
+                    { auto_dj: e.target.checked },
+                    e.target.checked
+                      ? "Auto-DJ aktiviert – füllt die Jam automatisch auf."
+                      : "Auto-DJ deaktiviert.",
+                  )
+                }
+                className="h-3.5 w-3.5 accent-[var(--accent)]"
+              />
+              Auto-DJ
+            </label>
+          )}
+        </div>
+      </div>
+
       <div className="grid items-start gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_19rem]">
         <div className="min-w-0 space-y-10">
           <PartySearch
@@ -337,10 +527,95 @@ function MemberParty({ code }: { code: string }) {
             isHost={isHost}
             locked={session.queueLocked}
             onKick={session.kickMember}
+            onTransferHost={(key, name) => setConfirmTransfer({ key, name })}
           />
           <ShareCard code={party.code} shareUrl={share.shareUrl} copied={share.copied} onCopy={share.copy} />
         </aside>
       </div>
+
+      {kioskOpen && (
+        <PartyScreenKiosk
+          party={party}
+          shareUrl={share.shareUrl}
+          canControl={isHost || guestsCanControl}
+          onTogglePlayback={session.togglePlayback}
+          onNext={session.nextTrack}
+          onReact={(emoji) => void session.sendReaction(emoji)}
+          onClose={() => setKioskOpen(false)}
+        />
+      )}
+
+      <Modal
+        open={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+        title="Jam als Playlist speichern"
+        description={`${party.tracks.length} ${party.tracks.length === 1 ? "Titel" : "Titel"} aus dieser Jam übernehmen.`}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setSaveDialogOpen(false)}
+              disabled={savingPlaylist}
+              className="action-secondary"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              form="party-save-playlist-form"
+              disabled={savingPlaylist}
+              className="action-primary"
+            >
+              {savingPlaylist ? "Speichert…" : "Playlist erstellen"}
+            </button>
+          </>
+        }
+      >
+        <form id="party-save-playlist-form" onSubmit={(e) => void submitSavePlaylist(e)} className="flex flex-col gap-4 pt-1">
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
+            Name der Playlist
+            <input
+              data-dialog-autofocus
+              type="text"
+              maxLength={120}
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              className="field-input font-normal"
+            />
+          </label>
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-[var(--radius-control)] border border-hairline bg-white/[0.03] px-3 py-2.5 text-sm">
+            <input
+              type="checkbox"
+              checked={saveCollaborative}
+              onChange={(e) => setSaveCollaborative(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[var(--accent)]"
+            />
+            <span>
+              <strong className="block font-semibold text-foreground">Als gemeinsame Playlist erstellen</strong>
+              <span className="block text-xs text-muted">
+                Alle angemeldeten Jam-Teilnehmer werden direkt als Mitwirkende hinzugefügt.
+              </span>
+            </span>
+          </label>
+        </form>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmTransfer !== null}
+        title="Host-Rolle übergeben?"
+        confirmLabel="Host übergeben"
+        cancelLabel="Abbrechen"
+        busy={session.queuePending}
+        onCancel={() => setConfirmTransfer(null)}
+        onConfirm={() => {
+          if (!confirmTransfer) return;
+          const target = confirmTransfer;
+          setConfirmTransfer(null);
+          void session.transferHost(target.key, target.name);
+        }}
+      >
+        {confirmTransfer?.name} übernimmt die Steuerung als Host dieser Jam. Du bleibst als Teilnehmer dabei.
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmExit !== null}

@@ -14,7 +14,7 @@ import { offlinePlaylistId } from '../offline/model';
 import type { OfflineRuntimeSnapshot } from '../offline/registry';
 
 export type OfflineScreenOperation = 'downloading' | 'removing' | null;
-export type OfflineScreenFailure = 'download' | 'remove' | null;
+export type OfflineScreenFailure = 'download' | 'wifi-required' | 'remove' | null;
 export type AccountOfflineAvailability = 'loading' | 'ready' | 'unavailable';
 
 export interface OfflinePlaylistControlInput {

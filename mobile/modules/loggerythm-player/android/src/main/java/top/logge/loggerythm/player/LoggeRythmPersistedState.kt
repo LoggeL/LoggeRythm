@@ -614,6 +614,10 @@ internal class LoggeRythmPersistedStateCodec(
         node.artworkUrl?.let { add(jsonStringBytes(it)) }
         node.url?.let { add(jsonStringBytes(it)) }
         node.cookie?.let { add(jsonStringBytes(it)) }
+        node.contentStyleBrowsable?.let { add(jsonStringBytes(it)) }
+        node.contentStylePlayable?.let { add(jsonStringBytes(it)) }
+        node.mediaType?.let { add(jsonStringBytes(it)) }
+        node.groupTitle?.let { add(jsonStringBytes(it)) }
         add(utf8Bytes(node.extrasJson))
         node.children.asReversed().forEach { child -> pending.add(child to depth + 1) }
       }
@@ -789,6 +793,10 @@ internal class LoggeRythmPersistedStateCodec(
     if (node.playable) value.put("playable", true)
     node.url?.let { value.put("url", it) }
     node.cookie?.let { value.put("headers", JSONObject().put("Cookie", it)) }
+    node.contentStyleBrowsable?.let { value.put("contentStyleBrowsable", it) }
+    node.contentStylePlayable?.let { value.put("contentStylePlayable", it) }
+    node.mediaType?.let { value.put("mediaType", it) }
+    node.groupTitle?.let { value.put("groupTitle", it) }
     // Omitting empty extras keeps legacy browse blobs and their canonical form unchanged.
     if (node.extrasJson != "{}") {
       value.put("extras", parseExactObject(node.extrasJson.toByteArray(StandardCharsets.UTF_8)))

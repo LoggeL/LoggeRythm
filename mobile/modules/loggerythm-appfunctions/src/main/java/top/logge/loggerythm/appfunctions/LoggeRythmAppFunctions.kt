@@ -191,6 +191,57 @@ class LoggeRythmAppFunctions internal constructor(
         }.toAppFunctionModel()
     }
 
+    /**
+     * Starts an endless LoggeRythm radio station either tailored to a requested mood or genre
+     * (such as chill, workout, indie, jazz) or personalized to the signed-in listener when
+     * omitted.
+     *
+     * @param appFunctionContext Android AppFunctions execution context.
+     * @param moodOrGenre Optional mood or genre name to seed the radio station. Leave null for
+     *   personalized radio.
+     * @return Details about the started radio station, queued track count, and now-playing state.
+     */
+    @AppFunction(isDescribedByKDoc = true)
+    suspend fun startRadio(
+        appFunctionContext: AppFunctionContext,
+        moodOrGenre: String? = null,
+    ): PlayMusicResult {
+        val normalizedMood = normalizeOptionalText(moodOrGenre)
+        return executeBridgeCall(appFunctionContext, "startRadio") { context ->
+            voiceExecutor.startRadio(
+                context = context,
+                moodOrGenre = normalizedMood,
+            )
+        }.toAppFunctionModel()
+    }
+
+    /**
+     * Sets or cancels LoggeRythm's native sleep timer with a gentle fade-out before pausing
+     * playback.
+     *
+     * @param appFunctionContext Android AppFunctions execution context.
+     * @param minutes Duration in minutes before pausing playback (1 to 1440), or 0 to cancel an
+     *   active sleep timer.
+     * @return Resulting sleep timer state including remaining time and fade-out duration.
+     */
+    @AppFunction(isDescribedByKDoc = true)
+    suspend fun setSleepTimer(
+        appFunctionContext: AppFunctionContext,
+        minutes: Int,
+    ): SleepTimerResult {
+        if (minutes < 0 || minutes > MAX_SLEEP_TIMER_MINUTES) {
+            throw AppFunctionInvalidArgumentException(
+                "setSleepTimer requires minutes between 0 and $MAX_SLEEP_TIMER_MINUTES (received $minutes).",
+            )
+        }
+        return executeBridgeCall(appFunctionContext, "setSleepTimer") { context ->
+            voiceExecutor.setSleepTimer(
+                context = context,
+                minutes = minutes,
+            )
+        }.toAppFunctionModel()
+    }
+
     private suspend fun <T> executeBridgeCall(
         appFunctionContext: AppFunctionContext,
         operation: String,
@@ -207,6 +258,8 @@ class LoggeRythmAppFunctions internal constructor(
     }
 
     private companion object {
+        const val MAX_SLEEP_TIMER_MINUTES = 1_440
+
         fun normalizeOptionalText(value: String?): String? {
             return value?.trim()?.takeIf { it.isNotEmpty() }
         }

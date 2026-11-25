@@ -1,6 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { exitPartySession } from "@/lib/partyExit";
+import { partyFailureMessage } from "@/app/party/requests";
 import { activeRemoteDevice, useConnectStore } from "@/store/connect";
 import { usePartyStore } from "@/store/party";
 import { UsersIcon } from "@/components/icons";
@@ -19,6 +24,11 @@ export default function ActiveOutputBanner({
   compact?: boolean;
   onNavigate?: () => void;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const queryClient = useQueryClient();
+  const [leavingJam, setLeavingJam] = useState(false);
+
   const enabled = useConnectStore((s) => s.enabled);
   const status = useConnectStore((s) => s.status);
   const activeDeviceId = useConnectStore((s) => s.activeDeviceId);
@@ -34,9 +44,26 @@ export default function ActiveOutputBanner({
   const partyHostName = usePartyStore((s) => s.hostName);
   const partyIsHost = usePartyStore((s) => s.isHost);
   const partyMembers = usePartyStore((s) => s.members);
+  const partyDetached = usePartyStore((s) => s.detached);
   const listenLocally = usePartyStore((s) => s.listenLocally);
+  const setDetached = usePartyStore((s) => s.setDetached);
 
   if (partyActive && partyCode) {
+    const leaveActiveJam = async () => {
+      if (leavingJam) return;
+      setLeavingJam(true);
+      try {
+        await exitPartySession(partyCode, "leave", { queryClient });
+        if (pathname?.startsWith("/party/")) {
+          router.push("/");
+        }
+      } catch (cause) {
+        toast.error(partyFailureMessage("Jam konnte nicht verlassen werden", cause));
+      } finally {
+        setLeavingJam(false);
+      }
+    };
+
     return (
       <div
         data-testid="jam-output-banner"
@@ -57,17 +84,36 @@ export default function ActiveOutputBanner({
               {" "}
               · {partyIsHost ? "Du bist Host" : `Host ${partyHostName}`} · {partyMembers.length}{" "}
               {partyMembers.length === 1 ? "Person" : "Personen"}
-              {!partyIsHost && !listenLocally ? " · Nur steuern" : ""}
+              {partyDetached ? " · Getrennt" : !partyIsHost && !listenLocally ? " · Nur steuern" : ""}
             </span>
           </span>
         </Link>
-        <Link
-          href={`/party/${encodeURIComponent(partyCode)}`}
-          onClick={onNavigate}
-          className="shrink-0 font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-accent hover:underline"
-        >
-          Zur Jam
-        </Link>
+        <div className="flex shrink-0 items-center gap-3">
+          {partyDetached && (
+            <button
+              type="button"
+              onClick={() => setDetached(false)}
+              className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-accent hover:underline"
+            >
+              Wieder verbinden
+            </button>
+          )}
+          <Link
+            href={`/party/${encodeURIComponent(partyCode)}`}
+            onClick={onNavigate}
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-accent hover:underline"
+          >
+            Zur Jam
+          </Link>
+          <button
+            type="button"
+            disabled={leavingJam}
+            onClick={() => void leaveActiveJam()}
+            className="font-mono text-[11px] font-semibold uppercase tracking-[0.08em] text-muted hover:text-danger disabled:opacity-50"
+          >
+            {leavingJam ? "…" : "Verlassen"}
+          </button>
+        </div>
       </div>
     );
   }

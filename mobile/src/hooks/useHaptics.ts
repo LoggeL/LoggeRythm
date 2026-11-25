@@ -3,9 +3,30 @@ import { getReducedMotionSnapshot, useReducedMotion } from './useReducedMotion';
 
 export type HapticKind = 'tap' | 'like' | 'commit' | 'drag';
 
+export type NativeHapticStyle =
+  | 'light'
+  | 'selection'
+  | 'tick'
+  | 'medium'
+  | 'click'
+  | 'heavy'
+  | 'success'
+  | 'double'
+  | 'confirm'
+  | 'error'
+  | 'reject'
+  | 'warning';
+
+export const NATIVE_HAPTIC_STYLE_BY_KIND: Readonly<Record<HapticKind, NativeHapticStyle>> = {
+  tap: 'click',
+  drag: 'tick',
+  commit: 'confirm',
+  like: 'success',
+};
+
 /**
- * Subtle Android vibration patterns in milliseconds.
- * Single numbers vibrate once; arrays follow Android's [wait, vibrate, wait, vibrate] format.
+ * Fallback Android vibration patterns in milliseconds when the native
+ * LoggeRythmPlayer.performHaptic method is absent (e.g. partial test mocks).
  */
 export const HAPTIC_PATTERNS: Readonly<Record<HapticKind, number | number[]>> = {
   tap: 10,
@@ -23,6 +44,18 @@ function getPlatformOs(): string | undefined {
   return ReactNative.Platform?.OS;
 }
 
+function getNativePerformHaptic(): ((style: NativeHapticStyle) => Promise<unknown>) | undefined {
+  if (!('NativeModules' in ReactNative)) return undefined;
+  const mod = (
+    ReactNative.NativeModules as {
+      LoggeRythmPlayer?: { performHaptic?: (style: NativeHapticStyle) => Promise<unknown> };
+    } | undefined
+  )?.LoggeRythmPlayer;
+  return typeof mod?.performHaptic === 'function'
+    ? (style) => mod.performHaptic!(style)
+    : undefined;
+}
+
 function getVibrate(): ((pattern: number | number[]) => void) | undefined {
   if (!('Vibration' in ReactNative)) return undefined;
   const vibration = ReactNative.Vibration;
@@ -32,9 +65,9 @@ function getVibrate(): ((pattern: number | number[]) => void) | undefined {
 }
 
 /**
- * Trigger subtle Android haptic feedback through core RN `Vibration`.
- * Respects reduced motion and returns `false` without vibrating on non-Android
- * platforms or partial test mocks. Real Android runtime errors propagate loudly.
+ * Trigger crisp Android haptic feedback through native `LoggeRythmPlayer.performHaptic`
+ * (using Android `VibrationEffect` primitives), falling back to RN `Vibration` when
+ * running under partial test mocks. Respects reduced motion and fails loud on real errors.
  */
 export function triggerHaptic(kind: HapticKind): boolean {
   if (!Object.prototype.hasOwnProperty.call(HAPTIC_PATTERNS, kind)) {
@@ -42,6 +75,14 @@ export function triggerHaptic(kind: HapticKind): boolean {
   }
   if (getReducedMotionSnapshot()) return false;
   if (getPlatformOs() !== 'android') return false;
+  const performNative = getNativePerformHaptic();
+  if (performNative !== undefined) {
+    const style = NATIVE_HAPTIC_STYLE_BY_KIND[kind];
+    void performNative(style).catch((error: unknown) => {
+      console.error(`[LoggeRythm] Native haptic (${style}) failed:`, error);
+    });
+    return true;
+  }
   const vibrate = getVibrate();
   if (vibrate === undefined) {
     if (isVitestEnvironment()) return false;

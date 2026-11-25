@@ -3,7 +3,9 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { exitPartySession } from "@/lib/partyExit";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import EqualizerBars from "@/components/EqualizerBars";
@@ -187,6 +189,7 @@ function DeviceSelectorPopover({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const enabled = useConnectStore((s) => s.enabled);
   const status = useConnectStore((s) => s.status);
   const error = useConnectStore((s) => s.error);
@@ -194,6 +197,7 @@ function DeviceSelectorPopover({
   const deviceName = useConnectStore((s) => s.deviceName);
   const activeDeviceId = useConnectStore((s) => s.activeDeviceId);
   const devices = useConnectStore((s) => s.devices);
+  const playback = useConnectStore((s) => s.playback);
   const transferringToId = useConnectStore((s) => s.transferringToId);
   const actions = useConnectStore((s) => s.actions);
   const setEnabled = useConnectStore((s) => s.setEnabled);
@@ -210,6 +214,7 @@ function DeviceSelectorPopover({
   const [draftName, setDraftName] = useState(deviceName);
   const [joinCode, setJoinCode] = useState("");
   const [startingJam, setStartingJam] = useState(false);
+  const [leavingJam, setLeavingJam] = useState(false);
   const [pendingJamTransfer, setPendingJamTransfer] = useState<ConnectDevice | null>(null);
   const [leavingForTransfer, setLeavingForTransfer] = useState(false);
 
@@ -310,11 +315,7 @@ function DeviceSelectorPopover({
     if (!target || !partyCode) return;
     setLeavingForTransfer(true);
     try {
-      if (partyIsHost) await api.endParty(partyCode);
-      else await api.leaveParty(partyCode);
-      usePlayerStore.getState().setPartyBridge(null);
-      usePlayerStore.getState().setSuppressLocalAudio(false);
-      usePartyStore.getState().clearParty();
+      await exitPartySession(partyCode, partyIsHost ? "end" : "leave", { queryClient });
       setPendingJamTransfer(null);
       await executeTransfer(target);
     } catch (cause) {
@@ -325,6 +326,21 @@ function DeviceSelectorPopover({
       );
     } finally {
       setLeavingForTransfer(false);
+    }
+  };
+
+  const handleLeaveJam = async () => {
+    if (!partyCode || leavingJam) return;
+    setLeavingJam(true);
+    try {
+      await exitPartySession(partyCode, "leave", { queryClient });
+      onClose();
+    } catch (cause) {
+      toast.error(
+        `Jam konnte nicht verlassen werden: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setLeavingJam(false);
     }
   };
 
@@ -463,6 +479,35 @@ function DeviceSelectorPopover({
           </div>
         )}
 
+        {/* Async Connect continuity: resume server-persisted session when no device is currently active */}
+        {enabled &&
+          activeDeviceId === null &&
+          playback &&
+          playback.queue.length > 0 &&
+          playback.current_index >= 0 &&
+          playback.current_index < playback.queue.length && (
+            <div className="mb-4 rounded-[var(--radius-card)] border border-accent/35 bg-accent/10 p-3">
+              <p className="label-mono text-[10px] text-accent">Letzte Sitzung verfügbar</p>
+              <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                {playback.queue[playback.current_index].title}
+              </p>
+              <p className="truncate text-xs text-muted">
+                {playback.queue[playback.current_index].artist} · {playback.queue.length}{" "}
+                {playback.queue.length === 1 ? "Titel" : "Titel"}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  usePlayerStore.getState().activateConnectPlayback({ ...playback, is_playing: true });
+                  onClose();
+                }}
+                className="action-primary mt-2.5 min-h-9 w-full justify-center text-xs"
+              >
+                Auf diesem Gerät fortsetzen
+              </button>
+            </div>
+          )}
+
         {/* Other connected devices */}
         {enabled && (
           <div className="mb-4">
@@ -514,23 +559,33 @@ function DeviceSelectorPopover({
         <div className="border-t border-hairline pt-3">
           <p className="label-mono mb-2 text-[10px]">Gemeinsam hören · Jam</p>
           {partyActive && partyCode ? (
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2.5">
+            <div className="space-y-2 rounded-lg border border-accent/25 bg-accent/10 px-3 py-2.5">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{partyName || partyCode}</p>
                 <p className="text-[11px] text-muted">
                   Code {partyCode} · {partyMembersCount} {partyMembersCount === 1 ? "Person" : "Personen"}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  router.push(`/party/${encodeURIComponent(partyCode)}`);
-                }}
-                className="action-primary min-h-9 px-3 text-xs"
-              >
-                Jam öffnen
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    router.push(`/party/${encodeURIComponent(partyCode)}`);
+                  }}
+                  className="action-primary min-h-9 flex-1 px-3 text-xs"
+                >
+                  Jam öffnen
+                </button>
+                <button
+                  type="button"
+                  disabled={leavingJam}
+                  onClick={() => void handleLeaveJam()}
+                  className="action-secondary min-h-9 px-3 text-xs"
+                >
+                  {leavingJam ? "Verlässt…" : "Verlassen"}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-2">

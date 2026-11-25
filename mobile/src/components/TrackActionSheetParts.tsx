@@ -157,6 +157,9 @@ export interface TrackActionsPlaylistRowProps extends TvFocusProps {
   name: string;
   detail: string;
   collaborative?: boolean;
+  alreadyAdded?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
   accessibilityLabel: string;
   disabled: boolean;
   busy: boolean;
@@ -169,6 +172,9 @@ export function TrackActionsPlaylistRow({
   name,
   detail,
   collaborative = false,
+  alreadyAdded = false,
+  selected = false,
+  onToggleSelect,
   accessibilityLabel,
   disabled,
   busy,
@@ -181,7 +187,7 @@ export function TrackActionsPlaylistRow({
   onPress,
 }: TrackActionsPlaylistRowProps) {
   const focusController = createFocusRingController();
-  return (
+  const rowButton = (
     <Pressable
       testID={testID}
       accessibilityRole="button"
@@ -202,6 +208,7 @@ export function TrackActionsPlaylistRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.playlistRow,
+        onToggleSelect !== undefined ? styles.playlistRowFlex : null,
         pressed ? styles.rowPressed : null,
         disabled && !busy ? styles.disabled : null,
       ]}
@@ -215,6 +222,13 @@ export function TrackActionsPlaylistRow({
         <AppText variant="bodyStrong" numberOfLines={1}>{name}</AppText>
         <AppText variant="callout" color="secondary" numberOfLines={1}>{detail}</AppText>
       </View>
+      {alreadyAdded ? (
+        <View testID={`${testID}-added`} style={styles.addedBadge}>
+          <AppText variant="micro" color="accent">
+            {strings.trackActions.alreadyInPlaylist}
+          </AppText>
+        </View>
+      ) : null}
       {busy ? (
         <ActivityIndicator accessible={false} color={colors.accentSoft} size="small" />
       ) : (
@@ -228,6 +242,91 @@ export function TrackActionsPlaylistRow({
         focusedStyle={focusedStyle}
       />
     </Pressable>
+  );
+
+  if (onToggleSelect === undefined) return rowButton;
+  return (
+    <View style={styles.playlistRowContainer}>
+      <Pressable
+        testID={`${testID}-select`}
+        accessibilityRole="checkbox"
+        accessibilityLabel={name}
+        accessibilityState={{ checked: selected, disabled }}
+        disabled={disabled}
+        onPress={onToggleSelect}
+        style={({ pressed }) => [
+          styles.checkboxButton,
+          pressed ? styles.rowPressed : null,
+          disabled ? styles.disabled : null,
+        ]}
+      >
+        <AppIcon
+          name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+          color={selected ? colors.accent : colors.textMuted}
+          size={22}
+        />
+      </Pressable>
+      {rowButton}
+    </View>
+  );
+}
+
+export interface TrackActionsPlaylistFilterProps {
+  value: string;
+  onChangeText: (value: string) => void;
+  disabled: boolean;
+}
+
+export function TrackActionsPlaylistFilter({
+  value,
+  onChangeText,
+  disabled,
+}: TrackActionsPlaylistFilterProps) {
+  return (
+    <View style={styles.filterWrap}>
+      <TextInput
+        testID="track-action-playlists-filter"
+        accessibilityLabel={strings.trackActions.searchPlaylistsPlaceholder}
+        placeholder={strings.trackActions.searchPlaylistsPlaceholder}
+        placeholderTextColor={colors.textMuted}
+        selectionColor={colors.accent}
+        value={value}
+        onChangeText={onChangeText}
+        editable={!disabled}
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+        style={styles.input}
+      />
+    </View>
+  );
+}
+
+export interface TrackActionsPlaylistCommitBarProps {
+  count: number;
+  busy: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}
+
+export function TrackActionsPlaylistCommitBar({
+  count,
+  busy,
+  disabled,
+  onPress,
+}: TrackActionsPlaylistCommitBarProps) {
+  return (
+    <View style={styles.commitBar}>
+      <ActionButton
+        testID="track-action-playlists-commit"
+        label={strings.trackActions.addToSelectedPlaylists(count)}
+        icon="playlist-check"
+        variant="primary"
+        fullWidth
+        busy={busy}
+        disabled={disabled}
+        onPress={onPress}
+      />
+    </View>
   );
 }
 
@@ -327,6 +426,17 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
   },
   rowLabel: { flex: 1 },
+  playlistRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  checkboxButton: {
+    minWidth: metrics.minimumTouchTarget,
+    minHeight: metrics.minimumTouchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.md,
+  },
   playlistRow: {
     minHeight: layout.rowHeight,
     flexDirection: 'row',
@@ -334,6 +444,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.sm,
     borderRadius: radii.md,
+  },
+  playlistRowFlex: { flex: 1, minWidth: 0 },
+  addedBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xxs / 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accentSubtle,
+  },
+  filterWrap: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  commitBar: {
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xs,
   },
   rowPressed: { opacity: opacity.pressed, backgroundColor: colors.fill },
   disabled: { opacity: opacity.disabled },

@@ -141,8 +141,9 @@ vi.mock('../data', () => ({
   musicCacheScope: (_origin: string, userId: number) => `account-${userId}`,
   musicMutations: { addToPlaylist: () => ({ mutationKey: ['add-to-playlist'] }) },
   musicQueries: { playlists: () => ({ queryKey: ['playlists'] }) },
-  musicRepository: {},
+  musicRepository: { addToPlaylist: vi.fn(async () => undefined) },
   optimisticallyAddPlaylistTrack: vi.fn(),
+  queryKeys: { playlists: { detail: (scope: string, id: number) => ['music', scope, 'playlists', id] } },
   refreshLibraryAutoBrowse: vi.fn(),
   restorePlaylistCache: vi.fn(),
 }));
@@ -174,6 +175,8 @@ vi.mock('./TrackActionSheetParts', () => ({
   TrackActionRow: 'TrackActionRow',
   TrackActionsCreateForm: 'TrackActionsCreateForm',
   TrackActionsHeader: 'TrackActionsHeader',
+  TrackActionsPlaylistCommitBar: 'TrackActionsPlaylistCommitBar',
+  TrackActionsPlaylistFilter: 'TrackActionsPlaylistFilter',
   TrackActionsPlaylistRow: 'TrackActionsPlaylistRow',
   useKeyboardHeight: () => 0,
 }));
@@ -338,5 +341,30 @@ describe('TrackActionsHost', () => {
       collaborative: true,
     });
     expect(byTestId(playlistsTree, 'track-action-playlist-12')).toBeNull();
+  });
+
+  it('filters playlists and supports multi-playlist selection commit', () => {
+    const actionsTree = renderHost();
+    (byTestId(actionsTree, 'track-action-add-playlist')?.props.onPress as () => void)();
+    const playlistsTree = renderHost();
+
+    // Filter down to Roadtrip only.
+    const filterEl = elements(playlistsTree).find((el) => el.type === 'TrackActionsPlaylistFilter');
+    expect(filterEl).toBeDefined();
+    (filterEl?.props.onChangeText as (v: string) => void)('road');
+    const filteredTree = renderHost();
+    expect(byTestId(filteredTree, 'track-action-playlist-10')).not.toBeNull();
+    expect(byTestId(filteredTree, 'track-action-playlist-11')).toBeNull();
+
+    // Clear filter and select both editable playlists.
+    (elements(filteredTree).find((el) => el.type === 'TrackActionsPlaylistFilter')?.props.onChangeText as (v: string) => void)('');
+    const unfilteredTree = renderHost();
+    (byTestId(unfilteredTree, 'track-action-playlist-10')?.props.onToggleSelect as () => void)();
+    const oneSelected = renderHost();
+    (byTestId(oneSelected, 'track-action-playlist-11')?.props.onToggleSelect as () => void)();
+    const twoSelected = renderHost();
+
+    const commitBar = elements(twoSelected).find((el) => el.type === 'TrackActionsPlaylistCommitBar');
+    expect(commitBar?.props.count).toBe(2);
   });
 });

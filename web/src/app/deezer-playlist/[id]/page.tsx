@@ -11,7 +11,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
-import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem } from "@/app/playlist/_components/CollectionActions";
+import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem, useSaveAsPlaylistItem } from "@/app/playlist/_components/CollectionActions";
 import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 import type { DeezerPlaylistDetail } from "@/types";
 
@@ -35,6 +35,7 @@ function DeezerPlaylistView({ playlist }: { playlist: DeezerPlaylistDetail }) {
   const playQueue = usePlayerStore((state) => state.playQueue);
   const tracks = playlist.tracks;
   const queueAll = useQueueAllItem(tracks);
+  const savePlaylist = useSaveAsPlaylistItem(playlist.name, tracks, "Von Deezer übernommen");
 
   return (
     <>
@@ -48,7 +49,7 @@ function DeezerPlaylistView({ playlist }: { playlist: DeezerPlaylistDetail }) {
           <>
             <PlayCollectionButton tracks={tracks} context={playlist.name} />
             <ShuffleCollectionButton tracks={tracks} context={playlist.name} />
-            {tracks.length > 0 && <CollectionMenu label="Weitere Optionen für diese Playlist" items={[queueAll]} />}
+            {tracks.length > 0 && <CollectionMenu label="Weitere Optionen für diese Playlist" items={[queueAll, savePlaylist]} />}
           </>
         }
       />

@@ -5,6 +5,7 @@ import { strings } from '../localization';
 import { initializeOfflineDownloads } from '../offline/runtime';
 import { cancelBrowseTreePublication, refreshBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
+import { hydrateAccountPlaybackSettings } from '../player/playbackSettingsSync';
 import { ensurePlayer } from '../player/setup';
 
 export interface PlayerBootstrap {
@@ -40,6 +41,15 @@ export function usePlayerBootstrap(accountScope: string): PlayerBootstrap {
         .then(() => {
           if (!mounted) return;
           setReady(true);
+          void hydrateAccountPlaybackSettings(accountScope, () => mounted).catch(
+            (settingsError: unknown) => {
+              if (!mounted) return;
+              console.error(
+                '[LoggeRythm] Failed to hydrate account playback settings on startup:',
+                settingsError,
+              );
+            },
+          );
           void refreshBrowseTree()
             .then(() => {
               if (mounted) console.info('[LoggeRythm] Android Auto library ready');

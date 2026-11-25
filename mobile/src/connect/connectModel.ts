@@ -38,10 +38,10 @@ export interface ConnectSessionSnapshot {
   readonly error: string | null;
 }
 
-/** Mobile Media3 player plays audio natively but intentionally does not expose remote volume mutation. */
+/** Mobile Media3 player exposes native playback and hardware/system volume control. */
 export const MOBILE_CONNECT_CAPABILITIES: Readonly<ConnectDeviceCapabilities> = Object.freeze({
   can_play_audio: true,
-  can_control_volume: false,
+  can_control_volume: true,
 });
 
 export function validateConnectDeviceName(name: string): string {

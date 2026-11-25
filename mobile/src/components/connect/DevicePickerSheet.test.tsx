@@ -7,6 +7,7 @@ import { DevicePickerSheetContent } from './DevicePickerSheet';
 
 vi.mock('react', async (importOriginal) => ({
   ...await importOriginal<typeof import('react')>(),
+  useEffect: vi.fn(),
   useState: <T,>(initial: T | (() => T)) => [
     typeof initial === 'function' ? (initial as () => T)() : initial,
     vi.fn(),

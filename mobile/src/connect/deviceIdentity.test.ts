@@ -33,10 +33,10 @@ function memoryStorage(initial: Record<string, string> = {}) {
 }
 
 describe('Connect mobile device identity', () => {
-  it('honestly declares mobile audio capability without remote volume control', () => {
+  it('declares mobile audio playback and hardware volume capabilities', () => {
     expect(MOBILE_CONNECT_CAPABILITIES).toEqual({
       can_play_audio: true,
-      can_control_volume: false,
+      can_control_volume: true,
     });
   });
 

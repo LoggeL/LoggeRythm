@@ -1,8 +1,10 @@
 package top.logge.loggerythm.player
 
 import android.net.Uri
+import androidx.annotation.OptIn
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.util.UnstableApi
 import java.net.URI
 import java.util.concurrent.atomic.AtomicLong
 
@@ -10,6 +12,7 @@ internal data class RuntimeBrowseNode(
   val mediaItem: MediaItem,
   val childIds: List<String>,
   val source: PlayerItemSpec? = null,
+  val displayHints: LoggeRythmBrowseDisplayHints? = null,
 ) {
   override fun toString(): String =
     "RuntimeBrowseNode(mediaItem=<redacted>, childIds=<public:${childIds.size}>, " +
@@ -355,6 +358,7 @@ internal object LoggeRythmPlayerRuntime {
     LoggeRythmCacheServiceBridge.queueChanged(revision)
   }
 
+  @OptIn(UnstableApi::class)
   fun installBrowseTree(spec: BrowseTreeSpec): RuntimeBrowseTree {
     if (spec.root.id != BROWSE_ROOT_ID) {
       throw PlayerProtocolException("browse-root-id-invalid")
@@ -386,6 +390,14 @@ internal object LoggeRythmPlayerRuntime {
           cookies += node.url to node.cookie
         }
         if (parentId != null) parents[node.id] = parentId
+        val hints = LoggeRythmCarBrowseMetadata.resolve(
+          id = node.id,
+          playable = node.playable,
+          explicitMediaType = node.mediaType,
+          explicitContentStyleBrowsable = node.contentStyleBrowsable,
+          explicitContentStylePlayable = node.contentStylePlayable,
+          explicitGroupTitle = node.groupTitle,
+        )
         nodes[node.id] = RuntimeBrowseNode(
           mediaItem = mediaItem(
             id = node.id,
@@ -399,9 +411,11 @@ internal object LoggeRythmPlayerRuntime {
             // In this schema every non-playable node is a container, including an empty one.
             browsable = !node.playable,
             playable = node.playable,
+            displayHints = hints,
           ),
           childIds = node.children.map(BrowseNodeSpec::id),
           source = source,
+          displayHints = hints,
         )
         node.children.forEach { child -> visit(child, node.id) }
       }
@@ -753,7 +767,10 @@ internal object LoggeRythmPlayerRuntime {
       val oldChildren = oldParent?.childIds.orEmpty()
       val newChildren = newParent?.childIds.orEmpty()
       val publicChildrenChanged = oldChildren != newChildren || newChildren.any { childId ->
-        !samePublicMediaItem(previous.nodes[childId]?.mediaItem, next.nodes[childId]?.mediaItem)
+        val oldNode = previous.nodes[childId]
+        val newNode = next.nodes[childId]
+        oldNode?.displayHints != newNode?.displayHints ||
+          !samePublicMediaItem(oldNode?.mediaItem, newNode?.mediaItem)
       }
       if (publicChildrenChanged) changed[parentId] = newChildren.size
     }
@@ -772,7 +789,8 @@ internal object LoggeRythmPlayerRuntime {
       leftMetadata.artworkUri == rightMetadata.artworkUri &&
       leftMetadata.durationMs == rightMetadata.durationMs &&
       leftMetadata.isBrowsable == rightMetadata.isBrowsable &&
-      leftMetadata.isPlayable == rightMetadata.isPlayable
+      leftMetadata.isPlayable == rightMetadata.isPlayable &&
+      leftMetadata.mediaType == rightMetadata.mediaType
   }
 
   private fun requireCookieMatchesBinding(
@@ -794,6 +812,7 @@ internal object LoggeRythmPlayerRuntime {
     if (origin != binding.origin) throw PlayerProtocolException("cookie-origin-mismatch")
   }
 
+  @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
   private fun mediaItem(
     id: String,
     url: String?,
@@ -805,7 +824,11 @@ internal object LoggeRythmPlayerRuntime {
     durationMs: Long?,
     browsable: Boolean,
     playable: Boolean,
+    displayHints: LoggeRythmBrowseDisplayHints? = null,
   ): MediaItem {
+    val resolvedMediaType = displayHints?.mediaType
+      ?: if (playable) MediaMetadata.MEDIA_TYPE_MUSIC else MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+    val metadataExtras = displayHints?.let(LoggeRythmCarBrowseMetadata::toMetadataExtras)
     val metadata = MediaMetadata.Builder()
       .setTitle(title)
       .setArtist(artist)
@@ -815,6 +838,10 @@ internal object LoggeRythmPlayerRuntime {
       .setDurationMs(durationMs)
       .setIsBrowsable(browsable)
       .setIsPlayable(playable)
+      .setMediaType(resolvedMediaType)
+      .apply {
+        if (metadataExtras != null) setExtras(metadataExtras)
+      }
       .build()
     return MediaItem.Builder()
       .setMediaId(id)

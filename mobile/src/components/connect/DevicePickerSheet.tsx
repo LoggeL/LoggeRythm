@@ -17,11 +17,18 @@ import {
 } from '../../connect/connectModel';
 import { connectSession, useConnectSession } from '../../connect/connectRuntime';
 import { strings } from '../../localization';
+import { wave2Strings } from '../../localization/wave2Strings';
 import { useLocaleRevision } from '../../localization/LocaleProvider';
 import { partyErrorDetail } from '../../party/partyErrors';
 import { normalizePartyCode, partyDisplayName } from '../../party/partyModel';
 import { partySession, startPartyFromQueue, usePartySession } from '../../party/partyRuntime';
 import type { PartySessionSnapshot } from '../../party/partySession';
+import {
+  getAudioOutputDevices,
+  isNativeMethodAvailable,
+  openAudioOutputSwitcher,
+  type AudioOutputDevice,
+} from '../../player/nativeAudioCraft';
 import { colors, metrics, opacity, radii, spacing } from '../../theme';
 import { isTvMode, tvFocusRegistry } from '../../tv';
 import AppIcon from '../AppIcon';
@@ -56,6 +63,156 @@ export interface DevicePickerSheetContentProps {
   onSetRemoteVolume: (volume: number) => Promise<void>;
   onSetRemoteMute: (muted: boolean) => Promise<void>;
   onStartJam: () => Promise<void>;
+  onResumePersisted?: () => Promise<void>;
+}
+
+/** Native Android audio route switcher (Bluetooth / wired / speaker / cast output). */
+function AudioOutputSection() {
+  const [devices, setDevices] = useState<AudioOutputDevice[] | null>(null);
+  const [outputError, setOutputError] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const available = isNativeMethodAvailable('openAudioOutputSwitcher');
+
+  useEffect(() => {
+    if (!isNativeMethodAvailable('getAudioOutputDevices')) return;
+    let cancelled = false;
+    void getAudioOutputDevices()
+      .then((list) => {
+        if (!cancelled) setDevices(list);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          const detail = cause instanceof Error ? cause.message : String(cause);
+          setOutputError(`${wave2Strings.audioOutput.loadFailed} (${detail})`);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!available) return null;
+
+  const activeOutput = devices?.find((item) => item.isActive) ?? devices?.[0] ?? null;
+
+  const handleOpenSwitcher = () => {
+    if (opening) return;
+    setOpening(true);
+    setOutputError(null);
+    void openAudioOutputSwitcher()
+      .then(() => {
+        if (isNativeMethodAvailable('getAudioOutputDevices')) {
+          return getAudioOutputDevices().then(setDevices);
+        }
+        return undefined;
+      })
+      .catch((cause: unknown) => {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        setOutputError(`${wave2Strings.audioOutput.switcherFailed} (${detail})`);
+      })
+      .finally(() => setOpening(false));
+  };
+
+  return (
+    <View testID="device-picker-audio-output" style={styles.section}>
+      <AppText variant="overline" color="secondary" style={styles.sectionTitle}>
+        {wave2Strings.audioOutput.title}
+      </AppText>
+      <View style={styles.jamCard}>
+        <AppIcon name="headphones" size={22} color={colors.accent} />
+        <View style={styles.deviceCopy}>
+          <AppText variant="bodyStrong" numberOfLines={1}>
+            {activeOutput !== null
+              ? wave2Strings.audioOutput.activeOutput(activeOutput.name)
+              : wave2Strings.audioOutput.noDevices}
+          </AppText>
+          {devices !== null && devices.length > 1 ? (
+            <AppText variant="caption" color="secondary" numberOfLines={1}>
+              {devices.map((item) => item.name).join(' · ')}
+            </AppText>
+          ) : null}
+        </View>
+        <ActionButton
+          testID="device-picker-open-output-switcher"
+          label={wave2Strings.audioOutput.openSwitcher}
+          variant="secondary"
+          busy={opening}
+          disabled={opening}
+          onPress={handleOpenSwitcher}
+        />
+      </View>
+      {outputError !== null ? (
+        <AppText testID="device-picker-output-error" accessibilityRole="alert" variant="caption" color="danger">
+          {outputError}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
+
+/** Async Connect continuity banner: resume persisted queue when no device is active. */
+function ResumePersistedSessionCard({
+  connect,
+  onResume,
+}: {
+  connect: ConnectSessionSnapshot;
+  onResume: () => Promise<void>;
+}) {
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const playback = connect.state?.playback ?? null;
+  if (
+    connect.phase !== 'connected'
+    || connect.activeDevice !== null
+    || playback === null
+    || playback.queue.length === 0
+  ) {
+    return null;
+  }
+  const track =
+    playback.current_index >= 0 && playback.current_index < playback.queue.length
+      ? playback.queue[playback.current_index]
+      : playback.queue[0];
+
+  return (
+    <View testID="device-picker-resume-session" style={styles.activeCard}>
+      <AppText variant="overline" color="accent">
+        {wave2Strings.connectContinuity.resumeTitle}
+      </AppText>
+      <AppText variant="bodyStrong" numberOfLines={1}>
+        {wave2Strings.connectContinuity.resumeTrack(track.title, track.artist)}
+      </AppText>
+      <ActionButton
+        testID="device-picker-resume-button"
+        icon="play"
+        label={
+          resuming
+            ? wave2Strings.connectContinuity.resuming
+            : wave2Strings.connectContinuity.resumeAction
+        }
+        variant="primary"
+        busy={resuming}
+        disabled={resuming}
+        onPress={() => {
+          if (resuming) return;
+          setResuming(true);
+          setResumeError(null);
+          void onResume()
+            .catch((cause: unknown) => {
+              setResumeError(
+                wave2Strings.connectContinuity.resumeFailed(partyErrorDetail(cause)),
+              );
+            })
+            .finally(() => setResuming(false));
+        }}
+      />
+      {resumeError !== null ? (
+        <AppText testID="device-picker-resume-error" accessibilityRole="alert" variant="caption" color="danger">
+          {resumeError}
+        </AppText>
+      ) : null}
+    </View>
+  );
 }
 
 function DeviceRow({
@@ -144,6 +301,7 @@ export function DevicePickerSheetContent({
   onSetRemoteVolume,
   onSetRemoteMute,
   onStartJam,
+  onResumePersisted,
 }: DevicePickerSheetContentProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [startingJam, setStartingJam] = useState(false);
@@ -332,6 +490,10 @@ export function DevicePickerSheetContent({
         </View>
       ) : null}
 
+      {onResumePersisted !== undefined ? (
+        <ResumePersistedSessionCard connect={connect} onResume={onResumePersisted} />
+      ) : null}
+
       {activeDevice !== null ? (
         <View testID="device-picker-active-card" style={styles.activeCard}>
           <View style={styles.activeCardHeader}>
@@ -419,6 +581,8 @@ export function DevicePickerSheetContent({
           )}
         </View>
       ) : null}
+
+      <AudioOutputSection />
 
       <ListSeparator />
 
@@ -621,6 +785,10 @@ export default function DevicePickerHost({
             const created = await startPartyFromQueue();
             close();
             onOpenParty(created.code);
+          }}
+          onResumePersisted={async () => {
+            await connectSession().resumePersistedPlayback();
+            close();
           }}
         />
       ) : null}

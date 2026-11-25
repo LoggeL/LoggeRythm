@@ -1,14 +1,42 @@
 import { streamUrl } from "@/lib/api";
+import { clearOfflineLyricsCache, deleteOfflineLyrics } from "@/lib/offlineLyrics";
 import type { Track } from "@/types";
 
 const AUDIO_CACHE = "sf-audio";
 const IMG_CACHE = "sf-img";
+export const DOWNLOADS_STORAGE_KEY = "sf_downloads";
+
+export type DownloadKind = "playlist" | "liked" | "album";
 
 export interface DownloadEntry {
   name: string;
   total: number;
+  kind?: DownloadKind;
+  cover?: string;
+  /** Server playlist revision from `sync-manifest`, used to skip unchanged syncs. */
+  revision?: number;
   // Older entries require the playlist response to identify their cached audio.
   trackIds?: string[];
+  /** Full track metadata snapshot enabling true offline playback without API calls. */
+  tracks?: Track[];
+}
+
+const VALID_KINDS = new Set<string>(["playlist", "liked", "album"]);
+
+function isValidTrackSnapshot(track: unknown): track is Track {
+  if (!track || typeof track !== "object" || Array.isArray(track)) return false;
+  const t = track as Record<string, unknown>;
+  return (
+    (typeof t.id === "string" || typeof t.id === "number") &&
+    String(t.id).trim() !== "" &&
+    typeof t.title === "string" &&
+    typeof t.artist === "string" &&
+    typeof t.album === "string" &&
+    typeof t.cover === "string" &&
+    typeof t.duration_sec === "number" &&
+    Number.isFinite(t.duration_sec) &&
+    t.duration_sec >= 0
+  );
 }
 
 export function assertDownloadEntries(value: unknown): asserts value is Record<string, DownloadEntry> {
@@ -20,11 +48,28 @@ export function assertDownloadEntries(value: unknown): asserts value is Record<s
       !entry || typeof entry !== "object" ||
       typeof entry.name !== "string" ||
       !Number.isInteger(entry.total) || entry.total < 0 ||
-      (entry.trackIds !== undefined && (!Array.isArray(entry.trackIds) || entry.trackIds.some((track: unknown) => typeof track !== "string" || track.trim() === "")))
+      (entry.kind !== undefined && (typeof entry.kind !== "string" || !VALID_KINDS.has(entry.kind))) ||
+      (entry.cover !== undefined && typeof entry.cover !== "string") ||
+      (entry.revision !== undefined && (!Number.isInteger(entry.revision) || entry.revision < 0)) ||
+      (entry.trackIds !== undefined && (!Array.isArray(entry.trackIds) || entry.trackIds.some((track: unknown) => typeof track !== "string" || track.trim() === ""))) ||
+      (entry.tracks !== undefined && (!Array.isArray(entry.tracks) || entry.tracks.some((track: unknown) => !isValidTrackSnapshot(track))))
     ) {
       throw new Error(`Lokale Daten "sf_downloads": Offline-Playlist "${id}" hat ein ungültiges Format.`);
     }
   }
+}
+
+/**
+ * Synchronous check used by AppShell to offer explicit read-only Offline Mode
+ * when `/auth/me` cannot reach the server while local downloads exist.
+ */
+export function hasOfflineDownloadsSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  const raw = window.localStorage.getItem(DOWNLOADS_STORAGE_KEY);
+  if (!raw) return false;
+  const parsed: unknown = JSON.parse(raw);
+  assertDownloadEntries(parsed);
+  return Object.keys(parsed).length > 0;
 }
 
 function detail(cause: unknown): string {
@@ -91,8 +136,9 @@ export async function clearOfflineCaches(onAudioRemoved: () => void): Promise<vo
   onAudioRemoved();
   try {
     await storage.delete(IMG_CACHE);
+    await clearOfflineLyricsCache();
   } catch (cause) {
-    throw new Error(`Audio-Downloads wurden entfernt; Offline-Cover konnten nicht entfernt werden: ${detail(cause)}`, { cause });
+    throw new Error(`Audio-Downloads wurden entfernt; Offline-Cover/Songtexte konnten nicht entfernt werden: ${detail(cause)}`, { cause });
   }
 }
 
@@ -157,8 +203,6 @@ export async function removePlaylistAudio(
   }
   const audio = await requireCacheStorage().open(AUDIO_CACHE);
   const removable = [...new Set(ids)].filter((track) => !keep.has(track));
-  // Cache Storage has no transaction. Keep the original responses so a failed
-  // batch can restore its completed deletions before metadata is retained.
   const originals = new Map<string, Response>();
   for (const track of removable) {
     const response = await audio.match(streamUrl(track));
@@ -168,7 +212,6 @@ export async function removePlaylistAudio(
   const deleted: string[] = [];
   for (const track of removable) {
     try {
-      // false means the cache entry was already absent, so removal is complete.
       if (await audio.delete(streamUrl(track))) deleted.push(track);
     } catch (cause) {
       failures.push(new Error(`Titel ${track}: ${detail(cause)}`, { cause }));
@@ -186,4 +229,5 @@ export async function removePlaylistAudio(
     }
     throw new AggregateError(failures, `Offline-Playlist "${entry.name}" konnte nicht vollständig entfernt werden: ${failures.map((error) => error.message).join("; ")}`);
   }
+  await deleteOfflineLyrics(removable);
 }

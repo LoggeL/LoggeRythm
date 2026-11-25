@@ -258,4 +258,82 @@ describe('LyricsPanelView', () => {
     (syncBtn?.props.onPress as () => void)();
     expect(onSyncToCurrent).toHaveBeenCalledOnce();
   });
+
+  it('exposes AI lyrics variant toggle and long-press lyric quote sharing', () => {
+    const onToggleVariant = vi.fn();
+    const onShareLine = vi.fn();
+    const rendered = view({
+      response: response({ synced: true }),
+      isPending: false,
+      isFetching: false,
+      activeIndex: 0,
+      variant: 'default',
+      onToggleVariant,
+      onShareLine,
+      shareError: null,
+    });
+
+    const toggle = byTestId(rendered, 'lyrics-variant-toggle');
+    expect(toggle).not.toBeNull();
+    expect(toggle?.props.accessibilityState).toEqual({ checked: false });
+    (toggle?.props.onPress as () => void)();
+    expect(onToggleVariant).toHaveBeenCalledOnce();
+
+    const list = byTestId(rendered, 'lyrics-list');
+    const renderItem = list?.props.renderItem as (info: {
+      item: LyricsLine;
+      index: number;
+    }) => React.ReactElement<ElementProps>;
+    const active = renderItem({ item: lines[0], index: 0 });
+    const instrumental = renderItem({ item: lines[1], index: 1 });
+    (active.props.onLongPress as () => void)();
+    expect(onShareLine).toHaveBeenCalledExactlyOnceWith(0);
+    expect(instrumental.props.onLongPress).toBeUndefined();
+
+    const withError = view({
+      response: response({ synced: true }),
+      isPending: false,
+      isFetching: false,
+      shareError: strings.player.lyrics.shareQuoteFailed,
+    });
+    expect(byTestId(withError, 'lyrics-share-error')?.props.accessibilityRole).toBe('alert');
+  });
+
+  it('renders dedicated instrumental state and word-by-word karaoke spans', () => {
+    const instrumental = view({
+      response: response({ lines: [], synced: false, instrumental: true }),
+      isPending: false,
+      isFetching: false,
+    });
+    expect(byTestId(instrumental, 'lyrics-instrumental')).not.toBeNull();
+    expect(byTestId(instrumental, 'lyrics-empty')).toBeNull();
+
+    const karaokeLines: LyricsLine[] = [
+      {
+        t: 10,
+        text: 'Signal in dark',
+        words: [
+          { t: 10.0, end: 10.6, text: 'Signal' },
+          { t: 10.6, end: 11.1, text: 'in' },
+          { t: 11.1, end: 11.8, text: 'dark' },
+        ],
+      },
+    ];
+    const karaoke = view({
+      response: response({ lines: karaokeLines, synced: true }),
+      isPending: false,
+      isFetching: false,
+      activeIndex: 0,
+      position: 10.8,
+    });
+    expect(byTestId(karaoke, 'lyrics-karaoke')).not.toBeNull();
+    const list = byTestId(karaoke, 'lyrics-list');
+    const renderItem = list?.props.renderItem as (info: {
+      item: LyricsLine;
+      index: number;
+    }) => React.ReactElement<ElementProps>;
+    const activeRow = renderItem({ item: karaokeLines[0], index: 0 });
+    expect(textContent(activeRow)).toContain('Signal');
+    expect(textContent(activeRow)).toContain('dark');
+  });
 });

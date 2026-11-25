@@ -28,7 +28,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     COOKIE_SAMESITE=lax
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs npm curl ca-certificates tini \
+    && apt-get install -y --no-install-recommends nodejs npm curl ca-certificates tini ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY api/requirements.txt /app/api/requirements.txt

@@ -55,6 +55,7 @@ import {
 import { libraryStrings } from './libraryStrings';
 import {
   accountOfflineAvailability,
+  accountOfflineDownloadedTracks,
   accountOfflinePlaylistSummaries,
 } from './offlineScreenModel';
 import { playlistFailureMessage } from './playlistFeedback';
@@ -131,6 +132,10 @@ export default function LibraryScreen(props: LibraryScreenProps) {
   const offlineSnapshot = useOfflineDownloads();
   const offlineAvailability = accountOfflineAvailability(offlineSnapshot, scope);
   const offlinePlaylists = accountOfflinePlaylistSummaries(offlineSnapshot, scope);
+  const offlineTracks = useMemo(
+    () => accountOfflineDownloadedTracks(offlineSnapshot, scope),
+    [offlineSnapshot, scope],
+  );
   const queryClient = useQueryClient();
   const isFocused = useIsFocused();
   const bottomInset = useBottomInset();
@@ -215,6 +220,25 @@ export default function LibraryScreen(props: LibraryScreenProps) {
         setRecentPlaybackIndex(null);
       });
   }, [queryClient, user.id]);
+
+  const playDownloadedTracks = useCallback((tracks: readonly Track[], index: number) => {
+    try {
+      const selected = libraryPlaybackSelection([...tracks], index);
+      setRuntimeError(null);
+      void playTrackRow(selected.tracks, selected.startIndex, {
+        requireExplicitDownloads: true,
+        context: {
+          type: 'collection',
+          id: 'downloads',
+          label: libraryStrings.library.downloadedSongs,
+        },
+      }).catch((error) =>
+        setRuntimeError(playlistFailureMessage('playback', error)),
+      );
+    } catch (error) {
+      setRuntimeError(playlistFailureMessage('playback', error));
+    }
+  }, []);
 
   const reportTrackActionFailure = useCallback(
     (message: string) => setRuntimeError(playlistFailureMessage('track-action', message)),
@@ -492,8 +516,13 @@ export default function LibraryScreen(props: LibraryScreenProps) {
           <LibraryDownloadsList
             availability={offlineAvailability}
             playlists={offlinePlaylists}
+            tracks={offlineTracks}
             apiBase={apiBase}
             onOpenPlaylist={onOpenPlaylist}
+            onPlayTrack={playDownloadedTracks}
+            onOpenTrackActions={(track) => showTrackActions(track, reportTrackActionFailure)}
+            onOpenAlbum={onOpenAlbum}
+            onOpenArtist={onOpenArtist}
           />
         );
       case 'following-artist':
@@ -521,9 +550,11 @@ export default function LibraryScreen(props: LibraryScreenProps) {
     likedTracks,
     offlineAvailability,
     offlinePlaylists,
+    offlineTracks,
     onOpenAlbum,
     onOpenArtist,
     onOpenPlaylist,
+    playDownloadedTracks,
     playLiked,
     playRecent,
     recentPlaybackIndex,

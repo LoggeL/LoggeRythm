@@ -11,6 +11,8 @@ import type {
   ArtistDetail,
   ArtistRef,
   ArtistSummary,
+  AudioQualityTier,
+  BatchPreloadResponse,
   CachedTrackIds,
   ConnectCommandAction,
   ConnectDevice,
@@ -24,39 +26,57 @@ import type {
   ConnectTicket,
   DeezerPlaylistDetail,
   DeezerPlaylistTrack,
+  FriendActivityItem,
   Genre,
   GenreDetail,
   HomeShelf,
   ImportJobDetail,
   ImportJobState,
   ImportJobStatus,
+  InsightsStatEntry,
   LyricsLine,
   LyricsResponse,
+  LyricsWord,
   PartyLoadState,
   PartyMember,
+  PartyReaction,
   PartyState,
   PartyTrack,
+  PartyVoteSkipResult,
   PlaybackSettings,
   Playlist,
+  PlaylistBlendResult,
   PlaylistCollaborator,
   PlaylistCollaboratorUser,
+  PlaylistDeduplicateResult,
+  PlaylistDuplicateGroup,
+  PlaylistDuplicatesResponse,
   PlaylistInvite,
   PlaylistInvitePreview,
   PlaylistInviteStatus,
   PlaylistJoinResult,
+  PlaylistLiveEvent,
+  PlaylistLiveEventType,
   PlaylistRole,
   PlaylistSearchResult,
   PlaylistSummary,
+  PlaylistSyncManifest,
+  PlaylistSyncTrackItem,
   PublicProfile,
   RadarReason,
   ReleaseRadarEntry,
   ResolveKind,
   ResolveResult,
+  SocialActivityResponse,
+  StatsInsightsRange,
   StorageCleanupResult,
+  TimestampedPlay,
   Track,
+  TrackAudioMeta,
   TrackPlayCount,
   TrackPlayCounts,
   User,
+  UserStatsInsights,
 } from './types';
 
 type JsonObject = Record<string, unknown>;
@@ -196,9 +216,12 @@ export function decodeTrack(value: unknown, path = 'Track'): Track {
   if ('isrc' in source) {
     track.isrc = string(source.isrc, `${path}.isrc`);
   }
-  for (const key of ['loudness_gain_db', 'loudness_lufs', 'loudness_peak'] as const) {
+  for (const key of ['loudness_gain_db', 'loudness_lufs', 'loudness_peak', 'bpm'] as const) {
     const decoded = optionalNullableNumber(source, key, path);
     if (decoded !== undefined) track[key] = decoded;
+  }
+  if ('explicit' in source && source.explicit !== undefined) {
+    track.explicit = nullable(source.explicit, `${path}.explicit`, boolean);
   }
   if ('playlist_entry_id' in source) {
     const entryId = nonNegativeInteger(
@@ -563,15 +586,35 @@ export function decodePublicProfile(value: unknown): PublicProfile {
   };
 }
 
+const AUDIO_QUALITY_TIERS = [
+  'lossless',
+  'high',
+  'saver',
+] as const satisfies readonly AudioQualityTier[];
+
 export function decodePlaybackSettings(value: unknown): PlaybackSettings {
   const source = object(value, 'PlaybackSettings');
-  return {
+  const settings: PlaybackSettings = {
     crossfade_enabled: boolean(source.crossfade_enabled, 'PlaybackSettings.crossfade_enabled'),
     crossfade_duration_sec: nonNegativeInteger(
       source.crossfade_duration_sec,
       'PlaybackSettings.crossfade_duration_sec',
     ),
   };
+  if ('preferred_quality' in source && source.preferred_quality !== undefined) {
+    settings.preferred_quality = literal(
+      source.preferred_quality,
+      'PlaybackSettings.preferred_quality',
+      AUDIO_QUALITY_TIERS,
+    );
+  }
+  if ('share_listening_activity' in source && source.share_listening_activity !== undefined) {
+    settings.share_listening_activity = boolean(
+      source.share_listening_activity,
+      'PlaybackSettings.share_listening_activity',
+    );
+  }
+  return settings;
 }
 
 export function decodeAddedTracksResult(value: unknown): AddedTracksResult {
@@ -608,7 +651,7 @@ export function decodeResolveResult(value: unknown): ResolveResult {
 const IMPORT_JOB_STATES = ['queued', 'running', 'done', 'failed'] as const satisfies readonly ImportJobState[];
 
 function decodeImportJobFields(source: Record<string, unknown>, path: string): ImportJobStatus {
-  return {
+  const job: ImportJobStatus = {
     id: string(source.id, `${path}.id`),
     url: string(source.url, `${path}.url`),
     status: literal(source.status, `${path}.status`, IMPORT_JOB_STATES),
@@ -626,6 +669,27 @@ function decodeImportJobFields(source: Record<string, unknown>, path: string): I
     updated_at: string(source.updated_at, `${path}.updated_at`),
     finished_at: nullableString(source.finished_at, `${path}.finished_at`),
   };
+  if ('target_playlist_id' in source && source.target_playlist_id !== undefined) {
+    job.target_playlist_id = nullable(
+      source.target_playlist_id,
+      `${path}.target_playlist_id`,
+      positiveInteger,
+    );
+  }
+  if ('create_playlist_name' in source && source.create_playlist_name !== undefined) {
+    job.create_playlist_name = nullableString(
+      source.create_playlist_name,
+      `${path}.create_playlist_name`,
+    );
+  }
+  if ('created_playlist_id' in source && source.created_playlist_id !== undefined) {
+    job.created_playlist_id = nullable(
+      source.created_playlist_id,
+      `${path}.created_playlist_id`,
+      positiveInteger,
+    );
+  }
+  return job;
 }
 
 function decodeImportJobStatusAt(value: unknown, path: string): ImportJobStatus {
@@ -681,12 +745,25 @@ export function decodeDeezerPlaylistDetail(value: unknown): DeezerPlaylistDetail
   };
 }
 
-function decodeLyricsLine(value: unknown, path: string): LyricsLine {
+function decodeLyricsWord(value: unknown, path: string): LyricsWord {
   const source = object(value, path);
   return {
     t: nonNegativeNumber(source.t, `${path}.t`),
+    end: nonNegativeNumber(source.end, `${path}.end`),
     text: string(source.text, `${path}.text`),
   };
+}
+
+function decodeLyricsLine(value: unknown, path: string): LyricsLine {
+  const source = object(value, path);
+  const line: LyricsLine = {
+    t: nonNegativeNumber(source.t, `${path}.t`),
+    text: string(source.text, `${path}.text`),
+  };
+  if ('words' in source && source.words !== undefined && source.words !== null) {
+    line.words = array(source.words, `${path}.words`, decodeLyricsWord);
+  }
+  return line;
 }
 
 export function decodeLyricsResponse(value: unknown): LyricsResponse {
@@ -699,6 +776,9 @@ export function decodeLyricsResponse(value: unknown): LyricsResponse {
     source: nullableString(source.source, 'LyricsResponse.source'),
     ai_generated: boolean(source.ai_generated, 'LyricsResponse.ai_generated'),
   };
+  if ('instrumental' in source && source.instrumental !== undefined) {
+    result.instrumental = boolean(source.instrumental, 'LyricsResponse.instrumental');
+  }
   const cached = optionalTrue(source, 'cached', 'LyricsResponse');
   return cached === undefined ? result : { ...result, cached };
 }
@@ -738,7 +818,7 @@ const PARTY_LOAD_STATES = [
 
 function decodePartyTrack(value: unknown, path: string): PartyTrack {
   const source = object(value, path);
-  return {
+  const track: PartyTrack = {
     id: nonNegativeInteger(source.id, `${path}.id`),
     deezer_id: deezerStringId(source.deezer_id, `${path}.deezer_id`),
     title: string(source.title, `${path}.title`),
@@ -756,6 +836,20 @@ function decodePartyTrack(value: unknown, path: string): PartyTrack {
     load_error: nullableString(source.load_error, `${path}.load_error`),
     is_stored: boolean(source.is_stored, `${path}.is_stored`),
   };
+  const gainDb = optionalNullableNumber(source, 'loudness_gain_db', path);
+  if (gainDb !== undefined) track.loudness_gain_db = gainDb;
+  return track;
+}
+
+export function decodePartyReaction(value: unknown, path = 'PartyReaction'): PartyReaction {
+  const source = object(value, path);
+  return {
+    id: string(source.id, `${path}.id`),
+    emoji: string(source.emoji, `${path}.emoji`),
+    member_key: string(source.member_key, `${path}.member_key`),
+    member_name: string(source.member_name, `${path}.member_name`),
+    created_at: string(source.created_at, `${path}.created_at`),
+  };
 }
 
 function decodePartyMember(value: unknown, path: string): PartyMember {
@@ -771,7 +865,7 @@ function decodePartyMember(value: unknown, path: string): PartyMember {
 
 export function decodePartyState(value: unknown): PartyState {
   const source = object(value, 'PartyState');
-  return {
+  const state: PartyState = {
     code: string(source.code, 'PartyState.code'),
     name: string(source.name, 'PartyState.name'),
     host_name: string(source.host_name, 'PartyState.host_name'),
@@ -793,6 +887,38 @@ export function decodePartyState(value: unknown): PartyState {
     viewer_key: string(source.viewer_key, 'PartyState.viewer_key'),
     viewer_name: string(source.viewer_name, 'PartyState.viewer_name'),
     viewer_is_guest: boolean(source.viewer_is_guest, 'PartyState.viewer_is_guest'),
+  };
+  if ('auto_dj' in source && source.auto_dj !== undefined) {
+    state.auto_dj = boolean(source.auto_dj, 'PartyState.auto_dj');
+  }
+  if ('skip_votes' in source && source.skip_votes !== undefined) {
+    state.skip_votes = array(source.skip_votes, 'PartyState.skip_votes', string);
+  }
+  if ('skip_votes_needed' in source && source.skip_votes_needed !== undefined) {
+    state.skip_votes_needed = nonNegativeInteger(
+      source.skip_votes_needed,
+      'PartyState.skip_votes_needed',
+    );
+  }
+  if ('latest_reaction' in source && source.latest_reaction !== undefined) {
+    state.latest_reaction = nullable(
+      source.latest_reaction,
+      'PartyState.latest_reaction',
+      decodePartyReaction,
+    );
+  }
+  return state;
+}
+
+export function decodePartyVoteSkipResult(value: unknown): PartyVoteSkipResult {
+  const source = object(value, 'PartyVoteSkipResult');
+  return {
+    code: string(source.code, 'PartyVoteSkipResult.code'),
+    track_item_id: nonNegativeInteger(source.track_item_id, 'PartyVoteSkipResult.track_item_id'),
+    votes: array(source.votes, 'PartyVoteSkipResult.votes', string),
+    votes_needed: nonNegativeInteger(source.votes_needed, 'PartyVoteSkipResult.votes_needed'),
+    skipped: boolean(source.skipped, 'PartyVoteSkipResult.skipped'),
+    state: decodePartyState(source.state),
   };
 }
 
@@ -1145,4 +1271,336 @@ export function decodeBooleanMap(value: unknown): Record<string, boolean> {
 export function decodeOk(value: unknown): { ok: boolean } {
   const source = object(value, 'Logout response');
   return { ok: boolean(source.ok, 'Logout response.ok') };
+}
+
+export function decodeTrackAudioMeta(value: unknown): TrackAudioMeta {
+  const source = object(value, 'TrackAudioMeta');
+  return {
+    deezer_id: deezerStringId(source.deezer_id, 'TrackAudioMeta.deezer_id'),
+    peaks: array(source.peaks, 'TrackAudioMeta.peaks', nonNegativeNumber),
+    loudness_lufs: optionalNullableNumber(source, 'loudness_lufs', 'TrackAudioMeta') ?? null,
+    loudness_gain_db: optionalNullableNumber(source, 'loudness_gain_db', 'TrackAudioMeta') ?? null,
+    loudness_peak: optionalNullableNumber(source, 'loudness_peak', 'TrackAudioMeta') ?? null,
+    bpm: optionalNullableNumber(source, 'bpm', 'TrackAudioMeta') ?? null,
+    duration_sec: optionalNullableNumber(source, 'duration_sec', 'TrackAudioMeta') ?? null,
+    intro_end_sec: optionalNullableNumber(source, 'intro_end_sec', 'TrackAudioMeta') ?? null,
+    outro_start_sec: optionalNullableNumber(source, 'outro_start_sec', 'TrackAudioMeta') ?? null,
+    analyzed_at: string(source.analyzed_at, 'TrackAudioMeta.analyzed_at'),
+  };
+}
+
+export function decodeBatchPreloadResponse(value: unknown): BatchPreloadResponse {
+  const source = object(value, 'BatchPreloadResponse');
+  return {
+    queued: array(source.queued, 'BatchPreloadResponse.queued', deezerStringId),
+    already_cached: array(
+      source.already_cached,
+      'BatchPreloadResponse.already_cached',
+      deezerStringId,
+    ),
+  };
+}
+
+function decodePlaylistSyncTrackItem(value: unknown, path: string): PlaylistSyncTrackItem {
+  const source = object(value, path);
+  return {
+    playlist_entry_id: positiveInteger(source.playlist_entry_id, `${path}.playlist_entry_id`),
+    deezer_id: deezerStringId(source.deezer_id, `${path}.deezer_id`),
+    title: string(source.title, `${path}.title`),
+    artist: string(source.artist, `${path}.artist`),
+    duration_sec: nonNegativeNumber(source.duration_sec, `${path}.duration_sec`),
+    is_stored: boolean(source.is_stored, `${path}.is_stored`),
+    size_bytes: optionalNullableNumber(source, 'size_bytes', path) ?? null,
+    audio_format:
+      'audio_format' in source && source.audio_format !== undefined
+        ? nullableString(source.audio_format, `${path}.audio_format`)
+        : null,
+    loudness_gain_db: optionalNullableNumber(source, 'loudness_gain_db', path) ?? null,
+    loudness_lufs: optionalNullableNumber(source, 'loudness_lufs', path) ?? null,
+    loudness_peak: optionalNullableNumber(source, 'loudness_peak', path) ?? null,
+    has_lyrics: boolean(source.has_lyrics, `${path}.has_lyrics`),
+  };
+}
+
+function decodeManifestLyricsEntry(value: unknown, path: string): LyricsResponse {
+  const source = object(value, path);
+  const lines =
+    source.lines === null || source.lines === undefined
+      ? null
+      : array(source.lines, `${path}.lines`, decodeLyricsLine);
+  const entry: LyricsResponse = {
+    lines,
+    synced: boolean(source.synced, `${path}.synced`),
+    source:
+      'source' in source && source.source !== undefined
+        ? nullableString(source.source, `${path}.source`)
+        : null,
+    ai_generated: boolean(source.ai_generated, `${path}.ai_generated`),
+  };
+  if ('instrumental' in source && source.instrumental !== undefined) {
+    entry.instrumental = boolean(source.instrumental, `${path}.instrumental`);
+  }
+  return entry;
+}
+
+export function decodePlaylistSyncManifest(value: unknown): PlaylistSyncManifest {
+  const source = object(value, 'PlaylistSyncManifest');
+  const manifest: PlaylistSyncManifest = {
+    playlist_id: positiveInteger(source.playlist_id, 'PlaylistSyncManifest.playlist_id'),
+    revision: nonNegativeInteger(source.revision, 'PlaylistSyncManifest.revision'),
+    track_count: nonNegativeInteger(source.track_count, 'PlaylistSyncManifest.track_count'),
+    stored_count: nonNegativeInteger(source.stored_count, 'PlaylistSyncManifest.stored_count'),
+    total_known_bytes: nonNegativeInteger(
+      source.total_known_bytes,
+      'PlaylistSyncManifest.total_known_bytes',
+    ),
+    tracks: array(source.tracks, 'PlaylistSyncManifest.tracks', decodePlaylistSyncTrackItem),
+  };
+  if ('lyrics' in source && source.lyrics !== undefined) {
+    manifest.lyrics = nullable(source.lyrics, 'PlaylistSyncManifest.lyrics', (rawMap, mapPath) => {
+      const entries = object(rawMap, mapPath);
+      const decoded: Record<string, LyricsResponse> = {};
+      for (const [id, item] of Object.entries(entries)) {
+        const trackId = deezerStringId(id, `${mapPath} key ${id}`);
+        decoded[trackId] = decodeManifestLyricsEntry(item, `${mapPath}.${trackId}`);
+      }
+      return decoded;
+    });
+  }
+  return manifest;
+}
+
+function decodePlaylistDuplicateGroup(value: unknown, path: string): PlaylistDuplicateGroup {
+  const source = object(value, path);
+  return {
+    keep_entry_id: positiveInteger(source.keep_entry_id, `${path}.keep_entry_id`),
+    duplicate_entry_ids: array(
+      source.duplicate_entry_ids,
+      `${path}.duplicate_entry_ids`,
+      positiveInteger,
+    ),
+    title: string(source.title, `${path}.title`),
+    artist: string(source.artist, `${path}.artist`),
+    isrc: 'isrc' in source && source.isrc !== undefined ? string(source.isrc, `${path}.isrc`) : '',
+  };
+}
+
+export function decodePlaylistDuplicates(value: unknown): PlaylistDuplicatesResponse {
+  const source = object(value, 'PlaylistDuplicatesResponse');
+  return {
+    playlist_id: positiveInteger(source.playlist_id, 'PlaylistDuplicatesResponse.playlist_id'),
+    total_duplicates: nonNegativeInteger(
+      source.total_duplicates,
+      'PlaylistDuplicatesResponse.total_duplicates',
+    ),
+    groups: array(
+      source.groups,
+      'PlaylistDuplicatesResponse.groups',
+      decodePlaylistDuplicateGroup,
+    ),
+  };
+}
+
+export function decodePlaylistDeduplicateResult(value: unknown): PlaylistDeduplicateResult {
+  const source = object(value, 'PlaylistDeduplicateResult');
+  return {
+    playlist_id: positiveInteger(source.playlist_id, 'PlaylistDeduplicateResult.playlist_id'),
+    groups_merged: nonNegativeInteger(
+      source.groups_merged,
+      'PlaylistDeduplicateResult.groups_merged',
+    ),
+    removed_count: nonNegativeInteger(
+      source.removed_count,
+      'PlaylistDeduplicateResult.removed_count',
+    ),
+    removed_entry_ids: array(
+      source.removed_entry_ids,
+      'PlaylistDeduplicateResult.removed_entry_ids',
+      positiveInteger,
+    ),
+    revision: nonNegativeInteger(source.revision, 'PlaylistDeduplicateResult.revision'),
+  };
+}
+
+export function decodePlaylistBlendResult(value: unknown): PlaylistBlendResult {
+  const source = object(value, 'PlaylistBlendResult');
+  return {
+    playlist: decodePlaylist(source.playlist),
+    match_percent: nonNegativeNumber(source.match_percent, 'PlaylistBlendResult.match_percent'),
+    shared_artists: array(source.shared_artists, 'PlaylistBlendResult.shared_artists', string),
+    shared_tracks_count: nonNegativeInteger(
+      source.shared_tracks_count,
+      'PlaylistBlendResult.shared_tracks_count',
+    ),
+    other_user: decodePlaylistCollaboratorUser(
+      source.other_user,
+      'PlaylistBlendResult.other_user',
+    ),
+  };
+}
+
+const PLAYLIST_LIVE_EVENTS = [
+  'snapshot',
+  'updated',
+  'revoked',
+  'deleted',
+] as const satisfies readonly PlaylistLiveEventType[];
+
+export function decodePlaylistLiveEvent(value: unknown): PlaylistLiveEvent {
+  const source = object(value, 'PlaylistLiveEvent');
+  return {
+    playlist_id: positiveInteger(source.playlist_id, 'PlaylistLiveEvent.playlist_id'),
+    revision: nonNegativeInteger(source.revision, 'PlaylistLiveEvent.revision'),
+    event: literal(source.event, 'PlaylistLiveEvent.event', PLAYLIST_LIVE_EVENTS),
+  };
+}
+
+const STATS_INSIGHTS_RANGES = [
+  '7d',
+  '30d',
+  '90d',
+  'year',
+  'all',
+] as const satisfies readonly StatsInsightsRange[];
+
+function decodeInsightsStatEntry(value: unknown, path: string): InsightsStatEntry {
+  const source = object(value, path);
+  const rawKey = source.key;
+  if (typeof rawKey !== 'string' && (typeof rawKey !== 'number' || !Number.isSafeInteger(rawKey))) {
+    throw new Error(`${path}.key must be a string or safe integer`);
+  }
+  return {
+    key: rawKey,
+    label: string(source.label, `${path}.label`),
+    sublabel:
+      'sublabel' in source && source.sublabel !== undefined
+        ? string(source.sublabel, `${path}.sublabel`)
+        : '',
+    cover:
+      'cover' in source && source.cover !== undefined
+        ? string(source.cover, `${path}.cover`)
+        : '',
+    count: nonNegativeInteger(source.count, `${path}.count`),
+  };
+}
+
+function decodeTimestampedPlay(value: unknown, path: string): TimestampedPlay {
+  const source = object(value, path);
+  const rawId = source.id;
+  const id = typeof rawId === 'number' ? deezerStringId(String(rawId), `${path}.id`) : deezerStringId(rawId, `${path}.id`);
+  return {
+    id,
+    title: string(source.title, `${path}.title`),
+    artist: 'artist' in source && source.artist !== undefined ? string(source.artist, `${path}.artist`) : '',
+    artist_id:
+      'artist_id' in source && source.artist_id !== undefined
+        ? deezerReferenceId(source.artist_id, `${path}.artist_id`)
+        : '',
+    artists:
+      'artists' in source && source.artists !== undefined
+        ? array(source.artists, `${path}.artists`, decodeArtist)
+        : [],
+    album: 'album' in source && source.album !== undefined ? string(source.album, `${path}.album`) : '',
+    album_id:
+      'album_id' in source && source.album_id !== undefined
+        ? deezerReferenceId(source.album_id, `${path}.album_id`)
+        : '',
+    cover: 'cover' in source && source.cover !== undefined ? string(source.cover, `${path}.cover`) : '',
+    duration_sec:
+      'duration_sec' in source && source.duration_sec !== undefined
+        ? nonNegativeNumber(source.duration_sec, `${path}.duration_sec`)
+        : 0,
+    played_at: string(source.played_at, `${path}.played_at`),
+  };
+}
+
+export function decodeUserStatsInsights(value: unknown): UserStatsInsights {
+  const source = object(value, 'UserStatsInsights');
+  const hourly = array(
+    source.hourly_distribution,
+    'UserStatsInsights.hourly_distribution',
+    nonNegativeInteger,
+  );
+  if (hourly.length !== 24) {
+    throw new Error(`UserStatsInsights.hourly_distribution must have 24 buckets, got ${hourly.length}`);
+  }
+  const weekday = array(
+    source.weekday_distribution,
+    'UserStatsInsights.weekday_distribution',
+    nonNegativeInteger,
+  );
+  if (weekday.length !== 7) {
+    throw new Error(`UserStatsInsights.weekday_distribution must have 7 buckets, got ${weekday.length}`);
+  }
+  return {
+    range: literal(source.range, 'UserStatsInsights.range', STATS_INSIGHTS_RANGES),
+    listening_sec: nonNegativeNumber(source.listening_sec, 'UserStatsInsights.listening_sec'),
+    play_count: nonNegativeInteger(source.play_count, 'UserStatsInsights.play_count'),
+    unique_tracks: nonNegativeInteger(source.unique_tracks, 'UserStatsInsights.unique_tracks'),
+    unique_artists: nonNegativeInteger(source.unique_artists, 'UserStatsInsights.unique_artists'),
+    top_tracks: array(source.top_tracks, 'UserStatsInsights.top_tracks', decodeInsightsStatEntry),
+    top_artists: array(source.top_artists, 'UserStatsInsights.top_artists', decodeInsightsStatEntry),
+    top_albums: array(source.top_albums, 'UserStatsInsights.top_albums', decodeInsightsStatEntry),
+    current_streak_days: nonNegativeInteger(
+      source.current_streak_days,
+      'UserStatsInsights.current_streak_days',
+    ),
+    longest_streak_days: nonNegativeInteger(
+      source.longest_streak_days,
+      'UserStatsInsights.longest_streak_days',
+    ),
+    hourly_distribution: hourly,
+    weekday_distribution: weekday,
+    new_artists_count: nonNegativeInteger(
+      source.new_artists_count,
+      'UserStatsInsights.new_artists_count',
+    ),
+    recent_plays: array(source.recent_plays, 'UserStatsInsights.recent_plays', decodeTimestampedPlay),
+  };
+}
+
+function decodeFriendActivityItem(value: unknown, path: string): FriendActivityItem {
+  const source = object(value, path);
+  return {
+    user_id: positiveInteger(source.user_id, `${path}.user_id`),
+    display_name:
+      'display_name' in source && source.display_name !== undefined
+        ? nullableString(source.display_name, `${path}.display_name`)
+        : null,
+    avatar_url:
+      'avatar_url' in source && source.avatar_url !== undefined
+        ? nullableString(source.avatar_url, `${path}.avatar_url`)
+        : null,
+    is_playing: boolean(source.is_playing, `${path}.is_playing`),
+    track:
+      'track' in source && source.track !== undefined
+        ? nullable(source.track, `${path}.track`, decodeTrack)
+        : null,
+    device_name:
+      'device_name' in source && source.device_name !== undefined
+        ? nullableString(source.device_name, `${path}.device_name`)
+        : null,
+    device_type:
+      'device_type' in source && source.device_type !== undefined
+        ? nullable(source.device_type, `${path}.device_type`, (item, itemPath) =>
+            literal(item, itemPath, CONNECT_DEVICE_TYPES),
+          )
+        : null,
+    party_code:
+      'party_code' in source && source.party_code !== undefined
+        ? nullableString(source.party_code, `${path}.party_code`)
+        : null,
+    updated_at:
+      'updated_at' in source && source.updated_at !== undefined
+        ? nullableString(source.updated_at, `${path}.updated_at`)
+        : null,
+  };
+}
+
+export function decodeSocialActivityResponse(value: unknown): SocialActivityResponse {
+  const source = object(value, 'SocialActivityResponse');
+  return {
+    items: array(source.items, 'SocialActivityResponse.items', decodeFriendActivityItem),
+    server_time: string(source.server_time, 'SocialActivityResponse.server_time'),
+  };
 }

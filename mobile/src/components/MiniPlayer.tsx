@@ -32,6 +32,7 @@ import {
   resolveMiniPlayerSwipe,
   shouldCaptureMiniPlayerSwipe,
 } from '../player/playerGestures';
+import { useArtworkPalette } from '../hooks/useArtworkPalette';
 import { useHaptics } from '../hooks/useHaptics';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { RootStackParams } from '../navigation';
@@ -155,6 +156,27 @@ export const MiniPlayerProgressBar = React.memo(function MiniPlayerProgressBar()
  * When controlling another device remotely or participating in a Jam, renders a
  * Spotify-style output strip directly beneath the main row.
  */
+/** Subtle contrast-safe dynamic artwork wash anchored inside the floating MiniPlayer card. */
+const MiniPlayerPaletteWash = React.memo(function MiniPlayerPaletteWash({
+  coverUri,
+}: {
+  coverUri: string;
+}) {
+  const ambience = useArtworkPalette(coverUri);
+  if (ambience === null) return null;
+  return (
+    <View
+      testID="mini-player-palette-tint"
+      accessible={false}
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        { backgroundColor: ambience.surfaceTint, opacity: 0.22 },
+      ]}
+    />
+  );
+});
+
 export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParams>>();
@@ -301,6 +323,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
         ]}
         {...(tv.isTv ? null : swipeResponder.panHandlers)}
       >
+        <MiniPlayerPaletteWash coverUri={track.cover} />
         <View style={[styles.mainRow, { height: baseBarHeight }]}>
           <Pressable
             testID="mini-player-open"

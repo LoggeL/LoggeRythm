@@ -223,6 +223,10 @@ export interface NativeBrowseNodeV1 {
   playable: boolean;
   url?: string;
   headers?: { Cookie: string };
+  contentStyleBrowsable?: 'grid' | 'list';
+  contentStylePlayable?: 'grid' | 'list';
+  mediaType?: BrowseItem['mediaType'];
+  groupTitle?: string;
   /** Sanitized app-private sidecar of a playable leaf; never Media3 metadata. */
   extras?: Readonly<Record<string, unknown>>;
   children?: readonly NativeBrowseNodeV1[];
@@ -636,15 +640,24 @@ export function mapBrowseTreeToNative(
         playable: true,
         url: source.url,
         ...(source.headers === undefined ? {} : { headers: source.headers }),
+        ...(item.mediaType === undefined ? {} : { mediaType: item.mediaType }),
+        ...(item.groupTitle === undefined ? {} : { groupTitle: item.groupTitle }),
         ...(privateExtras === undefined ? {} : { extras: privateExtras }),
       };
     }
+    const browsableStyle = item.contentStyleBrowsable ?? item.contentStyle;
     return {
       id: item.mediaId,
       title: item.title,
       ...(item.artist === undefined ? {} : { subtitle: item.artist }),
       ...(artwork === undefined ? {} : { artworkUrl: artwork }),
       playable: false,
+      ...(browsableStyle === undefined ? {} : { contentStyleBrowsable: browsableStyle }),
+      ...(item.contentStylePlayable === undefined
+        ? {}
+        : { contentStylePlayable: item.contentStylePlayable }),
+      ...(item.mediaType === undefined ? {} : { mediaType: item.mediaType }),
+      ...(item.groupTitle === undefined ? {} : { groupTitle: item.groupTitle }),
       children: item.children?.map((child) => mapItem(child, depth + 1)) ?? [],
     };
   };
@@ -660,10 +673,17 @@ export function mapBrowseTreeToNative(
         if (category.items.length > 1_000) {
           throw new RangeError('Browse category exceeds 1000 children');
         }
+        const browsableStyle = category.contentStyleBrowsable ?? category.contentStyle;
         return {
           id: category.mediaId,
           title: category.title,
           playable: false,
+          ...(browsableStyle === undefined ? {} : { contentStyleBrowsable: browsableStyle }),
+          ...(category.contentStylePlayable === undefined
+            ? {}
+            : { contentStylePlayable: category.contentStylePlayable }),
+          ...(category.mediaType === undefined ? {} : { mediaType: category.mediaType }),
+          ...(category.groupTitle === undefined ? {} : { groupTitle: category.groupTitle }),
           children: category.items.map((item) => mapItem(item, 2)),
         };
       }),

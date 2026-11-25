@@ -16,7 +16,7 @@ _MAX_AUDIO_BYTES = 24 * 1024 * 1024
 
 # Bump this value whenever the persisted line-building format changes. The
 # lyrics router uses it to replace legacy, segment-timed Groq cache entries.
-LYRICS_SOURCE = "groq-word-v2"
+LYRICS_SOURCE = "groq-word-v3"
 LEGACY_LYRICS_SOURCES = frozenset({"groq", "groq-word-v1"})
 
 _BREAK_PAUSE_SECONDS = 0.75
@@ -169,6 +169,14 @@ def _word_lines(payload: dict[str, Any]) -> list[dict]:
             {
                 "t": round(current[0].start, 2),
                 "text": _join_words(current),
+                "words": [
+                    {
+                        "t": round(w.start, 2),
+                        "end": round(w.end, 2),
+                        "text": w.text,
+                    }
+                    for w in current
+                ],
             }
         )
         current.clear()

@@ -1,12 +1,12 @@
 """Personal listening statistics for the current user."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 import re
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from pydantic import BeforeValidator, WithJsonSchema
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
@@ -14,7 +14,15 @@ from sqlalchemy.sql.elements import ColumnElement
 from ..auth import get_current_user
 from ..db.models import Play, User
 from ..db.session import get_db
-from ..schemas.stats import MAX_SAFE_WIRE_INTEGER, RecentPlay, StatEntry, UserStats
+from ..schemas.stats import (
+    MAX_SAFE_WIRE_INTEGER,
+    InsightsRange,
+    RecentPlay,
+    StatEntry,
+    TimestampedPlay,
+    UserStats,
+    UserStatsInsights,
+)
 from ..schemas.track import Track, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
@@ -213,4 +221,208 @@ def get_stats(
         total_plays_month=total_plays_month,
         top_tracks_month=top_tracks_month,
         top_artists_month=top_artists_month,
+    )
+
+
+_INSIGHTS_RANGE_DAYS: dict[InsightsRange, int | None] = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+    "year": 365,
+    "all": None,
+}
+
+
+def _as_utc(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _compute_streaks(play_dates: set[date], today: date) -> tuple[int, int]:
+    """Return ``(current_streak_days, longest_streak_days)`` over UTC calendar days."""
+    if not play_dates:
+        return 0, 0
+    ordered = sorted(play_dates)
+    longest = 1
+    run = 1
+    for prev, curr in zip(ordered, ordered[1:]):
+        if (curr - prev).days == 1:
+            run += 1
+            if run > longest:
+                longest = run
+        else:
+            run = 1
+
+    current = 0
+    cursor = today if today in play_dates else (today - timedelta(days=1))
+    while cursor in play_dates:
+        current += 1
+        cursor -= timedelta(days=1)
+    return current, longest
+
+
+@router.get("/stats/insights", response_model=UserStatsInsights)
+def get_stats_insights(
+    range: InsightsRange = Query(default="30d"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserStatsInsights:
+    """Rich personal listening insights (hours, top albums, streaks, heatmaps, discovery)."""
+    now = datetime.now(timezone.utc)
+    days = _INSIGHTS_RANGE_DAYS[range]
+    cutoff = (now - timedelta(days=days)).replace(tzinfo=None) if days is not None else None
+
+    where: ColumnElement[bool] = Play.user_id == user.id
+    if cutoff is not None:
+        where = where & (Play.played_at >= cutoff)
+
+    dur_expr = case((Play.duration_sec > 0, Play.duration_sec), else_=0)
+    summary = db.execute(
+        select(
+            func.count(Play.id).label("play_count"),
+            func.coalesce(func.sum(dur_expr), 0).label("listening_sec"),
+            func.count(func.distinct(Play.deezer_id)).label("unique_tracks"),
+            func.count(func.distinct(Play.artist)).label("unique_artists"),
+        ).where(where)
+    ).one()
+
+    play_count = int(summary.play_count or 0)
+    listening_sec = min(int(summary.listening_sec or 0), MAX_SAFE_WIRE_INTEGER)
+    unique_tracks = int(summary.unique_tracks or 0)
+    unique_artists = int(summary.unique_artists or 0)
+
+    count_col = func.count().label("count")
+    top_tracks_rows = db.execute(
+        select(
+            Play.deezer_id,
+            func.max(Play.title).label("title"),
+            func.max(Play.artist).label("artist"),
+            func.max(Play.cover_url).label("cover_url"),
+            count_col,
+        )
+        .where(where)
+        .group_by(Play.deezer_id)
+        .order_by(count_col.desc())
+        .limit(15)
+    ).all()
+    top_tracks = [
+        StatEntry(
+            key=r.deezer_id,
+            label=r.title or "",
+            sublabel=r.artist or "",
+            cover=r.cover_url or "",
+            count=r.count,
+        )
+        for r in top_tracks_rows
+    ]
+
+    top_artists_rows = db.execute(
+        select(
+            Play.artist,
+            Play.artist_id,
+            func.max(Play.cover_url).label("cover_url"),
+            count_col,
+        )
+        .where(where, Play.artist != "")
+        .group_by(Play.artist, Play.artist_id)
+        .order_by(count_col.desc())
+        .limit(15)
+    ).all()
+    top_artists = [
+        StatEntry(
+            key=r.artist_id or "",
+            label=r.artist or "",
+            cover=r.cover_url or "",
+            count=r.count,
+        )
+        for r in top_artists_rows
+    ]
+
+    top_albums_rows = db.execute(
+        select(
+            Play.album_id,
+            Play.album,
+            func.max(Play.artist).label("artist"),
+            func.max(Play.cover_url).label("cover_url"),
+            count_col,
+        )
+        .where(where, Play.album != "")
+        .group_by(Play.album_id, Play.album)
+        .order_by(count_col.desc())
+        .limit(10)
+    ).all()
+    top_albums = [
+        StatEntry(
+            key=r.album_id or "",
+            label=r.album or "",
+            sublabel=r.artist or "",
+            cover=r.cover_url or "",
+            count=r.count,
+        )
+        for r in top_albums_rows
+    ]
+
+    timestamps = db.scalars(select(Play.played_at).where(where)).all()
+    hourly = [0] * 24
+    weekday = [0] * 7
+    play_dates: set[date] = set()
+    for ts in timestamps:
+        if ts is None:
+            continue
+        utc_ts = _as_utc(ts)
+        hourly[utc_ts.hour] += 1
+        weekday[utc_ts.weekday()] += 1
+        play_dates.add(utc_ts.date())
+
+    current_streak, longest_streak = _compute_streaks(play_dates, now.date())
+
+    if cutoff is None:
+        new_artists_count = unique_artists
+    else:
+        first_plays = db.execute(
+            select(Play.artist, func.min(Play.played_at).label("first_at"))
+            .where(Play.user_id == user.id, Play.artist != "")
+            .group_by(Play.artist)
+        ).all()
+        cutoff_utc = _as_utc(cutoff)
+        new_artists_count = sum(
+            1 for r in first_plays if r.first_at is not None and _as_utc(r.first_at) >= cutoff_utc
+        )
+
+    recent_rows = db.scalars(
+        select(Play).where(where).order_by(Play.played_at.desc()).limit(50)
+    ).all()
+    recent_plays = [
+        TimestampedPlay(
+            id=p.deezer_id,
+            title=p.title,
+            artist=p.artist,
+            artist_id=p.artist_id,
+            artists=[
+                a.model_dump()
+                for a in load_artists(p.artists_json, p.artist, p.artist_id)
+            ][:100],
+            album=p.album,
+            album_id=p.album_id,
+            cover=p.cover_url or "",
+            duration_sec=min(max(p.duration_sec or 0, 0), MAX_SAFE_WIRE_INTEGER),
+            played_at=_as_utc(p.played_at),
+        )
+        for p in recent_rows
+    ]
+
+    return UserStatsInsights(
+        range=range,
+        listening_sec=listening_sec,
+        play_count=play_count,
+        unique_tracks=unique_tracks,
+        unique_artists=unique_artists,
+        top_tracks=top_tracks,
+        top_artists=top_artists,
+        top_albums=top_albums,
+        current_streak_days=current_streak,
+        longest_streak_days=longest_streak,
+        hourly_distribution=hourly,
+        weekday_distribution=weekday,
+        new_artists_count=new_artists_count,
+        recent_plays=recent_plays,
     )

@@ -14,6 +14,7 @@ const PERSIST_THROTTLE_MS = 1_000;
 
 export const PERSISTED_QUERY_ROOTS = [
   "home-mixes",
+  "home-personal-mixes",
   "because-you-listened",
   "home-collections",
   "release-radar",
@@ -30,6 +31,7 @@ export const PERSISTED_QUERY_ROOTS = [
 const PERSISTED_QUERY_ROOT_SET = new Set<string>(PERSISTED_QUERY_ROOTS);
 const USER_SCOPED_QUERY_ROOTS = new Set<string>([
   "home-mixes",
+  "home-personal-mixes",
   "because-you-listened",
   "release-radar",
 ]);
@@ -39,9 +41,13 @@ const PRIVATE_QUERY_ROOTS = new Set<string>([
   "playlist",
   "playlist-invite",
   "playlist-invite-preview",
+  "playlist-duplicates",
+  "playlist-sync-preview",
   "following",
   "playback-settings",
   "stats",
+  "stats-insights",
+  "social-activity",
   "party",
   "import-jobs",
   "import-job",

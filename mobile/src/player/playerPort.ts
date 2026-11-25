@@ -216,6 +216,22 @@ export interface RemoteControlConfig {
   backwardInterval?: number;
 }
 
+export type BrowseContentStyle = 'grid' | 'list';
+export type BrowseMediaType =
+  | 'mixed'
+  | 'music'
+  | 'artist'
+  | 'album'
+  | 'playlist'
+  | 'genre'
+  | 'radio_station'
+  | 'folder_mixed'
+  | 'folder_albums'
+  | 'folder_artists'
+  | 'folder_genres'
+  | 'folder_playlists'
+  | 'folder_radio_stations';
+
 export interface BrowseItem {
   mediaId: string;
   title: string;
@@ -226,6 +242,11 @@ export interface BrowseItem {
   duration?: number;
   isLive?: boolean;
   mimeType?: string;
+  contentStyle?: BrowseContentStyle;
+  contentStyleBrowsable?: BrowseContentStyle;
+  contentStylePlayable?: BrowseContentStyle;
+  mediaType?: BrowseMediaType;
+  groupTitle?: string;
   extras?: Readonly<Record<string, unknown>>;
   children?: readonly BrowseItem[];
 }
@@ -233,6 +254,11 @@ export interface BrowseItem {
 export interface BrowseCategory {
   mediaId: string;
   title: string;
+  contentStyle?: BrowseContentStyle;
+  contentStyleBrowsable?: BrowseContentStyle;
+  contentStylePlayable?: BrowseContentStyle;
+  mediaType?: BrowseMediaType;
+  groupTitle?: string;
   items: readonly BrowseItem[];
 }
 

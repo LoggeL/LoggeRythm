@@ -49,9 +49,14 @@ const iconsStub = moduleUrl(`
   export const ShuffleIcon = ${emptyIcon};
   export const MoreIcon = ${emptyIcon};
   export const QueueIcon = ${emptyIcon};
+  export const SavePlaylistIcon = ${emptyIcon};
+  export const CheckIcon = ${emptyIcon};
   export const GripIcon = ${emptyIcon};
   export const PlusIcon = ${emptyIcon};
   export const CloseIcon = ${emptyIcon};
+  export const SearchIcon = ${emptyIcon};
+  export const RadioIcon = ${emptyIcon};
+  export const DedupIcon = ${emptyIcon};
 `);
 const feedbackIconsStub = moduleUrl(`
   export const InfoCircleIcon = ${emptyIcon};
@@ -134,7 +139,25 @@ const commonStubs = {
     export const useAcceptPlaylistInvite = () => globalThis.__collabFixture.acceptState;
   `),
   "@/store/player": moduleUrl(
-    `export const usePlayerStore = (selector) => selector({ playQueue() {}, toggle() {}, toggleShuffle() {}, addToQueue() {}, index: -1, queue: [], origins: [], queueContext: null, isPlaying: false, shuffle: false });`,
+    `export const usePlayerStore = (selector) => selector({ playQueue() {}, toggle() {}, toggleShuffle() {}, addToQueue() {}, addManyToQueue() {}, index: -1, queue: [], origins: [], queueContext: null, isPlaying: false, shuffle: false });`,
+  ),
+  "@/store/saveAsPlaylist": moduleUrl(
+    `export const openSaveAsPlaylist = () => {};`,
+  ),
+  "@tanstack/react-query": moduleUrl(
+    `export const useQueryClient = () => ({ getQueryData() { return undefined; } });`,
+  ),
+  "@/lib/trackIdentity": moduleUrl(
+    `export const isSameRecording = (a, b) => String(a?.id) === String(b?.id);`,
+  ),
+  "@/app/library/_tabs/ListFilter": moduleUrl(
+    `export default function ListFilter() { return null; } export function NoFilterMatch() { return null; }`,
+  ),
+  "@/app/library/_tabs/filter": moduleUrl(
+    `export const matchesFilter = () => true;`,
+  ),
+  "../_components/PlaylistQuickAdd": moduleUrl(
+    `export default function PlaylistQuickAdd() { return null; }`,
   ),
   "@/store/toast": moduleUrl(
     `export const toast = { success() {}, error() {}, info() {} };`,
@@ -147,7 +170,16 @@ const commonStubs = {
   ),
   "./collection.module.css": collectionStyleStub,
   "./usePlaylistOffline": moduleUrl(
-    `export const usePlaylistOffline = () => ({ supported: false, downloaded: false, pending: null, progress: null, toggle() {} });`,
+    `export const usePlaylistOffline = () => ({ supported: false, downloaded: false, pending: null, progress: null, sizePreviewBytes: null, toggle() {} });`,
+  ),
+  "@/lib/radio": moduleUrl(
+    `export const startSeededRadio = async () => {};`,
+  ),
+  "@/hooks/usePlaylistEvents": moduleUrl(
+    `export const usePlaylistEvents = () => {};`,
+  ),
+  "../_components/DeduplicatePlaylistDialog": moduleUrl(
+    `export default function DeduplicatePlaylistDialog() { return null; }`,
   ),
   "./usePlaylistSettings": moduleUrl(
     `export const usePlaylistVisibility = () => ({ pending: false, toggle() {} }); export const usePlaylistCoverUpload = () => ({ uploading: false, upload() {} });`,

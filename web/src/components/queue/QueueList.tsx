@@ -2,7 +2,7 @@
 
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
-import { PlayIcon, PauseIcon, QueueIcon } from "@/components/icons";
+import { PlayIcon, PauseIcon, QueueIcon, ChevronDownIcon } from "@/components/icons";
 import CacheMarker from "@/components/CacheMarker";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
@@ -16,13 +16,15 @@ interface Entry {
   index: number;
 }
 
-/** Upcoming tracks split into the listener's own picks and the play context. */
+/** Upcoming tracks split into the listener's own picks and the play context, plus played session history. */
 export function useUpcomingQueue() {
   const queue = usePlayerStore((s) => s.queue);
   const origins = usePlayerStore((s) => s.origins);
   const index = usePlayerStore((s) => s.index);
+  const previous: Entry[] = queue.map((track, i) => ({ track, index: i })).filter((entry) => index > 0 && entry.index < index);
   const upcoming: Entry[] = queue.map((track, i) => ({ track, index: i })).filter((entry) => entry.index > index);
   return {
+    previous,
     upcoming,
     manual: upcoming.filter((entry) => origins[entry.index] === "manual"),
     context: upcoming.filter((entry) => origins[entry.index] !== "manual"),
@@ -66,7 +68,7 @@ export default function QueueList({ onNavigate }: { onNavigate?: () => void }) {
   const queueContext = usePlayerStore((s) => s.queueContext);
   const jumpTo = usePlayerStore((s) => s.jumpTo);
   const removeFromQueue = usePlayerStore((s) => s.removeFromQueue);
-  const { upcoming, manual, context } = useUpcomingQueue();
+  const { previous, upcoming, manual, context } = useUpcomingQueue();
   const reorder = useQueueReorder();
 
   const renderSection = (title: string, entries: Entry[]) =>
@@ -114,6 +116,32 @@ export default function QueueList({ onNavigate }: { onNavigate?: () => void }) {
               : "Wähle einen Titel – hier siehst du dann, was als Nächstes läuft."}
           </p>
         </div>
+      )}
+      {previous.length > 0 && (
+        <details className="group mt-4 px-0.5">
+          <summary className="label-mono flex cursor-pointer list-none items-center justify-between gap-2 border-t border-hairline px-3 py-3 text-muted hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <span>Bereits gespielt ({previous.length})</span>
+            <ChevronDownIcon width={16} height={16} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <ul className="mt-1 flex flex-col opacity-80">
+            {[...previous].reverse().map(({ track, index }) => (
+              <QueueItem
+                key={`prev-${track.id}-${index}`}
+                track={track}
+                index={index}
+                dragging={false}
+                dropEdge={null}
+                dragProps={reorder.rowProps(index)}
+                canMoveUp={false}
+                canMoveDown={false}
+                onMove={() => {}}
+                onPlay={() => jumpTo(index)}
+                onRemove={() => removeFromQueue(index)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </ul>
+        </details>
       )}
     </div>
   );

@@ -11,8 +11,10 @@ describe('root navigation dismissal policy', () => {
   it('keeps transient routes modal and delegates Android dismissal to system Back', () => {
     expect(TRANSIENT_ROOT_ROUTE_NAMES).toEqual([
       'Profile',
+      'Insights',
       'NowPlaying',
       'Queue',
+      'PartyStart',
       'Party',
       'PlaylistInvite',
     ]);

@@ -1,9 +1,9 @@
 "use client";
 
 import type { LyricsData } from "@/hooks/useLyrics";
-import { LyricsIcon } from "@/components/icons";
+import { LyricsIcon, MusicNoteIcon } from "@/components/icons";
 
-/** Loading, missing and failed lyrics — a failed request is never shown as "no lyrics". */
+/** Loading, instrumental, missing and failed lyrics — a failed request is never shown as "no lyrics". */
 export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
   if (lyrics.isError) {
     if (!lyrics.error) throw new Error("Songtext-Anfrage fehlgeschlagen, aber die Fehlerursache fehlt.");
@@ -24,6 +24,20 @@ export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
         {["w-4/5", "w-3/5", "w-11/12", "w-2/3", "w-3/4"].map((width, i) => (
           <span key={i} className={`skeleton h-7 rounded-lg lg:h-9 ${width}`} />
         ))}
+      </div>
+    );
+  }
+
+  if (lyrics.instrumental) {
+    return (
+      <div role="status" className="flex flex-col items-center text-center">
+        <span className="mb-4 grid h-14 w-14 place-items-center rounded-full border border-accent/35 bg-accent/12 text-accent">
+          <MusicNoteIcon width={24} height={24} />
+        </span>
+        <p className="font-display text-lg font-extrabold tracking-tight">Instrumental</p>
+        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted">
+          Dieser Titel ist rein instrumental – lehne dich zurück und genieße die Musik.
+        </p>
       </div>
     );
   }

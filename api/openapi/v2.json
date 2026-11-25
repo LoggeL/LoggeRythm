@@ -1372,6 +1372,44 @@
         ],
         "type": "object"
       },
+      "BatchPreloadRequest": {
+        "properties": {
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "track_ids"
+        ],
+        "title": "BatchPreloadRequest",
+        "type": "object"
+      },
+      "BatchPreloadResponse": {
+        "properties": {
+          "already_cached": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Already Cached",
+            "type": "array"
+          },
+          "queued": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Queued",
+            "type": "array"
+          }
+        },
+        "title": "BatchPreloadResponse",
+        "type": "object"
+      },
       "Body_set_avatar_api_me_avatar_put": {
         "properties": {
           "file": {
@@ -1398,6 +1436,44 @@
           "file"
         ],
         "title": "Body_set_cover_api_playlists__playlist_id__cover_put",
+        "type": "object"
+      },
+      "CachedCheckRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "CachedCheckRequest",
+        "type": "object"
+      },
+      "CachedCheckResponse": {
+        "properties": {
+          "cached": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Cached",
+            "type": "object"
+          },
+          "sizes": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Sizes",
+            "type": "object"
+          }
+        },
+        "title": "CachedCheckResponse",
         "type": "object"
       },
       "ConnectDeviceOut": {
@@ -1723,6 +1799,109 @@
         "title": "DeviceCapabilities",
         "type": "object"
       },
+      "FriendActivityItem": {
+        "properties": {
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Name"
+          },
+          "device_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mobile",
+                  "tablet",
+                  "desktop",
+                  "tv",
+                  "speaker",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Type"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "is_playing": {
+            "default": false,
+            "title": "Is Playing",
+            "type": "boolean"
+          },
+          "party_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Code"
+          },
+          "track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Track"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "FriendActivityItem",
+        "type": "object"
+      },
       "Genre": {
         "properties": {
           "id": {
@@ -1805,6 +1984,31 @@
       },
       "ImportJobCreate": {
         "properties": {
+          "create_playlist_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional new playlist name to create and populate automatically when matching finishes.",
+            "title": "Create Playlist Name"
+          },
+          "target_playlist_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional existing playlist ID to append matched tracks into automatically.",
+            "title": "Target Playlist Id"
+          },
           "url": {
             "description": "Spotify playlist/album/track link",
             "maxLength": 2000,
@@ -1821,10 +2025,32 @@
       },
       "ImportJobDetail": {
         "properties": {
+          "create_playlist_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Create Playlist Name"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "created_playlist_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Playlist Id"
           },
           "error": {
             "anyOf": [
@@ -1914,6 +2140,17 @@
             "title": "Status",
             "type": "string"
           },
+          "target_playlist_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Playlist Id"
+          },
           "total": {
             "default": 0,
             "title": "Total",
@@ -1947,10 +2184,32 @@
       "ImportJobStatus": {
         "description": "Progress of a background Spotify import, without the matched tracks.",
         "properties": {
+          "create_playlist_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Create Playlist Name"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "created_playlist_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Playlist Id"
           },
           "error": {
             "anyOf": [
@@ -2029,6 +2288,17 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "target_playlist_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Playlist Id"
           },
           "total": {
             "default": 0,
@@ -2236,6 +2506,40 @@
         "title": "MeUpdate",
         "type": "object"
       },
+      "OfflineLyricsEntry": {
+        "properties": {
+          "ai_generated": {
+            "default": false,
+            "title": "Ai Generated",
+            "type": "boolean"
+          },
+          "instrumental": {
+            "default": false,
+            "title": "Instrumental",
+            "type": "boolean"
+          },
+          "lines": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "source": {
+            "default": "",
+            "title": "Source",
+            "type": "string"
+          },
+          "synced": {
+            "default": false,
+            "title": "Synced",
+            "type": "boolean"
+          }
+        },
+        "title": "OfflineLyricsEntry",
+        "type": "object"
+      },
       "OrderUpdate": {
         "properties": {
           "ids": {
@@ -2268,6 +2572,11 @@
       "PartyCreate": {
         "description": "New party, optionally seeded with the host's current player queue.\n\n``current_index``/``is_playing``/``position_sec`` describe the host's\nplayhead inside ``tracks`` so the party continues exactly where the host's\nown playback was instead of starting from an empty queue.",
         "properties": {
+          "auto_dj": {
+            "default": false,
+            "title": "Auto Dj",
+            "type": "boolean"
+          },
           "current_index": {
             "default": -1,
             "title": "Current Index",
@@ -2325,6 +2634,21 @@
         "title": "PartyGuestJoin",
         "type": "object"
       },
+      "PartyHostTransferIn": {
+        "properties": {
+          "member_key": {
+            "maxLength": 24,
+            "minLength": 3,
+            "title": "Member Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_key"
+        ],
+        "title": "PartyHostTransferIn",
+        "type": "object"
+      },
       "PartyMemberOut": {
         "properties": {
           "avatar_url": {
@@ -2362,8 +2686,90 @@
         "title": "PartyMemberOut",
         "type": "object"
       },
+      "PartyReactIn": {
+        "properties": {
+          "emoji": {
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Emoji",
+            "type": "string"
+          }
+        },
+        "required": [
+          "emoji"
+        ],
+        "title": "PartyReactIn",
+        "type": "object"
+      },
+      "PartyReactionOut": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "emoji": {
+            "title": "Emoji",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "member_key": {
+            "title": "Member Key",
+            "type": "string"
+          },
+          "member_name": {
+            "title": "Member Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "emoji",
+          "member_key",
+          "member_name",
+          "created_at"
+        ],
+        "title": "PartyReactionOut",
+        "type": "object"
+      },
+      "PartySavePlaylistIn": {
+        "properties": {
+          "collaborative": {
+            "default": false,
+            "title": "Collaborative",
+            "type": "boolean"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "PartySavePlaylistIn",
+        "type": "object"
+      },
       "PartySettingsUpdate": {
         "properties": {
+          "auto_dj": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Dj"
+          },
           "guests_can_control": {
             "anyOf": [
               {
@@ -2393,6 +2799,11 @@
       },
       "PartyState": {
         "properties": {
+          "auto_dj": {
+            "default": false,
+            "title": "Auto Dj",
+            "type": "boolean"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -2426,6 +2837,16 @@
             "default": false,
             "title": "Is Playing",
             "type": "boolean"
+          },
+          "latest_reaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PartyReactionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "members": {
             "items": {
@@ -2469,6 +2890,18 @@
             "default": "",
             "title": "Server Time",
             "type": "string"
+          },
+          "skip_votes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Skip Votes",
+            "type": "array"
+          },
+          "skip_votes_needed": {
+            "default": 1,
+            "title": "Skip Votes Needed",
+            "type": "integer"
           },
           "tracks": {
             "items": {
@@ -2595,6 +3028,17 @@
             "title": "Load State",
             "type": "string"
           },
+          "loudness_gain_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Gain Db"
+          },
           "title": {
             "default": "",
             "title": "Title",
@@ -2606,6 +3050,45 @@
           "deezer_id"
         ],
         "title": "PartyTrackOut",
+        "type": "object"
+      },
+      "PartyVoteSkipOut": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          },
+          "state": {
+            "$ref": "#/components/schemas/PartyState"
+          },
+          "track_item_id": {
+            "title": "Track Item Id",
+            "type": "integer"
+          },
+          "votes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Votes",
+            "type": "array"
+          },
+          "votes_needed": {
+            "title": "Votes Needed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "track_item_id",
+          "votes_needed",
+          "state"
+        ],
+        "title": "PartyVoteSkipOut",
         "type": "object"
       },
       "PasswordForgotRequest": {
@@ -2676,6 +3159,21 @@
           "crossfade_enabled": {
             "title": "Crossfade Enabled",
             "type": "boolean"
+          },
+          "preferred_quality": {
+            "default": "high",
+            "enum": [
+              "lossless",
+              "high",
+              "saver"
+            ],
+            "title": "Preferred Quality",
+            "type": "string"
+          },
+          "share_listening_activity": {
+            "default": false,
+            "title": "Share Listening Activity",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2708,6 +3206,33 @@
               }
             ],
             "title": "Crossfade Enabled"
+          },
+          "preferred_quality": {
+            "anyOf": [
+              {
+                "enum": [
+                  "lossless",
+                  "high",
+                  "saver"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Quality"
+          },
+          "share_listening_activity": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Share Listening Activity"
           }
         },
         "title": "PlaybackSettingsUpdate",
@@ -2729,6 +3254,41 @@
           "position_sec"
         ],
         "title": "PlaybackUpdate",
+        "type": "object"
+      },
+      "PlaylistBlendOut": {
+        "properties": {
+          "match_percent": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Match Percent",
+            "type": "integer"
+          },
+          "other_user": {
+            "$ref": "#/components/schemas/PlaylistCollaboratorUser"
+          },
+          "playlist": {
+            "$ref": "#/components/schemas/PlaylistDetail"
+          },
+          "shared_artists": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Shared Artists",
+            "type": "array"
+          },
+          "shared_tracks_count": {
+            "default": 0,
+            "title": "Shared Tracks Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "playlist",
+          "match_percent",
+          "other_user"
+        ],
+        "title": "PlaylistBlendOut",
         "type": "object"
       },
       "PlaylistCollaborativeUpdate": {
@@ -2880,6 +3440,42 @@
         "title": "PlaylistCreate",
         "type": "object"
       },
+      "PlaylistDeduplicateResult": {
+        "properties": {
+          "groups_merged": {
+            "title": "Groups Merged",
+            "type": "integer"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "integer"
+          },
+          "removed_count": {
+            "title": "Removed Count",
+            "type": "integer"
+          },
+          "removed_entry_ids": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Removed Entry Ids",
+            "type": "array"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "groups_merged",
+          "removed_count",
+          "revision"
+        ],
+        "title": "PlaylistDeduplicateResult",
+        "type": "object"
+      },
       "PlaylistDetail": {
         "properties": {
           "can_edit_tracks": {
@@ -3001,6 +3597,69 @@
           "tracks"
         ],
         "title": "PlaylistDetail",
+        "type": "object"
+      },
+      "PlaylistDuplicateGroup": {
+        "properties": {
+          "artist": {
+            "default": "",
+            "title": "Artist",
+            "type": "string"
+          },
+          "duplicate_entry_ids": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Duplicate Entry Ids",
+            "type": "array"
+          },
+          "isrc": {
+            "default": "",
+            "title": "Isrc",
+            "type": "string"
+          },
+          "keep_entry_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Keep Entry Id",
+            "type": "integer"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "keep_entry_id",
+          "duplicate_entry_ids"
+        ],
+        "title": "PlaylistDuplicateGroup",
+        "type": "object"
+      },
+      "PlaylistDuplicatesOut": {
+        "properties": {
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistDuplicateGroup"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "integer"
+          },
+          "total_duplicates": {
+            "title": "Total Duplicates",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "total_duplicates"
+        ],
+        "title": "PlaylistDuplicatesOut",
         "type": "object"
       },
       "PlaylistEntryReorder": {
@@ -3325,6 +3984,159 @@
         "title": "PlaylistSummary",
         "type": "object"
       },
+      "PlaylistSyncManifest": {
+        "properties": {
+          "lyrics": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/OfflineLyricsEntry"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lyrics"
+          },
+          "playlist_id": {
+            "title": "Playlist Id",
+            "type": "integer"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "stored_count": {
+            "title": "Stored Count",
+            "type": "integer"
+          },
+          "total_known_bytes": {
+            "title": "Total Known Bytes",
+            "type": "integer"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/PlaylistSyncTrackItem"
+            },
+            "title": "Tracks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "revision",
+          "track_count",
+          "stored_count",
+          "total_known_bytes"
+        ],
+        "title": "PlaylistSyncManifest",
+        "type": "object"
+      },
+      "PlaylistSyncTrackItem": {
+        "properties": {
+          "artist": {
+            "default": "",
+            "title": "Artist",
+            "type": "string"
+          },
+          "audio_format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio Format"
+          },
+          "deezer_id": {
+            "title": "Deezer Id",
+            "type": "string"
+          },
+          "duration_sec": {
+            "default": 0,
+            "title": "Duration Sec",
+            "type": "integer"
+          },
+          "has_lyrics": {
+            "default": false,
+            "title": "Has Lyrics",
+            "type": "boolean"
+          },
+          "is_stored": {
+            "default": false,
+            "title": "Is Stored",
+            "type": "boolean"
+          },
+          "loudness_gain_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Gain Db"
+          },
+          "loudness_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Lufs"
+          },
+          "loudness_peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Peak"
+          },
+          "playlist_entry_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Playlist Entry Id",
+            "type": "integer"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playlist_entry_id",
+          "deezer_id"
+        ],
+        "title": "PlaylistSyncTrackItem",
+        "type": "object"
+      },
       "PlaylistTrackEntry": {
         "description": "A catalog track at one stable occurrence inside a playlist.",
         "properties": {
@@ -3391,6 +4203,17 @@
             "title": "Artists",
             "type": "array"
           },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
           "cover": {
             "default": "",
             "title": "Cover",
@@ -3400,6 +4223,17 @@
             "default": 0,
             "title": "Duration Sec",
             "type": "integer"
+          },
+          "explicit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explicit"
           },
           "id": {
             "title": "Id",
@@ -3653,6 +4487,17 @@
             "title": "Artists",
             "type": "array"
           },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
           "cover": {
             "default": "",
             "title": "Cover",
@@ -3662,6 +4507,17 @@
             "default": 0,
             "title": "Duration Sec",
             "type": "integer"
+          },
+          "explicit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explicit"
           },
           "id": {
             "title": "Id",
@@ -3740,6 +4596,47 @@
           "radar_reason"
         ],
         "title": "RadarTrack",
+        "type": "object"
+      },
+      "RadioSeedRequest": {
+        "properties": {
+          "exclude_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Exclude Ids",
+            "type": "array"
+          },
+          "limit": {
+            "default": 40,
+            "maximum": 80.0,
+            "minimum": 5.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mood_tag": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood Tag"
+          },
+          "track_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Track Ids",
+            "type": "array"
+          }
+        },
+        "title": "RadioSeedRequest",
         "type": "object"
       },
       "RecentPlay": {
@@ -3924,6 +4821,122 @@
         "title": "ResolveResult",
         "type": "object"
       },
+      "RestConnectCommandIn": {
+        "properties": {
+          "action": {
+            "enum": [
+              "play",
+              "pause",
+              "toggle",
+              "next",
+              "prev",
+              "clear_queue",
+              "seek",
+              "set_volume",
+              "set_mute",
+              "set_shuffle",
+              "set_repeat",
+              "play_tracks",
+              "queue_add",
+              "queue_play_next",
+              "queue_remove",
+              "queue_reorder",
+              "select_index"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "target_device_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Device Id"
+          },
+          "timeout_sec": {
+            "default": 5.0,
+            "maximum": 15.0,
+            "minimum": 0.5,
+            "title": "Timeout Sec",
+            "type": "number"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "RestConnectCommandIn",
+        "type": "object"
+      },
+      "RestConnectCommandOut": {
+        "properties": {
+          "command_id": {
+            "title": "Command Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "target_device_id": {
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command_id",
+          "target_device_id",
+          "ok"
+        ],
+        "title": "RestConnectCommandOut",
+        "type": "object"
+      },
+      "RestConnectTransferIn": {
+        "properties": {
+          "play": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Play"
+          },
+          "target_device_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Device Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_device_id"
+        ],
+        "title": "RestConnectTransferIn",
+        "type": "object"
+      },
       "Shelf": {
         "properties": {
           "cover": {
@@ -3958,6 +4971,26 @@
           "tracks"
         ],
         "title": "Shelf",
+        "type": "object"
+      },
+      "SocialActivityResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FriendActivityItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "server_time": {
+            "title": "Server Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_time"
+        ],
+        "title": "SocialActivityResponse",
         "type": "object"
       },
       "StatEntry": {
@@ -4236,6 +5269,98 @@
         "title": "SystemStatus",
         "type": "object"
       },
+      "TimestampedPlay": {
+        "description": "A played track entry including the UTC timestamp when it was played.",
+        "properties": {
+          "album": {
+            "default": "",
+            "title": "Album",
+            "type": "string"
+          },
+          "album_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "default": "",
+            "title": "Album Id"
+          },
+          "artist": {
+            "default": "",
+            "title": "Artist",
+            "type": "string"
+          },
+          "artist_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "default": "",
+            "title": "Artist Id"
+          },
+          "artists": {
+            "items": {
+              "$ref": "#/components/schemas/StatsArtistRef"
+            },
+            "maxItems": 100,
+            "title": "Artists",
+            "type": "array"
+          },
+          "cover": {
+            "default": "",
+            "title": "Cover",
+            "type": "string"
+          },
+          "duration_sec": {
+            "default": 0,
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Duration Sec",
+            "type": "integer"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              }
+            ],
+            "title": "Id"
+          },
+          "played_at": {
+            "format": "date-time",
+            "title": "Played At",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "played_at"
+        ],
+        "title": "TimestampedPlay",
+        "type": "object"
+      },
       "Track": {
         "properties": {
           "album": {
@@ -4279,6 +5404,17 @@
             "title": "Artists",
             "type": "array"
           },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
           "cover": {
             "default": "",
             "title": "Cover",
@@ -4288,6 +5424,17 @@
             "default": 0,
             "title": "Duration Sec",
             "type": "integer"
+          },
+          "explicit": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explicit"
           },
           "id": {
             "title": "Id",
@@ -4362,6 +5509,92 @@
           "id"
         ],
         "title": "Track",
+        "type": "object"
+      },
+      "TrackAudioMeta": {
+        "description": "Server-computed waveform peaks, true EBU R128 loudness, and silence cues.",
+        "properties": {
+          "analyzed_at": {
+            "format": "date-time",
+            "title": "Analyzed At",
+            "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
+          "deezer_id": {
+            "title": "Deezer Id",
+            "type": "string"
+          },
+          "duration_sec": {
+            "default": 0.0,
+            "title": "Duration Sec",
+            "type": "number"
+          },
+          "intro_end_sec": {
+            "default": 0.0,
+            "title": "Intro End Sec",
+            "type": "number"
+          },
+          "loudness_gain_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Gain Db"
+          },
+          "loudness_lufs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Lufs"
+          },
+          "loudness_peak": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Peak"
+          },
+          "outro_start_sec": {
+            "default": 0.0,
+            "title": "Outro Start Sec",
+            "type": "number"
+          },
+          "peaks": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Peaks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "deezer_id",
+          "analyzed_at"
+        ],
+        "title": "TrackAudioMeta",
         "type": "object"
       },
       "UnmatchedTrack": {
@@ -4495,6 +5728,132 @@
           "top_artists_month"
         ],
         "title": "UserStats",
+        "type": "object"
+      },
+      "UserStatsInsights": {
+        "description": "Rich personal listening insights & Wrapped analytics.",
+        "properties": {
+          "current_streak_days": {
+            "default": 0,
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Current Streak Days",
+            "type": "integer"
+          },
+          "hourly_distribution": {
+            "items": {
+              "maximum": 9007199254740991.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 24,
+            "minItems": 24,
+            "title": "Hourly Distribution",
+            "type": "array"
+          },
+          "listening_sec": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Listening Sec",
+            "type": "integer"
+          },
+          "longest_streak_days": {
+            "default": 0,
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Longest Streak Days",
+            "type": "integer"
+          },
+          "new_artists_count": {
+            "default": 0,
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "New Artists Count",
+            "type": "integer"
+          },
+          "play_count": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "range": {
+            "enum": [
+              "7d",
+              "30d",
+              "90d",
+              "year",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "recent_plays": {
+            "items": {
+              "$ref": "#/components/schemas/TimestampedPlay"
+            },
+            "maxItems": 50,
+            "title": "Recent Plays",
+            "type": "array"
+          },
+          "top_albums": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 10,
+            "title": "Top Albums",
+            "type": "array"
+          },
+          "top_artists": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 15,
+            "title": "Top Artists",
+            "type": "array"
+          },
+          "top_tracks": {
+            "items": {
+              "$ref": "#/components/schemas/StatEntry"
+            },
+            "maxItems": 15,
+            "title": "Top Tracks",
+            "type": "array"
+          },
+          "unique_artists": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Unique Artists",
+            "type": "integer"
+          },
+          "unique_tracks": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Unique Tracks",
+            "type": "integer"
+          },
+          "weekday_distribution": {
+            "items": {
+              "maximum": 9007199254740991.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "minItems": 7,
+            "title": "Weekday Distribution",
+            "type": "array"
+          }
+        },
+        "required": [
+          "range",
+          "listening_sec",
+          "play_count",
+          "unique_tracks",
+          "unique_artists",
+          "hourly_distribution",
+          "weekday_distribution"
+        ],
+        "title": "UserStatsInsights",
         "type": "object"
       },
       "UsersStatus": {
@@ -5677,9 +7036,76 @@
         ]
       }
     },
+    "/api/connect/command": {
+      "post": {
+        "description": "Statelessly dispatch a playback command to the user's active (or named) Connect device and wait for its acknowledgment.",
+        "operationId": "send_connect_command_api_connect_command_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestConnectCommandIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestConnectCommandOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Send Connect Command",
+        "tags": [
+          "connect"
+        ]
+      }
+    },
     "/api/connect/state": {
       "get": {
-        "description": "Return the authenticated user's currently connected devices, active device, and live playback state.",
+        "description": "Return the authenticated user's currently connected devices, active device, and live (or persisted resumable) playback state.",
         "operationId": "get_connect_state_api_connect_state_get",
         "responses": {
           "200": {
@@ -5766,6 +7192,73 @@
           }
         ],
         "summary": "Create Connect Ticket",
+        "tags": [
+          "connect"
+        ]
+      }
+    },
+    "/api/connect/transfer": {
+      "post": {
+        "description": "Statelessly transfer active Connect playback to another connected device.",
+        "operationId": "transfer_connect_playback_api_connect_transfer_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestConnectTransferIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectStateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Transfer Connect Playback",
         "tags": [
           "connect"
         ]
@@ -6083,6 +7576,60 @@
         ]
       }
     },
+    "/api/home/personal-mixes": {
+      "get": {
+        "description": "Zero-latency SQL personal mixes built purely from local history (no external API calls).\n\nProduces up to three shelves:\n- ``on-repeat``: most-played tracks over the last 30 days\n- ``forgotten-favorites``: liked or heavily played >90d ago with 0 plays in the last 60d\n- ``unheard-cuts``: tracks by followed artists in the local library/cache never played yet",
+        "operationId": "personal_mixes_api_home_personal_mixes_get",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "sf_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sf Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Shelf"
+                  },
+                  "title": "Response Personal Mixes Api Home Personal Mixes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Personal Mixes",
+        "tags": [
+          "home"
+        ]
+      }
+    },
     "/api/home/release-radar": {
       "get": {
         "description": "Recent songs (last 90 days), at most two per followed/top artist.\n\nFans out per artist over the 24h-cached album lists, then pulls the newest\nrelease's tracks. Any per-artist failure aborts the response after all\nlookups finish so clients never accept a partial radar as a successful\nrefresh. Signed-out or no artist history → empty list, frontend hides the\nsection.\n\nEvery track carries `radar_reason`: the watched artist whose release list\nproduced it and why that artist is watched. That source artist can differ\nfrom the track's primary artist (Deezer lists releases an artist merely\ncontributes to), which is what lets a client explain an unfamiliar name.",
@@ -6185,6 +7732,39 @@
                 }
               ],
               "title": "Deezer Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "album",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Album"
+            }
+          },
+          {
+            "in": "query",
+            "name": "duration_sec",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Duration Sec"
             }
           },
           {
@@ -7153,6 +8733,82 @@
         ]
       }
     },
+    "/api/me/stats/insights": {
+      "get": {
+        "description": "Rich personal listening insights (hours, top albums, streaks, heatmaps, discovery).",
+        "operationId": "get_stats_insights_api_me_stats_insights_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "year",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserStatsInsights"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Stats Insights",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
     "/api/new-releases": {
       "get": {
         "operationId": "new_releases_api_new_releases_get",
@@ -7424,6 +9080,89 @@
           }
         ],
         "summary": "Get Party",
+        "tags": [
+          "party"
+        ]
+      }
+    },
+    "/api/party/{code}/auto-dj/fill": {
+      "post": {
+        "description": "Append radio picks seeded from the current/last Jam track.",
+        "operationId": "fill_party_auto_dj_api_party__code__auto_dj_fill_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "count",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Count",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          },
+          {
+            "sf_party_guest": []
+          }
+        ],
+        "summary": "Fill Party Auto Dj",
         "tags": [
           "party"
         ]
@@ -7709,6 +9448,84 @@
         ]
       }
     },
+    "/api/party/{code}/host": {
+      "patch": {
+        "description": "Host-only: transfer Jam host ownership to another authenticated member.",
+        "operationId": "transfer_party_host_api_party__code__host_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyHostTransferIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Transfer Party Host",
+        "tags": [
+          "party"
+        ]
+      }
+    },
     "/api/party/{code}/join": {
       "post": {
         "operationId": "join_party_api_party__code__join_post",
@@ -7984,9 +9801,168 @@
         ]
       }
     },
+    "/api/party/{code}/react": {
+      "post": {
+        "description": "Broadcast an ephemeral emoji reaction burst to all Jam listeners.",
+        "operationId": "react_in_party_api_party__code__react_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartyReactIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyReactionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          },
+          {
+            "sf_party_guest": []
+          }
+        ],
+        "summary": "React In Party",
+        "tags": [
+          "party"
+        ]
+      }
+    },
+    "/api/party/{code}/save-playlist": {
+      "post": {
+        "description": "Save the current Party Jam queue as a permanent playlist, optionally adding all authenticated Jam members as collaborators.",
+        "operationId": "save_party_as_playlist_api_party__code__save_playlist_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartySavePlaylistIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Save Party As Playlist",
+        "tags": [
+          "party"
+        ]
+      }
+    },
     "/api/party/{code}/settings": {
       "patch": {
-        "description": "Host-only: update party name and/or shared guest playback controls.",
+        "description": "Host-only: update party name, shared guest playback controls, and/or Auto-DJ.",
         "operationId": "update_party_settings_api_party__code__settings_patch",
         "parameters": [
           {
@@ -8295,6 +10271,77 @@
         ]
       }
     },
+    "/api/party/{code}/vote-skip": {
+      "post": {
+        "description": "Cast a vote to skip the current track. When a strict majority of active participants vote, the Jam immediately advances to the next track.",
+        "operationId": "vote_skip_party_track_api_party__code__vote_skip_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyVoteSkipOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          },
+          {
+            "sf_party_guest": []
+          }
+        ],
+        "summary": "Vote Skip Party Track",
+        "tags": [
+          "party"
+        ]
+      }
+    },
     "/api/playlists": {
       "get": {
         "operationId": "list_playlists_api_playlists_get",
@@ -8433,6 +10480,74 @@
           }
         ],
         "summary": "Create Playlist",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/blend/{other_user_id}": {
+      "post": {
+        "description": "Create a collaborative Blend playlist combining both users' plays and likes with a computed taste-match score.",
+        "operationId": "create_blend_playlist_api_playlists_blend__other_user_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "other_user_id",
+            "required": true,
+            "schema": {
+              "title": "Other User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistBlendOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Create Blend Playlist",
         "tags": [
           "playlists"
         ]
@@ -9176,6 +11291,213 @@
         ]
       }
     },
+    "/api/playlists/{playlist_id}/deduplicate": {
+      "post": {
+        "description": "Remove duplicate recordings from a playlist, keeping Album > EP > Single.",
+        "operationId": "deduplicate_playlist_api_playlists__playlist_id__deduplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistDeduplicateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Deduplicate Playlist",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/duplicates": {
+      "get": {
+        "description": "Detect duplicate recordings (exact ID, ISRC, or artist+title+duration) in a playlist.",
+        "operationId": "get_playlist_duplicates_api_playlists__playlist_id__duplicates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistDuplicatesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Playlist Duplicates",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/events": {
+      "get": {
+        "description": "Live SSE stream keyed on ``Playlist.revision`` for collaborative sync.",
+        "operationId": "playlist_events_api_playlists__playlist_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "sf_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sf Session"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-Sent Events emitting collaborative playlist revision updates.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Accel-Buffering": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Playlist Events",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
     "/api/playlists/{playlist_id}/export": {
       "get": {
         "description": "Download all tracks in a visible playlist as an ordered MP3 ZIP.",
@@ -9506,6 +11828,94 @@
           }
         ],
         "summary": "Leave Playlist",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/sync-manifest": {
+      "get": {
+        "description": "Return offline-sync manifest (revision, sizes, loudness, cached lyrics) and preload uncached tracks.",
+        "operationId": "playlist_sync_manifest_api_playlists__playlist_id__sync_manifest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_lyrics",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Lyrics",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "preload",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Preload",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistSyncManifest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Playlist Sync Manifest",
         "tags": [
           "playlists"
         ]
@@ -10021,6 +12431,70 @@
         ]
       }
     },
+    "/api/radio/seed": {
+      "post": {
+        "description": "Context-aware multi-seed radio that excludes recently played tracks (last 7d).",
+        "operationId": "seeded_radio_api_radio_seed_post",
+        "parameters": [
+          {
+            "in": "cookie",
+            "name": "sf_session",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sf Session"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RadioSeedRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Track"
+                  },
+                  "title": "Response Seeded Radio Api Radio Seed Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Seeded Radio",
+        "tags": [
+          "radio"
+        ]
+      }
+    },
     "/api/radio/{deezer_id}": {
       "get": {
         "operationId": "radio_api_radio__deezer_id__get",
@@ -10505,6 +12979,111 @@
         ]
       }
     },
+    "/api/social/activity": {
+      "get": {
+        "description": "Return currently online opted-in server members' live listening activity and active Party Jam codes.",
+        "operationId": "get_social_activity_api_social_activity_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SocialActivityResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Social Activity",
+        "tags": [
+          "social"
+        ]
+      }
+    },
+    "/api/social/activity/events": {
+      "get": {
+        "operationId": "social_activity_events_api_social_activity_events_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Server-Sent Events stream of opted-in friend listening activity.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Accel-Buffering": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Social Activity Events",
+        "tags": [
+          "social"
+        ]
+      }
+    },
     "/api/track-plays": {
       "post": {
         "description": "Batched Last.fm play counts for a set of tracks → ``{id: {plays, listeners}}``.",
@@ -10577,6 +13156,140 @@
         ]
       }
     },
+    "/api/tracks/cached-check": {
+      "post": {
+        "description": "Scoped check of whether specific Deezer track IDs are cached on the server.",
+        "operationId": "cached_check_api_tracks_cached_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CachedCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CachedCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Cached Check",
+        "tags": [
+          "stream"
+        ]
+      }
+    },
+    "/api/tracks/preload": {
+      "post": {
+        "description": "Queue up to 50 tracks for background server-side materialization.",
+        "operationId": "preload_tracks_batch_api_tracks_preload_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPreloadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPreloadResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Preload Tracks Batch",
+        "tags": [
+          "stream"
+        ]
+      }
+    },
     "/api/tracks/{deezer_id}": {
       "get": {
         "operationId": "track_metadata_api_tracks__deezer_id__get",
@@ -10616,6 +13329,74 @@
         "summary": "Track Metadata",
         "tags": [
           "browse"
+        ]
+      }
+    },
+    "/api/tracks/{deezer_id}/audio-meta": {
+      "get": {
+        "description": "Return server-computed waveform peaks, true EBU R128 loudness, BPM, and leading/trailing silence cue points for a track.",
+        "operationId": "track_audio_meta_api_tracks__deezer_id__audio_meta_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deezer_id",
+            "required": true,
+            "schema": {
+              "title": "Deezer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackAudioMeta"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Track Audio Meta",
+        "tags": [
+          "stream"
         ]
       }
     },
@@ -10682,7 +13463,7 @@
     },
     "/api/tracks/{deezer_id}/stream": {
       "get": {
-        "description": "Return MP3 bytes, with a 206 response for a valid single Range request. A cache miss materializes the track on the server before streaming.",
+        "description": "Materializes and returns audio bytes (audio/mpeg or audio/flac), with a 206 response for a valid single Range request and ETag/Cache-Control headers. Supports optional quality tiers (lossless, high, saver).",
         "operationId": "stream_api_tracks__deezer_id__stream_get",
         "parameters": [
           {
@@ -10693,11 +13474,38 @@
               "title": "Deezer Id",
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "quality",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "lossless",
+                    "high",
+                    "saver"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quality"
+            }
           }
         ],
         "responses": {
           "200": {
             "content": {
+              "audio/flac": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "audio/mpeg": {
                 "schema": {
                   "format": "binary",
@@ -10705,9 +13513,24 @@
                 }
               }
             },
-            "description": "Complete MP3 audio file.",
+            "description": "Complete audio file.",
             "headers": {
               "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Audio-Quality": {
                 "schema": {
                   "type": "string"
                 }
@@ -10716,6 +13539,12 @@
           },
           "206": {
             "content": {
+              "audio/flac": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
               "audio/mpeg": {
                 "schema": {
                   "format": "binary",
@@ -10723,9 +13552,14 @@
                 }
               }
             },
-            "description": "Requested MP3 byte range.",
+            "description": "Requested audio byte range.",
             "headers": {
               "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
                 "schema": {
                   "type": "string"
                 }
@@ -10739,8 +13573,21 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Audio-Quality": {
+                "schema": {
+                  "type": "string"
+                }
               }
             }
+          },
+          "304": {
+            "description": "Audio file unchanged (ETag matched)."
           },
           "401": {
             "content": {

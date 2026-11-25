@@ -9,7 +9,7 @@ import Player, {
   type PlaybackErrorEvent,
   type PlaybackProgressUpdatedEvent,
 } from './player';
-import type { ConnectPlaybackState, Track } from '../api/types';
+import type { ConnectPlaybackState, Track, TrackAudioMeta } from '../api/types';
 import { activeConnectRouter } from '../connect/activeConnect';
 import { activeRemoteTrack, connectRepeatToPlayer } from '../connect/connectModel';
 import {
@@ -21,7 +21,11 @@ import {
 } from '../api/client';
 import { getApiBase } from '../config';
 import { refreshLibraryAutoBrowse } from '../data/autoBrowseRefresh';
-import { invalidateListeningStats, musicCacheScope } from '../data/queryClient';
+import {
+  invalidateListeningStats,
+  musicCacheScope,
+  musicQueryClient,
+} from '../data/queryClient';
 import { queryKeys } from '../data/queryKeys';
 import { musicRepository } from '../data/repositories';
 import { withTrackLiked } from '../data/trackLikes';
@@ -260,6 +264,17 @@ function queueMediaItem(
     stableId: string;
   },
 ): MediaItem {
+  const cachedAudioMeta = musicQueryClient.getQueryData<TrackAudioMeta>(
+    queryKeys.catalog.audioMeta(track.id),
+  );
+  const crossfade =
+    cachedAudioMeta !== undefined
+    && (cachedAudioMeta.intro_end_sec !== null || cachedAudioMeta.outro_start_sec !== null)
+      ? {
+          introEndSec: cachedAudioMeta.intro_end_sec,
+          outroStartSec: cachedAudioMeta.outro_start_sec,
+        }
+      : undefined;
   return withQueueProductMetadata(
     trackToMediaItem(
       track,
@@ -269,6 +284,7 @@ function queueMediaItem(
         mediaId: options.mediaId,
         radio: options.radio,
         explicitDownloadUri: source.kind === 'explicit-download' ? source.uri : undefined,
+        ...(crossfade === undefined ? {} : { crossfade }),
       },
     ),
     {

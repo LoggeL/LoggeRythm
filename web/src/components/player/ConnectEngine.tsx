@@ -99,9 +99,32 @@ export function createConnectRemoteBridge(
   };
 }
 
-/** True when this browser is following someone else's Jam (must never claim personal Connect active). */
-export function isNonHostJamFollower(party: { active: boolean; isHost: boolean }): boolean {
-  return party.active && !party.isHost;
+/** True when this browser is actively following someone else's Jam (must never claim personal Connect active). */
+export function isNonHostJamFollower(party: { active: boolean; isHost: boolean; detached?: boolean }): boolean {
+  return party.active && !party.detached && !party.isHost;
+}
+
+/**
+ * Pure decision helper for Async Connect Continuity (S3.1): when all devices
+ * were offline and this tab receives a server-persisted `UserPlaybackState` on
+ * `welcome`, hydrate it paused into an idle local player so cross-device queues
+ * survive reloads & offline handoffs immediately.
+ */
+export function shouldHydrateServerPlayback(params: {
+  activeDeviceId: string | null;
+  playback: { queue: readonly unknown[]; current_index: number } | null;
+  localQueueLength: number;
+  partyOwnsPlayback: boolean;
+}): boolean {
+  if (params.partyOwnsPlayback) return false;
+  if (params.activeDeviceId !== null) return false;
+  if (params.localQueueLength > 0) return false;
+  if (!params.playback) return false;
+  return (
+    params.playback.queue.length > 0 &&
+    params.playback.current_index >= 0 &&
+    params.playback.current_index < params.playback.queue.length
+  );
 }
 
 /**
@@ -117,7 +140,7 @@ export default function ConnectEngine() {
   const deviceId = useConnectStore((s) => s.deviceId);
   const playback = useConnectStore((s) => s.playback);
   const clockOffsetMs = useConnectStore((s) => s.clockOffsetMs);
-  const partyActive = usePartyStore((s) => s.active);
+  const partyOwnsPlayback = usePartyStore((s) => s.active && !s.detached);
 
   const socketRef = useRef<ConnectSocket | null>(null);
   const applyingRemoteDepthRef = useRef(0);
@@ -158,7 +181,8 @@ export default function ConnectEngine() {
       const player = usePlayerStore.getState();
       if (player.remoteBridge) {
         player.setRemoteBridge(null);
-        if (!usePartyStore.getState().active) {
+        const party = usePartyStore.getState();
+        if (!(party.active && !party.detached)) {
           player.setSuppressLocalAudio(false);
         }
       }
@@ -219,8 +243,8 @@ export default function ConnectEngine() {
       const party = usePartyStore.getState();
       const player = usePlayerStore.getState();
 
-      // Jam mode always owns playback while active.
-      if (party.active) {
+      // Jam mode owns playback while active and attached.
+      if (party.active && !party.detached) {
         if (player.remoteBridge) player.setRemoteBridge(null);
         return;
       }
@@ -251,17 +275,35 @@ export default function ConnectEngine() {
 
     const handleServerMessage = (msg: ConnectServerMessage) => {
       switch (msg.type) {
-        case "welcome":
+        case "welcome": {
           useConnectStore.getState().applyServerState(msg.state, msg.self_device_id);
+          const party = usePartyStore.getState();
+          const player = usePlayerStore.getState();
+          if (
+            shouldHydrateServerPlayback({
+              activeDeviceId: msg.state.active_device_id,
+              playback: msg.state.playback,
+              localQueueLength: player.queue.length,
+              partyOwnsPlayback: party.active && !party.detached,
+            })
+          ) {
+            runWhileApplyingRemote(() => {
+              player.applyRemotePlaybackState(
+                { ...msg.state.playback, is_playing: false },
+                msg.state.playback.position_sec,
+              );
+            });
+          }
           syncRemoteBridgeFromState();
           return;
+        }
         case "state":
           useConnectStore.getState().applyServerState(msg.state);
           syncRemoteBridgeFromState();
           return;
         case "activate": {
           const party = usePartyStore.getState();
-          if (party.active) {
+          if (party.active && !party.detached) {
             toast.info("Wiedergabe-Übertragung ignoriert, solange eine Jam aktiv ist.");
             return;
           }
@@ -273,7 +315,7 @@ export default function ConnectEngine() {
         }
         case "deactivated": {
           const party = usePartyStore.getState();
-          if (!party.active) {
+          if (!party.active || party.detached) {
             const player = usePlayerStore.getState();
             player.setSuppressLocalAudio(true);
             player.setRemoteBridge(buildRemoteBridge());
@@ -286,7 +328,7 @@ export default function ConnectEngine() {
         case "command": {
           const sock = socketRef.current;
           const party = usePartyStore.getState();
-          if (party.active && !party.isHost && !party.guestsCanControl) {
+          if (party.active && !party.detached && !party.isHost && !party.guestsCanControl) {
             sock?.send({
               type: "command_ack",
               command_id: msg.command_id,
@@ -385,7 +427,8 @@ export default function ConnectEngine() {
           const player = usePlayerStore.getState();
           if (player.remoteBridge) {
             player.setRemoteBridge(null);
-            if (!usePartyStore.getState().active) {
+            const party = usePartyStore.getState();
+            if (!(party.active && !party.detached)) {
               player.setSuppressLocalAudio(false);
             }
           }
@@ -476,7 +519,8 @@ export default function ConnectEngine() {
       const player = usePlayerStore.getState();
       if (player.remoteBridge) {
         player.setRemoteBridge(null);
-        if (!usePartyStore.getState().active) {
+        const party = usePartyStore.getState();
+        if (!(party.active && !party.detached)) {
           player.setSuppressLocalAudio(false);
         }
       }
@@ -513,7 +557,7 @@ export default function ConnectEngine() {
   // Smooth local playhead interpolation while controlling another device remotely.
   useEffect(() => {
     const remote =
-      !partyActive &&
+      !partyOwnsPlayback &&
       enabled &&
       status === "connected" &&
       activeDeviceId !== null &&
@@ -527,14 +571,14 @@ export default function ConnectEngine() {
       player._setCurrentTime(pos);
     }, 500);
     return () => window.clearInterval(interval);
-  }, [partyActive, enabled, status, activeDeviceId, deviceId, playback, clockOffsetMs]);
+  }, [partyOwnsPlayback, enabled, status, activeDeviceId, deviceId, playback, clockOffsetMs]);
 
   // Re-evaluate Connect remote controller ownership if a Jam starts or ends
   // while another personal device is currently active.
   useEffect(() => {
     const connect = useConnectStore.getState();
     const player = usePlayerStore.getState();
-    if (partyActive) {
+    if (partyOwnsPlayback) {
       if (player.remoteBridge) player.setRemoteBridge(null);
       return;
     }
@@ -561,7 +605,7 @@ export default function ConnectEngine() {
         );
       });
     }
-  }, [partyActive, enabled, status, activeDeviceId, deviceId]);
+  }, [partyOwnsPlayback, enabled, status, activeDeviceId, deviceId]);
 
   return null;
 }

@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => ({
   getRadio: vi.fn(),
   recordPlay: vi.fn(),
   invalidateListeningStats: vi.fn(),
+  getQueryData: vi.fn(),
   clearPlayerError: vi.fn(),
   drainPlaybackEvents: vi.fn(),
   mapMediaItemToNativeQueueItem: vi.fn(),
@@ -107,6 +108,7 @@ vi.mock('../api/client', () => ({
 vi.mock('../offline/registry', () => ({ offlineUriForTrack: mocks.offlineUriForTrack }));
 vi.mock('../data/queryClient', () => ({
   invalidateListeningStats: mocks.invalidateListeningStats,
+  musicQueryClient: { getQueryData: mocks.getQueryData },
 }));
 vi.mock('../data/repositories', () => ({
   musicRepository: {
@@ -813,5 +815,35 @@ describe('controller Phase-0 queue contract', () => {
     await expect(started).resolves.toBe('started-radio');
     expect(ids()).toEqual(['seed', 'native']);
     expect(mocks.addMediaItems).not.toHaveBeenCalled();
+  });
+
+  it('forwards cached TrackAudioMeta crossfade cues into queued MediaItems', async () => {
+    mocks.getQueryData.mockImplementation((key: unknown) => {
+      if (Array.isArray(key) && key.includes('audio-meta') && key.includes('42')) {
+        return {
+          deezer_id: '42',
+          peaks: [0.3, 0.7],
+          loudness_lufs: -10,
+          loudness_gain_db: -4,
+          loudness_peak: 0.95,
+          bpm: 120,
+          duration_sec: 180,
+          intro_end_sec: 9.5,
+          outro_start_sec: 166.2,
+          analyzed_at: '2026-11-25T00:00:00Z',
+        };
+      }
+      return undefined;
+    });
+
+    await playTracks([track('42'), track('43')], 0, {
+      context: { type: 'album', id: 'album-1', label: 'Album 1' },
+    });
+
+    expect(mocks.queue[0]?.extras?.crossfade).toEqual({
+      introEndSec: 9.5,
+      outroStartSec: 166.2,
+    });
+    expect(mocks.queue[1]?.extras?.crossfade).toBeUndefined();
   });
 });

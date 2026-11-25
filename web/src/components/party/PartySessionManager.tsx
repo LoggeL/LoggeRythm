@@ -3,6 +3,14 @@
 import { useEffect, useRef } from "react";
 import { ApiError, api } from "@/lib/api";
 import { openPartyStream } from "@/lib/partySocket";
+import {
+  canSendRemotePartyPlayback,
+  detectMemberRemoval,
+  findHostTrackAdvanceIndex,
+  isLocalPlaybackDetachedFromParty,
+  shouldHostBroadcastPlayback,
+  shouldRestoreActiveParty,
+} from "@/lib/partySync";
 import { useMe } from "@/hooks/useAuth";
 import { mergeServerCachedTrackIds } from "@/store/downloads";
 import { usePartyStore } from "@/store/party";
@@ -15,7 +23,7 @@ import { partyFailureMessage } from "@/app/party/requests";
 /** Seconds a listening guest may drift from the host before seeking. */
 const MAX_DRIFT_SEC = 1.5;
 
-function partyTrackToTrack(pt: PartyTrack): Track {
+export function partyTrackToTrack(pt: PartyTrack): Track {
   return {
     id: pt.deezer_id,
     title: pt.title,
@@ -26,13 +34,15 @@ function partyTrackToTrack(pt: PartyTrack): Track {
     album_id: pt.album_id,
     cover: pt.cover,
     duration_sec: pt.duration_sec,
+    ...(pt.loudness_gain_db !== undefined ? { loudness_gain_db: pt.loudness_gain_db } : {}),
   };
 }
 
 /**
  * Workspace-level Jam session manager. Keeps an active Jam alive across route
  * navigations, syncs playback (including host conflict resolution when
- * `guests_can_control` is enabled), enforces "Listen locally" vs "Control only"
+ * `guests_can_control` is enabled), detaches cleanly when the user starts
+ * non-party music locally, enforces "Listen locally" vs "Control only"
  * for non-host members, and advertises `party_code` to the Connect hub.
  */
 export default function PartySessionManager() {
@@ -43,6 +53,7 @@ export default function PartySessionManager() {
   const isHost = usePartyStore((s) => s.isHost);
   const guestsCanControl = usePartyStore((s) => s.guestsCanControl);
   const listenLocally = usePartyStore((s) => s.listenLocally);
+  const detached = usePartyStore((s) => s.detached);
   const hostIsPlaying = usePartyStore((s) => s.isPlaying);
   const hostPosition = usePartyStore((s) => s.positionSec);
   const hostUpdatedAt = usePartyStore((s) => s.playbackUpdatedAt);
@@ -51,6 +62,8 @@ export default function PartySessionManager() {
   const lastAppliedRevision = useRef<number>(0);
   const applyingPartyFrameDepth = useRef<number>(0);
   const restoredForUser = useRef<string | null>(null);
+  const wasMemberRef = useRef<boolean>(false);
+  const prevDetachedRef = useRef<boolean>(false);
 
   // Restore any active Jam for the signed-in user once per account session.
   useEffect(() => {
@@ -62,9 +75,9 @@ export default function PartySessionManager() {
     api
       .activeParty()
       .then((found) => {
-        if (!mounted || !found || found.ended) return;
+        if (!mounted) return;
         const current = usePartyStore.getState();
-        if (current.code && current.code !== found.code) return;
+        if (!shouldRestoreActiveParty(found, current) || !found) return;
         lastAppliedRevision.current = found.playback_revision ?? 0;
         current.setActiveCode(found.code);
         current.applyPartyState(found);
@@ -88,28 +101,55 @@ export default function PartySessionManager() {
 
   // Keep SSE stream + safety poll running while a Jam code is active.
   useEffect(() => {
-    if (!code || !me?.is_approved) return;
+    if (!code || !me?.is_approved) {
+      wasMemberRef.current = false;
+      return;
+    }
+    const existingOnOpen = usePartyStore.getState().party;
     lastAppliedRevision.current = usePartyStore.getState().playbackRevision;
+    wasMemberRef.current = Boolean(
+      existingOnOpen &&
+        existingOnOpen.code.toUpperCase() === code &&
+        existingOnOpen.viewer_key &&
+        existingOnOpen.members.some((m) => m.key === existingOnOpen.viewer_key),
+    );
     let disposed = false;
+
+    const releaseLocalPartyOwnership = () => {
+      const player = usePlayerStore.getState();
+      player.setPartyBridge(null);
+      if (!player.remoteBridge) {
+        player.setSuppressLocalAudio(false);
+      }
+    };
 
     const handleIncomingState = (next: PartyState) => {
       if (disposed) return;
+      const normalizedNextCode = next.code.toUpperCase();
+      // Ignore SSE/poll echoes while this client is intentionally leaving or ending the Jam.
+      if (usePartyStore.getState().exitingCode === normalizedNextCode) return;
 
       if (next.ended) {
-        usePlayerStore.getState().setPartyBridge(null);
-        usePlayerStore.getState().setSuppressLocalAudio(false);
+        releaseLocalPartyOwnership();
         usePartyStore.getState().markEnded("Die Jam wurde vom Host beendet.", next.code);
         toast.info("Die Jam wurde vom Host beendet.");
         return;
       }
 
-      // Detect if the host kicked this member (when members carry stable actor keys).
-      const hasKeys = next.members.length > 0 && next.members.every((m) => Boolean(m.key));
-      if (hasKeys && next.viewer_key && !next.members.some((m) => m.key === next.viewer_key)) {
-        usePlayerStore.getState().setPartyBridge(null);
-        usePlayerStore.getState().setSuppressLocalAudio(false);
+      if (next.viewer_key && next.members.some((m) => m.key === next.viewer_key)) {
+        wasMemberRef.current = true;
+      }
+      const removal = detectMemberRemoval(next, wasMemberRef.current);
+      if (removal === "kicked") {
+        releaseLocalPartyOwnership();
         usePartyStore.getState().markEnded("Du wurdest vom Host aus der Jam entfernt.", next.code);
         toast.error("Du wurdest vom Host aus der Jam entfernt.");
+        return;
+      }
+      if (removal === "left_elsewhere") {
+        releaseLocalPartyOwnership();
+        usePartyStore.getState().markEnded("Du hast die Jam verlassen.", next.code);
+        toast.info("Du hast die Jam verlassen.");
         return;
       }
 
@@ -118,48 +158,54 @@ export default function PartySessionManager() {
         .map((track) => track.deezer_id);
       if (storedIds.length > 0) mergeServerCachedTrackIds(storedIds);
 
-      const tracks = next.tracks.map(partyTrackToTrack);
-      const itemIds = next.tracks.map((entry) => entry.id);
+      const isDetached = usePartyStore.getState().detached;
+      const rev = next.playback_revision ?? 0;
 
-      // Guard both setPartyQueue and followHostPlayback so the host's player
-      // subscriber never echoes an incoming Jam frame back to PATCH /playback
-      // and clobbers a participant's remote change under guests_can_control.
-      applyingPartyFrameDepth.current += 1;
-      try {
-        usePlayerStore.getState().setPartyQueue(tracks, next.current_index, itemIds);
+      if (!isDetached) {
+        const tracks = next.tracks.map(partyTrackToTrack);
+        const itemIds = next.tracks.map((entry) => entry.id);
 
-        const rev = next.playback_revision ?? 0;
-        if (
-          next.is_host &&
-          rev > lastAppliedRevision.current &&
-          next.playback_changed_by &&
-          next.playback_changed_by !== next.viewer_key
-        ) {
-          lastAppliedRevision.current = rev;
-          usePlayerStore.getState().followHostPlayback(next.is_playing, next.position_sec);
-        } else if (rev > lastAppliedRevision.current) {
-          lastAppliedRevision.current = rev;
+        // Guard both setPartyQueue and followHostPlayback so the host's player
+        // subscriber never echoes an incoming Jam frame back to PATCH /playback
+        // and clobbers a participant's remote change under guests_can_control.
+        applyingPartyFrameDepth.current += 1;
+        try {
+          usePlayerStore.getState().setPartyQueue(tracks, next.current_index, itemIds);
+
+          if (
+            next.is_host &&
+            rev > lastAppliedRevision.current &&
+            next.playback_changed_by &&
+            next.playback_changed_by !== next.viewer_key
+          ) {
+            lastAppliedRevision.current = rev;
+            usePlayerStore.getState().followHostPlayback(next.is_playing, next.position_sec);
+          } else if (rev > lastAppliedRevision.current) {
+            lastAppliedRevision.current = rev;
+          }
+        } finally {
+          applyingPartyFrameDepth.current -= 1;
         }
-      } finally {
-        applyingPartyFrameDepth.current -= 1;
+      } else if (rev > lastAppliedRevision.current) {
+        lastAppliedRevision.current = rev;
       }
 
       usePartyStore.getState().applyPartyState(next);
     };
 
     const fetchLatest = () => {
+      if (disposed || usePartyStore.getState().exitingCode === code) return;
       api
         .getParty(code)
         .then(handleIncomingState)
         .catch((cause: unknown) => {
-          if (disposed) return;
+          if (disposed || usePartyStore.getState().exitingCode === code) return;
           if (cause instanceof ApiError && (cause.status === 403 || cause.status === 404)) {
             const reason =
               cause.status === 404
                 ? "Diese Jam wurde beendet."
                 : "Du bist nicht mehr Teil dieser Jam.";
-            usePlayerStore.getState().setPartyBridge(null);
-            usePlayerStore.getState().setSuppressLocalAudio(false);
+            releaseLocalPartyOwnership();
             usePartyStore.getState().markEnded(reason, code);
             toast.error(reason);
             return;
@@ -169,19 +215,22 @@ export default function PartySessionManager() {
         });
     };
 
-    const existing = usePartyStore.getState().party;
-    if (!existing || existing.code !== code) {
+    if (!existingOnOpen || existingOnOpen.code.toUpperCase() !== code) {
       fetchLatest();
     } else {
-      handleIncomingState(existing);
+      handleIncomingState(existingOnOpen);
     }
 
     const disposeStream = openPartyStream(code, handleIncomingState, {
       onStatus: (status, err) => {
-        if (!disposed) usePartyStore.getState().setStreamStatus(status, err ?? null);
+        if (!disposed && usePartyStore.getState().exitingCode !== code) {
+          usePartyStore.getState().setStreamStatus(status, err ?? null);
+        }
       },
       onFrameError: (err) => {
-        if (!disposed) usePartyStore.getState().setStreamStatus("error", err.message);
+        if (!disposed && usePartyStore.getState().exitingCode !== code) {
+          usePartyStore.getState().setStreamStatus("error", err.message);
+        }
       },
     });
 
@@ -191,19 +240,41 @@ export default function PartySessionManager() {
       disposed = true;
       disposeStream();
       window.clearInterval(safetyPoll);
-      usePlayerStore.getState().setPartyBridge(null);
-      // Restore local audio unless Connect remote controller owns suppression.
-      const player = usePlayerStore.getState();
-      if (!player.remoteBridge) {
-        player.setSuppressLocalAudio(false);
-      }
+      releaseLocalPartyOwnership();
     };
   }, [code, me?.is_approved]);
 
+  // Re-sync local player immediately when the user re-attaches after detached local playback.
+  useEffect(() => {
+    const reattached = prevDetachedRef.current && !detached;
+    prevDetachedRef.current = detached;
+    if (!reattached || !active || !party) return;
+    const tracks = party.tracks.map(partyTrackToTrack);
+    const itemIds = party.tracks.map((entry) => entry.id);
+    applyingPartyFrameDepth.current += 1;
+    try {
+      const player = usePlayerStore.getState();
+      player.setPartyQueue(tracks, party.current_index, itemIds);
+      if (party.current_index >= 0) {
+        const expected =
+          party.is_playing && hostUpdatedAt != null
+            ? party.position_sec + Math.max(0, (Date.now() - hostUpdatedAt) / 1000)
+            : party.position_sec;
+        player.followHostPlayback(party.is_playing, Math.max(0, expected));
+      }
+    } finally {
+      applyingPartyFrameDepth.current -= 1;
+    }
+  }, [detached, active, party, hostUpdatedAt]);
+
   // Install/refresh PartyBridge & local audio suppression whenever Jam permissions or tracks change.
   useEffect(() => {
-    if (!code || !party || !active) {
-      usePlayerStore.getState().setPartyBridge(null);
+    if (!code || !party || !active || detached) {
+      const player = usePlayerStore.getState();
+      player.setPartyBridge(null);
+      if (!player.remoteBridge) {
+        player.setSuppressLocalAudio(false);
+      }
       return;
     }
     const items = party.tracks;
@@ -216,6 +287,7 @@ export default function PartySessionManager() {
         toast.info(`${party.host_name} steuert die Wiedergabe dieser Jam.`);
         return;
       }
+      if (!canSendRemotePartyPlayback(usePartyStore.getState().party)) return;
       const pos = nextPos ?? usePlayerStore.getState().currentTime;
       api.partyPatchPlayback(code, nextPlaying, pos).catch((error: unknown) => {
         toast.error(partyFailureMessage("Wiedergabe-Update fehlgeschlagen", error));
@@ -269,37 +341,81 @@ export default function PartySessionManager() {
           }
         : {}),
     });
-  }, [code, party, active, isHost, guestsCanControl, listenLocally]);
+  }, [code, party, active, isHost, guestsCanControl, listenLocally, detached]);
 
-  // Host: broadcast playback transitions, manual seeks, and periodic heartbeats.
+  // Detach when local player starts non-party music; as host, broadcast valid
+  // party playback transitions, manual seeks, track advances, and heartbeats.
   useEffect(() => {
-    if (!code || !active || !isHost) return;
-    const broadcast = (posOverride?: number) => {
+    if (!code || !active || detached) return;
+
+    const broadcast = (reason: "change" | "heartbeat", posOverride?: number) => {
+      const partyStore = usePartyStore.getState();
       const player = usePlayerStore.getState();
-      const pos = posOverride ?? player.currentTime;
+      if (
+        !shouldHostBroadcastPlayback(partyStore.party, player, {
+          detached: partyStore.detached,
+          exitingCode: partyStore.exitingCode,
+          reason,
+        })
+      ) {
+        return;
+      }
+      const pos = Math.max(0, posOverride ?? player.currentTime);
       api.partyPatchPlayback(code, player.isPlaying, pos).catch((error: unknown) => {
         toast.error(partyFailureMessage("Wiedergabe konnte nicht an die Jam gesendet werden", error));
       });
     };
+
     const unsubscribe = usePlayerStore.subscribe((state, previous) => {
       if (applyingPartyFrameDepth.current > 0) return;
+      const partyStore = usePartyStore.getState();
+      if (partyStore.exitingCode === code || partyStore.detached) return;
+
+      // Playing a track/playlist outside the Jam detaches local playback instead
+      // of spamming 409 errors or having the next Jam frame clobber local audio.
+      if (
+        (state.queue !== previous.queue || state.partyQueueItemIds !== previous.partyQueueItemIds) &&
+        isLocalPlaybackDetachedFromParty(state)
+      ) {
+        partyStore.setDetached(true);
+        return;
+      }
+
+      if (!isHost) return;
+
+      // Local advance within the party queue (e.g. crossfade) updates /current first.
+      if (state.index !== previous.index) {
+        const advanceIdx = findHostTrackAdvanceIndex(partyStore.party, state);
+        if (advanceIdx !== null) {
+          api.partySetCurrent(code, advanceIdx).catch((error: unknown) => {
+            toast.error(partyFailureMessage("Titelwechsel konnte nicht an die Jam gesendet werden", error));
+          });
+          return;
+        }
+      }
+
       if (state.isPlaying !== previous.isPlaying || state.index !== previous.index) {
-        broadcast(state.seekTo ?? state.currentTime);
+        broadcast("change", state.seekTo ?? state.currentTime);
       } else if (state.seekTo !== null && state.seekTo !== previous.seekTo) {
-        broadcast(state.seekTo);
+        broadcast("change", state.seekTo);
       }
     });
-    const interval = window.setInterval(() => broadcast(), 3000);
-    broadcast();
+
+    if (!isHost) {
+      return unsubscribe;
+    }
+
+    const interval = window.setInterval(() => broadcast("heartbeat"), 3000);
+    broadcast("heartbeat");
     return () => {
       unsubscribe();
       window.clearInterval(interval);
     };
-  }, [code, active, isHost]);
+  }, [code, active, isHost, detached]);
 
   // Non-host signed-in member: follow host playback (locally or display-only).
   useEffect(() => {
-    if (!code || !active || isHost) return;
+    if (!code || !active || isHost || detached) return;
     const reconcile = () => {
       const player = usePlayerStore.getState();
       if (player.index < 0) return;
@@ -323,7 +439,7 @@ export default function PartySessionManager() {
     reconcile();
     const interval = window.setInterval(reconcile, 1000);
     return () => window.clearInterval(interval);
-  }, [code, active, isHost, listenLocally, hostIsPlaying, hostPosition, hostUpdatedAt]);
+  }, [code, active, isHost, detached, listenLocally, hostIsPlaying, hostPosition, hostUpdatedAt]);
 
   return null;
 }

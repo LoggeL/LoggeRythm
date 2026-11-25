@@ -483,4 +483,49 @@ describe('PartySession', () => {
       endedNotice: strings.party.kickedNotice,
     });
   });
+
+  it('ignores self-triggered SSE frames while leaving or ending so no stale endedNotice remains', async () => {
+    // 1. Member leaves and SSE delivers the removal frame before leaveParty resolves.
+    const leaving = harness(1);
+    leaving.session.enter('ABC123');
+    await leaving.settle();
+    leaving.deps.repository.leaveParty.mockImplementationOnce(async () => {
+      leaving.streams[0].onState(
+        party({
+          members: [{ key: 'u:1', name: 'Host', avatar_url: null, is_guest: false, is_host: true }],
+        }),
+      );
+    });
+    await leaving.session.leave();
+    expect(leaving.session.getSnapshot()).toMatchObject({
+      code: null,
+      party: null,
+      phase: 'idle',
+      endedNotice: null,
+    });
+
+    // 2. Host ends Jam and SSE delivers ended=true before endParty resolves.
+    const ending = harness(1);
+    ending.session.enter('ABC123', party({ is_host: true, viewer_key: 'u:1' }));
+    await ending.settle();
+    ending.deps.repository.endParty.mockImplementationOnce(async () => {
+      ending.streams[0].onState(party({ is_host: true, viewer_key: 'u:1', ended: true }));
+    });
+    await ending.session.end();
+    expect(ending.session.getSnapshot()).toMatchObject({
+      code: null,
+      party: null,
+      phase: 'idle',
+      endedNotice: null,
+    });
+
+    // 3. Failed leave restores SSE frame processing and rejects loudly.
+    const failing = harness(1);
+    failing.session.enter('ABC123');
+    await failing.settle();
+    failing.deps.repository.leaveParty.mockRejectedValueOnce(new Error('503'));
+    await expect(failing.session.leave()).rejects.toThrow('503');
+    failing.streams[0].onState(party({ ended: true }));
+    expect(failing.session.getSnapshot().endedNotice).toBe(strings.party.endedNotice);
+  });
 });

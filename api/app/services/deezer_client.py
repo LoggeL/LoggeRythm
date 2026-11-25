@@ -100,9 +100,10 @@ def _optional_float(*values: object) -> float | None:
 def _loudness_fields(item: dict) -> dict:
     """Extract ReplayGain/R128-style fields when an upstream payload has them.
 
-    Deezer's public track summaries usually omit these. Some private/catalog
-    payloads expose a gain-like field; preserve it without inventing values so
-    clients can normalize consistently when metadata is available.
+    Deezer's public ``/track/{id}`` payload exposes lowercase ``gain`` (in dB),
+    while private website payloads expose uppercase ``GAIN`` / ``REPLAYGAIN_*``.
+    Preserve real values without inventing defaults so clients normalize
+    consistently across the catalog.
     """
     return {
         "loudness_gain_db": _optional_float(
@@ -110,6 +111,7 @@ def _loudness_fields(item: dict) -> dict:
             item.get("replaygain_track_gain_db"),
             item.get("REPLAYGAIN_TRACK_GAIN"),
             item.get("GAIN"),
+            item.get("gain"),
         ),
         "loudness_lufs": _optional_float(
             item.get("loudness_lufs"),
@@ -120,6 +122,38 @@ def _loudness_fields(item: dict) -> dict:
             item.get("replaygain_track_peak"),
             item.get("REPLAYGAIN_TRACK_PEAK"),
         ),
+    }
+
+
+def _optional_bool(*values: object) -> bool | None:
+    for value in values:
+        if value is None or value == "":
+            continue
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return bool(value)
+        if isinstance(value, str):
+            low = value.strip().lower()
+            if low in ("1", "true", "yes"):
+                return True
+            if low in ("0", "false", "no"):
+                return False
+    return None
+
+
+def _extra_track_fields(item: dict) -> dict:
+    """Extract optional BPM and explicit-lyrics metadata when present."""
+    raw_bpm = _optional_float(item.get("bpm"), item.get("BPM"))
+    bpm = round(raw_bpm, 2) if raw_bpm is not None and raw_bpm > 0 else None
+    explicit = _optional_bool(
+        item.get("explicit"),
+        item.get("explicit_lyrics"),
+        item.get("EXPLICIT_LYRICS"),
+    )
+    return {
+        "bpm": bpm,
+        "explicit": explicit,
     }
 
 
@@ -137,6 +171,7 @@ def normalize_search_item(item: dict) -> dict:
         "preview_url": item.get("preview_url") or None,
         "isrc": normalize_isrc(item.get("isrc")),
         **_loudness_fields(item),
+        **_extra_track_fields(item),
     }
 
 
@@ -180,8 +215,10 @@ def normalize_public_track(t: dict) -> dict:
         "duration_sec": int(t.get("duration", 0) or 0),
         "preview_url": t.get("preview") or None,
         "rank": int(t.get("rank", 0) or 0),
+        "release_date": str(t.get("release_date") or ""),
         "isrc": normalize_isrc(t.get("isrc")),
         **_loudness_fields(t),
+        **_extra_track_fields(t),
     }
 
 
@@ -251,6 +288,7 @@ def track_metadata(deezer_id: str) -> dict:
         "preview_url": None,
         "isrc": normalize_isrc(song.get("ISRC")),
         **_loudness_fields(song),
+        **_extra_track_fields(song),
     }
 
 
@@ -317,12 +355,29 @@ _track_isrc_flights = SingleFlightTtlCache[str, str](
     max_entries=_TRACK_ARTISTS_CACHE_MAX,
     max_inflight=512,
 )
+_track_detail_meta_flights = SingleFlightTtlCache[str, dict](
+    ttl_seconds=_TRACK_ARTISTS_TTL_SEC,
+    max_entries=_TRACK_ARTISTS_CACHE_MAX,
+    max_inflight=512,
+)
 _ALBUM_RECORD_TYPE_TTL_SEC = 7 * 24 * 3600
 _album_record_type_flights = SingleFlightTtlCache[str, str](
     ttl_seconds=_ALBUM_RECORD_TYPE_TTL_SEC,
     max_entries=2048,
     max_inflight=64,
 )
+
+
+def _cache_track_detail_meta(track_id: str, detail: dict) -> None:
+    """Persist gain, bpm, explicit, release_date, and ISRC from /track/{id}."""
+    isrc = normalize_isrc(detail.get("isrc"))
+    _track_isrc_flights.put(track_id, isrc)
+    meta = {
+        **_loudness_fields(detail),
+        **_extra_track_fields(detail),
+        "release_date": str(detail.get("release_date") or ""),
+    }
+    _track_detail_meta_flights.put(track_id, meta)
 
 
 def _validated_track_detail(track_id: str, *, context: str) -> dict:
@@ -370,7 +425,7 @@ def _full_public_artist_refs(track_id: str) -> list[dict]:
                 f"Deezer track {track_id} has no contributor list; "
                 "complete artist credits cannot be determined"
             )
-        _track_isrc_flights.put(track_id, normalize_isrc(detail.get("isrc")))
+        _cache_track_detail_meta(track_id, detail)
         return refs
 
     return _track_artists_flights.get(track_id, load)
@@ -390,6 +445,7 @@ def track_isrc(track_id: str) -> str:
         refs = _artist_refs(detail, {})
         if refs:
             _track_artists_flights.put(tid, refs)
+        _cache_track_detail_meta(tid, detail)
         return normalize_isrc(detail.get("isrc"))
 
     return _track_isrc_flights.get(tid, load)
@@ -511,6 +567,19 @@ def normalize_public_tracks(
                 resolved_isrc = cached_isrc
         if resolved_isrc:
             enriched["isrc"] = resolved_isrc
+        meta_hit, cached_meta = _track_detail_meta_flights.peek(track_id)
+        if meta_hit and isinstance(cached_meta, dict):
+            for key in (
+                "loudness_gain_db",
+                "loudness_lufs",
+                "loudness_peak",
+                "bpm",
+                "explicit",
+            ):
+                if enriched.get(key) is None and cached_meta.get(key) is not None:
+                    enriched[key] = cached_meta[key]
+            if not enriched.get("release_date") and cached_meta.get("release_date"):
+                enriched["release_date"] = cached_meta["release_date"]
         normalized.append(normalize_public_track(enriched))
     return normalized
 

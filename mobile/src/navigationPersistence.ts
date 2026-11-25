@@ -117,6 +117,12 @@ function sanitizeSectionRoute(value: unknown): SanitizedRoute | null {
       if (playlistId === null) return null;
       return route('Playlist', { kind: 'playlist', playlistId, name });
     }
+    case 'UserProfile': {
+      const userId = playlistIdFromRouteValue(params.userId);
+      if (userId === null) return null;
+      const name = label(params.name);
+      return route('UserProfile', { userId, ...(name === undefined ? {} : { name }) });
+    }
     default:
       return null;
   }

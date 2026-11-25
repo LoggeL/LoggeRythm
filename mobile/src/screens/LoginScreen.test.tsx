@@ -49,6 +49,9 @@ vi.mock('../components/FormField', () => ({
   FormField: 'FormField',
   PasswordField: 'PasswordField',
 }));
+vi.mock('../components/party/GuestJamEntry', () => ({
+  GuestJamEntry: 'GuestJamEntry',
+}));
 
 interface RenderOptions {
   mode?: 'sign-in' | 'create-account';

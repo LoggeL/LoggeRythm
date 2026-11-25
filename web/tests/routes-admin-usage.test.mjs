@@ -44,6 +44,9 @@ const iconStub = moduleUrl(`
   export const RadioIcon = Icon;
   export const LogOutIcon = Icon;
   export const TrashIcon = Icon;
+  export const PlayIcon = Icon;
+  export const ShuffleIcon = Icon;
+  export const QueueIcon = Icon;
 `);
 
 const stubs = {
@@ -81,7 +84,8 @@ const stubs = {
   "@/lib/slugs": moduleUrl("export const playlistPath = (p) => `/playlist/${p.id}`;"),
   "@/hooks/useDialogFocus": moduleUrl("export function useDialogFocus() {}"),
   "@/hooks/useAuth": moduleUrl("export const useMe = () => ({ data: globalThis.__adminUsageRouteFixture.me });"),
-  "@/hooks/useLibrary": moduleUrl("export const usePlaylists = () => ({ data: [], isSuccess: true, isPending: false, isError: false }); export const useDeletePlaylist = () => ({ mutate() {} });"),
+  "@/hooks/useLibrary": moduleUrl("export const usePlaylists = () => ({ data: [], isSuccess: true, isPending: false, isError: false }); export const useDeletePlaylist = () => ({ mutate() {} }); export const useAddToPlaylist = () => ({ mutate() {} });"),
+  "@/lib/trackDrag": moduleUrl("export const TRACK_DRAG_MIME = 'application/x-loggerythm-track'; export const parseDraggedTrack = () => null;"),
   "@/hooks/useSearchNavigation": moduleUrl("export const useSearchNavigation = () => ({ input: '', setInput() {}, submit() {}, clear() {}, setComposing() {} });"),
   "@/store/player": moduleUrl("export const usePlayerStore = (sel) => sel({ isPlaying: false, queueContext: null });"),
   "@/store/toast": moduleUrl("export const toast = { success() {}, error() {} };"),

@@ -1,8 +1,17 @@
 import { queryOptions } from '@tanstack/react-query';
+import { ApiError } from '../api/error';
 import { canonicalDeezerIds, normalizeSearchQuery, queryKeys, type QueryScope } from './queryKeys';
 import { releaseRadarTracks } from './releaseRadar';
 import { musicRepository, type MusicRepository } from './repositories';
-import type { DeezerId, ImportJobStatus, TrackPlayQuery } from '../api/types';
+import type {
+  DeezerId,
+  ImportJobStatus,
+  StatsInsightsRange,
+  TrackPlayQuery,
+} from '../api/types';
+import type { LyricsLookupOptions } from '../api/endpoints';
+import { readOfflineLyrics, saveOfflineLyrics } from '../offline/lyricsCache';
+import { getOfflineSnapshot, trackIsExplicitlyDownloaded } from '../offline/registry';
 
 /** How often the import list refreshes while an import is still working. */
 export const IMPORT_JOB_POLL_MS = 1500;
@@ -62,6 +71,17 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
       return queryOptions({
         queryKey: queryKeys.home.mixes(scope),
         queryFn: ({ signal }) => repository.getHomeMixes(signal),
+      });
+    },
+    personalMixes(scope: QueryScope) {
+      return queryOptions({
+        queryKey: queryKeys.home.personalMixes(scope),
+        queryFn: ({ signal }) => {
+          if (!repository.getPersonalMixes) {
+            throw new Error('HomeRepository.getPersonalMixes is not configured');
+          }
+          return repository.getPersonalMixes(signal);
+        },
       });
     },
     becauseYouListened(scope: QueryScope) {
@@ -125,6 +145,19 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         queryFn: ({ signal }) => repository.getTrack(id, signal),
       });
     },
+    audioMeta(id: DeezerId) {
+      return queryOptions({
+        queryKey: queryKeys.catalog.audioMeta(id),
+        queryFn: ({ signal }) => {
+          if (!repository.getTrackAudioMeta) {
+            throw new Error('CatalogRepository.getTrackAudioMeta is not configured');
+          }
+          return repository.getTrackAudioMeta(id, signal);
+        },
+        staleTime: LYRICS_STALE_TIME_MS,
+        retry: false,
+      });
+    },
     album(id: DeezerId) {
       return queryOptions({
         queryKey: queryKeys.catalog.album(id),
@@ -176,13 +209,82 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         queryFn: ({ signal }) => repository.getDeezerPlaylist(id, signal),
       });
     },
-    lyrics(artist: string, title: string, deezerId?: DeezerId) {
+    lyrics(
+      artist: string,
+      title: string,
+      deezerId?: DeezerId,
+      variant?: 'default' | 'ai',
+      options?: LyricsLookupOptions,
+    ) {
       const normalizedArtist = artist.trim();
       const normalizedTitle = title.trim();
       return queryOptions({
-        queryKey: queryKeys.lyrics(normalizedArtist, normalizedTitle, deezerId),
-        queryFn: ({ signal }) =>
-          repository.getLyrics(normalizedArtist, normalizedTitle, deezerId, signal),
+        queryKey: queryKeys.lyrics(normalizedArtist, normalizedTitle, deezerId, variant),
+        queryFn: async ({ signal }) => {
+          const offlineScope = getOfflineSnapshot().scope;
+          const cacheableOffline =
+            deezerId !== undefined
+            && offlineScope !== null
+            && variant !== 'ai';
+          const hasLookupOptions =
+            options !== undefined
+            && (
+              (options.album !== undefined && options.album.trim().length > 0)
+              || (options.durationSec !== undefined && options.durationSec > 0)
+            );
+          try {
+            const response = hasLookupOptions
+              ? await repository.getLyrics(
+                  normalizedArtist,
+                  normalizedTitle,
+                  deezerId,
+                  signal,
+                  variant,
+                  options,
+                )
+              : variant === undefined
+                ? await repository.getLyrics(
+                    normalizedArtist,
+                    normalizedTitle,
+                    deezerId,
+                    signal,
+                  )
+                : await repository.getLyrics(
+                    normalizedArtist,
+                    normalizedTitle,
+                    deezerId,
+                    signal,
+                    variant,
+                  );
+            if (cacheableOffline && trackIsExplicitlyDownloaded(deezerId)) {
+              void saveOfflineLyrics(offlineScope, deezerId, response).catch((persistError: unknown) => {
+                console.error('[LoggeRythm] Failed to cache offline lyrics:', persistError);
+              });
+            }
+            return response;
+          } catch (error) {
+            const isAborted =
+              signal?.aborted === true
+              || (error instanceof Error && error.name === 'AbortError');
+            const isAuthOrClientError =
+              error instanceof ApiError
+              && (
+                error.status === 400
+                || error.status === 401
+                || error.status === 403
+                || error.status === 404
+              );
+            if (cacheableOffline && !isAborted && !isAuthOrClientError) {
+              try {
+                const saved = await readOfflineLyrics(offlineScope, deezerId);
+                if (saved !== null) return saved;
+              } catch (cacheError) {
+                console.error('[LoggeRythm] Failed to read offline lyrics cache:', cacheError);
+              }
+            }
+            throw error;
+          }
+        },
         staleTime: LYRICS_STALE_TIME_MS,
         // Lyrics resolution can materialize/transcribe audio server-side. Never
         // repeat that expensive request invisibly; the UI exposes explicit Retry.
@@ -227,6 +329,18 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         staleTime: 0,
       });
     },
+    playlistDuplicates(scope: QueryScope, id: number) {
+      return queryOptions({
+        queryKey: queryKeys.playlists.duplicates(scope, id),
+        queryFn: ({ signal }) => {
+          if (!repository.getPlaylistDuplicates) {
+            throw new Error('PlaylistsRepository.getPlaylistDuplicates is not configured');
+          }
+          return repository.getPlaylistDuplicates(id, signal);
+        },
+        staleTime: 0,
+      });
+    },
     playlistInvitePreview(scope: QueryScope, token: string) {
       const normalized = token.trim();
       return queryOptions({
@@ -265,6 +379,29 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
       return queryOptions({
         queryKey: queryKeys.profile.stats(scope),
         queryFn: ({ signal }) => repository.getStats(signal),
+      });
+    },
+    statsInsights(scope: QueryScope, range: StatsInsightsRange) {
+      return queryOptions({
+        queryKey: queryKeys.profile.insights(scope, range),
+        queryFn: ({ signal }) => {
+          if (!repository.getStatsInsights) {
+            throw new Error('ProfileRepository.getStatsInsights is not configured');
+          }
+          return repository.getStatsInsights(range, signal);
+        },
+      });
+    },
+    socialActivity(scope: QueryScope) {
+      return queryOptions({
+        queryKey: queryKeys.social.activity(scope),
+        queryFn: ({ signal }) => {
+          if (!repository.getSocialActivity) {
+            throw new Error('ProfileRepository.getSocialActivity is not configured');
+          }
+          return repository.getSocialActivity(signal);
+        },
+        staleTime: 10_000,
       });
     },
     playbackSettings(scope: QueryScope) {

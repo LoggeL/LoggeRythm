@@ -16,7 +16,19 @@ from sqlalchemy.schema import CreateColumn
 
 from .api_version import API_VERSION
 from .config import APP_ENV, CORS_ORIGINS, validate_runtime_config
-from .db.models import Like, PartySession, PartyTrack, Play, Playlist, PlaylistTrack, StoredTrack, User
+from .db.models import (
+    ImportJob,
+    Like,
+    PartySession,
+    PartyTrack,
+    Play,
+    Playlist,
+    PlaylistTrack,
+    StoredLyrics,
+    StoredTrack,
+    User,
+    UserPlaybackState,
+)
 from .db.session import SessionLocal, engine, init_db
 from .openapi_security import install_auth_openapi
 from .routers import (
@@ -35,6 +47,7 @@ from .routers import (
     profile,
     radio,
     resolve,
+    social,
     stats,
     stream,
 )
@@ -123,16 +136,31 @@ _COLUMN_MIGRATIONS: tuple[dict[str, str], ...] = (
 _PORTABLE_COLUMN_MIGRATIONS = (
     Play.__table__.c.event_id,
     PartyTrack.__table__.c.added_by_member,
+    PartyTrack.__table__.c.loudness_gain_db,
     PartySession.__table__.c.guests_can_control,
     PartySession.__table__.c.playback_changed_by,
     PartySession.__table__.c.playback_revision,
+    PartySession.__table__.c.auto_dj,
     StoredTrack.__table__.c.requested_by_user_id,
     StoredTrack.__table__.c.request_source,
+    StoredTrack.__table__.c.audio_format,
+    StoredTrack.__table__.c.loudness_gain_db,
+    StoredTrack.__table__.c.loudness_lufs,
+    StoredTrack.__table__.c.loudness_peak,
+    StoredTrack.__table__.c.bpm,
     Playlist.__table__.c.is_collaborative,
     Playlist.__table__.c.revision,
     PlaylistTrack.__table__.c.added_by_user_id,
     PlaylistTrack.__table__.c.isrc,
+    PlaylistTrack.__table__.c.loudness_gain_db,
     Like.__table__.c.isrc,
+    Like.__table__.c.loudness_gain_db,
+    User.__table__.c.share_listening_activity,
+    User.__table__.c.preferred_quality,
+    StoredLyrics.__table__.c.instrumental,
+    ImportJob.__table__.c.target_playlist_id,
+    ImportJob.__table__.c.create_playlist_name,
+    ImportJob.__table__.c.created_playlist_id,
 )
 _PORTABLE_COLUMN_BACKFILLS: dict[tuple[str, str], str] = {
     (
@@ -316,6 +344,7 @@ app.include_router(party.router)
 app.include_router(connect.router)
 app.include_router(profile.router)
 app.include_router(radio.router)
+app.include_router(social.router)
 app.include_router(stats.router)
 app.include_router(home.router)
 

@@ -55,7 +55,10 @@ vi.mock('../config', () => ({
 }));
 vi.mock('../data', () => ({
   musicCacheScope: () => 'https://music.example.test::user:7',
-  musicQueries: { homeMixes: () => ({ queryKey: ['home', 'mixes'] }) },
+  musicQueries: {
+    homeMixes: () => ({ queryKey: ['home', 'mixes'] }),
+    personalMixes: () => ({ queryKey: ['home', 'personal-mixes'] }),
+  },
 }));
 vi.mock('../localization', () => ({
   activeLocale: 'en',
@@ -206,4 +209,32 @@ describe('MixScreen missing-route query state', () => {
     expect(page.props.bottomInset).toBe(96);
     expect(page.props.tv).toBe(mocks.tvEnv);
   });
+
+  it.each(['on-repeat', 'forgotten-favorites', 'unheard-cuts'])(
+    'queries personalMixes instead of homeMixes for personal mix key "%s"',
+    (personalKey) => {
+      mocks.useQuery.mockReturnValue({
+        data: undefined,
+        error: null,
+        isPending: true,
+        isFetching: true,
+        isStale: false,
+        fetchStatus: 'fetching',
+        refetch: mocks.refetch,
+      });
+
+      MixScreen({
+        mixKey: personalKey,
+        onOpenAlbum: vi.fn(),
+        onOpenArtist: vi.fn(),
+      });
+
+      expect(mocks.useQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queryKey: ['home', 'personal-mixes'],
+          enabled: true,
+        }),
+      );
+    },
+  );
 });

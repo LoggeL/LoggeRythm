@@ -77,8 +77,10 @@ vi.mock('react', async (importOriginal) => {
 });
 
 vi.mock('react-native', () => ({
+  AccessibilityInfo: { announceForAccessibility: vi.fn() },
   ActivityIndicator: 'ActivityIndicator',
   Alert: { alert: vi.fn() },
+  Animated: { View: 'AnimatedView', Value: class { setValue = vi.fn(); } },
   FlatList: 'FlatList',
   Image: 'Image',
   Modal: 'Modal',
@@ -107,6 +109,13 @@ vi.mock('../components/party/PartyParts', () => ({
   PartyNotice: 'PartyNotice',
   PartyQueueRow: 'PartyQueueRow',
   PartySearchResultRow: 'PartySearchResultRow',
+}));
+vi.mock('../components/party/PartyJam2Controls', () => ({
+  PartyInteractionBar: 'PartyInteractionBar',
+  PartySavePlaylistSheet: 'PartySavePlaylistSheet',
+}));
+vi.mock('../components/party/PartyKioskModal', () => ({
+  PartyKioskModal: 'PartyKioskModal',
 }));
 vi.mock('../components/search/SpotifyImportForm', () => ({
   spotifyImportInputStyle: {},
@@ -266,6 +275,15 @@ vi.mock('../components/library/PlaylistDeleteSheet', () => ({
 vi.mock('../components/library/PlaylistLeaveSheet', () => ({
   PlaylistLeaveSheet: 'PlaylistLeaveSheet',
 }));
+vi.mock('../components/library/PlaylistQuickAddSheet', () => ({
+  PlaylistQuickAddSheet: 'PlaylistQuickAddSheet',
+}));
+vi.mock('../components/library/PlaylistDuplicatesSheet', () => ({
+  PlaylistDuplicatesSheet: 'PlaylistDuplicatesSheet',
+}));
+vi.mock('../components/library/PlaylistLiveSyncBanner', () => ({
+  PlaylistLiveSyncBanner: 'PlaylistLiveSyncBanner',
+}));
 vi.mock('../components/library/useCreatePlaylist', () => ({
   useCreatePlaylist: mocks.useCreatePlaylist,
 }));
@@ -298,12 +316,26 @@ vi.mock('../components/catalog/ArtistSongSearchHeader', () => ({
 vi.mock('./useArtistFollow', () => ({ useArtistFollow: mocks.useArtistFollow }));
 vi.mock('./useArtistSongSearch', () => ({ useArtistSongSearch: mocks.useArtistSongSearch }));
 vi.mock('../offline/hooks', () => ({ useOfflineDownloads: mocks.useOfflineDownloads }));
+vi.mock('../offline/useTrackCollectionOffline', () => ({
+  useTrackCollectionOffline: () => ({
+    phase: 'idle',
+    busy: false,
+    downloadedCount: 0,
+    totalCount: 0,
+    downloadAll: vi.fn(),
+    removeAll: vi.fn(),
+  }),
+}));
 vi.mock('../data', () => ({
   findCachedAlbumSummary: mocks.findCachedAlbumSummary,
   findCachedArtistSummary: mocks.findCachedArtistSummary,
   findCachedGenre: mocks.findCachedGenre,
   findCachedPlaylistSummary: mocks.findCachedPlaylistSummary,
   musicCacheScope: (origin: string, id: number) => `${origin}::user:${id}`,
+  musicRepository: {
+    getPlaylistSyncManifest: vi.fn(),
+    seedRadio: vi.fn(),
+  },
   musicQueries: {
     album: (id: string) => ({ queryKey: ['album', id] }),
     artist: (id: string) => ({ queryKey: ['artist', id] }),
@@ -650,8 +682,13 @@ describe('LibraryScreen & PlaylistScreen modernization', () => {
     expect(mocks.stateSetters[2]).toHaveBeenCalledWith(false);
 
     // Row play delegates to playTrackRow.
-    const row = (list.props.renderItem as (info: { item: Track; index: number }) => React.ReactElement)({
-      item: sampleTrack,
+    const row = (
+      list.props.renderItem as (info: {
+        item: { track: Track; sourceIndex: number };
+        index: number;
+      }) => React.ReactElement
+    )({
+      item: { track: sampleTrack, sourceIndex: 0 },
       index: 0,
     });
     (row.props as { onPlay: () => void }).onPlay();

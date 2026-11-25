@@ -237,9 +237,9 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 99)
-        self.assertEqual(len(schema["paths"]), 95)
-        self.assertEqual(len(operation_ids), 109)
+        self.assertEqual(len(schemas), 124)
+        self.assertEqual(len(schema["paths"]), 115)
+        self.assertEqual(len(operation_ids), 129)
         self.assertIn("/api/admin/likes/deduplicate", schema["paths"])
         self.assertIn("/api/admin/usage", schema["paths"])
         self.assertIn("/api/admin/usage/users/{user_id}", schema["paths"])
@@ -253,6 +253,29 @@ class OpenApiContractTests(unittest.TestCase):
             schema["paths"],
         )
         self.assertIn("/api/playlists/{playlist_id}/leave", schema["paths"])
+        for new_path in (
+            "/api/tracks/preload",
+            "/api/tracks/cached-check",
+            "/api/tracks/{deezer_id}/audio-meta",
+            "/api/connect/command",
+            "/api/connect/transfer",
+            "/api/playlists/{playlist_id}/sync-manifest",
+            "/api/playlists/{playlist_id}/duplicates",
+            "/api/playlists/{playlist_id}/deduplicate",
+            "/api/playlists/{playlist_id}/events",
+            "/api/playlists/blend/{other_user_id}",
+            "/api/home/personal-mixes",
+            "/api/radio/seed",
+            "/api/party/{code}/save-playlist",
+            "/api/party/{code}/host",
+            "/api/party/{code}/auto-dj/fill",
+            "/api/party/{code}/react",
+            "/api/party/{code}/vote-skip",
+            "/api/me/stats/insights",
+            "/api/social/activity",
+            "/api/social/activity/events",
+        ):
+            self.assertIn(new_path, schema["paths"])
         for schema_name in schemas:
             with self.subTest(schema=schema_name):
                 self.assertIn(f'  {json.dumps(schema_name)}:', generated)

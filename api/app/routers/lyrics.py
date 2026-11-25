@@ -40,20 +40,72 @@ def _parse_lrc(lrc: str) -> list[dict]:
     return lines
 
 
-def _lrclib_synced(artist: str, title: str) -> list[dict] | None:
+def _parse_plain(plain: str) -> list[dict]:
+    lines: list[dict] = []
+    for raw in plain.splitlines():
+        text = raw.strip()
+        if text:
+            lines.append({"t": 0.0, "text": text})
+    return lines
+
+
+def _lrclib_entry_to_result(item: dict) -> dict | None:
+    synced = item.get("syncedLyrics")
+    if isinstance(synced, str) and synced.strip():
+        parsed = _parse_lrc(synced)
+        if parsed:
+            return {
+                "lines": parsed,
+                "synced": True,
+                "instrumental": False,
+                "source": "lrclib",
+                "ai_generated": False,
+            }
+    if item.get("instrumental") is True:
+        return {
+            "lines": [],
+            "synced": False,
+            "instrumental": True,
+            "source": "lrclib",
+            "ai_generated": False,
+        }
+    plain = item.get("plainLyrics")
+    if isinstance(plain, str) and plain.strip():
+        parsed_plain = _parse_plain(plain)
+        if parsed_plain:
+            return {
+                "lines": parsed_plain,
+                "synced": False,
+                "instrumental": False,
+                "source": "lrclib-plain",
+                "ai_generated": False,
+            }
+    return None
+
+
+def _lrclib_lookup(
+    artist: str,
+    title: str,
+    *,
+    album: str | None = None,
+    duration_sec: int | None = None,
+) -> dict | None:
     try:
+        params: dict[str, object] = {"artist_name": artist, "track_name": title}
+        if album and album.strip():
+            params["album_name"] = album.strip()
+        if duration_sec is not None and duration_sec > 0:
+            params["duration"] = duration_sec
         r = requests.get(
             "https://lrclib.net/api/get",
-            params={"artist_name": artist, "track_name": title},
+            params=params,
             headers=_UA,
             timeout=10,
         )
         if r.status_code == 200:
-            synced = r.json().get("syncedLyrics")
-            if synced:
-                parsed = _parse_lrc(synced)
-                if parsed:
-                    return parsed
+            res = _lrclib_entry_to_result(r.json() or {})
+            if res is not None:
+                return res
         r = requests.get(
             "https://lrclib.net/api/search",
             params={"artist_name": artist, "track_name": title},
@@ -61,35 +113,54 @@ def _lrclib_synced(artist: str, title: str) -> list[dict] | None:
             timeout=10,
         )
         if r.status_code == 200:
-            for item in r.json() or []:
-                synced = item.get("syncedLyrics")
-                if synced:
-                    parsed = _parse_lrc(synced)
-                    if parsed:
-                        return parsed
+            items = r.json() or []
+            # Prefer synced lyrics across search results before falling back to
+            # instrumental or plain lyrics.
+            fallback_candidate: dict | None = None
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                res = _lrclib_entry_to_result(item)
+                if res is None:
+                    continue
+                if res["synced"]:
+                    return res
+                if fallback_candidate is None:
+                    fallback_candidate = res
+            if fallback_candidate is not None:
+                return fallback_candidate
     except (requests.exceptions.RequestException, ValueError):
         return None
     return None
 
 
-def _fetch(artist: str, title: str) -> dict:
+def _fetch(
+    artist: str,
+    title: str,
+    *,
+    album: str | None = None,
+    duration_sec: int | None = None,
+) -> dict:
     primary = artist.split(",")[0].strip() or artist
     titles = [title]
     cleaned = _clean_title(title)
     if cleaned != title:
         titles.append(cleaned)
+    fallback_result: dict | None = None
     for t in titles:
-        lines = _lrclib_synced(primary, t)
-        if lines:
-            return {
-                "lines": lines,
-                "synced": True,
-                "source": "lrclib",
-                "ai_generated": False,
-            }
+        res = _lrclib_lookup(primary, t, album=album, duration_sec=duration_sec)
+        if res is None:
+            continue
+        if res["synced"]:
+            return res
+        if fallback_result is None:
+            fallback_result = res
+    if fallback_result is not None:
+        return fallback_result
     return {
         "lines": None,
         "synced": False,
+        "instrumental": False,
         "source": None,
         "ai_generated": False,
     }
@@ -122,7 +193,11 @@ def _cached_lyrics_need_word_refresh(row: StoredLyrics) -> bool:
 
 
 def _should_persist_lyrics(result: dict) -> bool:
-    return bool(result.get("lines")) or result.get("source") == groq.LYRICS_SOURCE
+    return (
+        bool(result.get("lines"))
+        or bool(result.get("instrumental"))
+        or result.get("source") == groq.LYRICS_SOURCE
+    )
 
 
 def _transcribe_or_502(
@@ -211,6 +286,8 @@ def lyrics(
     artist: str = Query(..., min_length=1),
     title: str = Query(..., min_length=1),
     deezer_id: str | None = Query(default=None),
+    album: str | None = Query(default=None),
+    duration_sec: int | None = Query(default=None, ge=0),
     variant: str = Query(default="default", pattern="^(default|ai)$"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -240,32 +317,44 @@ def lyrics(
             return {
                 "lines": json.loads(row.lines_json),
                 "synced": row.synced,
+                "instrumental": bool(row.instrumental),
                 "source": row.source,
                 "ai_generated": row.ai_generated,
                 "cached": True,
             }
 
-    result = _fetch(artist, title)
+    if album is not None or duration_sec is not None:
+        result = _fetch(artist, title, album=album, duration_sec=duration_sec)
+    else:
+        result = _fetch(artist, title)
+    result.setdefault("instrumental", False)
 
-    if deezer_id and not result.get("lines") and groq.configured():
+    if (
+        deezer_id
+        and not result.get("lines")
+        and not result.get("instrumental")
+        and groq.configured()
+    ):
         lines = _transcribe_or_502(deezer_id, user_id=user.id)
         result = {
             "lines": lines,
             "synced": False,
+            "instrumental": False,
             "source": groq.LYRICS_SOURCE,
             "ai_generated": True,
         }
 
-    # Persist positive hits and valid no-vocals Groq results so repeated page
-    # loads never trigger another paid transcription for the same audio.
+    # Persist positive hits, known instrumentals, and valid no-vocals Groq
+    # results so repeated page loads never trigger another paid transcription.
     if deezer_id and _should_persist_lyrics(result):
         db.merge(
             StoredLyrics(
                 deezer_id=deezer_id,
-                lines_json=json.dumps(result["lines"], ensure_ascii=False),
+                lines_json=json.dumps(result["lines"] or [], ensure_ascii=False),
                 synced=bool(result.get("synced")),
                 source=str(result.get("source") or "unknown"),
                 ai_generated=bool(result.get("ai_generated")),
+                instrumental=bool(result.get("instrumental")),
             )
         )
         db.commit()

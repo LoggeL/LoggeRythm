@@ -216,14 +216,19 @@ export function useGuestParty(code: string) {
     removeTrack: (itemId: number, title: string) =>
       mutate(`"${title}" konnte nicht entfernt werden`, () => api.partyRemoveTrack(code, itemId)),
     playAt: (index: number, title: string) =>
-      mutate(`"${title}" konnte nicht abgespielt werden`, () => api.partySetCurrent(code, index)),
+      mutate(`"${title}" konnte nicht abgespielt werden`, async () => {
+        await api.partySetCurrent(code, index);
+        if (!party?.is_playing) {
+          await api.partyPatchPlayback(code, true, 0);
+        }
+      }),
     moveTrack: (from: number, to: number, title: string) =>
       mutate(
         `"${title}" konnte nicht nach ${to < from ? "oben" : "unten"} verschoben werden`,
         () => api.partyReorder(code, moved(trackIds, from, to)),
       ),
     togglePlayback: () => {
-      if (!party) return;
+      if (!party || party.current_index < 0 || party.current_index >= party.tracks.length) return;
       void mutate("Wiedergabe konnte nicht umgeschaltet werden", () =>
         api.partyPatchPlayback(code, !party.is_playing, party.position_sec),
       );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { strings } from '../localization';
+import { WifiOnlyDownloadError } from '../offline/downloadSettings';
 import { trackActionFailureMessage, type TrackActionFailureKind } from './trackActionFeedback';
 
 describe('track action failure copy', () => {
@@ -13,6 +14,7 @@ describe('track action failure copy', () => {
       'create-playlist': strings.trackActions.createPlaylistFailed,
       download: strings.trackActions.downloadFailed,
       'remove-download': strings.trackActions.removeDownloadFailed,
+      share: strings.trackActions.shareFailed,
       remove: strings.trackActions.removeFailed,
       generic: strings.trackActions.actionFailed,
     };
@@ -22,5 +24,11 @@ describe('track action failure copy', () => {
       expect(rendered).toBe(message);
       expect(rendered).not.toContain(privateDetail);
     }
+  });
+
+  it('surfaces the explicit Wi-Fi-only message for WifiOnlyDownloadError on downloads', () => {
+    expect(trackActionFailureMessage('download', new WifiOnlyDownloadError())).toBe(
+      strings.profile.wifiRequiredError,
+    );
   });
 });

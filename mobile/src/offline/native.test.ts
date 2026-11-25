@@ -4,6 +4,8 @@ import {
   decodeNativeDownloadResult,
   decodeNativeHydration,
   decodeNativeProgress,
+  decodeNativeRollingCacheClearResult,
+  decodeNativeStorageMetrics,
 } from './native';
 
 vi.mock('react-native', () => ({
@@ -109,5 +111,45 @@ describe('offline native bridge decoders', () => {
       .toThrow('incomplete');
     expect(() => decodeNativeClearAllResult({ cleanupGeneration: -1, cleared: true }))
       .toThrow('generation');
+  });
+
+  it('decodes account-bound native storage metrics and rolling cache clear results', () => {
+    expect(decodeNativeStorageMetrics({
+      scope,
+      scopeBytes: 12_000,
+      scopeTrackCount: 4,
+      allDownloadsBytes: 24_000,
+      rollingCacheBytes: 1_048_576,
+      rollingCacheMaxBytes: 524_288_000,
+      rollingCacheEntryCount: 12,
+      availableDiskBytes: 2_000_000_000,
+      wifiOnly: true,
+    }, scope)).toMatchObject({
+      scopeTrackCount: 4,
+      rollingCacheBytes: 1_048_576,
+      wifiOnly: true,
+    });
+    expect(() => decodeNativeStorageMetrics({
+      scope: 'https://music.test::user:8',
+      scopeBytes: 0,
+      scopeTrackCount: 0,
+      allDownloadsBytes: 0,
+      rollingCacheBytes: 0,
+      rollingCacheMaxBytes: 1,
+      rollingCacheEntryCount: 0,
+      availableDiskBytes: 1,
+      wifiOnly: false,
+    }, scope)).toThrow('another account');
+    expect(decodeNativeRollingCacheClearResult({
+      bytesBefore: 1024,
+      bytesAfter: 0,
+      resourcesRemoved: 3,
+      verified: true,
+    })).toEqual({
+      bytesBefore: 1024,
+      bytesAfter: 0,
+      resourcesRemoved: 3,
+      verified: true,
+    });
   });
 });

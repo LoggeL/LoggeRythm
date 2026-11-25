@@ -19,9 +19,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user_optional
-from ..db.models import FollowedArtist, Like, Play, User
+from ..db.models import FollowedArtist, Like, Play, Playlist, PlaylistTrack, StoredTrack, User
 from ..db.session import get_db
-from ..schemas.track import RadarTrack, Track
+from ..schemas.track import RadarTrack, Track, load_artists
 from ..services import deezer_client as dc
 from ..services import radar_preload, recommend
 from ..services.discovery import DiscoveryError, run_jobs
@@ -599,6 +599,282 @@ def _build_mixes(user: User | None, db: Session) -> list[Shelf]:
                     subtitle="Die größten Songs gerade",
                     cover=_cover_of(top),
                     tracks=top[:30],
+                )
+            )
+
+    return shelves
+
+
+@router.get("/personal-mixes", response_model=list[Shelf])
+def personal_mixes(
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> list[Shelf]:
+    """Zero-latency SQL personal mixes built purely from local history (no external API calls).
+
+    Produces up to three shelves:
+    - ``on-repeat``: most-played tracks over the last 30 days
+    - ``forgotten-favorites``: liked or heavily played >90d ago with 0 plays in the last 60d
+    - ``unheard-cuts``: tracks by followed artists in the local library/cache never played yet
+    """
+    if user is None:
+        return []
+
+    now = datetime.utcnow()
+    since_30d = now - timedelta(days=30)
+    since_60d = now - timedelta(days=60)
+    before_90d = now - timedelta(days=90)
+    shelves: list[Shelf] = []
+
+    # 1) On Repeat — top played tracks in the last 30 days.
+    repeat_rows = db.execute(
+        select(
+            Play.deezer_id,
+            func.max(Play.title).label("title"),
+            func.max(Play.artist).label("artist"),
+            func.max(Play.artist_id).label("artist_id"),
+            func.max(Play.artists_json).label("artists_json"),
+            func.max(Play.album).label("album"),
+            func.max(Play.album_id).label("album_id"),
+            func.max(Play.cover_url).label("cover_url"),
+            func.max(Play.duration_sec).label("duration_sec"),
+            func.count(Play.id).label("plays"),
+        )
+        .where(Play.user_id == user.id, Play.played_at >= since_30d, Play.deezer_id != "")
+        .group_by(Play.deezer_id)
+        .order_by(func.count(Play.id).desc(), func.max(Play.played_at).desc())
+        .limit(30)
+    ).all()
+    multi_play = [r for r in repeat_rows if int(r.plays) >= 2]
+    chosen_repeat = multi_play if multi_play else repeat_rows
+    if chosen_repeat:
+        on_repeat_tracks = [
+            Track(
+                id=r.deezer_id,
+                title=r.title or "",
+                artist=r.artist or "",
+                artist_id=r.artist_id or "",
+                artists=load_artists(r.artists_json, r.artist or "", r.artist_id or ""),
+                album=r.album or "",
+                album_id=r.album_id or "",
+                cover=r.cover_url or "",
+                duration_sec=max(int(r.duration_sec or 0), 0),
+            )
+            for r in chosen_repeat
+        ]
+        shelves.append(
+            Shelf(
+                key="on-repeat",
+                title="Auf Dauerschleife",
+                subtitle="Deine meistgehörten Songs der letzten 30 Tage",
+                cover=next((t.cover for t in on_repeat_tracks if t.cover), ""),
+                tracks=on_repeat_tracks,
+            )
+        )
+
+    # 2) Forgotten Favorites — liked or >=2 plays older than 90d, 0 plays in last 60d.
+    recent_played_ids = set(
+        db.scalars(
+            select(Play.deezer_id)
+            .where(Play.user_id == user.id, Play.played_at >= since_60d)
+            .distinct()
+        ).all()
+    )
+    forgotten_tracks: list[Track] = []
+    seen_forgotten: set[str] = set()
+
+    old_heavy_rows = db.execute(
+        select(
+            Play.deezer_id,
+            func.max(Play.title).label("title"),
+            func.max(Play.artist).label("artist"),
+            func.max(Play.artist_id).label("artist_id"),
+            func.max(Play.artists_json).label("artists_json"),
+            func.max(Play.album).label("album"),
+            func.max(Play.album_id).label("album_id"),
+            func.max(Play.cover_url).label("cover_url"),
+            func.max(Play.duration_sec).label("duration_sec"),
+            func.count(Play.id).label("plays"),
+        )
+        .where(Play.user_id == user.id, Play.played_at <= before_90d, Play.deezer_id != "")
+        .group_by(Play.deezer_id)
+        .having(func.count(Play.id) >= 2)
+        .order_by(func.count(Play.id).desc())
+        .limit(40)
+    ).all()
+    for r in old_heavy_rows:
+        if r.deezer_id in recent_played_ids or r.deezer_id in seen_forgotten:
+            continue
+        seen_forgotten.add(r.deezer_id)
+        forgotten_tracks.append(
+            Track(
+                id=r.deezer_id,
+                title=r.title or "",
+                artist=r.artist or "",
+                artist_id=r.artist_id or "",
+                artists=load_artists(r.artists_json, r.artist or "", r.artist_id or ""),
+                album=r.album or "",
+                album_id=r.album_id or "",
+                cover=r.cover_url or "",
+                duration_sec=max(int(r.duration_sec or 0), 0),
+            )
+        )
+        if len(forgotten_tracks) >= 30:
+            break
+
+    if len(forgotten_tracks) < 30:
+        old_likes = db.scalars(
+            select(Like)
+            .where(Like.user_id == user.id, Like.created_at <= before_90d)
+            .order_by(Like.created_at.desc())
+            .limit(40)
+        ).all()
+        for lk in old_likes:
+            if lk.deezer_id in recent_played_ids or lk.deezer_id in seen_forgotten:
+                continue
+            seen_forgotten.add(lk.deezer_id)
+            artists = load_artists(lk.artists_json, lk.artist)
+            forgotten_tracks.append(
+                Track(
+                    id=lk.deezer_id,
+                    title=lk.title,
+                    artist=lk.artist,
+                    artist_id=artists[0].id if artists else "",
+                    artists=artists,
+                    album=lk.album,
+                    album_id=lk.album_id,
+                    cover=lk.cover_url or "",
+                    duration_sec=lk.duration_sec,
+                    isrc=lk.isrc or "",
+                    loudness_gain_db=lk.loudness_gain_db,
+                )
+            )
+            if len(forgotten_tracks) >= 30:
+                break
+
+    if forgotten_tracks:
+        shelves.append(
+            Shelf(
+                key="forgotten-favorites",
+                title="Wiederentdeckt",
+                subtitle="Frühere Favoriten, die du lange nicht gehört hast",
+                cover=next((t.cover for t in forgotten_tracks if t.cover), ""),
+                tracks=forgotten_tracks,
+            )
+        )
+
+    # 3) Unheard Cuts — tracks by followed artists in local library/cache never played by user.
+    followed_names = {
+        name.strip().casefold()
+        for name in db.scalars(
+            select(FollowedArtist.name).where(FollowedArtist.user_id == user.id)
+        ).all()
+        if name and name.strip()
+    }
+    if followed_names:
+        all_played_ids = set(
+            db.scalars(
+                select(Play.deezer_id).where(Play.user_id == user.id).distinct()
+            ).all()
+        )
+        unheard: list[Track] = []
+        seen_unheard: set[str] = set()
+
+        def _consider_unheard(
+            tid: str,
+            title: str,
+            artist: str,
+            artists_json: str,
+            album: str,
+            album_id: str,
+            cover: str,
+            duration_sec: int,
+            gain_db: float | None = None,
+        ) -> None:
+            if len(unheard) >= 30 or not tid or tid in all_played_ids or tid in seen_unheard:
+                return
+            if artist.strip().casefold() not in followed_names:
+                return
+            seen_unheard.add(tid)
+            artists = load_artists(artists_json, artist)
+            unheard.append(
+                Track(
+                    id=tid,
+                    title=title,
+                    artist=artist,
+                    artist_id=artists[0].id if artists else "",
+                    artists=artists,
+                    album=album,
+                    album_id=album_id,
+                    cover=cover,
+                    duration_sec=max(int(duration_sec or 0), 0),
+                    loudness_gain_db=gain_db,
+                )
+            )
+
+        for lk in db.scalars(
+            select(Like).where(Like.user_id == user.id).order_by(Like.created_at.desc())
+        ).all():
+            _consider_unheard(
+                lk.deezer_id,
+                lk.title,
+                lk.artist,
+                lk.artists_json,
+                lk.album,
+                lk.album_id,
+                lk.cover_url or "",
+                lk.duration_sec,
+                lk.loudness_gain_db,
+            )
+
+        if len(unheard) < 30:
+            pt_rows = db.scalars(
+                select(PlaylistTrack)
+                .join(Playlist, Playlist.id == PlaylistTrack.playlist_id)
+                .where((Playlist.user_id == user.id) | Playlist.is_public.is_(True))
+                .order_by(PlaylistTrack.added_at.desc())
+                .limit(200)
+            ).all()
+            for pt in pt_rows:
+                _consider_unheard(
+                    pt.deezer_id,
+                    pt.title,
+                    pt.artist,
+                    pt.artists_json,
+                    pt.album,
+                    pt.album_id,
+                    pt.cover_url or "",
+                    pt.duration_sec,
+                    pt.loudness_gain_db,
+                )
+
+        if len(unheard) < 30:
+            for st in db.scalars(
+                select(StoredTrack)
+                .where(StoredTrack.status == "ready")
+                .order_by(StoredTrack.created_at.desc())
+                .limit(200)
+            ).all():
+                _consider_unheard(
+                    st.deezer_id,
+                    st.title,
+                    st.artist,
+                    "[]",
+                    st.album,
+                    "",
+                    st.cover_url or "",
+                    st.duration_sec,
+                    st.loudness_gain_db,
+                )
+
+        if unheard:
+            shelves.append(
+                Shelf(
+                    key="unheard-cuts",
+                    title="Ungehörte Tracks deiner Artists",
+                    subtitle="Songs von Künstler:innen, denen du folgst – noch nie gespielt",
+                    cover=next((t.cover for t in unheard if t.cover), ""),
+                    tracks=unheard,
                 )
             )
 

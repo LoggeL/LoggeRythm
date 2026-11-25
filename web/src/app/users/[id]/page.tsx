@@ -1,21 +1,27 @@
 "use client";
 
-import { use, type CSSProperties } from "react";
+import { use, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { playlistPath } from "@/lib/slugs";
+import { useMe } from "@/hooks/useAuth";
+import { toast } from "@/store/toast";
 import ArtistCard from "@/components/ArtistCard";
 import PlaylistCard from "@/components/PlaylistCard";
 import Avatar from "@/components/Avatar";
+import Modal from "@/components/Modal";
 import EmptyState from "@/components/ui/EmptyState";
 import SectionHeader from "@/components/ui/SectionHeader";
+import { BlendIcon, SpinnerIcon } from "@/components/icons";
 import { CARD_GRID } from "@/components/cardGrid";
 import { CardGridSkeleton } from "@/components/Skeleton";
 import Shelf from "@/components/browse/Shelf";
 import { useCoverColors } from "@/hooks/useCoverColors";
 import collection from "@/app/playlist/_components/collection.module.css";
 import CollectionPageState from "@/app/playlist/_components/CollectionPageState";
-import type { PublicProfile } from "@/types";
+import type { BlendResult, PublicProfile } from "@/types";
 
 export default function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -85,12 +91,30 @@ function Count({ value }: { value: number }) {
 }
 
 function ProfileView({ profile }: { profile: PublicProfile }) {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { data: me } = useMe();
+  const [blendResult, setBlendResult] = useState<BlendResult | null>(null);
   const playlists = profile.playlists ?? [];
   const artists = profile.top_artists ?? [];
   const name = profile.display_name || "Unbekannt";
   const totalTracks = playlists.reduce((sum, playlist) => sum + (playlist.track_count || 0), 0);
   const palette = useCoverColors(profile.avatar_url);
   const tint = palette ? ({ "--hero-tint": palette.rgb.join(" ") } as CSSProperties) : undefined;
+  const canBlend = Boolean(me?.is_approved && String(me.id) !== String(profile.id));
+
+  const createBlend = useMutation({
+    mutationFn: () => api.playlistBlend(profile.id),
+    onSuccess: (result) => {
+      void qc.invalidateQueries({ queryKey: ["playlists"] });
+      setBlendResult(result);
+    },
+    onError: (cause) => {
+      toast.error(
+        `Blend konnte nicht erstellt werden: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    },
+  });
 
   return (
     <>
@@ -105,6 +129,23 @@ function ProfileView({ profile }: { profile: PublicProfile }) {
             <h1 className={`page-title ${name.trim().length > 18 ? "text-[clamp(1.75rem,4.2vw,3rem)] leading-none" : ""}`} title={name}>
               {name}
             </h1>
+            {canBlend && (
+              <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  disabled={createBlend.isPending}
+                  onClick={() => createBlend.mutate()}
+                  className="action-primary"
+                >
+                  {createBlend.isPending ? (
+                    <SpinnerIcon width={16} height={16} className="animate-spin" />
+                  ) : (
+                    <BlendIcon width={18} height={18} />
+                  )}
+                  {createBlend.isPending ? "Blend wird erstellt…" : "Blend erstellen"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <dl aria-label="Kennzahlen" className="mt-8 grid grid-cols-3 border-y border-hairline py-4 sm:inline-grid sm:grid-cols-[repeat(3,auto)]">
@@ -113,6 +154,69 @@ function ProfileView({ profile }: { profile: PublicProfile }) {
           <Figure value={totalTracks} label="Titel" />
         </dl>
       </header>
+
+      <Modal
+        open={blendResult !== null}
+        onClose={() => setBlendResult(null)}
+        title="Euer Taste Blend ist fertig"
+        description={
+          blendResult
+            ? `Gemeinsame Playlist mit ${blendResult.other_user.display_name || name}`
+            : undefined
+        }
+        footer={
+          blendResult && (
+            <>
+              <button type="button" onClick={() => setBlendResult(null)} className="action-secondary">
+                Schließen
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = playlistPath(blendResult.playlist);
+                  setBlendResult(null);
+                  router.push(target);
+                }}
+                className="action-primary"
+              >
+                Blend-Playlist öffnen
+              </button>
+            </>
+          )
+        }
+      >
+        {blendResult && (
+          <div className="flex flex-col gap-5 pt-1">
+            <div className="flex items-center justify-between rounded-[var(--radius-card)] border border-accent/40 bg-accent/10 px-4 py-4">
+              <div>
+                <p className="label-mono text-accent">Taste Match</p>
+                <p className="font-display mt-1 text-4xl font-extrabold tracking-tight tabular-nums text-foreground">
+                  {Math.round(blendResult.match_percent)} %
+                </p>
+              </div>
+              <div className="text-right text-xs text-muted">
+                <p className="font-semibold text-foreground">{blendResult.playlist.tracks.length} Titel im Blend</p>
+                <p className="mt-0.5">{blendResult.shared_tracks_count} gemeinsame Favoriten</p>
+              </div>
+            </div>
+            {blendResult.shared_artists.length > 0 && (
+              <div>
+                <p className="label-mono mb-2">Gemeinsame Künstler</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {blendResult.shared_artists.map((artistName) => (
+                    <span
+                      key={artistName}
+                      className="rounded-full border border-hairline bg-white/[0.04] px-3 py-1 text-xs font-medium text-foreground"
+                    >
+                      {artistName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <div className="flex flex-col gap-9 md:gap-11">
         <section aria-labelledby="profile-playlists">

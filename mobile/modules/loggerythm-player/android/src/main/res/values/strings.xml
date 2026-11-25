@@ -18,4 +18,17 @@
     <string name="loggerythm_player_car_error_favorite_unavailable">Favorites aren\'t loaded yet. Open LoggeRythm on your phone once, then try again.</string>
     <string name="loggerythm_player_car_error_favorite_failed">Couldn\'t update your favorites. Check your connection and try again.</string>
     <string name="loggerythm_player_car_error_search_network_error">Couldn\'t search LoggeRythm right now. Check your connection and try again.</string>
+    <string name="loggerythm_widget_name">LoggeRythm Now Playing</string>
+    <string name="loggerythm_widget_description">Control playback and like tracks right from your home screen.</string>
+    <string name="loggerythm_widget_empty_title">Nothing playing</string>
+    <string name="loggerythm_widget_empty_subtitle">Tap to open LoggeRythm</string>
+    <string name="loggerythm_widget_cd_artwork">Album artwork</string>
+    <string name="loggerythm_widget_cd_previous">Previous track</string>
+    <string name="loggerythm_widget_cd_play_pause">Play or pause</string>
+    <string name="loggerythm_widget_cd_next">Next track</string>
+    <string name="loggerythm_widget_cd_favorite">Toggle favorite</string>
+    <string name="loggerythm_qs_tile_label">LoggeRythm Radio</string>
+    <string name="loggerythm_qs_tile_subtitle_idle">Resume / Radio</string>
+    <string name="loggerythm_qs_tile_subtitle_playing">Playing</string>
+    <string name="loggerythm_qs_tile_subtitle_paused">Paused</string>
 </resources>

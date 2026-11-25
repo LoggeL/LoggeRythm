@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useLayoutEffect, useRef } from "react";
+import { Suspense, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import Sidebar from "@/components/shell/Sidebar";
 import TopBar from "@/components/shell/TopBar";
@@ -9,17 +9,24 @@ import PlayerBar from "@/components/player/PlayerBar";
 import PlaybackEngine from "@/components/player/PlaybackEngine";
 import ConnectEngine from "@/components/player/ConnectEngine";
 import { DeviceSelectorHost } from "@/components/player/DeviceSelector";
+import { SleepTimerHost } from "@/components/player/SleepTimerControl";
+import { AudioEffectsHost } from "@/components/player/AudioEffectsControl";
 import PartySessionManager from "@/components/party/PartySessionManager";
 import Toaster from "@/components/Toast";
 import PwaBanner from "@/components/PwaBanner";
 import QueueSidebar from "@/components/QueueSidebar";
 import CommandPalette from "@/components/CommandPalette";
 import AddToPlaylistModal from "@/components/AddToPlaylistModal";
+import SaveAsPlaylistModal from "@/components/SaveAsPlaylistModal";
+import KeyboardShortcutsModal from "@/components/KeyboardShortcutsModal";
 import Lyrics from "@/components/Lyrics";
-import Logo from "@/components/Logo";
+import Logo, { Wordmark } from "@/components/Logo";
 import { AuthShell } from "@/components/AuthCard";
-import { SpinnerIcon } from "@/components/icons";
+import { DownloadedIcon, RefreshIcon, SpinnerIcon } from "@/components/icons";
 import { LandingScreen, PendingScreen } from "@/components/GateScreen";
+import DownloadsTab from "@/app/library/_tabs/DownloadsTab";
+import { ApiError } from "@/lib/api";
+import { hasOfflineDownloadsSnapshot } from "@/lib/offlineDownloads";
 import { useMe } from "@/hooks/useAuth";
 import { ImportJobWatcher } from "@/hooks/useImportJobs";
 import { useAmbientColor } from "@/hooks/useAmbientColor";
@@ -34,7 +41,36 @@ function SplashScreen() {
   );
 }
 
-function SessionError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+function offlineBypassState(error: unknown): { available: boolean; offlineError: string | null } {
+  const isNetworkFailure =
+    (typeof navigator !== "undefined" && !navigator.onLine) ||
+    (error instanceof ApiError && error.status === 0);
+  if (!isNetworkFailure) return { available: false, offlineError: null };
+  try {
+    return { available: hasOfflineDownloadsSnapshot(), offlineError: null };
+  } catch (cause) {
+    return {
+      available: false,
+      offlineError: cause instanceof Error ? cause.message : String(cause),
+    };
+  }
+}
+
+function SessionError({
+  message,
+  offlineError,
+  retrying,
+  canOpenOffline,
+  onRetry,
+  onOpenOffline,
+}: {
+  message: string;
+  offlineError: string | null;
+  retrying: boolean;
+  canOpenOffline: boolean;
+  onRetry: () => void;
+  onOpenOffline: () => void;
+}) {
   return (
     <div className="h-full overflow-y-auto bg-background">
       <AuthShell compact>
@@ -43,19 +79,89 @@ function SessionError({ message, retrying, onRetry }: { message: string; retryin
           <h1 id="session-error-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [text-wrap:balance]">
             Sitzung konnte nicht geladen werden
           </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted">Die Anmeldung ließ sich nicht prüfen. Die App bleibt gesperrt, bis das klappt.</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">
+            {canOpenOffline
+              ? "Der Server ist gerade nicht erreichbar. Du kannst deine lokal gespeicherten Downloads trotzdem im schreibgeschützten Offline-Modus abspielen."
+              : "Die Anmeldung ließ sich nicht prüfen. Die App bleibt gesperrt, bis das klappt."}
+          </p>
           <div className="error-panel mt-8">
             <p className="label-mono mb-1.5 text-danger">Fehlermeldung</p>
             <p className="text-[15px] font-semibold [overflow-wrap:anywhere]">{message}</p>
+            {offlineError && (
+              <p className="mt-2 text-xs text-danger/90 [overflow-wrap:anywhere]">
+                Offline-Index konnte nicht gelesen werden: {offlineError}
+              </p>
+            )}
           </div>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <button type="button" disabled={retrying} aria-busy={retrying} onClick={onRetry} className="action-primary min-h-12 flex-1 text-[15px]">
+            {canOpenOffline && (
+              <button type="button" onClick={onOpenOffline} className="action-primary min-h-12 flex-1 text-[15px]">
+                <DownloadedIcon width={18} height={18} aria-hidden="true" />
+                Offline-Downloads öffnen
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={retrying}
+              aria-busy={retrying}
+              onClick={onRetry}
+              className={`${canOpenOffline ? "action-secondary" : "action-primary"} min-h-12 flex-1 text-[15px]`}
+            >
               {retrying && <SpinnerIcon width={18} height={18} aria-hidden className="animate-spin motion-reduce:animate-none" />}
               {retrying ? "Lädt…" : "Erneut versuchen"}
             </button>
           </div>
         </section>
       </AuthShell>
+    </div>
+  );
+}
+
+/**
+ * Explicit read-only Offline Mode when `/auth/me` is unreachable while local
+ * downloads exist on this device. Never fakes authentication — only serves
+ * local cached downloads through the player and service worker.
+ */
+function OfflineWorkspace({ onReconnect, reconnecting }: { onReconnect: () => void; reconnecting: boolean }) {
+  useAmbientColor();
+  return (
+    <div className="flex h-full flex-col bg-backdrop">
+      <PwaBanner />
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline bg-background px-4 py-3 sm:px-6 lg:px-10">
+        <div className="flex items-center gap-2.5">
+          <Logo size={26} />
+          <Wordmark />
+          <span className="label-mono rounded-full border border-hairline bg-white/[0.04] px-2.5 py-0.5 text-[10px] text-success">
+            Offline-Modus
+          </span>
+        </div>
+        <button
+          type="button"
+          disabled={reconnecting}
+          onClick={onReconnect}
+          className="action-secondary min-h-9 gap-2 px-3.5 text-xs"
+        >
+          <RefreshIcon width={14} height={14} className={reconnecting ? "animate-spin" : undefined} />
+          {reconnecting ? "Verbindet…" : "Erneut verbinden"}
+        </button>
+      </header>
+      <div className="flex min-h-0 flex-1">
+        <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
+          <main className="scroll-area ambient-wash min-h-0 flex-1 overflow-y-auto bg-background">
+            <div className="mx-auto max-w-4xl px-4 pb-16 pt-6 sm:px-6 lg:px-10">
+              <DownloadsTab playlistsHref="/library?tab=downloads" offlineOnly />
+            </div>
+          </main>
+          <Lyrics />
+        </div>
+        <QueueSidebar offlineOnly />
+      </div>
+      <PlaybackEngine />
+      <PlayerBar offlineOnly />
+      <SleepTimerHost />
+      <AudioEffectsHost />
+      <KeyboardShortcutsModal />
+      <Toaster />
     </div>
   );
 }
@@ -67,9 +173,6 @@ function Workspace({ children }: { children: React.ReactNode }) {
   useAmbientColor();
   const pageMotion = usePageMotion();
 
-  // Reset scroll position on route change. As a layout effect it lands before
-  // the route's view transition captures the new page, so the cross-fade ends
-  // on the page as it will be shown instead of jumping afterwards.
   useLayoutEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
   }, [pathname]);
@@ -85,10 +188,7 @@ function Workspace({ children }: { children: React.ReactNode }) {
           <div className="flex min-h-0 flex-1">
             <Sidebar />
             <div className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden">
-              {/* Only the page area moves on navigation; sidebar, player and panels stay put. Its own
-                  opaque background keeps the old page from showing through the new one in flight. */}
               <PageTransition>
-                {/* data-traverse-page: the page area and the page it shows, for lib/traversalMorph.ts. */}
                 <main ref={mainRef} id="main-content" data-traverse-page={pathname} tabIndex={-1} className="scroll-area ambient-wash min-h-0 flex-1 bg-background overflow-y-auto outline-none">
                   <TopBar />
                   <div key={pathname} className={`${pageMotion} mx-auto max-w-[96rem] px-4 pb-16 pt-3 sm:px-6 lg:px-10 lg:pt-6`}>
@@ -96,7 +196,6 @@ function Workspace({ children }: { children: React.ReactNode }) {
                   </div>
                 </main>
               </PageTransition>
-              {/* Lyrics dock sits at the bottom of the main column only. */}
               <Lyrics />
             </div>
             <QueueSidebar />
@@ -108,7 +207,11 @@ function Workspace({ children }: { children: React.ReactNode }) {
           <MobileNav />
           <CommandPalette />
           <AddToPlaylistModal />
+          <SaveAsPlaylistModal />
           <DeviceSelectorHost />
+          <SleepTimerHost />
+          <AudioEffectsHost />
+          <KeyboardShortcutsModal />
           <Toaster />
           <ImportJobWatcher />
         </div>
@@ -126,11 +229,13 @@ export function isPartyInvitePath(pathname: string): boolean {
 
 /**
  * Session gate. Login, registration and password reset are always reachable;
- * everything else requires an approved account.
+ * everything else requires an approved account — except an explicit read-only
+ * Offline Mode when local downloads exist and the server is unreachable.
  */
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { data: me, isPending, isError, error, refetch, isFetching } = useMe();
+  const [offlineMode, setOfflineMode] = useState(false);
   useTraversalMorph();
 
   if (PUBLIC_AUTH_PATHS.has(pathname)) {
@@ -141,11 +246,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-  if (isError) return <SessionError message={error.message} retrying={isFetching} onRetry={() => void refetch()} />;
+  if (isError) {
+    const offline = offlineBypassState(error);
+    if (offlineMode && offline.available) {
+      return (
+        <OfflineWorkspace
+          reconnecting={isFetching}
+          onReconnect={() => {
+            void refetch().then((res) => {
+              if (!res.isError) setOfflineMode(false);
+            });
+          }}
+        />
+      );
+    }
+    return (
+      <SessionError
+        message={error.message}
+        offlineError={offline.offlineError}
+        retrying={isFetching}
+        canOpenOffline={offline.available}
+        onRetry={() => void refetch()}
+        onOpenOffline={() => setOfflineMode(true)}
+      />
+    );
+  }
   if (isPending && me === undefined) return <SplashScreen />;
   if ((!me || !me.is_approved) && isPartyInvitePath(pathname)) {
-    // An invite link works without an account: the party page lets the
-    // visitor join anonymously with a nickname. Nothing else is reachable.
     return (
       <div className="h-full overflow-y-auto bg-background">
         {children}

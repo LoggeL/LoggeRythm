@@ -37,6 +37,12 @@ class User(Base):
     is_approved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     crossfade_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     crossfade_duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    share_listening_activity: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    preferred_quality: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="high", server_default="high"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     playlists: Mapped[list["Playlist"]] = relationship(
@@ -105,6 +111,7 @@ class PlaylistTrack(Base):
     album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    loudness_gain_db: Mapped[float | None] = mapped_column(Float, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     added_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
@@ -187,6 +194,7 @@ class Like(Base):
     album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    loudness_gain_db: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     user: Mapped["User"] = relationship(back_populates="likes")
@@ -270,6 +278,10 @@ class PartySession(Base):
     playback_revision: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    # Party Auto-DJ: automatically append radio picks when queue runs low.
+    auto_dj: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
@@ -305,6 +317,7 @@ class PartyTrack(Base):
     album_id: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     cover_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    loudness_gain_db: Mapped[float | None] = mapped_column(Float, nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     added_by: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     # Who added it, as a party member key ("u:<user id>" or "g:<guest id>").
@@ -370,6 +383,9 @@ class StoredLyrics(Base):
     # client requests variant=ai; unused when the primary is already AI.
     whisper_lines_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     whisper_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    instrumental: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
@@ -385,6 +401,13 @@ class StoredTrack(Base):
     duration_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ready")
+    audio_format: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="mp3", server_default="mp3"
+    )
+    loudness_gain_db: Mapped[float | None] = mapped_column(Float, nullable=True)
+    loudness_lufs: Mapped[float | None] = mapped_column(Float, nullable=True)
+    loudness_peak: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bpm: Mapped[float | None] = mapped_column(Float, nullable=True)
     # User whose request originally materialized this cached audio file on disk.
     # NULL for pre-existing files from before tracking existed or anonymous party guests.
     requested_by_user_id: Mapped[int | None] = mapped_column(
@@ -461,6 +484,30 @@ class ImportJob(Base):
     lookup_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_playlist_id: Mapped[int | None] = mapped_column(
+        ForeignKey("playlists.id", ondelete="SET NULL"), nullable=True
+    )
+    create_playlist_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_playlist_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class UserPlaybackState(Base):
+    """Persisted Connect playback snapshot for async cross-device continuity."""
+
+    __tablename__ = "user_playback_states"
+
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    queue_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    origins_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    queue_context: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    current_index: Mapped[int] = mapped_column(Integer, nullable=False, default=-1)
+    position_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    duration_sec: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    shuffle: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    repeat: Mapped[str] = mapped_column(String(8), nullable=False, default="off")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)

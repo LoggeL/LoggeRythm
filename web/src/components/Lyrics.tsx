@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { useLyrics } from "@/hooks/useLyrics";
+import { useLivePlaybackTime } from "@/hooks/useLivePlaybackTime";
+import KaraokeLine from "@/components/KaraokeLine";
 import LyricsVariantToggle from "@/components/LyricsVariantToggle";
 import { LyricsIcon, ChevronDownIcon } from "@/components/icons";
 
@@ -12,21 +14,25 @@ const EXPANDED_ROWS = 7;
 
 /**
  * Lyrics dock at the bottom of the main panel: a short karaoke window that
- * follows the playing line. Click a line to jump there.
+ * follows the playing line (with word-by-word fill when available) or shows
+ * clean unsynced / Instrumental states. Click a timed line to jump there.
  */
 export default function Lyrics() {
   const open = usePlayerStore((s) => s.lyricsOpen);
   const track = usePlayerStore(currentTrack);
-  const currentTime = usePlayerStore((s) => s.currentTime);
+  const currentTime = useLivePlaybackTime(open);
   const seek = usePlayerStore((s) => s.seek);
   const [expanded, setExpanded] = useState(false);
 
   // Shares fetch, variant preference and toggle with the fullscreen view;
   // an empty trackId keeps the query disabled while the dock is closed.
-  const lyrics = useLyrics(track?.artist ?? "", track?.title ?? "", open && track ? track.id : "", currentTime);
-  const { lines, active, isLoading, hasTimedLines } = lyrics;
+  const lyrics = useLyrics(track?.artist ?? "", track?.title ?? "", open && track ? track.id : "", currentTime, {
+    album: track?.album,
+    duration_sec: track?.duration_sec,
+  });
+  const { lines, active, isLoading, hasTimedLines, instrumental } = lyrics;
   const a = active < 0 ? 0 : active;
-  const hasLyrics = !!track && !isLoading && !lyrics.isError && lines.length > 0;
+  const hasLyrics = !!track && !isLoading && !lyrics.isError && !instrumental && lines.length > 0;
 
   const rows = expanded ? EXPANDED_ROWS : COLLAPSED_ROWS;
   // Lines shown above the active one: it sits in the middle of the window.
@@ -70,7 +76,16 @@ export default function Lyrics() {
                         isActive ? "font-display text-base font-bold text-foreground" : "text-sm text-subtle enabled:hover:text-foreground"
                       }`}
                     >
-                      {line.text || "♪"}
+                      {hasTimedLines ? (
+                        <KaraokeLine
+                          line={line}
+                          isActive={isActive}
+                          isPast={active >= 0 && i < active}
+                          currentTime={currentTime}
+                        />
+                      ) : (
+                        line.text || "♪"
+                      )}
                     </button>
                   );
                 })}
@@ -93,6 +108,8 @@ export default function Lyrics() {
                   <span className="skeleton h-4 w-4/5 rounded" />
                   <span className="skeleton h-3.5 w-1/2 rounded" />
                 </span>
+              ) : instrumental ? (
+                <p className="truncate text-sm font-medium text-accent">Instrumental – dieser Titel hat keinen Gesang.</p>
               ) : (
                 <p className="truncate text-sm text-muted">Für diesen Titel gibt es keinen Songtext.</p>
               )}

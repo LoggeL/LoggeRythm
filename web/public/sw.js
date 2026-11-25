@@ -1,14 +1,14 @@
-/* SpotiFrei service worker — conservative offline support.
+/* SpotiFrei service worker — offline-first support for downloaded music.
  *
- * Online behaviour is unchanged (network-first for navigations + API, so users
- * always get fresh content). Offline support kicks in only for:
- *   - immutable Next static chunks (cache-first; content-hashed → safe)
+ * Online behaviour stays fresh (network-first for navigations + API). Offline
+ * support serves:
+ *   - immutable Next static chunks (cache-first; content-hashed -> safe)
  *   - tracks the user explicitly DOWNLOADED (served from the sf-audio cache,
- *     with HTTP Range support sliced from the cached full body)
+ *     with HTTP Range support preserving the original Content-Type)
  *   - cached cover images for downloaded tracks
- *   - a last-good app shell, served only when the network is unreachable
+ *   - per-route cached app shells without clobbering "/"
  */
-const VERSION = "sf-v2";
+const VERSION = "sf-v3";
 const SHELL = `${VERSION}-shell`;
 const STATIC = `${VERSION}-static`;
 const AUDIO = "sf-audio"; // unversioned — user downloads must persist across releases
@@ -66,9 +66,9 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(cacheFirst(req, STATIC));
     return;
   }
-  // Navigations: network-first, fall back to a cached shell when offline.
+  // Navigations: network-first, fall back to the matching cached route or root shell.
   if (req.mode === "navigate") {
-    event.respondWith(networkFirstNav(req));
+    event.respondWith(networkFirstNav(req, url));
     return;
   }
   // Everything else (API, etc.): passthrough to the network.
@@ -87,14 +87,19 @@ async function cacheFirst(req, cacheName) {
   }
 }
 
-async function networkFirstNav(req) {
+async function networkFirstNav(req, url) {
   const shell = await caches.open(SHELL);
   try {
     const res = await fetch(req);
-    if (res.ok) shell.put("/", res.clone());
+    if (res.ok) {
+      await shell.put(req, res.clone());
+      if (url.pathname === "/") {
+        await shell.put("/", res.clone());
+      }
+    }
     return res;
   } catch {
-    return (await shell.match("/")) || (await shell.match(req)) || Response.error();
+    return (await shell.match(req)) || (await shell.match("/")) || Response.error();
   }
 }
 
@@ -103,18 +108,19 @@ async function handleAudio(req, url) {
   const c = await caches.open(AUDIO);
   const cached = await c.match(key);
   if (cached) return rangeFrom(req, cached);
-  return fetch(req); // not downloaded → stream online
+  return fetch(req); // not downloaded -> stream online
 }
 
 async function rangeFrom(req, cached) {
   const buf = await cached.arrayBuffer();
   const size = buf.byteLength;
+  const contentType = cached.headers.get("content-type") || "audio/mpeg";
   const range = req.headers.get("range");
   if (!range) {
     return new Response(buf, {
       status: 200,
       headers: {
-        "Content-Type": "audio/mpeg",
+        "Content-Type": contentType,
         "Accept-Ranges": "bytes",
         "Content-Length": String(size),
       },
@@ -138,7 +144,7 @@ async function rangeFrom(req, cached) {
   return new Response(chunk, {
     status: 206,
     headers: {
-      "Content-Type": "audio/mpeg",
+      "Content-Type": contentType,
       "Accept-Ranges": "bytes",
       "Content-Range": `bytes ${start}-${end}/${size}`,
       "Content-Length": String(chunk.byteLength),

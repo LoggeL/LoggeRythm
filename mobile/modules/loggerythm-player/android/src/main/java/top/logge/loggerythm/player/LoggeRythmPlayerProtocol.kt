@@ -136,12 +136,22 @@ internal data class BrowseNodeSpec(
    * They only enter [PlayerItemSpec] and encrypted state; Media3 browse results never carry them.
    */
   val extrasJson: String = "{}",
+  /** Optional Android Auto 2.0 browsable child layout hint ("grid" or "list"). */
+  val contentStyleBrowsable: String? = null,
+  /** Optional Android Auto 2.0 playable child layout hint ("grid" or "list"). */
+  val contentStylePlayable: String? = null,
+  /** Optional Media3 `MediaMetadata.MEDIA_TYPE_*` semantic type wire value. */
+  val mediaType: String? = null,
+  /** Optional Android Auto section group header title (`CONTENT_STYLE_GROUP_TITLE`). */
+  val groupTitle: String? = null,
 ) {
   override fun toString(): String =
     "BrowseNodeSpec(id=<redacted>, title=<redacted>, subtitle=<redacted>, " +
       "artist=<redacted>, album=<redacted>, artworkUrl=<redacted>, durationMs=$durationMs, " +
       "playable=$playable, url=<redacted>, cookie=<redacted>, children=<redacted:${children.size}>, " +
-      "extrasJson=<redacted>)"
+      "extrasJson=<redacted>, contentStyleBrowsable=$contentStyleBrowsable, " +
+      "contentStylePlayable=$contentStylePlayable, mediaType=$mediaType, " +
+      "groupTitle=<redacted>)"
 }
 
 internal data class BrowseTreeSpec(val root: BrowseNodeSpec) {
@@ -478,6 +488,16 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
     val extrasJson = optionalExtras(value)
     if (cookie != null && url?.startsWith("https://") != true) fail("header-url-invalid")
     if (playable && childValues.length() != 0) fail("browse-playable-children-invalid")
+    val contentStyleBrowsable = optionalString(value, "contentStyleBrowsable", 16)?.also {
+      if (it !in BROWSE_CONTENT_STYLES) fail("browse-content-style-invalid")
+    }
+    val contentStylePlayable = optionalString(value, "contentStylePlayable", 16)?.also {
+      if (it !in BROWSE_CONTENT_STYLES) fail("browse-content-style-invalid")
+    }
+    val mediaType = optionalString(value, "mediaType", 32)?.also {
+      if (it !in BROWSE_MEDIA_TYPES) fail("browse-media-type-invalid")
+    }
+    val groupTitle = optionalString(value, "groupTitle", MAX_TITLE_LENGTH)
     val children = List(childValues.length()) { index ->
       parseBrowseNode(requiredObject(childValues, index), depth + 1, seen, nodeCount)
     }
@@ -494,6 +514,10 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       cookie = cookie,
       children = children,
       extrasJson = extrasJson,
+      contentStyleBrowsable = contentStyleBrowsable,
+      contentStylePlayable = contentStylePlayable,
+      mediaType = mediaType,
+      groupTitle = groupTitle,
     )
   }
 
@@ -727,6 +751,22 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       "headers",
       "extras",
     )
+    private val BROWSE_CONTENT_STYLES = setOf("grid", "list")
+    private val BROWSE_MEDIA_TYPES = setOf(
+      "mixed",
+      "music",
+      "artist",
+      "album",
+      "playlist",
+      "genre",
+      "radio_station",
+      "folder_mixed",
+      "folder_albums",
+      "folder_artists",
+      "folder_genres",
+      "folder_playlists",
+      "folder_radio_stations",
+    )
     private val BROWSE_NODE_KEYS = setOf(
       "id",
       "title",
@@ -740,6 +780,10 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
       "headers",
       "children",
       "extras",
+      "contentStyleBrowsable",
+      "contentStylePlayable",
+      "mediaType",
+      "groupTitle",
     )
   }
 }

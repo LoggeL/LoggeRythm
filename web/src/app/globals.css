@@ -227,12 +227,42 @@ input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: none;
 input[type="range"]:disabled { cursor: default; opacity: .5; }
 @media (hover: none), (pointer: coarse) { input[type="range"] { --thumb-scale: 1; } }
 
+/* ---- Seekbar scrubber: GPU-animated fill + always-visible moving knob --- */
+.scrubber-rail { position: relative; height: 22px; touch-action: none; }
+.scrubber-track { position: absolute; left: 0; right: 0; top: 50%; height: 4px; transform: translateY(-50%); border-radius: 999px; background: rgb(244 240 230 / 0.16); overflow: hidden; pointer-events: none; transition: height .15s var(--ease-out); }
+.scrubber-fill { width: 100%; height: 100%; background: var(--accent-soft); transform-origin: left center; transform: scaleX(var(--scrub-ratio, 0)); will-change: transform; }
+.scrubber-knob-track { position: absolute; left: 5px; right: 5px; top: 50%; height: 0; pointer-events: none; }
+.scrubber-knob-travel { position: relative; width: 100%; height: 0; transform: translate3d(calc(var(--scrub-ratio, 0) * 100%), 0, 0); will-change: transform; }
+.scrubber-knob { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 999px; background: var(--accent-soft); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent), 0 1px 4px rgb(0 0 0 / 0.65); transform: translate(-50%, -50%) scale(1); transition: transform .15s var(--ease-out), box-shadow .15s ease, opacity .15s ease; }
+.scrubber-rail[data-empty="true"] .scrubber-knob { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+.scrubber-rail:not([data-disabled="true"]):hover .scrubber-track,
+.scrubber-rail:not([data-disabled="true"])[data-dragging="true"] .scrubber-track,
+.scrubber-rail:not([data-disabled="true"]):has(.scrubber-input:focus-visible) .scrubber-track { height: 6px; }
+.scrubber-rail:not([data-disabled="true"]):hover .scrubber-knob,
+.scrubber-rail:not([data-disabled="true"])[data-dragging="true"] .scrubber-knob,
+.scrubber-rail:not([data-disabled="true"]):has(.scrubber-input:focus-visible) .scrubber-knob { transform: translate(-50%, -50%) scale(1.4); box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 75%, transparent), 0 2px 6px rgb(0 0 0 / 0.7); }
+.scrubber-rail:has(.scrubber-input:focus-visible) .scrubber-knob { box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 38%, transparent), 0 0 12px color-mix(in srgb, var(--accent) 75%, transparent); }
+.scrubber-rail .scrubber-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; opacity: 0; background: transparent; border-radius: 0; cursor: pointer; }
+.scrubber-rail .scrubber-input:disabled { cursor: default; }
+
 /* Edge seek bar: a hairline along the top of the player deck with a tall,
-   invisible hit area; it thickens when engaged. */
-.seek-edge input[type="range"] { display: block; width: 100%; height: 18px; border-radius: 0; background-repeat: no-repeat !important; background-position: center !important; background-size: 100% 3px !important; transition: background-size .15s ease; }
-.seek-edge:hover input[type="range"], .seek-edge input[type="range"]:focus-visible, .seek-edge input[type="range"]:active { background-size: 100% 6px !important; }
-.seek-edge input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; background: var(--accent-soft); }
-.seek-edge input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; background: var(--accent-soft); }
+   invisible hit area, a subtle moving knob, and thicker track when engaged. */
+.seek-edge .scrubber-rail { height: 18px; }
+.seek-edge .scrubber-track { height: 3px; border-radius: 0; }
+.seek-edge .scrubber-knob { width: 9px; height: 9px; }
+.seek-edge:hover .scrubber-rail:not([data-disabled="true"]) .scrubber-track,
+.seek-edge .scrubber-rail:not([data-disabled="true"])[data-dragging="true"] .scrubber-track,
+.seek-edge .scrubber-rail:not([data-disabled="true"]):has(.scrubber-input:focus-visible) .scrubber-track { height: 5px; }
+.seek-edge:hover .scrubber-rail:not([data-disabled="true"]) .scrubber-knob,
+.seek-edge .scrubber-rail:not([data-disabled="true"])[data-dragging="true"] .scrubber-knob,
+.seek-edge .scrubber-rail:not([data-disabled="true"]):has(.scrubber-input:focus-visible) .scrubber-knob { transform: translate(-50%, -50%) scale(1.55); }
+
+/* Compact mobile mini-player progress line: smooth 60fps fill + small leading knob. */
+.progress-line-fill { transform: scaleX(var(--scrub-ratio, 0)); will-change: transform; }
+.progress-line-knob-track { position: absolute; left: 3px; right: 3px; top: 50%; height: 0; pointer-events: none; }
+.progress-line-knob-travel { position: relative; width: 100%; height: 0; transform: translate3d(calc(var(--scrub-ratio, 0) * 100%), 0, 0); will-change: transform; }
+.progress-line-knob { position: absolute; left: 0; top: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--accent-soft); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 65%, transparent); transform: translate(-50%, -50%); }
+.progress-line[data-empty="true"] .progress-line-knob { opacity: 0; }
 
 .scroll-area { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 .scroll-area:hover { scrollbar-color: rgb(255 255 255 / 0.18) transparent; }
@@ -414,6 +444,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .cover-image[data-loaded="arrived"] { animation: none; }
   .animate-in, .pop-in, .sheet-up, .skeleton, .eq-bar, .page-enter { animation: none; }
   .equalizer-bars [data-equalizer-bar] { transition: none; }
+  .scrubber-track, .scrubber-knob { transition: none; }
   .press:active, .play-fab:hover, .action-primary:hover, .hover-lift:hover { transform: none; }
 }
 @media (hover: none), (pointer: coarse) {

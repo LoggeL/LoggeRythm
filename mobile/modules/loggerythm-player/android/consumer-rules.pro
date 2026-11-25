@@ -2,3 +2,12 @@
 -keep class top.logge.loggerythm.player.LoggeRythmPlaybackJournalWorker {
     public <init>(android.content.Context, androidx.work.WorkerParameters);
 }
+-keep class top.logge.loggerythm.player.LoggeRythmNowPlayingWidgetProvider {
+    public <init>();
+}
+-keep class top.logge.loggerythm.player.LoggeRythmWidgetActionReceiver {
+    public <init>();
+}
+-keep class top.logge.loggerythm.player.LoggeRythmQuickTileService {
+    public <init>();
+}

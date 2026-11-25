@@ -65,6 +65,25 @@ export interface NativeOfflineClearAllResult {
   cleared: true;
 }
 
+export interface NativeOfflineStorageMetrics {
+  scope: string;
+  scopeBytes: number;
+  scopeTrackCount: number;
+  allDownloadsBytes: number;
+  rollingCacheBytes: number;
+  rollingCacheMaxBytes: number;
+  rollingCacheEntryCount: number;
+  availableDiskBytes: number;
+  wifiOnly: boolean;
+}
+
+export interface NativeRollingCacheClearResult {
+  bytesBefore: number;
+  bytesAfter: number;
+  resourcesRemoved: number;
+  verified: boolean;
+}
+
 interface OfflineDownloadsNativeModule {
   hydrate(scope: string): Promise<unknown>;
   persistManifest(scope: string, generation: number, manifestJson: string): Promise<unknown>;
@@ -77,6 +96,11 @@ interface OfflineDownloadsNativeModule {
   removeFiles(scope: string, generation: number, fileNames: string[]): Promise<unknown>;
   clearScope(scope: string): Promise<unknown>;
   clearAllScopes(): Promise<unknown>;
+  setWifiOnly?(enabled: boolean): Promise<unknown>;
+  getWifiOnly?(): Promise<unknown>;
+  cancelDownload?(): Promise<unknown>;
+  getStorageMetrics?(scope: string): Promise<unknown>;
+  clearRollingCache?(): Promise<unknown>;
   addListener(eventName: string): void;
   removeListeners(count: number): void;
 }
@@ -311,6 +335,95 @@ export function decodeNativeClearAllResult(value: unknown): NativeOfflineClearAl
 
 export async function clearAllNativeOfflineScopes(): Promise<NativeOfflineClearAllResult> {
   return decodeNativeClearAllResult(await requireModule().clearAllScopes());
+}
+
+export function decodeNativeStorageMetrics(
+  value: unknown,
+  expectedScope: string,
+): NativeOfflineStorageMetrics {
+  const result = record(value, 'Offline storage metrics');
+  const scope = text(result.scope, 'Offline storage metrics scope');
+  if (scope !== expectedScope) {
+    throw new Error('Offline storage metrics belong to another account');
+  }
+  return {
+    scope,
+    scopeBytes: natural(result.scopeBytes, 'Offline storage scopeBytes'),
+    scopeTrackCount: natural(result.scopeTrackCount, 'Offline storage scopeTrackCount'),
+    allDownloadsBytes: natural(result.allDownloadsBytes, 'Offline storage allDownloadsBytes'),
+    rollingCacheBytes: natural(result.rollingCacheBytes, 'Offline storage rollingCacheBytes'),
+    rollingCacheMaxBytes: natural(result.rollingCacheMaxBytes, 'Offline storage rollingCacheMaxBytes'),
+    rollingCacheEntryCount: natural(result.rollingCacheEntryCount, 'Offline storage rollingCacheEntryCount'),
+    availableDiskBytes: natural(result.availableDiskBytes, 'Offline storage availableDiskBytes'),
+    wifiOnly: boolean(result.wifiOnly, 'Offline storage wifiOnly'),
+  };
+}
+
+export function decodeNativeRollingCacheClearResult(
+  value: unknown,
+): NativeRollingCacheClearResult {
+  const result = record(value, 'Rolling cache clear result');
+  return {
+    bytesBefore: natural(result.bytesBefore, 'Rolling cache bytesBefore'),
+    bytesAfter: natural(result.bytesAfter, 'Rolling cache bytesAfter'),
+    resourcesRemoved: natural(result.resourcesRemoved, 'Rolling cache resourcesRemoved'),
+    verified: boolean(result.verified, 'Rolling cache verified'),
+  };
+}
+
+function optionalOfflineModule(): Partial<OfflineDownloadsNativeModule> | undefined {
+  return NativeModules?.[MODULE_NAME] as Partial<OfflineDownloadsNativeModule> | undefined;
+}
+
+export function hasNativeOfflineExtension(
+  method: 'setWifiOnly' | 'getWifiOnly' | 'cancelDownload' | 'getStorageMetrics' | 'clearRollingCache',
+): boolean {
+  return typeof optionalOfflineModule()?.[method] === 'function';
+}
+
+export async function setNativeOfflineWifiOnly(enabled: boolean): Promise<boolean> {
+  const fn = optionalOfflineModule()?.setWifiOnly;
+  if (typeof fn !== 'function') {
+    throw new Error('Native OfflineDownloads.setWifiOnly is unavailable');
+  }
+  const result = record(await fn(enabled), 'Offline setWifiOnly result');
+  return boolean(result.wifiOnly, 'Offline setWifiOnly wifiOnly');
+}
+
+export async function getNativeOfflineWifiOnly(): Promise<boolean> {
+  const fn = optionalOfflineModule()?.getWifiOnly;
+  if (typeof fn !== 'function') {
+    throw new Error('Native OfflineDownloads.getWifiOnly is unavailable');
+  }
+  const result = record(await fn(), 'Offline getWifiOnly result');
+  return boolean(result.wifiOnly, 'Offline getWifiOnly wifiOnly');
+}
+
+export async function cancelNativeOfflineDownload(): Promise<boolean> {
+  const fn = optionalOfflineModule()?.cancelDownload;
+  if (typeof fn !== 'function') {
+    throw new Error('Native OfflineDownloads.cancelDownload is unavailable');
+  }
+  const result = record(await fn(), 'Offline cancelDownload result');
+  return boolean(result.cancelled, 'Offline cancelDownload cancelled');
+}
+
+export async function getNativeOfflineStorageMetrics(
+  scope: string,
+): Promise<NativeOfflineStorageMetrics> {
+  const fn = optionalOfflineModule()?.getStorageMetrics;
+  if (typeof fn !== 'function') {
+    throw new Error('Native OfflineDownloads.getStorageMetrics is unavailable');
+  }
+  return decodeNativeStorageMetrics(await fn(scope), scope);
+}
+
+export async function clearNativeRollingCache(): Promise<NativeRollingCacheClearResult> {
+  const fn = optionalOfflineModule()?.clearRollingCache;
+  if (typeof fn !== 'function') {
+    throw new Error('Native OfflineDownloads.clearRollingCache is unavailable');
+  }
+  return decodeNativeRollingCacheClearResult(await fn());
 }
 
 export function subscribeNativeOfflineProgress(

@@ -59,11 +59,22 @@ describe('cold app-link state construction', () => {
     ['account', 'Profile'],
     ['now-playing', 'NowPlaying'],
     ['queue', 'Queue'],
+    ['party/start', 'PartyStart'],
   ])('retains the validated transient destination for %s', (path, target) => {
     const state = getAppStateFromPath(path);
     expect(state?.index).toBe(1);
     expect(state?.routes.map((route) => route.name)).toEqual(['Tabs', target]);
     expect(findRoute(state, 'Home')).toBeDefined();
+    expect(findRoute(state, target)).toBeDefined();
+  });
+
+  it.each([
+    ['search', 'Search'],
+    ['library', 'Library'],
+    ['radar', 'Radar'],
+    ['radio', 'Radio'],
+  ])('resolves Android launcher shortcut deep link %s to %s', (path, target) => {
+    const state = getAppStateFromPath(path);
     expect(findRoute(state, target)).toBeDefined();
   });
 

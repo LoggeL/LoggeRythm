@@ -10,6 +10,7 @@ import type {
   ArtistAbout,
   ArtistDetail,
   ArtistSummary,
+  BatchPreloadResponse,
   CachedTrackIds,
   ConnectState,
   ConnectTicket,
@@ -19,10 +20,15 @@ import type {
   GenreDetail,
   HomeShelf,
   LyricsResponse,
+  PartyReaction,
   PartyState,
+  PartyVoteSkipResult,
   PlaybackSettings,
   Playlist,
+  PlaylistBlendResult,
   PlaylistCollaborator,
+  PlaylistDeduplicateResult,
+  PlaylistDuplicatesResponse,
   PlaylistEntryId,
   PlaylistCreateRequest,
   PlaylistInvite,
@@ -32,29 +38,40 @@ import type {
   PlaylistListScope,
   PlaylistSearchResult,
   PlaylistSummary,
+  PlaylistSyncManifest,
   PlaylistUpdateRequest,
   PublicProfile,
+  RadioSeedRequest,
   ReleaseRadarEntry,
   ImportJobDetail,
   ImportJobStatus,
+  SocialActivityResponse,
+  StatsInsightsRange,
   StorageCleanupResult,
   Track,
+  TrackAudioMeta,
   TrackInput,
   TrackPlayCounts,
   TrackPlayQuery,
   User,
+  UserStatsInsights,
 } from '../api/types';
 import type { AlbumCard } from '../domain/catalog';
 import type { UserStats } from '../domain/listeningStats';
 import { mapAlbumSearchWire } from './mappers/albumSearch';
 import { mapListeningStatsWire } from './mappers/listeningStats';
 import type {
+  LyricsLookupOptions,
+  LyricsVariant,
   MeUpdateRequest,
   PartyCreateRequest,
   PartyPlaybackUpdate,
+  PartySavePlaylistRequest,
   PartySettingsUpdateRequest,
   PartyTrackInsertMode,
   PlaybackSettingsUpdate,
+  PlaylistSyncManifestOptions,
+  StartImportJobOptions,
 } from '../api/endpoints';
 import type { AuthenticatedRequestAuthority } from '../api/client';
 
@@ -63,7 +80,7 @@ export interface SearchRepository {
   searchAlbums(query: string, signal?: AbortSignal): Promise<AlbumCard[]>;
   searchArtists(query: string, signal?: AbortSignal): Promise<ArtistSummary[]>;
   searchPlaylists(query: string, signal?: AbortSignal): Promise<PlaylistSearchResult[]>;
-  startImportJob(url: string): Promise<ImportJobStatus>;
+  startImportJob(url: string, options?: StartImportJobOptions): Promise<ImportJobStatus>;
   getImportJobs(signal?: AbortSignal): Promise<ImportJobStatus[]>;
   getImportJob(id: string, signal?: AbortSignal): Promise<ImportJobDetail>;
   deleteImportJob(id: string): Promise<void>;
@@ -72,6 +89,7 @@ export interface SearchRepository {
 
 export interface HomeRepository {
   getHomeMixes(signal?: AbortSignal): Promise<HomeShelf[]>;
+  getPersonalMixes?(signal?: AbortSignal): Promise<HomeShelf[]>;
   getBecauseYouListened(signal?: AbortSignal): Promise<HomeShelf[]>;
   getHomeChartCollections(signal?: AbortSignal): Promise<HomeShelf[]>;
   getReleaseRadar(signal?: AbortSignal): Promise<ReleaseRadarEntry[]>;
@@ -84,6 +102,7 @@ export interface CatalogRepository {
   getGenre(id: DeezerId, signal?: AbortSignal): Promise<GenreDetail>;
   getNewReleases(signal?: AbortSignal): Promise<AlbumSummary[]>;
   getTrack(id: DeezerId, signal?: AbortSignal): Promise<Track>;
+  getTrackAudioMeta?(id: DeezerId, signal?: AbortSignal): Promise<TrackAudioMeta>;
   getAlbum(id: DeezerId, signal?: AbortSignal): Promise<AlbumDetail>;
   getArtist(id: DeezerId, signal?: AbortSignal): Promise<ArtistDetail>;
   getArtistAbout(name: string, signal?: AbortSignal): Promise<ArtistAbout>;
@@ -92,6 +111,8 @@ export interface CatalogRepository {
     title: string,
     deezerId?: DeezerId,
     signal?: AbortSignal,
+    variant?: LyricsVariant,
+    options?: LyricsLookupOptions,
   ): Promise<LyricsResponse>;
   getTrackPlayCounts(
     tracks: TrackPlayQuery[],
@@ -107,6 +128,7 @@ export interface PreloadTrackOptions {
 export interface StorageRepository {
   getCachedTrackIds(signal?: AbortSignal): Promise<CachedTrackIds>;
   preloadTrack(id: DeezerId, options?: PreloadTrackOptions): Promise<void>;
+  preloadTracksBatch?(trackIds: DeezerId[], signal?: AbortSignal): Promise<BatchPreloadResponse>;
 }
 
 export interface PlaylistsRepository {
@@ -132,6 +154,14 @@ export interface PlaylistsRepository {
   addPlaylistCollaborator(id: number, email: string): Promise<PlaylistCollaborator>;
   removePlaylistCollaborator(id: number, userId: number): Promise<void>;
   leavePlaylist(id: number): Promise<void>;
+  getPlaylistSyncManifest?(
+    id: number,
+    options?: PlaylistSyncManifestOptions,
+    signal?: AbortSignal,
+  ): Promise<PlaylistSyncManifest>;
+  getPlaylistDuplicates?(id: number, signal?: AbortSignal): Promise<PlaylistDuplicatesResponse>;
+  deduplicatePlaylist?(id: number): Promise<PlaylistDeduplicateResult>;
+  createPlaylistBlend?(otherUserId: number): Promise<PlaylistBlendResult>;
 }
 
 export interface LibraryRepository {
@@ -158,6 +188,8 @@ export interface FollowsRepository {
 export interface ProfileRepository {
   getPublicProfile(userId: number, signal?: AbortSignal): Promise<PublicProfile>;
   getStats(signal?: AbortSignal): Promise<UserStats>;
+  getStatsInsights?(range?: StatsInsightsRange, signal?: AbortSignal): Promise<UserStatsInsights>;
+  getSocialActivity?(signal?: AbortSignal): Promise<SocialActivityResponse>;
   updateMe(patch: MeUpdateRequest): Promise<User>;
   deleteMe(): Promise<void>;
   getPlaybackSettings(signal?: AbortSignal): Promise<PlaybackSettings>;
@@ -179,6 +211,11 @@ export interface PartyRepository {
   partyKickMember(code: string, memberKey: string): Promise<void>;
   getPartyCachedTrackIds(code: string, signal?: AbortSignal): Promise<CachedTrackIds>;
   leaveParty(code: string): Promise<void>;
+  savePartyAsPlaylist?(code: string, request?: PartySavePlaylistRequest): Promise<PlaylistSummary>;
+  transferPartyHost?(code: string, memberKey: string): Promise<PartyState>;
+  fillPartyAutoDj?(code: string, count?: number): Promise<PartyState>;
+  reactInParty?(code: string, emoji: string): Promise<PartyReaction>;
+  voteSkipPartyTrack?(code: string): Promise<PartyVoteSkipResult>;
 }
 
 export interface ConnectRepository {
@@ -204,6 +241,7 @@ export interface PlayerRepository {
     timeoutMs?: number,
     authenticatedRequestAuthority?: AuthenticatedRequestAuthority,
   ): Promise<Track[]>;
+  getSeededRadio?(request: RadioSeedRequest, signal?: AbortSignal): Promise<Track[]>;
   recordPlay(
     track: Track,
     timeoutMs?: number,
@@ -237,6 +275,7 @@ export const musicRepository: MusicRepository = {
   searchPlaylists: api.searchPlaylists,
   getCharts: api.getCharts,
   getHomeMixes: api.getHomeMixes,
+  getPersonalMixes: api.getPersonalMixes,
   getBecauseYouListened: api.getBecauseYouListened,
   getHomeChartCollections: api.getHomeChartCollections,
   getReleaseRadar: api.getReleaseRadar,
@@ -245,10 +284,12 @@ export const musicRepository: MusicRepository = {
   getGenre: api.getGenre,
   getNewReleases: api.getNewReleases,
   getTrack: api.getTrack,
+  getTrackAudioMeta: api.getTrackAudioMeta,
   getAlbum: api.getAlbum,
   getArtist: api.getArtist,
   getArtistAbout: api.getArtistAbout,
   getRadio: api.getRadio,
+  getSeededRadio: api.getSeededRadio,
   recordPlay: api.recordPlay,
   startImportJob: api.startImportJob,
   getImportJobs: api.getImportJobs,
@@ -258,6 +299,7 @@ export const musicRepository: MusicRepository = {
   getLyrics: api.getLyrics,
   getCachedTrackIds: api.getCachedTrackIds,
   preloadTrack: api.preloadTrack,
+  preloadTracksBatch: api.preloadTracksBatch,
   getTrackPlayCounts: api.getTrackPlayCounts,
   getPlaylists: api.getPlaylists,
   getPublicPlaylists: api.getPublicPlaylists,
@@ -281,6 +323,10 @@ export const musicRepository: MusicRepository = {
   addPlaylistCollaborator: api.addPlaylistCollaborator,
   removePlaylistCollaborator: api.removePlaylistCollaborator,
   leavePlaylist: api.leavePlaylist,
+  getPlaylistSyncManifest: api.getPlaylistSyncManifest,
+  getPlaylistDuplicates: api.getPlaylistDuplicates,
+  deduplicatePlaylist: api.deduplicatePlaylist,
+  createPlaylistBlend: api.createPlaylistBlend,
   getLikes: api.getLikes,
   likeTrack: api.likeTrack,
   unlikeTrack: api.unlikeTrack,
@@ -290,6 +336,8 @@ export const musicRepository: MusicRepository = {
   unfollowArtist: api.unfollowArtist,
   getPublicProfile: api.getPublicProfile,
   getStats: async (signal) => mapListeningStatsWire(await api.getStats(signal)),
+  getStatsInsights: api.getStatsInsights,
+  getSocialActivity: api.getSocialActivity,
   updateMe: api.updateMe,
   deleteMe: api.deleteMe,
   getPlaybackSettings: api.getPlaybackSettings,
@@ -308,6 +356,11 @@ export const musicRepository: MusicRepository = {
   partyKickMember: api.partyKickMember,
   getPartyCachedTrackIds: api.getPartyCachedTrackIds,
   leaveParty: api.leaveParty,
+  savePartyAsPlaylist: api.savePartyAsPlaylist,
+  transferPartyHost: api.transferPartyHost,
+  fillPartyAutoDj: api.fillPartyAutoDj,
+  reactInParty: api.reactInParty,
+  voteSkipPartyTrack: api.voteSkipPartyTrack,
   createConnectTicket: api.createConnectTicket,
   getConnectState: api.getConnectState,
   getAdminUsers: api.getAdminUsers,

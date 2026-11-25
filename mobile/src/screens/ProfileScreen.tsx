@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MeUpdateRequest } from '../api/endpoints';
@@ -9,7 +10,9 @@ import { useAuth } from '../auth/AuthContext';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
 import ConnectSettingsPanel from '../components/profile/ConnectSettingsPanel';
 import LanguageSelector from '../components/profile/LanguageSelector';
+import PlaybackSettingsPanel from '../components/profile/PlaybackSettingsPanel';
 import { ProfileGroup } from '../components/profile/ProfileGroup';
+import StorageCachePanel from '../components/profile/StorageCachePanel';
 import { useAndroidUpdatePlacement } from '../components/profile/useAndroidUpdatePlacement';
 import {
   ListeningStatsPanel,
@@ -22,6 +25,8 @@ import { getCurrentApiBase } from '../config';
 import { musicCacheScope, musicQueries, musicRepository, queryKeys } from '../data';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
+import { wave2Strings } from '../localization/wave2Strings';
+import type { RootStackParams } from '../navigation';
 import { colors, layout, spacing } from '../theme';
 import { TvFocusScope, tvFocusRegistry, useTvEnvironment, useTvFocusReturn } from '../tv';
 import { profileDeleteFailureMessage } from './profileFeedback';
@@ -76,6 +81,28 @@ export function ProfileTvFocusEffect() {
     };
   }, [tv.isTv]);
   return null;
+}
+
+/** Self-contained entry card to the Wrapped / Listening Insights screen. */
+function ProfileInsightsEntry() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParams>>();
+  return (
+    <ProfileGroup
+      testID="profile-insights-entry"
+      icon="chart-bar"
+      title={wave2Strings.insights.title}
+      description={wave2Strings.insights.openHint}
+    >
+      <ActionButton
+        testID="profile-open-insights"
+        icon="chart-areaspline"
+        variant="primary"
+        label={wave2Strings.insights.openButton}
+        fullWidth
+        onPress={() => navigation.navigate('Insights')}
+      />
+    </ProfileGroup>
+  );
 }
 
 export default function ProfileScreen() {
@@ -151,6 +178,8 @@ export default function ProfileScreen() {
     />
   );
   const sleepPanel = <SleepTimerPanel />;
+  const playbackPanel = <PlaybackSettingsPanel />;
+  const storagePanel = <StorageCachePanel />;
   const connectPanel = <ConnectSettingsPanel />;
   const languagePanel = <LanguageSelector />;
   const editForm = (
@@ -246,12 +275,15 @@ export default function ProfileScreen() {
               <View style={styles.tvColumn}>
                 {identityCard}
                 {sleepPanel}
+                {playbackPanel}
+                {storagePanel}
                 {connectPanel}
                 {languagePanel}
                 {dangerGroup}
               </View>
               <View style={styles.tvColumn}>
                 {statsPanel}
+                <ProfileInsightsEntry />
                 {editForm}
                 {updatePlacement === 'bottom' ? <AndroidUpdateCard /> : null}
               </View>
@@ -290,7 +322,10 @@ export default function ProfileScreen() {
 
         {identityCard}
         {statsPanel}
+        <ProfileInsightsEntry />
         {sleepPanel}
+        {playbackPanel}
+        {storagePanel}
         {connectPanel}
         {languagePanel}
         {editForm}

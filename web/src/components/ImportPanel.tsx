@@ -7,7 +7,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { playlistPath } from "@/lib/slugs";
 import { usePlayerStore } from "@/store/player";
-import { useCreatePlaylist } from "@/hooks/useLibrary";
+import { useCreatePlaylist, usePlaylists } from "@/hooks/useLibrary";
+import { canEditPlaylistTracks } from "@/lib/playlistPermissions";
 import {
   IMPORT_JOBS_KEY,
   importJobSummary,
@@ -23,6 +24,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import QueryError from "@/components/ui/QueryError";
 import { CloseIcon, PlayIcon, PlusIcon, TrashIcon } from "@/components/icons";
 import type {
+  ImportJobCreateOptions,
   ImportJobDetail,
   ImportJobStatus,
   PlaylistSummary,
@@ -259,15 +261,24 @@ function ImportResult({ job, detail, saver }: { job: ImportJobStatus; detail: Im
         >
           <PlayIcon width={20} height={20} />
         </button>
-        <button
-          type="button"
-          onClick={saveAsPlaylist}
-          disabled={result.tracks.length === 0 || saving}
-          className="action-secondary min-h-11"
-        >
-          <PlusIcon width={18} height={18} />
-          {saving ? "Speichert…" : createdPlaylist ? "Titel erneut speichern" : "Als Playlist speichern"}
-        </button>
+        {detail.created_playlist_id ? (
+          <Link
+            href={playlistPath({ id: detail.created_playlist_id, name: result.name })}
+            className="action-primary min-h-11"
+          >
+            Importierte Playlist öffnen
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={saveAsPlaylist}
+            disabled={result.tracks.length === 0 || saving}
+            className="action-secondary min-h-11"
+          >
+            <PlusIcon width={18} height={18} />
+            {saving ? "Speichert…" : createdPlaylist ? "Titel erneut speichern" : "Als Playlist speichern"}
+          </button>
+        )}
       </div>
 
       {saveError && (
@@ -410,11 +421,18 @@ function ImportJobList({
   );
 }
 
+type ImportTargetMode = "preview" | "create" | "existing";
+
 export default function ImportPanel() {
   const queryClient = useQueryClient();
   const jobs = useImportJobs();
+  const playlistsQuery = usePlaylists();
+  const editablePlaylists = (playlistsQuery.data ?? []).filter(canEditPlaylistTracks);
   const createPlaylist = useCreatePlaylist();
   const [url, setUrl] = useState("");
+  const [targetMode, setTargetMode] = useState<ImportTargetMode>("preview");
+  const [createName, setCreateName] = useState("");
+  const [targetPlaylistId, setTargetPlaylistId] = useState<string>("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [saver] = useState(() =>
     createImportSaver({
@@ -424,12 +442,15 @@ export default function ImportPanel() {
   );
 
   const start = useMutation({
-    mutationFn: (link: string) => api.startImportJob(link),
+    mutationFn: ({ link, options }: { link: string; options?: ImportJobCreateOptions }) =>
+      api.startImportJob(link, options),
     onSuccess: (job) => {
       queryClient.setQueryData<ImportJobStatus[]>(IMPORT_JOBS_KEY, (current) => [job, ...(current ?? [])]);
       void queryClient.invalidateQueries({ queryKey: IMPORT_JOBS_KEY });
+      void queryClient.invalidateQueries({ queryKey: ["playlists"] });
       setSelectedId(job.id);
       setUrl("");
+      setCreateName("");
     },
     onError: (error) => toast.error(errorDetail(error)),
   });
@@ -449,7 +470,23 @@ export default function ImportPanel() {
     e.preventDefault();
     const link = url.trim();
     if (!link || start.isPending) return;
-    start.mutate(link);
+    let options: ImportJobCreateOptions | undefined;
+    if (targetMode === "create") {
+      const trimmedName = createName.trim();
+      if (!trimmedName) {
+        toast.error("Bitte gib einen Namen für die neue Playlist ein.");
+        return;
+      }
+      options = { create_playlist_name: trimmedName };
+    } else if (targetMode === "existing") {
+      const numericId = Number(targetPlaylistId);
+      if (!Number.isInteger(numericId) || numericId <= 0) {
+        toast.error("Bitte wähle eine Ziel-Playlist aus.");
+        return;
+      }
+      options = { target_playlist_id: numericId };
+    }
+    start.mutate({ link, options });
   }
 
   function removeJob(job: ImportJobStatus) {
@@ -496,6 +533,69 @@ export default function ImportPanel() {
             {start.isPending ? "Startet…" : "Importieren"}
           </button>
         </div>
+
+        <fieldset className="mt-4 flex flex-col gap-2.5">
+          <legend className="label-mono mb-1">Ziel nach Abschluss</legend>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              aria-pressed={targetMode === "preview"}
+              onClick={() => setTargetMode("preview")}
+              className="filter-chip min-h-9 px-3 text-xs"
+            >
+              Nur Vorschau
+            </button>
+            <button
+              type="button"
+              aria-pressed={targetMode === "create"}
+              onClick={() => setTargetMode("create")}
+              className="filter-chip min-h-9 px-3 text-xs"
+            >
+              Neue Playlist direkt erstellen
+            </button>
+            {editablePlaylists.length > 0 && (
+              <button
+                type="button"
+                aria-pressed={targetMode === "existing"}
+                onClick={() => {
+                  setTargetMode("existing");
+                  if (!targetPlaylistId && editablePlaylists[0]) {
+                    setTargetPlaylistId(String(editablePlaylists[0].id));
+                  }
+                }}
+                className="filter-chip min-h-9 px-3 text-xs"
+              >
+                In bestehende Playlist
+              </button>
+            )}
+          </div>
+          {targetMode === "create" && (
+            <input
+              type="text"
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              maxLength={120}
+              placeholder="Name der neuen Playlist…"
+              aria-label="Name der neuen Playlist"
+              className="field-input max-w-md text-sm"
+            />
+          )}
+          {targetMode === "existing" && (
+            <select
+              value={targetPlaylistId}
+              onChange={(e) => setTargetPlaylistId(e.target.value)}
+              aria-label="Ziel-Playlist auswählen"
+              className="field-input max-w-md text-sm"
+            >
+              <option value="">Playlist auswählen…</option>
+              {editablePlaylists.map((pl) => (
+                <option key={String(pl.id)} value={String(pl.id)}>
+                  {pl.name} ({pl.track_count})
+                </option>
+              ))}
+            </select>
+          )}
+        </fieldset>
       </form>
 
       {start.isError && (

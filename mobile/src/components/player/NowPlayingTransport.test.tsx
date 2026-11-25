@@ -14,6 +14,11 @@ vi.mock('react-native', () => ({
 }));
 
 vi.mock('@react-native-community/slider', () => ({ default: 'Slider' }));
+vi.mock('./WaveformScrubber', () => ({
+  unexpectedAudioMetaErrorMessage: () => null,
+  useTrackAudioMeta: () => ({ data: undefined, error: null }),
+  WaveformScrubberView: 'WaveformScrubberView',
+}));
 vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../../tv', () => ({ TvFocusable: 'TvFocusable' }));
 

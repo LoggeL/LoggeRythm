@@ -30,6 +30,20 @@ internal data class LoggeRythmCacheClearResult(
   val verified: Boolean,
 )
 
+public data class LoggeRythmRollingCacheMetrics(
+  val cacheBytes: Long,
+  val maxCacheBytes: Long,
+  val entryCount: Int,
+  val isClearing: Boolean,
+)
+
+public data class LoggeRythmRollingCacheClearSummary(
+  val bytesBefore: Long,
+  val bytesAfter: Long,
+  val resourcesRemoved: Int,
+  val verified: Boolean,
+)
+
 internal class LoggeRythmCacheOperationState(available: Boolean) {
   private enum class State { READY, CLEARING, UNAVAILABLE, CLOSED }
 
@@ -86,6 +100,8 @@ internal interface LoggeRythmCacheServiceControl {
   fun onQueueGenerationChanged(generation: Long)
   fun cancelPreloadAndAwait(callback: (Result<Unit>) -> Unit)
   fun clearCache(callback: (Result<LoggeRythmCacheClearResult>) -> Unit)
+  fun clearRollingCacheOnly(callback: (Result<LoggeRythmCacheClearResult>) -> Unit)
+  fun cacheMetrics(): LoggeRythmRollingCacheMetrics
 }
 
 internal object LoggeRythmCacheServiceBridge {
@@ -115,6 +131,114 @@ internal object LoggeRythmCacheServiceBridge {
     val active = synchronized(lock) { control }
     if (active == null) callback(Result.failure(LoggeRythmCacheException("player-cache-unavailable")))
     else active.clearCache(callback)
+  }
+
+  fun clearRollingCacheOnly(callback: (Result<LoggeRythmCacheClearResult>) -> Unit) {
+    val active = synchronized(lock) { control }
+    if (active == null) callback(Result.failure(LoggeRythmCacheException("player-cache-unavailable")))
+    else active.clearRollingCacheOnly(callback)
+  }
+
+  fun metricsOrNull(): LoggeRythmRollingCacheMetrics? =
+    synchronized(lock) { control }?.cacheMetrics()
+}
+
+/**
+ * Public, cross-package bridge allowing app modules (such as `OfflineDownloadsModule`) to inspect
+ * and clear the rolling stream cache without importing Media3 `SimpleCache` directly.
+ */
+@UnstableApi
+public object LoggeRythmRollingCacheBridge {
+  public fun getMetrics(context: Context): LoggeRythmRollingCacheMetrics {
+    LoggeRythmCacheServiceBridge.metricsOrNull()?.let { return it }
+    val dir = File(context.applicationContext.noBackupFilesDir, LoggeRythmPlayerCache.CACHE_DIRECTORY_NAME)
+    val bytes = directorySizeBytes(dir)
+    val count = if (dir.isDirectory) dir.listFiles()?.count { it.isFile } ?: 0 else 0
+    return LoggeRythmRollingCacheMetrics(
+      cacheBytes = bytes,
+      maxCacheBytes = LoggeRythmPlayerCache.MAX_CACHE_BYTES,
+      entryCount = count,
+      isClearing = false,
+    )
+  }
+
+  public fun clearRollingCache(
+    context: Context,
+    callback: (Result<LoggeRythmRollingCacheClearSummary>) -> Unit,
+  ) {
+    if (LoggeRythmCacheServiceBridge.metricsOrNull() != null) {
+      LoggeRythmCacheServiceBridge.clearRollingCacheOnly { result ->
+        callback(
+          result.map { cleared ->
+            LoggeRythmRollingCacheClearSummary(
+              bytesBefore = cleared.bytesBefore,
+              bytesAfter = cleared.bytesAfter,
+              resourcesRemoved = cleared.resourcesRemoved,
+              verified = cleared.verified,
+            )
+          },
+        )
+      }
+      return
+    }
+    // Service is not currently running: safely purge the rolling cache directory on disk.
+    try {
+      val dir = File(context.applicationContext.noBackupFilesDir, LoggeRythmPlayerCache.CACHE_DIRECTORY_NAME)
+      if (!dir.exists()) {
+        callback(
+          Result.success(
+            LoggeRythmRollingCacheClearSummary(
+              bytesBefore = 0L,
+              bytesAfter = 0L,
+              resourcesRemoved = 0,
+              verified = true,
+            ),
+          ),
+        )
+        return
+      }
+      val before = directorySizeBytes(dir)
+      var removed = 0
+      dir.listFiles()?.forEach { child ->
+        if (deleteRecursively(child)) removed += 1
+      }
+      val after = directorySizeBytes(dir)
+      if (after != 0L) {
+        callback(Result.failure(LoggeRythmCacheException("player-cache-clear-unverified")))
+      } else {
+        callback(
+          Result.success(
+            LoggeRythmRollingCacheClearSummary(
+              bytesBefore = before,
+              bytesAfter = 0L,
+              resourcesRemoved = removed,
+              verified = true,
+            ),
+          ),
+        )
+      }
+    } catch (error: Exception) {
+      callback(Result.failure(error))
+    }
+  }
+
+  private fun directorySizeBytes(root: File): Long {
+    if (!root.exists()) return 0L
+    if (root.isFile) return root.length().coerceAtLeast(0L)
+    var total = 0L
+    root.listFiles()?.forEach { child ->
+      total += directorySizeBytes(child)
+    }
+    return total
+  }
+
+  private fun deleteRecursively(target: File): Boolean {
+    if (target.isDirectory) {
+      target.listFiles()?.forEach { child ->
+        if (!deleteRecursively(child)) return false
+      }
+    }
+    return target.delete()
   }
 }
 
@@ -152,6 +276,20 @@ internal class LoggeRythmPlayerCache(context: Context) : LoggeRythmCacheServiceC
   }
 
   fun isClearing(): Boolean = operationState.isClearing()
+
+  override fun cacheMetrics(): LoggeRythmRollingCacheMetrics {
+    val activeCache = cache
+    return LoggeRythmRollingCacheMetrics(
+      cacheBytes = activeCache?.cacheSpace?.coerceAtLeast(0L) ?: 0L,
+      maxCacheBytes = MAX_CACHE_BYTES,
+      entryCount = activeCache?.keys?.size ?: 0,
+      isClearing = operationState.isClearing(),
+    )
+  }
+
+  override fun clearRollingCacheOnly(callback: (Result<LoggeRythmCacheClearResult>) -> Unit) {
+    clearCache(callback)
+  }
 
   override fun onQueueGenerationChanged(generation: Long) {
     preloader?.onQueueGenerationChanged(generation)

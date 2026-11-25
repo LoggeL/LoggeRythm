@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 import type { ArtistDetail } from '../../api/types';
 import { strings } from '../../localization';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { ActionButton, AppText } from '../ui';
+import { ActionButton, AppText, IconButton } from '../ui';
 import { CatalogHeroArtwork } from './CatalogCards';
 import { CatalogDetailHero } from './CatalogDetailHero';
 import { CatalogQueryBoundary } from './CatalogStates';
@@ -18,6 +18,7 @@ export interface ArtistHeroProps {
   onToggleFollow: () => void;
   onPlay: () => void;
   onShuffle?: () => void;
+  onShare?: () => void;
 }
 
 /**
@@ -34,6 +35,7 @@ export function ArtistHero({
   onToggleFollow,
   onPlay,
   onShuffle,
+  onShare,
 }: ArtistHeroProps) {
   return (
     <CatalogDetailHero
@@ -60,43 +62,54 @@ export function ArtistHero({
         onPress: onPlay,
       }}
       actions={
-        <CatalogQueryBoundary
-          id="artist-follow-state"
-          hasData={followState.data !== undefined}
-          empty={false}
-          {...catalogQueryFlags(followState)}
-          loadingLabel={catalogStrings.artist.followLoading}
-          emptyLabel={catalogStrings.artist.followStateFailed}
-          errorLabel={catalogStrings.artist.followStateFailed}
-          retryLabel={catalogStrings.common.retry}
-          onRetry={() => void followState.refetch()}
-          skeleton="pill"
-          padded={false}
-          refreshIndicator={false}
-          style={styles.follow}
-        >
-          <ActionButton
-            testID="artist-follow-toggle"
-            label={
-              followUpdating
-                ? catalogStrings.artist.followUpdating
-                : following
-                  ? catalogStrings.artist.following
-                  : catalogStrings.artist.follow
-            }
-            accessibilityLabel={
-              following
-                ? catalogStrings.artist.unfollowArtist(artist.name)
-                : catalogStrings.artist.followArtist(artist.name)
-            }
-            disabled={followUpdating}
-            busy={followUpdating}
-            variant={following ? 'secondary' : 'primary'}
-            icon={following ? 'check' : 'plus'}
-            onPress={onToggleFollow}
-            style={styles.followButton}
-          />
-        </CatalogQueryBoundary>
+        <>
+          <CatalogQueryBoundary
+            id="artist-follow-state"
+            hasData={followState.data !== undefined}
+            empty={false}
+            {...catalogQueryFlags(followState)}
+            loadingLabel={catalogStrings.artist.followLoading}
+            emptyLabel={catalogStrings.artist.followStateFailed}
+            errorLabel={catalogStrings.artist.followStateFailed}
+            retryLabel={catalogStrings.common.retry}
+            onRetry={() => void followState.refetch()}
+            skeleton="pill"
+            padded={false}
+            refreshIndicator={false}
+            style={styles.follow}
+          >
+            <ActionButton
+              testID="artist-follow-toggle"
+              label={
+                followUpdating
+                  ? catalogStrings.artist.followUpdating
+                  : following
+                    ? catalogStrings.artist.following
+                    : catalogStrings.artist.follow
+              }
+              accessibilityLabel={
+                following
+                  ? catalogStrings.artist.unfollowArtist(artist.name)
+                  : catalogStrings.artist.followArtist(artist.name)
+              }
+              disabled={followUpdating}
+              busy={followUpdating}
+              variant={following ? 'secondary' : 'primary'}
+              icon={following ? 'check' : 'plus'}
+              onPress={onToggleFollow}
+              style={styles.followButton}
+            />
+          </CatalogQueryBoundary>
+          {onShare !== undefined ? (
+            <IconButton
+              testID="artist-share"
+              icon="share-variant"
+              variant="tonal"
+              accessibilityLabel={catalogStrings.common.share}
+              onPress={onShare}
+            />
+          ) : null}
+        </>
       }
     >
       {artist.fans > 0 ? (

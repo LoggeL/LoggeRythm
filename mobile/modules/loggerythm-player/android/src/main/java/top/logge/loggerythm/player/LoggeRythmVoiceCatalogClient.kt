@@ -172,6 +172,87 @@ internal class LoggeRythmVoiceCatalogClient(
     }
   }
 
+  /**
+   * Starts endless radio from either a specific mood/genre tag (`/api/home/mood/{tag}`), an
+   * active/liked seed track (`/api/radio/{trackId}`), or the user's personalized mixes
+   * (`/api/home/mixes`). Every item is tagged `"radio": true` so native auto-refill triggers.
+   */
+  fun resolveRadio(
+    origin: String,
+    cookie: String,
+    moodOrGenre: String?,
+    seedTrackId: String?,
+    mediaIdPrefix: String = "voice:radio",
+  ): LoggeRythmVoiceCatalogSelection {
+    requireOriginAndCookie(origin, cookie)
+    val cleanMood = moodOrGenre?.trim()?.takeIf(String::isNotEmpty)
+    if (cleanMood != null) {
+      val slug = urlEncode(cleanMood.lowercase(java.util.Locale.ROOT))
+      val tracks = deduplicateTracksById(
+        fetchTrackArray(origin, cookie, "/api/home/mood/$slug"),
+      ).take(MAX_VOICE_QUEUE_ITEMS)
+      if (tracks.isEmpty()) {
+        throw LoggeRythmVoiceException(
+          LoggeRythmVoiceErrorCode.SEARCH_NO_MATCH,
+          "radio-mood-no-match",
+        )
+      }
+      return selectionOf(
+        matchedTitle = cleanMood,
+        tracks = tracks,
+        origin = origin,
+        cookie = cookie,
+        mediaIdPrefix = "$mediaIdPrefix:mood",
+        radio = true,
+      )
+    }
+
+    val validSeed = seedTrackId?.trim()?.takeIf(DEEZER_ID_PATTERN::matches)
+    if (validSeed != null) {
+      val tracks = deduplicateTracksById(
+        fetchTrackArray(origin, cookie, "/api/radio/$validSeed"),
+      ).take(MAX_VOICE_QUEUE_ITEMS)
+      if (tracks.isNotEmpty()) {
+        return selectionOf(
+          matchedTitle = "Personal Radio",
+          tracks = tracks,
+          origin = origin,
+          cookie = cookie,
+          mediaIdPrefix = "$mediaIdPrefix:seed:$validSeed",
+          radio = true,
+        )
+      }
+    }
+
+    val shelves = executeJsonArray(origin, cookie, "/api/home/mixes")
+    for (index in 0 until shelves.length()) {
+      val shelf = shelves.optJSONObject(index) ?: continue
+      val rawTracks = shelf.optJSONArray("tracks") ?: continue
+      val decoded = mutableListOf<LoggeRythmVoiceCatalogTrack>()
+      for (t in 0 until rawTracks.length()) {
+        val obj = rawTracks.optJSONObject(t) ?: throw invalidPayload("mix-track-not-object")
+        decoded += decodeTrack(obj, allowMissingReleaseDate = true)
+      }
+      val tracks = deduplicateTracksById(decoded).take(MAX_VOICE_QUEUE_ITEMS)
+      if (tracks.isNotEmpty()) {
+        val title = shelf.optString("title", "").trim().ifEmpty { "Personal Radio" }
+        return selectionOf(
+          matchedTitle = title,
+          tracks = tracks,
+          origin = origin,
+          cookie = cookie,
+          mediaIdPrefix = "$mediaIdPrefix:mix",
+          radio = true,
+        )
+      }
+    }
+
+    throw LoggeRythmVoiceException(
+      LoggeRythmVoiceErrorCode.NOTHING_TO_PLAY,
+      "radio-no-tracks",
+    )
+  }
+
   private fun resolvePlaylist(
     origin: String,
     cookie: String,
@@ -383,9 +464,10 @@ internal class LoggeRythmVoiceCatalogClient(
     cookie: String,
     mediaIdPrefix: String,
     startIndex: Int = 0,
+    radio: Boolean = false,
   ): LoggeRythmVoiceCatalogSelection {
     val specs = tracks.mapIndexed { index, track ->
-      toPlayerItemSpec(track, origin, cookie, mediaIdPrefix, index)
+      toPlayerItemSpec(track, origin, cookie, mediaIdPrefix, index, radio = radio)
     }
     return LoggeRythmVoiceCatalogSelection(
       matchedTitle = matchedTitle,
@@ -896,11 +978,12 @@ internal class LoggeRythmVoiceCatalogClient(
       cookie: String,
       mediaIdPrefix: String,
       index: Int,
+      radio: Boolean = false,
     ): PlayerItemSpec {
       val artistLabel = trackArtistLabel(track)
       val artworkUrl = resolveHttpsArtworkUrl(track.cover, origin)
       val durationMs = (track.durationSec * 1000.0).toLong().takeIf { it > 0L }
-      val extrasJson = buildPhoneTrackExtrasJson(track)
+      val extrasJson = buildPhoneTrackExtrasJson(track, radio = radio)
       require(LoggeRythmCarLibraryState.hasPhoneTrackMetadata(extrasJson)) {
         "voice-track-extras-invalid"
       }
@@ -917,7 +1000,10 @@ internal class LoggeRythmVoiceCatalogClient(
       )
     }
 
-    internal fun buildPhoneTrackExtrasJson(track: LoggeRythmVoiceCatalogTrack): String {
+    internal fun buildPhoneTrackExtrasJson(
+      track: LoggeRythmVoiceCatalogTrack,
+      radio: Boolean = false,
+    ): String {
       val artistsJson = JSONArray().apply {
         track.artists.forEach { ref ->
           put(JSONObject().apply {
@@ -950,7 +1036,7 @@ internal class LoggeRythmVoiceCatalogClient(
       )
       return JSONObject().apply {
         put("track", trackJson)
-        put("radio", false)
+        put("radio", radio)
         put("explicitDownload", false)
         put("loudnessNormalization", loudnessJson)
       }.toString()

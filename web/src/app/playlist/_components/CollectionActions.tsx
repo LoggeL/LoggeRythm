@@ -3,10 +3,11 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import type { Track } from "@/types";
 import { usePlayerStore } from "@/store/player";
+import { openSaveAsPlaylist } from "@/store/saveAsPlaylist";
 import { toast } from "@/store/toast";
 import ContextMenu, { type ContextMenuItem } from "@/components/ContextMenu";
 import { isCollectionQueue } from "./collectionPlayback";
-import { MoreIcon, PauseIcon, PlayIcon, QueueIcon, ShuffleIcon } from "@/components/icons";
+import { MoreIcon, PauseIcon, PlayIcon, QueueIcon, SavePlaylistIcon, ShuffleIcon } from "@/components/icons";
 
 /**
  * The hero's main control: plays the collection from the top, or pauses and
@@ -54,17 +55,31 @@ export function ShuffleCollectionButton({ tracks, context }: { tracks: Track[]; 
   );
 }
 
-/** Menu entry that appends the whole collection to the queue. */
+/** Menu entry that batch-appends the whole collection to the queue in one update. */
 export function useQueueAllItem(tracks: Track[]): ContextMenuItem {
-  const addToQueue = usePlayerStore((state) => state.addToQueue);
+  const addManyToQueue = usePlayerStore((state) => state.addManyToQueue);
   return {
     label: "Zur Warteschlange hinzufügen",
     icon: <QueueIcon width={18} height={18} />,
     disabled: tracks.length === 0,
     onClick: () => {
-      tracks.forEach(addToQueue);
+      addManyToQueue(tracks);
       toast.info(`${tracks.length} Titel zur Warteschlange hinzugefügt.`);
     },
+  };
+}
+
+/** Menu entry that saves an ephemeral track collection as a new permanent playlist. */
+export function useSaveAsPlaylistItem(
+  defaultName: string,
+  tracks: Track[],
+  description?: string,
+): ContextMenuItem {
+  return {
+    label: "Als Playlist speichern",
+    icon: <SavePlaylistIcon width={18} height={18} />,
+    disabled: tracks.length === 0,
+    onClick: () => openSaveAsPlaylist({ defaultName, description, tracks }),
   };
 }
 

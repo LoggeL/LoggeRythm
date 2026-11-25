@@ -3,8 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { create } from "zustand";
 import { api } from "@/lib/api";
+import { readOfflineLyrics } from "@/lib/offlineLyrics";
+import { useMe } from "@/hooks/useAuth";
 import { usePlayerStore } from "@/store/player";
 import { findLyricsSuspicion } from "@/lib/lyricsQuality";
+import type { LyricsLine, LyricsResponse } from "@/types";
 
 export type LyricsVariant = "normal" | "ai";
 
@@ -24,10 +27,16 @@ const useLyricsVariantOverride = create<LyricsVariantOverrideState>((set) => ({
 }));
 
 export interface LyricsData {
-  lines: { t: number; text: string }[];
+  lines: LyricsLine[];
   /** Index of the active line (last whose timestamp passed), or -1. */
   active: number;
   hasTimedLines: boolean;
+  /** True when any line carries word-by-word karaoke timestamps. */
+  hasWordTimings: boolean;
+  /** True when lrclib explicitly identified this track as instrumental. */
+  instrumental: boolean;
+  /** Provider source label (e.g. "lrclib", "lrclib-plain", "groq-word-v3"). */
+  source: string | null;
   isLoading: boolean;
   isFetching: boolean;
   isError: boolean;
@@ -50,51 +59,67 @@ export interface LyricsData {
 }
 
 /**
- * Fetch a track's lyrics and compute the currently active line. Shared by the
- * desktop lyrics pane, the compact mobile lyrics view and the karaoke dock;
- * react-query dedupes the request by trackId so all can mount at once.
- *
- * When the provider lyrics look wrong (big timestamp skips, times past the
- * song end, clumped timings) the hook automatically prefers the Whisper
- * transcription (`variant=ai`); `toggleVariant` lets the user override either
- * way. While the transcription is still running, the provider lyrics stay
- * visible (`aiLoading` marks the pending switch).
+ * Fetch a track's lyrics (passing `album` and `duration_sec` for higher lrclib
+ * accuracy) and compute the currently active line. In Offline Mode (when
+ * unauthenticated or offline), reads cached lyrics from `sf-lyrics` Cache Storage.
  */
 export function useLyrics(
   artist: string,
   title: string,
   trackId: number | string,
   currentTime: number,
+  options?: { album?: string; duration_sec?: number },
 ): LyricsData {
   const duration = usePlayerStore((s) => s.duration);
+  const { data: me } = useMe();
   const override = useLyricsVariantOverride();
+  const offlineMode = !me?.is_approved || (typeof navigator !== "undefined" && !navigator.onLine);
+  const effectiveDuration =
+    options?.duration_sec && options.duration_sec > 0
+      ? options.duration_sec
+      : duration > 0
+        ? duration
+        : undefined;
 
-  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ["lyrics", trackId],
-    queryFn: () => api.lyrics(artist, title, String(trackId)),
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery<LyricsResponse | null>({
+    queryKey: ["lyrics", String(trackId), offlineMode ? "offline" : "online"],
+    queryFn: async () => {
+      if (offlineMode) {
+        return await readOfflineLyrics(String(trackId));
+      }
+      return await api.lyrics(artist, title, String(trackId), undefined, {
+        album: options?.album,
+        duration_sec: effectiveDuration,
+      });
+    },
     enabled: !!trackId,
     staleTime: 3600_000,
     retry: false,
   });
 
-  const normalLines = data?.lines ?? [];
+  const instrumental = Boolean(data?.instrumental);
+  const normalLines = instrumental ? [] : (data?.lines ?? []);
   const normalIsAi = !!data?.ai_generated;
   const suspicion =
-    !normalIsAi && normalLines.length > 0
+    !offlineMode && !instrumental && !normalIsAi && normalLines.length > 0 && data?.synced !== false
       ? findLyricsSuspicion(normalLines, duration)
       : null;
 
-  // The toggle only exists when a distinct AI transcription can be fetched:
-  // provider lyrics present and not already AI-generated.
-  const canToggle = !!trackId && normalLines.length > 0 && !normalIsAi;
+  // The toggle only exists when online, non-instrumental, and a distinct AI
+  // transcription can be fetched.
+  const canToggle = !offlineMode && !instrumental && !!trackId && normalLines.length > 0 && !normalIsAi;
   const overrideVariant =
     override.trackId === String(trackId) ? override.variant : null;
   const wantAi =
     canToggle && (overrideVariant ?? (suspicion ? "ai" : "normal")) === "ai";
 
   const aiQuery = useQuery({
-    queryKey: ["lyrics", trackId, "ai"],
-    queryFn: () => api.lyrics(artist, title, String(trackId), "ai"),
+    queryKey: ["lyrics", String(trackId), "ai"],
+    queryFn: () =>
+      api.lyrics(artist, title, String(trackId), "ai", {
+        album: options?.album,
+        duration_sec: effectiveDuration,
+      }),
     enabled: wantAi,
     staleTime: 3600_000,
     retry: false,
@@ -102,10 +127,15 @@ export function useLyrics(
 
   const aiLines = aiQuery.data?.lines ?? [];
   const aiReady = wantAi && aiLines.length > 0;
+  const activePayload = aiReady ? aiQuery.data : data;
   const lines = aiReady ? aiLines : normalLines;
   const variant: LyricsVariant = aiReady || normalIsAi ? "ai" : "normal";
 
-  const hasTimedLines = lines.some((line) => typeof line.t === "number");
+  const syncedFlag = activePayload?.synced;
+  const hasTimedLines =
+    syncedFlag !== false && lines.some((line) => typeof line.t === "number");
+  const hasWordTimings =
+    hasTimedLines && lines.some((line) => Array.isArray(line.words) && line.words.length > 0);
 
   let active = -1;
   if (hasTimedLines) {
@@ -119,6 +149,9 @@ export function useLyrics(
     lines,
     active,
     hasTimedLines,
+    hasWordTimings,
+    instrumental,
+    source: activePayload?.source ?? null,
     isLoading,
     isFetching,
     isError,

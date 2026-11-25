@@ -23,9 +23,11 @@ import { showTrackActions } from '../components/trackActions';
 import { EmptyState, TrackRowSkeleton } from '../components/ui';
 import { useAuth } from '../auth/AuthContext';
 import { getCurrentApiBase } from '../config';
-import { findCachedArtistSummary, musicCacheScope, musicQueries } from '../data';
+import { findCachedArtistSummary, musicCacheScope, musicQueries, musicRepository } from '../data';
 import { resolveRemoteVisualState } from '../data/remoteState';
 import { useBottomInset } from '../hooks/useBottomInset';
+import { playTracks } from '../player/controller';
+import { shareArtist } from '../share/outboundShare';
 import { colors, layout, spacing } from '../theme';
 import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 import { artistLikedSectionVisible } from './artistTrackListModel';
@@ -93,6 +95,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
   const likes = useQuery(musicQueries.likes(scope));
   const [likedExpanded, setLikedExpanded] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [busyTag, setBusyTag] = useState<string | null>(null);
   const artistLoadedName = artist.data?.name;
   const likedTracks = useMemo(
     // The name is needed for likes saved before performer ids were stored;
@@ -151,6 +154,32 @@ export default function ArtistScreen(props: ArtistScreenProps) {
     songSearch.search,
     trackPlays,
   ]);
+
+  const startTagRadio = useCallback(async (tag: string) => {
+    const normalized = tag.trim();
+    if (normalized.length === 0 || busyTag !== null) return;
+    setBusyTag(normalized);
+    setRuntimeError(null);
+    try {
+      const tracks = await musicRepository.getMood(normalized);
+      if (tracks.length === 0) {
+        setRuntimeError(catalogStrings.artist.tagRadioEmpty(normalized));
+        return;
+      }
+      await playTracks(tracks, 0, {
+        radio: true,
+        context: {
+          type: 'radio',
+          id: `mood:${normalized.toLocaleLowerCase('en-US')}`,
+          label: `${normalized} Radio`,
+        },
+      });
+    } catch {
+      setRuntimeError(catalogStrings.artist.tagRadioFailed(normalized));
+    } finally {
+      setBusyTag(null);
+    }
+  }, [busyTag, setRuntimeError]);
 
   const initialVisual = resolveRemoteVisualState({
     hasData: artist.data !== undefined,
@@ -257,6 +286,12 @@ export default function ArtistScreen(props: ArtistScreenProps) {
         onToggleFollow={follow.toggle}
         onPlay={playArtistAll}
         onShuffle={shuffleArtistAll}
+        onShare={() => {
+          setRuntimeError(null);
+          void shareArtist(detail.id, detail.name).catch(() => {
+            setRuntimeError(catalogStrings.common.shareFailed);
+          });
+        }}
       />
       <CatalogRuntimeError id="artist" message={runtimeError} />
       <CatalogContentStatus
@@ -329,6 +364,8 @@ export default function ArtistScreen(props: ArtistScreenProps) {
           cardSize={tv.isTv ? tv.cardSize : undefined}
           onOpenAlbum={props.onOpenAlbum}
           onOpenArtist={props.onOpenArtist}
+          onTagPress={(tag) => void startTagRadio(tag)}
+          busyTag={busyTag}
         />
       }
       renderTrackItem={({ kind, track, index }) => {

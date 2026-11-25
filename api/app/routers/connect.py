@@ -6,7 +6,8 @@ import json
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+import anyio
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 
@@ -21,6 +22,9 @@ from ..schemas.connect import (
     ConnectTicketOut,
     PlaybackStateMessage,
     RegisterMessage,
+    RestConnectCommandIn,
+    RestConnectCommandOut,
+    RestConnectTransferIn,
     TransferMessage,
     UpdateDeviceMessage,
 )
@@ -49,13 +53,59 @@ def create_connect_ticket(
     response_model=ConnectStateOut,
     description=(
         "Return the authenticated user's currently connected devices, active "
-        "device, and live playback state."
+        "device, and live (or persisted resumable) playback state."
     ),
 )
 def get_connect_state(
     user: User = Depends(get_current_user),
 ) -> ConnectStateOut:
-    return connect_hub.hub.get_state(user.id)
+    return connect_hub.hub.get_state(user.id, session_factory=SessionLocal)
+
+
+@router.post(
+    "/command",
+    response_model=RestConnectCommandOut,
+    description=(
+        "Statelessly dispatch a playback command to the user's active (or named) "
+        "Connect device and wait for its acknowledgment."
+    ),
+)
+async def send_connect_command(
+    body: RestConnectCommandIn,
+    user: User = Depends(get_current_user),
+) -> RestConnectCommandOut:
+    try:
+        return await connect_hub.hub.dispatch_rest_command(
+            user.id,
+            body.action,
+            body.payload,
+            target_device_id=body.target_device_id,
+            timeout_sec=body.timeout_sec,
+        )
+    except connect_hub.ConnectRestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post(
+    "/transfer",
+    response_model=ConnectStateOut,
+    description=(
+        "Statelessly transfer active Connect playback to another connected device."
+    ),
+)
+async def transfer_connect_playback(
+    body: RestConnectTransferIn,
+    user: User = Depends(get_current_user),
+) -> ConnectStateOut:
+    try:
+        return await connect_hub.hub.dispatch_rest_transfer(
+            user.id,
+            body.target_device_id,
+            play=body.play,
+            session_factory=SessionLocal,
+        )
+    except connect_hub.ConnectRestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 def _lookup_ws_user(user_id: int) -> tuple[int | None, bool]:
@@ -166,7 +216,9 @@ async def connect_ws(websocket: WebSocket) -> None:
         return
 
     try:
-        conn = await hub.register(user_id, websocket, register_msg)
+        conn = await hub.register(
+            user_id, websocket, register_msg, session_factory=SessionLocal
+        )
     except WebSocketDisconnect:
         return
     except ValueError as exc:
@@ -214,7 +266,7 @@ async def connect_ws(websocket: WebSocket) -> None:
                         conn, connect_hub.error_frame("invalid_payload", str(exc), request_id)
                     )
                     continue
-                await hub.handle_playback_state(conn, msg)
+                await hub.handle_playback_state(conn, msg, session_factory=SessionLocal)
             elif msg_type == "transfer":
                 try:
                     msg = TransferMessage.model_validate(frame)
@@ -223,7 +275,7 @@ async def connect_ws(websocket: WebSocket) -> None:
                         conn, connect_hub.error_frame("invalid_payload", str(exc), request_id)
                     )
                     continue
-                await hub.handle_transfer(conn, msg)
+                await hub.handle_transfer(conn, msg, session_factory=SessionLocal)
             elif msg_type == "command":
                 try:
                     msg = CommandMessage.model_validate(frame)
@@ -255,8 +307,9 @@ async def connect_ws(websocket: WebSocket) -> None:
         pass
     finally:
         heartbeat_task.cancel()
-        try:
-            await heartbeat_task
-        except asyncio.CancelledError:
-            pass
-        await hub.disconnect(conn)
+        with anyio.CancelScope(shield=True):
+            try:
+                await heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            await hub.disconnect(conn, session_factory=SessionLocal)

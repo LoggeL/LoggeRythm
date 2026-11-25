@@ -3,10 +3,13 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
+import Cover from "@/components/ui/Cover";
 import EmptyState from "@/components/ui/EmptyState";
-import { DownloadIcon, DownloadedIcon } from "@/components/icons";
+import { DownloadIcon, DownloadedIcon, PlayIcon, ShuffleIcon } from "@/components/icons";
 import { useDownloads } from "@/hooks/useDownloads";
 import { api } from "@/lib/api";
+import type { DownloadEntry, DownloadKind } from "@/lib/offlineDownloads";
+import { usePlayerStore } from "@/store/player";
 import { toast } from "@/store/toast";
 import TabHeader from "./TabHeader";
 
@@ -14,16 +17,51 @@ function detail(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Playlists stored for offline listening on this device. */
-export default function DownloadsTab({ playlistsHref }: { playlistsHref: string }) {
+const KIND_LABELS: Record<DownloadKind, string> = {
+  playlist: "Playlist",
+  liked: "Gelikte Titel",
+  album: "Album",
+};
+
+function entryHref(id: string, info: DownloadEntry): string {
+  if (info.kind === "liked" || id === "liked") return "/library?tab=liked";
+  if (info.kind === "album" || id.startsWith("album:")) {
+    return `/album/${encodeURIComponent(id.replace(/^album:/, ""))}`;
+  }
+  return `/playlist/${encodeURIComponent(id)}`;
+}
+
+function playOfflineEntry(info: DownloadEntry, shuffled: boolean) {
+  const tracks = info.tracks;
+  if (!tracks || tracks.length === 0) {
+    toast.info("Lade diese Sammlung einmal neu herunter, um sie direkt im Offline-Modus abzuspielen.");
+    return;
+  }
+  const player = usePlayerStore.getState();
+  if (shuffled) {
+    if (!player.shuffle) player.toggleShuffle();
+    player.playQueue(tracks, Math.floor(Math.random() * tracks.length), info.name);
+    return;
+  }
+  player.playQueue(tracks, 0, info.name);
+}
+
+/** Collections stored for offline listening on this device (playable with zero network). */
+export default function DownloadsTab({
+  playlistsHref,
+  offlineOnly = false,
+}: {
+  playlistsHref: string;
+  offlineOnly?: boolean;
+}) {
   const { downloads, removeDownload, clearAllDownloads, supported } = useDownloads();
-  // "all" while the whole-device cleanup runs, otherwise the playlist id.
   const [removing, setRemoving] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [clearError, setClearError] = useState<string | null>(null);
-  // Reserves the operation before React rerenders, so double clicks cannot race.
   const removeRequest = useRef<string | null>(null);
   const entries = Object.entries(downloads);
+
+  const playOffline = playOfflineEntry;
 
   async function handleRemove(id: string) {
     if (removeRequest.current !== null) return;
@@ -33,7 +71,6 @@ export default function DownloadsTab({ playlistsHref }: { playlistsHref: string 
       if (downloads[id].trackIds) {
         await removeDownload(id);
       } else {
-        // Downloads saved before track ids were recorded need the playlist's titles.
         const playlist = await api.playlist(id);
         if (!Array.isArray(playlist.tracks)) throw new Error("Die Playlist-Antwort enthält keine gültige Titelliste.");
         await removeDownload(id, playlist.tracks);
@@ -66,7 +103,7 @@ export default function DownloadsTab({ playlistsHref }: { playlistsHref: string 
 
   return (
     <section aria-labelledby="download-heading">
-      <TabHeader id="download-heading" title="Offline hören" meta="Auf diesem Gerät gespeicherte Playlists.">
+      <TabHeader id="download-heading" title="Offline hören" meta="Auf diesem Gerät gespeicherte Playlists, Alben und Lieblingssongs.">
         {supported && entries.length > 0 && (
           <button
             type="button"
@@ -91,42 +128,87 @@ export default function DownloadsTab({ playlistsHref }: { playlistsHref: string 
           icon={<DownloadIcon width={24} height={24} />}
           title="Noch keine Downloads"
           action={
-            <Link href={playlistsHref} scroll={false} className="action-secondary">
-              Deine Playlists öffnen
-            </Link>
+            !offlineOnly && (
+              <Link href={playlistsHref} scroll={false} className="action-secondary">
+                Deine Playlists öffnen
+              </Link>
+            )
           }
         >
-          Öffne eine Playlist und wähle „Herunterladen“, um sie offline verfügbar zu machen.
+          Öffne eine Playlist, ein Album oder deine gelikten Titel und wähle „Offline verfügbar machen“.
         </EmptyState>
       ) : (
         <ul className="flex flex-col divide-y divide-hairline">
-          {entries.map(([id, info]) => (
-            <li key={id} className="flex items-center gap-3 py-3">
-              <span aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-white/[0.07] text-success">
-                <DownloadedIcon width={20} height={20} />
-              </span>
-              <Link href={`/playlist/${encodeURIComponent(id)}`} className="group min-w-0 flex-1">
+          {entries.map(([id, info]) => {
+            const hasSnapshot = Array.isArray(info.tracks) && info.tracks.length > 0;
+            const kindLabel = KIND_LABELS[info.kind ?? "playlist"];
+            const titleBlock = (
+              <>
                 <span className="block truncate text-sm font-semibold group-hover:underline">{info.name}</span>
-                <span className="mt-0.5 block text-xs text-muted">{info.total} Titel offline</span>
-              </Link>
-              <button
-                type="button"
-                onClick={() => void handleRemove(id)}
-                disabled={removing !== null}
-                aria-label={`Download entfernen: ${info.name}`}
-                className="action-secondary shrink-0 px-4 text-xs sm:min-h-9"
-              >
-                {removing === id ? "Entfernt…" : "Entfernen"}
-              </button>
-            </li>
-          ))}
+                <span className="mt-0.5 block text-xs text-muted">
+                  {kindLabel} · {info.total} Titel offline
+                </span>
+              </>
+            );
+            return (
+              <li key={id} className="flex flex-wrap items-center gap-3 py-3">
+                {info.cover ? (
+                  <Cover src={info.cover} className="h-12 w-12 shrink-0 rounded-lg" />
+                ) : (
+                  <span aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-white/[0.07] text-success">
+                    <DownloadedIcon width={20} height={20} />
+                  </span>
+                )}
+                {offlineOnly ? (
+                  <div className="min-w-0 flex-1">{titleBlock}</div>
+                ) : (
+                  <Link href={entryHref(id, info)} className="group min-w-0 flex-1">
+                    {titleBlock}
+                  </Link>
+                )}
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {hasSnapshot && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => playOffline(info, false)}
+                        aria-label={`${info.name} offline abspielen`}
+                        title="Offline abspielen"
+                        className="play-fab h-10 w-10 shadow-none"
+                      >
+                        <PlayIcon width={17} height={17} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => playOffline(info, true)}
+                        aria-label={`${info.name} zufällig offline abspielen`}
+                        title="Zufällig offline abspielen"
+                        className="action-icon h-10 w-10"
+                      >
+                        <ShuffleIcon width={17} height={17} />
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleRemove(id)}
+                    disabled={removing !== null}
+                    aria-label={`Download entfernen: ${info.name}`}
+                    className="action-secondary shrink-0 px-4 text-xs sm:min-h-9"
+                  >
+                    {removing === id ? "Entfernt…" : "Entfernen"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
       <Modal
         open={confirmClear}
         title="Alle Offline-Downloads löschen"
-        description="Die gespeicherte Musik dieser Playlists wird auf diesem Gerät gelöscht. Deine Playlists bleiben in deiner Bibliothek erhalten und können erneut heruntergeladen werden."
+        description="Die gespeicherte Musik dieser Sammlungen wird auf diesem Gerät gelöscht. Deine Playlists und Likes bleiben in deiner Bibliothek erhalten und können erneut heruntergeladen werden."
         onClose={() => {
           if (removing !== "all") setConfirmClear(false);
         }}

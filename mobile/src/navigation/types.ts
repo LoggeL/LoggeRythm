@@ -6,6 +6,7 @@ import type {
 } from '../screens/catalogModel';
 import type { HomeMixRouteParams } from '../screens/homeModel';
 import type { LibraryPlaylistRouteParams } from '../screens/libraryModel';
+import type { UserProfileRouteParams } from '../screens/UserProfileScreen';
 
 /**
  * Route names are a contract: navigationLinking.ts, navigationPersistence.ts
@@ -23,6 +24,7 @@ export type SectionStackParams = {
   Genre: GenreRouteParams;
   Artist: ArtistRouteParams;
   Playlist: LibraryPlaylistRouteParams;
+  UserProfile: UserProfileRouteParams;
 };
 
 export type AppTabParams = {
@@ -36,8 +38,11 @@ export type AppTabParams = {
 export type RootStackParams = {
   Tabs: NavigatorScreenParams<AppTabParams> | undefined;
   Profile: undefined;
+  Insights: undefined;
   NowPlaying: undefined;
   Queue: undefined;
+  /** Launcher shortcut (`loggerythm://party/start`): opens active Jam or starts a new one. */
+  PartyStart: undefined;
   /** `code` comes from links and is validated by the route before use. */
   Party: { code: string };
   /** `token` comes from collaborative playlist invite links and is validated before use. */

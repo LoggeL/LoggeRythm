@@ -2,6 +2,10 @@
 
 import { useEffect, useRef } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
+import { useAudioEffectsStore } from "@/store/audioEffects";
+import { useConnectStore } from "@/store/connect";
+import { useUiModalsStore } from "@/store/uiModals";
+import { openAddToPlaylist } from "@/store/addToPlaylist";
 import {
   PLAYER_SESSION_KEY,
   capturePlayerSession,
@@ -9,7 +13,9 @@ import {
   restoredPlayerState,
 } from "@/store/playerSession";
 import { api } from "@/lib/api";
+import { readLivePlaybackClock } from "@/lib/playbackClock";
 import { useMe } from "@/hooks/useAuth";
+import { useLikedTrack, useToggleLike } from "@/hooks/useLibrary";
 import { readLocalJsonSnapshot, writeLocalJsonValue } from "@/hooks/useLocalJson";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { toast } from "@/store/toast";
@@ -44,12 +50,10 @@ function restorePlayerSession(userId: string): void {
   if (stored === null) return;
   const snapshot = parsePlayerSession(stored);
   if (snapshot.userId !== userId) {
-    // Left behind by another account on this browser.
     removePlayerSession();
     return;
   }
   const live = usePlayerStore.getState();
-  // A party or a queue started before the player mounted owns playback.
   if (live.partyBridge || live.queue.length > 0) return;
   restoredTrackId = snapshot.index >= 0 ? snapshot.queue[snapshot.index].id : null;
   usePlayerStore.setState((state) => ({
@@ -58,11 +62,6 @@ function restorePlayerSession(userId: string): void {
   }));
 }
 
-/**
- * Keeps the listening session across reloads: restored when the player
- * mounts, written when the page is left. `visibilitychange` covers mobile
- * browsers that discard a hidden tab without firing `pagehide`.
- */
 function usePlayerSession() {
   const { data: me } = useMe();
   const userId = me ? String(me.id) : null;
@@ -85,26 +84,59 @@ function usePlayerSession() {
   }, [userId]);
 }
 
+/**
+ * Keep a stable per-play-occurrence Idempotency-Key across retries so a
+ * timed-out `POST /api/me/plays` never double-counts when retried.
+ */
+export function resolvePlayIdempotencyKey(
+  existing: { occurrence: string; key: string } | null,
+  occurrence: string,
+  createKey: () => string,
+): { occurrence: string; key: string } {
+  if (existing && existing.occurrence === occurrence) return existing;
+  return { occurrence, key: createKey() };
+}
+
+function generateIdempotencyKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `play-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /** Record a play once per (new) track for approved, logged-in users playing locally. */
 function usePlayRecorder() {
   const track = usePlayerStore(currentTrack);
+  const index = usePlayerStore((s) => s.index);
   const suppressLocalAudio = usePlayerStore((s) => s.suppressLocalAudio);
   const { data: me } = useMe();
   const recorded = useRef<string | null>(null);
+  const pendingKey = useRef<{ occurrence: string; key: string } | null>(null);
   const trackId = track?.id ?? null;
+  const occurrence = trackId !== null ? `${index}:${trackId}` : null;
   useEffect(() => {
-    if (suppressLocalAudio || !track || !trackId || !me?.is_approved) return;
-    if (recorded.current === trackId) return;
-    recorded.current = trackId;
-    // Only the first entry after a restore can be the one already counted.
+    if (suppressLocalAudio || !track || !trackId || !occurrence || !me?.is_approved) return;
+    if (recorded.current === occurrence) return;
+    recorded.current = occurrence;
     const alreadyCounted = restoredTrackId === trackId;
     restoredTrackId = null;
-    if (alreadyCounted) return;
-    api.recordPlay(track).catch((error: unknown) => {
-      if (recorded.current === trackId) recorded.current = null;
-      toast.error(`Hörverlauf konnte nicht gespeichert werden: ${error instanceof Error ? error.message : String(error)}`);
-    });
-  }, [suppressLocalAudio, trackId, track, me?.is_approved]);
+    if (alreadyCounted) {
+      pendingKey.current = null;
+      return;
+    }
+    const keyEntry = resolvePlayIdempotencyKey(pendingKey.current, occurrence, generateIdempotencyKey);
+    pendingKey.current = keyEntry;
+    api.recordPlay(track, keyEntry.key)
+      .then(() => {
+        if (pendingKey.current?.occurrence === occurrence) {
+          pendingKey.current = null;
+        }
+      })
+      .catch((error: unknown) => {
+        if (recorded.current === occurrence) recorded.current = null;
+        toast.error(`Hörverlauf konnte nicht gespeichert werden: ${error instanceof Error ? error.message : String(error)}`);
+      });
+  }, [suppressLocalAudio, trackId, occurrence, track, me?.is_approved]);
 }
 
 /** Reflect the current song in the browser tab title. */
@@ -129,13 +161,11 @@ function useRadioTopUp() {
   const radioSession = usePlayerStore((s) => s.radioSession);
   const queueLen = usePlayerStore((s) => s.queue.length);
   const index = usePlayerStore((s) => s.index);
-  // A replacement station may start while the previous top-up is still in
-  // flight. Track the owning session instead of globally blocking all fetches.
   const fetchingSession = useRef<number | null>(null);
 
   useEffect(() => {
     if (suppressLocalAudio || !radioActive || !track) return;
-    if (queueLen - index > 2) return; // still have a buffer
+    if (queueLen - index > 2) return;
     if (fetchingSession.current === radioSession) return;
     fetchingSession.current = radioSession;
     const requestSession = radioSession;
@@ -154,7 +184,6 @@ function useRadioTopUp() {
       })
       .catch((e) => {
         if (!stillOwned()) return;
-        // Stop the radio visibly instead of silently starving the queue.
         usePlayerStore.getState().setRadioActive(false);
         toast.error(
           `Song-Radio konnte nicht erweitert werden: ${e instanceof Error ? e.message : String(e)}`,
@@ -170,16 +199,42 @@ const MEDIA_SESSION_ACTIONS: MediaSessionAction[] = [
   "play", "pause", "previoustrack", "nexttrack", "seekto", "seekforward", "seekbackward", "stop",
 ];
 
-/** MediaSession: OS media keys + lock-screen metadata + artwork. */
+/**
+ * Pure helper validating and clamping a MediaPositionState payload before
+ * handing it to `navigator.mediaSession.setPositionState` (browsers throw
+ * `TypeError` if `duration <= 0`, `position > duration`, or any field is NaN).
+ */
+export function buildMediaPositionState(
+  duration: number,
+  position: number,
+  playbackRate: number,
+): MediaPositionState | null {
+  if (!Number.isFinite(duration) || duration <= 0) return null;
+  if (!Number.isFinite(position)) return null;
+  if (!Number.isFinite(playbackRate) || playbackRate <= 0) return null;
+  return {
+    duration,
+    playbackRate,
+    position: Math.max(0, Math.min(position, duration)),
+  };
+}
+
+/** MediaSession: OS media keys + lock-screen metadata + live progress bar. */
 function useMediaSession() {
   const track = usePlayerStore(currentTrack);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const duration = usePlayerStore((s) => s.duration);
+  const seekTo = usePlayerStore((s) => s.seekTo);
+  const playbackRate = useAudioEffectsStore((s) => s.playbackRate);
 
   useEffect(() => {
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
     const session = navigator.mediaSession;
     if (!track) {
       session.metadata = null;
+      if (typeof session.setPositionState === "function") {
+        session.setPositionState();
+      }
       return;
     }
     const store = () => usePlayerStore.getState();
@@ -231,6 +286,40 @@ function useMediaSession() {
     if (typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
   }, [isPlaying]);
+
+  // Publish live playback position to OS media controls (macOS Now Playing,
+  // Windows SMTC, Chrome Media Hub, Android lock screen).
+  useEffect(() => {
+    if (
+      typeof navigator === "undefined" ||
+      !("mediaSession" in navigator) ||
+      typeof navigator.mediaSession.setPositionState !== "function" ||
+      !track
+    ) {
+      return;
+    }
+    const publishPosition = () => {
+      const state = usePlayerStore.getState();
+      const liveClock = readLivePlaybackClock();
+      const pos =
+        !state.suppressLocalAudio &&
+        liveClock &&
+        liveClock.trackId === String(track.id)
+          ? liveClock.currentTime
+          : state.currentTime;
+      const payload = buildMediaPositionState(
+        state.duration || track.duration_sec || 0,
+        pos,
+        useAudioEffectsStore.getState().playbackRate,
+      );
+      if (!payload) return;
+      navigator.mediaSession.setPositionState(payload);
+    };
+    publishPosition();
+    if (!isPlaying) return;
+    const interval = window.setInterval(publishPosition, 5_000);
+    return () => window.clearInterval(interval);
+  }, [track, duration, isPlaying, seekTo, playbackRate]);
 }
 
 /** Sleep timer: pause when the deadline passes. */
@@ -245,9 +334,42 @@ function useSleepTimer() {
         s.pause();
         toast.info("Sleep-Timer: Wiedergabe pausiert.");
       }
-    }, 1000);
+    }, 500);
     return () => window.clearInterval(interval);
   }, [sleepAt]);
+}
+
+/** Handles the `L` keyboard shortcut to like/unlike the currently playing song. */
+function useLikeCurrentTrackShortcut() {
+  const { data: me } = useMe();
+  const track = usePlayerStore(currentTrack);
+  const matchedLike = useLikedTrack(
+    track ?? { id: "", title: "", artist: "", album: "", cover: "", duration_sec: 0 },
+    Boolean(me && track),
+  );
+  const toggleLike = useToggleLike(track?.id ?? "");
+  const stateRef = useRef({ me, track, matchedLike, toggleLike });
+  useEffect(() => {
+    stateRef.current = { me, track, matchedLike, toggleLike };
+  }, [me, track, matchedLike, toggleLike]);
+
+  useEffect(() => {
+    const onToggleLike = () => {
+      const { me: user, track: current, matchedLike: matched, toggleLike: mutateLike } = stateRef.current;
+      if (!user || !current || mutateLike.isPending) return;
+      const liked = matched !== undefined;
+      mutateLike.mutate(
+        { track: current, liked, matchedLikeId: matched?.id },
+        {
+          onSuccess: () => {
+            toast.info(liked ? "Aus Lieblingssongs entfernt." : "Zu Lieblingssongs hinzugefügt.");
+          },
+        },
+      );
+    };
+    window.addEventListener("spotifrei:toggle-current-like", onToggleLike);
+    return () => window.removeEventListener("spotifrei:toggle-current-like", onToggleLike);
+  }, []);
 }
 
 const INTERACTIVE_TARGETS =
@@ -255,8 +377,10 @@ const INTERACTIVE_TARGETS =
 
 /**
  * Global keyboard shortcuts (ignored while a control has focus):
- * Space play/pause · ←/→ seek 5 s · ↑/↓ volume · M mute ·
- * Q queue · T lyrics · F fullscreen · Shift+N / Shift+P next / previous.
+ * - Always available: Q queue · / focus search · ? shortcuts help · D devices
+ * - With a loaded track: Space play/pause · ←/→ seek 5 s · ↑/↓ volume ·
+ *   0–9 seek 0–90 % · M mute · S shuffle · R repeat · L like · A add to playlist ·
+ *   T lyrics · F fullscreen · V visualizer · C cinema · Shift+N / Shift+P next / prev.
  */
 function usePlayerShortcuts() {
   useEffect(() => {
@@ -266,8 +390,49 @@ function usePlayerShortcuts() {
         return;
       }
       const s = usePlayerStore.getState();
+      const rawKey = e.key;
+      const key = rawKey.length === 1 ? rawKey.toLowerCase() : rawKey;
+
+      // Shortcuts available even when no track is loaded.
+      if (rawKey === "?" || (e.shiftKey && rawKey === "/")) {
+        e.preventDefault();
+        useUiModalsStore.getState().toggleShortcuts();
+        return;
+      }
+      if (rawKey === "/" && !e.shiftKey) {
+        e.preventDefault();
+        const searchInput = document.querySelector<HTMLInputElement>("[data-global-search-input]");
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        } else {
+          window.dispatchEvent(new Event("open-command-palette"));
+        }
+        return;
+      }
+      if (key === "q" && !e.shiftKey) {
+        e.preventDefault();
+        s.toggleQueue();
+        return;
+      }
+      if (key === "d" && !e.shiftKey) {
+        e.preventDefault();
+        const connect = useConnectStore.getState();
+        connect.setSelectorOpen(!connect.selectorOpen, null);
+        return;
+      }
+
       if (s.index < 0) return;
-      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+
+      // 0–9 jump to 0%–90% of the current track duration.
+      if (!e.shiftKey && rawKey.length === 1 && rawKey >= "0" && rawKey <= "9") {
+        if (s.duration > 0) {
+          e.preventDefault();
+          s.seek((Number(rawKey) / 10) * s.duration);
+        }
+        return;
+      }
+
       const actions: Record<string, () => void> = {
         " ": s.toggle,
         ArrowRight: () => s.seek(Math.min(s.currentTime + 5, s.duration || s.currentTime + 5)),
@@ -275,9 +440,23 @@ function usePlayerShortcuts() {
         ArrowUp: () => s.setVolume(Math.min(s.volume + 0.05, 1)),
         ArrowDown: () => s.setVolume(Math.max(s.volume - 0.05, 0)),
         m: s.toggleMute,
-        q: s.toggleQueue,
+        s: s.toggleShuffle,
+        r: s.cycleRepeat,
+        l: () => window.dispatchEvent(new Event("spotifrei:toggle-current-like")),
+        a: () => {
+          const cur = currentTrack(usePlayerStore.getState());
+          if (cur) openAddToPlaylist(cur);
+        },
         t: s.toggleLyrics,
         f: () => setNowPlayingOpen(!s.nowPlayingOpen),
+        v: () => {
+          useUiModalsStore.getState().cycleVisualizer();
+          if (!s.nowPlayingOpen) setNowPlayingOpen(true);
+        },
+        c: () => {
+          if (!s.nowPlayingOpen) setNowPlayingOpen(true);
+          useUiModalsStore.getState().toggleCinemaMode();
+        },
         ...(e.shiftKey ? { n: s.next, p: s.prev } : {}),
       };
       const action = actions[key];
@@ -297,6 +476,9 @@ function usePlayerShortcuts() {
  */
 export function setNowPlayingOpen(open: boolean): void {
   usePlayerStore.getState().setNowPlayingOpen(open);
+  if (!open) {
+    useUiModalsStore.getState().setCinemaMode(false);
+  }
   if (open && !document.fullscreenElement) {
     document.documentElement.requestFullscreen?.().catch(() => undefined);
   } else if (!open && document.fullscreenElement) {
@@ -333,6 +515,7 @@ export function usePlayerSideEffects(): void {
   useRadioTopUp();
   useMediaSession();
   useSleepTimer();
+  useLikeCurrentTrackShortcut();
   usePlayerShortcuts();
   useNowPlayingBridge();
 }

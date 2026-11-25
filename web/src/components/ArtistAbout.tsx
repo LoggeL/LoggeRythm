@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { startTrackListRadio } from "@/lib/radio";
 import { formatCompact } from "@/lib/format";
+import { toast } from "@/store/toast";
+import { RadioIcon, SpinnerIcon } from "@/components/icons";
 import QueryError from "@/components/ui/QueryError";
 import SectionHeader from "@/components/ui/SectionHeader";
 
@@ -33,6 +36,7 @@ export default function ArtistAbout({
   albumsCount?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [startingTag, setStartingTag] = useState<string | null>(null);
   const about = useQuery({
     queryKey: ["artist-about", name],
     queryFn: () => api.artistAbout(name),
@@ -40,6 +44,25 @@ export default function ArtistAbout({
     staleTime: 60 * 60_000,
   });
   const data = about.data;
+
+  async function startTagRadio(tag: string) {
+    if (startingTag !== null) return;
+    setStartingTag(tag);
+    try {
+      const tracks = await api.homeMood(tag);
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        toast.error(`Für „${tag}“ wurden keine Radio-Titel gefunden.`);
+        return;
+      }
+      startTrackListRadio(tracks, `${tag}-Radio`);
+    } catch (cause) {
+      toast.error(
+        `${tag}-Radio konnte nicht gestartet werden: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    } finally {
+      setStartingTag(null);
+    }
+  }
 
   if (!data) {
     if (!about.isError) return null;
@@ -85,11 +108,28 @@ export default function ArtistAbout({
 
             {data.tags.length > 0 && (
               <ul className={`flex flex-wrap gap-1.5 ${data.bio ? "mt-4" : ""}`} aria-label="Genres">
-                {data.tags.map((tag) => (
-                  <li key={tag} className="label-mono rounded-art border border-hairline px-2 py-1">
-                    {tag}
-                  </li>
-                ))}
+                {data.tags.map((tag) => {
+                  const busy = startingTag === tag;
+                  return (
+                    <li key={tag}>
+                      <button
+                        type="button"
+                        disabled={startingTag !== null}
+                        aria-busy={busy}
+                        onClick={() => void startTagRadio(tag)}
+                        title={`${tag}-Radio starten`}
+                        className="label-mono inline-flex min-h-8 items-center gap-1.5 rounded-art border border-hairline px-2.5 py-1 transition-colors hover:border-accent/50 hover:bg-accent/10 hover:text-foreground disabled:opacity-50"
+                      >
+                        {busy ? (
+                          <SpinnerIcon width={12} height={12} className="animate-spin" aria-hidden="true" />
+                        ) : (
+                          <RadioIcon width={12} height={12} className="text-accent-soft" aria-hidden="true" />
+                        )}
+                        {tag}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>

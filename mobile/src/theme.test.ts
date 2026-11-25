@@ -23,11 +23,14 @@ function contrast(foreground: string, background: string): number {
 }
 
 describe('production Android color contract', () => {
-  it('uses the production violet and exposes every semantic state token', () => {
-    expect(colors.accent).toBe('#8f73ff');
-    expect(colors.accentSolid).toBe('#7a5cf5');
-    expect(colors.backdrop).toBe('#050608');
-    expect(colors.background).toBe('#0c0d11');
+  it('uses the Ink, Paper, Signal lime palette and exposes every semantic state token', () => {
+    expect(colors.accent).toBe('#d6ff4b');
+    expect(colors.accentSolid).toBe('#c9f53c');
+    expect(colors.brand).toBe('#d6ff4b');
+    expect(colors.backdrop).toBe('#09090b');
+    expect(colors.background).toBe('#0f0e11');
+    expect(colors.textPrimary).toBe('#f4f0e6');
+    expect(colors.onAccent).toBe('#10140a');
     expect(colors).toMatchObject({
       background: expect.stringMatching(/^#[0-9a-f]{6}$/u),
       surface: expect.stringMatching(/^#[0-9a-f]{6}$/u),

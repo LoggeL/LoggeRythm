@@ -26,6 +26,9 @@ export interface ArtistFooterProps {
   aboutEnabled: boolean;
   onOpenAlbum: (params: AlbumRouteParams) => void;
   onOpenArtist: (params: ArtistRouteParams) => void;
+  /** Optional interactive genre tag handler (launches mood radio). */
+  onTagPress?: (tag: string) => void;
+  busyTag?: string | null;
   /** Optional 10-foot card size for Android TV. */
   cardSize?: number;
 }
@@ -57,6 +60,8 @@ export function ArtistFooter({
   aboutEnabled,
   onOpenAlbum,
   onOpenArtist,
+  onTagPress,
+  busyTag = null,
   cardSize,
 }: ArtistFooterProps) {
   return (
@@ -108,7 +113,9 @@ export function ArtistFooter({
         onRetry={() => void about.refetch()}
         skeleton="text"
       >
-        {about.data !== undefined ? <ArtistAbout about={about.data} /> : null}
+        {about.data !== undefined ? (
+          <ArtistAbout about={about.data} onTagPress={onTagPress} busyTag={busyTag} />
+        ) : null}
       </CatalogSection>
     </View>
   );

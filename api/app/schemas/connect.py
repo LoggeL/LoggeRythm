@@ -144,6 +144,33 @@ class ConnectTicketOut(BaseModel):
     expires_in_sec: int
 
 
+class RestConnectCommandIn(BaseModel):
+    action: CommandAction
+    payload: dict[str, Any] = Field(default_factory=dict)
+    target_device_id: str | None = Field(default=None, max_length=64)
+    timeout_sec: float = Field(default=5.0, ge=0.5, le=15.0)
+
+
+class RestConnectCommandOut(BaseModel):
+    command_id: str
+    target_device_id: str
+    ok: bool
+    error: str | None = None
+
+
+class RestConnectTransferIn(BaseModel):
+    target_device_id: str = Field(min_length=1, max_length=64)
+    play: bool | None = None
+
+    @field_validator("target_device_id")
+    @classmethod
+    def _validate_rest_target(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("target_device_id must not be blank")
+        return stripped
+
+
 # --- Incoming WebSocket message schemas -----------------------------------
 
 

@@ -16,12 +16,27 @@ from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.auth import create_token
-from app.db.models import PartyGuest, PartyMember, PartySession, PartyTrack, User
+from app.db.models import (
+    PartyGuest,
+    PartyMember,
+    PartySession,
+    PartyTrack,
+    Playlist,
+    PlaylistCollaborator,
+    PlaylistTrack,
+    User,
+)
 from app.db.session import Base, get_db
 from app.main import _run_column_migrations, app
 from app.party_auth import PartyActor, get_party_actor
 from app.routers import party
-from app.schemas.party import PartyGuestJoin, PartySettingsUpdate
+from app.schemas.party import (
+    PartyGuestJoin,
+    PartyHostTransferIn,
+    PartyReactIn,
+    PartySavePlaylistIn,
+    PartySettingsUpdate,
+)
 from app.schemas.track import Track
 from app.services import party_bus, party_preload
 
@@ -232,6 +247,30 @@ class PartyJamTests(unittest.TestCase):
         finally:
             app.dependency_overrides.pop(get_db, None)
 
+    def test_creating_or_joining_new_party_removes_previous_party_membership(self) -> None:
+        first = self._create_jam()
+        party.join_party(first.code, self.member, self.db)
+        self.assertEqual(party.get_active_party(self.member, self.db).code, first.code)
+
+        # Member starts a new Jam -> automatically leaves the first Jam so it cannot
+        # resurrect later via GET /api/party/active after leaving the second Jam.
+        second = party.create_party(party.PartyCreate(name="Second Jam"), self.member, self.db)
+        self.assertEqual(party.get_active_party(self.member, self.db).code, second.code)
+        first_members = {
+            m.key for m in party.get_party(first.code, PartyActor(user=self.host), self.db).members
+        }
+        self.assertNotIn(f"u:{self.member.id}", first_members)
+
+        # Leaving the second Jam leaves member in no active Jam at all.
+        party.leave_party(second.code, PartyActor(user=self.member), self.db)
+        self.assertIsNone(party.get_active_party(self.member, self.db))
+
+        # Host joining the second Jam removes host's stale membership from the first Jam.
+        party.join_party(second.code, self.host, self.db)
+        self.assertEqual(party.get_active_party(self.host, self.db).code, second.code)
+        party.leave_party(second.code, PartyActor(user=self.host), self.db)
+        self.assertIsNone(party.get_active_party(self.host, self.db))
+
     def test_settings_and_shared_guest_control_permissions(self) -> None:
         state = self._create_jam(guests_can_control=False)
         party.join_party(state.code, self.member, self.db)
@@ -425,10 +464,285 @@ class PartyJamTests(unittest.TestCase):
                 _run_column_migrations()
             cols = {c["name"] for c in inspect(legacy_engine).get_columns("party_sessions")}
             self.assertTrue(
-                {"guests_can_control", "playback_changed_by", "playback_revision"} <= cols
+                {"guests_can_control", "playback_changed_by", "playback_revision", "auto_dj"}
+                <= cols
             )
         finally:
             legacy_engine.dispose()
+
+    def test_save_party_as_playlist_plain_and_collaborative(self) -> None:
+        state = self._create_jam()
+        party.join_party(state.code, self.member, self.db)
+        guest_actor, _ = self._join_guest(state.code, "Mia")
+        party.add_track(
+            state.code,
+            Track(id="300", title="Third", artist="C", artist_id="3", loudness_gain_db=-4.2),
+            guest_actor,
+            self.db,
+        )
+
+        plain = party.save_party_as_playlist(
+            state.code,
+            PartySavePlaylistIn(name="My Saved Jam", collaborative=False),
+            self.host,
+            self.db,
+        )
+        self.assertEqual(plain.name, "My Saved Jam")
+        self.assertEqual(plain.track_count, 3)
+        self.assertFalse(plain.is_collaborative)
+        saved_tracks = self.db.scalars(
+            select(PlaylistTrack)
+            .where(PlaylistTrack.playlist_id == plain.id)
+            .order_by(PlaylistTrack.position)
+        ).all()
+        self.assertEqual([t.deezer_id for t in saved_tracks], ["100", "200", "300"])
+        self.assertEqual(saved_tracks[2].loudness_gain_db, -4.2)
+
+        collab = party.save_party_as_playlist(
+            state.code,
+            PartySavePlaylistIn(collaborative=True),
+            self.host,
+            self.db,
+        )
+        self.assertEqual(collab.name, "Friday Jam")
+        self.assertTrue(collab.is_collaborative)
+        collabs = self.db.scalars(
+            select(PlaylistCollaborator).where(PlaylistCollaborator.playlist_id == collab.id)
+        ).all()
+        self.assertEqual([c.user_id for c in collabs], [self.member.id])
+
+    def test_host_transfer_updates_permissions_and_live_sse_is_host(self) -> None:
+        state = self._create_jam()
+        party.join_party(state.code, self.member, self.db)
+        guest_actor, _ = self._join_guest(state.code, "Mia")
+
+        # Reject non-host, guest target, self target, and non-member
+        with self.assertRaises(HTTPException) as non_host:
+            party.transfer_party_host(
+                state.code,
+                PartyHostTransferIn(member_key=f"u:{self.member.id}"),
+                self.member,
+                self.db,
+            )
+        self.assertEqual(non_host.exception.status_code, 403)
+
+        with self.assertRaises(HTTPException) as guest_target:
+            party.transfer_party_host(
+                state.code,
+                PartyHostTransferIn(member_key=guest_actor.key),
+                self.host,
+                self.db,
+            )
+        self.assertEqual(guest_target.exception.status_code, 400)
+
+        with self.assertRaises(HTTPException) as self_target:
+            party.transfer_party_host(
+                state.code,
+                PartyHostTransferIn(member_key=f"u:{self.host.id}"),
+                self.host,
+                self.db,
+            )
+        self.assertEqual(self_target.exception.status_code, 400)
+
+        with self.assertRaises(HTTPException) as missing_member:
+            party.transfer_party_host(
+                state.code,
+                PartyHostTransferIn(member_key=f"u:{self.outsider.id}"),
+                self.host,
+                self.db,
+            )
+        self.assertEqual(missing_member.exception.status_code, 404)
+
+        async def run_transfer_sse() -> list[dict]:
+            with patch.object(party, "SessionLocal", self.session_factory):
+                response = await party.party_events(state.code, PartyActor(user=self.member))
+                try:
+                    first = json.loads(
+                        (await anext(response.body_iterator)).removeprefix("data: ").strip()
+                    )
+                    self.assertFalse(first["is_host"])
+                    transferred = party.transfer_party_host(
+                        state.code,
+                        PartyHostTransferIn(member_key=f"u:{self.member.id}"),
+                        self.host,
+                        self.db,
+                    )
+                    self.assertFalse(transferred.is_host)
+                    self.assertEqual(transferred.host_name, "Member User")
+                    second = json.loads(
+                        (await anext(response.body_iterator)).removeprefix("data: ").strip()
+                    )
+                    return [first, second]
+                finally:
+                    await response.body_iterator.aclose()
+
+        frames = asyncio.run(run_transfer_sse())
+        self.assertFalse(frames[0]["is_host"])
+        self.assertTrue(frames[1]["is_host"])
+        self.assertEqual(frames[1]["host_name"], "Member User")
+
+    def test_auto_dj_refills_queue_when_running_low_and_dedupes_existing(self) -> None:
+        state = self._create_jam()
+        radio_picks = [
+            {"id": "100", "title": "Already Queued", "artist": "A"},
+            {"id": "501", "title": "DJ Pick 1", "artist": "X", "duration_sec": 180},
+            {"id": "502", "title": "DJ Pick 2", "artist": "Y", "duration_sec": 190},
+        ]
+        with patch.object(party.radio_router, "_radio", return_value=radio_picks) as mock_radio:
+            updated = party.update_party_settings(
+                state.code,
+                PartySettingsUpdate(auto_dj=True),
+                self.host,
+                self.db,
+            )
+        mock_radio.assert_called_once_with("100")
+        self.assertTrue(updated.auto_dj)
+        self.assertEqual([t.deezer_id for t in updated.tracks], ["100", "200", "501", "502"])
+        self.assertEqual(updated.tracks[2].added_by, "Auto-DJ")
+        self.assertEqual(updated.tracks[2].added_by_member, "system:autodj")
+
+        # Advancing to second-to-last track (<=1 upcoming) triggers refill automatically
+        more_picks = [{"id": "503", "title": "DJ Pick 3", "artist": "Z", "duration_sec": 200}]
+        with patch.object(party.radio_router, "_radio", return_value=more_picks) as mock_radio2:
+            party.set_current(
+                state.code, party.CurrentUpdate(index=2), PartyActor(user=self.host), self.db
+            )
+        mock_radio2.assert_called_once_with("501")
+        refreshed = party.get_party(state.code, PartyActor(user=self.host), self.db)
+        self.assertEqual([t.deezer_id for t in refreshed.tracks], ["100", "200", "501", "502", "503"])
+
+        # Manual fill endpoint also appends picks
+        extra_picks = [{"id": "504", "title": "Manual Fill", "artist": "W", "duration_sec": 210}]
+        with patch.object(party.radio_router, "_radio", return_value=extra_picks):
+            filled = party.fill_party_auto_dj(
+                state.code, count=3, actor=PartyActor(user=self.host), db=self.db
+            )
+        self.assertIn("504", [t.deezer_id for t in filled.tracks])
+
+    def test_ephemeral_reactions_and_majority_vote_to_skip(self) -> None:
+        state = self._create_jam()
+        party.join_party(state.code, self.member, self.db)
+        guest_actor, _ = self._join_guest(state.code, "Mia")
+        host_actor = PartyActor(user=self.host)
+        member_actor = PartyActor(user=self.member)
+        self.addCleanup(party_bus.clear_party_ephemeral, state.code)
+
+        # Blank emoji fails with 422
+        with self.assertRaises(HTTPException) as blank:
+            party.react_in_party(state.code, PartyReactIn(emoji="   "), guest_actor, self.db)
+        self.assertEqual(blank.exception.status_code, 422)
+
+        reaction = party.react_in_party(state.code, PartyReactIn(emoji="🔥"), guest_actor, self.db)
+        self.assertEqual(reaction.emoji, "🔥")
+        self.assertEqual(reaction.member_key, guest_actor.key)
+        after_react = party.get_party(state.code, host_actor, self.db)
+        self.assertIsNotNone(after_react.latest_reaction)
+        self.assertEqual(after_react.latest_reaction.emoji, "🔥")
+        self.assertEqual(after_react.skip_votes_needed, 2)  # 3 participants -> majority is 2
+
+        # First vote records vote without skipping
+        vote1 = party.vote_skip_party_track(state.code, member_actor, self.db)
+        self.assertFalse(vote1.skipped)
+        self.assertEqual(vote1.votes, [member_actor.key])
+        self.assertEqual(vote1.votes_needed, 2)
+        self.assertEqual(vote1.state.current_index, 0)
+
+        # Duplicate vote from same participant does not double-count
+        vote1_dup = party.vote_skip_party_track(state.code, member_actor, self.db)
+        self.assertFalse(vote1_dup.skipped)
+        self.assertEqual(vote1_dup.votes, [member_actor.key])
+
+        # Second unique vote reaches majority -> advances track and resets votes
+        vote2 = party.vote_skip_party_track(state.code, guest_actor, self.db)
+        self.assertTrue(vote2.skipped)
+        self.assertEqual(vote2.votes, [])
+        self.assertEqual(vote2.state.current_index, 1)
+        self.assertEqual(vote2.state.position_sec, 0.0)
+        self.assertEqual(vote2.state.skip_votes, [])
+
+        # Ending party clears ephemeral reaction/vote state
+        party.end_party(state.code, self.host, self.db)
+        self.assertIsNone(party_bus.get_latest_reaction(state.code))
+
+    def test_non_members_and_kicked_users_rejected_from_jam2_mutations_and_deleted_contributor_safe(
+        self,
+    ) -> None:
+        state = self._create_jam()
+        party.join_party(state.code, self.member, self.db)
+        party.add_track(
+            state.code,
+            Track(id="300", title="Member Track", artist="M", artist_id="3"),
+            PartyActor(user=self.member),
+            self.db,
+        )
+
+        # Outsider cannot save-playlist, react, vote-skip, or auto-dj fill (all 403)
+        outsider_actor = PartyActor(user=self.outsider)
+        with self.assertRaises(HTTPException) as save_denied:
+            party.save_party_as_playlist(
+                state.code, PartySavePlaylistIn(collaborative=True), self.outsider, self.db
+            )
+        self.assertEqual(save_denied.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as react_denied:
+            party.react_in_party(state.code, PartyReactIn(emoji="🔥"), outsider_actor, self.db)
+        self.assertEqual(react_denied.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as skip_denied:
+            party.vote_skip_party_track(state.code, outsider_actor, self.db)
+        self.assertEqual(skip_denied.exception.status_code, 403)
+
+        # Kick member -> member is also rejected with 403 on react & vote-skip
+        party.kick_member(state.code, f"u:{self.member.id}", self.host, self.db)
+        with self.assertRaises(HTTPException) as kicked_react:
+            party.react_in_party(
+                state.code, PartyReactIn(emoji="👎"), PartyActor(user=self.member), self.db
+            )
+        self.assertEqual(kicked_react.exception.status_code, 403)
+        with self.assertRaises(HTTPException) as kicked_skip:
+            party.vote_skip_party_track(state.code, PartyActor(user=self.member), self.db)
+        self.assertEqual(kicked_skip.exception.status_code, 403)
+
+        # Delete the former contributor's User row -> save-playlist falls back to added_by_user_id=None
+        self.db.delete(self.member)
+        self.db.commit()
+        saved = party.save_party_as_playlist(
+            state.code, PartySavePlaylistIn(name="After Delete"), self.host, self.db
+        )
+        tracks = self.db.scalars(
+            select(PlaylistTrack)
+            .where(PlaylistTrack.playlist_id == saved.id)
+            .order_by(PlaylistTrack.position)
+        ).all()
+        self.assertEqual(tracks[0].added_by_user_id, self.host.id)
+        self.assertIsNone(tracks[2].added_by_user_id)
+
+    def test_purge_host_account_clears_ephemeral_party_state_and_broadcasts_ended(self) -> None:
+        from app.routers import profile as profile_router
+
+        state = self._create_jam()
+        party.join_party(state.code, self.member, self.db)
+        party.react_in_party(
+            state.code, PartyReactIn(emoji="🎉"), PartyActor(user=self.host), self.db
+        )
+        self.assertIsNotNone(party_bus.get_latest_reaction(state.code))
+
+        async def run_purge_sse() -> list[dict]:
+            with patch.object(party, "SessionLocal", self.session_factory):
+                response = await party.party_events(state.code, PartyActor(user=self.member))
+                received: list[dict] = []
+                received.append(
+                    json.loads((await anext(response.body_iterator)).removeprefix("data: ").strip())
+                )
+                profile_router.purge_user_account(self.db, self.host)
+                async for chunk in response.body_iterator:
+                    if chunk.startswith("data: "):
+                        received.append(json.loads(chunk.removeprefix("data: ").strip()))
+                return received
+
+        frames = asyncio.run(run_purge_sse())
+        self.assertEqual(len(frames), 2)
+        self.assertTrue(frames[1]["ended"])
+        self.assertIsNone(party_bus.get_latest_reaction(state.code))
+        self.assertEqual(party_bus.subscriber_count(state.code), 0)
 
 
 if __name__ == "__main__":

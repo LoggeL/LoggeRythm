@@ -53,10 +53,10 @@ const skeletonUrl = moduleUrl(
   `import {createElement} from ${JSON.stringify(reactUrl)}; export const DetailHeaderSkeleton = () => createElement("span", {"data-testid": "header-loading"}); export const RowListSkeleton = () => createElement("span", {"data-testid": "tracks-loading"});`,
 );
 const playerStoreUrl = moduleUrl(
-  `export const usePlayerStore = selector => selector({playQueue() {}});`,
+  `export const usePlayerStore = selector => selector({playQueue() {}, addManyToQueue() {}});`,
 );
 const iconsUrl = moduleUrl(
-  `export const PlayIcon = () => null; export const PauseIcon = PlayIcon; export const ShuffleIcon = PlayIcon; export const MoreIcon = PlayIcon; export const QueueIcon = PlayIcon; export const RefreshIcon = PlayIcon;`,
+  `export const PlayIcon = () => null; export const PauseIcon = PlayIcon; export const ShuffleIcon = PlayIcon; export const MoreIcon = PlayIcon; export const QueueIcon = PlayIcon; export const RefreshIcon = PlayIcon; export const SavePlaylistIcon = PlayIcon;`,
 );
 // Shared primitives render for real so the pages' error and empty states are
 // asserted on their actual markup.
@@ -85,6 +85,7 @@ const collectionImports = {
   ),
   "@/components/icons": iconsUrl,
   "@/store/player": playerStoreUrl,
+  "@/store/saveAsPlaylist": moduleUrl(`export const openSaveAsPlaylist = () => {};`),
   "@/store/toast": moduleUrl(`export const toast = {info() {}};`),
   // View transitions need a browser; the hero renders its content unwrapped
   // and no card has handed over artwork for the loading header.

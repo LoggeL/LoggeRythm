@@ -1,13 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
-import type { LyricsLine, LyricsResponse, Track } from '../../api/types';
+import type { LyricsVariant } from '../../api/endpoints';
+import type { LyricsLine, LyricsResponse, LyricsWord, Track } from '../../api/types';
 import { musicQueries } from '../../data';
 import type { RemoteFetchStatus } from '../../data/remoteState';
 import { triggerHaptic } from '../../hooks/useHaptics';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { strings } from '../../localization';
-import { useProgress } from '../../player/player';
+import { wave2Strings } from '../../localization/wave2Strings';
+import { useEffectiveProgress } from '../../connect/effectivePlaybackState';
+import { shareLyricQuote } from '../../share/outboundShare';
 import { colors, metrics, opacity, radii, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
 import {
@@ -50,12 +53,17 @@ export interface LyricsPanelViewProps {
   isStale: boolean;
   fetchStatus: RemoteFetchStatus;
   activeIndex: number;
+  position?: number;
   onSeek: (seconds: number) => void;
   onRetry: () => void;
   listRef?: React.RefObject<FlatList<LyricsLine> | null>;
   autoScrollPaused?: boolean;
   onUserScrollStart?: () => void;
   onSyncToCurrent?: () => void;
+  variant?: LyricsVariant;
+  onToggleVariant?: () => void;
+  onShareLine?: (index: number) => void;
+  shareError?: string | null;
   onScrollToIndexFailed?: (info: {
     index: number;
     highestMeasuredFrameIndex: number;
@@ -145,6 +153,38 @@ function CachedNotice({ testID, message, retryBusy, onRetry }: CachedNoticeProps
   );
 }
 
+function KaraokeWordsLine({
+  words,
+  position,
+}: {
+  words: readonly LyricsWord[];
+  position: number;
+}) {
+  const leadPosition = position + 0.12;
+  return (
+    <AppText testID="lyrics-karaoke-line" variant="section" color="muted">
+      {words.map((word, idx) => {
+        const isCurrent = leadPosition >= word.t && position <= word.end + 0.08;
+        const isSung = position > word.end + 0.08;
+        const color = isCurrent
+          ? colors.accent
+          : isSung
+            ? colors.textPrimary
+            : colors.textMuted;
+        return (
+          <Text
+            key={`${word.t}-${idx}`}
+            style={{ color, fontWeight: isCurrent ? '700' : '600' }}
+          >
+            {idx > 0 ? ' ' : ''}
+            {word.text}
+          </Text>
+        );
+      })}
+    </AppText>
+  );
+}
+
 /** Pure rendering contract; network state and auto-follow ownership live outside it. */
 export function LyricsPanelView({
   response,
@@ -154,12 +194,17 @@ export function LyricsPanelView({
   isStale,
   fetchStatus,
   activeIndex,
+  position = 0,
   onSeek,
   onRetry,
   listRef,
   autoScrollPaused = false,
   onUserScrollStart,
   onSyncToCurrent,
+  variant = 'default',
+  onToggleVariant,
+  onShareLine,
+  shareError = null,
   onScrollToIndexFailed,
 }: LyricsPanelViewProps) {
   const visual = resolveLyricsVisualState({
@@ -172,8 +217,15 @@ export function LyricsPanelView({
   });
   const lines = response?.lines ?? EMPTY_LINES;
   const isSynced = response?.synced === true;
+  const isInstrumental = response?.instrumental === true;
+  const hasWordTimings = isSynced && lines.some((line) => (line.words?.length ?? 0) > 0);
   const provider = response === undefined ? null : sourceLabel(response);
-  const showSyncAction = visual.body === 'content' && isSynced && autoScrollPaused && onSyncToCurrent !== undefined;
+  const showSyncAction =
+    !isInstrumental
+    && visual.body === 'content'
+    && isSynced
+    && autoScrollPaused
+    && onSyncToCurrent !== undefined;
 
   return (
     <View testID="lyrics-panel" style={styles.panel}>
@@ -181,6 +233,39 @@ export function LyricsPanelView({
         <AppText accessibilityRole="header" variant="overline" color="secondary">
           {strings.player.lyrics.title}
         </AppText>
+        {onToggleVariant !== undefined ? (
+          <Pressable
+            testID="lyrics-variant-toggle"
+            accessibilityRole="switch"
+            accessibilityState={{ checked: variant === 'ai' }}
+            accessibilityLabel={
+              variant === 'ai'
+                ? strings.player.lyrics.switchToStandard
+                : strings.player.lyrics.switchToAi
+            }
+            focusable
+            onPress={onToggleVariant}
+            style={({ pressed }) => [
+              styles.variantPill,
+              variant === 'ai' ? styles.variantPillActive : null,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            <AppIcon
+              name="auto-fix"
+              size={14}
+              color={variant === 'ai' ? colors.accentSoft : colors.textSecondary}
+            />
+            <AppText
+              variant="micro"
+              color={variant === 'ai' ? 'accent' : 'secondary'}
+            >
+              {variant === 'ai'
+                ? strings.player.lyrics.aiVariant
+                : strings.player.lyrics.standardVariant}
+            </AppText>
+          </Pressable>
+        ) : null}
         {response !== undefined ? (
           <View testID="lyrics-metadata" style={styles.badges}>
             {isSynced ? (
@@ -192,6 +277,9 @@ export function LyricsPanelView({
                 tone="secondary"
               />
             )}
+            {hasWordTimings ? (
+              <Badge testID="lyrics-karaoke" label={wave2Strings.lyrics.karaokeBadge} />
+            ) : null}
             {response.ai_generated ? (
               <Badge testID="lyrics-ai-generated" label={strings.player.lyrics.aiGenerated} />
             ) : null}
@@ -235,7 +323,17 @@ export function LyricsPanelView({
         />
       ) : null}
 
-      {visual.body === 'empty' ? (
+      {isInstrumental && (visual.body === 'empty' || visual.body === 'content') ? (
+        <EmptyState
+          testID="lyrics-instrumental"
+          icon="music-note"
+          title={wave2Strings.lyrics.instrumentalTitle}
+          message={wave2Strings.lyrics.instrumentalBody}
+          style={styles.empty}
+        />
+      ) : null}
+
+      {!isInstrumental && visual.body === 'empty' ? (
         <EmptyState
           testID="lyrics-empty"
           icon="text-box-remove-outline"
@@ -244,7 +342,7 @@ export function LyricsPanelView({
         />
       ) : null}
 
-      {visual.body === 'content' ? (
+      {!isInstrumental && visual.body === 'content' ? (
         <View style={styles.listWrap}>
           <FlatList
             ref={listRef}
@@ -259,14 +357,36 @@ export function LyricsPanelView({
             onScrollToIndexFailed={onScrollToIndexFailed}
             renderItem={({ item, index }) => {
               const active = isSynced && index === activeIndex;
-              const text = item.text.trim() || strings.player.lyrics.instrumentalLine;
+              const rawText = item.text.trim();
+              const text = rawText || strings.player.lyrics.instrumentalLine;
+              const canShareLine = onShareLine !== undefined && rawText.length > 0;
               if (!isSynced) {
+                if (!canShareLine) {
+                  return (
+                    <View testID={`lyrics-line-${index}`} style={styles.line}>
+                      <AppText variant="section" color="primary">
+                        {text}
+                      </AppText>
+                    </View>
+                  );
+                }
                 return (
-                  <View testID={`lyrics-line-${index}`} style={styles.line}>
+                  <Pressable
+                    testID={`lyrics-line-${index}`}
+                    accessibilityHint={strings.player.lyrics.shareQuoteHint}
+                    accessibilityActions={[
+                      { name: 'longpress', label: strings.player.lyrics.shareQuote },
+                    ]}
+                    onAccessibilityAction={(event) => {
+                      if (event.nativeEvent.actionName === 'longpress') onShareLine(index);
+                    }}
+                    onLongPress={() => onShareLine(index)}
+                    style={({ pressed }) => [styles.line, pressed ? styles.pressed : null]}
+                  >
                     <AppText variant="section" color="primary">
                       {text}
                     </AppText>
-                  </View>
+                  </Pressable>
                 );
               }
               const focusController = createFocusRingController();
@@ -278,17 +398,38 @@ export function LyricsPanelView({
                     text,
                     formatTimestamp(item.t),
                   )}
-                  accessibilityHint={strings.player.lyrics.lineSeekHint}
+                  accessibilityHint={
+                    canShareLine
+                      ? `${strings.player.lyrics.lineSeekHint}. ${strings.player.lyrics.shareQuoteHint}`
+                      : strings.player.lyrics.lineSeekHint
+                  }
+                  accessibilityActions={
+                    canShareLine
+                      ? [{ name: 'longpress', label: strings.player.lyrics.shareQuote }]
+                      : undefined
+                  }
                   accessibilityState={{ selected: active }}
                   focusable
+                  onAccessibilityAction={
+                    canShareLine
+                      ? (event) => {
+                          if (event.nativeEvent.actionName === 'longpress') onShareLine(index);
+                        }
+                      : undefined
+                  }
                   onFocus={() => focusController.setFocused(true)}
                   onBlur={() => focusController.setFocused(false)}
                   onPress={() => onSeek(item.t)}
+                  onLongPress={canShareLine ? () => onShareLine(index) : undefined}
                   style={({ pressed }) => [styles.line, pressed ? styles.pressed : null]}
                 >
-                  <AppText variant="section" color={active ? 'primary' : 'muted'}>
-                    {text}
-                  </AppText>
+                  {active && item.words !== undefined && item.words.length > 0 ? (
+                    <KaraokeWordsLine words={item.words} position={position} />
+                  ) : (
+                    <AppText variant="section" color={active ? 'primary' : 'muted'}>
+                      {text}
+                    </AppText>
+                  )}
                   <FocusRingOverlay controller={focusController} borderRadius={radii.sm} />
                 </Pressable>
               );
@@ -349,6 +490,20 @@ export function LyricsPanelView({
         />
       ) : null}
 
+      {shareError !== null ? (
+        <AppText
+          testID="lyrics-share-error"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+          variant="caption"
+          color="danger"
+          align="center"
+          style={styles.status}
+        >
+          {shareError}
+        </AppText>
+      ) : null}
+
       {visual.notice === 'stale' ? (
         <AppText
           testID="lyrics-stale"
@@ -369,7 +524,19 @@ const MemoLyricsPanelView = React.memo(LyricsPanelView);
 
 /** Own the lazy lyrics query and visual auto-follow for exactly one active track. */
 export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProps) {
-  const query = useQuery(musicQueries.lyrics(track.artist, track.title, track.id));
+  const [variantState, setVariantState] = useState<{
+    trackId: string;
+    variant: LyricsVariant;
+  }>({ trackId: track.id, variant: 'default' });
+  const [shareError, setShareError] = useState<string | null>(null);
+  const variant: LyricsVariant =
+    variantState.trackId === track.id ? variantState.variant : 'default';
+  const query = useQuery(
+    musicQueries.lyrics(track.artist, track.title, track.id, variant, {
+      album: track.album,
+      durationSec: track.duration_sec,
+    }),
+  );
   const reducedMotion = useReducedMotion();
   const isSynced = query.data?.synced === true;
   const lines = useMemo(() => query.data?.lines ?? EMPTY_LINES, [query.data?.lines]);
@@ -378,6 +545,30 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
   const previousFollow = useRef<LyricsFollowIdentity | null>(null);
   const [pausedTrackId, setPausedTrackId] = useState<string | null>(null);
   const autoScrollPaused = isSynced && pausedTrackId === track.id;
+
+  const handleToggleVariant = useCallback(() => {
+    triggerHaptic('tap');
+    setShareError(null);
+    setPausedTrackId(null);
+    setVariantState((current) => {
+      const currentVariant = current.trackId === track.id ? current.variant : 'default';
+      return {
+        trackId: track.id,
+        variant: currentVariant === 'ai' ? 'default' : 'ai',
+      };
+    });
+  }, [track.id]);
+
+  const handleShareLine = useCallback(
+    (index: number) => {
+      triggerHaptic('tap');
+      setShareError(null);
+      void shareLyricQuote(track, lines, index).catch(() => {
+        setShareError(strings.player.lyrics.shareQuoteFailed);
+      });
+    },
+    [lines, track],
+  );
 
   useEffect(() => {
     if (!isSynced) {
@@ -444,26 +635,32 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
       isStale={query.isStale}
       fetchStatus={query.fetchStatus}
       activeIndex={activeIndex}
+      position={position}
       onSeek={handleSeek}
       onRetry={handleRetry}
       listRef={listRef}
       autoScrollPaused={autoScrollPaused}
       onUserScrollStart={handleUserScrollStart}
       onSyncToCurrent={handleSyncToCurrent}
+      variant={variant}
+      onToggleVariant={handleToggleVariant}
+      onShareLine={handleShareLine}
+      shareError={shareError}
       onScrollToIndexFailed={handleScrollFailure}
     />
   );
 }
 
 /**
- * Progress-isolated LyricsPanel wrapper. Keeps `useProgress(0.5)` strictly
- * scoped to active-line tracking so parent screens never re-render at 1Hz.
+ * Progress-isolated LyricsPanel wrapper. Keeps `useEffectiveProgress(0.5)`
+ * strictly scoped to active-line tracking so parent screens never re-render at
+ * 1Hz while staying in sync during both local and Connect remote playback.
  */
 export const LiveLyricsPanel = React.memo(function LiveLyricsPanel({
   track,
   onSeek,
 }: LiveLyricsPanelProps) {
-  const { position } = useProgress(0.5);
+  const { position } = useEffectiveProgress(0.5);
   return <LyricsPanel track={track} position={position} onSeek={onSeek} />;
 });
 
@@ -493,6 +690,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
     borderRadius: radii.pill,
     backgroundColor: colors.fill,
+  },
+  variantPill: {
+    minHeight: BADGE_HEIGHT,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.fill,
+  },
+  variantPillActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSubtle,
   },
   skeleton: { flex: 1, gap: spacing.lg, paddingTop: spacing.xl },
   error: { marginTop: spacing.md },

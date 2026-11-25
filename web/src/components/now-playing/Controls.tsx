@@ -34,11 +34,13 @@ export function TransportRow({ className = "" }: { className?: string }) {
   const toggleShuffle = usePlayerStore((s) => s.toggleShuffle);
   const cycleRepeat = usePlayerStore((s) => s.cycleRepeat);
   const partyActive = usePartyStore((s) => s.active);
+  const partyDetached = usePartyStore((s) => s.detached);
   const partyIsHost = usePartyStore((s) => s.isHost);
   const partyGuestsCanControl = usePartyStore((s) => s.guestsCanControl);
   const partyHostName = usePartyStore((s) => s.hostName);
   const locked = !canControlPartyPlayback({
     active: partyActive,
+    detached: partyDetached,
     isHost: partyIsHost,
     guestsCanControl: partyGuestsCanControl,
   });

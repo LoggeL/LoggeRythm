@@ -74,6 +74,9 @@ def _status_fields(job: ImportJob) -> dict:
         "failed_lookups": job.failed_lookups,
         "lookup_error": job.lookup_error,
         "error": job.error,
+        "target_playlist_id": job.target_playlist_id,
+        "create_playlist_name": job.create_playlist_name,
+        "created_playlist_id": job.created_playlist_id,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
         "finished_at": job.finished_at,
@@ -101,9 +104,20 @@ def start_import_job(
     db: Session = Depends(get_db),
 ) -> ImportJobStatus:
     try:
-        job = import_jobs.start(db, user, body.url)
+        if body.target_playlist_id is not None or body.create_playlist_name is not None:
+            job = import_jobs.start(
+                db,
+                user,
+                body.url,
+                target_playlist_id=body.target_playlist_id,
+                create_playlist_name=body.create_playlist_name,
+            )
+        else:
+            job = import_jobs.start(db, user, body.url)
     except spotify.SpotifyError as e:
         raise _spotify_http_error(e)
+    except import_jobs.InvalidImportTarget as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
     except import_jobs.TooManyActiveJobs as e:
         raise HTTPException(status_code=429, detail=str(e))
     return ImportJobStatus(**_status_fields(job))

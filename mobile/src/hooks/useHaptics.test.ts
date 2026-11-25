@@ -5,6 +5,7 @@ import { HAPTIC_PATTERNS, triggerHaptic, useHaptics, type HapticKind } from './u
 const mocks = vi.hoisted(() => ({
   os: 'android' as 'android' | 'ios' | 'web',
   vibrate: vi.fn(),
+  performHaptic: null as null | ReturnType<typeof vi.fn>,
   useReducedMotionCalled: false,
 }));
 
@@ -12,6 +13,13 @@ vi.mock('react-native', () => ({
   AccessibilityInfo: {
     isReduceMotionEnabled: vi.fn(async () => false),
     addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+  },
+  NativeModules: {
+    get LoggeRythmPlayer() {
+      return mocks.performHaptic === null
+        ? undefined
+        : { performHaptic: mocks.performHaptic };
+    },
   },
   Platform: {
     get OS() {
@@ -40,6 +48,7 @@ vi.mock('react', async (importOriginal) => {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.os = 'android';
+  mocks.performHaptic = null;
   mocks.useReducedMotionCalled = false;
   resetReducedMotionForTests(false);
 });
@@ -85,5 +94,12 @@ describe('useHaptics', () => {
     expect(first).toBe(second);
     expect(first.trigger('drag')).toBe(true);
     expect(mocks.vibrate).toHaveBeenCalledWith(HAPTIC_PATTERNS.drag);
+  });
+
+  it('prefers native LoggeRythmPlayer.performHaptic on Android when present', () => {
+    mocks.performHaptic = vi.fn(async () => ({ performed: true, style: 'success', reason: null }));
+    expect(triggerHaptic('like')).toBe(true);
+    expect(mocks.performHaptic).toHaveBeenCalledExactlyOnceWith('success');
+    expect(mocks.vibrate).not.toHaveBeenCalled();
   });
 });

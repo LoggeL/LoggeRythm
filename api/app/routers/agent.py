@@ -178,6 +178,13 @@ def get_agent_manifest(request: Request, response: Response) -> AgentManifest:
                 "set_playback_api_party__code__playback_patch",
                 "party_events_api_party__code__events_get",
             ),
+            capability(
+                "connect_remote_control",
+                "Inspect connected devices and resumable playback state, dispatch remote playback commands (play/pause/next/prev/enqueue/play_next), and transfer playback across devices via stateless REST.",
+                "get_connect_state_api_connect_state_get",
+                "send_connect_command_api_connect_command_post",
+                "transfer_connect_playback_api_connect_transfer_post",
+            ),
         ],
         operations=list(operations.values()),
     )

@@ -24,8 +24,8 @@ export interface ActionButtonProps extends TvFocusProps {
   onPress: () => void;
   icon?: AppIconName;
   /**
-   * primary = light pill on dark (the main action of a view), accent = violet
-   * pill (playback-adjacent actions), secondary = translucent pill with
+   * primary = light pill on dark (the main action of a view), accent = signal
+   * lime pill (playback-adjacent actions), secondary = translucent pill with
    * hairline, ghost = text only, danger = destructive.
    */
   variant?: ActionButtonVariant;
@@ -50,11 +50,11 @@ const foregrounds: Record<ActionButtonVariant, string> = {
 };
 
 const rippleColors: Record<ActionButtonVariant, string> = {
-  primary: 'rgba(11,12,16,0.14)',
-  accent: 'rgba(255,255,255,0.2)',
+  primary: 'rgba(12,11,13,0.14)',
+  accent: 'rgba(16,20,10,0.18)',
   secondary: colors.fillStrong,
   ghost: colors.fillStrong,
-  danger: 'rgba(255,122,138,0.18)',
+  danger: 'rgba(255,122,107,0.18)',
 };
 
 /**

@@ -51,6 +51,7 @@ interface PlaylistScreenCallbacks {
   onDeleted: () => void;
   onOpenAlbum: (params: LibraryAlbumRouteParams) => void;
   onOpenArtist: (params: LibraryArtistRouteParams) => void;
+  onOpenUser?: (params: { userId: number; name?: string }) => void;
 }
 
 export type PlaylistScreenContract =
@@ -221,6 +222,24 @@ export function reorderedPlaylistEntryIds(
   }
   const ids = tracks.map(playlistEntryId);
   [ids[index], ids[destination]] = [ids[destination], ids[index]];
+  return ids;
+}
+
+/** Returns the complete server reorder payload after dragging a track from `fromIndex` to `toIndex`. */
+export function reorderedPlaylistEntryIdsByMove(
+  tracks: readonly Track[],
+  fromIndex: number,
+  toIndex: number,
+): PlaylistEntryId[] {
+  if (!Number.isInteger(fromIndex) || fromIndex < 0 || fromIndex >= tracks.length) {
+    throw new Error(`Track source index ${String(fromIndex)} is outside the playlist`);
+  }
+  if (!Number.isInteger(toIndex) || toIndex < 0 || toIndex >= tracks.length) {
+    throw new Error(`Track target index ${String(toIndex)} is outside the playlist`);
+  }
+  const ids = tracks.map(playlistEntryId);
+  const [moved] = ids.splice(fromIndex, 1);
+  ids.splice(toIndex, 0, moved);
   return ids;
 }
 

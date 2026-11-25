@@ -1,12 +1,19 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import type { Track } from '../../api/types';
 import { resolveServerUrl } from '../../api/url';
 import type { OfflinePlaylistBrowseSummary } from '../../offline/browse';
-import type { LibraryPlaylistRouteParams } from '../../screens/libraryModel';
+import {
+  libraryTestIdSegment,
+  type LibraryAlbumRouteParams,
+  type LibraryArtistRouteParams,
+  type LibraryPlaylistRouteParams,
+} from '../../screens/libraryModel';
 import { libraryStrings } from '../../screens/libraryStrings';
 import type { AccountOfflineAvailability } from '../../screens/offlineScreenModel';
-import { colors, layout } from '../../theme';
+import { colors, layout, spacing } from '../../theme';
 import AppIcon from '../AppIcon';
+import StandardTrackRow from '../track/StandardTrackRow';
 import { AppText, Artwork, EmptyState, TrackRowSkeleton } from '../ui';
 import { InlineNotice } from './InlineNotice';
 import { LibraryRow } from './LibraryRows';
@@ -14,16 +21,27 @@ import { LibraryRow } from './LibraryRows';
 export interface LibraryDownloadsListProps {
   availability: AccountOfflineAvailability;
   playlists: readonly OfflinePlaylistBrowseSummary[];
+  /** Verified downloaded tracks for this account (single-track, album, or liked downloads). */
+  tracks?: readonly Track[];
   apiBase: string;
   onOpenPlaylist: (params: LibraryPlaylistRouteParams) => void;
+  onPlayTrack?: (tracks: readonly Track[], index: number) => void;
+  onOpenTrackActions?: (track: Track) => void;
+  onOpenAlbum?: (params: LibraryAlbumRouteParams) => void;
+  onOpenArtist?: (params: LibraryArtistRouteParams) => void;
 }
 
 /** Account-filtered local collection rendered inside the fixed Downloads section. */
 export function LibraryDownloadsList({
   availability,
   playlists,
+  tracks = [],
   apiBase,
   onOpenPlaylist,
+  onPlayTrack,
+  onOpenTrackActions,
+  onOpenAlbum,
+  onOpenArtist,
 }: LibraryDownloadsListProps) {
   if (availability === 'loading') {
     return (
@@ -45,7 +63,7 @@ export function LibraryDownloadsList({
       />
     );
   }
-  if (playlists.length === 0) {
+  if (playlists.length === 0 && tracks.length === 0) {
     return (
       <EmptyState
         testID="library-downloads-empty"
@@ -113,10 +131,40 @@ export function LibraryDownloadsList({
           />
         );
       })}
+      {tracks.length > 0 && onPlayTrack !== undefined ? (
+        <View testID="library-downloads-songs" style={styles.songsSection}>
+          <View style={styles.songsHeader}>
+            <AppText variant="overline" color="muted">
+              {libraryStrings.library.downloadedSongs}
+            </AppText>
+            <AppText variant="caption" color="muted">
+              {libraryStrings.library.downloadedSongsCount(tracks.length)}
+            </AppText>
+          </View>
+          {tracks.map((track, index) => (
+            <StandardTrackRow
+              key={`dl-track-${track.id}-${index}`}
+              track={track}
+              testID={`library-download-track-${libraryTestIdSegment(track.id)}-${index}`}
+              onPlay={() => onPlayTrack(tracks, index)}
+              onActions={onOpenTrackActions ? () => onOpenTrackActions(track) : undefined}
+              onOpenAlbum={onOpenAlbum ?? (() => undefined)}
+              onOpenArtist={onOpenArtist ?? (() => undefined)}
+            />
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   gutter: { marginHorizontal: layout.pagePadding },
+  songsSection: { marginTop: spacing.md, gap: spacing.xs },
+  songsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: layout.pagePadding,
+  },
 });

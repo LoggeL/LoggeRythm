@@ -297,6 +297,38 @@ export interface StringCatalog {
     noActiveTrack: string;
     noRemainingTime: string;
     sleepSetFailed: string;
+    playbackTitle: string;
+    playbackSubtitle: string;
+    crossfadeEnabled: string;
+    crossfadeHint: string;
+    crossfadeDuration: (seconds: number) => string;
+    crossfadeSaved: string;
+    crossfadeSaveFailed: string;
+    crossfadeLoadFailed: string;
+    storageTitle: string;
+    storageSubtitle: string;
+    storageDownloadsLabel: string;
+    storageDownloadsSummary: (count: number, size: string) => string;
+    storageFreeSpace: (size: string) => string;
+    storageStreamCacheLabel: string;
+    storageStreamCacheHint: string;
+    clearStreamCache: string;
+    clearingStreamCache: string;
+    streamCacheCleared: string;
+    streamCacheClearFailed: string;
+    wifiOnlyLabel: string;
+    wifiOnlyHint: string;
+    wifiOnlySaveFailed: string;
+    wifiRequiredError: string;
+    playTopTrack: (title: string) => string;
+    openTopArtist: (name: string) => string;
+    statActionFailed: string;
+    publicProfileTitle: string;
+    publicProfileJoined: (date: string) => string;
+    publicProfilePlaylists: string;
+    publicProfileNoPlaylists: string;
+    publicProfileLoadFailed: string;
+    openUserProfile: (name: string) => string;
     update: {
       titleVersion: string;
       titleAvailable: string;
@@ -443,6 +475,11 @@ export interface StringCatalog {
     autoLikedSongs: string;
     autoPlaylists: string;
     autoDownloads: string;
+    autoHome: string;
+    autoRadio: string;
+    autoDownloadedSongs: string;
+    autoRecent: string;
+    autoReleaseRadar: string;
     autoDownloadedProgress: (downloaded: number, total: number) => string;
     bookkeepingFailedTitle: string;
     bookkeepingFailedMessage: string;
@@ -524,7 +561,20 @@ export interface StringCatalog {
       instrumentalLine: string;
       lineLabel: (text: string, timestamp: string) => string;
       lineSeekHint: string;
+      standardVariant: string;
+      aiVariant: string;
+      switchToAi: string;
+      switchToStandard: string;
+      shareQuote: string;
+      shareQuoteHint: string;
+      shareQuoteFailed: string;
     };
+    sleepTimer: string;
+    sleepTimerActive: (label: string) => string;
+    sleepTimerSheetClose: string;
+    shareTrack: string;
+    shareFailed: string;
+    moreTrackActions: string;
     playbackPosition: string;
     buffering: string;
     likeTrack: string;
@@ -703,6 +753,14 @@ export interface StringCatalog {
     removeDownloadSucceeded: (title: string) => string;
     openAlbum: (title: string) => string;
     openArtist: (name: string) => string;
+    share: string;
+    shareFailed: string;
+    shareSucceeded: (title: string) => string;
+    swipeToQueue: string;
+    searchPlaylistsPlaceholder: string;
+    alreadyInPlaylist: string;
+    addToSelectedPlaylists: (count: number) => string;
+    addedToMultiplePlaylists: (title: string, count: number) => string;
     remove: string;
     removeFailed: string;
     removeSucceeded: (title: string) => string;
@@ -895,6 +953,23 @@ export interface StringCatalog {
     controlledByHost: (host: string) => string;
     playbackControlFailed: (detail: string) => string;
     restoreActiveFailed: (detail: string) => string;
+    guestJoinButton: string;
+    guestJoinTitle: string;
+    guestJoinSubtitle: string;
+    guestNicknameLabel: string;
+    guestNicknamePlaceholder: string;
+    guestNicknameRequired: string;
+    guestJoining: string;
+    guestLeave: string;
+  };
+  share: {
+    trackMessage: (title: string, artist: string, url: string) => string;
+    albumMessage: (title: string, artist: string, url: string) => string;
+    artistMessage: (name: string, url: string) => string;
+    playlistMessage: (name: string, url: string) => string;
+    lyricQuoteMessage: (quote: string, title: string, artist: string, url: string) => string;
+    shareAction: string;
+    shareFailed: string;
   };
   connect: {
     title: string;
@@ -1263,6 +1338,40 @@ export const de: StringCatalog = {
     noActiveTrack: 'Für diese Aktion muss ein Titel aktiv sein.',
     noRemainingTime: 'Für den aktuellen Titel ist keine Restzeit verfügbar.',
     sleepSetFailed: 'Sleep-Timer konnte nicht geändert werden',
+    playbackTitle: 'Wiedergabe',
+    playbackSubtitle: 'Crossfade-Übergänge zwischen Titeln für dein Konto.',
+    crossfadeEnabled: 'Crossfade aktivieren',
+    crossfadeHint: 'Blendet aufeinanderfolgende Titel sanft ineinander über.',
+    crossfadeDuration: (seconds) => `${seconds} Sek.`,
+    crossfadeSaved: 'Wiedergabe-Einstellungen gespeichert.',
+    crossfadeSaveFailed: 'Wiedergabe-Einstellungen konnten nicht gespeichert werden.',
+    crossfadeLoadFailed: 'Wiedergabe-Einstellungen konnten nicht geladen werden.',
+    storageTitle: 'Speicher & Downloads',
+    storageSubtitle: 'Offline-Downloads, Stream-Cache und Download-Regeln verwalten.',
+    storageDownloadsLabel: 'Offline-Downloads',
+    storageDownloadsSummary: (count, size) =>
+      `${count} ${count === 1 ? 'Titel' : 'Titel'} · ${size}`,
+    storageFreeSpace: (size) => `${size} freier Gerätespeicher`,
+    storageStreamCacheLabel: 'Rolling Stream-Cache',
+    storageStreamCacheHint: 'Bis zu 500 MiB zwischengespeicherte Streams für sofortige Wiedergabe.',
+    clearStreamCache: 'Stream-Cache leeren',
+    clearingStreamCache: 'Cache wird geleert…',
+    streamCacheCleared: 'Stream-Cache wurde geleert.',
+    streamCacheClearFailed: 'Stream-Cache konnte nicht geleert werden.',
+    wifiOnlyLabel: 'Nur über WLAN herunterladen',
+    wifiOnlyHint: 'Blockiert Offline-Downloads über Mobilfunk.',
+    wifiOnlySaveFailed: 'WLAN-Einstellung konnte nicht gespeichert werden.',
+    wifiRequiredError:
+      'Downloads sind auf WLAN beschränkt. Verbinde dich mit einem WLAN oder ändere die Einstellung im Profil.',
+    playTopTrack: (title) => `Top-Titel „${title}“ abspielen`,
+    openTopArtist: (name) => `Top-Künstler:in ${name} öffnen`,
+    statActionFailed: 'Konnte aus der Statistik nicht geöffnet werden.',
+    publicProfileTitle: 'Profil',
+    publicProfileJoined: (date) => `Dabei seit ${date}`,
+    publicProfilePlaylists: 'Öffentliche Playlists',
+    publicProfileNoPlaylists: 'Keine öffentlichen Playlists vorhanden.',
+    publicProfileLoadFailed: 'Profil konnte nicht geladen werden.',
+    openUserProfile: (name) => `Profil von ${name} öffnen`,
     update: {
       titleVersion: 'App-Version',
       titleAvailable: 'Update verfügbar',
@@ -1413,6 +1522,11 @@ export const de: StringCatalog = {
     autoLikedSongs: 'Lieblingstitel',
     autoPlaylists: 'Playlists',
     autoDownloads: 'Downloads',
+    autoHome: 'Start',
+    autoRadio: 'Radio',
+    autoDownloadedSongs: 'Heruntergeladene Titel',
+    autoRecent: 'Zuletzt gehört',
+    autoReleaseRadar: 'Release Radar',
     autoDownloadedProgress: (downloaded, total) =>
       `${downloaded} von ${total} Titeln heruntergeladen`,
     bookkeepingFailedTitle: 'Wiedergabedaten konnten nicht aktualisiert werden',
@@ -1508,7 +1622,20 @@ export const de: StringCatalog = {
       instrumentalLine: '♪',
       lineLabel: (text, timestamp) => `${text}, bei ${timestamp}`,
       lineSeekHint: 'Springt zu dieser Stelle im Titel',
+      standardVariant: 'Standard',
+      aiVariant: 'KI-Text',
+      switchToAi: 'KI-transkribierten Songtext laden',
+      switchToStandard: 'Standard-Songtext laden',
+      shareQuote: 'Textzeile als Zitat teilen',
+      shareQuoteHint: 'Lange drücken, um diese Zeile als Zitat zu teilen',
+      shareQuoteFailed: 'Zitat konnte nicht geteilt werden.',
     },
+    sleepTimer: 'Sleep-Timer',
+    sleepTimerActive: (label) => `Sleep-Timer aktiv: ${label}`,
+    sleepTimerSheetClose: 'Sleep-Timer schließen',
+    shareTrack: 'Titel teilen',
+    shareFailed: 'Teilen fehlgeschlagen',
+    moreTrackActions: 'Weitere Titelaktionen',
     playbackPosition: 'Wiedergabeposition',
     buffering: 'Titel wird gepuffert…',
     likeTrack: 'Titel mit „Gefällt mir“ markieren',
@@ -1687,6 +1814,14 @@ export const de: StringCatalog = {
     removeDownloadSucceeded: (title) => `Der Download von „${title}“ wurde entfernt.`,
     openAlbum: (title) => `Album „${title}“ öffnen`,
     openArtist: (name) => `Künstlerprofil von ${name} öffnen`,
+    share: 'Teilen',
+    shareFailed: 'Titel konnte nicht geteilt werden',
+    shareSucceeded: (title) => `„${title}“ wurde geteilt.`,
+    swipeToQueue: 'Warteschlange',
+    searchPlaylistsPlaceholder: 'Playlists filtern…',
+    alreadyInPlaylist: 'Bereits enthalten',
+    addToSelectedPlaylists: (count) => `Zu ${count} Playlists hinzufügen`,
+    addedToMultiplePlaylists: (title, count) => `„${title}“ wurde zu ${count} Playlists hinzugefügt.`,
     remove: 'Aus dieser Playlist entfernen',
     removeFailed: 'Entfernen aus der Playlist fehlgeschlagen',
     removeSucceeded: (title) => `„${title}“ wurde aus der Playlist entfernt.`,
@@ -1902,6 +2037,23 @@ export const de: StringCatalog = {
     controlledByHost: (host) => `Wiedergabe wird von ${host} gesteuert`,
     playbackControlFailed: (detail) => `Wiedergabe-Befehl fehlgeschlagen: ${detail}`,
     restoreActiveFailed: (detail) => `Aktive Jam konnte nicht wiederhergestellt werden: ${detail}`,
+    guestJoinButton: 'Als Gast einer Jam beitreten',
+    guestJoinTitle: 'Als Gast beitreten',
+    guestJoinSubtitle: 'Tritt ohne Konto per 6-stelligem Jam-Code bei und füge Songs hinzu.',
+    guestNicknameLabel: 'Dein Name',
+    guestNicknamePlaceholder: 'z. B. Alex',
+    guestNicknameRequired: 'Bitte gib einen Namen ein.',
+    guestJoining: 'Beitritt läuft…',
+    guestLeave: 'Jam verlassen',
+  },
+  share: {
+    trackMessage: (title, artist, url) => `${title} – ${artist}\n${url}`,
+    albumMessage: (title, artist, url) => `Album „${title}“ von ${artist}\n${url}`,
+    artistMessage: (name, url) => `${name} auf LoggeRythm\n${url}`,
+    playlistMessage: (name, url) => `Playlist „${name}“ auf LoggeRythm\n${url}`,
+    lyricQuoteMessage: (quote, title, artist, url) => `„${quote}“\n— ${title} · ${artist}\n${url}`,
+    shareAction: 'Teilen',
+    shareFailed: 'Teilen fehlgeschlagen.',
   },
   connect: {
     title: 'Geräte',
@@ -2181,6 +2333,40 @@ export const en: StringCatalog = {
     cancelTimer: 'Cancel sleep timer', noActiveTrack: 'A track must be active for this action.',
     noRemainingTime: 'The current track has no available time remaining.',
     sleepSetFailed: 'The sleep timer could not be changed',
+    playbackTitle: 'Playback',
+    playbackSubtitle: 'Crossfade transitions between tracks on your account.',
+    crossfadeEnabled: 'Enable crossfade',
+    crossfadeHint: 'Smoothly blend between consecutive tracks.',
+    crossfadeDuration: (seconds) => `${seconds}s`,
+    crossfadeSaved: 'Playback settings saved.',
+    crossfadeSaveFailed: 'Could not save playback settings.',
+    crossfadeLoadFailed: 'Could not load playback settings.',
+    storageTitle: 'Storage & Downloads',
+    storageSubtitle: 'Manage offline downloads, stream cache, and download rules.',
+    storageDownloadsLabel: 'Offline downloads',
+    storageDownloadsSummary: (count, size) =>
+      `${count} ${count === 1 ? 'track' : 'tracks'} · ${size}`,
+    storageFreeSpace: (size) => `${size} free device storage`,
+    storageStreamCacheLabel: 'Rolling stream cache',
+    storageStreamCacheHint: 'Up to 500 MiB of cached streams for instant replay.',
+    clearStreamCache: 'Clear stream cache',
+    clearingStreamCache: 'Clearing cache…',
+    streamCacheCleared: 'Stream cache cleared.',
+    streamCacheClearFailed: 'Could not clear stream cache.',
+    wifiOnlyLabel: 'Download on Wi-Fi only',
+    wifiOnlyHint: 'Blocks offline downloads over cellular data.',
+    wifiOnlySaveFailed: 'Could not save Wi-Fi preference.',
+    wifiRequiredError:
+      'Downloads are restricted to Wi-Fi. Connect to Wi-Fi or change this setting in Profile.',
+    playTopTrack: (title) => `Play top track ${title}`,
+    openTopArtist: (name) => `Open top artist ${name}`,
+    statActionFailed: 'Could not open item from listening stats.',
+    publicProfileTitle: 'Profile',
+    publicProfileJoined: (date) => `Joined ${date}`,
+    publicProfilePlaylists: 'Public playlists',
+    publicProfileNoPlaylists: 'No public playlists yet.',
+    publicProfileLoadFailed: 'Could not load profile.',
+    openUserProfile: (name) => `Open ${name}’s profile`,
     update: {
       titleVersion: 'App version',
       titleAvailable: 'Update available',
@@ -2323,6 +2509,11 @@ export const en: StringCatalog = {
     autoLibraryReadyLog: '[LoggeRythm] Android Auto library ready',
     notificationChannelName: 'Playback', autoLikedSongs: 'Liked Songs', autoPlaylists: 'Playlists',
     autoDownloads: 'Downloads',
+    autoHome: 'Home',
+    autoRadio: 'Radio',
+    autoDownloadedSongs: 'Downloaded Songs',
+    autoRecent: 'Recently Played',
+    autoReleaseRadar: 'Release Radar',
     autoDownloadedProgress: (downloaded, total) => `${downloaded} of ${total} tracks downloaded`,
     bookkeepingFailedTitle: 'Playback data could not be updated',
     bookkeepingFailedMessage:
@@ -2410,7 +2601,20 @@ export const en: StringCatalog = {
       instrumentalLine: '♪',
       lineLabel: (text, timestamp) => `${text}, at ${timestamp}`,
       lineSeekHint: 'Seeks to this point in the track',
+      standardVariant: 'Standard',
+      aiVariant: 'AI Lyrics',
+      switchToAi: 'Load AI-transcribed lyrics',
+      switchToStandard: 'Load standard lyrics',
+      shareQuote: 'Share lyric quote',
+      shareQuoteHint: 'Long press to share this line as a quote',
+      shareQuoteFailed: 'Could not share lyric quote.',
     },
+    sleepTimer: 'Sleep timer',
+    sleepTimerActive: (label) => `Sleep timer active: ${label}`,
+    sleepTimerSheetClose: 'Close sleep timer',
+    shareTrack: 'Share track',
+    shareFailed: 'Sharing failed',
+    moreTrackActions: 'More track actions',
     playbackPosition: 'Playback position', buffering: 'Buffering track…', likeTrack: 'Like track',
     unlikeTrack: 'Unlike track', likeFailed: 'Like failed',
     likedTrack: (title) => `${title} was liked.`,
@@ -2558,6 +2762,14 @@ export const en: StringCatalog = {
     removeDownloadSucceeded: (title) => `${title}'s download was removed.`,
     openAlbum: (title) => `Open album ${title}`,
     openArtist: (name) => `Open artist ${name}`,
+    share: 'Share',
+    shareFailed: 'Track could not be shared',
+    shareSucceeded: (title) => `Shared ${title}.`,
+    swipeToQueue: 'Queue',
+    searchPlaylistsPlaceholder: 'Filter playlists…',
+    alreadyInPlaylist: 'Already added',
+    addToSelectedPlaylists: (count) => `Add to ${count} playlists`,
+    addedToMultiplePlaylists: (title, count) => `${title} was added to ${count} playlists.`,
     remove: 'Remove from this playlist',
     removeFailed: 'Removing from the playlist failed',
     removeSucceeded: (title) => `${title} was removed from the playlist.`,
@@ -2742,6 +2954,23 @@ export const en: StringCatalog = {
     controlledByHost: (host) => `Playback controlled by ${host}`,
     playbackControlFailed: (detail) => `Playback control failed: ${detail}`,
     restoreActiveFailed: (detail) => `Restoring active Jam failed: ${detail}`,
+    guestJoinButton: 'Join a Jam as Guest',
+    guestJoinTitle: 'Join Jam as Guest',
+    guestJoinSubtitle: 'Join without an account using a 6-character Jam code and add songs.',
+    guestNicknameLabel: 'Your nickname',
+    guestNicknamePlaceholder: 'e.g. Alex',
+    guestNicknameRequired: 'Please enter a nickname.',
+    guestJoining: 'Joining…',
+    guestLeave: 'Leave Jam',
+  },
+  share: {
+    trackMessage: (title, artist, url) => `${title} – ${artist}\n${url}`,
+    albumMessage: (title, artist, url) => `Album “${title}” by ${artist}\n${url}`,
+    artistMessage: (name, url) => `${name} on LoggeRythm\n${url}`,
+    playlistMessage: (name, url) => `Playlist “${name}” on LoggeRythm\n${url}`,
+    lyricQuoteMessage: (quote, title, artist, url) => `“${quote}”\n— ${title} · ${artist}\n${url}`,
+    shareAction: 'Share',
+    shareFailed: 'Sharing failed.',
   },
   connect: {
     title: 'Devices',

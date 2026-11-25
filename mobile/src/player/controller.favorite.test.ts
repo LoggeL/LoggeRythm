@@ -41,6 +41,7 @@ vi.mock('../offline/registry', () => ({ offlineUriForTrack: vi.fn() }));
 vi.mock('../data/queryClient', () => ({
   invalidateListeningStats: vi.fn(),
   musicCacheScope: vi.fn(),
+  musicQueryClient: { getQueryData: vi.fn(() => undefined) },
 }));
 vi.mock('../data/repositories', () => ({
   musicRepository: {

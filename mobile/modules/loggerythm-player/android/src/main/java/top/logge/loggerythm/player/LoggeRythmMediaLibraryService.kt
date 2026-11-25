@@ -11,10 +11,12 @@ import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.CommandButton
@@ -346,11 +348,15 @@ class LoggeRythmMediaLibraryService :
   MediaLibraryService(),
   LoggeRythmMediaSessionServiceControl {
   private lateinit var player: ExoPlayer
+  private lateinit var sessionPlayer: LoggeRythmSessionPlayer
   private lateinit var librarySession: MediaLibrarySession
   private lateinit var playerCache: LoggeRythmPlayerCache
   private lateinit var persistedCoordinator: LoggeRythmPersistedPlayerCoordinator
   private lateinit var remoteCommandInstaller: LoggeRythmDurableRemoteCommandInstaller
   private lateinit var sessionActivity: PendingIntent
+  private lateinit var crossfadeController: LoggeRythmDualPlayerCrossfadeController
+  private lateinit var visualizerController: LoggeRythmAudioVisualizerController
+  private val audioEffects = LoggeRythmAudioEffectsController()
   private val mainHandler = Handler(Looper.getMainLooper())
   private val voiceSearchExecutor: ExecutorService = Executors.newSingleThreadExecutor { task ->
     Thread(
@@ -390,6 +396,138 @@ class LoggeRythmMediaLibraryService :
       player.clearMediaItems()
       playerCache.clearCache(callback)
     }
+
+    override fun clearRollingCacheOnly(callback: (Result<LoggeRythmCacheClearResult>) -> Unit) {
+      playerCache.clearRollingCacheOnly(callback)
+    }
+
+    override fun cacheMetrics(): LoggeRythmRollingCacheMetrics = playerCache.cacheMetrics()
+  }
+  private val audioCraftControl = object : LoggeRythmAudioCraftServiceControl {
+    override fun getAudioSessionId(): Int = player.audioSessionId
+
+    override fun getEqualizerState(): LoggeRythmEqualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.getEqualizerState()
+    }
+
+    override fun setEqualizerEnabled(enabled: Boolean): LoggeRythmEqualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.setEqualizerEnabled(enabled)
+    }
+
+    override fun setEqualizerBandLevel(bandIndex: Int, levelMb: Int): LoggeRythmEqualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.setEqualizerBandLevel(bandIndex, levelMb)
+    }
+
+    override fun setEqualizerBandLevels(levelsMb: List<Int>): LoggeRythmEqualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.setEqualizerBandLevels(levelsMb)
+    }
+
+    override fun setEqualizerPreset(presetName: String): LoggeRythmEqualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.setEqualizerPreset(presetName)
+    }
+
+    override fun getBassBoostState(): LoggeRythmBassBoostState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.getBassBoostState()
+    }
+
+    override fun setBassBoost(enabled: Boolean, strength: Int): LoggeRythmBassBoostState {
+      syncAudioSessionId(player.audioSessionId)
+      return audioEffects.setBassBoost(enabled, strength)
+    }
+
+    override fun getLoudnessConfig(): LoggeRythmLoudnessState = audioEffects.getLoudnessState()
+
+    override fun setLoudnessConfig(enabled: Boolean, preset: String): LoggeRythmLoudnessState {
+      syncAudioSessionId(player.audioSessionId)
+      val activeExtras = player.currentMediaItem?.mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
+      val isFading = persistedCoordinator.isSleepFading()
+      val (state, volumeScale) = audioEffects.setLoudnessConfig(
+        enabled = enabled,
+        presetName = preset,
+        activeExtrasJson = activeExtras,
+        isSleepFading = isFading,
+      )
+      if (!isFading && !crossfadeController.isCrossfadeActive() && player.volume != volumeScale) {
+        player.volume = volumeScale
+      }
+      return state
+    }
+
+    override fun getPlaybackSpeed(): LoggeRythmPlaybackSpeedState = LoggeRythmPlaybackSpeedState(
+      speed = player.playbackParameters.speed,
+      pitch = player.playbackParameters.pitch,
+    )
+
+    override fun setPlaybackSpeed(speed: Float, pitch: Float): LoggeRythmPlaybackSpeedState {
+      LoggeRythmAudioEffectsController.validatePlaybackParameters(speed, pitch)
+      player.playbackParameters = PlaybackParameters(speed, pitch)
+      return getPlaybackSpeed()
+    }
+
+    override fun getCrossfadeConfig(): LoggeRythmCrossfadeConfig = crossfadeController.currentConfig()
+
+    override fun setCrossfadeConfig(
+      enabled: Boolean,
+      durationSec: Double,
+    ): LoggeRythmCrossfadeConfig {
+      val validated = LoggeRythmCrossfadeConfig.validated(enabled, durationSec)
+      crossfadeController.setConfig(validated)
+      return validated
+    }
+
+    override fun setRemoteVolumeControl(
+      active: Boolean,
+      currentVolume: Int,
+      maxVolume: Int,
+      muted: Boolean,
+    ): LoggeRythmRemoteVolumeState {
+      val updated = sessionPlayer.setRemoteVolumeControl(
+        active = active,
+        currentVolume = currentVolume,
+        maxVolume = maxVolume,
+        muted = muted,
+      )
+      runCatching(::refreshConnectedControllerCommands)
+      return updated
+    }
+
+    override fun getRemoteVolumeState(): LoggeRythmRemoteVolumeState =
+      sessionPlayer.remoteVolumeState()
+
+    override fun setVisualizerEnabled(enabled: Boolean): LoggeRythmVisualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return visualizerController.setEnabled(enabled)
+    }
+
+    override fun getVisualizerState(): LoggeRythmVisualizerState {
+      syncAudioSessionId(player.audioSessionId)
+      return visualizerController.state()
+    }
+
+    override fun resetForAccountBoundary() {
+      if (serviceDestroyed) return
+      crossfadeController.setConfig(crossfadeController.currentConfig().copy(enabled = false))
+      visualizerController.setEnabled(false)
+      sessionPlayer.setRemoteVolumeControl(
+        active = false,
+        currentVolume = 50,
+        maxVolume = 100,
+        muted = false,
+      )
+      runCatching(::refreshConnectedControllerCommands)
+      LoggeRythmWidgetUpdater.clearForAccountBoundary(this@LoggeRythmMediaLibraryService)
+    }
+  }
+  private val audioSessionAnalyticsListener = object : AnalyticsListener {
+    override fun onAudioSessionIdChanged(eventTime: EventTime, audioSessionId: Int) {
+      syncAudioSessionId(audioSessionId)
+    }
   }
   private val voiceServiceControl = object : LoggeRythmVoiceServiceControl {
     override fun executePlayMusic(
@@ -416,6 +554,16 @@ class LoggeRythmMediaLibraryService :
     override fun executeGetNowPlaying(
       callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
     ) = handleVoiceGetNowPlaying(callback)
+
+    override fun executeStartRadio(
+      moodOrGenre: String?,
+      callback: (Result<LoggeRythmVoicePlayResult>) -> Unit,
+    ) = handleVoiceStartRadio(moodOrGenre, callback)
+
+    override fun executeSetSleepTimer(
+      minutes: Int,
+      callback: (Result<LoggeRythmVoiceSleepTimerResult>) -> Unit,
+    ) = handleVoiceSetSleepTimer(minutes, callback)
   }
   private val preloadListener = object : Player.Listener {
     override fun onEvents(player: Player, events: Player.Events) {
@@ -432,6 +580,14 @@ class LoggeRythmMediaLibraryService :
         events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)
       ) {
         refreshNotificationFavoriteButtons()
+      }
+      if (
+        events.contains(Player.EVENT_TIMELINE_CHANGED) ||
+        events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
+        events.contains(Player.EVENT_IS_PLAYING_CHANGED) ||
+        events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED)
+      ) {
+        publishWidgetSnapshot()
       }
       if (
         idleNotificationSuppressed &&
@@ -461,15 +617,40 @@ class LoggeRythmMediaLibraryService :
       .setWakeMode(C.WAKE_MODE_NETWORK)
       .build()
     player.addListener(preloadListener)
+    player.addAnalyticsListener(audioSessionAnalyticsListener)
+    sessionPlayer = LoggeRythmSessionPlayer(player)
+    visualizerController = LoggeRythmAudioVisualizerController(this)
+    syncAudioSessionId(player.audioSessionId)
     persistedCoordinator = LoggeRythmPersistedPlayerCoordinator(
       context = this,
       player = player,
       clearCache = playerCache::clearCache,
       onFavoriteStateChanged = ::syncAndRefreshNotificationFavoriteButtons,
       onFavoriteSyncFailed = ::reportCarFavoriteUpdateFailed,
+      applyLoudnessForMediaId = { mediaId, isSleepFading ->
+        val extras = mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
+        audioEffects.applyTrackLoudness(extras, isSleepFading)
+      },
+      onSleepFadeStarted = audioEffects::resetLoudnessBoostForFade,
+    )
+    crossfadeController = LoggeRythmDualPlayerCrossfadeController(
+      context = this,
+      primaryPlayer = player,
+      playerCache = playerCache,
+      audioAttributes = audioAttributes,
+      isSleepFading = persistedCoordinator::isSleepFading,
+      loudnessScaleForMediaId = { mediaId ->
+        val extras = mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
+        LoggeRythmLoudnessNormalization.computePlan(
+          extrasJson = extras,
+          enabled = audioEffects.getLoudnessState().enabled,
+          preset = LoggeRythmLoudnessPreset.parse(audioEffects.getLoudnessState().preset),
+        ).volumeScale
+      },
+      restorePrimaryLoudness = persistedCoordinator::refreshLoudnessGain,
     )
     sessionActivity = LoggeRythmSessionActivity.pendingIntent(this)
-    librarySession = MediaLibrarySession.Builder(this, player, LibraryCallback())
+    librarySession = MediaLibrarySession.Builder(this, sessionPlayer, LibraryCallback())
       .setSessionActivity(sessionActivity)
       .build()
     remoteCommandInstaller = LoggeRythmDurableRemoteCommandInstaller(
@@ -486,8 +667,10 @@ class LoggeRythmMediaLibraryService :
     LoggeRythmPersistedServiceBridge.attach(persistedCoordinator)
     LoggeRythmMediaSessionServiceBridge.attach(this)
     LoggeRythmVoiceServiceBridge.attach(voiceServiceControl)
+    LoggeRythmAudioCraftServiceBridge.attach(audioCraftControl)
     LoggeRythmExoPlayerObservationHook.attach(player)
     cacheControl.onQueueGenerationChanged(LoggeRythmPlayerRuntime.currentQueueGeneration())
+    publishWidgetSnapshot()
   }
 
   override fun onBind(intent: Intent?): IBinder? {
@@ -556,21 +739,60 @@ class LoggeRythmMediaLibraryService :
     failedLegacySearchErrors.clear()
     voiceSearchExecutor.shutdownNow()
     LoggeRythmExoPlayerObservationHook.detach(player)
+    LoggeRythmAudioCraftServiceBridge.detach(audioCraftControl)
     LoggeRythmVoiceServiceBridge.detach(voiceServiceControl)
     LoggeRythmMediaSessionServiceBridge.detach(this)
     LoggeRythmPersistedServiceBridge.detach(persistedCoordinator)
     LoggeRythmCacheServiceBridge.detach(cacheControl)
     // Coordinator.close() clears the runtime tree; the session is being released, so detach first.
     LoggeRythmBrowseTreeServiceBridge.detach(browseTreeObserver)
+    crossfadeController.release()
+    visualizerController.release()
+    audioEffects.release()
     remoteCommandInstaller.close()
     persistedCoordinator.close()
     serviceOnlyRestoreState = ServiceOnlyRestoreState.FAILED
     finishServiceOnlyRestoreWaiters()
+    player.removeAnalyticsListener(audioSessionAnalyticsListener)
     player.removeListener(preloadListener)
     librarySession.release()
     player.release()
     playerCache.close()
     super.onDestroy()
+  }
+
+  private fun syncAudioSessionId(sessionId: Int) {
+    audioEffects.onAudioSessionIdChanged(sessionId)
+    if (::visualizerController.isInitialized) {
+      visualizerController.onAudioSessionIdChanged(sessionId)
+    }
+  }
+
+  private fun publishWidgetSnapshot() {
+    if (serviceDestroyed || !::player.isInitialized) return
+    val activeItem = player.currentMediaItem
+    val activeMediaId = activeItem?.mediaId
+    val trackId = if (activeMediaId != null && ::persistedCoordinator.isInitialized) {
+      persistedCoordinator.resolveTrackIdForMediaId(activeMediaId)
+        ?: extractTrackIdFromExtras(LoggeRythmPlayerRuntime.extrasFor(activeMediaId))
+    } else {
+      null
+    }
+    if (::persistedCoordinator.isInitialized) syncNotificationFavoriteProjection()
+    val favorite = notificationFavorite.stateFor(activeMediaId, trackId)
+    runCatching {
+      LoggeRythmWidgetUpdater.publishSnapshot(
+        this,
+        LoggeRythmWidgetSnapshot(
+          hasActiveTrack = activeItem != null,
+          title = activeItem?.mediaMetadata?.title?.toString(),
+          artist = activeItem?.mediaMetadata?.artist?.toString(),
+          artworkUrl = activeItem?.mediaMetadata?.artworkUri?.toString(),
+          isPlaying = player.isPlaying,
+          liked = favorite?.liked,
+        ),
+      )
+    }
   }
 
   override fun installRemoteCommands(
@@ -670,6 +892,7 @@ class LoggeRythmMediaLibraryService :
     if (serviceDestroyed || !::librarySession.isInitialized) return
     syncNotificationFavoriteProjection()
     refreshNotificationFavoriteButtons()
+    publishWidgetSnapshot()
   }
 
   private fun reportCarFavoriteUpdateFailed() {
@@ -692,12 +915,23 @@ class LoggeRythmMediaLibraryService :
 
   private fun refreshConnectedControllerCommands() {
     syncNotificationFavoriteProjection()
+    val remoteVolumeActive = sessionPlayer.remoteVolumeState().active
     librarySession.connectedControllers.forEach { controller ->
       val profile = controllerProfile(librarySession, controller)
+      val basePlayerCommands = remoteCommandPolicy.playerCommands(profile)
+      val playerCommands = if (remoteVolumeActive) {
+        basePlayerCommands.buildUpon()
+          .add(Player.COMMAND_GET_DEVICE_VOLUME)
+          .add(Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS)
+          .add(Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS)
+          .build()
+      } else {
+        basePlayerCommands
+      }
       librarySession.setAvailableCommands(
         controller,
         remoteCommandPolicy.sessionCommands(profile),
-        remoteCommandPolicy.playerCommands(profile),
+        playerCommands,
       )
       if (
         profile.supportsFavorite &&
@@ -1281,6 +1515,7 @@ class LoggeRythmMediaLibraryService :
     artist = item.mediaMetadata.artist?.toString().orEmpty(),
     album = item.mediaMetadata.albumTitle?.toString().orEmpty(),
     durationMs = item.mediaMetadata.durationMs?.takeIf { it >= 0L } ?: fallbackDurationMs,
+    artworkUrl = item.mediaMetadata.artworkUri?.toString(),
   )
 
   private fun trackSummaryFromSpec(spec: PlayerItemSpec): LoggeRythmVoiceTrackSummary =
@@ -1291,6 +1526,7 @@ class LoggeRythmMediaLibraryService :
       artist = spec.artist.orEmpty(),
       album = spec.album.orEmpty(),
       durationMs = spec.durationMs,
+      artworkUrl = spec.artworkUrl,
     )
 
   private fun specsFromLocalBrowseSelection(
@@ -1735,6 +1971,153 @@ class LoggeRythmMediaLibraryService :
     }
   }
 
+  private fun handleVoiceStartRadio(
+    moodOrGenre: String?,
+    callback: (Result<LoggeRythmVoicePlayResult>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      try {
+        rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        requireQueueReplacementAdmitted()
+        val originalBinding = LoggeRythmPlayerRuntime.currentSessionBinding()
+          ?: throw LoggeRythmVoiceException(LoggeRythmVoiceErrorCode.AUTH_REQUIRED, "radio-signed-out")
+        val auth = LoggeRythmPlayerRuntime.sessionCookieForCurrentOrigin()
+          ?: throw LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.AUTH_REQUIRED,
+            "radio-no-remote-session",
+          )
+        val activeMediaId = player.currentMediaItem?.mediaId
+        val seedTrackId = activeMediaId?.let { id ->
+          persistedCoordinator.resolveTrackIdForMediaId(id)
+            ?: extractTrackIdFromExtras(LoggeRythmPlayerRuntime.extrasFor(id))
+        }
+        val (origin, cookie) = auth
+        val client = voiceCatalogClient()
+        val prefix = "voice:radio:${voiceItemSequence.incrementAndGet()}"
+        voiceSearchExecutor.execute {
+          val resolved = runCatching {
+            client.resolveRadio(
+              origin = origin,
+              cookie = cookie,
+              moodOrGenre = moodOrGenre,
+              seedTrackId = seedTrackId,
+              mediaIdPrefix = prefix,
+            )
+          }
+          mainHandler.post {
+            if (serviceDestroyed) {
+              callback(
+                Result.failure(
+                  LoggeRythmVoiceException(
+                    LoggeRythmVoiceErrorCode.SERVICE_UNAVAILABLE,
+                    "radio-service-destroyed",
+                  ),
+                ),
+              )
+              return@post
+            }
+            if (LoggeRythmPlayerRuntime.currentSessionBinding() != originalBinding) {
+              callback(
+                Result.failure(
+                  LoggeRythmVoiceException(
+                    LoggeRythmVoiceErrorCode.AUTH_REQUIRED,
+                    "radio-session-changed",
+                  ),
+                ),
+              )
+              return@post
+            }
+            resolved.fold(
+              onSuccess = { selection ->
+                try {
+                  requireQueueReplacementAdmitted()
+                  val mediaItems = LoggeRythmPlayerRuntime.installQueue(selection.items)
+                  player.setMediaItems(mediaItems, selection.startIndex, 0L)
+                  player.prepare()
+                  player.play()
+                  val snapshot = buildNowPlayingSnapshot()
+                  callback(
+                    Result.success(
+                      LoggeRythmVoicePlayResult(
+                        source = if (moodOrGenre.isNullOrBlank()) "radio:personal" else "radio:mood",
+                        matchedTitle = selection.matchedTitle,
+                        queuedCount = selection.items.size,
+                        nowPlaying = snapshot,
+                      ),
+                    ),
+                  )
+                } catch (error: Throwable) {
+                  callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+                }
+              },
+              onFailure = { error ->
+                callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+              },
+            )
+          }
+        }
+      } catch (error: Throwable) {
+        callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      }
+    }
+  }
+
+  private fun handleVoiceSetSleepTimer(
+    minutes: Int,
+    callback: (Result<LoggeRythmVoiceSleepTimerResult>) -> Unit,
+  ) {
+    runAfterRestoreForVoice(onFailure = { callback(Result.failure(it)) }) {
+      try {
+        rootUnavailable()?.let { throw LoggeRythmCarRequestException(it) }
+        if (playerCache.isClearing()) throw LoggeRythmCarRequestException(LoggeRythmCarError.CACHE_CLEARING)
+        if (!persistedCoordinator.isReady()) throw LoggeRythmCarRequestException(notReadyError())
+        if (minutes < 0 || minutes > LoggeRythmVoiceBridge.MAX_SLEEP_TIMER_MINUTES) {
+          throw LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.INVALID_ARGUMENT,
+            "voice-sleep-minutes-invalid",
+          )
+        }
+        if (minutes == 0) {
+          persistedCoordinator.applyAuxiliaryCommand(PlayerCommand.CancelSleepTimer)
+          callback(
+            Result.success(
+              LoggeRythmVoiceSleepTimerResult(
+                active = false,
+                minutesRequested = 0,
+                remainingMs = 0L,
+                fadeOutMs = 0L,
+              ),
+            ),
+          )
+          return@runAfterRestoreForVoice
+        }
+        if (player.mediaItemCount == 0) {
+          throw LoggeRythmVoiceException(
+            LoggeRythmVoiceErrorCode.NO_ACTIVE_TRACK,
+            "voice-sleep-empty-queue",
+          )
+        }
+        val durationMs = minutes.toLong() * 60_000L
+        val fadeOutMs = 15_000L.coerceAtMost(durationMs)
+        persistedCoordinator.applyAuxiliaryCommand(
+          PlayerCommand.SleepAfterTime(durationMs = durationMs, fadeOutMs = fadeOutMs),
+        )
+        callback(
+          Result.success(
+            LoggeRythmVoiceSleepTimerResult(
+              active = true,
+              minutesRequested = minutes,
+              remainingMs = durationMs,
+              fadeOutMs = fadeOutMs,
+            ),
+          ),
+        )
+      } catch (error: Throwable) {
+        callback(Result.failure(LoggeRythmVoiceBridge.asVoiceException(error)))
+      }
+    }
+  }
+
   private fun finishServiceOnlyRestoreWaiters() {
     val admitted = serviceOnlyRestoreWaiters.toList()
     serviceOnlyRestoreWaiters.clear()
@@ -1871,6 +2254,15 @@ class LoggeRythmMediaLibraryService :
         reportCarError(session, controller, notReadyError())
         return SessionResult.RESULT_ERROR_INVALID_STATE
       }
+      if (
+        sessionPlayer.remoteVolumeState().active && (
+          playerCommand == Player.COMMAND_GET_DEVICE_VOLUME ||
+            playerCommand == Player.COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS ||
+            playerCommand == Player.COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS
+          )
+      ) {
+        return SessionResult.RESULT_SUCCESS
+      }
       return if (remoteCommandPolicy.permits(profile, playerCommand)) {
         SessionResult.RESULT_SUCCESS
       } else {
@@ -1889,7 +2281,17 @@ class LoggeRythmMediaLibraryService :
       ensureServiceOnlyRestore()
       val tree = LoggeRythmPlayerRuntime.browseTree()
       val root = checkNotNull(tree.nodes[tree.rootId]).mediaItem
-      return Futures.immediateFuture(LibraryResult.ofItem(root, params))
+      val rootParams = LibraryParams.Builder()
+        .setExtras(LoggeRythmCarBrowseMetadata.rootLibraryExtras(params?.extras))
+        .apply {
+          if (params != null) {
+            setRecent(params.isRecent)
+            setOffline(params.isOffline)
+            setSuggested(params.isSuggested)
+          }
+        }
+        .build()
+      return Futures.immediateFuture(LibraryResult.ofItem(root, rootParams))
     }
 
     override fun onGetItem(

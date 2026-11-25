@@ -1,11 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { StartImportJobOptions } from '../../api/endpoints';
 import type { ImportJobStatus } from '../../api/types';
 import { isActiveImportJob, musicQueries, musicRepository, queryKeys } from '../../data';
 import type { AlbumRouteParams, ArtistRouteParams } from '../../screens/catalogModel';
 import { useBottomInset } from '../../hooks/useBottomInset';
 import { strings } from '../../localization';
+import { wave2Strings } from '../../localization/wave2Strings';
+import { rootNavigation } from '../../navigation/rootNavigation';
 import {
   normalizeSpotifyImportInput,
   SpotifyImportInputError,
@@ -13,11 +16,11 @@ import {
   type SpotifyImportRequest,
 } from '../../share/spotifyImport';
 import { showTrackActions } from '../trackActions';
-import { TrackRowSkeleton } from '../ui';
+import { ActionButton, TrackRowSkeleton } from '../ui';
 import { importJobErrorDetail, importJobTitle } from './importJobModel';
 import { SearchErrorNotice, SearchRemoteBoundary } from './SearchRemoteStates';
 import { SearchTrackResultRow } from './SearchResults';
-import { SpotifyImportForm } from './SpotifyImportForm';
+import { SpotifyImportForm, type ImportTargetMode } from './SpotifyImportForm';
 import { SpotifyImportJobList, SpotifyImportProgress } from './SpotifyImportJobs';
 import { SpotifyImportResultSummary } from './SpotifyImportResultSummary';
 import {
@@ -78,6 +81,9 @@ export default function SpotifyImportPanel({
   );
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [targetMode, setTargetMode] = useState<ImportTargetMode>('none');
+  const [createPlaylistName, setCreatePlaylistName] = useState('');
+  const [targetPlaylistId, setTargetPlaylistId] = useState<number | null>(null);
   const bottomInset = useBottomInset();
 
   const jobsQuery = useQuery(musicQueries.importJobs(accountScope));
@@ -89,7 +95,8 @@ export default function SpotifyImportPanel({
 
   const start = useMutation({
     mutationKey: ['music', 'mutation', accountScope, 'spotify-import-job', 'start'],
-    mutationFn: (url: string) => musicRepository.startImportJob(url),
+    mutationFn: (payload: { url: string; options?: StartImportJobOptions }) =>
+      musicRepository.startImportJob(payload.url, payload.options),
     onMutate: () => {
       setInputError(null);
       setRemoveError(null);
@@ -100,6 +107,7 @@ export default function SpotifyImportPanel({
       void queryClient.invalidateQueries({ queryKey: jobsKey, exact: true });
       setSelectedJobId(job.id);
       setInput('');
+      setCreatePlaylistName('');
     },
     onError: (error) => {
       setInputError(strings.search.importStartFailed(importJobErrorDetail(error)));
@@ -132,7 +140,7 @@ export default function SpotifyImportPanel({
     if (sharedRequest?.link === undefined || sharedRequest.link === null) return;
     if (startedShare.current === sharedRequest.id) return;
     startedShare.current = sharedRequest.id;
-    startImport(sharedRequest.link);
+    startImport({ url: sharedRequest.link });
   }, [sharedRequest, startImport]);
 
   const updateInput = (value: string) => {
@@ -145,7 +153,13 @@ export default function SpotifyImportPanel({
     try {
       const normalized = normalizeSpotifyImportInput(input);
       setInput(normalized);
-      start.mutate(normalized);
+      let options: StartImportJobOptions | undefined;
+      if (targetMode === 'new' && createPlaylistName.trim().length > 0) {
+        options = { create_playlist_name: createPlaylistName.trim() };
+      } else if (targetMode === 'existing' && targetPlaylistId !== null) {
+        options = { target_playlist_id: targetPlaylistId };
+      }
+      start.mutate({ url: normalized, options });
     } catch (error) {
       const code = error instanceof SpotifyImportInputError ? error.code : 'invalid';
       setInputError(inputErrorMessage(code));
@@ -182,6 +196,13 @@ export default function SpotifyImportPanel({
         starting={start.isPending}
         onChangeText={updateInput}
         onSubmit={submit}
+        targetMode={targetMode}
+        onTargetModeChange={setTargetMode}
+        createPlaylistName={createPlaylistName}
+        onCreatePlaylistNameChange={setCreatePlaylistName}
+        targetPlaylistId={targetPlaylistId}
+        onTargetPlaylistIdChange={setTargetPlaylistId}
+        playlists={session.playlists}
       />
       <SpotifyImportJobList
         jobs={jobs}
@@ -209,6 +230,33 @@ export default function SpotifyImportPanel({
             selectedJob.error ?? strings.search.importJobNoServerError
           }`}
         />
+      ) : null}
+      {selectedJob !== null
+      && selectedJob.status === 'done'
+      && selectedJob.created_playlist_id !== null
+      && selectedJob.created_playlist_id !== undefined ? (
+        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+          <ActionButton
+            testID="spotify-import-open-created-playlist"
+            icon="playlist-music"
+            variant="primary"
+            label={wave2Strings.importTarget.openCreatedPlaylist}
+            onPress={() => {
+              const createdId = selectedJob.created_playlist_id!;
+              rootNavigation.navigate('Tabs', {
+                screen: 'LibraryTab',
+                params: {
+                  screen: 'Playlist',
+                  params: {
+                    kind: 'playlist',
+                    playlistId: createdId,
+                    name: selectedJob.create_playlist_name || importJobTitle(selectedJob),
+                  },
+                },
+              });
+            }}
+          />
+        </View>
       ) : null}
       {selectedJob !== null && selectedJob.status === 'done' ? (
         <SearchRemoteBoundary

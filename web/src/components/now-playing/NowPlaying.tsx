@@ -2,17 +2,28 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { usePlayerStore, currentTrack } from "@/store/player";
+import { canControlPartyPlayback, usePartyStore } from "@/store/party";
+import { useUiModalsStore } from "@/store/uiModals";
 import { useCoverColors } from "@/hooks/useCoverColors";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { hiResCover } from "@/lib/cover";
 import { fullscreenTheme } from "@/lib/fullscreenTheme";
-import { INITIAL_VISUALIZER_PREFERENCES, validateVisualizerPreferences, type VisualizerPreferences } from "@/lib/visualizerScenes";
+import {
+  INITIAL_VISUALIZER_PREFERENCES,
+  VISUALIZER_PREFERENCES_KEY,
+  validateVisualizerPreferences,
+  type VisualizerPreferences,
+} from "@/lib/visualizerScenes";
 import { useVisualizerScene } from "@/hooks/useVisualizerScene";
-import { ChevronDownIcon } from "@/components/icons";
+import { ChevronDownIcon, CinemaIcon } from "@/components/icons";
 import LikeButton from "@/components/LikeButton";
-import Scrubber from "@/components/player/Scrubber";
+import TrackMenu from "@/components/TrackMenu";
+import WaveformScrubber from "@/components/player/WaveformScrubber";
 import { DeviceSelectorTrigger } from "@/components/player/DeviceSelector";
+import { SleepTimerTrigger } from "@/components/player/SleepTimerControl";
+import { AudioEffectsTrigger } from "@/components/player/AudioEffectsControl";
+import PictureInPictureButton from "@/components/player/PictureInPictureButton";
 import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
 import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
 import SceneVisualizer from "@/components/SceneVisualizer";
@@ -36,6 +47,7 @@ const PANELS: { key: PanelKey; label: string }[] = [
   { key: "similar", label: "Ähnliche Titel" },
 ];
 const PANEL_KEYS = PANELS.map((panel) => panel.key);
+const CINEMA_IDLE_MS = 3_000;
 
 /** From this width the stage and a panel sit side by side. */
 const SPLIT_QUERY = "(min-width: 1024px)";
@@ -56,36 +68,86 @@ function validatePanel(value: unknown): PanelKey {
 }
 
 /**
- * Fullscreen now-playing view, laid out as three bands that together use the
- * whole screen: a slim header, the body, and a full-width transport console.
- *
- * Wide screens split the body: the artwork stage with the track heading on
- * the left, and one panel (lyrics, queue or similar tracks) on the right —
- * the choice is remembered. Narrow screens are a sheet (slides up, swipe down
- * to close) showing either the stage or one panel, with the heading folded
- * into the console. Backdrop and accents follow the cover art.
+ * Fullscreen now-playing view with optional full-bleed Cinema/Ambient
+ * Visualizer mode (collapses right panel + auto-hides chrome after 3s idle).
  */
 export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const track = usePlayerStore(currentTrack);
   const error = usePlayerStore((s) => s.error);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const queueContext = usePlayerStore((s) => s.queueContext);
+  const next = usePlayerStore((s) => s.next);
+  const prev = usePlayerStore((s) => s.prev);
+  const cinemaMode = useUiModalsStore((s) => s.cinemaMode);
+  const toggleCinemaMode = useUiModalsStore((s) => s.toggleCinemaMode);
+  const partyActive = usePartyStore((s) => s.active);
+  const partyDetached = usePartyStore((s) => s.detached);
+  const partyIsHost = usePartyStore((s) => s.isHost);
+  const partyGuestsCanControl = usePartyStore((s) => s.guestsCanControl);
+  const canControl = canControlPartyPlayback({
+    active: partyActive,
+    detached: partyDetached,
+    isHost: partyIsHost,
+    guestsCanControl: partyGuestsCanControl,
+  });
+
   const palette = useCoverColors(track?.cover);
   const split = useSyncExternalStore(subscribeSplit, splitSnapshot, serverSplitSnapshot);
 
   const [storedPanel, setStoredPanel] = useLocalJson<PanelKey>("player:fullscreen-panel", "lyrics");
   const panel = validatePanel(storedPanel);
   const [stageOnNarrow, setStageOnNarrow] = useState(true);
-  const view: ViewKey = !split && stageOnNarrow ? "stage" : panel;
+  const view: ViewKey = !split && (stageOnNarrow || cinemaMode) ? "stage" : panel;
 
-  const [storedPreferences, setStoredPreferences] = useLocalJson<VisualizerPreferences>("player:visualizer", INITIAL_VISUALIZER_PREFERENCES);
+  const [storedPreferences, setStoredPreferences] = useLocalJson<VisualizerPreferences>(VISUALIZER_PREFERENCES_KEY, INITIAL_VISUALIZER_PREFERENCES);
   const preferences = validateVisualizerPreferences(storedPreferences);
   const [signalStatus, setSignalStatus] = useState<VisualizerStatus>("waiting");
   const sceneChoice = useVisualizerScene({ track, preference: preferences.scene, listening: preferences.enabled && isPlaying });
 
+  // Cinema mode auto-hides header & console after 3s of cursor/key inactivity.
+  const cinemaIdle = useUiModalsStore((s) => s.cinemaIdle);
+  const idleTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!cinemaMode) {
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+      return;
+    }
+    const armTimer = () => {
+      if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = window.setTimeout(() => {
+        useUiModalsStore.getState().setCinemaIdle(true);
+      }, CINEMA_IDLE_MS);
+    };
+    const bump = () => {
+      useUiModalsStore.getState().setCinemaIdle(false);
+      armTimer();
+    };
+    armTimer();
+    window.addEventListener("pointermove", bump);
+    window.addEventListener("pointerdown", bump);
+    window.addEventListener("keydown", bump);
+    return () => {
+      window.removeEventListener("pointermove", bump);
+      window.removeEventListener("pointerdown", bump);
+      window.removeEventListener("keydown", bump);
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+    };
+  }, [cinemaMode]);
+
   const rootRef = useRef<HTMLDivElement>(null);
   const albumRef = useRef<HTMLDivElement>(null);
-  const swipeHandlers = useSwipeToClose(rootRef, onClose);
+  const swipeHandlers = useSwipeToClose(rootRef, onClose, {
+    artworkRef: albumRef,
+    onSwipeNext: canControl ? next : undefined,
+    onSwipePrev: canControl ? prev : undefined,
+  });
   useDialogFocus(!!track, rootRef, onClose);
 
   useEffect(() => {
@@ -112,9 +174,9 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
     event.preventDefault();
     event.stopPropagation();
     const current = tabs.findIndex((item) => item.key === view);
-    const next =
+    const nextIdx =
       event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-    const key = tabs[next].key;
+    const key = tabs[nextIdx].key;
     select(key);
     rootRef.current?.querySelector<HTMLButtonElement>(`#now-playing-tab-${key}`)?.focus();
   };
@@ -159,7 +221,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
     <VisualizerControls preferences={preferences} choice={sceneChoice} signalStatus={signalStatus} onChange={setStoredPreferences} />
   );
   const stage = <Stage track={track} albumRef={albumRef} preferences={preferences} footer={split ? undefined : visualizerControls} />;
-  const showVisualizer = preferences.enabled && (split || view === "stage");
+  const showVisualizer = preferences.enabled && (split || view === "stage" || cinemaMode);
+  const chromeFadeClass = cinemaMode && cinemaIdle ? "opacity-0 pointer-events-none" : "opacity-100";
 
   return (
     <div
@@ -167,16 +230,18 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       role="dialog"
       aria-modal="true"
       aria-label="Vollbildplayer"
+      data-cinema={cinemaMode ? "true" : undefined}
       {...swipeHandlers}
       style={fullscreenTheme(palette) as CSSProperties}
-      className={`${styles.scope} fixed inset-0 z-[80] flex h-dvh animate-[sheetUp_.34s_var(--ease-out)] flex-col overflow-hidden bg-backdrop pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] motion-reduce:animate-none lg:animate-[fadeIn_.28s_var(--ease-out)]`}
+      className={`${styles.scope} fixed inset-0 z-[80] flex h-dvh animate-[sheetUp_.34s_var(--ease-out)] flex-col overflow-hidden bg-backdrop pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] motion-reduce:animate-none lg:animate-[fadeIn_.28s_var(--ease-out)] ${
+        cinemaMode && cinemaIdle ? "cursor-none" : ""
+      }`}
     >
       {track.cover && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={hiResCover(track.cover)} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-3xl saturate-150" />
       )}
       <div aria-hidden className={`${styles.backdrop} pointer-events-none absolute inset-0`} />
-      {/* Spans the whole player, behind header, body and console; composed around the artwork. */}
       {showVisualizer && (sceneChoice.scene === "aura" ? (
         <FullscreenVisualizer
           isPlaying={isPlaying}
@@ -198,9 +263,9 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       ))}
 
       {/* Drag affordance for the swipe-down gesture (touch layouts) */}
-      <div aria-hidden className="relative mx-auto mt-2 h-1 w-9 flex-shrink-0 rounded-full bg-white/30 lg:hidden" />
+      <div aria-hidden className={`relative mx-auto mt-2 h-1 w-9 flex-shrink-0 rounded-full bg-white/30 transition-opacity duration-500 lg:hidden ${chromeFadeClass}`} />
 
-      <header className="relative flex h-14 flex-shrink-0 items-center gap-3 px-3 lg:h-16 lg:px-6">
+      <header className={`relative flex h-14 flex-shrink-0 items-center gap-2 px-3 transition-opacity duration-500 motion-reduce:transition-none lg:h-16 lg:gap-3 lg:px-6 ${chromeFadeClass}`}>
         <button data-dialog-autofocus type="button" onClick={onClose} aria-label="Schließen" title="Schließen (Esc)" className="action-icon h-11 w-11 text-foreground">
           <ChevronDownIcon width={26} height={26} />
         </button>
@@ -208,8 +273,22 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
           <span className="label-mono flex-shrink-0">{queueContext ? "Wiedergabe aus" : "Jetzt läuft"}</span>
           {queueContext && <span className="max-w-full truncate text-sm font-semibold">{queueContext}</span>}
         </p>
-        <div className="lg:hidden">
-          <DeviceSelectorTrigger forceVisible compact />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleCinemaMode}
+            aria-pressed={cinemaMode}
+            aria-label={cinemaMode ? "Kino-Modus beenden" : "Kino-Modus (Vollbild-Visualizer)"}
+            title={cinemaMode ? "Kino-Modus beenden (C)" : "Kino-Modus (C)"}
+            className={`action-icon h-10 w-10 ${cinemaMode ? "text-accent" : ""}`}
+          >
+            <CinemaIcon width={18} height={18} />
+          </button>
+          <div className="flex items-center gap-0.5 lg:hidden">
+            <SleepTimerTrigger compact />
+            <AudioEffectsTrigger compact />
+            <DeviceSelectorTrigger forceVisible compact />
+          </div>
         </div>
       </header>
 
@@ -220,53 +299,70 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       )}
 
       {split ? (
-        <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-10 px-10 pb-2 xl:gap-16 xl:px-14">
-          <div className="flex min-h-0 flex-col gap-6">
-            {stage}
-            <div className="flex-shrink-0">
-              <TrackHeading track={track} onNavigate={onClose} variant="display" />
+        cinemaMode ? (
+          <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center px-10 pb-2 xl:px-14">
+            <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-6">
+              {stage}
+              <div className={`flex-shrink-0 transition-opacity duration-500 ${cinemaIdle ? "opacity-75" : "opacity-100"}`}>
+                <TrackHeading track={track} onNavigate={onClose} variant="display" />
+              </div>
             </div>
           </div>
-          <div className="flex min-h-0 flex-col">
-            {tablist}
-            <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
-              {panelContent}
+        ) : (
+          <div className="relative grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,6fr)] gap-10 px-10 pb-2 xl:gap-16 xl:px-14">
+            <div className="flex min-h-0 flex-col gap-6">
+              {stage}
+              <div className="flex-shrink-0">
+                <TrackHeading track={track} onNavigate={onClose} variant="display" />
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-col">
+              {tablist}
+              <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
+                {panelContent}
+              </div>
             </div>
           </div>
-        </div>
+        )
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col px-5">
-          {tablist}
+          {!cinemaMode && tablist}
           <div role="tabpanel" id="now-playing-panel" aria-labelledby={`now-playing-tab-${view}`} className="flex min-h-0 flex-1 flex-col pt-3">
-            {view === "stage" ? stage : panelContent}
+            {view === "stage" || cinemaMode ? stage : panelContent}
           </div>
         </div>
       )}
 
       {/* Console: active output strip, seek across the full width, transport centred beneath it. */}
-      <ActiveOutputBanner onNavigate={onClose} />
-      <div className={`${styles.console} like-celebration-surface relative flex-shrink-0 px-5 pb-4 pt-3 lg:px-10 lg:pb-6 lg:pt-4 xl:px-14`}>
-        {!split && (
-          <div className="mb-3">
-            <TrackHeading track={track} onNavigate={onClose} variant="row" thumbnail={view !== "stage"} />
-          </div>
-        )}
-        <Scrubber />
-        {split ? (
-          <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6">
-            <div className="flex min-w-0 items-center gap-1">
-              <LikeButton key={track.id} track={track} />
-              {visualizerControls}
+      <div className={`transition-opacity duration-500 motion-reduce:transition-none ${chromeFadeClass}`}>
+        <ActiveOutputBanner onNavigate={onClose} />
+        <div className={`${styles.console} like-celebration-surface relative flex-shrink-0 px-5 pb-4 pt-3 lg:px-10 lg:pb-6 lg:pt-4 xl:px-14`}>
+          {!split && (
+            <div className="mb-3">
+              <TrackHeading track={track} onNavigate={onClose} variant="row" thumbnail={view !== "stage" && !cinemaMode} />
             </div>
-            <TransportRow />
-            <div className="flex items-center justify-end gap-2">
-              <DeviceSelectorTrigger forceVisible />
-              <VolumeRow />
+          )}
+          <WaveformScrubber />
+          {split ? (
+            <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6">
+              <div className="flex min-w-0 items-center gap-1">
+                <LikeButton key={track.id} track={track} />
+                <TrackMenu track={track} />
+                {visualizerControls}
+              </div>
+              <TransportRow />
+              <div className="flex items-center justify-end gap-1.5">
+                <AudioEffectsTrigger />
+                <SleepTimerTrigger />
+                <PictureInPictureButton />
+                <DeviceSelectorTrigger forceVisible />
+                <VolumeRow />
+              </div>
             </div>
-          </div>
-        ) : (
-          <TransportRow className="mt-1" />
-        )}
+          ) : (
+            <TransportRow className="mt-1" />
+          )}
+        </div>
       </div>
     </div>
   );

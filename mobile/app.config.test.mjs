@@ -34,6 +34,7 @@ describe('Expo API-origin policy', () => {
     expect(config.android.icon).toBe('./assets/android-icon-legacy.png');
     expect(config.plugins).toContain('./plugins/withMusicVolumeControl');
     expect(config.plugins).toContain('./plugins/withAndroidLauncherAssets');
+    expect(config.plugins).toContain('./plugins/withAndroidSystemSurfaces');
     expect(config.plugins).toContain('./plugins/withAndroidTvSupport');
     expect(config.plugins.filter((entry) => entry === './plugins/withAndroidTvSupport')).toHaveLength(1);
     expect(config.plugins).toContain('./plugins/withAndroidAppFunctions');

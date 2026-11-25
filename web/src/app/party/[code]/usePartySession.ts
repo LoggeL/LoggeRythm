@@ -31,6 +31,7 @@ export function usePartySession(code: string) {
     party,
     ended,
     endedReason,
+    hasLeft,
     isLoading,
     isError,
     error,
@@ -43,11 +44,18 @@ export function usePartySession(code: string) {
     setPlayback,
     updateSettings,
     kickMember,
+    savePlaylist,
+    transferHost,
+    autoDjFill,
+    react,
+    voteSkip,
     leave,
     end,
   } = useParty(code);
   const listenLocally = usePartyStore((s) => s.listenLocally);
   const setListenLocally = usePartyStore((s) => s.setListenLocally);
+  const detached = usePartyStore((s) => s.detached);
+  const setDetached = usePartyStore((s) => s.setDetached);
   const isHost = Boolean(party?.is_host);
   const guestsCanControl = Boolean(party?.guests_can_control);
 
@@ -182,8 +190,56 @@ export function usePartySession(code: string) {
     );
   };
 
+  const transferHostTo = async (memberKey: string, name: string) => {
+    await mutateQueue(
+      `Host-Rolle konnte nicht an ${name} übergeben werden`,
+      async () => {
+        await transferHost(memberKey);
+      },
+      `${name} ist jetzt Host der Jam.`,
+    );
+  };
+
+  const fillAutoDj = async () => {
+    await mutateQueue(
+      "Auto-DJ konnte keine Titel hinzufügen",
+      async () => {
+        await autoDjFill(5);
+      },
+      "Auto-DJ hat passende Titel eingereiht.",
+    );
+  };
+
+  const sendReaction = async (emoji: string) => {
+    try {
+      await react(emoji);
+    } catch (cause) {
+      toast.error(partyFailureMessage("Reaktion konnte nicht gesendet werden", cause));
+    }
+  };
+
+  const castVoteSkip = async () => {
+    try {
+      const res = await voteSkip();
+      if (res.skipped) {
+        toast.info("Mehrheit erreicht – Titel wurde übersprungen.");
+      } else {
+        toast.info(`Skip-Stimme gezählt (${res.votes.length}/${res.votes_needed}).`);
+      }
+    } catch (cause) {
+      toast.error(partyFailureMessage("Skip-Abstimmung fehlgeschlagen", cause));
+    }
+  };
+
+  const savePartyAsPlaylist = async (options: { name?: string; collaborative?: boolean }) => {
+    const created = await savePlaylist(options);
+    toast.success(`Playlist „${created.name}“ gespeichert.`);
+    return created;
+  };
+
   const togglePlayback = () => {
-    if (!party) return;
+    if (!party || party.current_index < 0 || party.current_index >= party.tracks.length) return;
+    if (detached) setDetached(false);
     if (isHost) {
       usePlayerStore.getState().toggle();
       return;
@@ -194,12 +250,44 @@ export function usePartySession(code: string) {
     );
   };
 
+  const playAt = (index: number, title: string) =>
+    mutateQueue(`"${title}" konnte nicht abgespielt werden`, async () => {
+      if (detached) setDetached(false);
+      await setCurrent(index);
+      const shouldStartPlaying = !party?.is_playing;
+      if (shouldStartPlaying) {
+        await setPlayback(true, 0);
+      }
+      if (isHost && party && index >= 0 && index < party.tracks.length) {
+        const player = usePlayerStore.getState();
+        player.setPartyQueue(
+          party.tracks.map((pt) => ({
+            id: pt.deezer_id,
+            title: pt.title,
+            artist: pt.artist,
+            artist_id: pt.artist_id,
+            artists: pt.artists,
+            album: pt.album,
+            album_id: pt.album_id,
+            cover: pt.cover,
+            duration_sec: pt.duration_sec,
+          })),
+          index,
+          party.tracks.map((pt) => pt.id),
+        );
+        if (shouldStartPlaying) player.play();
+      }
+    });
+
   const trackIds = party ? party.tracks.map((track) => track.id) : [];
 
   return {
     party,
     ended,
     endedReason,
+    hasLeft,
+    detached,
+    rejoinPlayback: () => setDetached(false),
     isHost,
     guestsCanControl,
     listenLocally,
@@ -226,8 +314,7 @@ export function usePartySession(code: string) {
       mutateQueue(`"${track.title}" konnte nicht hinzugefügt werden`, () => add(track, "end"), "Zur Jam hinzugefügt."),
     addTrackNext: (track: Track) =>
       mutateQueue(`"${track.title}" konnte nicht als Nächstes eingereiht werden`, () => add(track, "next"), "Wird als Nächstes in der Jam gespielt."),
-    playAt: (index: number, title: string) =>
-      mutateQueue(`"${title}" konnte nicht abgespielt werden`, () => setCurrent(index)),
+    playAt,
     nextTrack: () => {
       if (!party || party.current_index + 1 >= party.tracks.length) return;
       const target = party.tracks[party.current_index + 1];
@@ -252,5 +339,10 @@ export function usePartySession(code: string) {
       mutateQueue(`"${title}" konnte nicht entfernt werden`, () => remove(itemId)),
     saveSettings,
     kickMember: kick,
+    transferHost: transferHostTo,
+    fillAutoDj,
+    sendReaction,
+    voteSkip: castVoteSkip,
+    savePartyAsPlaylist,
   };
 }

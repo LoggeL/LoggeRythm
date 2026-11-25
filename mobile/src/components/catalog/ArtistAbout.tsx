@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import type { ArtistAbout as ArtistAboutData } from '../../api/types';
+import { triggerHaptic } from '../../hooks/useHaptics';
 import { catalogStrings } from '../../screens/catalogStrings';
-import { colors, layout, radii, spacing } from '../../theme';
+import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
+import AppIcon from '../AppIcon';
 import { ActionButton, AppText } from '../ui';
 
 /** Lines of biography shown before "Show more". */
@@ -21,11 +23,17 @@ export function artistAboutHasContent(about: ArtistAboutData | undefined): boole
   );
 }
 
+export interface ArtistAboutProps {
+  about: ArtistAboutData;
+  onTagPress?: (tag: string) => void;
+  busyTag?: string | null;
+}
+
 /**
  * Biography (collapsed to a few lines, expandable), listener and play
- * counts, and genre tags of an artist.
+ * counts, and interactive genre tags that launch mood radio.
  */
-export function ArtistAbout({ about }: { about: ArtistAboutData }) {
+export function ArtistAbout({ about, onTagPress, busyTag = null }: ArtistAboutProps) {
   const [expanded, setExpanded] = useState(false);
   const bio = about.bio.trim();
   const collapsible = bio.length > COLLAPSIBLE_FROM_CHARS;
@@ -70,9 +78,43 @@ export function ArtistAbout({ about }: { about: ArtistAboutData }) {
       ) : null}
       {about.tags.length > 0 ? (
         <View style={styles.tags}>
-          {about.tags.map((tag) => (
-            <AppText key={tag} variant="caption" style={styles.tag}>{tag}</AppText>
-          ))}
+          {about.tags.map((tag, index) => {
+            if (onTagPress === undefined) {
+              return (
+                <AppText key={tag} variant="caption" style={styles.tag}>{tag}</AppText>
+              );
+            }
+            const busy = busyTag === tag;
+            const disabled = busyTag !== null;
+            return (
+              <Pressable
+                key={tag}
+                testID={`artist-tag-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={catalogStrings.artist.startTagRadio(tag)}
+                accessibilityState={{ busy, disabled }}
+                disabled={disabled}
+                focusable
+                onPress={() => {
+                  triggerHaptic('tap');
+                  onTagPress(tag);
+                }}
+                style={({ pressed }) => [
+                  styles.tagButton,
+                  busy ? styles.tagButtonBusy : null,
+                  pressed ? styles.pressed : null,
+                  disabled && !busy ? styles.disabled : null,
+                ]}
+              >
+                {busy ? (
+                  <ActivityIndicator accessible={false} size="small" color={colors.accentSoft} />
+                ) : (
+                  <AppIcon name="radio-tower" size={14} color={colors.accentSoft} />
+                )}
+                <AppText variant="caption" color={busy ? 'accent' : 'primary'}>{tag}</AppText>
+              </Pressable>
+            );
+          })}
         </View>
       ) : null}
     </View>
@@ -93,4 +135,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: colors.fill,
   },
+  tagButton: {
+    minHeight: metrics.minimumTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.fill,
+  },
+  tagButtonBusy: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSubtle,
+  },
+  pressed: { opacity: opacity.pressed },
+  disabled: { opacity: opacity.disabled },
 });

@@ -48,6 +48,13 @@ internal data class OfflineHydration(
   val availableDiskBytes: Long,
 )
 
+internal data class OfflineStorageUsage(
+  val scopeBytes: Long,
+  val scopeTrackCount: Int,
+  val allDownloadsBytes: Long,
+  val availableDiskBytes: Long,
+)
+
 /**
  * The explicit-download store is deliberately separate from the player's rolling
  * cache. Files here are never LRU-evicted and are only
@@ -299,6 +306,47 @@ internal class OfflineDownloadStorage(private val context: Context) {
   fun availableBytes(directory: File): Long {
     val safeDirectory = requireKnownSafeAudioDirectory(directory)
     return StatFs(safeDirectory.absolutePath).availableBytes.coerceAtLeast(0L)
+  }
+
+  /** Computes exact byte usage for [scopeValue] and across all stored offline scopes. */
+  fun storageUsage(scopeValue: String): OfflineStorageUsage {
+    val scope = parseScope(scopeValue)
+    val audioDir = audioDirectory(scope)
+    var scopeBytes = 0L
+    var scopeTracks = 0
+    val scopeChildren = audioDir.listFiles() ?: throw IllegalStateException("storage-unavailable")
+    scopeChildren.forEach { file ->
+      val stat = requireSafeRegularFileSlot(file, audioDir) ?: return@forEach
+      scopeBytes += stat.st_size.coerceAtLeast(0L)
+      if (FINAL_FILE.matches(file.name)) scopeTracks += 1
+    }
+
+    var totalBytes = 0L
+    val safeRoot = existingStoreRootOrNull()
+    if (safeRoot != null) {
+      val scopes = existingSafeDirectory(File(safeRoot, scopesRoot.name), safeRoot)
+      scopes?.listFiles()?.forEach { scopeDir ->
+        val safeScopeDir = existingSafeDirectory(scopeDir, scopes) ?: return@forEach
+        val safeAudioDir = existingSafeDirectory(File(safeScopeDir, "audio"), safeScopeDir)
+          ?: return@forEach
+        safeAudioDir.listFiles()?.forEach { audioFile ->
+          val stat = requireSafeRegularFileSlot(audioFile, safeAudioDir) ?: return@forEach
+          totalBytes += stat.st_size.coerceAtLeast(0L)
+        }
+      }
+      val manifests = existingSafeDirectory(File(safeRoot, manifestRoot.name), safeRoot)
+      manifests?.listFiles()?.forEach { manifestEntry ->
+        val stat = requireSafeRegularFileSlot(manifestEntry, manifests) ?: return@forEach
+        totalBytes += stat.st_size.coerceAtLeast(0L)
+      }
+    }
+
+    return OfflineStorageUsage(
+      scopeBytes = scopeBytes,
+      scopeTrackCount = scopeTracks,
+      allDownloadsBytes = totalBytes.coerceAtLeast(scopeBytes),
+      availableDiskBytes = availableBytes(audioDir),
+    )
   }
 
   fun verifiedExistingFile(scope: OfflineScope, trackIdValue: String): OfflineStoredFile? {

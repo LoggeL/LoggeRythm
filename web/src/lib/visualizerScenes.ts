@@ -66,7 +66,23 @@ export interface VisualizerPreferences {
   /** "auto" picks a scene per song (genre + listening); otherwise one fixed scene. */
   scene: ScenePreference;
 }
+export const VISUALIZER_PREFERENCES_KEY = "player:visualizer";
 export const INITIAL_VISUALIZER_PREFERENCES: VisualizerPreferences = { enabled: true, scene: "auto" };
+export const VISUALIZER_SCENE_CYCLE: readonly ScenePreference[] = ["auto", ...SCENE_KEYS];
+
+/**
+ * Advance the persisted visualizer preference through:
+ *   off -> auto -> laser -> ... -> aura -> off
+ */
+export function nextCycledVisualizerPreferences(current: VisualizerPreferences): VisualizerPreferences {
+  if (!current.enabled) return { enabled: true, scene: "auto" };
+  const idx = VISUALIZER_SCENE_CYCLE.indexOf(current.scene);
+  const nextIdx = idx + 1;
+  if (nextIdx >= VISUALIZER_SCENE_CYCLE.length) {
+    return { enabled: false, scene: "auto" };
+  }
+  return { enabled: true, scene: VISUALIZER_SCENE_CYCLE[nextIdx] };
+}
 
 /** `mode` is the scene choice of the retired three-scene visualizer; it is dropped. */
 const LEGACY_PREFERENCE_KEYS = new Set(["mode"]);

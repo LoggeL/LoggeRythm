@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AccessibilityInfo, ScrollView, StyleSheet, View } from 'react-native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../auth/AuthContext';
+import type { Playlist } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
 import { getCurrentApiBase } from '../config';
 import {
@@ -12,6 +13,7 @@ import {
   musicQueries,
   musicRepository,
   optimisticallyAddPlaylistTrack,
+  queryKeys,
   refreshLibraryAutoBrowse,
   restorePlaylistCache,
 } from '../data';
@@ -30,12 +32,15 @@ import {
 } from '../offline/runtime';
 import { refreshBrowseTree, refreshOfflineBrowseTree } from '../player/browseTree';
 import { reportPlayerNotice } from '../player/notices';
+import { shareTrack } from '../share/outboundShare';
 import { spacing } from '../theme';
 import { isTvMode, tvFocusRegistry } from '../tv';
 import {
   TrackActionRow,
   TrackActionsCreateForm,
   TrackActionsHeader,
+  TrackActionsPlaylistCommitBar,
+  TrackActionsPlaylistFilter,
   TrackActionsPlaylistRow,
   useKeyboardHeight,
   type TrackActionRowProps,
@@ -59,6 +64,7 @@ type PendingSheetAction =
   | TrackQueueAction
   | 'download'
   | 'remove-download'
+  | 'share'
   | 'remove';
 
 function autoRefreshNotice(): void {
@@ -92,6 +98,9 @@ export default function TrackActionsHost() {
   const wasVisibleRef = useRef(false);
   const [mode, setMode] = useState<Mode>('actions');
   const [newName, setNewName] = useState('');
+  const [playlistFilter, setPlaylistFilter] = useState('');
+  const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<number[]>([]);
+  const [batchPending, setBatchPending] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
     requestId: number;
@@ -102,6 +111,9 @@ export default function TrackActionsHost() {
     setStateRequestId(requestId);
     setMode('actions');
     setNewName('');
+    setPlaylistFilter('');
+    setSelectedPlaylistIds([]);
+    setBatchPending(false);
     setRuntimeError(null);
     setPendingAction(null);
   }
@@ -204,7 +216,10 @@ export default function TrackActionsHost() {
   const activePendingAction =
     pendingAction?.requestId === requestId ? pendingAction.action : null;
   const pending =
-    activePendingAction !== null || addMutation.isPending || createMutation.isPending;
+    activePendingAction !== null
+    || addMutation.isPending
+    || createMutation.isPending
+    || batchPending;
   const close = () => {
     if (!pending) dismissTrackActions(requestId ?? undefined);
   };
@@ -219,6 +234,8 @@ export default function TrackActionsHost() {
     }
     if (mode === 'playlists') {
       setRuntimeError(null);
+      setPlaylistFilter('');
+      setSelectedPlaylistIds([]);
       setMode('actions');
       return;
     }
@@ -317,12 +334,95 @@ export default function TrackActionsHost() {
       });
   };
 
+  const runShareAction = () => {
+    if (request === null || pending) return;
+    const actionRequest = request;
+    setRuntimeError(null);
+    setPendingAction({ requestId: actionRequest.requestId, action: 'share' });
+    void shareTrack(actionRequest.track)
+      .then(() => {
+        if (getTrackActionRequest()?.requestId !== actionRequest.requestId) return;
+        AccessibilityInfo.announceForAccessibility(
+          strings.trackActions.shareSucceeded(actionRequest.track.title),
+        );
+        dismissTrackActions(actionRequest.requestId);
+      })
+      .catch((error) => {
+        if (getTrackActionRequest()?.requestId === actionRequest.requestId) {
+          setRuntimeError(trackActionFailureMessage('share', error));
+        }
+      })
+      .finally(() => {
+        setPendingAction((current) =>
+          current?.requestId === actionRequest.requestId ? null : current,
+        );
+      });
+  };
+
   const openPlaylists = () => {
     if (pending) return;
     setRuntimeError(null);
+    setPlaylistFilter('');
+    setSelectedPlaylistIds([]);
     addMutation.reset();
     createMutation.reset();
     setMode('playlists');
+  };
+
+  const togglePlaylistSelection = (playlistId: number) => {
+    if (pending) return;
+    setSelectedPlaylistIds((current) =>
+      current.includes(playlistId)
+        ? current.filter((id) => id !== playlistId)
+        : [...current, playlistId],
+    );
+  };
+
+  const runBatchPlaylistAdd = () => {
+    if (request === null || pending || selectedPlaylistIds.length === 0) return;
+    const actionRequest = request;
+    const targetIds = [...selectedPlaylistIds];
+    setRuntimeError(null);
+    setBatchPending(true);
+    void Promise.allSettled(
+      targetIds.map((id) => musicRepository.addToPlaylist(id, actionRequest.track)),
+    )
+      .then(async (results) => {
+        const succeededIds: number[] = [];
+        const failedIds: number[] = [];
+        let firstFailure: unknown = null;
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            succeededIds.push(targetIds[index]);
+          } else {
+            failedIds.push(targetIds[index]);
+            if (firstFailure === null) firstFailure = result.reason;
+          }
+        });
+        if (succeededIds.length > 0) {
+          await Promise.all([
+            ...succeededIds.map((id) => invalidatePlaylistCaches(queryClient, scope, id)),
+            refreshAutoBrowse(),
+          ]);
+        }
+        if (getTrackActionRequest()?.requestId !== actionRequest.requestId) return;
+        if (failedIds.length > 0) {
+          setSelectedPlaylistIds(failedIds);
+          const baseMessage = trackActionFailureMessage('add-to-playlist', firstFailure);
+          setRuntimeError(`${baseMessage} (${failedIds.length}/${targetIds.length})`);
+          return;
+        }
+        AccessibilityInfo.announceForAccessibility(
+          strings.trackActions.addedToMultiplePlaylists(
+            actionRequest.track.title,
+            succeededIds.length,
+          ),
+        );
+        dismissTrackActions(actionRequest.requestId);
+      })
+      .finally(() => {
+        setBatchPending(false);
+      });
   };
 
   const submitCreate = () => {
@@ -405,6 +505,14 @@ export default function TrackActionsHost() {
       icon: 'account-music',
       disabled: pending || artistRoute === null,
       onPress: () => runNavigationAction(openTrackArtist),
+    },
+    share: {
+      testID: 'track-action-share',
+      label: strings.trackActions.share,
+      icon: 'share-variant',
+      disabled: pending,
+      busy: activePendingAction === 'share',
+      onPress: runShareAction,
     },
     remove: {
       testID: 'track-action-remove',
@@ -515,6 +623,11 @@ export default function TrackActionsHost() {
             }}
           />
           <ListSeparator />
+          <TrackActionsPlaylistFilter
+            value={playlistFilter}
+            onChangeText={setPlaylistFilter}
+            disabled={pending}
+          />
           <TrackActionsPlaylistPicker
             hasData={playlists.data !== undefined}
             empty={(playlists.data?.filter((playlist) => playlist.can_edit_tracks).length ?? 0) === 0}
@@ -533,6 +646,12 @@ export default function TrackActionsHost() {
             >
               {(playlists.data ?? [])
                 .filter((playlist) => playlist.can_edit_tracks)
+                .filter((playlist) => {
+                  const needle = playlistFilter.trim().toLocaleLowerCase('en-US');
+                  if (needle.length === 0) return true;
+                  const hay = `${playlist.name} ${playlist.owner_name ?? ''}`.toLocaleLowerCase('en-US');
+                  return hay.includes(needle);
+                })
                 .map((playlist) => {
                   const detail = !playlist.is_owner && playlist.owner_name
                     ? strings.trackActions.playlistSharedTrackCount(
@@ -542,6 +661,17 @@ export default function TrackActionsHost() {
                     : playlist.is_collaborative
                       ? strings.trackActions.playlistCollaborativeCount(playlist.track_count)
                       : strings.trackActions.playlistTrackCount(playlist.track_count);
+                  const cachedDetail =
+                    typeof queryClient?.getQueryData === 'function'
+                      ? queryClient.getQueryData<Playlist>(
+                          queryKeys.playlists.detail(scope, playlist.id),
+                        )
+                      : undefined;
+                  const alreadyAdded =
+                    request !== null
+                    && cachedDetail !== undefined
+                    && cachedDetail.tracks.some((t) => t.id === request.track.id);
+                  const selected = selectedPlaylistIds.includes(playlist.id);
                   return (
                     <TrackActionsPlaylistRow
                       key={playlist.id}
@@ -549,6 +679,9 @@ export default function TrackActionsHost() {
                       name={playlist.name}
                       detail={detail}
                       collaborative={playlist.is_collaborative}
+                      alreadyAdded={alreadyAdded}
+                      selected={selected}
+                      onToggleSelect={() => togglePlaylistSelection(playlist.id)}
                       accessibilityLabel={strings.trackActions.addToNamedPlaylist(
                         request?.track.title ?? '',
                         playlist.name,
@@ -564,6 +697,14 @@ export default function TrackActionsHost() {
                 })}
             </ScrollView>
           </TrackActionsPlaylistPicker>
+          {selectedPlaylistIds.length > 0 ? (
+            <TrackActionsPlaylistCommitBar
+              count={selectedPlaylistIds.length}
+              busy={batchPending}
+              disabled={pending}
+              onPress={runBatchPlaylistAdd}
+            />
+          ) : null}
         </View>
       )}
     </BottomSheet>

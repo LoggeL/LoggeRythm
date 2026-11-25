@@ -17,6 +17,7 @@ class PartyTrackOut(BaseModel):
     album_id: str = ""
     cover: str = ""
     duration_sec: int = 0
+    loudness_gain_db: float | None = None
     added_by: str = ""
     # Member key of whoever added it ("u:<id>" / "g:<id>", "" if unknown);
     # compare with ``PartyState.viewer_key`` to find your own additions.
@@ -49,10 +50,32 @@ class PartyGuestJoin(BaseModel):
 class PartySettingsUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=200)
     guests_can_control: bool | None = None
+    auto_dj: bool | None = None
 
 
 class PartyCachedTracks(BaseModel):
     ids: list[str] = Field(default_factory=list)
+
+
+class PartyReactionOut(BaseModel):
+    id: str
+    emoji: str
+    member_key: str
+    member_name: str
+    created_at: str
+
+
+class PartyReactIn(BaseModel):
+    emoji: str = Field(min_length=1, max_length=16)
+
+
+class PartySavePlaylistIn(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    collaborative: bool = False
+
+
+class PartyHostTransferIn(BaseModel):
+    member_key: str = Field(min_length=3, max_length=24)
 
 
 class PartyState(BaseModel):
@@ -61,6 +84,7 @@ class PartyState(BaseModel):
     host_name: str = ""
     is_host: bool = False
     guests_can_control: bool = False
+    auto_dj: bool = False
     current_index: int = -1
     # Host-authoritative (or shared-control) playback state, broadcast via SSE.
     is_playing: bool = False
@@ -71,6 +95,10 @@ class PartyState(BaseModel):
     playback_changed_by: str = ""
     # Monotonic counter bumped on explicit playback/current mutations.
     playback_revision: int = 0
+    # Ephemeral live Party Jam 2.0 state (skip votes + latest emoji reaction burst).
+    skip_votes: list[str] = Field(default_factory=list)
+    skip_votes_needed: int = 1
+    latest_reaction: PartyReactionOut | None = None
     # True on the terminal SSE frame broadcast when the host ends the Jam.
     ended: bool = False
     # Server UTC timestamp (ISO-8601) when this state snapshot was emitted.
@@ -81,3 +109,12 @@ class PartyState(BaseModel):
     viewer_key: str = ""
     viewer_name: str = ""
     viewer_is_guest: bool = False
+
+
+class PartyVoteSkipOut(BaseModel):
+    code: str
+    track_item_id: int
+    votes: list[str] = Field(default_factory=list)
+    votes_needed: int
+    skipped: bool = False
+    state: PartyState

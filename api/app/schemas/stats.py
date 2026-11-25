@@ -1,8 +1,11 @@
 """Response schemas for personal listening statistics."""
 
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+InsightsRange = Literal["7d", "30d", "90d", "year", "all"]
 
 # Older rows and upstream catalog payloads may carry textual or numeric
 # references. Text stays intentionally permissive for stored legacy values;
@@ -104,3 +107,28 @@ class UserStats(BaseModel):
                 raise ValueError(
                     f"{label} top-{kind} counts must not exceed the period total"
                 )
+
+
+class TimestampedPlay(RecentPlay):
+    """A played track entry including the UTC timestamp when it was played."""
+
+    played_at: datetime
+
+
+class UserStatsInsights(BaseModel):
+    """Rich personal listening insights & Wrapped analytics."""
+
+    range: InsightsRange
+    listening_sec: NonNegativeCount
+    play_count: NonNegativeCount
+    unique_tracks: NonNegativeCount
+    unique_artists: NonNegativeCount
+    top_tracks: list[StatEntry] = Field(default_factory=list, max_length=15)
+    top_artists: list[StatEntry] = Field(default_factory=list, max_length=15)
+    top_albums: list[StatEntry] = Field(default_factory=list, max_length=10)
+    current_streak_days: NonNegativeCount = 0
+    longest_streak_days: NonNegativeCount = 0
+    hourly_distribution: list[NonNegativeCount] = Field(min_length=24, max_length=24)
+    weekday_distribution: list[NonNegativeCount] = Field(min_length=7, max_length=7)
+    new_artists_count: NonNegativeCount = 0
+    recent_plays: list[TimestampedPlay] = Field(default_factory=list, max_length=50)

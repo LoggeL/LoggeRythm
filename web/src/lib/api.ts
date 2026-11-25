@@ -29,11 +29,21 @@ import type {
   InviteInfo,
   SystemStatus,
   AdminUsageRange,
+  AudioQuality,
+  BlendResult,
   DeezerPlaylistDetail,
+  ImportJobCreateOptions,
   PublicProfile,
   PlaybackSettings,
+  PlaylistDeduplicateResponse,
+  PlaylistDuplicatesResponse,
+  PlaylistSyncManifest,
   LyricsResponse,
+  PartyReaction,
+  PartyVoteSkipResult,
   RadarTrack,
+  SocialActivityResponse,
+  StatsInsightsRange,
 } from "@/types";
 import { decodeReleaseRadar } from "@/lib/releaseRadar";
 import { decodeSearchArtists, decodeSearchPlaylists, decodeSearchTracks } from "@/lib/searchDecoders";
@@ -154,6 +164,7 @@ export const api = {
   charts: () => req<Track[]>(`/charts`),
   // Home / discovery shelves
   homeMixes: () => req<HomeShelf[]>(`/home/mixes`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
+  homePersonalMixes: () => req<HomeShelf[]>(`/home/personal-mixes`),
   becauseYouListened: () => req<HomeShelf[]>(`/home/because-you-listened`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   homeChartsCollections: () => req<HomeShelf[]>(`/home/charts-collections`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
   /** Every track carries `radar_reason`: the watched artist that put it in the radar. */
@@ -177,6 +188,8 @@ export const api = {
   genre: (id: string) => req<GenreDetail>(`/genres/${encodeURIComponent(id)}`),
   newReleases: () => req<AlbumSummary[]>(`/new-releases`),
   track: (id: string) => req<Track>(`/tracks/${encodeURIComponent(id)}`),
+  trackAudioMeta: (id: string) =>
+    req<unknown>(`/tracks/${encodeURIComponent(id)}/audio-meta`, { timeoutMs: 60_000 }),
   album: (id: string) => req<Album>(`/albums/${encodeURIComponent(id)}`),
   artist: (id: string) => req<Artist>(`/artists/${encodeURIComponent(id)}`),
   artistAbout: (name: string) =>
@@ -211,10 +224,7 @@ export const api = {
   }) => req<User>(`/me`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteMe: () => req<void>(`/me`, { method: "DELETE" }),
   settings: () => req<PlaybackSettings>(`/me/settings`),
-  updateSettings: (patch: {
-    crossfade_enabled?: boolean;
-    crossfade_duration_sec?: number;
-  }) =>
+  updateSettings: (patch: Partial<PlaybackSettings>) =>
     req<PlaybackSettings>(`/me/settings`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -382,8 +392,19 @@ export const api = {
 
   // Spotify link import (Spotify -> Deezer-playable) as a background job:
   // start it, poll its progress, fetch the result whenever convenient.
-  startImportJob: (url: string) =>
-    req<ImportJobStatus>(`/resolve/jobs`, { method: "POST", body: JSON.stringify({ url }) }),
+  startImportJob: (url: string, options?: ImportJobCreateOptions) =>
+    req<ImportJobStatus>(`/resolve/jobs`, {
+      method: "POST",
+      body: JSON.stringify({
+        url,
+        ...(options?.target_playlist_id != null
+          ? { target_playlist_id: options.target_playlist_id }
+          : {}),
+        ...(options?.create_playlist_name
+          ? { create_playlist_name: options.create_playlist_name }
+          : {}),
+      }),
+    }),
   importJobs: () => req<ImportJobStatus[]>(`/resolve/jobs`),
   importJob: (id: string) => req<ImportJobDetail>(`/resolve/jobs/${encodeURIComponent(id)}`),
   deleteImportJob: (id: string) =>
@@ -391,36 +412,96 @@ export const api = {
 
   // Synchronized lyrics (lrclib LRC, parsed to timestamped lines; cached
   // server-side). variant "ai" forces the Whisper transcription instead.
-  lyrics: (artist: string, title: string, deezerId?: string, variant?: "ai") =>
-    req<LyricsResponse>(
-      `/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(
-        title,
-      )}${deezerId ? `&deezer_id=${encodeURIComponent(deezerId)}` : ""}${
-        variant ? `&variant=${variant}` : ""
-      }`,
-      { timeoutMs: 300_000 },
-    ),
+  lyrics: (
+    artist: string,
+    title: string,
+    deezerId?: string,
+    variant?: "ai",
+    options?: { album?: string; duration_sec?: number },
+  ) => {
+    const parts = [
+      `artist=${encodeURIComponent(artist)}`,
+      `title=${encodeURIComponent(title)}`,
+    ];
+    if (deezerId) parts.push(`deezer_id=${encodeURIComponent(deezerId)}`);
+    if (variant) parts.push(`variant=${encodeURIComponent(variant)}`);
+    if (options?.album) parts.push(`album=${encodeURIComponent(options.album)}`);
+    if (typeof options?.duration_sec === "number" && Number.isFinite(options.duration_sec) && options.duration_sec > 0) {
+      parts.push(`duration_sec=${encodeURIComponent(String(Math.round(options.duration_sec)))}`);
+    }
+    return req<LyricsResponse>(`/lyrics?${parts.join("&")}`, { timeoutMs: 300_000 });
+  },
 
   // Deezer playlist (public) → playable tracks
   deezerPlaylist: (id: string) =>
     req<DeezerPlaylistDetail>(`/deezer-playlist/${encodeURIComponent(id)}`),
 
-  // Song radio (seed track → similar tracks)
+  // Song radio (seed track → similar tracks) & multi-seed radio (playlists/liked)
   radio: (deezerId: string) =>
     req<Track[]>(`/radio/${encodeURIComponent(deezerId)}`, { timeoutMs: DISCOVERY_TIMEOUT_MS }),
+  radioSeed: (body: {
+    track_ids?: string[];
+    exclude_ids?: string[];
+    mood_tag?: string;
+    limit?: number;
+  }) =>
+    req<Track[]>(`/radio/seed`, {
+      method: "POST",
+      body: JSON.stringify(body),
+      timeoutMs: DISCOVERY_TIMEOUT_MS,
+    }),
 
-  // Profile / avatar / public profile
+  // Playlist deduplication, offline sync manifest & taste blend
+  playlistDuplicates: (id: string) =>
+    req<PlaylistDuplicatesResponse>(`/playlists/${encodeURIComponent(id)}/duplicates`),
+  deduplicatePlaylist: (id: string) =>
+    req<PlaylistDeduplicateResponse>(`/playlists/${encodeURIComponent(id)}/deduplicate`, {
+      method: "POST",
+    }),
+  playlistSyncManifest: (
+    id: string,
+    options?: { include_lyrics?: boolean; preload?: boolean },
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.include_lyrics) params.set("include_lyrics", "true");
+    if (options?.preload !== undefined) params.set("preload", String(options.preload));
+    const qs = params.toString();
+    return req<PlaylistSyncManifest>(
+      `/playlists/${encodeURIComponent(id)}/sync-manifest${qs ? `?${qs}` : ""}`,
+      { timeoutMs: 60_000 },
+    );
+  },
+  playlistBlend: (otherUserId: string | number) =>
+    req<BlendResult>(`/playlists/blend/${encodeURIComponent(String(otherUserId))}`, {
+      method: "POST",
+      timeoutMs: DISCOVERY_TIMEOUT_MS,
+    }),
+
+  // Profile / avatar / public profile / social activity
   uploadAvatar: (file: File) => {
     const form = new FormData();
     form.append("file", file);
     return req<User>(`/me/avatar`, { method: "PUT", body: form });
   },
   publicProfile: (id: string) => req<PublicProfile>(`/users/${encodeURIComponent(id)}`),
+  socialActivity: () => req<SocialActivityResponse>(`/social/activity`),
 
   // Play tracking + stats
-  recordPlay: (track: Track) =>
-    req<void>(`/me/plays`, { method: "POST", body: JSON.stringify(track) }),
+  recordPlay: (track: Track, idempotencyKey?: string) => {
+    const key =
+      idempotencyKey ??
+      (typeof globalThis.crypto?.randomUUID === "function"
+        ? globalThis.crypto.randomUUID()
+        : `play-${String(track.id)}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+    return req<void>(`/me/plays`, {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: JSON.stringify(track),
+    });
+  },
   stats: () => req<unknown>(`/me/stats`),
+  statsInsights: (range: StatsInsightsRange = "30d") =>
+    req<unknown>(`/me/stats/insights?range=${encodeURIComponent(range)}`),
 
   // Track ids cached on the server (no Deezer re-fetch needed)
   cachedTracks: () => req<{ ids: string[] }>(`/cached-tracks`),
@@ -522,6 +603,33 @@ export const api = {
       `/party/${encodeURIComponent(code)}/members/${encodeURIComponent(memberKey)}`,
       { method: "DELETE" },
     ),
+  partySavePlaylist: (
+    code: string,
+    body: { name?: string; collaborative?: boolean },
+  ) =>
+    req<PlaylistSummary>(`/party/${encodeURIComponent(code)}/save-playlist`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  partyTransferHost: (code: string, memberKey: string) =>
+    req<PartyState>(`/party/${encodeURIComponent(code)}/host`, {
+      method: "PATCH",
+      body: JSON.stringify({ member_key: memberKey }),
+    }),
+  partyAutoDjFill: (code: string, count = 5) =>
+    req<PartyState>(
+      `/party/${encodeURIComponent(code)}/auto-dj/fill?count=${encodeURIComponent(String(count))}`,
+      { method: "POST", timeoutMs: DISCOVERY_TIMEOUT_MS },
+    ),
+  partyReact: (code: string, emoji: string) =>
+    req<PartyReaction>(`/party/${encodeURIComponent(code)}/react`, {
+      method: "POST",
+      body: JSON.stringify({ emoji }),
+    }),
+  partyVoteSkip: (code: string) =>
+    req<PartyVoteSkipResult>(`/party/${encodeURIComponent(code)}/vote-skip`, {
+      method: "POST",
+    }),
 
   // Personal multi-device Connect mode (Spotify Connect-like WS)
   connectTicket: () => req<ConnectTicket>(`/connect/ticket`, { method: "POST" }),
@@ -537,10 +645,19 @@ export const api = {
 
 export { ApiError };
 
-export function streamUrl(trackId: string): string {
-  return `${BASE}/tracks/${encodeURIComponent(trackId)}/stream`;
+export function streamUrl(trackId: string, quality?: AudioQuality): string {
+  const base = `${BASE}/tracks/${encodeURIComponent(trackId)}/stream`;
+  return quality ? `${base}?quality=${encodeURIComponent(quality)}` : base;
 }
 
 export function playlistExportUrl(playlistId: string): string {
   return `${BASE}/playlists/${encodeURIComponent(playlistId)}/export`;
+}
+
+export function playlistEventsUrl(playlistId: string): string {
+  return `${BASE}/playlists/${encodeURIComponent(playlistId)}/events`;
+}
+
+export function socialActivityEventsUrl(): string {
+  return `${BASE}/social/activity/events`;
 }

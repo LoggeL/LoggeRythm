@@ -57,6 +57,8 @@ export interface PlaylistHeroProps {
   /** The liked-tracks collection gets its accent heart tile instead of a cover. */
   liked: boolean;
   ownerName: string | null;
+  /** Opens the playlist owner's public profile when available. */
+  onOpenOwner?: () => void;
   /** Number of tracks in the playlist; null omits the count while unknown. */
   trackCount: number | null;
   /** Sum of the listed tracks' durations in seconds. */
@@ -94,6 +96,7 @@ export function PlaylistHero({
   coverUrl,
   liked,
   ownerName,
+  onOpenOwner,
   trackCount,
   durationSeconds,
   visibility,
@@ -167,9 +170,24 @@ export function PlaylistHero({
         </AppText>
         <View style={styles.meta}>
           {ownerName ? (
-            <AppText variant="callout" color="secondary" numberOfLines={1} style={styles.owner}>
-              {libraryStrings.playlist.byOwner(ownerName)}
-            </AppText>
+            onOpenOwner !== undefined ? (
+              <Pressable
+                testID="playlist-owner-link"
+                focusable
+                accessibilityRole="button"
+                accessibilityLabel={libraryStrings.playlist.byOwner(ownerName)}
+                onPress={onOpenOwner}
+                style={({ pressed }) => [styles.ownerButton, pressed ? styles.pressed : null]}
+              >
+                <AppText variant="callout" color="accent" numberOfLines={1} style={styles.owner}>
+                  {libraryStrings.playlist.byOwner(ownerName)}
+                </AppText>
+              </Pressable>
+            ) : (
+              <AppText variant="callout" color="secondary" numberOfLines={1} style={styles.owner}>
+                {libraryStrings.playlist.byOwner(ownerName)}
+              </AppText>
+            )
           ) : null}
           {trackCount === null ? null : (
             <AppText testID="playlist-track-count" variant="callout" color="secondary">
@@ -322,6 +340,11 @@ const styles = StyleSheet.create({
     rowGap: spacing.xxs,
   },
   owner: { flexShrink: 1 },
+  ownerButton: {
+    minHeight: metrics.minimumTouchTarget,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
   badge: {
     flexDirection: 'row',
     alignItems: 'center',

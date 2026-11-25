@@ -29,7 +29,7 @@ export default function Stage({
 }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="relative z-10 grid min-h-40 flex-1 place-items-center [container-type:size]">
+      <div data-np-swipe-track className="relative z-10 grid min-h-40 flex-1 place-items-center [container-type:size]">
         <div
           ref={albumRef}
           className={`aspect-square max-w-[44rem] rounded-[var(--radius-card)] transition-[width] duration-300 motion-reduce:transition-none ${

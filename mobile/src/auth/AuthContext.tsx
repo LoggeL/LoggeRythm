@@ -29,7 +29,16 @@ import {
   clearAccountScopedStorage,
   musicCacheScope,
 } from '../data';
+import {
+  applyAccountQueryCacheSnapshot,
+  attachAccountQueryPersistence,
+  readAccountQueryCacheSnapshot,
+  type PersistedQuerySnapshot,
+} from '../data/queryPersistence';
 import { clearPlayerSession } from '../player/setup';
+import { resetNativePlaybackSettings } from '../player/playbackSettingsSync';
+import { clearArtworkPaletteCache } from '../hooks/artworkPaletteModel';
+import { hydrateWifiOnlyDownloads } from '../offline/downloadSettings';
 import { clearOfflineDownloads } from '../offline/runtime';
 import { performAccountSwitch } from './accountSwitch';
 import { AccountCleanupBarrier, AuthCommitBarrier } from './cleanupBarrier';
@@ -140,6 +149,8 @@ export function AuthProvider({
     // Remove account-owned screens synchronously, before the first native or
     // storage await. This prevents an authoritative 401 from leaving stale UI
     // mounted while its account boundary is being erased.
+    resetNativePlaybackSettings();
+    clearArtworkPaletteCache();
     setUser(null);
     setOfflineMode(false);
     const failures: string[] = [];
@@ -192,8 +203,27 @@ export function AuthProvider({
         );
       }
       authCommitBarrier.assertCurrent(expectedRevision);
+      let persistedSnapshot: PersistedQuerySnapshot | null = null;
+      if (authenticated.is_approved) {
+        const [snapshot] = await Promise.all([
+          readAccountQueryCacheSnapshot(AsyncStorage, nextScope).catch((cacheError: unknown) => {
+            console.error('[LoggeRythm] Failed to hydrate persisted query cache:', cacheError);
+            return null;
+          }),
+          hydrateWifiOnlyDownloads(AsyncStorage).catch((settingError: unknown) => {
+            console.error('[LoggeRythm] Failed to hydrate Wi-Fi-only download setting:', settingError);
+          }),
+        ]);
+        persistedSnapshot = snapshot;
+        // Re-verify the commit barrier after awaiting storage reads so a concurrent
+        // logout, 401 invalidation, or account switch cannot be overwritten by a stale login.
+        authCommitBarrier.assertCurrent(expectedRevision);
+      }
       if (cacheScope.current !== nextScope) clearAccountQueryState(queryClient);
       cacheScope.current = nextScope;
+      if (authenticated.is_approved && persistedSnapshot !== null) {
+        applyAccountQueryCacheSnapshot(queryClient, nextScope, persistedSnapshot);
+      }
       setUser(authenticated);
       setOfflineMode(false);
     },
@@ -223,6 +253,8 @@ export function AuthProvider({
 
       // Unmount account-owned screens before the first asynchronous cleanup
       // boundary so their local errors/forms cannot survive the switch.
+      resetNativePlaybackSettings();
+      clearArtworkPaletteCache();
       setUser(null);
       setBootstrapError(null);
       setBootstrapping(true);
@@ -300,6 +332,11 @@ export function AuthProvider({
     persistValidatedIdentity,
     repository,
   ]);
+
+  useEffect(() => {
+    if (user === null || !user.is_approved || cacheScope.current === null) return undefined;
+    return attachAccountQueryPersistence(queryClient, AsyncStorage, cacheScope.current);
+  }, [queryClient, user]);
 
   useEffect(() => {
     let active = true;

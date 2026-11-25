@@ -18,6 +18,7 @@ internal class OfflineDownloadsModule(
 ) : ReactContextBaseJavaModule(reactContext) {
   private val listenerCount = AtomicInteger(0)
   private val coordinator = OfflineDownloadCoordinator(
+    reactContext.applicationContext,
     OfflineDownloadStorage(reactContext.applicationContext),
     ::emitProgress,
   )
@@ -97,6 +98,68 @@ internal class OfflineDownloadsModule(
         Arguments.createMap().apply {
           putDouble("cleanupGeneration", cleanupGeneration.toDouble())
           putBoolean("cleared", true)
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setWifiOnly(enabled: Boolean, promise: Promise) {
+    try {
+      val updated = coordinator.setWifiOnly(enabled)
+      promise.resolve(Arguments.createMap().apply { putBoolean("wifiOnly", updated) })
+    } catch (error: Exception) {
+      reject(promise, error)
+    }
+  }
+
+  @ReactMethod
+  fun getWifiOnly(promise: Promise) {
+    try {
+      promise.resolve(Arguments.createMap().apply { putBoolean("wifiOnly", coordinator.isWifiOnly()) })
+    } catch (error: Exception) {
+      reject(promise, error)
+    }
+  }
+
+  @ReactMethod
+  fun cancelDownload(promise: Promise) {
+    try {
+      val cancelled = coordinator.cancelActiveDownload()
+      promise.resolve(Arguments.createMap().apply { putBoolean("cancelled", cancelled) })
+    } catch (error: Exception) {
+      reject(promise, error)
+    }
+  }
+
+  @ReactMethod
+  fun getStorageMetrics(scope: String, promise: Promise) {
+    coordinator.getStorageMetrics(scope) { result ->
+      settle(promise, result) { metrics ->
+        Arguments.createMap().apply {
+          putString("scope", metrics.scope)
+          putDouble("scopeBytes", metrics.scopeBytes.toDouble())
+          putInt("scopeTrackCount", metrics.scopeTrackCount)
+          putDouble("allDownloadsBytes", metrics.allDownloadsBytes.toDouble())
+          putDouble("rollingCacheBytes", metrics.rollingCacheBytes.toDouble())
+          putDouble("rollingCacheMaxBytes", metrics.rollingCacheMaxBytes.toDouble())
+          putInt("rollingCacheEntryCount", metrics.rollingCacheEntryCount)
+          putDouble("availableDiskBytes", metrics.availableDiskBytes.toDouble())
+          putBoolean("wifiOnly", metrics.wifiOnly)
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun clearRollingCache(promise: Promise) {
+    coordinator.clearRollingCache { result ->
+      settle(promise, result) { summary ->
+        Arguments.createMap().apply {
+          putDouble("bytesBefore", summary.bytesBefore.toDouble())
+          putDouble("bytesAfter", summary.bytesAfter.toDouble())
+          putInt("resourcesRemoved", summary.resourcesRemoved)
+          putBoolean("verified", summary.verified)
         }
       }
     }

@@ -1,6 +1,7 @@
 """Normalized Track shape used across the whole API (in and out)."""
 import json
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -13,7 +14,7 @@ class ArtistRef(BaseModel):
 
 
 class Track(BaseModel):
-    @field_validator("loudness_gain_db", "loudness_lufs", "loudness_peak", mode="before")
+    @field_validator("loudness_gain_db", "loudness_lufs", "loudness_peak", "bpm", mode="before")
     @classmethod
     def nullable_loudness_sentinel(cls, value: object) -> object:
         """Tolerate Android bridge JSON null sentinels for optional loudness fields.
@@ -52,6 +53,25 @@ class Track(BaseModel):
     loudness_gain_db: float | None = None
     loudness_lufs: float | None = None
     loudness_peak: float | None = None
+    # Tempo in beats per minute when supplied by Deezer or audio analysis.
+    bpm: float | None = None
+    # Explicit lyrics flag when supplied by Deezer catalog metadata.
+    explicit: bool | None = None
+
+
+class TrackAudioMeta(BaseModel):
+    """Server-computed waveform peaks, true EBU R128 loudness, and silence cues."""
+
+    deezer_id: str
+    peaks: list[float] = Field(default_factory=list)
+    loudness_lufs: float | None = None
+    loudness_gain_db: float | None = None
+    loudness_peak: float | None = None
+    bpm: float | None = None
+    duration_sec: float = 0.0
+    intro_end_sec: float = 0.0
+    outro_start_sec: float = 0.0
+    analyzed_at: datetime
 
 
 class RadarReason(BaseModel):

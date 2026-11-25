@@ -13,13 +13,19 @@ import {
   PartyMembers,
   PartyNotice,
 } from '../components/party/PartyParts';
+import {
+  PartyInteractionBar,
+  PartySavePlaylistSheet,
+} from '../components/party/PartyJam2Controls';
+import { PartyKioskModal } from '../components/party/PartyKioskModal';
 import { spotifyImportInputStyle } from '../components/search/SpotifyImportForm';
 import { ActionButton, AppText, EmptyState, ErrorState, SectionHeader } from '../components/ui';
-import { getApiBase } from '../config';
+import { getApiBase, getCurrentApiBase } from '../config';
 import { musicRepository } from '../data/repositories';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
+import { wave2Strings } from '../localization/wave2Strings';
 import { partyErrorDetail } from '../party/partyErrors';
 import {
   canControlPartyPlayback,
@@ -109,6 +115,8 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   const [leaving, setLeaving] = useState(false);
   const [ending, setEnding] = useState(false);
   const [reloading, setReloading] = useState(false);
+  const [saveSheetOpen, setSaveSheetOpen] = useState(false);
+  const [kioskOpen, setKioskOpen] = useState(false);
   const busy = useRef(false);
 
   // Android Back clears an active party song search before leaving the party screen.
@@ -276,6 +284,77 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
     );
   };
 
+  const transferHost = (member: PartyMember) => {
+    Alert.alert(
+      wave2Strings.party2.transferHostTitle,
+      wave2Strings.party2.transferHostBody(member.name),
+      [
+        { text: strings.party.leaveStay, style: 'cancel' },
+        {
+          text: wave2Strings.party2.transferHostConfirm,
+          onPress: () =>
+            run(
+              `transfer:${member.key}`,
+              wave2Strings.party2.transferHostFailed,
+              async () => {
+                if (!musicRepository.transferPartyHost) {
+                  throw new Error('Host transfer endpoint unavailable');
+                }
+                await musicRepository.transferPartyHost(party.code, member.key);
+              },
+            ),
+        },
+      ],
+    );
+  };
+
+  const handleSaveAsPlaylist = (playlistName: string, collaborative: boolean) => {
+    setSaveSheetOpen(false);
+    run(
+      'save-playlist',
+      wave2Strings.party2.savePlaylistFailed,
+      async () => {
+        if (!musicRepository.savePartyAsPlaylist) {
+          throw new Error('Save Jam as Playlist endpoint unavailable');
+        }
+        await musicRepository.savePartyAsPlaylist(party.code, {
+          name: playlistName,
+          collaborative,
+        });
+      },
+      wave2Strings.party2.savedPlaylist(playlistName),
+    );
+  };
+
+  const handleVoteSkip = () => {
+    run(
+      'vote-skip',
+      wave2Strings.party2.voteSkipFailed,
+      async () => {
+        if (!musicRepository.voteSkipPartyTrack) {
+          throw new Error('Vote skip endpoint unavailable');
+        }
+        const result = await musicRepository.voteSkipPartyTrack(party.code);
+        if (result.skipped) {
+          setFeedback(wave2Strings.party2.voteSkipTriggered);
+        }
+      },
+    );
+  };
+
+  const handleReact = (emoji: string) => {
+    void (async () => {
+      try {
+        if (!musicRepository.reactInParty) {
+          throw new Error('Party react endpoint unavailable');
+        }
+        await musicRepository.reactInParty(party.code, emoji);
+      } catch (error: unknown) {
+        setActionError(wave2Strings.party2.reactFailed(partyErrorDetail(error)));
+      }
+    })();
+  };
+
   const reload = () => {
     setReloading(true);
     partySession().reload().catch(() => {
@@ -369,6 +448,36 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
                 )
             : undefined
         }
+        onToggleAutoDj={
+          party.is_host
+            ? (enabled) =>
+                run(
+                  'auto-dj',
+                  strings.party.settingsFailed,
+                  async () => {
+                    await partySession().updateSettings({ auto_dj: enabled });
+                  },
+                )
+            : undefined
+        }
+        onFillAutoDj={
+          party.is_host
+            ? () =>
+                run(
+                  'fill-auto-dj',
+                  wave2Strings.party2.fillAutoDjFailed,
+                  async () => {
+                    if (!musicRepository.fillPartyAutoDj) {
+                      throw new Error('Auto-DJ fill endpoint unavailable');
+                    }
+                    await musicRepository.fillPartyAutoDj(party.code, 5);
+                  },
+                )
+            : undefined
+        }
+        fillingAutoDj={pending === 'fill-auto-dj'}
+        onSaveAsPlaylist={() => setSaveSheetOpen(true)}
+        onOpenKiosk={() => setKioskOpen(true)}
         onToggleControlOnly={
           !party.is_host
             ? (enabled) => partySession().setControlOnly(enabled)
@@ -446,6 +555,13 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
   const queueSection = (
     <View style={styles.section}>
       {nowPlayingSection}
+      <PartyInteractionBar
+        party={party}
+        locked={locked}
+        votingSkip={pending === 'vote-skip'}
+        onVoteSkip={handleVoteSkip}
+        onReact={handleReact}
+      />
       <View style={[styles.sectionHeader, hasCurrent ? styles.upNextHeader : null]}>
         <SectionHeader
           title={hasCurrent ? strings.party.upNextTitle : strings.party.queueTitle}
@@ -551,8 +667,27 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         isHost={party.is_host}
         locked={locked}
         onKick={party.is_host ? kickMember : undefined}
+        onTransferHost={party.is_host ? transferHost : undefined}
       />
     </View>
+  );
+
+  const modals = (
+    <>
+      <PartySavePlaylistSheet
+        visible={saveSheetOpen}
+        party={party}
+        saving={pending === 'save-playlist'}
+        onClose={() => setSaveSheetOpen(false)}
+        onSave={handleSaveAsPlaylist}
+      />
+      <PartyKioskModal
+        visible={kioskOpen}
+        party={party}
+        joinUrl={partyInviteUrl(getCurrentApiBase(), party.code)}
+        onClose={() => setKioskOpen(false)}
+      />
+    </>
   );
 
   if (tv.isTv) {
@@ -588,6 +723,7 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
             {queueSection}
           </ScrollView>
         </View>
+        {modals}
       </TvFocusScope>
     );
   }
@@ -606,6 +742,7 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         {membersSection}
       </ScrollView>
       <PartyBottomSafeSpacer />
+      {modals}
     </View>
   );
 }

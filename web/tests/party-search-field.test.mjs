@@ -49,6 +49,10 @@ const iconStub = moduleUrl(`
   export const EditIcon = PlayIcon;
   export const ClockIcon = PlayIcon;
   export const SpinnerIcon = PlayIcon;
+  export const SavePlaylistIcon = PlayIcon;
+  export const CinemaIcon = PlayIcon;
+  export const SparklesIcon = PlayIcon;
+  export const CrownIcon = PlayIcon;
 `);
 const feedbackIconStub = moduleUrl(
   "export function CopyIcon() {return null;} export const CheckCircleIcon = CopyIcon; export const InfoCircleIcon = CopyIcon; export const AlertCircleIcon = CopyIcon;",
@@ -84,7 +88,7 @@ const playerStub = moduleUrl(
   "export const usePlayerStore = Object.assign((selector) => selector({followHostPlayback() {}, isBuffering: false}), { getState: () => ({ toggle() {}, currentTime: 0 }) });",
 );
 const partyStoreStub = moduleUrl(
-  "export const usePartyStore = (selector) => selector({listenLocally: true, setListenLocally() {}});",
+  "export const usePartyStore = (selector) => selector({listenLocally: true, setListenLocally() {}, detached: false, setDetached() {}});",
 );
 const formatStub = moduleUrl("export const formatTime = (value) => String(value);");
 const artistsStub = moduleUrl("export const trackArtistLabel = (track) => track.artist;");
@@ -97,6 +101,7 @@ const sessionUrl = await compile(party("usePartySession.ts"), {
     party: globalThis.__partySearchFixture.party,
     ended: false,
     endedReason: null,
+    hasLeft: false,
     isLoading: false,
     isError: false,
     error: null,
@@ -111,6 +116,11 @@ const sessionUrl = await compile(party("usePartySession.ts"), {
     setPlayback: async () => {},
     updateSettings: async () => {},
     kickMember: async () => {},
+    savePlaylist: async () => ({ id: "1", name: "Jam" }),
+    transferHost: async () => {},
+    autoDjFill: async () => {},
+    react: async () => {},
+    voteSkip: async () => ({ skipped: false, votes: ["u:2"], votes_needed: 2 }),
     join: async () => {},
     leave: async () => {},
     end: async () => {},
@@ -183,11 +193,16 @@ const statesUrl = await compile(party("PartyStates.tsx"), {
 const pageUrl = await compile(party("page.tsx"), {
   react: reactStub,
   "react/jsx-runtime": jsxRuntime,
+  "next/navigation": moduleUrl("export function useRouter() { return {push() {}}; }"),
   "@/components/ConfirmDialog": nullStub,
+  "@/components/Modal": nullStub,
+  "@/components/party/PartyScreenKiosk": moduleUrl("export const PARTY_REACTION_EMOJIS = ['🔥']; export default function PartyScreenKiosk() { return null; }"),
   "@/components/feedbackIcons": feedbackIconStub,
   "@/components/icons": iconStub,
   "@/hooks/useAuth": moduleUrl("export function useMe() { return {data: {is_approved: true}}; }"),
+  "@/lib/slugs": moduleUrl("export const playlistPath = (p) => '/playlist/' + p.id;"),
   "@/store/player": playerStub,
+  "@/store/toast": toastStub,
   "./GuestParty": nullStub,
   "./MembersCard": membersUrl,
   "./PartyQueue": queueUrl,

@@ -35,6 +35,7 @@ import {
   type NowPlayingTab,
 } from '../components/player/NowPlayingTabs';
 import { LiveNowPlayingTransport } from '../components/player/NowPlayingTransport';
+import { NowPlayingToolsBar } from '../components/player/NowPlayingToolsBar';
 import { PlayerErrorBanner } from '../components/player/PlayerErrorBanner';
 import { PlayerToggleButton } from '../components/player/PlayerToggleButton';
 import SimilarPanel from '../components/player/SimilarPanel';
@@ -697,6 +698,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
                 trailingControl={repeatButton}
               />
               {connectUtilityBar}
+              <NowPlayingToolsBar track={track} />
             </View>
 
             <View
@@ -798,6 +800,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
               trailingControl={repeatButton}
             />
             {connectUtilityBar}
+            <NowPlayingToolsBar track={track} />
           </ScrollView>
         )}
       </Animated.View>

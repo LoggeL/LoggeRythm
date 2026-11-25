@@ -1,4 +1,5 @@
 import { strings } from '../localization';
+import { WifiOnlyDownloadError } from '../offline/downloadSettings';
 
 export type TrackActionFailureKind =
   | 'play-next'
@@ -8,13 +9,14 @@ export type TrackActionFailureKind =
   | 'create-playlist'
   | 'download'
   | 'remove-download'
+  | 'share'
   | 'remove'
   | 'generic';
 
 /** External failure details stay in diagnostics; this is the complete UI-copy boundary. */
 export function trackActionFailureMessage(
   kind: TrackActionFailureKind,
-  _error: unknown,
+  error: unknown,
 ): string {
   switch (kind) {
     case 'play-next':
@@ -28,9 +30,13 @@ export function trackActionFailureMessage(
     case 'create-playlist':
       return strings.trackActions.createPlaylistFailed;
     case 'download':
-      return strings.trackActions.downloadFailed;
+      return error instanceof WifiOnlyDownloadError
+        ? error.message
+        : strings.trackActions.downloadFailed;
     case 'remove-download':
       return strings.trackActions.removeDownloadFailed;
+    case 'share':
+      return strings.trackActions.shareFailed;
     case 'remove':
       return strings.trackActions.removeFailed;
     case 'generic':

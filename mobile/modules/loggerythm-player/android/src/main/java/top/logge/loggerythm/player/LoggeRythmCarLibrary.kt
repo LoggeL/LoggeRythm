@@ -1,5 +1,9 @@
 package top.logge.loggerythm.player
 
+import android.os.Bundle
+import androidx.media3.common.MediaMetadata
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
 import java.text.Normalizer
@@ -477,5 +481,151 @@ internal object LoggeRythmLibrarySearch {
       metadata.albumTitle?.toString(),
       metadata.durationMs,
     )
+  }
+}
+
+/**
+ * Resolved Android Auto 2.0 content-style hints and Media3 `MediaMetadata.MEDIA_TYPE_*` value
+ * for one browse node. Kept in a plain Kotlin data class so JVM tests and public-tree diffing
+ * do not depend on Android's stub `Bundle` implementation.
+ */
+internal data class LoggeRythmBrowseDisplayHints(
+  val mediaType: Int,
+  val contentStyleBrowsable: Int?,
+  val contentStylePlayable: Int?,
+  val groupTitle: String?,
+) {
+  fun hasExtras(): Boolean =
+    contentStyleBrowsable != null || contentStylePlayable != null || groupTitle != null
+}
+
+/**
+ * Maps explicit browse node hints (and safe defaults for cover-heavy Android Auto 2.0 roots) to
+ * Media3 `MediaMetadata.MEDIA_TYPE_*` and `MediaConstants.EXTRAS_KEY_CONTENT_STYLE_*` constants.
+ * Never reads private track extras or credentials.
+ */
+@UnstableApi
+internal object LoggeRythmCarBrowseMetadata {
+  private val GRID_BROWSABLE_CONTAINER_IDS = setOf(
+    "library:home",
+    "library:mixes",
+    "library:radar",
+    "library:playlists",
+    "library:radio",
+    "library:moods",
+    "library:downloads",
+  )
+
+  private val GRID_PLAYABLE_CONTAINER_IDS = setOf(
+    "library:radio",
+    "library:moods",
+  )
+
+  fun resolve(
+    id: String,
+    playable: Boolean,
+    explicitMediaType: String? = null,
+    explicitContentStyleBrowsable: String? = null,
+    explicitContentStylePlayable: String? = null,
+    explicitGroupTitle: String? = null,
+  ): LoggeRythmBrowseDisplayHints {
+    val mediaType = explicitMediaType?.let(::parseMediaType) ?: inferMediaType(id, playable)
+    val browsableStyle = explicitContentStyleBrowsable?.let(::parseContentStyle)
+      ?: if (!playable && id in GRID_BROWSABLE_CONTAINER_IDS) {
+        MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM
+      } else {
+        null
+      }
+    val playableStyle = explicitContentStylePlayable?.let(::parseContentStyle)
+      ?: if (!playable && id in GRID_PLAYABLE_CONTAINER_IDS) {
+        MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM
+      } else if (!playable && id in GRID_BROWSABLE_CONTAINER_IDS) {
+        MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
+      } else {
+        null
+      }
+    val groupTitle = explicitGroupTitle?.trim()?.takeIf(String::isNotEmpty)
+    return LoggeRythmBrowseDisplayHints(
+      mediaType = mediaType,
+      contentStyleBrowsable = browsableStyle,
+      contentStylePlayable = playableStyle,
+      groupTitle = groupTitle,
+    )
+  }
+
+  fun toMetadataExtras(hints: LoggeRythmBrowseDisplayHints): Bundle? {
+    if (!hints.hasExtras()) return null
+    return Bundle().apply {
+      hints.contentStyleBrowsable?.let {
+        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, it)
+      }
+      hints.contentStylePlayable?.let {
+        putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, it)
+      }
+      hints.groupTitle?.let {
+        putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it)
+      }
+    }
+  }
+
+  internal const val EXTRAS_KEY_CONTENT_STYLE_SUPPORTED =
+    "android.media.browse.CONTENT_STYLE_SUPPORTED"
+
+  /** Library root extras advertising Android Auto 2.0 grid/list support. */
+  fun rootLibraryExtras(existing: Bundle? = null): Bundle = Bundle().apply {
+    if (existing != null) putAll(existing)
+    putBoolean(EXTRAS_KEY_CONTENT_STYLE_SUPPORTED, true)
+    putInt(
+      MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE,
+      MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM,
+    )
+    putInt(
+      MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE,
+      MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+    )
+  }
+
+  private fun parseContentStyle(value: String): Int = when (value) {
+    "grid" -> MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_GRID_ITEM
+    "list" -> MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM
+    else -> throw PlayerProtocolException("browse-content-style-invalid")
+  }
+
+  private fun parseMediaType(value: String): Int = when (value) {
+    "mixed" -> MediaMetadata.MEDIA_TYPE_MIXED
+    "music" -> MediaMetadata.MEDIA_TYPE_MUSIC
+    "artist" -> MediaMetadata.MEDIA_TYPE_ARTIST
+    "album" -> MediaMetadata.MEDIA_TYPE_ALBUM
+    "playlist" -> MediaMetadata.MEDIA_TYPE_PLAYLIST
+    "genre" -> MediaMetadata.MEDIA_TYPE_GENRE
+    "radio_station" -> MediaMetadata.MEDIA_TYPE_RADIO_STATION
+    "folder_mixed" -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+    "folder_albums" -> MediaMetadata.MEDIA_TYPE_FOLDER_ALBUMS
+    "folder_artists" -> MediaMetadata.MEDIA_TYPE_FOLDER_ARTISTS
+    "folder_genres" -> MediaMetadata.MEDIA_TYPE_FOLDER_GENRES
+    "folder_playlists" -> MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+    "folder_radio_stations" -> MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS
+    else -> throw PlayerProtocolException("browse-media-type-invalid")
+  }
+
+  private fun inferMediaType(id: String, playable: Boolean): Int {
+    if (playable) return MediaMetadata.MEDIA_TYPE_MUSIC
+    return when {
+      id == LoggeRythmPlayerRuntime.BROWSE_ROOT_ID -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+      id == "library:playlists" || id == "library:downloads" ->
+        MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+      id == "library:radio" || id == "library:moods" ->
+        MediaMetadata.MEDIA_TYPE_FOLDER_RADIO_STATIONS
+      id == "library:home" || id == "library:mixes" || id == "library:radar" ->
+        MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+      id == "library:liked" -> MediaMetadata.MEDIA_TYPE_PLAYLIST
+      id.startsWith("playlist:") || id.startsWith("download-playlist:") || id.startsWith("mix:") ->
+        MediaMetadata.MEDIA_TYPE_PLAYLIST
+      id.startsWith("album:") -> MediaMetadata.MEDIA_TYPE_ALBUM
+      id.startsWith("artist:") -> MediaMetadata.MEDIA_TYPE_ARTIST
+      id.startsWith("genre:") -> MediaMetadata.MEDIA_TYPE_GENRE
+      id.startsWith("radio:") || id.startsWith("mood:") -> MediaMetadata.MEDIA_TYPE_RADIO_STATION
+      else -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
+    }
   }
 }

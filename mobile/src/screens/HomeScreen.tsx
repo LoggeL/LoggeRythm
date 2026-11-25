@@ -14,6 +14,8 @@ import {
   QUICK_GRID_COLUMNS,
 } from '../components/home/HomeQuickGrid';
 import { HomeRadarCardSkeleton, MemoHomeRadarCard } from '../components/home/HomeRadarCard';
+import { FriendsListeningSection } from '../components/home/FriendsListeningSection';
+import { PersonalMixesHomeSection } from '../components/home/PersonalMixesHomeSection';
 import { HomeShelfRail, HomeTrackRail } from '../components/home/HomeRails';
 import { HomeSection, type HomeSectionSkeletonProps } from '../components/home/HomeSection';
 import { HorizontalShelf } from '../components/home/HorizontalShelf';
@@ -30,6 +32,7 @@ import { musicCacheScope } from '../data';
 import type { RecentPlay } from '../domain/listeningStats';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
+import { rootNavigation } from '../navigation/rootNavigation';
 import { colors, layout, metrics, opacity, radii, spacing } from '../theme';
 import { TvFocusScope, tvFocusRegistry, useTvEnvironment, useTvFocusReturn } from '../tv';
 import {
@@ -296,6 +299,21 @@ export default function HomeScreen(props: HomeScreenProps) {
           }}
         />
       </HomeSection>
+
+      <FriendsListeningSection
+        scope={scope}
+        onOpenParty={(code) => rootNavigation.navigate('Party', { code })}
+      />
+
+      <PersonalMixesHomeSection
+        scope={scope}
+        cardSize={tvCardSize}
+        paddingHorizontal={tvPaddingHorizontal}
+        gap={tvRailGap}
+        tvMode={tv.isTv}
+        onCardFocus={recordHomeFocus}
+        onOpenMix={openMixRoute}
+      />
 
       <HomeSection
         id="mixes"

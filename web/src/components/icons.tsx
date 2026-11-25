@@ -795,3 +795,92 @@ export function LogOutIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function MoonIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+    </svg>
+  );
+}
+
+export function SlidersIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
+      <path d="M1 14h6M9 8h6M17 16h6" />
+    </svg>
+  );
+}
+
+export function PipIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="3" y="4" width="18" height="15" rx="2" />
+      <rect x="11.5" y="10.5" width="7" height="5.5" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function CinemaIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M6.5 9.5h2.5M15 14.5h2.5" />
+    </svg>
+  );
+}
+
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="2.5" y="5.5" width="19" height="13" rx="2" />
+      <path d="M6.5 9.5h.01M10 9.5h.01M13.5 9.5h.01M17 9.5h.01M7.5 14.5h9" />
+    </svg>
+  );
+}
+
+export function SavePlaylistIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M4 6h12M4 11h12M4 16h7" />
+      <path d="M17 13v6M14 16h6" />
+    </svg>
+  );
+}
+
+export function SparklesIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M12 3l1.7 4.7L18.5 9.5l-4.8 1.8L12 16l-1.7-4.7L5.5 9.5l4.8-1.8L12 3z" />
+      <path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16z" />
+    </svg>
+  );
+}
+
+export function BlendIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <circle cx="9.5" cy="12" r="5.5" />
+      <circle cx="14.5" cy="12" r="5.5" />
+    </svg>
+  );
+}
+
+export function DedupIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <rect x="4" y="5" width="11" height="11" rx="2" />
+      <path d="M9 16v2a2 2 0 002 2h7a2 2 0 002-2v-7a2 2 0 00-2-2h-2" />
+      <path d="M7.5 10.5h4" />
+    </svg>
+  );
+}
+
+export function CrownIcon(props: IconProps) {
+  return (
+    <svg {...strokeIcon} {...props}>
+      <path d="M3.5 18h17l-1.5-10-4.5 4-2.5-6-2.5 6-4.5-4L3.5 18z" />
+    </svg>
+  );
+}

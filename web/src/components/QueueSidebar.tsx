@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Fo
 import { useRouter } from "next/navigation";
 import { usePlayerStore } from "@/store/player";
 import { usePartyStore } from "@/store/party";
+import { openSaveAsPlaylist } from "@/store/saveAsPlaylist";
 import { api } from "@/lib/api";
 import { toast } from "@/store/toast";
-import { CloseIcon, UsersIcon } from "@/components/icons";
+import { CloseIcon, SavePlaylistIcon, UsersIcon } from "@/components/icons";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import QueueList, { useUpcomingQueue } from "@/components/queue/QueueList";
 import { useClearQueueWithUndo } from "@/components/queue/useClearQueueWithUndo";
@@ -25,9 +26,11 @@ const serverDockSnapshot = () => false;
  * below that. It stays mounted while closed (and `inert`) so opening and
  * closing can animate.
  */
-export default function QueueSidebar() {
+export default function QueueSidebar({ offlineOnly = false }: { offlineOnly?: boolean }) {
   const open = usePlayerStore((s) => s.queueOpen);
   const setOpen = usePlayerStore((s) => s.setQueueOpen);
+  const queue = usePlayerStore((s) => s.queue);
+  const queueContext = usePlayerStore((s) => s.queueContext);
   const partyActive = usePartyStore((s) => s.active);
   const partyCode = usePartyStore((s) => s.code);
   const partyName = usePartyStore((s) => s.name);
@@ -122,33 +125,51 @@ export default function QueueSidebar() {
 
           <div className="flex flex-shrink-0 flex-col gap-2 px-4 pb-4">
             <div className="flex items-center gap-2">
-              {partyActive && partyCode ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!docked) closeQueue();
-                    router.push(`/party/${encodeURIComponent(partyCode)}`);
-                  }}
-                  className="action-primary min-h-9 flex-1 px-4 text-[13px]"
-                >
-                  <UsersIcon width={15} height={15} />
-                  <span className="truncate">Zur Jam ({partyName || partyCode})</span>
-                </button>
-              ) : (
-                <>
-                  <button type="button" onClick={startParty} disabled={startingParty} className="action-secondary min-h-9 flex-1 px-3 text-[13px]">
-                    <UsersIcon width={15} height={15} />
-                    {startingParty ? "Wird gestartet…" : "Jam starten"}
-                  </button>
+              {!offlineOnly && (
+                partyActive && partyCode ? (
                   <button
                     type="button"
-                    onClick={() => setShowJoinForm((v) => !v)}
-                    aria-expanded={showJoinForm}
-                    className="action-secondary min-h-9 px-3 text-[13px]"
+                    onClick={() => {
+                      if (!docked) closeQueue();
+                      router.push(`/party/${encodeURIComponent(partyCode)}`);
+                    }}
+                    className="action-primary min-h-9 flex-1 px-4 text-[13px]"
                   >
-                    Code
+                    <UsersIcon width={15} height={15} />
+                    <span className="truncate">Zur Jam ({partyName || partyCode})</span>
                   </button>
-                </>
+                ) : (
+                  <>
+                    <button type="button" onClick={startParty} disabled={startingParty} className="action-secondary min-h-9 flex-1 px-3 text-[13px]">
+                      <UsersIcon width={15} height={15} />
+                      {startingParty ? "Wird gestartet…" : "Jam starten"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowJoinForm((v) => !v)}
+                      aria-expanded={showJoinForm}
+                      className="action-secondary min-h-9 px-3 text-[13px]"
+                    >
+                      Code
+                    </button>
+                  </>
+                )
+              )}
+              {!offlineOnly && queue.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    openSaveAsPlaylist({
+                      defaultName: queueContext ? `${queueContext} (Warteschlange)` : "Meine Warteschlange",
+                      tracks: queue,
+                    })
+                  }
+                  aria-label="Warteschlange als Playlist speichern"
+                  title="Als Playlist speichern"
+                  className="action-icon h-9 min-h-9 w-9 border border-border"
+                >
+                  <SavePlaylistIcon width={16} height={16} />
+                </button>
               )}
               {clearing.canClear && upcoming.length > 0 && (
                 <button type="button" onClick={clearing.clear} className="action-secondary min-h-9 px-3 text-[13px]">
@@ -156,7 +177,7 @@ export default function QueueSidebar() {
                 </button>
               )}
             </div>
-            {showJoinForm && !partyActive && (
+            {!offlineOnly && showJoinForm && !partyActive && (
               <form onSubmit={joinPartyByCode} className="flex items-center gap-1.5">
                 <input
                   type="text"

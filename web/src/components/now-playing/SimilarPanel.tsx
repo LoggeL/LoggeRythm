@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { usePlayerStore } from "@/store/player";
 import { api } from "@/lib/api";
+import { startTrackListRadio } from "@/lib/radio";
 import { formatTime } from "@/lib/format";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
@@ -13,6 +14,7 @@ import QueryError from "@/components/ui/QueryError";
 /** "Ähnliche Titel" tab: song radio seeded by the current track. */
 export default function SimilarPanel({ seedId, onClose }: { seedId: string | number; onClose: () => void }) {
   const playQueue = usePlayerStore((s) => s.playQueue);
+  const setRadioActive = usePlayerStore((s) => s.setRadioActive);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
   const query = useQuery({
     queryKey: ["similar-tracks", seedId],
@@ -22,12 +24,22 @@ export default function SimilarPanel({ seedId, onClose }: { seedId: string | num
   });
   const tracks = query.data;
 
+  function playSimilarRadio(startIndex = 0) {
+    if (!tracks || tracks.length === 0) return;
+    if (startIndex === 0) {
+      startTrackListRadio(tracks, "Ähnliche Titel");
+      return;
+    }
+    playQueue(tracks, startIndex, "Ähnliche Titel");
+    setRadioActive(true);
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-9 flex-shrink-0 items-center justify-between gap-3 pb-2">
         <h2 className="label-mono">Radio zu diesem Titel</h2>
         {tracks && tracks.length > 0 && (
-          <button type="button" onClick={() => playQueue(tracks, 0, "Ähnliche Titel")} className="action-secondary min-h-9 px-4 text-xs">
+          <button type="button" onClick={() => playSimilarRadio(0)} className="action-secondary min-h-9 px-4 text-xs">
             <PlayIcon width={14} height={14} />
             Alle abspielen
           </button>
@@ -63,7 +75,7 @@ export default function SimilarPanel({ seedId, onClose }: { seedId: string | num
               <li key={`${t.id}-${i}`} className="group flex items-center gap-3 rounded-xl px-2 py-1.5 transition-colors hover:bg-white/[0.06] focus-within:bg-white/[0.06]">
                 <button
                   type="button"
-                  onClick={() => playQueue(tracks, i, "Ähnliche Titel")}
+                  onClick={() => playSimilarRadio(i)}
                   aria-label={`${t.title} abspielen`}
                   className="group/cover relative shrink-0"
                 >

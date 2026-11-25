@@ -8,6 +8,16 @@ import {
   navigationStateStorageKey,
   waitForNavigationStateWrites,
 } from '../navigationPersistence';
+import {
+  OFFLINE_LYRICS_PREFIX,
+  offlineLyricsStorageKey,
+  waitForOfflineLyricsWrites,
+} from '../offline/lyricsCache';
+import {
+  QUERY_CACHE_PREFIX,
+  queryCacheStorageKey,
+  waitForQueryCacheWrites,
+} from './queryPersistence';
 
 export interface AccountScopedStorage {
   getAllKeys(): Promise<readonly string[]>;
@@ -33,6 +43,8 @@ export function accountScopedStorageKeys(accountScope: string): readonly string[
     recentSearchStorageKey(accountScope),
     releaseRadarSeenStorageKey(accountScope),
     navigationStateStorageKey(accountScope),
+    queryCacheStorageKey(accountScope),
+    offlineLyricsStorageKey(accountScope),
   ];
 }
 
@@ -48,13 +60,17 @@ export async function clearAccountScopedStorage(
   await Promise.all([
     waitForReleaseRadarSeenWrites(accountScope),
     waitForNavigationStateWrites(accountScope),
+    waitForQueryCacheWrites(accountScope),
+    waitForOfflineLyricsWrites(accountScope),
   ]);
   const keys = accountScope === null
     ? (await storage.getAllKeys()).filter(
         (key) =>
           key.startsWith(RECENT_SEARCH_PREFIX) ||
           key.startsWith(RELEASE_RADAR_SEEN_PREFIX) ||
-          key.startsWith(NAVIGATION_STATE_PREFIX),
+          key.startsWith(NAVIGATION_STATE_PREFIX) ||
+          key.startsWith(QUERY_CACHE_PREFIX) ||
+          key.startsWith(OFFLINE_LYRICS_PREFIX),
       )
     : accountScopedStorageKeys(accountScope);
   await Promise.all(keys.map((key) => storage.removeItem(key)));

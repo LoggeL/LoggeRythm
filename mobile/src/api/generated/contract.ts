@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "9d6552fa363b7422d3946ec7dd650453e01b7f78368b75e23f0060a5877c1456" as const;
+export const GENERATED_OPENAPI_SHA256 = "5849f78312944f6af55a0942d44a4130f8b558536f6cab45a54dec72b64edf3c" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -254,11 +254,25 @@ export interface ArtistSummaryWire {
 export interface AuthErrorWire {
   detail: string;
 }
+export interface BatchPreloadRequestWire {
+  track_ids: string[];
+}
+export interface BatchPreloadResponseWire {
+  already_cached?: string[];
+  queued?: string[];
+}
 export interface Body_set_avatar_api_me_avatar_putWire {
   file: Blob;
 }
 export interface Body_set_cover_api_playlists__playlist_id__cover_putWire {
   file: Blob;
+}
+export interface CachedCheckRequestWire {
+  ids: string[];
+}
+export interface CachedCheckResponseWire {
+  cached?: Record<string, boolean>;
+  sizes?: Record<string, number>;
 }
 export interface ConnectDeviceOutWire {
   capabilities?: DeviceCapabilitiesWire;
@@ -319,6 +333,17 @@ export interface DeviceCapabilitiesWire {
   can_control_volume?: boolean;
   can_play_audio?: boolean;
 }
+export interface FriendActivityItemWire {
+  avatar_url?: string | null;
+  device_name?: string | null;
+  device_type?: "web" | "mobile" | "tablet" | "desktop" | "tv" | "speaker" | "other" | null;
+  display_name?: string | null;
+  is_playing?: boolean;
+  party_code?: string | null;
+  track?: TrackWire | null;
+  updated_at?: string | null;
+  user_id: number;
+}
 export interface GenreWire {
   id: string;
   name?: string;
@@ -336,10 +361,14 @@ export interface HTTPValidationErrorWire {
   detail?: ValidationErrorWire[];
 }
 export interface ImportJobCreateWire {
+  create_playlist_name?: string | null;
+  target_playlist_id?: number | null;
   url: string;
 }
 export interface ImportJobDetailWire {
+  create_playlist_name?: string | null;
   created_at: string;
+  created_playlist_id?: number | null;
   error?: string | null;
   failed_lookups?: number;
   finished_at?: string | null;
@@ -352,13 +381,16 @@ export interface ImportJobDetailWire {
   result?: ResolveResultWire | null;
   source_total?: number;
   status: "queued" | "running" | "done" | "failed";
+  target_playlist_id?: number | null;
   total?: number;
   type?: string;
   updated_at: string;
   url: string;
 }
 export interface ImportJobStatusWire {
+  create_playlist_name?: string | null;
   created_at: string;
+  created_playlist_id?: number | null;
   error?: string | null;
   failed_lookups?: number;
   finished_at?: string | null;
@@ -370,6 +402,7 @@ export interface ImportJobStatusWire {
   processed?: number;
   source_total?: number;
   status: "queued" | "running" | "done" | "failed";
+  target_playlist_id?: number | null;
   total?: number;
   type?: string;
   updated_at: string;
@@ -405,6 +438,13 @@ export interface MeUpdateWire {
   email?: string | null;
   password?: string | null;
 }
+export interface OfflineLyricsEntryWire {
+  ai_generated?: boolean;
+  instrumental?: boolean;
+  lines?: Record<string, unknown>[];
+  source?: string;
+  synced?: boolean;
+}
 export interface OrderUpdateWire {
   ids: number[];
 }
@@ -412,6 +452,7 @@ export interface PartyCachedTracksWire {
   ids?: string[];
 }
 export interface PartyCreateWire {
+  auto_dj?: boolean;
   current_index?: number;
   guests_can_control?: boolean;
   is_playing?: boolean;
@@ -422,6 +463,9 @@ export interface PartyCreateWire {
 export interface PartyGuestJoinWire {
   nickname: string;
 }
+export interface PartyHostTransferInWire {
+  member_key: string;
+}
 export interface PartyMemberOutWire {
   avatar_url?: string | null;
   is_guest?: boolean;
@@ -429,11 +473,27 @@ export interface PartyMemberOutWire {
   key?: string;
   name?: string;
 }
+export interface PartyReactInWire {
+  emoji: string;
+}
+export interface PartyReactionOutWire {
+  created_at: string;
+  emoji: string;
+  id: string;
+  member_key: string;
+  member_name: string;
+}
+export interface PartySavePlaylistInWire {
+  collaborative?: boolean;
+  name?: string | null;
+}
 export interface PartySettingsUpdateWire {
+  auto_dj?: boolean | null;
   guests_can_control?: boolean | null;
   name?: string | null;
 }
 export interface PartyStateWire {
+  auto_dj?: boolean;
   code: string;
   current_index?: number;
   ended?: boolean;
@@ -441,6 +501,7 @@ export interface PartyStateWire {
   host_name?: string;
   is_host?: boolean;
   is_playing?: boolean;
+  latest_reaction?: PartyReactionOutWire | null;
   members?: PartyMemberOutWire[];
   name?: string;
   playback_changed_by?: string;
@@ -448,6 +509,8 @@ export interface PartyStateWire {
   playback_updated_at?: string | null;
   position_sec?: number;
   server_time?: string;
+  skip_votes?: string[];
+  skip_votes_needed?: number;
   tracks?: PartyTrackOutWire[];
   viewer_is_guest?: boolean;
   viewer_key?: string;
@@ -469,7 +532,16 @@ export interface PartyTrackOutWire {
   is_stored?: boolean;
   load_error?: string | null;
   load_state?: "ready" | "loading" | "queued" | "failed" | "idle";
+  loudness_gain_db?: number | null;
   title?: string;
+}
+export interface PartyVoteSkipOutWire {
+  code: string;
+  skipped?: boolean;
+  state: PartyStateWire;
+  track_item_id: number;
+  votes?: string[];
+  votes_needed: number;
 }
 export interface PasswordForgotRequestWire {
   email: string;
@@ -486,14 +558,25 @@ export interface PlayQueryWire {
 export interface PlaybackSettingsWire {
   crossfade_duration_sec: number;
   crossfade_enabled: boolean;
+  preferred_quality?: "lossless" | "high" | "saver";
+  share_listening_activity?: boolean;
 }
 export interface PlaybackSettingsUpdateWire {
   crossfade_duration_sec?: number | null;
   crossfade_enabled?: boolean | null;
+  preferred_quality?: "lossless" | "high" | "saver" | null;
+  share_listening_activity?: boolean | null;
 }
 export interface PlaybackUpdateWire {
   is_playing: boolean;
   position_sec: number;
+}
+export interface PlaylistBlendOutWire {
+  match_percent: number;
+  other_user: PlaylistCollaboratorUserWire;
+  playlist: PlaylistDetailWire;
+  shared_artists?: string[];
+  shared_tracks_count?: number;
 }
 export interface PlaylistCollaborativeUpdateWire {
   is_collaborative: boolean;
@@ -518,6 +601,13 @@ export interface PlaylistCreateWire {
   is_collaborative?: boolean;
   name: string;
 }
+export interface PlaylistDeduplicateResultWire {
+  groups_merged: number;
+  playlist_id: number;
+  removed_count: number;
+  removed_entry_ids?: number[];
+  revision: number;
+}
 export interface PlaylistDetailWire {
   can_edit_tracks?: boolean;
   collaborator_count?: number;
@@ -535,6 +625,18 @@ export interface PlaylistDetailWire {
   owner_name?: string | null;
   revision?: number;
   tracks: PlaylistTrackEntryWire[];
+}
+export interface PlaylistDuplicateGroupWire {
+  artist?: string;
+  duplicate_entry_ids: number[];
+  isrc?: string;
+  keep_entry_id: number;
+  title?: string;
+}
+export interface PlaylistDuplicatesOutWire {
+  groups?: PlaylistDuplicateGroupWire[];
+  playlist_id: number;
+  total_duplicates: number;
 }
 export interface PlaylistEntryReorderWire {
   entry_ids: number[];
@@ -590,6 +692,29 @@ export interface PlaylistSummaryWire {
   owner_name?: string | null;
   track_count: number;
 }
+export interface PlaylistSyncManifestWire {
+  lyrics?: Record<string, OfflineLyricsEntryWire> | null;
+  playlist_id: number;
+  revision: number;
+  stored_count: number;
+  total_known_bytes: number;
+  track_count: number;
+  tracks?: PlaylistSyncTrackItemWire[];
+}
+export interface PlaylistSyncTrackItemWire {
+  artist?: string;
+  audio_format?: string | null;
+  deezer_id: string;
+  duration_sec?: number;
+  has_lyrics?: boolean;
+  is_stored?: boolean;
+  loudness_gain_db?: number | null;
+  loudness_lufs?: number | null;
+  loudness_peak?: number | null;
+  playlist_entry_id: number;
+  size_bytes?: number | null;
+  title?: string;
+}
 export interface PlaylistTrackEntryWire {
   added_at?: string | null;
   added_by?: PlaylistCollaboratorUserWire | null;
@@ -598,8 +723,10 @@ export interface PlaylistTrackEntryWire {
   artist?: string;
   artist_id?: string | number;
   artists?: ArtistRefWire[];
+  bpm?: number | null;
   cover?: string;
   duration_sec?: number;
+  explicit?: boolean | null;
   id: string;
   isrc?: string;
   loudness_gain_db?: number | null;
@@ -637,8 +764,10 @@ export interface RadarTrackWire {
   artist?: string;
   artist_id?: string | number;
   artists?: ArtistRefWire[];
+  bpm?: number | null;
   cover?: string;
   duration_sec?: number;
+  explicit?: boolean | null;
   id: string;
   isrc?: string;
   loudness_gain_db?: number | null;
@@ -649,6 +778,12 @@ export interface RadarTrackWire {
   rank?: number;
   release_date?: string;
   title?: string;
+}
+export interface RadioSeedRequestWire {
+  exclude_ids?: string[];
+  limit?: number;
+  mood_tag?: string | null;
+  track_ids?: string[];
 }
 export interface RecentPlayWire {
   album?: string;
@@ -677,12 +812,32 @@ export interface ResolveResultWire {
   type: string;
   unmatched?: UnmatchedTrackWire[];
 }
+export interface RestConnectCommandInWire {
+  action: "play" | "pause" | "toggle" | "next" | "prev" | "clear_queue" | "seek" | "set_volume" | "set_mute" | "set_shuffle" | "set_repeat" | "play_tracks" | "queue_add" | "queue_play_next" | "queue_remove" | "queue_reorder" | "select_index";
+  payload?: Record<string, unknown>;
+  target_device_id?: string | null;
+  timeout_sec?: number;
+}
+export interface RestConnectCommandOutWire {
+  command_id: string;
+  error?: string | null;
+  ok: boolean;
+  target_device_id: string;
+}
+export interface RestConnectTransferInWire {
+  play?: boolean | null;
+  target_device_id: string;
+}
 export interface ShelfWire {
   cover?: string;
   key: string;
   subtitle?: string;
   title: string;
   tracks: TrackWire[];
+}
+export interface SocialActivityResponseWire {
+  items?: FriendActivityItemWire[];
+  server_time: string;
 }
 export interface StatEntryWire {
   count: number;
@@ -735,14 +890,28 @@ export interface SystemStatusWire {
   database: string;
   jwt_secure: boolean;
 }
+export interface TimestampedPlayWire {
+  album?: string;
+  album_id?: string | number;
+  artist?: string;
+  artist_id?: string | number;
+  artists?: StatsArtistRefWire[];
+  cover?: string;
+  duration_sec?: number;
+  id: string | number;
+  played_at: string;
+  title: string;
+}
 export interface TrackWire {
   album?: string;
   album_id?: string | number;
   artist?: string;
   artist_id?: string | number;
   artists?: ArtistRefWire[];
+  bpm?: number | null;
   cover?: string;
   duration_sec?: number;
+  explicit?: boolean | null;
   id: string;
   isrc?: string;
   loudness_gain_db?: number | null;
@@ -752,6 +921,18 @@ export interface TrackWire {
   rank?: number;
   release_date?: string;
   title?: string;
+}
+export interface TrackAudioMetaWire {
+  analyzed_at: string;
+  bpm?: number | null;
+  deezer_id: string;
+  duration_sec?: number;
+  intro_end_sec?: number;
+  loudness_gain_db?: number | null;
+  loudness_lufs?: number | null;
+  loudness_peak?: number | null;
+  outro_start_sec?: number;
+  peaks?: number[];
 }
 export interface UnmatchedTrackWire {
   artist?: string;
@@ -773,6 +954,22 @@ export interface UserStatsWire {
   top_tracks_month: StatEntryWire[];
   total_plays: number;
   total_plays_month: number;
+}
+export interface UserStatsInsightsWire {
+  current_streak_days?: number;
+  hourly_distribution: number[];
+  listening_sec: number;
+  longest_streak_days?: number;
+  new_artists_count?: number;
+  play_count: number;
+  range: "7d" | "30d" | "90d" | "year" | "all";
+  recent_plays?: TimestampedPlayWire[];
+  top_albums?: StatEntryWire[];
+  top_artists?: StatEntryWire[];
+  top_tracks?: StatEntryWire[];
+  unique_artists: number;
+  unique_tracks: number;
+  weekday_distribution: number[];
 }
 export interface UsersStatusWire {
   admins: number;
@@ -816,8 +1013,12 @@ export interface GeneratedApiSchemas {
   "ArtistRef": ArtistRefWire;
   "ArtistSummary": ArtistSummaryWire;
   "AuthError": AuthErrorWire;
+  "BatchPreloadRequest": BatchPreloadRequestWire;
+  "BatchPreloadResponse": BatchPreloadResponseWire;
   "Body_set_avatar_api_me_avatar_put": Body_set_avatar_api_me_avatar_putWire;
   "Body_set_cover_api_playlists__playlist_id__cover_put": Body_set_cover_api_playlists__playlist_id__cover_putWire;
+  "CachedCheckRequest": CachedCheckRequestWire;
+  "CachedCheckResponse": CachedCheckResponseWire;
   "ConnectDeviceOut": ConnectDeviceOutWire;
   "ConnectPlaybackState": ConnectPlaybackStateWire;
   "ConnectStateOut": ConnectStateOutWire;
@@ -826,6 +1027,7 @@ export interface GeneratedApiSchemas {
   "CurrentUpdate": CurrentUpdateWire;
   "DeezerStatus": DeezerStatusWire;
   "DeviceCapabilities": DeviceCapabilitiesWire;
+  "FriendActivityItem": FriendActivityItemWire;
   "Genre": GenreWire;
   "GenreDetail": GenreDetailWire;
   "HTTPValidationError": HTTPValidationErrorWire;
@@ -837,26 +1039,36 @@ export interface GeneratedApiSchemas {
   "LikesDeduplicationResult": LikesDeduplicationResultWire;
   "LoginRequest": LoginRequestWire;
   "MeUpdate": MeUpdateWire;
+  "OfflineLyricsEntry": OfflineLyricsEntryWire;
   "OrderUpdate": OrderUpdateWire;
   "PartyCachedTracks": PartyCachedTracksWire;
   "PartyCreate": PartyCreateWire;
   "PartyGuestJoin": PartyGuestJoinWire;
+  "PartyHostTransferIn": PartyHostTransferInWire;
   "PartyMemberOut": PartyMemberOutWire;
+  "PartyReactIn": PartyReactInWire;
+  "PartyReactionOut": PartyReactionOutWire;
+  "PartySavePlaylistIn": PartySavePlaylistInWire;
   "PartySettingsUpdate": PartySettingsUpdateWire;
   "PartyState": PartyStateWire;
   "PartyTrackOut": PartyTrackOutWire;
+  "PartyVoteSkipOut": PartyVoteSkipOutWire;
   "PasswordForgotRequest": PasswordForgotRequestWire;
   "PasswordResetRequest": PasswordResetRequestWire;
   "PlayQuery": PlayQueryWire;
   "PlaybackSettings": PlaybackSettingsWire;
   "PlaybackSettingsUpdate": PlaybackSettingsUpdateWire;
   "PlaybackUpdate": PlaybackUpdateWire;
+  "PlaylistBlendOut": PlaylistBlendOutWire;
   "PlaylistCollaborativeUpdate": PlaylistCollaborativeUpdateWire;
   "PlaylistCollaboratorAdd": PlaylistCollaboratorAddWire;
   "PlaylistCollaboratorOut": PlaylistCollaboratorOutWire;
   "PlaylistCollaboratorUser": PlaylistCollaboratorUserWire;
   "PlaylistCreate": PlaylistCreateWire;
+  "PlaylistDeduplicateResult": PlaylistDeduplicateResultWire;
   "PlaylistDetail": PlaylistDetailWire;
+  "PlaylistDuplicateGroup": PlaylistDuplicateGroupWire;
+  "PlaylistDuplicatesOut": PlaylistDuplicatesOutWire;
   "PlaylistEntryReorder": PlaylistEntryReorderWire;
   "PlaylistInviteOut": PlaylistInviteOutWire;
   "PlaylistInvitePreview": PlaylistInvitePreviewWire;
@@ -865,16 +1077,23 @@ export interface GeneratedApiSchemas {
   "PlaylistReorder": PlaylistReorderWire;
   "PlaylistSearchResult": PlaylistSearchResultWire;
   "PlaylistSummary": PlaylistSummaryWire;
+  "PlaylistSyncManifest": PlaylistSyncManifestWire;
+  "PlaylistSyncTrackItem": PlaylistSyncTrackItemWire;
   "PlaylistTrackEntry": PlaylistTrackEntryWire;
   "PlaylistUpdate": PlaylistUpdateWire;
   "PlaysRequest": PlaysRequestWire;
   "PublicProfile": PublicProfileWire;
   "RadarReason": RadarReasonWire;
   "RadarTrack": RadarTrackWire;
+  "RadioSeedRequest": RadioSeedRequestWire;
   "RecentPlay": RecentPlayWire;
   "RegisterRequest": RegisterRequestWire;
   "ResolveResult": ResolveResultWire;
+  "RestConnectCommandIn": RestConnectCommandInWire;
+  "RestConnectCommandOut": RestConnectCommandOutWire;
+  "RestConnectTransferIn": RestConnectTransferInWire;
   "Shelf": ShelfWire;
+  "SocialActivityResponse": SocialActivityResponseWire;
   "StatEntry": StatEntryWire;
   "StatsArtistRef": StatsArtistRefWire;
   "StatusInfo": StatusInfoWire;
@@ -882,10 +1101,13 @@ export interface GeneratedApiSchemas {
   "StorageItem": StorageItemWire;
   "StorageStatus": StorageStatusWire;
   "SystemStatus": SystemStatusWire;
+  "TimestampedPlay": TimestampedPlayWire;
   "Track": TrackWire;
+  "TrackAudioMeta": TrackAudioMetaWire;
   "UnmatchedTrack": UnmatchedTrackWire;
   "UserOut": UserOutWire;
   "UserStats": UserStatsWire;
+  "UserStatsInsights": UserStatsInsightsWire;
   "UsersStatus": UsersStatusWire;
   "ValidationError": ValidationErrorWire;
   "_VisibilityUpdate": _VisibilityUpdateWire;
@@ -1077,6 +1299,18 @@ export interface GeneratedApiOperations {
     };
     response: ShelfWire[];
   };
+  "cached_check_api_tracks_cached_check_post": {
+    request: {
+      body: CachedCheckRequestWire;
+    };
+    responses: {
+      "200": CachedCheckResponseWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: CachedCheckResponseWire;
+  };
   "cached_tracks_api_cached_tracks_get": {
     request: Record<never, never>;
     responses: {
@@ -1099,6 +1333,20 @@ export interface GeneratedApiOperations {
       "200": ShelfWire[];
     };
     response: ShelfWire[];
+  };
+  "create_blend_playlist_api_playlists_blend__other_user_id__post": {
+    request: {
+      path: {
+        other_user_id: number;
+      };
+    };
+    responses: {
+      "201": PlaylistBlendOutWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistBlendOutWire;
   };
   "create_connect_ticket_api_connect_ticket_post": {
     request: Record<never, never>;
@@ -1164,6 +1412,20 @@ export interface GeneratedApiOperations {
       "403": AuthErrorWire;
     };
     response: LikesDeduplicationResultWire;
+  };
+  "deduplicate_playlist_api_playlists__playlist_id__deduplicate_post": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+    };
+    responses: {
+      "200": PlaylistDeduplicateResultWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistDeduplicateResultWire;
   };
   "deezer_playlist_api_deezer_playlist__playlist_id__get": {
     request: {
@@ -1255,6 +1517,23 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: Blob;
+  };
+  "fill_party_auto_dj_api_party__code__auto_dj_fill_post": {
+    request: {
+      path: {
+        code: string;
+      };
+      query?: {
+        count?: number;
+      };
+    };
+    responses: {
+      "200": PartyStateWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PartyStateWire;
   };
   "follow_artist_api_me_following_artists__artist_id__put": {
     request: {
@@ -1418,6 +1697,20 @@ export interface GeneratedApiOperations {
     };
     response: PlaylistDetailWire;
   };
+  "get_playlist_duplicates_api_playlists__playlist_id__duplicates_get": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+    };
+    responses: {
+      "200": PlaylistDuplicatesOutWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistDuplicatesOutWire;
+  };
   "get_playlist_invite_api_playlists__playlist_id__invite_get": {
     request: {
       path: {
@@ -1441,6 +1734,15 @@ export interface GeneratedApiOperations {
     };
     response: PlaybackSettingsWire;
   };
+  "get_social_activity_api_social_activity_get": {
+    request: Record<never, never>;
+    responses: {
+      "200": SocialActivityResponseWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+    };
+    response: SocialActivityResponseWire;
+  };
   "get_stats_api_me_stats_get": {
     request: Record<never, never>;
     responses: {
@@ -1449,6 +1751,20 @@ export interface GeneratedApiOperations {
       "403": AuthErrorWire;
     };
     response: UserStatsWire;
+  };
+  "get_stats_insights_api_me_stats_insights_get": {
+    request: {
+      query?: {
+        range?: "7d" | "30d" | "90d" | "year" | "all";
+      };
+    };
+    responses: {
+      "200": UserStatsInsightsWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: UserStatsInsightsWire;
   };
   "health_deezer_api_health_deezer_get": {
     request: Record<never, never>;
@@ -1627,8 +1943,10 @@ export interface GeneratedApiOperations {
   "lyrics_api_lyrics_get": {
     request: {
       query: {
+        album?: string | null;
         artist: string;
         deezer_id?: string | null;
+        duration_sec?: number | null;
         title: string;
         variant?: string;
       };
@@ -1708,6 +2026,51 @@ export interface GeneratedApiOperations {
     };
     response: string;
   };
+  "personal_mixes_api_home_personal_mixes_get": {
+    request: {
+      cookie?: {
+        sf_session?: string | null;
+      };
+    };
+    responses: {
+      "200": ShelfWire[];
+      "422": HTTPValidationErrorWire;
+    };
+    response: ShelfWire[];
+  };
+  "playlist_events_api_playlists__playlist_id__events_get": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+      cookie?: {
+        sf_session?: string | null;
+      };
+    };
+    responses: {
+      "200": string;
+      "422": HTTPValidationErrorWire;
+    };
+    response: string;
+  };
+  "playlist_sync_manifest_api_playlists__playlist_id__sync_manifest_get": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+      query?: {
+        include_lyrics?: boolean;
+        preload?: boolean;
+      };
+    };
+    responses: {
+      "200": PlaylistSyncManifestWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistSyncManifestWire;
+  };
   "preload_track_api_tracks__deezer_id__preload_post": {
     request: {
       path: {
@@ -1721,6 +2084,18 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: undefined;
+  };
+  "preload_tracks_batch_api_tracks_preload_post": {
+    request: {
+      body: BatchPreloadRequestWire;
+    };
+    responses: {
+      "200": BatchPreloadResponseWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: BatchPreloadResponseWire;
   };
   "preview_playlist_invite_api_playlists_invites__token__get": {
     request: {
@@ -1771,6 +2146,21 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: TrackWire[];
+  };
+  "react_in_party_api_party__code__react_post": {
+    request: {
+      path: {
+        code: string;
+      };
+      body: PartyReactInWire;
+    };
+    responses: {
+      "200": PartyReactionOutWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PartyReactionOutWire;
   };
   "record_play_api_me_plays_post": {
     request: {
@@ -1967,6 +2357,21 @@ export interface GeneratedApiOperations {
     };
     response: undefined;
   };
+  "save_party_as_playlist_api_party__code__save_playlist_post": {
+    request: {
+      path: {
+        code: string;
+      };
+      body: PartySavePlaylistInWire;
+    };
+    responses: {
+      "201": PlaylistSummaryWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistSummaryWire;
+  };
   "search_api_search_get": {
     request: {
       query?: {
@@ -2003,6 +2408,31 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: PlaylistSearchResultWire[];
+  };
+  "seeded_radio_api_radio_seed_post": {
+    request: {
+      cookie?: {
+        sf_session?: string | null;
+      };
+      body: RadioSeedRequestWire;
+    };
+    responses: {
+      "200": TrackWire[];
+      "422": HTTPValidationErrorWire;
+    };
+    response: TrackWire[];
+  };
+  "send_connect_command_api_connect_command_post": {
+    request: {
+      body: RestConnectCommandInWire;
+    };
+    responses: {
+      "200": RestConnectCommandOutWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: RestConnectCommandOutWire;
   };
   "set_avatar_api_me_avatar_put": {
     request: {
@@ -2091,6 +2521,15 @@ export interface GeneratedApiOperations {
     };
     response: PlaylistSummaryWire;
   };
+  "social_activity_events_api_social_activity_events_get": {
+    request: Record<never, never>;
+    responses: {
+      "200": string;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+    };
+    response: string;
+  };
   "start_import_job_api_resolve_jobs_post": {
     request: {
       body: ImportJobCreateWire;
@@ -2126,10 +2565,14 @@ export interface GeneratedApiOperations {
       path: {
         deezer_id: string;
       };
+      query?: {
+        quality?: "lossless" | "high" | "saver" | null;
+      };
     };
     responses: {
       "200": Blob;
       "206": Blob;
+      "304": undefined;
       "401": AuthErrorWire;
       "403": AuthErrorWire;
       "416": Record<string, unknown>;
@@ -2145,6 +2588,20 @@ export interface GeneratedApiOperations {
       "403": AuthErrorWire;
     };
     response: StatusInfoWire;
+  };
+  "track_audio_meta_api_tracks__deezer_id__audio_meta_get": {
+    request: {
+      path: {
+        deezer_id: string;
+      };
+    };
+    responses: {
+      "200": TrackAudioMetaWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: TrackAudioMetaWire;
   };
   "track_metadata_api_tracks__deezer_id__get": {
     request: {
@@ -2169,6 +2626,33 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: Record<string, Record<string, unknown>>;
+  };
+  "transfer_connect_playback_api_connect_transfer_post": {
+    request: {
+      body: RestConnectTransferInWire;
+    };
+    responses: {
+      "200": ConnectStateOutWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: ConnectStateOutWire;
+  };
+  "transfer_party_host_api_party__code__host_patch": {
+    request: {
+      path: {
+        code: string;
+      };
+      body: PartyHostTransferInWire;
+    };
+    responses: {
+      "200": PartyStateWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PartyStateWire;
   };
   "unfollow_artist_api_me_following_artists__artist_id__delete": {
     request: {
@@ -2237,6 +2721,20 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: PlaybackSettingsWire;
+  };
+  "vote_skip_party_track_api_party__code__vote_skip_post": {
+    request: {
+      path: {
+        code: string;
+      };
+    };
+    responses: {
+      "200": PartyVoteSkipOutWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PartyVoteSkipOutWire;
   };
 }
 
@@ -2360,6 +2858,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "cached_check_api_tracks_cached_check_post": {
+    method: "POST",
+    path: "/api/tracks/cached-check",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
+  },
   "cached_tracks_api_cached_tracks_get": {
     method: "GET",
     path: "/api/cached-tracks",
@@ -2380,6 +2885,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "none",
     requestMediaTypes: [],
     successStatuses: [200],
+  },
+  "create_blend_playlist_api_playlists_blend__other_user_id__post": {
+    method: "POST",
+    path: "/api/playlists/blend/{other_user_id}",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [201],
   },
   "create_connect_ticket_api_connect_ticket_post": {
     method: "POST",
@@ -2419,6 +2931,13 @@ export const GENERATED_API_OPERATIONS = {
   "deduplicate_likes_api_admin_likes_deduplicate_post": {
     method: "POST",
     path: "/api/admin/likes/deduplicate",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "deduplicate_playlist_api_playlists__playlist_id__deduplicate_post": {
+    method: "POST",
+    path: "/api/playlists/{playlist_id}/deduplicate",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
@@ -2468,6 +2987,13 @@ export const GENERATED_API_OPERATIONS = {
   "export_playlist_api_playlists__playlist_id__export_get": {
     method: "GET",
     path: "/api/playlists/{playlist_id}/export",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "fill_party_auto_dj_api_party__code__auto_dj_fill_post": {
+    method: "POST",
+    path: "/api/party/{code}/auto-dj/fill",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
@@ -2570,6 +3096,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "get_playlist_duplicates_api_playlists__playlist_id__duplicates_get": {
+    method: "GET",
+    path: "/api/playlists/{playlist_id}/duplicates",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "get_playlist_invite_api_playlists__playlist_id__invite_get": {
     method: "GET",
     path: "/api/playlists/{playlist_id}/invite",
@@ -2584,9 +3117,23 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "get_social_activity_api_social_activity_get": {
+    method: "GET",
+    path: "/api/social/activity",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "get_stats_api_me_stats_get": {
     method: "GET",
     path: "/api/me/stats",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "get_stats_insights_api_me_stats_insights_get": {
+    method: "GET",
+    path: "/api/me/stats/insights",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
@@ -2752,12 +3299,40 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "personal_mixes_api_home_personal_mixes_get": {
+    method: "GET",
+    path: "/api/home/personal-mixes",
+    auth: "optional",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "playlist_events_api_playlists__playlist_id__events_get": {
+    method: "GET",
+    path: "/api/playlists/{playlist_id}/events",
+    auth: "optional",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "playlist_sync_manifest_api_playlists__playlist_id__sync_manifest_get": {
+    method: "GET",
+    path: "/api/playlists/{playlist_id}/sync-manifest",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "preload_track_api_tracks__deezer_id__preload_post": {
     method: "POST",
     path: "/api/tracks/{deezer_id}/preload",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [204],
+  },
+  "preload_tracks_batch_api_tracks_preload_post": {
+    method: "POST",
+    path: "/api/tracks/preload",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
   },
   "preview_playlist_invite_api_playlists_invites__token__get": {
     method: "GET",
@@ -2785,6 +3360,13 @@ export const GENERATED_API_OPERATIONS = {
     path: "/api/radio/{deezer_id}",
     auth: "none",
     requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "react_in_party_api_party__code__react_post": {
+    method: "POST",
+    path: "/api/party/{code}/react",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
     successStatuses: [200],
   },
   "record_play_api_me_plays_post": {
@@ -2885,6 +3467,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [204],
   },
+  "save_party_as_playlist_api_party__code__save_playlist_post": {
+    method: "POST",
+    path: "/api/party/{code}/save-playlist",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [201],
+  },
   "search_api_search_get": {
     method: "GET",
     path: "/api/search",
@@ -2904,6 +3493,20 @@ export const GENERATED_API_OPERATIONS = {
     path: "/api/search/playlist",
     auth: "none",
     requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "seeded_radio_api_radio_seed_post": {
+    method: "POST",
+    path: "/api/radio/seed",
+    auth: "optional",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
+  },
+  "send_connect_command_api_connect_command_post": {
+    method: "POST",
+    path: "/api/connect/command",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
     successStatuses: [200],
   },
   "set_avatar_api_me_avatar_put": {
@@ -2948,6 +3551,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: ["application/json"],
     successStatuses: [200],
   },
+  "social_activity_events_api_social_activity_events_get": {
+    method: "GET",
+    path: "/api/social/activity/events",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "start_import_job_api_resolve_jobs_post": {
     method: "POST",
     path: "/api/resolve/jobs",
@@ -2983,6 +3593,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "track_audio_meta_api_tracks__deezer_id__audio_meta_get": {
+    method: "GET",
+    path: "/api/tracks/{deezer_id}/audio-meta",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "track_metadata_api_tracks__deezer_id__get": {
     method: "GET",
     path: "/api/tracks/{deezer_id}",
@@ -2993,6 +3610,20 @@ export const GENERATED_API_OPERATIONS = {
   "track_plays_api_track_plays_post": {
     method: "POST",
     path: "/api/track-plays",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
+  },
+  "transfer_connect_playback_api_connect_transfer_post": {
+    method: "POST",
+    path: "/api/connect/transfer",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
+  },
+  "transfer_party_host_api_party__code__host_patch": {
+    method: "PATCH",
+    path: "/api/party/{code}/host",
     auth: "required",
     requestMediaTypes: ["application/json"],
     successStatuses: [200],
@@ -3030,6 +3661,13 @@ export const GENERATED_API_OPERATIONS = {
     path: "/api/me/settings",
     auth: "required",
     requestMediaTypes: ["application/json"],
+    successStatuses: [200],
+  },
+  "vote_skip_party_track_api_party__code__vote_skip_post": {
+    method: "POST",
+    path: "/api/party/{code}/vote-skip",
+    auth: "required",
+    requestMediaTypes: [],
     successStatuses: [200],
   },
 } as const satisfies Record<GeneratedApiOperationId, GeneratedOperationDescriptor>;

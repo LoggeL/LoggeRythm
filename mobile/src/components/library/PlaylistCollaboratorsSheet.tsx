@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   ScrollView,
   Share,
   StyleSheet,
@@ -20,9 +21,10 @@ import {
   musicQueries,
   queryKeys,
 } from '../../data';
+import { strings } from '../../localization';
 import { playlistInviteUrl } from '../../navigationLinks';
 import { libraryStrings } from '../../screens/libraryStrings';
-import { colors, layout, metrics, radii, spacing, typography } from '../../theme';
+import { colors, layout, metrics, opacity, radii, spacing, typography } from '../../theme';
 import { ActionButton, AppText, Artwork, BottomSheet, ErrorState, IconButton, ListSeparator } from '../ui';
 import { InlineNotice } from './InlineNotice';
 import { SheetActionRow } from './SheetActionRow';
@@ -79,6 +81,7 @@ export interface PlaylistCollaboratorsSheetContentProps {
   removeError: string | null;
   onToggleCollaborative?: (enabled: boolean) => void;
   onRemoveCollaborator?: (collaborator: PlaylistCollaborator) => void;
+  onOpenUser?: (params: { userId: number; name?: string }) => void;
   onLeave?: () => void;
   keyboardInset?: number;
 }
@@ -100,6 +103,7 @@ export function PlaylistCollaboratorsSheetContent({
   removeError,
   onToggleCollaborative,
   onRemoveCollaborator,
+  onOpenUser,
   onLeave,
   keyboardInset = 0,
 }: PlaylistCollaboratorsSheetContentProps) {
@@ -369,17 +373,40 @@ export function PlaylistCollaboratorsSheetContent({
             {libraryStrings.playlist.collaborators}
           </AppText>
 
-          <View testID="playlist-member-owner" style={styles.memberRow}>
-            <Artwork uri={ownerAvatar} size={layout.artwork.xs} shape="round" icon="account" />
-            <View style={styles.memberCopy}>
-              <AppText variant="bodyStrong" numberOfLines={1}>{ownerName}</AppText>
+          {onOpenUser !== undefined && playlist.owner_id !== null ? (
+            <Pressable
+              testID="playlist-member-owner"
+              accessibilityRole="button"
+              accessibilityLabel={strings.profile.openUserProfile(ownerName)}
+              onPress={() => {
+                onClose();
+                onOpenUser({ userId: playlist.owner_id!, name: ownerName });
+              }}
+              style={({ pressed }) => [styles.memberRow, pressed ? styles.pressed : null]}
+            >
+              <Artwork uri={ownerAvatar} size={layout.artwork.xs} shape="round" icon="account" />
+              <View style={styles.memberCopy}>
+                <AppText variant="bodyStrong" numberOfLines={1}>{ownerName}</AppText>
+              </View>
+              <View style={styles.roleBadge}>
+                <AppText variant="micro" color="accent">
+                  {libraryStrings.playlist.ownerBadge}
+                </AppText>
+              </View>
+            </Pressable>
+          ) : (
+            <View testID="playlist-member-owner" style={styles.memberRow}>
+              <Artwork uri={ownerAvatar} size={layout.artwork.xs} shape="round" icon="account" />
+              <View style={styles.memberCopy}>
+                <AppText variant="bodyStrong" numberOfLines={1}>{ownerName}</AppText>
+              </View>
+              <View style={styles.roleBadge}>
+                <AppText variant="micro" color="accent">
+                  {libraryStrings.playlist.ownerBadge}
+                </AppText>
+              </View>
             </View>
-            <View style={styles.roleBadge}>
-              <AppText variant="micro" color="accent">
-                {libraryStrings.playlist.ownerBadge}
-              </AppText>
-            </View>
-          </View>
+          )}
 
           {playlist.collaborators.length === 0 ? (
             <View testID="playlist-members-empty" style={styles.emptyMembers}>
@@ -404,10 +431,30 @@ export function PlaylistCollaboratorsSheetContent({
                   testID={`playlist-member-${member.user_id}`}
                   style={styles.memberRow}
                 >
-                  <Artwork uri={avatarUrl} size={layout.artwork.xs} shape="round" icon="account" />
-                  <View style={styles.memberCopy}>
-                    <AppText variant="body" numberOfLines={1}>{name}</AppText>
-                  </View>
+                  {onOpenUser !== undefined ? (
+                    <Pressable
+                      testID={`playlist-member-open-${member.user_id}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={strings.profile.openUserProfile(name)}
+                      onPress={() => {
+                        onClose();
+                        onOpenUser({ userId: member.user_id, name });
+                      }}
+                      style={({ pressed }) => [styles.memberPress, pressed ? styles.pressed : null]}
+                    >
+                      <Artwork uri={avatarUrl} size={layout.artwork.xs} shape="round" icon="account" />
+                      <View style={styles.memberCopy}>
+                        <AppText variant="body" numberOfLines={1}>{name}</AppText>
+                      </View>
+                    </Pressable>
+                  ) : (
+                    <>
+                      <Artwork uri={avatarUrl} size={layout.artwork.xs} shape="round" icon="account" />
+                      <View style={styles.memberCopy}>
+                        <AppText variant="body" numberOfLines={1}>{name}</AppText>
+                      </View>
+                    </>
+                  )}
                   <View style={styles.roleBadge}>
                     <AppText variant="micro" color="secondary">
                       {libraryStrings.playlist.editorBadge}
@@ -471,6 +518,7 @@ export interface PlaylistCollaboratorsSheetProps {
   playlist: Playlist;
   busy: boolean;
   onToggleCollaborative: (enabled: boolean) => void;
+  onOpenUser?: (params: { userId: number; name?: string }) => void;
   onLeave: () => void;
 }
 
@@ -487,6 +535,7 @@ export function PlaylistCollaboratorsSheet({
   playlist,
   busy,
   onToggleCollaborative,
+  onOpenUser,
   onLeave,
 }: PlaylistCollaboratorsSheetProps) {
   const queryClient = useQueryClient();
@@ -684,6 +733,7 @@ export function PlaylistCollaboratorsSheet({
       }
       onToggleCollaborative={playlist.is_owner ? onToggleCollaborative : undefined}
       onRemoveCollaborator={playlist.is_owner ? handleRemoveCollaborator : undefined}
+      onOpenUser={onOpenUser}
       onLeave={!playlist.is_owner && playlist.is_collaborator ? onLeave : undefined}
       keyboardInset={keyboardInset}
     />
@@ -743,6 +793,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
+  memberPress: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: metrics.minimumTouchTarget,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  pressed: { opacity: opacity.pressed },
   memberCopy: { flex: 1, minWidth: 0 },
   roleBadge: {
     paddingHorizontal: spacing.xs,

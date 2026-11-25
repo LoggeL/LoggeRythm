@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../api/error';
 import {
   createMusicQueryOptions,
   LYRICS_STALE_TIME_MS,
@@ -7,9 +8,23 @@ import {
 import type { MusicRepository } from './repositories';
 import type { AlbumCard } from '../domain/catalog';
 
+const offlineLyricsMocks = vi.hoisted(() => ({
+  scope: null as string | null,
+  readOfflineLyrics: vi.fn(),
+  saveOfflineLyrics: vi.fn(async () => undefined),
+}));
+
 // The option factory accepts an injected repository. Keep this pure unit test
 // from loading the production React Native API client through the default.
 vi.mock('./repositories', () => ({ musicRepository: {} }));
+vi.mock('../offline/registry', () => ({
+  getOfflineSnapshot: () => ({ scope: offlineLyricsMocks.scope }),
+  trackIsExplicitlyDownloaded: () => false,
+}));
+vi.mock('../offline/lyricsCache', () => ({
+  readOfflineLyrics: offlineLyricsMocks.readOfflineLyrics,
+  saveOfflineLyrics: offlineLyricsMocks.saveOfflineLyrics,
+}));
 
 function queryContext(signal: AbortSignal): never {
   return {
@@ -81,6 +96,36 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     factory: 'homeMixes', repositoryMethod: 'getHomeMixes',
     option: (queries) => queries.homeMixes('  account-a  '),
     expectedKey: ['music', 'home', 'scope', 'account-a', 'mixes'],
+    expectedArguments: (signal) => [signal],
+  },
+  {
+    factory: 'personalMixes', repositoryMethod: 'getPersonalMixes',
+    option: (queries) => queries.personalMixes('  account-a  '),
+    expectedKey: ['music', 'home', 'scope', 'account-a', 'personal-mixes'],
+    expectedArguments: (signal) => [signal],
+  },
+  {
+    factory: 'audioMeta', repositoryMethod: 'getTrackAudioMeta',
+    option: (queries) => queries.audioMeta('42'),
+    expectedKey: ['music', 'catalog', 'audio-meta', '42'],
+    expectedArguments: (signal) => ['42', signal],
+  },
+  {
+    factory: 'playlistDuplicates', repositoryMethod: 'getPlaylistDuplicates',
+    option: (queries) => queries.playlistDuplicates('account-a', 7),
+    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'detail', '7', 'duplicates'],
+    expectedArguments: (signal) => [7, signal],
+  },
+  {
+    factory: 'statsInsights', repositoryMethod: 'getStatsInsights',
+    option: (queries) => queries.statsInsights('account-a', '30d'),
+    expectedKey: ['music', 'profile', 'private', 'account-a', 'insights', '30d'],
+    expectedArguments: (signal) => ['30d', signal],
+  },
+  {
+    factory: 'socialActivity', repositoryMethod: 'getSocialActivity',
+    option: (queries) => queries.socialActivity('account-a'),
+    expectedKey: ['music', 'social', 'account-a', 'activity'],
     expectedArguments: (signal) => [signal],
   },
   {
@@ -485,5 +530,42 @@ describe('music query options', () => {
     await expect(option.queryFn!(queryContext(controller.signal))).resolves.toBe(tracks);
     expect(getRadio).toHaveBeenCalledOnce();
     expect(getRadio).toHaveBeenCalledWith('42', controller.signal);
+  });
+
+  it('falls back to offline lyrics only on transport failures, never on 401/403 or abort', async () => {
+    const cached = { lines: [{ t: 1, text: 'Cached' }], synced: true, source: 'lrclib', ai_generated: false, cached: true };
+    offlineLyricsMocks.scope = 'https://music.example.test::user:7';
+    offlineLyricsMocks.readOfflineLyrics.mockReset();
+    offlineLyricsMocks.readOfflineLyrics.mockResolvedValue(cached);
+
+    try {
+      const getLyrics = vi.fn();
+      const queries = createMusicQueryOptions({ getLyrics } as unknown as MusicRepository);
+      const option = queries.lyrics('Artist', 'Title', '42');
+
+      // 401 must propagate and never serve cached lyrics.
+      const authError = new ApiError(401, '', 'Unauthorized');
+      getLyrics.mockRejectedValueOnce(authError);
+      await expect(option.queryFn!(queryContext(new AbortController().signal))).rejects.toBe(authError);
+      expect(offlineLyricsMocks.readOfflineLyrics).not.toHaveBeenCalled();
+
+      // Aborted signal must propagate and never serve cached lyrics.
+      const aborted = new AbortController();
+      aborted.abort();
+      const cancelError = new ApiError(0, '', 'Cancelled');
+      getLyrics.mockRejectedValueOnce(cancelError);
+      await expect(option.queryFn!(queryContext(aborted.signal))).rejects.toBe(cancelError);
+      expect(offlineLyricsMocks.readOfflineLyrics).not.toHaveBeenCalled();
+
+      // Transport failure (status 0) serves verified offline lyrics.
+      getLyrics.mockRejectedValueOnce(new ApiError(0, '', 'Network offline'));
+      await expect(option.queryFn!(queryContext(new AbortController().signal))).resolves.toEqual(cached);
+      expect(offlineLyricsMocks.readOfflineLyrics).toHaveBeenCalledWith(
+        'https://music.example.test::user:7',
+        '42',
+      );
+    } finally {
+      offlineLyricsMocks.scope = null;
+    }
   });
 });

@@ -48,7 +48,7 @@ vi.mock('react-native', () => ({
 
 vi.mock('../../hooks/useBottomInset', () => ({ useBottomInset: () => 96 }));
 vi.mock('../../theme', () => ({
-  colors: { accent: '#7c5cff', surfaceElevated: '#181824' },
+  colors: { accent: '#d6ff4b', surfaceElevated: '#25232a' },
 }));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };

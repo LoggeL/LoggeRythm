@@ -195,6 +195,8 @@ interface PlayerState {
   playTrack: (track: Track) => void;
   playQueue: (tracks: Track[], startIndex?: number, context?: string) => void;
   addToQueue: (track: Track) => void;
+  /** Batch-append multiple tracks to the manual queue in a single update. */
+  addManyToQueue: (tracks: Track[], context?: string) => void;
   playNext: (track: Track) => void;
   removeFromQueue: (i: number) => void;
   clearQueue: () => void;
@@ -222,6 +224,7 @@ interface PlayerState {
     incomingId: string,
     currentTime: number,
     duration: number,
+    targetIndex?: number,
   ) => boolean;
   _setBuffering: (b: boolean) => void;
   _setError: (msg: string | null) => void;
@@ -528,6 +531,36 @@ export const usePlayerStore = create<PlayerState>()(
         set(insertManualItem(get(), { ...track }, "tail"));
       },
 
+      addManyToQueue: (tracks, context) => {
+        if (!tracks.length) return;
+        const bridge = get().partyBridge;
+        if (bridge) {
+          for (const track of tracks) bridge.addToQueue(track);
+          return;
+        }
+        const remote = get().remoteBridge;
+        if (remote) {
+          for (const track of tracks) remote.addToQueue(track);
+          return;
+        }
+        if (get().index < 0) {
+          get().playQueue(tracks, 0, context);
+          return;
+        }
+        let nextState = {
+          queue: get().queue,
+          origins: get().origins,
+          originalQueue: get().originalQueue,
+          originalOrigins: get().originalOrigins,
+          index: get().index,
+          shuffle: get().shuffle,
+        };
+        for (const track of tracks) {
+          nextState = insertManualItem(nextState, { ...track }, "tail");
+        }
+        set(nextState);
+      },
+
       playNext: (track) => {
         const bridge = get().partyBridge;
         if (bridge) {
@@ -801,24 +834,36 @@ export const usePlayerStore = create<PlayerState>()(
 
       _setCurrentTime: (t) => set({ currentTime: t }),
       _setDuration: (d) => set({ duration: d }),
-      _crossfadeAdvance: (outgoingId, incomingId, currentTime, duration) => {
-        const { index, queue } = get();
+      _crossfadeAdvance: (outgoingId, incomingId, currentTime, duration, targetIndex) => {
+        const state = get();
+        const { index, queue, repeat } = state;
+        if (index < 0 || index >= queue.length) return false;
+        const resolvedTarget =
+          targetIndex ??
+          (index < queue.length - 1
+            ? index + 1
+            : repeat === "all" && queue.length > 1
+              ? 0
+              : -1);
         if (
-          index < 0 ||
-          index >= queue.length - 1 ||
+          resolvedTarget < 0 ||
+          resolvedTarget >= queue.length ||
           String(queue[index]?.id ?? "") !== outgoingId ||
-          String(queue[index + 1]?.id ?? "") !== incomingId
+          String(queue[resolvedTarget]?.id ?? "") !== incomingId
         ) {
           return false;
         }
-        pushRecent(queue[index + 1]);
+        pushRecent(queue[resolvedTarget]);
+        const origins =
+          resolvedTarget < index ? demoteOvertakenManualItems(state, resolvedTarget) : {};
         set({
-          index: index + 1,
+          ...origins,
+          index: resolvedTarget,
           isPlaying: true,
           currentTime: Number.isFinite(currentTime) ? currentTime : 0,
           duration: Number.isFinite(duration)
             ? duration
-            : queue[index + 1]?.duration_sec || 0,
+            : queue[resolvedTarget]?.duration_sec || 0,
           seekTo: null,
           error: null,
           isBuffering: false,

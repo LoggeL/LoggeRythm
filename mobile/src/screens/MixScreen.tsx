@@ -1,7 +1,8 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
+import type { HomeShelf } from '../api/types';
 import { CatalogHeroArtwork, CatalogTrackRow } from '../components/catalog/CatalogCards';
 import {
   CatalogCollectionPage,
@@ -51,6 +52,8 @@ export function MixCollectionTvShell(props: Omit<CatalogCollectionPageProps, 'tv
   );
 }
 
+const PERSONAL_MIX_KEYS = new Set(['on-repeat', 'forgotten-favorites', 'unheard-cuts']);
+
 export default function MixScreen(props: MixScreenProps) {
   assertTrackCatalogRouteCallbacks(props, 'MixScreen');
   const routeMixKey = props.mixKey;
@@ -60,8 +63,11 @@ export default function MixScreen(props: MixScreenProps) {
   const mixKey = typeof routeMixKey === 'string' ? routeMixKey.trim() : '';
   const validRoute = mixKey.length > 0;
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
+  const queryOptions: UseQueryOptions<HomeShelf[], Error> = PERSONAL_MIX_KEYS.has(mixKey)
+    ? (musicQueries.personalMixes(scope) as UseQueryOptions<HomeShelf[], Error>)
+    : (musicQueries.homeMixes(scope) as UseQueryOptions<HomeShelf[], Error>);
   const mixes = useQuery({
-    ...musicQueries.homeMixes(scope),
+    ...queryOptions,
     enabled: validRoute,
   });
   // Hook order (useAuth → useQuery → one useState inside this hook) is pinned by MixScreen.test.

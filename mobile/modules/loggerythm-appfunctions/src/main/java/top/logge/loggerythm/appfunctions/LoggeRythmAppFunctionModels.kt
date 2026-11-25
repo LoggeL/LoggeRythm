@@ -7,6 +7,7 @@ import top.logge.loggerythm.player.LoggeRythmVoicePlayResult
 import top.logge.loggerythm.player.LoggeRythmVoicePlaybackState
 import top.logge.loggerythm.player.LoggeRythmVoiceQueuePosition
 import top.logge.loggerythm.player.LoggeRythmVoiceQueueResult
+import top.logge.loggerythm.player.LoggeRythmVoiceSleepTimerResult
 import top.logge.loggerythm.player.LoggeRythmVoiceTrackSummary
 
 /**
@@ -105,6 +106,22 @@ data class FavoriteTrackResult(
     val changed: Boolean,
 )
 
+/**
+ * Result returned after setting or cancelling the LoggeRythm sleep timer.
+ *
+ * @property active True when a sleep timer is armed, false when cancelled.
+ * @property minutesRequested Requested sleep timer duration in minutes (0 when cancelled).
+ * @property remainingMs Remaining duration until playback pauses in milliseconds.
+ * @property fadeOutMs Fade-out window applied at the end of the sleep timer in milliseconds.
+ */
+@AppFunctionSerializable(isDescribedByKDoc = true)
+data class SleepTimerResult(
+    val active: Boolean,
+    val minutesRequested: Int,
+    val remainingMs: Long,
+    val fadeOutMs: Long,
+)
+
 internal fun LoggeRythmVoiceTrackSummary.toAppFunctionModel(): TrackInfo = TrackInfo(
     mediaId = mediaId,
     trackId = trackId,
@@ -159,4 +176,12 @@ internal fun LoggeRythmVoiceFavoriteResult.toAppFunctionModel(): FavoriteTrackRe
         track = track.toAppFunctionModel(),
         liked = liked,
         changed = changed,
+    )
+
+internal fun LoggeRythmVoiceSleepTimerResult.toAppFunctionModel(): SleepTimerResult =
+    SleepTimerResult(
+        active = active,
+        minutesRequested = minutesRequested,
+        remainingMs = remainingMs,
+        fadeOutMs = fadeOutMs,
     )

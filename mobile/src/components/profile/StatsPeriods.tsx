@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { StatEntry, UserStats } from '../../domain/listeningStats';
+import { triggerHaptic } from '../../hooks/useHaptics';
 import { strings } from '../../localization';
 import { accountStrings } from '../../screens/accountStrings';
 import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
@@ -11,6 +12,8 @@ type PeriodId = 'all-time' | '30-days';
 export interface StatsPeriodsProps {
   data: UserStats;
   testID?: string;
+  onPressTrack?: (entry: StatEntry) => void;
+  onPressArtist?: (entry: StatEntry) => void;
 }
 
 const TOP_ENTRIES = 5;
@@ -20,11 +23,13 @@ function StatRows({
   title,
   entries,
   round,
+  onPressEntry,
 }: {
   id: string;
   title: string;
   entries: StatEntry[];
   round: boolean;
+  onPressEntry: (entry: StatEntry) => void;
 }) {
   return (
     <View testID={`profile-stats-${id}`} style={styles.list}>
@@ -34,12 +39,23 @@ function StatRows({
           {accountStrings.profile.statsNoEntries}
         </AppText>
       ) : entries.slice(0, TOP_ENTRIES).map((entry, index) => (
-        <View
+        <Pressable
           key={`${entry.key}:${index}`}
           testID={`profile-stats-${id}-${index}`}
           accessible
+          focusable
+          accessibilityRole="button"
           accessibilityLabel={`${accountStrings.profile.statRank(index + 1)}: ${entry.label}, ${entry.sublabel}, ${strings.profile.playCount(entry.count)}`}
-          style={styles.row}
+          accessibilityHint={
+            round
+              ? strings.profile.openTopArtist(entry.label)
+              : strings.profile.playTopTrack(entry.label)
+          }
+          onPress={() => {
+            triggerHaptic('tap');
+            onPressEntry(entry);
+          }}
+          style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
         >
           <AppText variant="label" color="muted" align="center" style={styles.rank}>
             {index + 1}
@@ -55,7 +71,7 @@ function StatRows({
             <AppText variant="callout" color="secondary" numberOfLines={1}>{entry.sublabel}</AppText>
           </View>
           <AppText variant="label" color="secondary">{entry.count}</AppText>
-        </View>
+        </Pressable>
       ))}
     </View>
   );
@@ -66,8 +82,27 @@ function StatRows({
  * the last 30 days — that double as the period switch (tabs), followed by
  * the top tracks and artists of the selected period.
  */
-export function StatsPeriods({ data, testID }: StatsPeriodsProps) {
+export function StatsPeriods({
+  data,
+  testID,
+  onPressTrack,
+  onPressArtist,
+}: StatsPeriodsProps) {
   const [period, setPeriod] = useState<PeriodId>('all-time');
+  const handleTrackPress = onPressTrack ?? ((entry: StatEntry) => {
+    void import('./statRowActions')
+      .then((mod) => mod.playTopStatTrack(entry))
+      .catch((error: unknown) => {
+        console.error('[LoggeRythm] Failed to play top stat track:', error);
+      });
+  });
+  const handleArtistPress = onPressArtist ?? ((entry: StatEntry) => {
+    void import('./statRowActions')
+      .then((mod) => mod.openTopStatArtist(entry))
+      .catch((error: unknown) => {
+        console.error('[LoggeRythm] Failed to open top stat artist:', error);
+      });
+  });
   const periods: readonly {
     id: PeriodId;
     title: string;
@@ -134,12 +169,14 @@ export function StatsPeriods({ data, testID }: StatsPeriodsProps) {
           title={strings.profile.topTracks}
           entries={selected.tracks}
           round={false}
+          onPressEntry={handleTrackPress}
         />
         <StatRows
           id={`${selected.id}-artists`}
           title={strings.profile.topArtists}
           entries={selected.artists}
           round
+          onPressEntry={handleArtistPress}
         />
       </View>
     </View>

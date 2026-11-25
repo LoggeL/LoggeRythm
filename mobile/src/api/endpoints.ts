@@ -13,6 +13,7 @@ import {
   decodeArtistAbout,
   decodeArtistDetail,
   decodeArtistSummaries,
+  decodeBatchPreloadResponse,
   decodeBooleanMap,
   decodeCachedTrackIds,
   decodeConnectState,
@@ -24,10 +25,15 @@ import {
   decodeLyricsResponse,
   decodeNullablePartyState,
   decodeOk,
-  decodePlaybackSettings,
+  decodePartyReaction,
   decodePartyState,
+  decodePartyVoteSkipResult,
+  decodePlaybackSettings,
   decodePlaylist,
+  decodePlaylistBlendResult,
   decodePlaylistCollaborator,
+  decodePlaylistDeduplicateResult,
+  decodePlaylistDuplicates,
   decodePlaylistInvite,
   decodePlaylistInvitePreview,
   decodePlaylistInviteStatus,
@@ -35,16 +41,20 @@ import {
   decodePlaylistSummary,
   decodePlaylistSearchResults,
   decodePlaylistSummaries,
+  decodePlaylistSyncManifest,
   decodePublicProfile,
   decodeReleaseRadar,
   decodeImportJobDetail,
   decodeImportJobStatus,
   decodeImportJobStatuses,
+  decodeSocialActivityResponse,
   decodeStorageCleanupResult,
   decodeTrack,
+  decodeTrackAudioMeta,
   decodeTrackList,
   decodeTrackPlayCounts,
   decodeUser,
+  decodeUserStatsInsights,
 } from './decoders';
 import { decodeListeningStatsWire } from '../data/mappers/listeningStats';
 import type {
@@ -58,6 +68,8 @@ import type {
   ArtistAbout,
   ArtistDetail,
   ArtistSummary,
+  AudioQualityTier,
+  BatchPreloadResponse,
   CachedTrackIds,
   ConnectState,
   ConnectTicket,
@@ -67,11 +79,16 @@ import type {
   GenreDetail,
   HomeShelf,
   LyricsResponse,
+  PartyReaction,
   PartyState,
+  PartyVoteSkipResult,
   PlaybackSettings,
   Playlist,
+  PlaylistBlendResult,
   PlaylistCollaborator,
   PlaylistCreateRequest,
+  PlaylistDeduplicateResult,
+  PlaylistDuplicatesResponse,
   PlaylistInvite,
   PlaylistInvitePreview,
   PlaylistInviteStatus,
@@ -79,17 +96,23 @@ import type {
   PlaylistListScope,
   PlaylistSearchResult,
   PlaylistSummary,
+  PlaylistSyncManifest,
   PlaylistUpdateRequest,
   PublicProfile,
+  RadioSeedRequest,
   ReleaseRadarEntry,
   ImportJobDetail,
   ImportJobStatus,
+  SocialActivityResponse,
+  StatsInsightsRange,
   StorageCleanupResult,
   Track,
+  TrackAudioMeta,
   TrackInput,
   TrackPlayCounts,
   TrackPlayQuery,
   User,
+  UserStatsInsights,
 } from './types';
 
 // Cold personalized discovery can exceed the usual 20s request deadline while resolving provider
@@ -116,6 +139,8 @@ export interface MeUpdateRequest {
 export interface PlaybackSettingsUpdate {
   crossfade_enabled?: boolean | null;
   crossfade_duration_sec?: number | null;
+  preferred_quality?: AudioQualityTier | null;
+  share_listening_activity?: boolean | null;
 }
 
 export interface PartyCreateRequest {
@@ -127,11 +152,33 @@ export interface PartyCreateRequest {
   is_playing?: boolean;
   position_sec?: number;
   guests_can_control?: boolean;
+  auto_dj?: boolean;
 }
 
 export interface PartySettingsUpdateRequest {
   name?: string | null;
   guests_can_control?: boolean | null;
+  auto_dj?: boolean | null;
+}
+
+export interface PartySavePlaylistRequest {
+  name?: string | null;
+  collaborative?: boolean;
+}
+
+export interface StartImportJobOptions {
+  target_playlist_id?: number | null;
+  create_playlist_name?: string | null;
+}
+
+export interface PlaylistSyncManifestOptions {
+  includeLyrics?: boolean;
+  preload?: boolean;
+}
+
+export interface LyricsLookupOptions {
+  album?: string;
+  durationSec?: number;
 }
 
 export type PartyTrackInsertMode = 'end' | 'next';
@@ -224,6 +271,14 @@ export function getHomeMixes(signal?: AbortSignal): Promise<HomeShelf[]> {
   });
 }
 
+export function getPersonalMixes(signal?: AbortSignal): Promise<HomeShelf[]> {
+  return apiRequest<HomeShelf[]>('/api/home/personal-mixes', {
+    signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
+    decode: decodeHomeShelves,
+  });
+}
+
 export function getBecauseYouListened(signal?: AbortSignal): Promise<HomeShelf[]> {
   return apiRequest<HomeShelf[]>('/api/home/because-you-listened', {
     signal,
@@ -282,6 +337,28 @@ export function getTrack(deezerId: DeezerId, signal?: AbortSignal): Promise<Trac
   });
 }
 
+export function getTrackAudioMeta(
+  deezerId: DeezerId,
+  signal?: AbortSignal,
+): Promise<TrackAudioMeta> {
+  return apiRequest<TrackAudioMeta>(`/api/tracks/${pathSegment(deezerId)}/audio-meta`, {
+    signal,
+    decode: decodeTrackAudioMeta,
+  });
+}
+
+export function preloadTracksBatch(
+  trackIds: DeezerId[],
+  signal?: AbortSignal,
+): Promise<BatchPreloadResponse> {
+  return apiRequest<BatchPreloadResponse>('/api/tracks/preload', {
+    method: 'POST',
+    body: { track_ids: trackIds },
+    signal,
+    decode: decodeBatchPreloadResponse,
+  });
+}
+
 export function getAlbum(albumId: DeezerId, signal?: AbortSignal): Promise<AlbumDetail> {
   return apiRequest<AlbumDetail>(`/api/albums/${pathSegment(albumId)}`, {
     signal,
@@ -320,11 +397,34 @@ export function getRadio(
   });
 }
 
+export function getSeededRadio(
+  request: RadioSeedRequest,
+  signal?: AbortSignal,
+): Promise<Track[]> {
+  return apiRequest<Track[]>('/api/radio/seed', {
+    method: 'POST',
+    body: request,
+    signal,
+    timeoutMs: DISCOVERY_TIMEOUT_MS,
+    decode: decodeTrackList,
+  });
+}
+
 /** Starts a background Spotify import; the server answers 202 with the queued job. */
-export function startImportJob(url: string): Promise<ImportJobStatus> {
+export function startImportJob(
+  url: string,
+  options?: StartImportJobOptions,
+): Promise<ImportJobStatus> {
+  const body: Record<string, unknown> = { url };
+  if (options?.target_playlist_id !== undefined) {
+    body.target_playlist_id = options.target_playlist_id;
+  }
+  if (options?.create_playlist_name !== undefined) {
+    body.create_playlist_name = options.create_playlist_name;
+  }
   return apiRequest<ImportJobStatus>('/api/resolve/jobs', {
     method: 'POST',
-    body: { url },
+    body,
     successStatuses: [202],
     decode: decodeImportJobStatus,
   });
@@ -364,15 +464,28 @@ export function getDeezerPlaylist(
   );
 }
 
+export type LyricsVariant = 'default' | 'ai';
+
 export function getLyrics(
   artist: string,
   title: string,
   deezerId?: DeezerId,
   signal?: AbortSignal,
+  variant?: LyricsVariant,
+  options?: LyricsLookupOptions,
 ): Promise<LyricsResponse> {
   const track = deezerId === undefined ? '' : `&deezer_id=${encodeURIComponent(deezerId)}`;
+  const variantQuery = variant === 'ai' ? '&variant=ai' : '';
+  const albumQuery =
+    options?.album !== undefined && options.album.trim().length > 0
+      ? `&album=${encodeURIComponent(options.album.trim())}`
+      : '';
+  const durationQuery =
+    options?.durationSec !== undefined && Number.isFinite(options.durationSec) && options.durationSec > 0
+      ? `&duration_sec=${Math.round(options.durationSec)}`
+      : '';
   return apiRequest<LyricsResponse>(
-    `/api/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}${track}`,
+    `/api/lyrics?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}${track}${variantQuery}${albumQuery}${durationQuery}`,
     {
       signal,
       // A cache miss can perform two bounded LRCLIB lookups, materialize the
@@ -596,6 +709,58 @@ export function leavePlaylist(id: number): Promise<void> {
   });
 }
 
+export function getPlaylistSyncManifest(
+  id: number,
+  options: PlaylistSyncManifestOptions = {},
+  signal?: AbortSignal,
+): Promise<PlaylistSyncManifest> {
+  const params: string[] = [];
+  if (options.includeLyrics) params.push('include_lyrics=true');
+  if (options.preload) params.push('preload=true');
+  const query = params.length > 0 ? `?${params.join('&')}` : '';
+  return apiRequest<PlaylistSyncManifest>(
+    `/api/playlists/${pathSegment(id)}/sync-manifest${query}`,
+    {
+      signal,
+      decode: decodePlaylistSyncManifest,
+    },
+  );
+}
+
+export function getPlaylistDuplicates(
+  id: number,
+  signal?: AbortSignal,
+): Promise<PlaylistDuplicatesResponse> {
+  return apiRequest<PlaylistDuplicatesResponse>(
+    `/api/playlists/${pathSegment(id)}/duplicates`,
+    {
+      signal,
+      decode: decodePlaylistDuplicates,
+    },
+  );
+}
+
+export function deduplicatePlaylist(id: number): Promise<PlaylistDeduplicateResult> {
+  return apiRequest<PlaylistDeduplicateResult>(
+    `/api/playlists/${pathSegment(id)}/deduplicate`,
+    {
+      method: 'POST',
+      decode: decodePlaylistDeduplicateResult,
+    },
+  );
+}
+
+export function createPlaylistBlend(otherUserId: number): Promise<PlaylistBlendResult> {
+  return apiRequest<PlaylistBlendResult>(
+    `/api/playlists/blend/${pathSegment(otherUserId)}`,
+    {
+      method: 'POST',
+      successStatuses: [201],
+      decode: decodePlaylistBlendResult,
+    },
+  );
+}
+
 // --- Likes ---
 export function getLikes(signal?: AbortSignal): Promise<Track[]> {
   return apiRequest<Track[]>('/api/me/likes', { signal, decode: decodeTrackList });
@@ -719,6 +884,26 @@ export function getStats(
     request: {},
     signal,
     decode: decodeListeningStatsWire,
+  });
+}
+
+export function getStatsInsights(
+  range: StatsInsightsRange = '30d',
+  signal?: AbortSignal,
+): Promise<UserStatsInsights> {
+  return apiRequest<UserStatsInsights>(
+    `/api/me/stats/insights?range=${encodeURIComponent(range)}`,
+    {
+      signal,
+      decode: decodeUserStatsInsights,
+    },
+  );
+}
+
+export function getSocialActivity(signal?: AbortSignal): Promise<SocialActivityResponse> {
+  return apiRequest<SocialActivityResponse>('/api/social/activity', {
+    signal,
+    decode: decodeSocialActivityResponse,
   });
 }
 
@@ -850,6 +1035,51 @@ export function getPartyCachedTrackIds(
 
 export function leaveParty(code: string): Promise<void> {
   return apiRequest<void>(`/api/party/${pathSegment(code)}/leave`, { method: 'POST' });
+}
+
+export function savePartyAsPlaylist(
+  code: string,
+  request: PartySavePlaylistRequest = {},
+): Promise<PlaylistSummary> {
+  return apiRequest<PlaylistSummary>(`/api/party/${pathSegment(code)}/save-playlist`, {
+    method: 'POST',
+    body: request,
+    successStatuses: [201],
+    decode: decodePlaylistSummary,
+  });
+}
+
+export function transferPartyHost(code: string, memberKey: string): Promise<PartyState> {
+  return apiRequest<PartyState>(`/api/party/${pathSegment(code)}/host`, {
+    method: 'PATCH',
+    body: { member_key: memberKey },
+    decode: decodePartyState,
+  });
+}
+
+export function fillPartyAutoDj(code: string, count = 5): Promise<PartyState> {
+  return apiRequest<PartyState>(
+    `/api/party/${pathSegment(code)}/auto-dj/fill?count=${encodeURIComponent(String(count))}`,
+    {
+      method: 'POST',
+      decode: decodePartyState,
+    },
+  );
+}
+
+export function reactInParty(code: string, emoji: string): Promise<PartyReaction> {
+  return apiRequest<PartyReaction>(`/api/party/${pathSegment(code)}/react`, {
+    method: 'POST',
+    body: { emoji },
+    decode: decodePartyReaction,
+  });
+}
+
+export function voteSkipPartyTrack(code: string): Promise<PartyVoteSkipResult> {
+  return apiRequest<PartyVoteSkipResult>(`/api/party/${pathSegment(code)}/vote-skip`, {
+    method: 'POST',
+    decode: decodePartyVoteSkipResult,
+  });
 }
 
 // --- Personal multi-device Connect ---

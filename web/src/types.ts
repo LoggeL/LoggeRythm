@@ -28,6 +28,25 @@ export interface Track {
   loudness_lufs?: number | null;
   /** True/sample peak as a linear full-scale ratio when known. */
   loudness_peak?: number | null;
+  /** Tempo in beats per minute when known. */
+  bpm?: number | null;
+  /** Explicit lyrics flag when known. */
+  explicit?: boolean | null;
+}
+
+export type AudioQuality = "lossless" | "high" | "saver";
+
+export interface TrackAudioMeta {
+  deezer_id: string;
+  peaks: number[];
+  loudness_lufs: number | null;
+  loudness_gain_db: number | null;
+  loudness_peak: number | null;
+  bpm: number | null;
+  duration_sec: number | null;
+  intro_end_sec: number | null;
+  outro_start_sec: number | null;
+  analyzed_at: string | null;
 }
 
 /** `followed` wins when the source artist is both followed and played. */
@@ -104,11 +123,20 @@ export interface UserStats {
 export interface PlaybackSettings {
   crossfade_enabled: boolean;
   crossfade_duration_sec: number;
+  preferred_quality?: AudioQuality;
+  share_listening_activity?: boolean;
+}
+
+export interface LyricsWord {
+  t: number;
+  end: number;
+  text: string;
 }
 
 export interface LyricsLine {
   t: number;
   text: string;
+  words?: LyricsWord[];
 }
 
 export interface LyricsResponse {
@@ -117,6 +145,108 @@ export interface LyricsResponse {
   source?: string | null;
   ai_generated?: boolean;
   cached?: boolean;
+  instrumental?: boolean;
+}
+
+export type StatsInsightsRange = "7d" | "30d" | "90d" | "year" | "all";
+
+export interface TimestampedPlay extends RecentPlay {
+  played_at: string;
+}
+
+export interface UserStatsInsights {
+  range: StatsInsightsRange;
+  listening_sec: number;
+  play_count: number;
+  unique_tracks: number;
+  unique_artists: number;
+  top_tracks: StatEntry[];
+  top_artists: StatEntry[];
+  top_albums: StatEntry[];
+  current_streak_days: number;
+  longest_streak_days: number;
+  hourly_distribution: number[];
+  weekday_distribution: number[];
+  new_artists_count: number;
+  recent_plays: TimestampedPlay[];
+}
+
+export interface SocialActivityItem {
+  user_id: number;
+  display_name: string;
+  avatar_url: string | null;
+  is_playing: boolean;
+  track: Track | null;
+  device_name: string | null;
+  device_type: DeviceType | null;
+  party_code: string | null;
+  updated_at: string | null;
+}
+
+export interface SocialActivityResponse {
+  items: SocialActivityItem[];
+  server_time: string;
+}
+
+export interface BlendResult {
+  playlist: Playlist;
+  match_percent: number;
+  shared_artists: string[];
+  shared_tracks_count: number;
+  other_user: PlaylistCollaboratorUser;
+}
+
+export interface PlaylistSyncTrack {
+  playlist_entry_id: number;
+  deezer_id: string;
+  title: string;
+  artist: string;
+  duration_sec: number;
+  is_stored: boolean;
+  size_bytes: number | null;
+  audio_format: string | null;
+  loudness_gain_db: number | null;
+  loudness_lufs: number | null;
+  loudness_peak: number | null;
+  has_lyrics: boolean;
+}
+
+export interface PlaylistSyncManifest {
+  playlist_id: number;
+  revision: number;
+  track_count: number;
+  stored_count: number;
+  total_known_bytes: number;
+  tracks: PlaylistSyncTrack[];
+  lyrics?: Record<string, LyricsResponse> | null;
+}
+
+export interface PlaylistDuplicateGroup {
+  keep_entry_id: number;
+  duplicate_entry_ids: number[];
+  title: string;
+  artist: string;
+  isrc: string | null;
+}
+
+export interface PlaylistDuplicatesResponse {
+  playlist_id: number;
+  total_duplicates: number;
+  groups: PlaylistDuplicateGroup[];
+}
+
+export interface PlaylistDeduplicateResponse {
+  playlist_id: number;
+  groups_merged: number;
+  removed_count: number;
+  removed_entry_ids: number[];
+  revision: number;
+}
+
+export interface PlaylistSseEvent {
+  playlist_id: number;
+  revision: number;
+  event: "snapshot" | "updated" | "revoked" | "deleted";
 }
 
 export interface AdminUser {
@@ -321,9 +451,28 @@ export interface PartyTrack {
   load_state: PartyLoadState;
   /** Why the last background load failed (only for `failed`). */
   load_error: string | null;
+  /** ReplayGain/R128 track gain adjustment in dB when known. */
+  loudness_gain_db?: number | null;
 }
 
 export type PartyLoadState = "ready" | "loading" | "queued" | "failed" | "idle";
+
+export interface PartyReaction {
+  id: string;
+  emoji: string;
+  member_key: string;
+  member_name: string;
+  created_at: string;
+}
+
+export interface PartyVoteSkipResult {
+  code: string;
+  track_item_id: number;
+  votes: string[];
+  votes_needed: number;
+  skipped: boolean;
+  state: PartyState;
+}
 
 export interface PartyMember {
   /** Stable actor key (`u:<id>` or `g:<id>`), used by host kick actions. */
@@ -361,11 +510,20 @@ export interface PartyState {
   playback_updated_at: string | null;
   /** Server UTC timestamp for drift compensation. */
   server_time?: string | null;
+  /** Auto-DJ automatically tops up the queue when <= 1 track remains. */
+  auto_dj?: boolean;
+  /** Member keys that voted to skip the current track. */
+  skip_votes?: string[];
+  /** Number of votes needed to trigger an automatic skip. */
+  skip_votes_needed?: number;
+  /** Most recent live emoji reaction broadcast via SSE. */
+  latest_reaction?: PartyReaction | null;
 }
 
 export interface PartySettingsUpdate {
   name?: string | null;
   guests_can_control?: boolean | null;
+  auto_dj?: boolean | null;
 }
 
 /** The host's player queue and playhead a new party continues from. */
@@ -575,6 +733,13 @@ export interface ImportJobStatus {
   created_at: string;
   updated_at: string;
   finished_at: string | null;
+  /** Populated automatically when the job targeted or created a playlist. */
+  created_playlist_id?: number | null;
+}
+
+export interface ImportJobCreateOptions {
+  target_playlist_id?: number | null;
+  create_playlist_name?: string | null;
 }
 
 export interface ImportJobDetail extends ImportJobStatus {

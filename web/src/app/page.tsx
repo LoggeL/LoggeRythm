@@ -9,6 +9,7 @@ import { useRecentTracks, RECENT_QUEUE_CONTEXT } from "@/hooks/useRecentTracks";
 import { useReleaseRadar, useReleaseRadarSeen } from "@/hooks/useReleaseRadar";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { CompassIcon, RadioIcon } from "@/components/icons";
+import FriendsListeningPanel from "@/components/social/FriendsListeningPanel";
 import ShelfCard from "@/components/ShelfCard";
 import Shelf, { ShelfSkeleton } from "@/components/browse/Shelf";
 import QuickTile from "@/components/browse/QuickTile";
@@ -40,6 +41,11 @@ export default function HomePage() {
   const mixes = useQuery<HomeShelf[]>({
     queryKey: ["home-mixes", userId],
     queryFn: () => api.homeMixes(),
+    enabled: userId !== null,
+  });
+  const personalMixes = useQuery<HomeShelf[]>({
+    queryKey: ["home-personal-mixes", userId],
+    queryFn: () => api.homePersonalMixes(),
     enabled: userId !== null,
   });
   const becauseYouListened = useQuery<HomeShelf[]>({
@@ -97,6 +103,29 @@ export default function HomePage() {
               Meine Bibliothek
             </Link>
           </div>
+        </section>
+      )}
+
+      {me && <FriendsListeningPanel />}
+
+      {me && (personalMixes.isLoading || personalMixes.isError || (personalMixes.data?.length ?? 0) > 0) && (
+        <section aria-labelledby="personal-mixes-heading" aria-busy={personalMixes.isLoading}>
+          <SectionHeader
+            id="personal-mixes-heading"
+            title="Aus deinem Hörverlauf"
+            description="On Repeat, vergessene Favoriten und ungehörte Schätze aus deiner Bibliothek."
+            href="/account?tab=stats"
+            linkLabel="Hörprofil"
+          />
+          <QueryState query={personalMixes} label="Deine persönlichen Mixe" skeleton={<ShelfSkeleton />} empty={null}>
+            {(shelves) => (
+              <Shelf label="Aus deinem Hörverlauf">
+                {shelves.map((shelf, index) => (
+                  <ShelfCard key={shelf.key} href={mixHref(shelf)} shelf={shelf} index={index} />
+                ))}
+              </Shelf>
+            )}
+          </QueryState>
         </section>
       )}
 

@@ -1,20 +1,22 @@
 import Avatar from "@/components/Avatar";
-import { CloseIcon } from "@/components/icons";
+import { CloseIcon, CrownIcon } from "@/components/icons";
 import type { PartyMember } from "@/types";
 
-/** Who is listening along in the Jam; host is marked and can remove participants. */
+/** Who is listening along in the Jam; host is marked and can transfer host or remove participants. */
 export default function MembersCard({
   members,
   hostName,
   isHost = false,
   locked = false,
   onKick,
+  onTransferHost,
 }: {
   members: PartyMember[];
   hostName: string;
   isHost?: boolean;
   locked?: boolean;
   onKick?: (memberKey: string, name: string) => void;
+  onTransferHost?: (memberKey: string, name: string) => void;
 }) {
   return (
     <section aria-labelledby="party-members-title" className="min-w-0">
@@ -31,6 +33,8 @@ export default function MembersCard({
           {members.map((member) => {
             const host = member.is_host ?? (!member.is_guest && member.name === hostName);
             const canKick = isHost && !host && Boolean(member.key) && Boolean(onKick);
+            const canTransfer =
+              isHost && !host && !member.is_guest && Boolean(member.key) && Boolean(onTransferHost);
             return (
               <li
                 key={member.key ?? `${member.is_guest ? "g" : "u"}:${member.name}`}
@@ -44,6 +48,18 @@ export default function MembersCard({
                     size={44}
                     className={host ? "ring-2 ring-accent ring-offset-2 ring-offset-background" : ""}
                   />
+                  {canTransfer && member.key && onTransferHost && (
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => onTransferHost(member.key as string, member.name)}
+                      aria-label={`Host-Rolle an ${member.name} übergeben`}
+                      title={`Host an ${member.name} übergeben`}
+                      className="absolute -left-1.5 -top-1.5 grid h-6 w-6 place-items-center rounded-full border border-border bg-panel text-muted opacity-100 transition hover:border-accent hover:text-accent focus-visible:opacity-100 disabled:opacity-40 sm:opacity-0 sm:group-hover:opacity-100"
+                    >
+                      <CrownIcon width={12} height={12} aria-hidden="true" />
+                    </button>
+                  )}
                   {canKick && member.key && onKick && (
                     <button
                       type="button"

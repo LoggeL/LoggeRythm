@@ -215,6 +215,7 @@ describe('track action sheet contract', () => {
       'download',
       'open-album',
       'open-artist',
+      'share',
     ]);
 
     showTrackActions(track, vi.fn(), {
@@ -230,6 +231,7 @@ describe('track action sheet contract', () => {
       'download',
       'open-album',
       'open-artist',
+      'share',
       'remove',
     ]);
     expect(trackActionIdsForRequest(request, 'account-7', true)).toContain(

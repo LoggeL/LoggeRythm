@@ -13,20 +13,26 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import secrets
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import WebSocket
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
 
+from ..db.models import UserPlaybackState
+from ..db.session import SessionLocal
 from ..schemas.connect import (
     CommandAckMessage,
+    CommandAction,
     CommandMessage,
     ConnectDeviceOut,
     ConnectPlaybackInput,
@@ -36,10 +42,13 @@ from ..schemas.connect import (
     DeviceType,
     PlaybackStateMessage,
     RegisterMessage,
+    RestConnectCommandOut,
     TransferMessage,
     UpdateDeviceMessage,
     validate_command_payload,
 )
+from ..schemas.track import Track
+from . import social_bus, storage
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +57,17 @@ HEARTBEAT_INTERVAL_SEC = 20
 HEARTBEAT_TIMEOUT_SEC = 45
 REGISTRATION_TIMEOUT_SEC = 10
 PENDING_COMMAND_TTL_SEC = 30
+_PERSIST_INTERVAL_SEC = 15.0
+
+
+class ConnectRestError(Exception):
+    """Structured error raised by stateless REST Connect operations."""
+
+    def __init__(self, status_code: int, code: str, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.code = code
+        self.detail = detail
 
 
 def _utcnow() -> datetime:
@@ -76,10 +96,130 @@ class _TicketEntry:
 @dataclass
 class _PendingCommand:
     command_id: str
-    sender_device_id: str
+    sender_device_id: str | None
     target_device_id: str
     request_id: str | None
     created_at_mono: float
+    ack_future: asyncio.Future[tuple[bool, str | None]] | None = None
+    ack_loop: asyncio.AbstractEventLoop | None = None
+
+    def resolve(self, ok: bool, error: str | None) -> None:
+        fut = self.ack_future
+        loop = self.ack_loop
+        if fut is None or loop is None:
+            return
+        if not fut.done():
+            loop.call_soon_threadsafe(_set_future_result, fut, (ok, error))
+
+
+def _set_future_result(
+    fut: asyncio.Future[tuple[bool, str | None]],
+    value: tuple[bool, str | None],
+) -> None:
+    if not fut.done():
+        fut.set_result(value)
+
+
+def _persist_playback_state(
+    user_id: int,
+    playback: ConnectPlaybackState,
+    *,
+    session_factory: Callable[[], Session] | None = None,
+) -> None:
+    """Upsert the user's resumable playback queue and playhead into the DB."""
+    factory = session_factory or SessionLocal
+    queue_payload = json.dumps(
+        [t.model_dump(mode="json") for t in playback.queue],
+        ensure_ascii=False,
+    )
+    origins_payload = json.dumps(list(playback.origins), ensure_ascii=False)
+    now = _utcnow()
+    with factory() as db:
+        row = db.get(UserPlaybackState, user_id)
+        if row is None:
+            row = UserPlaybackState(
+                user_id=user_id,
+                queue_json=queue_payload,
+                origins_json=origins_payload,
+                queue_context=playback.queue_context,
+                current_index=playback.current_index,
+                position_sec=float(playback.position_sec),
+                duration_sec=float(playback.duration_sec),
+                shuffle=bool(playback.shuffle),
+                repeat=playback.repeat,
+                updated_at=now,
+            )
+            db.add(row)
+        else:
+            row.queue_json = queue_payload
+            row.origins_json = origins_payload
+            row.queue_context = playback.queue_context
+            row.current_index = playback.current_index
+            row.position_sec = float(playback.position_sec)
+            row.duration_sec = float(playback.duration_sec)
+            row.shuffle = bool(playback.shuffle)
+            row.repeat = playback.repeat
+            row.updated_at = now
+        db.commit()
+
+
+def _load_persisted_playback_state(
+    user_id: int,
+    *,
+    session_factory: Callable[[], Session] | None = None,
+) -> ConnectPlaybackState | None:
+    factory = session_factory or SessionLocal
+    with factory() as db:
+        row = db.get(UserPlaybackState, user_id)
+        if row is None:
+            return None
+        raw_queue = json.loads(row.queue_json or "[]")
+        raw_origins = json.loads(row.origins_json or "[]")
+        queue = [Track.model_validate(item) for item in raw_queue]
+        origins = (
+            [o if o in ("manual", "context") else "context" for o in raw_origins]
+            if len(raw_origins) == len(queue)
+            else ["context"] * len(queue)
+        )
+        current_index = (
+            row.current_index
+            if -1 <= row.current_index < len(queue)
+            else (-1 if not queue else 0)
+        )
+        repeat = row.repeat if row.repeat in ("off", "all", "one") else "off"
+        updated = row.updated_at
+        if updated is not None:
+            updated = (
+                updated.replace(tzinfo=timezone.utc)
+                if updated.tzinfo is None
+                else updated.astimezone(timezone.utc)
+            )
+        return ConnectPlaybackState(
+            queue=queue,
+            origins=origins,  # type: ignore[arg-type]
+            queue_context=row.queue_context,
+            current_index=current_index,
+            is_playing=False,
+            position_sec=max(0.0, float(row.position_sec or 0.0)),
+            duration_sec=max(0.0, float(row.duration_sec or 0.0)),
+            shuffle=bool(row.shuffle),
+            repeat=repeat,  # type: ignore[arg-type]
+            updated_at=updated.isoformat() if updated else None,
+        )
+
+
+def _preload_transfer_tracks(user_id: int, playback: ConnectPlaybackState) -> None:
+    """Warm server cache for the transferred track and the next track in queue."""
+    if not playback.queue or playback.current_index < 0:
+        return
+    ids: list[str] = []
+    for idx in (playback.current_index, playback.current_index + 1):
+        if 0 <= idx < len(playback.queue):
+            tid = str(playback.queue[idx].id or "").strip()
+            if tid.isdigit():
+                ids.append(tid)
+    if ids:
+        storage.schedule_preload(ids, user_id=user_id, source="preload")
 
 
 @dataclass
@@ -97,6 +237,7 @@ class DeviceConnection:
     last_seen_at: str
     last_activity_mono: float
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    loop: asyncio.AbstractEventLoop | None = None
 
     def to_out(self, active_device_id: str | None) -> ConnectDeviceOut:
         return ConnectDeviceOut(
@@ -120,6 +261,7 @@ class _UserRoom:
     devices: dict[str, DeviceConnection] = field(default_factory=dict)
     playback: ConnectPlaybackState = field(default_factory=ConnectPlaybackState)
     pending_commands: dict[str, _PendingCommand] = field(default_factory=dict)
+    last_persisted_mono: float = 0.0
 
     def snapshot(self) -> ConnectStateOut:
         return ConnectStateOut(
@@ -253,12 +395,25 @@ class ConnectHub:
 
     # --- state inspection -------------------------------------------------
 
-    def get_state(self, user_id: int) -> ConnectStateOut:
+    def get_state(
+        self,
+        user_id: int,
+        *,
+        session_factory: Callable[[], Session] | None = None,
+    ) -> ConnectStateOut:
         with self._lock:
             room = self._rooms.get(user_id)
-            if room is None:
-                return ConnectStateOut(server_time=_utcnow_iso())
-            return room.snapshot()
+            if room is not None:
+                return room.snapshot()
+        persisted = (
+            _load_persisted_playback_state(user_id, session_factory=session_factory)
+            if session_factory is not None
+            else None
+        )
+        return ConnectStateOut(
+            playback=persisted if persisted is not None else ConnectPlaybackState(),
+            server_time=_utcnow_iso(),
+        )
 
     def snapshot_all(self) -> dict[int, ConnectStateOut]:
         """Return a consistent snapshot for every user with live connected devices."""
@@ -281,6 +436,8 @@ class ConnectHub:
         user_id: int,
         websocket: WebSocket,
         msg: RegisterMessage,
+        *,
+        session_factory: Callable[[], Session] | None = None,
     ) -> DeviceConnection:
         now = _utcnow()
         now_iso = now.isoformat()
@@ -298,17 +455,34 @@ class ConnectHub:
             connected_at=now_iso,
             last_seen_at=now_iso,
             last_activity_mono=now_mono,
+            loop=asyncio.get_running_loop(),
         )
+
+        # Hydrate persisted playback outside the room lock when no live room exists yet.
+        persisted_playback: ConnectPlaybackState | None = None
+        if session_factory is not None:
+            with self._lock:
+                needs_hydrate = user_id not in self._rooms
+            if needs_hydrate:
+                persisted_playback = await asyncio.to_thread(
+                    _load_persisted_playback_state,
+                    user_id,
+                    session_factory=session_factory,
+                )
 
         replaced_conn: DeviceConnection | None = None
         deactivated_target: DeviceConnection | None = None
         deactivated_payload: dict[str, Any] | None = None
         failed_results: list[tuple[DeviceConnection, dict[str, Any]]] = []
+        persist_snapshot: ConnectPlaybackState | None = None
 
         with self._lock:
             if msg.take_active and not msg.capabilities.can_play_audio:
                 raise ValueError("Cannot take_active on a device with can_play_audio=false")
+            is_new_room = user_id not in self._rooms
             room = self._rooms.setdefault(user_id, _UserRoom())
+            if is_new_room and persisted_playback is not None and not room.playback.queue:
+                room.playback = persisted_playback
             replaced_conn = room.devices.get(conn.device_id)
             room.devices[conn.device_id] = conn
 
@@ -321,7 +495,16 @@ class ConnectHub:
                 ]
                 for cid in dropped_ids:
                     entry = room.pending_commands.pop(cid)
-                    sender = room.devices.get(entry.sender_device_id)
+                    err_msg = (
+                        f"Device {replaced_conn.name!r} reconnected before "
+                        "acknowledging command"
+                    )
+                    entry.resolve(False, err_msg)
+                    sender = (
+                        room.devices.get(entry.sender_device_id)
+                        if entry.sender_device_id is not None
+                        else None
+                    )
                     if sender is not None and sender is not replaced_conn:
                         failed_results.append(
                             (
@@ -331,10 +514,7 @@ class ConnectHub:
                                     "request_id": entry.request_id,
                                     "command_id": cid,
                                     "ok": False,
-                                    "error": (
-                                        f"Device {replaced_conn.name!r} reconnected before "
-                                        "acknowledging command"
-                                    ),
+                                    "error": err_msg,
                                 },
                             )
                         )
@@ -362,6 +542,9 @@ class ConnectHub:
                     room.playback = _apply_playback_input(
                         room.playback, msg.playback, conn, now_iso
                     )
+                    if session_factory is not None:
+                        persist_snapshot = room.playback.model_copy(deep=True)
+                        room.last_persisted_mono = now_mono
                 else:
                     room.playback.volume = conn.volume
                     room.playback.muted = conn.muted
@@ -373,10 +556,16 @@ class ConnectHub:
                     room.playback.is_playing = False
                     room.playback.position_sec = pos
                     room.playback.updated_at = now_iso
+                    if session_factory is not None:
+                        persist_snapshot = room.playback.model_copy(deep=True)
+                        room.last_persisted_mono = now_mono
                 elif msg.playback is not None:
                     room.playback = _apply_playback_input(
                         room.playback, msg.playback, conn, now_iso
                     )
+                    if session_factory is not None:
+                        persist_snapshot = room.playback.model_copy(deep=True)
+                        room.last_persisted_mono = now_mono
                 else:
                     room.playback.volume = conn.volume
                     room.playback.muted = conn.muted
@@ -384,6 +573,14 @@ class ConnectHub:
             room.revision += 1
             snapshot = room.snapshot().model_dump(mode="json")
             other_conns = [c for c in room.devices.values() if c is not conn]
+
+        if persist_snapshot is not None and session_factory is not None:
+            await asyncio.to_thread(
+                _persist_playback_state,
+                user_id,
+                persist_snapshot,
+                session_factory=session_factory,
+            )
 
         if replaced_conn is not None:
             try:
@@ -409,21 +606,28 @@ class ConnectHub:
             )
         except BaseException:
             # Never leak a registered device if the socket drops before welcome completes.
-            await self.disconnect(conn)
+            await self.disconnect(conn, session_factory=session_factory)
             raise
 
         if deactivated_target is not None and deactivated_payload is not None:
             await _send_broadcast([deactivated_target], deactivated_payload)
         if other_conns:
             await _send_broadcast(other_conns, {"type": "state", "state": snapshot})
+        social_bus.notify()
         return conn
 
-    async def disconnect(self, conn: DeviceConnection) -> None:
+    async def disconnect(
+        self,
+        conn: DeviceConnection,
+        *,
+        session_factory: Callable[[], Session] | None = None,
+    ) -> None:
         now = _utcnow()
         now_iso = now.isoformat()
         state_payload: dict[str, Any] | None = None
         remaining_conns: list[DeviceConnection] = []
         failed_results: list[tuple[DeviceConnection, dict[str, Any]]] = []
+        persist_snapshot: ConnectPlaybackState | None = None
 
         with self._lock:
             room = self._rooms.get(conn.user_id)
@@ -442,7 +646,13 @@ class ConnectHub:
             ]
             for cid in dropped_ids:
                 entry = room.pending_commands.pop(cid)
-                sender = room.devices.get(entry.sender_device_id)
+                err_msg = f"Device {conn.name!r} disconnected before acknowledging command"
+                entry.resolve(False, err_msg)
+                sender = (
+                    room.devices.get(entry.sender_device_id)
+                    if entry.sender_device_id is not None
+                    else None
+                )
                 if sender is not None:
                     failed_results.append(
                         (
@@ -452,7 +662,7 @@ class ConnectHub:
                                 "request_id": entry.request_id,
                                 "command_id": cid,
                                 "ok": False,
-                                "error": f"Device {conn.name!r} disconnected before acknowledging command",
+                                "error": err_msg,
                             },
                         )
                     )
@@ -463,19 +673,37 @@ class ConnectHub:
                 room.playback.is_playing = False
                 room.playback.position_sec = pos
                 room.playback.updated_at = now_iso
+                if session_factory is not None and room.playback.queue:
+                    persist_snapshot = room.playback.model_copy(deep=True)
 
             if not room.devices:
+                if (
+                    persist_snapshot is None
+                    and session_factory is not None
+                    and room.playback.queue
+                ):
+                    persist_snapshot = room.playback.model_copy(
+                        deep=True, update={"is_playing": False}
+                    )
                 del self._rooms[conn.user_id]
-                return
+            else:
+                room.revision += 1
+                state_payload = {"type": "state", "state": room.snapshot().model_dump(mode="json")}
+                remaining_conns = list(room.devices.values())
 
-            room.revision += 1
-            state_payload = {"type": "state", "state": room.snapshot().model_dump(mode="json")}
-            remaining_conns = list(room.devices.values())
+        if persist_snapshot is not None and session_factory is not None:
+            await asyncio.to_thread(
+                _persist_playback_state,
+                conn.user_id,
+                persist_snapshot,
+                session_factory=session_factory,
+            )
 
         for sender, result_payload in failed_results:
             await _send_broadcast([sender], result_payload)
         if state_payload is not None and remaining_conns:
             await _send_broadcast(remaining_conns, state_payload)
+        social_bus.notify()
 
     # --- message handlers -------------------------------------------------
 
@@ -519,18 +747,33 @@ class ConnectHub:
             recipients = list(room.devices.values())
 
         await _send_broadcast(recipients, state_payload)
+        if "party_code" in fields:
+            social_bus.notify()
 
     async def handle_playback_state(
-        self, conn: DeviceConnection, msg: PlaybackStateMessage
+        self,
+        conn: DeviceConnection,
+        msg: PlaybackStateMessage,
+        *,
+        session_factory: Callable[[], Session] | None = None,
     ) -> None:
         now_iso = _utcnow_iso()
+        now_mono = time.monotonic()
         deactivated_target: DeviceConnection | None = None
         deactivated_payload: dict[str, Any] | None = None
+        persist_snapshot: ConnectPlaybackState | None = None
+        social_changed = False
 
         with self._lock:
             room = self._rooms.get(conn.user_id)
             if room is None or room.devices.get(conn.device_id) is not conn:
                 return
+            prev_pb = room.playback
+            prev_track_id = (
+                prev_pb.queue[prev_pb.current_index].id
+                if 0 <= prev_pb.current_index < len(prev_pb.queue)
+                else None
+            )
             if room.active_device_id != conn.device_id:
                 if not msg.claim_active:
                     err = error_frame(
@@ -568,6 +811,10 @@ class ConnectHub:
                         "state": room.snapshot().model_dump(mode="json"),
                     }
                     recipients = list(room.devices.values())
+                    social_changed = True
+                    if session_factory is not None:
+                        persist_snapshot = room.playback.model_copy(deep=True)
+                        room.last_persisted_mono = now_mono
             else:
                 err = None
                 room.playback = _apply_playback_input(
@@ -579,16 +826,50 @@ class ConnectHub:
                     "state": room.snapshot().model_dump(mode="json"),
                 }
                 recipients = list(room.devices.values())
+                new_track_id = (
+                    room.playback.queue[room.playback.current_index].id
+                    if 0 <= room.playback.current_index < len(room.playback.queue)
+                    else None
+                )
+                track_or_play_changed = (
+                    new_track_id != prev_track_id
+                    or room.playback.is_playing != prev_pb.is_playing
+                )
+                social_changed = track_or_play_changed
+                should_persist = (
+                    track_or_play_changed
+                    or len(room.playback.queue) != len(prev_pb.queue)
+                    or not room.playback.is_playing
+                    or (now_mono - room.last_persisted_mono) >= _PERSIST_INTERVAL_SEC
+                )
+                if session_factory is not None and should_persist:
+                    persist_snapshot = room.playback.model_copy(deep=True)
+                    room.last_persisted_mono = now_mono
 
         if err is not None:
             await send_json(conn, err)
             return
+        if persist_snapshot is not None and session_factory is not None:
+            await asyncio.to_thread(
+                _persist_playback_state,
+                conn.user_id,
+                persist_snapshot,
+                session_factory=session_factory,
+            )
         if deactivated_target is not None and deactivated_payload is not None:
             await _send_broadcast([deactivated_target], deactivated_payload)
         if state_payload is not None:
             await _send_broadcast(recipients, state_payload)
+        if social_changed:
+            social_bus.notify()
 
-    async def handle_transfer(self, conn: DeviceConnection, msg: TransferMessage) -> None:
+    async def handle_transfer(
+        self,
+        conn: DeviceConnection,
+        msg: TransferMessage,
+        *,
+        session_factory: Callable[[], Session] | None = None,
+    ) -> None:
         now = _utcnow()
         now_iso = now.isoformat()
 
@@ -687,6 +968,7 @@ class ConnectHub:
                 room.active_device_id = target.device_id
                 room.playback = projected_playback
                 room.revision += 1
+                room.last_persisted_mono = time.monotonic()
                 state_payload = {
                     "type": "state",
                     "state": room.snapshot().model_dump(mode="json"),
@@ -696,10 +978,225 @@ class ConnectHub:
         if commit_err is not None:
             await send_json(conn, commit_err)
             return
+        if session_factory is not None:
+            await asyncio.to_thread(
+                _persist_playback_state,
+                conn.user_id,
+                projected_playback,
+                session_factory=session_factory,
+            )
+        _preload_transfer_tracks(conn.user_id, projected_playback)
         if deactivated_target is not None and deactivated_payload is not None:
             await _send_broadcast([deactivated_target], deactivated_payload)
         if state_payload is not None:
             await _send_broadcast(recipients, state_payload)
+        social_bus.notify()
+
+    async def dispatch_rest_transfer(
+        self,
+        user_id: int,
+        target_device_id: str,
+        play: bool | None = None,
+        *,
+        session_factory: Callable[[], Session] | None = None,
+    ) -> ConnectStateOut:
+        """Stateless REST transfer between the user's connected devices."""
+        now = _utcnow()
+        now_iso = now.isoformat()
+        with self._lock:
+            room = self._rooms.get(user_id)
+            if room is None or target_device_id not in room.devices:
+                raise ConnectRestError(
+                    404,
+                    "device_not_found",
+                    f"Connected device {target_device_id!r} not found",
+                )
+            target = room.devices[target_device_id]
+            if not target.capabilities.can_play_audio:
+                raise ConnectRestError(
+                    400,
+                    "device_cannot_play",
+                    f"Device {target.name!r} cannot play audio",
+                )
+            pos = room.interpolated_position(now)
+            has_track = 0 <= room.playback.current_index < len(room.playback.queue)
+            next_is_playing = (
+                bool(play and has_track)
+                if play is not None
+                else bool(room.playback.is_playing and has_track)
+            )
+            projected_playback = room.playback.model_copy(
+                deep=True,
+                update={
+                    "position_sec": pos,
+                    "is_playing": next_is_playing,
+                    "volume": target.volume,
+                    "muted": target.muted,
+                    "updated_at": now_iso,
+                },
+            )
+            activate_payload = {
+                "type": "activate",
+                "from_device_id": room.active_device_id,
+                "playback": projected_playback.model_dump(mode="json"),
+            }
+
+        try:
+            await send_json(target, activate_payload)
+        except Exception as exc:  # noqa: BLE001
+            raise ConnectRestError(
+                502,
+                "device_unreachable",
+                f"Could not deliver transfer to device {target.name!r}: {exc}",
+            ) from exc
+
+        deactivated_target: DeviceConnection | None = None
+        deactivated_payload: dict[str, Any] | None = None
+        with self._lock:
+            room = self._rooms.get(user_id)
+            if room is None or room.devices.get(target.device_id) is not target:
+                raise ConnectRestError(
+                    502,
+                    "device_unreachable",
+                    f"Device {target.name!r} disconnected or reconnected during transfer",
+                )
+            old_active_id = room.active_device_id
+            if old_active_id and old_active_id != target.device_id:
+                old_conn = room.devices.get(old_active_id)
+                if old_conn is not None:
+                    deactivated_target = old_conn
+                    deactivated_payload = {
+                        "type": "deactivated",
+                        "new_active_device_id": target.device_id,
+                        "reason": "transferred",
+                    }
+            room.active_device_id = target.device_id
+            room.playback = projected_playback
+            room.revision += 1
+            room.last_persisted_mono = time.monotonic()
+            snapshot = room.snapshot()
+            state_payload = {"type": "state", "state": snapshot.model_dump(mode="json")}
+            recipients = list(room.devices.values())
+
+        if session_factory is not None:
+            await asyncio.to_thread(
+                _persist_playback_state,
+                user_id,
+                projected_playback,
+                session_factory=session_factory,
+            )
+        _preload_transfer_tracks(user_id, projected_playback)
+        if deactivated_target is not None and deactivated_payload is not None:
+            await _send_broadcast([deactivated_target], deactivated_payload)
+        await _send_broadcast(recipients, state_payload)
+        social_bus.notify()
+        return snapshot
+
+    async def dispatch_rest_command(
+        self,
+        user_id: int,
+        action: CommandAction,
+        payload: dict[str, Any],
+        *,
+        target_device_id: str | None = None,
+        timeout_sec: float = 5.0,
+    ) -> RestConnectCommandOut:
+        """Dispatch a validated playback command via REST and await the device ack."""
+        try:
+            normalized_payload = validate_command_payload(action, payload)
+        except ValidationError as exc:
+            raise ConnectRestError(422, "invalid_payload", str(exc)) from exc
+
+        loop = asyncio.get_running_loop()
+        ack_future: asyncio.Future[tuple[bool, str | None]] = loop.create_future()
+        now_mono = time.monotonic()
+
+        with self._lock:
+            room = self._rooms.get(user_id)
+            if room is None:
+                raise ConnectRestError(
+                    409,
+                    "no_active_device",
+                    "No connected devices available to receive playback command",
+                )
+            room.prune_pending(now_mono)
+            resolved_target_id = target_device_id or room.active_device_id
+            if resolved_target_id is None:
+                raise ConnectRestError(
+                    409,
+                    "no_active_device",
+                    "No active device to receive playback command",
+                )
+            target = room.devices.get(resolved_target_id)
+            if target is None:
+                raise ConnectRestError(
+                    404,
+                    "device_not_found",
+                    f"Connected device {resolved_target_id!r} not found",
+                )
+            if action in ("set_volume", "set_mute") and not target.capabilities.can_control_volume:
+                raise ConnectRestError(
+                    400,
+                    "unsupported_capability",
+                    f"Device {target.name!r} does not support remote volume control",
+                )
+            if action in ("play", "toggle", "play_tracks") and not target.capabilities.can_play_audio:
+                raise ConnectRestError(
+                    400,
+                    "device_cannot_play",
+                    f"Device {target.name!r} cannot play audio",
+                )
+            command_id = uuid.uuid4().hex
+            room.pending_commands[command_id] = _PendingCommand(
+                command_id=command_id,
+                sender_device_id=None,
+                target_device_id=target.device_id,
+                request_id=None,
+                created_at_mono=now_mono,
+                ack_future=ack_future,
+                ack_loop=loop,
+            )
+            command_frame = {
+                "type": "command",
+                "command_id": command_id,
+                "request_id": None,
+                "from_device_id": "rest-api",
+                "action": action,
+                "payload": normalized_payload,
+            }
+
+        try:
+            await send_json(target, command_frame)
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                room = self._rooms.get(user_id)
+                if room is not None:
+                    room.pending_commands.pop(command_id, None)
+            raise ConnectRestError(
+                502,
+                "device_unreachable",
+                f"Could not deliver command {action!r} to device {target.name!r}: {exc}",
+            ) from exc
+
+        try:
+            ok, err_text = await asyncio.wait_for(ack_future, timeout=timeout_sec)
+        except asyncio.TimeoutError as exc:
+            with self._lock:
+                room = self._rooms.get(user_id)
+                if room is not None:
+                    room.pending_commands.pop(command_id, None)
+            raise ConnectRestError(
+                504,
+                "command_timeout",
+                f"Device {target.name!r} did not acknowledge command {action!r} within {timeout_sec}s",
+            ) from exc
+
+        return RestConnectCommandOut(
+            command_id=command_id,
+            target_device_id=target.device_id,
+            ok=ok,
+            error=err_text,
+        )
 
     async def handle_command(self, conn: DeviceConnection, msg: CommandMessage) -> None:
         try:
@@ -816,7 +1313,11 @@ class ConnectHub:
                 result_payload = None
             else:
                 room.pending_commands.pop(msg.command_id, None)
-                sender = room.devices.get(pending.sender_device_id)
+                sender = (
+                    room.devices.get(pending.sender_device_id)
+                    if pending.sender_device_id is not None
+                    else None
+                )
                 if not msg.ok and not (msg.error and msg.error.strip()):
                     err = error_frame(
                         "invalid_payload",
@@ -828,6 +1329,7 @@ class ConnectHub:
                 else:
                     err = None
                     result_error = None if msg.ok else msg.error
+                pending.resolve(msg.ok, result_error)
                 result_payload = {
                     "type": "command_result",
                     "request_id": pending.request_id,
@@ -840,6 +1342,36 @@ class ConnectHub:
             await send_json(conn, err)
         if sender is not None and result_payload is not None:
             await _send_broadcast([sender], result_payload)
+
+    def evict_user(self, user_id: int) -> None:
+        """Evict a deleted user's live Connect room, tickets, pending commands, and sockets."""
+        with self._lock:
+            room = self._rooms.pop(user_id, None)
+            stale_tickets = [k for k, v in self._tickets.items() if v.user_id == user_id]
+            for k in stale_tickets:
+                del self._tickets[k]
+            conns: list[DeviceConnection] = []
+            if room is not None:
+                for entry in room.pending_commands.values():
+                    entry.resolve(False, "User account was deleted")
+                room.pending_commands.clear()
+                conns = list(room.devices.values())
+                room.devices.clear()
+
+        async def _close_conn(target: DeviceConnection) -> None:
+            try:
+                async with target.send_lock:
+                    await target.websocket.close(code=4401, reason="Account deleted")
+            except Exception:  # noqa: BLE001 — socket may already be closed
+                pass
+
+        for conn in conns:
+            if conn.loop is not None and not conn.loop.is_closed():
+                try:
+                    conn.loop.call_soon_threadsafe(asyncio.create_task, _close_conn(conn))
+                except RuntimeError:
+                    pass
+        social_bus.notify()
 
     def reset_for_tests(self) -> None:
         with self._lock:

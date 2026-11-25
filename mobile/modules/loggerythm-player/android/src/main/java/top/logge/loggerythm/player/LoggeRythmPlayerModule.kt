@@ -16,6 +16,9 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.ReadableType
+import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -255,15 +258,21 @@ class LoggeRythmPlayerModule(
 ) : ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
   private val mainHandler = Handler(Looper.getMainLooper())
   private val worker = Executors.newSingleThreadExecutor()
+  private val artworkExecutor = Executors.newSingleThreadExecutor()
   private val invalidated = AtomicBoolean(false)
   private val cleanupInProgress = AtomicBoolean(false)
   private val listenerCount = AtomicInteger(0)
-  private val protocol = LoggeRythmPlayerProtocol(
-    listOf(
-      reactContext.filesDir,
-      reactContext.noBackupFilesDir,
-      reactContext.cacheDir,
-    ),
+  private val deviceVolumeObserved = AtomicBoolean(false)
+  private val privateRoots = listOf(
+    reactContext.filesDir,
+    reactContext.noBackupFilesDir,
+    reactContext.cacheDir,
+  )
+  private val protocol = LoggeRythmPlayerProtocol(privateRoots)
+  private val artworkPaletteExtractor = LoggeRythmArtworkPaletteExtractor(privateRoots)
+  private val deviceVolumeController = LoggeRythmDeviceVolumeController(
+    context = reactContext.applicationContext,
+    onVolumeChanged = ::emitDeviceVolume,
   )
   private var controllerFuture: ListenableFuture<MediaController>? = null
   private var controller: MediaController? = null
@@ -271,9 +280,15 @@ class LoggeRythmPlayerModule(
   private var progressTickerScheduled = false
   private val notificationFavoriteReceiver: (String, Boolean) -> Boolean =
     ::emitNotificationFavoriteRequest
+  private val visualizerFrameReceiver: (LoggeRythmVisualizerFrame) -> Unit =
+    ::emitVisualizerFrame
+  private val remoteVolumeReceiver: (LoggeRythmRemoteVolumeChangeEvent) -> Unit =
+    ::emitRemoteVolumeChange
 
   init {
     LoggeRythmNotificationFavoriteEventBridge.attach(notificationFavoriteReceiver)
+    LoggeRythmVisualizerEventBridge.attach(visualizerFrameReceiver)
+    LoggeRythmRemoteVolumeEventBridge.attach(remoteVolumeReceiver)
     reactContext.addLifecycleEventListener(this)
   }
 
@@ -326,12 +341,20 @@ class LoggeRythmPlayerModule(
     "snapshotEvent" to SNAPSHOT_EVENT,
     "playerEvent" to PLAYER_EVENT,
     "progressEvent" to PROGRESS_EVENT,
+    "visualizerEvent" to VISUALIZER_EVENT,
+    "remoteVolumeEvent" to REMOTE_VOLUME_EVENT,
+    "deviceVolumeEvent" to DEVICE_VOLUME_EVENT,
   )
 
   @ReactMethod
   fun setup(optionsJson: String, promise: Promise) {
     parseOnWorker(promise, { protocol.parseSetup(optionsJson) }) { setup ->
       withController(promise) { active ->
+        val previousBinding = LoggeRythmPlayerRuntime.currentSessionBinding()
+        if (previousBinding != null && previousBinding != setup.sessionBinding) {
+          artworkPaletteExtractor.clearCache()
+          LoggeRythmAudioCraftServiceBridge.resetForAccountBoundaryIfAttached()
+        }
         LoggeRythmMediaSessionServiceBridge.resetRemoteCommands()
         LoggeRythmPersistedServiceBridge.bindSession(setup.sessionBinding) { result ->
           result.fold(
@@ -465,6 +488,8 @@ class LoggeRythmPlayerModule(
         reject(promise, PlayerProtocolException("player-cleanup-active"))
         return@withController
       }
+      artworkPaletteExtractor.clearCache()
+      LoggeRythmAudioCraftServiceBridge.resetForAccountBoundaryIfAttached()
       LoggeRythmMediaSessionServiceBridge.resetRemoteCommands()
       try {
         LoggeRythmPersistedServiceBridge.clearPersistedState { result ->
@@ -500,6 +525,8 @@ class LoggeRythmPlayerModule(
       try {
         active.stop()
         active.clearMediaItems()
+        artworkPaletteExtractor.clearCache()
+        LoggeRythmAudioCraftServiceBridge.resetForAccountBoundaryIfAttached()
         // Cache invalidation and credential-vault invalidation share this main-thread
         // admission point, so no new playback request can observe stale credentials.
         LoggeRythmPlayerRuntime.clearAllHeadersAndBrowseTree()
@@ -642,23 +669,431 @@ class LoggeRythmPlayerModule(
   }
 
   @ReactMethod
+  fun performHaptic(style: String, promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      settleOnMain(promise) {
+        val result = LoggeRythmHaptics.perform(
+          context = reactApplicationContext,
+          activity = reactApplicationContext.currentActivity,
+          rawStyle = style,
+        )
+        Arguments.createMap().apply {
+          putBoolean("performed", result.performed)
+          putString("style", result.style)
+          if (result.reason == null) putNull("reason") else putString("reason", result.reason)
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun extractArtworkPalette(uri: String, promise: Promise) {
+    if (invalidated.get()) {
+      reject(promise, PlayerProtocolException("player-module-invalidated"))
+      return
+    }
+    try {
+      artworkExecutor.execute {
+        if (invalidated.get()) {
+          mainHandler.post { reject(promise, PlayerProtocolException("player-module-invalidated")) }
+          return@execute
+        }
+        val outcome = runCatching { artworkPaletteExtractor.extract(uri) }
+        mainHandler.post {
+          outcome.fold(
+            onSuccess = { palette ->
+              promise.resolve(
+                Arguments.createMap().apply {
+                  if (palette.vibrant == null) putNull("vibrant") else putString("vibrant", palette.vibrant)
+                  if (palette.darkVibrant == null) putNull("darkVibrant") else putString("darkVibrant", palette.darkVibrant)
+                  if (palette.muted == null) putNull("muted") else putString("muted", palette.muted)
+                  if (palette.darkMuted == null) putNull("darkMuted") else putString("darkMuted", palette.darkMuted)
+                  putString("dominant", palette.dominant)
+                },
+              )
+            },
+            onFailure = { error -> reject(promise, error) },
+          )
+        }
+      }
+    } catch (error: Exception) {
+      reject(promise, error)
+    }
+  }
+
+  @ReactMethod
+  fun getAudioSessionId(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        LoggeRythmAudioCraftServiceBridge.requireControl().getAudioSessionId()
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getEqualizerState(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        equalizerStateMap(LoggeRythmAudioCraftServiceBridge.requireControl().getEqualizerState())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setEqualizerEnabled(enabled: Boolean, promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        equalizerStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setEqualizerEnabled(enabled),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setEqualizerBandLevel(bandIndex: Double, levelMb: Double, promise: Promise) {
+    val parsedBand = exactIntArgument(bandIndex, "equalizer-band-index-invalid", promise) ?: return
+    val parsedLevel = exactIntArgument(levelMb, "equalizer-band-level-invalid", promise) ?: return
+    withController(promise) {
+      settleOnMain(promise) {
+        equalizerStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setEqualizerBandLevel(
+            parsedBand,
+            parsedLevel,
+          ),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setEqualizerBandLevels(levelsMb: ReadableArray, promise: Promise) {
+    val parsed = mutableListOf<Int>()
+    for (index in 0 until levelsMb.size()) {
+      if (levelsMb.getType(index) != ReadableType.Number) {
+        reject(promise, LoggeRythmAudioEffectException("equalizer-band-level-invalid"))
+        return
+      }
+      val value = exactIntArgument(levelsMb.getDouble(index), "equalizer-band-level-invalid", promise)
+        ?: return
+      parsed += value
+    }
+    withController(promise) {
+      settleOnMain(promise) {
+        equalizerStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setEqualizerBandLevels(parsed),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setEqualizerPreset(presetName: String, promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        equalizerStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setEqualizerPreset(presetName),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getBassBoostState(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        bassBoostStateMap(LoggeRythmAudioCraftServiceBridge.requireControl().getBassBoostState())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setBassBoost(enabled: Boolean, strength: Double, promise: Promise) {
+    val parsedStrength = exactIntArgument(strength, "bass-boost-strength-invalid", promise) ?: return
+    withController(promise) {
+      settleOnMain(promise) {
+        bassBoostStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setBassBoost(enabled, parsedStrength),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getLoudnessConfig(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        loudnessStateMap(LoggeRythmAudioCraftServiceBridge.requireControl().getLoudnessConfig())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setLoudnessConfig(enabled: Boolean, preset: String, promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        loudnessStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setLoudnessConfig(enabled, preset),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getPlaybackSpeed(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        playbackSpeedMap(LoggeRythmAudioCraftServiceBridge.requireControl().getPlaybackSpeed())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setPlaybackSpeed(speed: Double, pitch: Double, promise: Promise) {
+    if (!speed.isFinite()) {
+      reject(promise, LoggeRythmAudioEffectException("playback-speed-invalid"))
+      return
+    }
+    if (!pitch.isFinite()) {
+      reject(promise, LoggeRythmAudioEffectException("playback-pitch-invalid"))
+      return
+    }
+    withController(promise) {
+      settleOnMain(promise) {
+        playbackSpeedMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setPlaybackSpeed(
+            speed.toFloat(),
+            pitch.toFloat(),
+          ),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getCrossfadeConfig(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        crossfadeConfigMap(LoggeRythmAudioCraftServiceBridge.requireControl().getCrossfadeConfig())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setCrossfadeConfig(enabled: Boolean, durationSec: Double, promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        crossfadeConfigMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setCrossfadeConfig(enabled, durationSec),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun openAudioOutputSwitcher(promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      settleOnMain(promise) {
+        val result = LoggeRythmAudioOutput.openOutputSwitcher(
+          context = reactApplicationContext,
+          activity = reactApplicationContext.currentActivity,
+        )
+        Arguments.createMap().apply {
+          putBoolean("opened", result.opened)
+          putString("method", result.method)
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getAudioOutputDevices(promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      settleOnMain(promise) {
+        val devices = LoggeRythmAudioOutput.listOutputDevices(reactApplicationContext)
+        Arguments.createArray().apply {
+          devices.forEach { device ->
+            pushMap(
+              Arguments.createMap().apply {
+                putString("id", device.id)
+                putString("name", device.name)
+                putString("type", device.type)
+                putBoolean("isActive", device.isActive)
+              },
+            )
+          }
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getDeviceVolume(promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      settleOnMain(promise) {
+        deviceVolumeMap(deviceVolumeController.getVolume())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setDeviceVolume(volume: Double, muted: Boolean?, promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      settleOnMain(promise) {
+        deviceVolumeMap(deviceVolumeController.setVolume(volume, muted))
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setRemoteVolumeControl(
+    active: Boolean,
+    currentVolume: Double,
+    maxVolume: Double,
+    muted: Boolean?,
+    promise: Promise,
+  ) {
+    val parsedCurrent = exactIntArgument(currentVolume, "remote-volume-value-invalid", promise) ?: return
+    val parsedMax = exactIntArgument(maxVolume, "remote-volume-max-invalid", promise) ?: return
+    withController(promise) {
+      settleOnMain(promise) {
+        remoteVolumeStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setRemoteVolumeControl(
+            active = active,
+            currentVolume = parsedCurrent,
+            maxVolume = parsedMax,
+            muted = muted ?: false,
+          ),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setVisualizerEnabled(enabled: Boolean, promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        visualizerStateMap(
+          LoggeRythmAudioCraftServiceBridge.requireControl().setVisualizerEnabled(enabled),
+        )
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getVisualizerState(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        visualizerStateMap(LoggeRythmAudioCraftServiceBridge.requireControl().getVisualizerState())
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getRollingCacheMetrics(promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      settleOnMain(promise) {
+        val metrics = LoggeRythmRollingCacheBridge.getMetrics(reactApplicationContext)
+        Arguments.createMap().apply {
+          putDouble("cacheBytes", metrics.cacheBytes.toDouble())
+          putDouble("maxCacheBytes", metrics.maxCacheBytes.toDouble())
+          putInt("entryCount", metrics.entryCount)
+          putBoolean("isClearing", metrics.isClearing)
+        }
+      }
+    }
+  }
+
+  @ReactMethod
+  fun clearRollingCache(promise: Promise) {
+    mainHandler.post {
+      if (invalidated.get()) {
+        reject(promise, PlayerProtocolException("player-module-invalidated"))
+        return@post
+      }
+      LoggeRythmRollingCacheBridge.clearRollingCache(reactApplicationContext) { result ->
+        mainHandler.post {
+          result.fold(
+            onSuccess = { summary ->
+              promise.resolve(
+                Arguments.createMap().apply {
+                  putDouble("bytesBefore", summary.bytesBefore.toDouble())
+                  putDouble("bytesAfter", summary.bytesAfter.toDouble())
+                  putInt("resourcesRemoved", summary.resourcesRemoved)
+                  putBoolean("verified", summary.verified)
+                },
+              )
+            },
+            onFailure = { error -> reject(promise, error) },
+          )
+        }
+      }
+    }
+  }
+
+  @ReactMethod
   fun addListener(eventName: String) {
-    if (eventName == SNAPSHOT_EVENT || eventName == PLAYER_EVENT || eventName == PROGRESS_EVENT) {
-      listenerCount.incrementAndGet()
-      mainHandler.post(::updateProgressTicker)
+    when (eventName) {
+      SNAPSHOT_EVENT,
+      PLAYER_EVENT,
+      PROGRESS_EVENT,
+      VISUALIZER_EVENT,
+      REMOTE_VOLUME_EVENT -> {
+        listenerCount.incrementAndGet()
+        mainHandler.post(::updateProgressTicker)
+      }
+      DEVICE_VOLUME_EVENT -> {
+        listenerCount.incrementAndGet()
+        deviceVolumeObserved.set(true)
+        mainHandler.post {
+          if (!invalidated.get()) deviceVolumeController.startObserving()
+          updateProgressTicker()
+        }
+      }
     }
   }
 
   @ReactMethod
   fun removeListeners(count: Double) {
     val removed = if (count.isFinite()) count.toInt().coerceAtLeast(0) else 0
-    listenerCount.updateAndGet { current -> (current - removed).coerceAtLeast(0) }
+    val remaining = listenerCount.updateAndGet { current -> (current - removed).coerceAtLeast(0) }
+    if (remaining <= 0 && deviceVolumeObserved.compareAndSet(true, false)) {
+      mainHandler.post(deviceVolumeController::stopObserving)
+    }
     mainHandler.post(::updateProgressTicker)
   }
 
   override fun invalidate() {
     if (!invalidated.compareAndSet(false, true)) return
     LoggeRythmNotificationFavoriteEventBridge.detach(notificationFavoriteReceiver)
+    LoggeRythmVisualizerEventBridge.detach(visualizerFrameReceiver)
+    LoggeRythmRemoteVolumeEventBridge.detach(remoteVolumeReceiver)
+    deviceVolumeController.stopObserving()
+    artworkPaletteExtractor.clearCache()
     reactApplicationContext.removeLifecycleEventListener(this)
     mainHandler.post {
       stopProgressTicker()
@@ -674,6 +1109,7 @@ class LoggeRythmPlayerModule(
     // Promises (each checks `invalidated` and rejects fast). shutdownNow()
     // would discard them, leaving JS promises hanging forever.
     worker.shutdown()
+    artworkExecutor.shutdown()
     super.invalidate()
   }
 
@@ -928,6 +1364,148 @@ class LoggeRythmPlayerModule(
     progressTickerScheduled = false
   }
 
+  private fun emitVisualizerFrame(frame: LoggeRythmVisualizerFrame) {
+    if (invalidated.get() || !reactApplicationContext.hasActiveReactInstance()) return
+    mainHandler.post {
+      if (invalidated.get() || !reactApplicationContext.hasActiveReactInstance()) return@post
+      val payload = Arguments.createMap().apply {
+        putArray(
+          "bands",
+          Arguments.createArray().apply {
+            frame.bands.forEach { band -> pushDouble(band.toDouble()) }
+          },
+        )
+        putDouble("bass", frame.bass.toDouble())
+        putDouble("mid", frame.mid.toDouble())
+        putDouble("treble", frame.treble.toDouble())
+        putDouble("rms", frame.rms.toDouble())
+        putDouble("peak", frame.peak.toDouble())
+        putDouble("timestampMs", frame.timestampMs.toDouble())
+      }
+      reactApplicationContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(VISUALIZER_EVENT, payload)
+    }
+  }
+
+  private fun emitRemoteVolumeChange(event: LoggeRythmRemoteVolumeChangeEvent) {
+    if (invalidated.get() || !reactApplicationContext.hasActiveReactInstance()) return
+    mainHandler.post {
+      if (invalidated.get() || !reactApplicationContext.hasActiveReactInstance()) return@post
+      val payload = Arguments.createMap().apply {
+        putInt("volume", event.volume)
+        putInt("maxVolume", event.maxVolume)
+        putDouble("normalizedVolume", event.normalizedVolume)
+        putBoolean("muted", event.muted)
+        putString("direction", event.direction)
+      }
+      reactApplicationContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(REMOTE_VOLUME_EVENT, payload)
+    }
+  }
+
+  private fun emitDeviceVolume(state: LoggeRythmDeviceVolumeState) {
+    if (invalidated.get() || !reactApplicationContext.hasActiveReactInstance()) return
+    mainHandler.post {
+      if (invalidated.get() || !reactApplicationContext.hasActiveReactInstance()) return@post
+      reactApplicationContext
+        .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+        .emit(DEVICE_VOLUME_EVENT, deviceVolumeMap(state))
+    }
+  }
+
+  private fun exactIntArgument(value: Double, errorCode: String, promise: Promise): Int? {
+    if (!value.isFinite() || value < Int.MIN_VALUE.toDouble() || value > Int.MAX_VALUE.toDouble()) {
+      reject(promise, PlayerProtocolException(errorCode))
+      return null
+    }
+    val parsed = value.toInt()
+    if (parsed.toDouble() != value) {
+      reject(promise, PlayerProtocolException(errorCode))
+      return null
+    }
+    return parsed
+  }
+
+  private fun equalizerStateMap(state: LoggeRythmEqualizerState): WritableMap = Arguments.createMap().apply {
+    putBoolean("supported", state.supported)
+    putInt("audioSessionId", state.audioSessionId)
+    putBoolean("enabled", state.enabled)
+    putInt("minBandLevelMb", state.minBandLevelMb)
+    putInt("maxBandLevelMb", state.maxBandLevelMb)
+    putString("preset", state.preset)
+    putArray(
+      "presets",
+      Arguments.createArray().apply { state.presets.forEach(::pushString) },
+    )
+    putArray(
+      "bands",
+      Arguments.createArray().apply {
+        state.bands.forEach { band ->
+          pushMap(
+            Arguments.createMap().apply {
+              putInt("index", band.index)
+              putInt("centerFreqHz", band.centerFreqHz)
+              putInt("minFreqHz", band.minFreqHz)
+              putInt("maxFreqHz", band.maxFreqHz)
+              putInt("levelMb", band.levelMb)
+            },
+          )
+        }
+      },
+    )
+  }
+
+  private fun bassBoostStateMap(state: LoggeRythmBassBoostState): WritableMap = Arguments.createMap().apply {
+    putBoolean("supported", state.supported)
+    putInt("audioSessionId", state.audioSessionId)
+    putBoolean("enabled", state.enabled)
+    putInt("strength", state.strength)
+  }
+
+  private fun loudnessStateMap(state: LoggeRythmLoudnessState): WritableMap = Arguments.createMap().apply {
+    putBoolean("enabled", state.enabled)
+    putString("preset", state.preset)
+    putBoolean("enhancerAttached", state.enhancerAttached)
+    putInt("currentBoostMb", state.currentBoostMb)
+    putDouble("currentVolumeScale", state.currentVolumeScale.toDouble())
+    putDouble("currentGainDb", state.currentGainDb)
+  }
+
+  private fun playbackSpeedMap(state: LoggeRythmPlaybackSpeedState): WritableMap = Arguments.createMap().apply {
+    putDouble("speed", state.speed.toDouble())
+    putDouble("pitch", state.pitch.toDouble())
+  }
+
+  private fun crossfadeConfigMap(config: LoggeRythmCrossfadeConfig): WritableMap = Arguments.createMap().apply {
+    putBoolean("enabled", config.enabled)
+    putDouble("durationSec", config.durationSec)
+  }
+
+  private fun deviceVolumeMap(state: LoggeRythmDeviceVolumeState): WritableMap = Arguments.createMap().apply {
+    putDouble("volume", state.volume)
+    putInt("step", state.step)
+    putInt("maxStep", state.maxStep)
+    putBoolean("muted", state.muted)
+  }
+
+  private fun remoteVolumeStateMap(state: LoggeRythmRemoteVolumeState): WritableMap = Arguments.createMap().apply {
+    putBoolean("active", state.active)
+    putInt("currentVolume", state.currentVolume)
+    putInt("maxVolume", state.maxVolume)
+    putBoolean("muted", state.muted)
+    putDouble("normalizedVolume", state.normalizedVolume)
+  }
+
+  private fun visualizerStateMap(state: LoggeRythmVisualizerState): WritableMap = Arguments.createMap().apply {
+    putBoolean("enabled", state.enabled)
+    putInt("bandCount", state.bandCount)
+    putInt("audioSessionId", state.audioSessionId)
+    putInt("captureSize", state.captureSize)
+    putInt("samplingRateMilliHz", state.samplingRateMilliHz)
+  }
+
   private fun reject(promise: Promise, error: Throwable) {
     val code = when (error) {
       is PlayerProtocolException -> error.code.takeIf(SAFE_CODE::matches)
@@ -935,6 +1513,10 @@ class LoggeRythmPlayerModule(
       is LoggeRythmPersistedPlayerException -> error.code.takeIf(SAFE_CODE::matches)
       is LoggeRythmPersistedStateException -> error.code.takeIf(SAFE_CODE::matches)
       is LoggeRythmPlaybackEventJournalException -> error.code.takeIf(SAFE_CODE::matches)
+      is LoggeRythmArtworkPaletteException -> error.code.takeIf(SAFE_CODE::matches)
+      is LoggeRythmAudioEffectException -> error.code.takeIf(SAFE_CODE::matches)
+      is LoggeRythmAudioOutputException -> error.code.takeIf(SAFE_CODE::matches)
+      is LoggeRythmVisualizerException -> error.code.takeIf(SAFE_CODE::matches)
       else -> null
     } ?: "player-operation-failed"
     promise.reject(code, "Player operation failed: $code")
@@ -969,6 +1551,9 @@ class LoggeRythmPlayerModule(
     const val SNAPSHOT_EVENT = "LoggeRythmPlayerSnapshot"
     const val PLAYER_EVENT = "LoggeRythmPlayerEvent"
     const val PROGRESS_EVENT = "LoggeRythmPlayerProgress"
+    const val VISUALIZER_EVENT = "LoggeRythmVisualizerFrame"
+    const val REMOTE_VOLUME_EVENT = "LoggeRythmRemoteVolume"
+    const val DEVICE_VOLUME_EVENT = "LoggeRythmDeviceVolume"
     private const val SNAPSHOT_SCHEMA_VERSION = 1
     private const val MAX_JS_SAFE_INTEGER = 9_007_199_254_740_991L
     private val SAFE_CODE = Regex("[a-z][a-z0-9-]{1,63}")

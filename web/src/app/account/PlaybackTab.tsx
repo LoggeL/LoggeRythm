@@ -5,9 +5,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePlayerStore } from "@/store/player";
 import { useConnectStore } from "@/store/connect";
 import { api } from "@/lib/api";
+import { AUDIO_QUALITY_META, AUDIO_QUALITY_ORDER } from "@/lib/audioIntelligence";
 import { toast } from "@/store/toast";
-import { ClockIcon, DevicesIcon, RefreshIcon, VisualizerIcon } from "@/components/icons";
-import type { PlaybackSettings } from "@/types";
+import { ClockIcon, DevicesIcon, RefreshIcon, SlidersIcon, VisualizerIcon } from "@/components/icons";
+import type { AudioQuality, PlaybackSettings } from "@/types";
 import { errorMessage, SectionError, SettingsCard, SettingsRow, Switch } from "./presentation";
 
 const SLEEP_PRESETS = [15, 30, 45, 60];
@@ -285,15 +286,90 @@ function ConnectSettings() {
   );
 }
 
-/** "Wiedergabe" tab: crossfade, sleep timer, and WebSocket multi-device Connect settings. */
+function AudioQualitySettings() {
+  const qc = useQueryClient();
+  const { data, isLoading, isFetching, error, refetch } = useQuery<PlaybackSettings>({
+    queryKey: ["playback-settings"],
+    queryFn: api.settings,
+  });
+
+  const updateQuality = useMutation({
+    mutationFn: (preferred_quality: AudioQuality) => api.updateSettings({ preferred_quality }),
+    onSuccess: (next) => {
+      qc.setQueryData(["playback-settings"], next);
+      toast.success(`Audioqualität auf ${AUDIO_QUALITY_META[next.preferred_quality ?? "high"].label} umgestellt.`);
+    },
+    onError: (err) => toast.error(`Audioqualität konnte nicht geändert werden: ${errorMessage(err)}`),
+  });
+
+  const current: AudioQuality = data?.preferred_quality ?? "high";
+
+  return (
+    <SettingsCard
+      title="Audioqualität"
+      description="Wähle die bevorzugte Streaming-Qualität für neue Titel."
+      icon={<SlidersIcon width={18} height={18} />}
+    >
+      {isLoading && <span className="skeleton block h-24 rounded-xl" />}
+      {error && (
+        <SectionError
+          label="Die Qualitäts-Einstellungen"
+          error={error}
+          retrying={isFetching}
+          onRetry={() => void refetch()}
+        />
+      )}
+      {data && (
+        <div role="radiogroup" aria-label="Streaming-Qualität" className="flex flex-col gap-2">
+          {AUDIO_QUALITY_ORDER.map((tier) => {
+            const meta = AUDIO_QUALITY_META[tier];
+            const selected = current === tier;
+            return (
+              <button
+                key={tier}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={updateQuality.isPending}
+                onClick={() => {
+                  if (!selected) updateQuality.mutate(tier);
+                }}
+                className={`flex min-h-12 items-center justify-between gap-3 rounded-[var(--radius-card)] border px-3.5 py-2.5 text-left transition-colors ${
+                  selected
+                    ? "border-accent/55 bg-accent/10 text-foreground"
+                    : "border-hairline bg-white/[0.02] text-muted hover:border-border hover:text-foreground"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-foreground">{meta.label}</p>
+                  <p className="text-xs text-muted">{meta.detail}</p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold tracking-[0.08em] ${
+                    selected
+                      ? "border-accent bg-accent text-on-accent"
+                      : "border-hairline text-subtle"
+                  }`}
+                >
+                  {meta.badge}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </SettingsCard>
+  );
+}
+
+/** "Wiedergabe" tab: audio quality, crossfade, sleep timer, and multi-device Connect settings. */
 export default function PlaybackTab() {
   return (
     <div className="grid items-start gap-4 lg:grid-cols-2">
+      <AudioQualitySettings />
       <CrossfadeSettings />
       <SleepTimer />
-      <div className="lg:col-span-2">
-        <ConnectSettings />
-      </div>
+      <ConnectSettings />
     </div>
   );
 }

@@ -711,6 +711,8 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   private val nowEpochMs: () -> Long = System::currentTimeMillis,
   private val onFavoriteStateChanged: () -> Unit = {},
   private val onFavoriteSyncFailed: () -> Unit = {},
+  private val applyLoudnessForMediaId: ((mediaId: String?, isSleepFading: Boolean) -> Float)? = null,
+  private val onSleepFadeStarted: (() -> Unit)? = null,
 ) : LoggeRythmPersistedServiceControl {
   private val sharedCacheClear = LoggeRythmSharedCacheClear(clearCache)
   private val appContext = context.applicationContext
@@ -2631,7 +2633,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
     val fadeStart = active.triggerAtEpochMs - active.fadeOutMs
     if (active.fadeOutMs > 0L && now >= fadeStart) {
-      val base = fadeBaseVolume ?: player.volume.also { fadeBaseVolume = it }
+      val base = fadeBaseVolume ?: run {
+        onSleepFadeStarted?.invoke()
+        player.volume.also { fadeBaseVolume = it }
+      }
       val remaining = (active.triggerAtEpochMs - now).coerceAtLeast(0L)
       val ratio = (remaining.toDouble() / active.fadeOutMs.toDouble()).coerceIn(0.0, 1.0)
       player.volume = (base * ratio.toFloat()).coerceIn(0f, 1f)
@@ -2641,6 +2646,12 @@ internal class LoggeRythmPersistedPlayerCoordinator(
     }
   }
 
+  internal fun isSleepFading(): Boolean = fadeBaseVolume != null
+
+  internal fun refreshLoudnessGain() {
+    applyCurrentLoudnessGain()
+  }
+
   private fun restoreFadeVolume() {
     fadeBaseVolume = null
     applyCurrentLoudnessGain()
@@ -2648,7 +2659,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
 
   private fun applyCurrentLoudnessGain() {
     if (!isReady() || fadeBaseVolume != null) return
-    val gain = LoggeRythmPlayerRuntime.loudnessGainFor(player.currentMediaItem?.mediaId)
+    val mediaId = player.currentMediaItem?.mediaId
+    val gain = applyLoudnessForMediaId?.invoke(mediaId, false)
+      ?: LoggeRythmPlayerRuntime.loudnessGainFor(mediaId)
     if (player.volume != gain) player.volume = gain
   }
 

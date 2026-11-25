@@ -1,6 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { AUDIO_QUALITY_META } from "@/lib/audioIntelligence";
+import { useMe } from "@/hooks/useAuth";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { canControlActiveVolume, useConnectStore } from "@/store/connect";
 import { canControlPartyPlayback, usePartyStore } from "@/store/party";
@@ -13,6 +17,9 @@ import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Scrubber, { ProgressLine, rangeFill } from "@/components/player/Scrubber";
 import { DeviceSelectorTrigger } from "@/components/player/DeviceSelector";
+import { SleepTimerTrigger } from "@/components/player/SleepTimerControl";
+import { AudioEffectsTrigger } from "@/components/player/AudioEffectsControl";
+import PictureInPictureButton from "@/components/player/PictureInPictureButton";
 import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
 import { formatTime } from "@/lib/format";
 import { NAV_FORWARD } from "@/lib/morph";
@@ -32,7 +39,7 @@ import {
   SpinnerIcon,
   ExpandIcon,
 } from "@/components/icons";
-import type { Track } from "@/types";
+import type { PlaybackSettings, Track } from "@/types";
 
 const openNowPlaying = () => setNowPlayingOpen(true);
 const closeNowPlaying = () => setNowPlayingOpen(false);
@@ -48,10 +55,11 @@ function Cover({ track, className }: { track: Track; className: string }) {
 
 function usePlaybackLock(): { locked: boolean; reason?: string } {
   const active = usePartyStore((s) => s.active);
+  const detached = usePartyStore((s) => s.detached);
   const isHost = usePartyStore((s) => s.isHost);
   const guestsCanControl = usePartyStore((s) => s.guestsCanControl);
   const hostName = usePartyStore((s) => s.hostName);
-  const allowed = canControlPartyPlayback({ active, isHost, guestsCanControl });
+  const allowed = canControlPartyPlayback({ active, detached, isHost, guestsCanControl });
   return allowed ? { locked: false } : { locked: true, reason: `${hostName || "Host"} steuert die Wiedergabe` };
 }
 
@@ -171,7 +179,7 @@ function VolumeControl() {
   );
 }
 
-function PanelToggles() {
+function PanelToggles({ offlineOnly = false }: { offlineOnly?: boolean }) {
   const hasTrack = usePlayerStore((s) => s.index >= 0);
   const queueOpen = usePlayerStore((s) => s.queueOpen);
   const toggleQueue = usePlayerStore((s) => s.toggleQueue);
@@ -187,8 +195,11 @@ function PanelToggles() {
         <QueueIcon width={18} height={18} />
         {queueOpen && <ActiveDot />}
       </button>
-      <DeviceSelectorTrigger />
+      <AudioEffectsTrigger />
+      <SleepTimerTrigger />
+      {!offlineOnly && <DeviceSelectorTrigger />}
       <VolumeControl />
+      <PictureInPictureButton />
       <button type="button" onClick={openNowPlaying} disabled={!hasTrack} aria-label="Jetzt läuft öffnen" title="Jetzt läuft (F)" className="action-icon h-9 w-9">
         <ExpandIcon width={18} height={18} />
       </button>
@@ -196,7 +207,31 @@ function PanelToggles() {
   );
 }
 
-function TrackSummary({ track }: { track: Track }) {
+function QualityBadge({ offlineOnly }: { offlineOnly: boolean }) {
+  const { data: me } = useMe();
+  const { data: settings } = useQuery<PlaybackSettings>({
+    queryKey: ["playback-settings"],
+    queryFn: api.settings,
+    enabled: Boolean(!offlineOnly && me?.is_approved),
+    staleTime: 5 * 60_000,
+  });
+  if (offlineOnly || !settings?.preferred_quality) return null;
+  const meta = AUDIO_QUALITY_META[settings.preferred_quality];
+  return (
+    <span
+      title={`Audioqualität: ${meta.label}`}
+      className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9.5px] font-semibold leading-none tracking-[0.08em] ${
+        settings.preferred_quality === "lossless"
+          ? "border-accent/45 bg-accent/12 text-accent"
+          : "border-hairline bg-white/[0.04] text-subtle"
+      }`}
+    >
+      {meta.badge}
+    </span>
+  );
+}
+
+function TrackSummary({ track, offlineOnly = false }: { track: Track; offlineOnly?: boolean }) {
   const playing = usePlayerStore((s) => s.isPlaying && !s.isBuffering);
   return (
     <TrackContext track={track} className="flex min-w-0 items-center gap-3.5">
@@ -215,6 +250,7 @@ function TrackSummary({ track }: { track: Track }) {
         <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
           <EqualizerBars height={12} isPlaying={playing} />
           <CacheMarker trackId={track.id} />
+          <QualityBadge offlineOnly={offlineOnly} />
           <ArtistLinks track={track} className="truncate text-[13px] text-muted" linkClassName="hover:underline hover:text-foreground" />
         </div>
       </div>
@@ -239,7 +275,7 @@ function PlayerErrors() {
  * Desktop deck: the seek bar is its full-width top edge; below it sit the
  * track, the transport with a time readout, and the panel toggles.
  */
-function DesktopBar({ track }: { track: Track | null }) {
+function DesktopBar({ track, offlineOnly = false }: { track: Track | null; offlineOnly?: boolean }) {
   const lock = usePlaybackLock();
   return (
     <div className="relative hidden border-t border-hairline bg-backdrop lg:block">
@@ -247,13 +283,13 @@ function DesktopBar({ track }: { track: Track | null }) {
         <Scrubber showTimes={false} disabled={lock.locked} />
       </div>
       <div className="grid h-[84px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-5">
-        {track ? <TrackSummary track={track} /> : <p className="label-mono">Wähle einen Titel zum Abspielen.</p>}
+        {track ? <TrackSummary track={track} offlineOnly={offlineOnly} /> : <p className="label-mono">Wähle einen Titel zum Abspielen.</p>}
         <div className="flex items-center gap-5">
           <Transport />
           <TimeReadout />
         </div>
         <div className="flex items-center justify-end gap-3">
-          <PanelToggles />
+          <PanelToggles offlineOnly={offlineOnly} />
         </div>
       </div>
       <ActiveOutputBanner />
@@ -262,7 +298,7 @@ function DesktopBar({ track }: { track: Track | null }) {
 }
 
 /** Mobile mini player: a floating card that opens the fullscreen view. */
-function MiniPlayer({ track }: { track: Track }) {
+function MiniPlayer({ track, offlineOnly = false }: { track: Track; offlineOnly?: boolean }) {
   const next = usePlayerStore((s) => s.next);
   const lock = usePlaybackLock();
   return (
@@ -276,7 +312,7 @@ function MiniPlayer({ track }: { track: Track }) {
             <span className="block truncate text-xs text-muted">{track.artist}</span>
           </span>
         </button>
-        <DeviceSelectorTrigger compact />
+        {!offlineOnly && <DeviceSelectorTrigger compact />}
         <LikeButton key={track.id} track={track} />
         <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
         <button type="button" onClick={next} disabled={lock.locked} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground disabled:opacity-40">
@@ -292,7 +328,7 @@ function MiniPlayer({ track }: { track: Track }) {
  * Player chrome. Purely presentational: playback itself is owned by
  * PlaybackEngine, and everything here reads from the player store.
  */
-export default function PlayerBar() {
+export default function PlayerBar({ offlineOnly = false }: { offlineOnly?: boolean }) {
   const track = usePlayerStore(currentTrack);
   const nowPlayingOpen = usePlayerStore((s) => s.nowPlayingOpen);
   return (
@@ -300,8 +336,14 @@ export default function PlayerBar() {
       {nowPlayingOpen && track && <NowPlaying onClose={closeNowPlaying} />}
       <footer aria-label="Musikplayer" className="like-celebration-surface relative z-20 shrink-0 bg-backdrop">
         <PlayerErrors />
-        <DesktopBar track={track} />
-        {track && <MiniPlayer track={track} />}
+        <DesktopBar track={track} offlineOnly={offlineOnly} />
+        {track ? (
+          <MiniPlayer track={track} offlineOnly={offlineOnly} />
+        ) : (
+          <div className="lg:hidden">
+            <ActiveOutputBanner compact />
+          </div>
+        )}
       </footer>
     </>
   );

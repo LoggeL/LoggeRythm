@@ -118,6 +118,7 @@ interface Engine {
   lastAppliedPlaybackRevision: number;
   forceApplyRemotePlayback: boolean;
   knownStoredIds: Set<string>;
+  exiting: boolean;
   stopped: boolean;
 }
 
@@ -214,12 +215,15 @@ export class PartySession {
   /** Refetch the party now; resolves once fresh state is shown, rejects on failure. */
   async reload(): Promise<void> {
     const engine = this.requireEngine();
+    if (engine.exiting) return;
     try {
       const party = await this.deps.repository.getParty(engine.code);
-      if (this.engine !== engine) return;
+      if (this.engine !== engine || engine.exiting) return;
       this.applyFrame(engine, party);
     } catch (error) {
-      if (this.engine === engine) this.markStale(strings.party.loadFailed(partyErrorDetail(error)));
+      if (this.engine === engine && !engine.exiting) {
+        this.markStale(strings.party.loadFailed(partyErrorDetail(error)));
+      }
       throw error;
     }
   }
@@ -227,7 +231,13 @@ export class PartySession {
   /** Leave on the server first; the session ends only once the server confirmed it. */
   async leave(): Promise<void> {
     const engine = this.requireEngine();
-    await this.deps.repository.leaveParty(engine.code);
+    engine.exiting = true;
+    try {
+      await this.deps.repository.leaveParty(engine.code);
+    } catch (error) {
+      if (this.engine === engine) engine.exiting = false;
+      throw error;
+    }
     if (this.engine !== engine) return;
     this.stopEngine();
     this.publish(IDLE);
@@ -240,7 +250,13 @@ export class PartySession {
     if (this.deps.repository.endParty === undefined) {
       throw new Error('PartySession repository does not implement endParty');
     }
-    await this.deps.repository.endParty(engine.code);
+    engine.exiting = true;
+    try {
+      await this.deps.repository.endParty(engine.code);
+    } catch (error) {
+      if (this.engine === engine) engine.exiting = false;
+      throw error;
+    }
     if (this.engine !== engine) return;
     this.stopEngine();
     this.publish(IDLE);
@@ -435,6 +451,7 @@ export class PartySession {
       lastAppliedPlaybackRevision: -1,
       forceApplyRemotePlayback: false,
       knownStoredIds: new Set<string>(),
+      exiting: false,
       stopped: false,
     };
   }
@@ -551,6 +568,7 @@ export class PartySession {
     if (party.code !== engine.code) {
       throw new Error(`Party frame for ${party.code} arrived on the ${engine.code} session`);
     }
+    if (engine.exiting) return;
     if (party.ended) {
       this.terminateWithNotice(engine, strings.party.endedNotice);
       return;
@@ -664,7 +682,13 @@ export class PartySession {
 
   private onPlayerChange(engine: Engine): void {
     const party = this.state.party;
-    if (this.engine !== engine || party === null || this.state.detached || this.state.controlOnly) {
+    if (
+      this.engine !== engine
+      || engine.exiting
+      || party === null
+      || this.state.detached
+      || this.state.controlOnly
+    ) {
       return;
     }
     if (engine.syncing || !engine.synced) return;
@@ -703,6 +727,7 @@ export class PartySession {
     const party = this.state.party;
     if (
       this.engine !== engine
+      || engine.exiting
       || party === null
       || !party.is_host
       || this.state.detached
@@ -733,6 +758,7 @@ export class PartySession {
     const party = this.state.party;
     if (
       this.engine !== engine
+      || engine.exiting
       || party === null
       || party.is_host
       || this.state.detached

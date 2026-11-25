@@ -201,6 +201,9 @@ vi.mock('../components/player/NowPlayingMetadata', () => ({
 vi.mock('../components/player/NowPlayingTransport', () => ({
   LiveNowPlayingTransport: 'Transport',
 }));
+vi.mock('../components/player/NowPlayingToolsBar', () => ({
+  NowPlayingToolsBar: 'NowPlayingToolsBar',
+}));
 vi.mock('../components/player/SimilarPanel', () => ({ default: 'SimilarPanel' }));
 vi.mock('../components/player/NowPlayingTabs', () => ({
   DEFAULT_NOW_PLAYING_TAB: 'playing',

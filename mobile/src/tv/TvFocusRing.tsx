@@ -41,7 +41,7 @@ export interface TvFocusRingProps {
   focused: boolean;
   /** Theme radius token or numeric border radius matching the wrapped control. Defaults to `'card'`. */
   radius?: keyof typeof radii | number;
-  /** High-contrast ring tone (`'brand'` lime, `'accent'` violet, `'light'` white). Defaults to `'brand'`. */
+  /** High-contrast ring tone (`'brand'` lime, `'accent'` signal lime, `'light'` paper). Defaults to `'brand'`. */
   tone?: TvFocusRingTone;
   /** Subtle focus scale when reduced motion is off. Defaults to `1.04`; pass `1` to disable scaling. */
   scale?: number;

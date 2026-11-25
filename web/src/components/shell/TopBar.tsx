@@ -48,9 +48,10 @@ export default function TopBar() {
           placeholder="Was möchtest du hören?"
           className="w-full max-w-xl"
           inputProps={{
+            "data-global-search-input": "",
             onCompositionStart: () => search.setComposing(true),
             onCompositionEnd: () => search.setComposing(false),
-          }}
+          } as React.InputHTMLAttributes<HTMLInputElement>}
           trailing={
             <button
               type="button"

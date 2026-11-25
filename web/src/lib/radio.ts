@@ -43,3 +43,41 @@ export function startTrackListRadio(tracks: Track[], context: string): void {
   store.setRadioActive(true);
   toast.info(`${context} gestartet…`);
 }
+
+/**
+ * Start a multi-seed endless radio station (`POST /api/radio/seed`) derived
+ * from up to 10 tracks of a playlist or the user's liked songs. Fails loudly
+ * with the upstream cause if seeding fails or returns no tracks.
+ */
+export async function startSeededRadio(
+  seedTracks: readonly Track[],
+  context: string,
+  limit = 30,
+): Promise<void> {
+  const seedIds = Array.from(
+    new Set(seedTracks.map((t) => String(t.id)).filter((id) => id.trim() !== "")),
+  ).slice(0, 10);
+  if (seedIds.length === 0) {
+    const error = new Error("Für das Radio werden mindestens ein Titel benötigt.");
+    toast.error(error.message);
+    throw error;
+  }
+  usePlayerStore.getState().setRadioActive(false);
+  const requestSession = usePlayerStore.getState().radioSession;
+  try {
+    const tracks = await api.radioSeed({ track_ids: seedIds, limit });
+    const store = usePlayerStore.getState();
+    if (store.radioSession !== requestSession) return;
+    if (!tracks.length) {
+      throw new Error("Die API hat keine ähnlichen Titel zurückgegeben.");
+    }
+    store.playQueue(tracks, 0, context);
+    store.setRadioActive(true);
+    toast.info(`${context} gestartet…`);
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    const error = new Error(`${context} konnte nicht gestartet werden: ${detail}`, { cause });
+    toast.error(error.message);
+    throw error;
+  }
+}

@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import { Animated, FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { playlistEntryId, type Playlist, type Track } from '../api/types';
@@ -9,9 +9,18 @@ import { InlineNotice } from '../components/library/InlineNotice';
 import { PlaylistActionsSheet } from '../components/library/PlaylistActionsSheet';
 import { PlaylistCollaboratorsSheet } from '../components/library/PlaylistCollaboratorsSheet';
 import { PlaylistDeleteSheet } from '../components/library/PlaylistDeleteSheet';
+import { PlaylistDuplicatesSheet } from '../components/library/PlaylistDuplicatesSheet';
 import { PlaylistEditSheet, usePlaylistEditForm } from '../components/library/PlaylistEditSheet';
 import { PlaylistHero } from '../components/library/PlaylistHero';
+import {
+  PlaylistFilterSortBar,
+  filterAndSortPlaylistTracks,
+  type IndexedPlaylistTrack,
+  type PlaylistSortKey,
+} from '../components/library/PlaylistFilterSortBar';
 import { PlaylistLeaveSheet } from '../components/library/PlaylistLeaveSheet';
+import { PlaylistLiveSyncBanner } from '../components/library/PlaylistLiveSyncBanner';
+import { PlaylistQuickAddSheet } from '../components/library/PlaylistQuickAddSheet';
 import {
   PlaylistQueryGate,
   PlaylistQueryNotice,
@@ -24,13 +33,16 @@ import type { OfflinePlaylistControlCopy } from '../components/offline/OfflinePl
 import { showTrackActions } from '../components/trackActions';
 import { ActionButton, AppText, EmptyState, TrackRowSkeleton } from '../components/ui';
 import { getCurrentApiBase } from '../config';
-import { findCachedPlaylistSummary, musicCacheScope, musicQueries } from '../data';
+import { findCachedPlaylistSummary, musicCacheScope, musicQueries, musicRepository } from '../data';
+import { wave2Strings } from '../localization/wave2Strings';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { useOfflineDownloads } from '../offline/hooks';
+import { useTrackCollectionOffline } from '../offline/useTrackCollectionOffline';
 import { playTrackRow, playTracks, toggleShuffle } from '../player/controller';
-import { colors, layout, spacing } from '../theme';
+import { sharePlaylist } from '../share/outboundShare';
+import { colors, elevation, layout, radii, spacing } from '../theme';
 import { TvFocusScope, tvFocusRegistry, useTvEnvironment, useTvFocusReturn } from '../tv';
 import {
   assertPlaylistScreenContract,
@@ -38,9 +50,11 @@ import {
   likedTrackOccurrence,
   playlistTrackOccurrence,
   reorderedPlaylistEntryIds,
+  reorderedPlaylistEntryIdsByMove,
   type PlaylistScreenContract,
   type TrackMoveDirection,
 } from './libraryModel';
+import { useQueueDrag } from './useQueueDrag';
 import { libraryStrings } from './libraryStrings';
 import {
   accountOfflinePlaylistDetail,
@@ -58,7 +72,7 @@ export { refreshOfflineAutoBrowse } from '../components/library/autoBrowse';
 
 export type PlaylistScreenProps = PlaylistScreenContract;
 
-type PlaylistSheet = 'actions' | 'delete' | 'collaborators' | 'leave' | null;
+type PlaylistSheet = 'actions' | 'delete' | 'collaborators' | 'leave' | 'quick-add' | 'duplicates' | null;
 const EMPTY_TRACKS: Track[] = [];
 
 export function playlistTrackAddedByLabel(
@@ -106,7 +120,9 @@ export function offlineControlCopy(
       libraryStrings.playlist.offlineRemoving(completedTracks, totalTracks),
     error: ({ completedTracks }) => failure === 'remove'
       ? libraryStrings.playlist.offlineRemoveError
-      : libraryStrings.playlist.offlineError(completedTracks),
+      : failure === 'wifi-required'
+        ? strings.profile.wifiRequiredError
+        : libraryStrings.playlist.offlineError(completedTracks),
     progress: ({ percent }) => libraryStrings.playlist.offlineProgress(percent),
     downloadAction: libraryStrings.playlist.downloadAction,
     downloadingAction: libraryStrings.playlist.downloadingAction,
@@ -142,6 +158,8 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
   const [sheet, setSheet] = useState<PlaylistSheet>(null);
   const [reordering, setReordering] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
+  const [filterQuery, setFilterQuery] = useState('');
+  const [sortKey, setSortKey] = useState<PlaylistSortKey>('custom');
   const mutations = usePlaylistMutations(scope, { onDeleted: props.onDeleted });
   const editForm = usePlaylistEditForm(mutations.update);
 
@@ -172,6 +190,14 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     ? (likedQuery.data ?? EMPTY_TRACKS)
     : (remoteDetail?.tracks ?? EMPTY_TRACKS);
   const tracks = props.kind === 'liked' ? remoteTracks : (detail?.tracks ?? EMPTY_TRACKS);
+  const likedOffline = useTrackCollectionOffline({
+    scope: props.kind === 'liked' ? scope : null,
+    jobId: props.kind === 'liked' ? (remoteTracks[0]?.id ?? null) : null,
+    tracks: props.kind === 'liked' ? remoteTracks : EMPTY_TRACKS,
+    downloadFailedMessage: libraryStrings.playlist.collectionDownloadFailed,
+    removeFailedMessage: libraryStrings.playlist.collectionRemoveFailed,
+    onError: setRuntimeError,
+  });
   const query = props.kind === 'liked' ? likedQuery : playlistQuery;
   const queryVisual = resolvePlaylistRemoteVisualState({
     hasData: props.kind === 'liked' ? likedQuery.data !== undefined : remoteDetail !== undefined,
@@ -323,10 +349,18 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     }
   };
 
-  const seededInitialLoading =
-    !localFallback
-    && queryVisual.body === 'loading'
-    && (props.kind === 'liked' || seededSummary !== null);
+  const moveTrackByDrag = (fromIndex: number, toIndex: number) => {
+    if (props.kind !== 'playlist' || !canEditTracks) return;
+    mutations.resetErrors();
+    try {
+      mutations.reorder.mutate({
+        id: props.playlistId,
+        entryIds: reorderedPlaylistEntryIdsByMove(tracks, fromIndex, toIndex),
+      });
+    } catch (error) {
+      setRuntimeError(playlistFailureMessage('mutation', error));
+    }
+  };
 
   const keyExtractor = useCallback(
     (track: Track, index: number) =>
@@ -335,6 +369,45 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         : `${props.kind}-track-${track.id}-${String(index)}`,
     [props.kind],
   );
+
+  const dragRows = tracks.map((track, index) => ({
+    stableId: keyExtractor(track, index),
+    origin: 'context' as const,
+  }));
+  const activeFilterQuery = reordering ? '' : filterQuery;
+  const activeSortKey: PlaylistSortKey = reordering ? 'custom' : sortKey;
+  const displayedTracks: IndexedPlaylistTrack[] = filterAndSortPlaylistTracks(
+    tracks,
+    activeFilterQuery,
+    activeSortKey,
+  );
+  const existingTrackIds = new Set(tracks.map((track) => track.id));
+  const toggleReordering = () => {
+    setReordering((current) => {
+      const next = !current;
+      if (next) {
+        setFilterQuery('');
+        setSortKey('custom');
+      }
+      return next;
+    });
+  };
+
+  // Take ref callbacks out of the drag controller so passing `attachFrame` to
+  // `ref` does not mark the entire controller object as a ref for the hooks linter.
+  const { attachFrame, attachList, attachRow, ...drag } = useQueueDrag({
+    rows: dragRows,
+    activeIndex: null,
+    disabled: !(canEditTracks && reordering) || mutations.pending || tv.isTv,
+    onDrop: moveTrackByDrag,
+    onTap: () => undefined,
+  });
+
+  const seededInitialLoading =
+    !localFallback
+    && queryVisual.body === 'loading'
+    && (props.kind === 'liked' || seededSummary !== null);
+
   const listContentStyle = useMemo(
     () => ({ paddingBottom: bottomInset }),
     [bottomInset],
@@ -407,13 +480,39 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         }
       : null;
 
+  const liveSyncEnabled =
+    props.kind === 'playlist'
+    && remoteDetail !== undefined
+    && (isCollaborative || isCollaborator || remoteDetail.collaborators.length > 0);
+
   const heroHeaderContent = (
     <View style={tv.isTv ? styles.tvHeroHeader : styles.header}>
+      {liveSyncEnabled && props.kind === 'playlist' && remoteDetail !== undefined ? (
+        <PlaylistLiveSyncBanner
+          playlistId={props.playlistId}
+          scope={scope}
+          currentRevision={remoteDetail.revision}
+          focused={isFocused}
+          isCollaborative={liveSyncEnabled}
+          onExit={props.onDeleted}
+        />
+      ) : null}
       <PlaylistHero
         title={title}
         coverUrl={coverUrl}
         liked={props.kind === 'liked'}
         ownerName={ownerName}
+        onOpenOwner={
+          props.kind === 'playlist'
+          && detail?.owner_id !== null
+          && detail?.owner_id !== undefined
+          && props.onOpenUser !== undefined
+            ? () => props.onOpenUser?.({
+                userId: detail.owner_id!,
+                name: ownerName ?? undefined,
+              })
+            : undefined
+        }
         trackCount={trackCount}
         durationSeconds={tracks.reduce((total, track) => total + track.duration_sec, 0)}
         visibility={
@@ -433,23 +532,36 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
             ? {
                 active: reordering,
                 disabled: mutations.pending,
-                onPress: () => setReordering((current) => !current),
+                onPress: toggleReordering,
               }
             : null
         }
         download={
-          offlineControlState === null || detail === undefined
-            ? null
-            : {
-                kind: offlineControlState.kind,
-                accessibilityLabel: offlineControlState.kind === 'idle'
-                  ? libraryStrings.playlist.downloadAction
-                  : libraryStrings.playlist.downloadStatus,
-                disabled: offlineControlState.kind === 'idle' && tracks.length === 0,
-                onPress: offlineControlState.kind === 'idle'
-                  ? offline.download
-                  : () => openSheet('actions'),
+          props.kind === 'liked'
+            ? {
+                kind: likedOffline.phase,
+                accessibilityLabel:
+                  likedOffline.phase === 'downloaded'
+                    ? libraryStrings.playlist.removeCollectionDownloads
+                    : libraryStrings.playlist.downloadCollection,
+                disabled: tracks.length === 0 || likedOffline.busy,
+                onPress:
+                  likedOffline.phase === 'downloaded'
+                    ? likedOffline.removeAll
+                    : likedOffline.downloadAll,
               }
+            : offlineControlState === null || detail === undefined
+              ? null
+              : {
+                  kind: offlineControlState.kind,
+                  accessibilityLabel: offlineControlState.kind === 'idle'
+                    ? libraryStrings.playlist.downloadAction
+                    : libraryStrings.playlist.downloadStatus,
+                  disabled: offlineControlState.kind === 'idle' && tracks.length === 0,
+                  onPress: offlineControlState.kind === 'idle'
+                    ? offline.download
+                    : () => openSheet('actions'),
+                }
         }
         onOpenActions={
           props.kind === 'playlist' && detail !== undefined
@@ -471,6 +583,15 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           tone="danger"
           live="assertive"
           message={runtimeError}
+        />
+      ) : null}
+
+      {offline.failure === 'wifi-required' ? (
+        <InlineNotice
+          testID="playlist-wifi-required-error"
+          tone="danger"
+          live="assertive"
+          message={strings.profile.wifiRequiredError}
         />
       ) : null}
 
@@ -503,6 +624,21 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           refreshIndicator={false}
         />
       )}
+
+      {!showRowControls && !seededInitialLoading && (tracks.length > 0 || (props.kind === 'playlist' && canEditTracks)) ? (
+        <PlaylistFilterSortBar
+          query={filterQuery}
+          onChangeQuery={setFilterQuery}
+          sort={sortKey}
+          onChangeSort={setSortKey}
+          canQuickAdd={props.kind === 'playlist' && canEditTracks}
+          onOpenQuickAdd={
+            props.kind === 'playlist' && canEditTracks
+              ? () => openSheet('quick-add')
+              : undefined
+          }
+        />
+      ) : null}
 
       {showRowControls ? (
         <View testID="playlist-reorder-bar" style={styles.reorderBar}>
@@ -543,6 +679,12 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
           : 5
       }
     />
+  ) : tracks.length > 0 && displayedTracks.length === 0 ? (
+    <EmptyState
+      testID="playlist-filter-empty"
+      icon="magnify"
+      title={libraryStrings.playlist.filterEmpty}
+    />
   ) : (
     <EmptyState
       testID="playlist-empty"
@@ -560,48 +702,119 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
     />
   );
 
+  const draggedIndex =
+    drag.draggingId === null
+      ? -1
+      : dragRows.findIndex((row) => row.stableId === drag.draggingId);
+  const draggedTrack = draggedIndex >= 0 ? tracks[draggedIndex] ?? null : null;
+
   const trackList = (
-    <FlatList
-      testID="playlist-list"
-      data={tracks}
-      keyExtractor={keyExtractor}
-      refreshing={manualRefreshing}
-      onRefresh={pullToRefresh}
-      showsVerticalScrollIndicator={false}
-      initialNumToRender={12}
-      maxToRenderPerBatch={10}
-      windowSize={9}
-      // Keep false on RN 0.86 Fabric: clipping detaches updated/active track cells into blank gaps.
-      removeClippedSubviews={false}
-      ListHeaderComponent={tv.isTv ? null : heroHeaderContent}
-      renderItem={({ item, index }) => (
-        <PlaylistTrackRow
-          track={item}
-          index={index}
-          count={tracks.length}
-          occurrence={
-            props.kind === 'liked'
-              ? likedTrackOccurrence(user.id, index)
-              : playlistTrackOccurrence(props.playlistId, index)
-          }
-          canEdit={showRowControls}
-          controlsDisabled={mutations.pending}
-          addedByLabel={
-            showTrackAttribution ? playlistTrackAddedByLabel(item, user.id) : undefined
-          }
-          onPlay={() => playRow(index)}
-          onOpenActions={() => openTrackActions(item)}
-          onOpenAlbum={props.onOpenAlbum}
-          onOpenArtist={props.onOpenArtist}
-          onMove={(direction) => moveTrack(index, direction)}
-          // The rejection is already on the remove mutation and rendered as
-          // `playlist-mutation-error`; only the unhandled promise is settled here.
-          onRemove={() => void removeTrack(item).catch(() => undefined)}
-        />
-      )}
-      ListEmptyComponent={emptyOrLoading}
-      contentContainerStyle={listContentStyle}
-    />
+    <View
+      ref={attachFrame}
+      onLayout={drag.onFrameLayout}
+      style={styles.listFrame}
+    >
+      <FlatList
+        ref={(list) =>
+          attachList(
+            list === null
+              ? null
+              : {
+                  getScrollResponder: () => ({
+                    scrollTo: ({ y, animated }) => list.scrollToOffset({ offset: y, animated }),
+                  }),
+                },
+          )
+        }
+        testID="playlist-list"
+        data={displayedTracks}
+        keyExtractor={(entry) => keyExtractor(entry.track, entry.sourceIndex)}
+        scrollEnabled={drag.draggingId === null}
+        onScroll={drag.onScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={drag.onContentSizeChange}
+        refreshing={manualRefreshing}
+        onRefresh={pullToRefresh}
+        showsVerticalScrollIndicator={false}
+        initialNumToRender={12}
+        maxToRenderPerBatch={10}
+        windowSize={9}
+        // Keep false on RN 0.86 Fabric: clipping detaches updated/active track cells into blank gaps.
+        removeClippedSubviews={false}
+        ListHeaderComponent={tv.isTv ? null : heroHeaderContent}
+        renderItem={({ item }) => {
+          const { track, sourceIndex } = item;
+          const stableId = keyExtractor(track, sourceIndex);
+          const enableDrag = showRowControls && !tv.isTv && drag.canDrag(sourceIndex);
+          return (
+            <PlaylistTrackRow
+              track={track}
+              index={sourceIndex}
+              count={tracks.length}
+              occurrence={
+                props.kind === 'liked'
+                  ? likedTrackOccurrence(user.id, sourceIndex)
+                  : playlistTrackOccurrence(props.playlistId, sourceIndex)
+              }
+              canEdit={showRowControls}
+              controlsDisabled={mutations.pending}
+              dragHandle={
+                enableDrag
+                  ? {
+                      handlers: drag.handlersFor(stableId),
+                      dragging: drag.draggingId === stableId,
+                    }
+                  : undefined
+              }
+              rowRef={showRowControls && !tv.isTv ? attachRow(stableId) : undefined}
+              addedByLabel={
+                showTrackAttribution ? playlistTrackAddedByLabel(track, user.id) : undefined
+              }
+              onPlay={() => playRow(sourceIndex)}
+              onOpenActions={() => openTrackActions(track)}
+              onOpenAlbum={props.onOpenAlbum}
+              onOpenArtist={props.onOpenArtist}
+              onMove={(direction) => moveTrack(sourceIndex, direction)}
+              // The rejection is already on the remove mutation and rendered as
+              // `playlist-mutation-error`; only the unhandled promise is settled here.
+              onRemove={() => void removeTrack(track).catch(() => undefined)}
+            />
+          );
+        }}
+        ListEmptyComponent={emptyOrLoading}
+        contentContainerStyle={listContentStyle}
+      />
+      {draggedTrack !== null ? (
+        <>
+          <Animated.View
+            testID="playlist-drag-indicator"
+            pointerEvents="none"
+            style={[
+              styles.dragIndicator,
+              {
+                opacity: drag.indicatorOpacity,
+                transform: [{ translateY: drag.indicatorTop }],
+              },
+            ]}
+          />
+          <Animated.View
+            testID="playlist-drag-ghost"
+            pointerEvents="none"
+            style={[
+              styles.dragGhost,
+              { transform: [{ translateY: drag.ghostTop }] },
+            ]}
+          >
+            <AppText variant="bodyStrong" numberOfLines={1}>
+              {draggedTrack.title}
+            </AppText>
+            <AppText variant="caption" color="secondary" numberOfLines={1}>
+              {draggedTrack.artist}
+            </AppText>
+          </Animated.View>
+        </>
+      ) : null}
+    </View>
   );
 
   return (
@@ -638,6 +851,55 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         <PlaylistActionsSheet
           visible={sheet === 'actions'}
           onClose={closeSheet}
+          onStartRadio={
+            tracks.length > 0
+              ? () => {
+                  closeSheet();
+                  setRuntimeError(null);
+                  void (async () => {
+                    if (!musicRepository.getSeededRadio) {
+                      throw new Error('Seeded radio endpoint unavailable');
+                    }
+                    const seedIds = tracks.slice(0, 10).map((t) => t.id);
+                    const radioTracks = await musicRepository.getSeededRadio({
+                      track_ids: seedIds,
+                      limit: 35,
+                    });
+                    if (radioTracks.length === 0) {
+                      throw new Error(wave2Strings.playlistTools.radioFailed);
+                    }
+                    await playTracks(radioTracks, 0, {
+                      context: {
+                        type: 'collection',
+                        id: props.kind === 'playlist' ? `playlist-radio:${props.playlistId}` : 'liked-radio',
+                        label: `${title} Radio`,
+                      },
+                    });
+                  })().catch(() => {
+                    setRuntimeError(wave2Strings.playlistTools.radioFailed);
+                  });
+                }
+              : undefined
+          }
+          onFindDuplicates={
+            props.kind === 'playlist' && canEditTracks && tracks.length > 1
+              ? () => {
+                  mutations.resetErrors();
+                  setSheet('duplicates');
+                }
+              : undefined
+          }
+          onShare={
+            props.kind === 'playlist' && detail !== undefined
+              ? () => {
+                  closeSheet();
+                  setRuntimeError(null);
+                  void sharePlaylist(props.playlistId, title).catch(() => {
+                    setRuntimeError(libraryStrings.playlist.shareFailed);
+                  });
+                }
+              : undefined
+          }
           offline={
             props.kind === 'playlist' && detail !== undefined && offlineControlState !== null
               ? {
@@ -672,7 +934,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
                   },
                   onToggleReorder: () => {
                     closeSheet();
-                    setReordering((current) => !current);
+                    toggleReordering();
                   },
                   onDelete: () => {
                     mutations.resetErrors();
@@ -696,7 +958,7 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
                   },
                   onToggleReorder: () => {
                     closeSheet();
-                    setReordering((current) => !current);
+                    toggleReordering();
                   },
                   onLeave: () => {
                     mutations.resetErrors();
@@ -722,10 +984,30 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
             playlist={remoteDetail}
             busy={mutations.pending}
             onToggleCollaborative={changeCollaborative}
+            onOpenUser={props.onOpenUser}
             onLeave={() => {
               mutations.resetErrors();
               setSheet('leave');
             }}
+          />
+        ) : null}
+
+        {props.kind === 'playlist' && canEditTracks ? (
+          <PlaylistQuickAddSheet
+            visible={sheet === 'quick-add'}
+            playlistId={props.playlistId}
+            scope={scope}
+            existingTrackIds={existingTrackIds}
+            onClose={closeSheet}
+          />
+        ) : null}
+
+        {props.kind === 'playlist' && canEditTracks ? (
+          <PlaylistDuplicatesSheet
+            visible={sheet === 'duplicates'}
+            playlistId={props.playlistId}
+            scope={scope}
+            onClose={closeSheet}
           />
         ) : null}
 
@@ -795,6 +1077,29 @@ const styles = StyleSheet.create({
   },
   tvSplit: { flexDirection: 'row', alignItems: 'stretch' },
   tvTracksPane: { flex: 1, minWidth: 0 },
+  listFrame: { flex: 1, position: 'relative' },
+  dragIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: layout.pagePadding,
+    right: layout.pagePadding,
+    height: 2,
+    borderRadius: radii.pill,
+    backgroundColor: colors.accent,
+  },
+  dragGhost: {
+    position: 'absolute',
+    top: 0,
+    left: spacing.sm,
+    right: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    backgroundColor: colors.surfaceElevated,
+    ...elevation.floating,
+  },
   reorderBar: {
     flexDirection: 'row',
     alignItems: 'center',

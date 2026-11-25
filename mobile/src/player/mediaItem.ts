@@ -1,7 +1,12 @@
 import type { MediaItem } from './player';
-import type { Track } from '../api/types';
+import type { AudioQualityTier, Track } from '../api/types';
 import { trackArtistLabel } from '../api/trackArtists';
 import { calculateLoudnessGain, loudnessMetadataFromTrack } from './loudness';
+import {
+  audioMimeTypeForQuality,
+  buildTrackStreamUri,
+  getAudioQualityPreference,
+} from './qualityPreference';
 
 function isArtistRef(value: unknown): value is Track['artists'][number] {
   if (typeof value !== 'object' || value === null) return false;
@@ -35,30 +40,45 @@ export function trackToMediaItem(
   track: Track,
   apiBase: string,
   streamHeaders: Record<string, string>,
-  options: { mediaId?: string; radio?: boolean; explicitDownloadUri?: string } = {},
+  options: {
+    mediaId?: string;
+    radio?: boolean;
+    explicitDownloadUri?: string;
+    quality?: AudioQualityTier;
+    crossfade?: { introEndSec?: number | null; outroStartSec?: number | null };
+  } = {},
 ): MediaItem {
   const explicitDownloadUri = options.explicitDownloadUri?.trim();
   if (explicitDownloadUri !== undefined && !explicitDownloadUri.startsWith('file://')) {
     throw new Error(`Explicit download for track ${track.id} must use an app-private file URI`);
   }
+  const effectiveQuality = options.quality ?? getAudioQualityPreference();
   const loudnessNormalization = calculateLoudnessGain(loudnessMetadataFromTrack(track));
-  return {
+  const extras: Record<string, unknown> = {
+    track: track as unknown as Record<string, unknown>,
+    radio: options.radio === true,
+    explicitDownload: explicitDownloadUri !== undefined,
+    loudnessNormalization,
+  };
+  if (options.crossfade !== undefined) {
+    extras.crossfade = options.crossfade;
+  }
+  const item: MediaItem = {
     mediaId: options.mediaId ?? `track:${track.id}`,
     url: explicitDownloadUri === undefined
-      ? { uri: `${apiBase}/api/tracks/${track.id}/stream`, headers: streamHeaders }
+      ? { uri: buildTrackStreamUri(apiBase, track.id, effectiveQuality), headers: streamHeaders }
       : { uri: explicitDownloadUri },
     title: track.title,
     artist: trackArtistLabel(track),
     albumTitle: track.album,
     artworkUrl: track.cover || undefined,
     duration: track.duration_sec,
-    extras: {
-      track: track as unknown as Record<string, unknown>,
-      radio: options.radio === true,
-      explicitDownload: explicitDownloadUri !== undefined,
-      loudnessNormalization,
-    },
+    extras,
   };
+  if (explicitDownloadUri === undefined && effectiveQuality === 'lossless') {
+    item.mimeType = audioMimeTypeForQuality(effectiveQuality);
+  }
+  return item;
 }
 
 /** Recover the original Track from a MediaItem's extras, or null if absent. */

@@ -213,5 +213,15 @@ class LoggeRythmVoiceBridgeTest {
     override fun executeGetNowPlaying(
       callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
     ) = Unit
+
+    override fun executeStartRadio(
+      moodOrGenre: String?,
+      callback: (Result<LoggeRythmVoicePlayResult>) -> Unit,
+    ) = Unit
+
+    override fun executeSetSleepTimer(
+      minutes: Int,
+      callback: (Result<LoggeRythmVoiceSleepTimerResult>) -> Unit,
+    ) = Unit
   }
 }

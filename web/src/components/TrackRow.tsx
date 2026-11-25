@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import type { Track } from "@/types";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { formatTime, formatCompact, formatRelativeDate } from "@/lib/format";
+import { serializeDraggedTrack, TRACK_DRAG_MIME } from "@/lib/trackDrag";
 import type { TrackPlays } from "@/hooks/usePlays";
 import { PlayIcon, PauseIcon } from "@/components/icons";
 import CacheMarker from "@/components/CacheMarker";
@@ -109,6 +110,16 @@ export default function TrackRow({
     setMenuPos({ x: event.clientX, y: event.clientY });
   }
 
+  function handleDragStart(event: DragEvent<HTMLDivElement>) {
+    if (event.target instanceof Element && event.target.closest("[data-drag-handle], input, textarea")) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData(TRACK_DRAG_MIME, serializeDraggedTrack(track));
+    event.dataTransfer.setData("text/plain", `${track.title} – ${track.artist}`);
+  }
+
   return (
     <div
       data-track-id={String(track.id)}
@@ -117,6 +128,8 @@ export default function TrackRow({
       data-popularity={showPopularity}
       data-handle={dragHandle !== undefined}
       data-note={note !== undefined}
+      draggable
+      onDragStart={handleDragStart}
       onContextMenu={handleContextMenu}
       onDoubleClick={handleDoubleClick}
       className={styles.row}

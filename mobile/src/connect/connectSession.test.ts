@@ -205,7 +205,7 @@ describe('ConnectSession', () => {
       device_id: 'phone-1',
       name: 'Pixel 9',
       device_type: 'mobile',
-      capabilities: { can_play_audio: true, can_control_volume: false },
+      capabilities: { can_play_audio: true, can_control_volume: true },
     });
 
     h.sockets[0].handlers.onFrame({
@@ -260,7 +260,7 @@ describe('ConnectSession', () => {
     await expect(timeoutPromise).rejects.toThrow(/timed out/);
   });
 
-  it('executes incoming commands on local player, rejects set_volume honestly, and pauses on deactivated', async () => {
+  it('executes incoming commands including set_volume on local player and pauses on deactivated', async () => {
     const h = harness();
     await h.session.start();
     h.sockets[0].handlers.onOpen();
@@ -280,10 +280,10 @@ describe('ConnectSession', () => {
       payload: { volume: 0.5 },
     });
     await h.settle();
+    expect(h.deps.player.executeRemoteCommand).toHaveBeenCalledWith('set_volume', { volume: 0.5 });
     expect(h.sentFrames).toContainEqual(
-      expect.objectContaining({ type: 'command_ack', command_id: 'cmd-vol', ok: false }),
+      expect.objectContaining({ type: 'command_ack', command_id: 'cmd-vol', ok: true }),
     );
-    expect(h.deps.player.executeRemoteCommand).not.toHaveBeenCalled();
 
     h.sockets[0].handlers.onFrame({
       type: 'command',

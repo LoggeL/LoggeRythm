@@ -42,6 +42,7 @@ function commitPublication(action: () => Promise<void>): Promise<void> {
 
 export interface OfflineBrowseTreeCopy {
   downloadsTitle: string;
+  downloadedSongsTitle?: string;
   downloadedProgress(downloadedOccurrences: number, totalOccurrences: number): string;
 }
 
@@ -75,6 +76,7 @@ export async function clearBrowseTree(): Promise<void> {
 function currentOfflineCopy(): OfflineBrowseTreeCopy {
   return {
     downloadsTitle: strings.player.autoDownloads,
+    downloadedSongsTitle: strings.player.autoDownloadedSongs,
     downloadedProgress: strings.player.autoDownloadedProgress,
   };
 }
@@ -108,13 +110,41 @@ export function buildOfflineDownloadsBrowseCategory(
   }
 
   const summaries = listOfflinePlaylistSummaries(manifest, scope);
-  if (summaries.length === 0) return null;
   const origin = offlineScopeOrigin(scope);
+  const individualItems = Object.values(manifest.tracks)
+    .filter((entry) => entry.individualDownload === true)
+    .sort((left, right) => right.downloadedAt.localeCompare(left.downloadedAt))
+    .flatMap((entry, position) => {
+      const { track } = entry;
+      const uri = resolveTrackUri(track.id);
+      if (
+        uri === null
+        || uri !== snapshot.trackUris[track.id]
+        || uri !== `${snapshot.directoryUri}${entry.fileName}`
+        || !uri.startsWith('file://')
+      ) {
+        return [];
+      }
+      return [{
+        mediaId: `download-song:${position}:${track.id}`,
+        title: track.title,
+        artist: trackArtistLabel(track),
+        albumTitle: track.album,
+        artworkUrl: browseArtworkUrl(track.cover, origin),
+        url: { uri },
+        duration: track.duration_sec,
+        mimeType: 'audio/mpeg',
+        mediaType: 'music',
+        extras: {
+          track: track as unknown as Record<string, unknown>,
+          radio: false,
+          explicitDownload: true,
+        },
+      } satisfies BrowseItem];
+    });
+  if (summaries.length === 0 && individualItems.length === 0) return null;
 
-  return {
-    mediaId: 'library:downloads',
-    title: copy.downloadsTitle,
-    items: summaries.map((summary): BrowseItem => {
+  const items: BrowseItem[] = summaries.map((summary): BrowseItem => {
       const detail = getOfflinePlaylistBrowseDetail(manifest, scope, summary.id);
       if (detail === null) {
         throw new Error(`Offline playlist ${summary.id} disappeared while building browse tree`);
@@ -143,6 +173,7 @@ export function buildOfflineDownloadsBrowseCategory(
           url: { uri },
           duration: track.duration_sec,
           mimeType: 'audio/mpeg',
+          mediaType: 'music',
           extras: {
             track: track as unknown as Record<string, unknown>,
             radio: false,
@@ -155,9 +186,30 @@ export function buildOfflineDownloadsBrowseCategory(
         title: summary.name,
         artist: copy.downloadedProgress(children.length, summary.offline.totalOccurrences),
         artworkUrl: browseArtworkUrl(summary.cover_url, origin),
+        mediaType: 'playlist',
         children,
       };
-    }),
+    });
+
+  if (individualItems.length > 0) {
+    items.push({
+      mediaId: 'download-songs:all',
+      title: copy.downloadedSongsTitle ?? strings.player.autoDownloadedSongs,
+      artist: copy.downloadedProgress(individualItems.length, individualItems.length),
+      artworkUrl: individualItems[0]?.artworkUrl,
+      mediaType: 'playlist',
+      children: individualItems,
+    });
+  }
+
+  return {
+    mediaId: 'library:downloads',
+    title: copy.downloadsTitle,
+    contentStyle: 'list',
+    contentStyleBrowsable: 'grid',
+    contentStylePlayable: 'list',
+    mediaType: 'folder_playlists',
+    items,
   };
 }
 
@@ -234,25 +286,137 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
       : null;
     if (loaded !== null) failures.push(...loaded.failures);
 
-    const toItem = (track: Track, mediaId: string): BrowseItem => ({
-      mediaId,
-      title: track.title,
-      artist: trackArtistLabel(track),
-      albumTitle: track.album,
-      artworkUrl: browseArtworkUrl(track.cover, base),
-      url: {
-        uri: `${base}/api/tracks/${encodeURIComponent(track.id)}/stream`,
-        headers: streamHeaders,
-      },
-      duration: track.duration_sec,
-      extras: { track: track as unknown as Record<string, unknown>, radio: false },
-    });
+    const toItem = (track: Track, mediaId: string): BrowseItem => {
+      const offlineUri =
+        publicationScope !== null && getOfflineSnapshot().scope === publicationScope
+          ? offlineUriForTrack(track.id)
+          : null;
+      if (offlineUri !== null && offlineUri.startsWith('file://')) {
+        return {
+          mediaId,
+          title: track.title,
+          artist: trackArtistLabel(track),
+          albumTitle: track.album,
+          artworkUrl: browseArtworkUrl(track.cover, base),
+          url: { uri: offlineUri },
+          duration: track.duration_sec,
+          mimeType: 'audio/mpeg',
+          mediaType: 'music',
+          extras: {
+            track: track as unknown as Record<string, unknown>,
+            radio: false,
+            explicitDownload: true,
+          },
+        };
+      }
+      return {
+        mediaId,
+        title: track.title,
+        artist: trackArtistLabel(track),
+        albumTitle: track.album,
+        artworkUrl: browseArtworkUrl(track.cover, base),
+        url: {
+          uri: `${base}/api/tracks/${encodeURIComponent(track.id)}/stream`,
+          headers: streamHeaders,
+        },
+        duration: track.duration_sec,
+        mediaType: 'music',
+        extras: { track: track as unknown as Record<string, unknown>, radio: false },
+      };
+    };
 
     const categories: BrowseCategory[] = [];
+
+    // Android Auto 2.0 Home category (Recent + Personal Mixes + Release Radar)
+    const homeItems: BrowseItem[] = [];
+    const optionalReads = await Promise.allSettled([
+      typeof musicRepository.getStats === 'function'
+        ? musicRepository.getStats(signal)
+        : Promise.resolve(null),
+      typeof musicRepository.getHomeMixes === 'function'
+        ? musicRepository.getHomeMixes(signal)
+        : Promise.resolve(null),
+      typeof musicRepository.getReleaseRadar === 'function'
+        ? musicRepository.getReleaseRadar(signal)
+        : Promise.resolve(null),
+    ]);
+    assertCurrent(revision, signal);
+    const statsResult = optionalReads[0];
+    if (statsResult.status === 'rejected') {
+      failures.push(`Recent plays: ${String(statsResult.reason)}`);
+    } else if (statsResult.value && statsResult.value.recent.length > 0) {
+      const recentChildren = statsResult.value.recent.map((play, index) =>
+        toItem(
+          {
+            ...play,
+            preview_url: null,
+            rank: 0,
+            release_date: '',
+          },
+          `recent:${index}:${play.id}`,
+        ),
+      );
+      homeItems.push({
+        mediaId: 'home:recent',
+        title: strings.player.autoRecent,
+        artworkUrl: recentChildren[0]?.artworkUrl,
+        mediaType: 'playlist',
+        children: recentChildren,
+      });
+    }
+    const mixesResult = optionalReads[1];
+    if (mixesResult.status === 'rejected') {
+      failures.push(`Personal mixes: ${String(mixesResult.reason)}`);
+    } else if (Array.isArray(mixesResult.value)) {
+      mixesResult.value.forEach((shelf, shelfIndex) => {
+        if (shelf.tracks.length === 0) return;
+        const children = shelf.tracks.map((track, trackIndex) =>
+          toItem(track, `mix:${shelfIndex}:${trackIndex}:${track.id}`),
+        );
+        homeItems.push({
+          mediaId: `home:mix:${shelfIndex}`,
+          title: shelf.title,
+          artist: shelf.subtitle,
+          artworkUrl: children[0]?.artworkUrl,
+          mediaType: 'playlist',
+          children,
+        });
+      });
+    }
+    const radarResult = optionalReads[2];
+    if (radarResult.status === 'rejected') {
+      failures.push(`Release radar: ${String(radarResult.reason)}`);
+    } else if (Array.isArray(radarResult.value) && radarResult.value.length > 0) {
+      const radarChildren = radarResult.value.map((entry, index) =>
+        toItem(entry.track, `radar:${index}:${entry.track.id}`),
+      );
+      homeItems.push({
+        mediaId: 'home:radar',
+        title: strings.player.autoReleaseRadar,
+        artworkUrl: radarChildren[0]?.artworkUrl,
+        mediaType: 'playlist',
+        children: radarChildren,
+      });
+    }
+    if (homeItems.length > 0) {
+      categories.push({
+        mediaId: 'library:home',
+        title: strings.player.autoHome,
+        contentStyle: 'grid',
+        contentStyleBrowsable: 'grid',
+        contentStylePlayable: 'list',
+        mediaType: 'folder_mixed',
+        items: homeItems,
+      });
+    }
+
     if (likes !== null && likes.length > 0) {
       categories.push({
         mediaId: 'library:liked',
         title: strings.player.autoLikedSongs,
+        contentStyle: 'list',
+        contentStylePlayable: 'list',
+        mediaType: 'playlist',
         items: likes.map((track, index) => toItem(track, `liked:${index}:${track.id}`)),
       });
     } else if (likes === null) {
@@ -274,6 +438,7 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
           mediaId: `playlist:${playlist.id}`,
           title: playlist.name,
           artworkUrl: browseArtworkUrl(playlist.cover_url, base),
+          mediaType: 'playlist',
           children: playlist.tracks.map((track, index) =>
             toItem(track, `playlist:${playlist.id}:${index}:${track.id}`),
           ),
@@ -282,11 +447,59 @@ export async function publishBrowseTree(signal?: AbortSignal): Promise<void> {
       if (items.length > 0) categories.push({
         mediaId: 'library:playlists',
         title: strings.player.autoPlaylists,
+        contentStyle: 'grid',
+        contentStyleBrowsable: 'grid',
+        contentStylePlayable: 'list',
+        mediaType: 'folder_playlists',
         items,
       });
     } else if (loaded === null) {
       const previous = retained.find(({ mediaId }) => mediaId === 'library:playlists');
       if (previous) categories.push(previous);
+    }
+
+    // Android Auto 2.0 Radio category (Mood Radio stations)
+    if (typeof musicRepository.getMood === 'function') {
+      const moods = [
+        { tag: 'chill', title: strings.radio.moods.chill.title },
+        { tag: 'focus', title: strings.radio.moods.focus.title },
+        { tag: 'workout', title: strings.radio.moods.workout.title },
+        { tag: 'party', title: strings.radio.moods.party.title },
+      ] as const;
+      const moodResults = await Promise.allSettled(
+        moods.map(({ tag }) => musicRepository.getMood(tag, signal)),
+      );
+      assertCurrent(revision, signal);
+      const radioItems: BrowseItem[] = [];
+      moodResults.forEach((result, index) => {
+        const mood = moods[index];
+        if (result.status === 'rejected') {
+          failures.push(`Mood radio (${mood.tag}): ${String(result.reason)}`);
+          return;
+        }
+        if (result.value.length === 0) return;
+        const children = result.value.map((track, trackIndex) =>
+          toItem(track, `radio:mood:${mood.tag}:${trackIndex}:${track.id}`),
+        );
+        radioItems.push({
+          mediaId: `radio:mood:${mood.tag}`,
+          title: mood.title,
+          artworkUrl: children[0]?.artworkUrl,
+          mediaType: 'radio_station',
+          children,
+        });
+      });
+      if (radioItems.length > 0) {
+        categories.push({
+          mediaId: 'library:radio',
+          title: strings.player.autoRadio,
+          contentStyle: 'grid',
+          contentStyleBrowsable: 'grid',
+          contentStylePlayable: 'list',
+          mediaType: 'folder_radio_stations',
+          items: radioItems,
+        });
+      }
     }
 
     assertCurrent(revision, signal);

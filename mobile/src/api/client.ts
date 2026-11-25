@@ -12,7 +12,7 @@ import {
   resetApiCompatibilityCheck,
 } from './compatibility';
 import { ApiError } from './error';
-import type { DeezerId } from './types';
+import type { AudioQualityTier, DeezerId } from './types';
 import {
   decodeStoredSession,
   parseSessionCookie,
@@ -574,14 +574,18 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
 }
 
 /** An authenticated Range-capable stream source for the Media3 player. */
-export async function streamSource(deezerId: DeezerId): Promise<{
+export async function streamSource(
+  deezerId: DeezerId,
+  quality?: AudioQualityTier,
+): Promise<{
   uri: string;
   headers: Record<string, string>;
 }> {
   await ensureLoaded();
   const base = await getApiBase();
   await ensureApiCompatibility(base);
-  const uri = `${base}/api/tracks/${deezerId}/stream`;
+  const qualityQuery = quality === undefined ? '' : `?quality=${encodeURIComponent(quality)}`;
+  const uri = `${base}/api/tracks/${deezerId}/stream${qualityQuery}`;
   if (session === null) throw new Error(`Cannot stream track ${deezerId}: no authenticated session`);
   return { uri, headers: { Cookie: sessionCookieHeader(session, uri) } };
 }

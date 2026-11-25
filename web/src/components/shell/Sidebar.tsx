@@ -2,33 +2,51 @@
 
 import Link from "next/link";
 import { NAV_LATERAL } from "@/lib/morph";
-import { useState } from "react";
+import { useState, type DragEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { usePlaylists, useDeletePlaylist } from "@/hooks/useLibrary";
+import { usePlaylists, useDeletePlaylist, useAddToPlaylist } from "@/hooks/useLibrary";
 import { useMe } from "@/hooks/useAuth";
-import { HeartIcon, DownloadedIcon, PlusIcon, LibraryIcon, ClockIcon, VisualizerIcon, UsersIcon, LogOutIcon, TrashIcon } from "@/components/icons";
+import { api } from "@/lib/api";
+import { parseDraggedTrack, TRACK_DRAG_MIME } from "@/lib/trackDrag";
+import {
+  HeartIcon,
+  DownloadedIcon,
+  PlusIcon,
+  LibraryIcon,
+  ClockIcon,
+  VisualizerIcon,
+  UsersIcon,
+  LogOutIcon,
+  TrashIcon,
+  PlayIcon,
+  ShuffleIcon,
+  QueueIcon,
+} from "@/components/icons";
 import Logo, { Wordmark } from "@/components/Logo";
 import ContextMenu from "@/components/ContextMenu";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import EqualizerBars from "@/components/EqualizerBars";
 import CreatePlaylistDialog from "@/app/library/CreatePlaylistDialog";
 import LeavePlaylistDialog from "@/app/playlist/_components/LeavePlaylistDialog";
 import { NAV_ITEMS, isNavItemActive } from "@/components/shell/navigation";
 import { usePlayerStore } from "@/store/player";
-import { isOwnedLibraryPlaylist, sidebarPlaylistMeta } from "@/lib/playlistPermissions";
+import { toast } from "@/store/toast";
+import { canEditPlaylistTracks, isOwnedLibraryPlaylist, sidebarPlaylistMeta } from "@/lib/playlistPermissions";
 import { playlistPath } from "@/lib/slugs";
-import type { PlaylistSummary } from "@/types";
+import type { PlaylistSummary, Track } from "@/types";
 
 const FILTER_THRESHOLD = 8;
 
-const rowClass = (active: boolean) =>
-  `group/row relative flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-2 py-1.5 transition-colors ${active ? "bg-foreground/[0.08]" : "hover:bg-foreground/[0.05]"}`;
+const rowClass = (active: boolean, dropTarget = false) =>
+  `group/row relative flex min-h-12 items-center gap-3 rounded-[var(--radius-control)] px-2 py-1.5 transition-colors ${
+    dropTarget
+      ? "bg-accent/18 ring-2 ring-accent"
+      : active
+        ? "bg-foreground/[0.08]"
+        : "hover:bg-foreground/[0.05]"
+  }`;
 
-/**
- * Signal marker on the active destination. The primary navigation's marker
- * `travels`: it slides from the old item to the new one (globals.css,
- * `.vt-nav-marker`); there is only ever one of those.
- */
 function ActiveMarker({ travels = false }: { travels?: boolean }) {
   return <span aria-hidden="true" className={`absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent ${travels ? "vt-nav-marker" : ""}`} />;
 }
@@ -76,7 +94,6 @@ function PrimaryNav() {
   );
 }
 
-/** One of the three fixed collections, as a square key under the library label. */
 function Shortcut({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
   return (
     <Link
@@ -91,14 +108,59 @@ function Shortcut({ href, label, icon }: { href: string; label: string; icon: Re
   );
 }
 
-function PlaylistRow({ playlist, active, playing, onMenu }: { playlist: PlaylistSummary; active: boolean; playing: boolean; onMenu: (event: React.MouseEvent, path: string) => void }) {
+function PlaylistRow({
+  playlist,
+  active,
+  playing,
+  onMenu,
+  onDropTrack,
+}: {
+  playlist: PlaylistSummary;
+  active: boolean;
+  playing: boolean;
+  onMenu: (event: React.MouseEvent, path: string) => void;
+  onDropTrack: (playlist: PlaylistSummary, track: Track) => void;
+}) {
   const path = playlistPath(playlist);
+  const editable = canEditPlaylistTracks(playlist);
+  const [dropActive, setDropActive] = useState(false);
   const sharedOrCollaborative = Boolean(
     playlist.is_collaborative || playlist.is_collaborator,
   );
+
+  function handleDragOver(event: DragEvent<HTMLLIElement>) {
+    if (!editable || !event.dataTransfer.types.includes(TRACK_DRAG_MIME)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (!dropActive) setDropActive(true);
+  }
+
+  function handleDragLeave() {
+    if (dropActive) setDropActive(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLLIElement>) {
+    setDropActive(false);
+    if (!editable) return;
+    const raw = event.dataTransfer.getData(TRACK_DRAG_MIME);
+    if (!raw) return;
+    event.preventDefault();
+    try {
+      const track = parseDraggedTrack(raw);
+      if (track) onDropTrack(playlist, track);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause));
+    }
+  }
+
   return (
-    <li onContextMenu={(event) => onMenu(event, path)}>
-      <Link href={path} transitionTypes={NAV_LATERAL} aria-current={active ? "page" : undefined} className={rowClass(active)}>
+    <li
+      onContextMenu={(event) => onMenu(event, path)}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <Link href={path} transitionTypes={NAV_LATERAL} aria-current={active ? "page" : undefined} className={rowClass(active, dropActive)}>
         {active && <ActiveMarker />}
         {playlist.cover_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -119,7 +181,7 @@ function PlaylistRow({ playlist, active, playing, onMenu }: { playlist: Playlist
             )}
           </span>
           <span className="mt-0.5 block truncate font-mono text-[10.5px] uppercase tracking-[0.08em] text-subtle">
-            {sidebarPlaylistMeta(playlist)}
+            {dropActive ? "Titel hier ablegen" : sidebarPlaylistMeta(playlist)}
           </span>
         </span>
         {playing && <EqualizerBars height={12} isPlaying />}
@@ -133,15 +195,55 @@ function LibrarySection() {
   const pathname = usePathname();
   const playlistQuery = usePlaylists(true);
   const deletePlaylist = useDeletePlaylist();
+  const addToPlaylist = useAddToPlaylist();
   const playingContext = usePlayerStore((s) => (s.isPlaying ? s.queueContext : null));
   const [creating, setCreating] = useState(false);
   const [filter, setFilter] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; playlist: PlaylistSummary; path: string } | null>(null);
   const [leaving, setLeaving] = useState<{ id: string; name: string; path: string } | null>(null);
+  const [deleting, setDeleting] = useState<{ id: string; name: string; path: string } | null>(null);
 
   const playlists = playlistQuery.data ?? [];
   const needle = filter.trim().toLowerCase();
   const visible = needle ? playlists.filter((playlist) => playlist.name.toLowerCase().includes(needle)) : playlists;
+
+  async function runPlaylistAction(playlist: PlaylistSummary, mode: "play" | "shuffle" | "queue") {
+    try {
+      const detail = await api.playlist(String(playlist.id));
+      const tracks = detail.tracks ?? [];
+      if (tracks.length === 0) {
+        toast.info(`„${playlist.name}“ enthält noch keine Titel.`);
+        return;
+      }
+      const player = usePlayerStore.getState();
+      if (mode === "queue") {
+        player.addManyToQueue(tracks, playlist.name);
+        toast.info(`${tracks.length} Titel aus „${playlist.name}“ zur Warteschlange hinzugefügt.`);
+        return;
+      }
+      if (mode === "shuffle") {
+        if (!player.shuffle) player.toggleShuffle();
+        player.playQueue(tracks, Math.floor(Math.random() * tracks.length), playlist.name);
+        return;
+      }
+      player.playQueue(tracks, 0, playlist.name);
+    } catch (cause) {
+      toast.error(
+        `„${playlist.name}“ konnte nicht geladen werden: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
+    }
+  }
+
+  function handleDropTrack(playlist: PlaylistSummary, track: Track) {
+    addToPlaylist.mutate(
+      { id: String(playlist.id), track },
+      {
+        onSuccess: () => {
+          toast.success(`„${track.title}“ zu „${playlist.name}“ hinzugefügt.`);
+        },
+      },
+    );
+  }
 
   return (
     <section aria-label="Bibliothek" className="mt-6 flex min-h-0 flex-1 flex-col border-t border-hairline pt-4">
@@ -209,6 +311,7 @@ function LibrarySection() {
               playlist={playlist}
               active={pathname === playlistPath(playlist)}
               playing={playingContext === playlist.name}
+              onDropTrack={handleDropTrack}
               onMenu={(event, path) => {
                 event.preventDefault();
                 setMenu({ x: event.clientX, y: event.clientY, playlist, path });
@@ -229,20 +332,48 @@ function LibrarySection() {
           }}
         />
       )}
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Playlist löschen?"
+        confirmLabel="Löschen"
+        destructive
+        busy={deletePlaylist.isPending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          if (!deleting) return;
+          const target = deleting;
+          deletePlaylist.mutate(target.id, {
+            onSuccess: () => {
+              setDeleting(null);
+              if (pathname === target.path) router.push("/library");
+            },
+          });
+        }}
+      >
+        „{deleting?.name}“ wird dauerhaft gelöscht. Deine gelikten Titel bleiben erhalten.
+      </ConfirmDialog>
       {menu && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: "Öffnen", onClick: () => router.push(menu.path) },
+            { label: "Abspielen", icon: <PlayIcon width={16} height={16} />, onClick: () => void runPlaylistAction(menu.playlist, "play") },
+            { label: "Zufällig abspielen", icon: <ShuffleIcon width={16} height={16} />, onClick: () => void runPlaylistAction(menu.playlist, "shuffle") },
+            { label: "Zur Warteschlange", icon: <QueueIcon width={16} height={16} />, onClick: () => void runPlaylistAction(menu.playlist, "queue") },
+            { label: "Öffnen", separated: true, onClick: () => router.push(menu.path) },
             isOwnedLibraryPlaylist(menu.playlist)
               ? {
                   label: "Löschen",
                   icon: <TrashIcon width={16} height={16} />,
                   danger: true,
                   separated: true,
-                  onClick: () => deletePlaylist.mutate(String(menu.playlist.id)),
+                  onClick: () =>
+                    setDeleting({
+                      id: String(menu.playlist.id),
+                      name: menu.playlist.name,
+                      path: menu.path,
+                    }),
                 }
               : {
                   label: "Playlist verlassen",

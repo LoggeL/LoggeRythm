@@ -1,4 +1,4 @@
-import type { DeezerId, TrackPlayQuery } from '../api/types';
+import type { DeezerId, StatsInsightsRange, TrackPlayQuery } from '../api/types';
 
 export type QueryScope = string | number;
 
@@ -44,6 +44,8 @@ export const queryKeys = {
     genre: (id: DeezerId) => [...queryKeys.catalog.genres(), scalar(id, 'genre id')] as const,
     newReleases: () => [...queryKeys.catalog.root(), 'new-releases'] as const,
     track: (id: DeezerId) => [...queryKeys.catalog.root(), 'track', scalar(id, 'track id')] as const,
+    audioMeta: (id: DeezerId) =>
+      [...queryKeys.catalog.root(), 'audio-meta', scalar(id, 'track id')] as const,
     album: (id: DeezerId) => [...queryKeys.catalog.root(), 'album', scalar(id, 'album id')] as const,
     artist: (id: DeezerId) =>
       [...queryKeys.catalog.root(), 'artist', scalar(id, 'artist id')] as const,
@@ -65,14 +67,23 @@ export const queryKeys = {
     importJob: (scope: QueryScope, id: string) =>
       [...queryKeys.external.importJobs(scope), scalar(id, 'import job id')] as const,
   },
-  lyrics: (artist: string, title: string, deezerId?: DeezerId) =>
-    [
-      ...root,
-      'lyrics',
-      scalar(artist, 'lyrics artist'),
-      scalar(title, 'lyrics title'),
-      deezerId === undefined ? null : scalar(deezerId, 'lyrics track id'),
-    ] as const,
+  lyrics: (artist: string, title: string, deezerId?: DeezerId, variant?: 'default' | 'ai') =>
+    variant === 'ai'
+      ? ([
+          ...root,
+          'lyrics',
+          scalar(artist, 'lyrics artist'),
+          scalar(title, 'lyrics title'),
+          deezerId === undefined ? null : scalar(deezerId, 'lyrics track id'),
+          'ai',
+        ] as const)
+      : ([
+          ...root,
+          'lyrics',
+          scalar(artist, 'lyrics artist'),
+          scalar(title, 'lyrics title'),
+          deezerId === undefined ? null : scalar(deezerId, 'lyrics track id'),
+        ] as const),
   storage: {
     root: () => [...root, 'storage'] as const,
     cachedTrackIds: () => [...queryKeys.storage.root(), 'cached-track-ids'] as const,
@@ -93,6 +104,10 @@ export const queryKeys = {
       [...queryKeys.playlists.details(scope), scalar(id, 'playlist id')] as const,
     invite: (scope: QueryScope, id: number) =>
       [...queryKeys.playlists.detail(scope, id), 'invite'] as const,
+    duplicates: (scope: QueryScope, id: number) =>
+      [...queryKeys.playlists.detail(scope, id), 'duplicates'] as const,
+    syncManifest: (scope: QueryScope, id: number) =>
+      [...queryKeys.playlists.detail(scope, id), 'sync-manifest'] as const,
     invitePreview: (scope: QueryScope, token: string) =>
       [
         ...queryKeys.playlists.scoped(scope),
@@ -110,6 +125,8 @@ export const queryKeys = {
     personalized: (scope: QueryScope) =>
       [...queryKeys.home.root(), 'scope', scalar(scope, 'home scope')] as const,
     mixes: (scope: QueryScope) => [...queryKeys.home.personalized(scope), 'mixes'] as const,
+    personalMixes: (scope: QueryScope) =>
+      [...queryKeys.home.personalized(scope), 'personal-mixes'] as const,
     becauseYouListened: (scope: QueryScope) =>
       [...queryKeys.home.personalized(scope), 'because-you-listened'] as const,
     releaseRadar: (scope: QueryScope) =>
@@ -132,7 +149,14 @@ export const queryKeys = {
     private: (scope: QueryScope) =>
       [...queryKeys.profile.privateRoot(), scalar(scope, 'profile scope')] as const,
     stats: (scope: QueryScope) => [...queryKeys.profile.private(scope), 'stats'] as const,
+    insights: (scope: QueryScope, range: StatsInsightsRange) =>
+      [...queryKeys.profile.private(scope), 'insights', range] as const,
     settings: (scope: QueryScope) => [...queryKeys.profile.private(scope), 'settings'] as const,
+  },
+  social: {
+    root: () => [...root, 'social'] as const,
+    activity: (scope: QueryScope) =>
+      [...queryKeys.social.root(), scalar(scope, 'social scope'), 'activity'] as const,
   },
   party: {
     root: () => [...root, 'party'] as const,

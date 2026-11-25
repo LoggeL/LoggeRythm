@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { libraryStrings } from '../../screens/libraryStrings';
+import { wave2Strings } from '../../localization/wave2Strings';
 import { colors, spacing } from '../../theme';
 import OfflinePlaylistControl, {
   type OfflinePlaylistControlCopy,
@@ -58,6 +59,12 @@ export interface PlaylistActionsSheetProps {
   collaborator?: PlaylistActionsCollaborator | null;
   /** Explains to a viewer why there are no edit actions. */
   showViewerNotice: boolean;
+  /** Share canonical playlist URL via the native Android share sheet. */
+  onShare?: () => void;
+  /** Start a seeded radio queue from the playlist's or Liked Songs' tracks. */
+  onStartRadio?: () => void;
+  /** Open the duplicate inspector & deduplicator sheet (editable playlists only). */
+  onFindDuplicates?: () => void;
 }
 
 /**
@@ -72,6 +79,9 @@ export function PlaylistActionsSheet({
   owner,
   collaborator = null,
   showViewerNotice,
+  onShare,
+  onStartRadio,
+  onFindDuplicates,
 }: PlaylistActionsSheetProps) {
   return (
     <BottomSheet
@@ -107,6 +117,36 @@ export function PlaylistActionsSheet({
               onRemove={offline.onRemove}
             />
           </View>
+        )}
+
+        {onStartRadio === undefined ? null : (
+          <SheetActionRow
+            testID="playlist-start-radio"
+            icon="radio-tower"
+            label={wave2Strings.playlistTools.startRadio}
+            description={wave2Strings.playlistTools.startRadioHint}
+            onPress={onStartRadio}
+          />
+        )}
+
+        {onFindDuplicates === undefined ? null : (
+          <SheetActionRow
+            testID="playlist-find-duplicates"
+            icon="broom"
+            label={wave2Strings.playlistTools.findDuplicates}
+            description={wave2Strings.playlistTools.findDuplicatesHint}
+            onPress={onFindDuplicates}
+          />
+        )}
+
+        {onShare === undefined ? null : (
+          <SheetActionRow
+            testID="playlist-share"
+            icon="share-variant"
+            label={libraryStrings.playlist.share}
+            description={libraryStrings.playlist.shareHint}
+            onPress={onShare}
+          />
         )}
 
         {owner === null ? null : (

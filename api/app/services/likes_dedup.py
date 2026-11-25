@@ -148,6 +148,8 @@ def _apply_track_to_like(like: Like, deezer_id: str, track: Track, isrc: str) ->
     like.album_id = str(track.album_id or "")
     like.cover_url = track.cover or None
     like.duration_sec = track.duration_sec
+    if track.loudness_gain_db is not None:
+        like.loudness_gain_db = track.loudness_gain_db
 
 
 def _prefer_incoming_over_existing(
@@ -228,6 +230,7 @@ def upsert_deduped_like(
                 album_id=str(track.album_id or ""),
                 cover_url=track.cover or None,
                 duration_sec=track.duration_sec,
+                loudness_gain_db=track.loudness_gain_db,
             )
             db.add(new_like)
             try:

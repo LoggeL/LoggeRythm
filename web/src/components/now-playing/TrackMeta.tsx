@@ -4,6 +4,7 @@ import type { Track } from "@/types";
 import TrackTitle from "@/components/TrackTitle";
 import ArtistLinks from "@/components/ArtistLinks";
 import LikeButton from "@/components/LikeButton";
+import TrackMenu from "@/components/TrackMenu";
 import Cover from "@/components/ui/Cover";
 
 /**
@@ -40,13 +41,14 @@ export function TrackHeading({
     );
   }
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2.5">
       {thumbnail && <Cover src={track.cover} className="h-12 w-12 rounded-[var(--radius-art)]" eager />}
       <div className="min-w-0 flex-1">
         <TrackTitle track={track} onNavigate={onNavigate} className="font-display block truncate text-xl font-bold tracking-tight hover:underline" />
         <ArtistLinks track={track} onNavigate={onNavigate} className="block truncate text-sm text-muted" linkClassName="hover:text-foreground hover:underline" />
       </div>
       <LikeButton key={track.id} track={track} />
+      <TrackMenu track={track} />
     </div>
   );
 }

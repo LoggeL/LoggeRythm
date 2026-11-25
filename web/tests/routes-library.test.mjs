@@ -75,7 +75,11 @@ const stubs = {
     `export const Morph = ({children}) => children; export const useMorphSource = () => ({arm() {}});`,
   ),
   "@/components/icons": moduleUrl(
-    `export function HeartIcon() { return null; } export const DownloadIcon = HeartIcon; export const DownloadedIcon = HeartIcon; export const PlayIcon = HeartIcon; export const PlusIcon = HeartIcon; export const LibraryIcon = HeartIcon; export const ShuffleIcon = HeartIcon; export const SearchIcon = HeartIcon; export const ClockIcon = HeartIcon; export const UserIcon = HeartIcon; export const UsersIcon = HeartIcon;`,
+    `export function HeartIcon() { return null; } export const DownloadIcon = HeartIcon; export const DownloadedIcon = HeartIcon; export const PlayIcon = HeartIcon; export const PlusIcon = HeartIcon; export const LibraryIcon = HeartIcon; export const ShuffleIcon = HeartIcon; export const SearchIcon = HeartIcon; export const ClockIcon = HeartIcon; export const UserIcon = HeartIcon; export const UsersIcon = HeartIcon; export const SpinnerIcon = HeartIcon; export const RadioIcon = HeartIcon;`,
+  ),
+  "@/lib/radio": moduleUrl(`export const startSeededRadio = async () => {};`),
+  "@/app/playlist/_components/usePlaylistOffline": moduleUrl(
+    `export const usePlaylistOffline = () => ({ supported: false, downloaded: false, pending: null, progress: null, sizePreviewBytes: null, toggle() {} });`,
   ),
   "./CreatePlaylistDialog": moduleUrl(
     `export default function CreatePlaylistDialog() { return null; }`,

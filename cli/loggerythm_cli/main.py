@@ -152,6 +152,22 @@ def build_parser() -> argparse.ArgumentParser:
     p = pa.add_parser("add"); p.add_argument("code"); p.add_argument("track_id")
     p = pa.add_parser("current"); p.add_argument("code"); p.add_argument("index", type=int)
 
+    connect = sub.add_parser("connect", help="Wiedergabe auf verbundenen Geräten fernsteuern")
+    co = connect.add_subparsers(dest="action", required=True)
+    co.add_parser("status", help="Verbundene Geräte und aktuellen/fortsetzbaren Status anzeigen")
+    for action in ("play", "pause", "next", "prev"):
+        p = co.add_parser(action)
+        p.add_argument("--device", help="Ziel-Geräte-ID (Standard: aktives Gerät)")
+    p = co.add_parser("transfer", help="Wiedergabe auf ein anderes Gerät übertragen")
+    p.add_argument("device_id")
+    transfer_play = p.add_mutually_exclusive_group()
+    transfer_play.add_argument("--play", action="store_true", help="Nach der Übertragung sofort abspielen")
+    transfer_play.add_argument("--pause", action="store_true", help="Nach der Übertragung pausiert bleiben")
+    p = co.add_parser("queue", help="Track zur Warteschlange des aktiven Geräts hinzufügen")
+    p.add_argument("track_id")
+    p.add_argument("--next", action="store_true", help="Als nächsten Titel einreihen")
+    p.add_argument("--device", help="Ziel-Geräte-ID (Standard: aktives Gerät)")
+
     downloads = sub.add_parser("downloads", help="Serverseitige Downloads verwalten")
     dl = downloads.add_subparsers(dest="action", required=True)
     dl.add_parser("cached")
@@ -293,6 +309,39 @@ def execute(args, *, client: Client | None = None):
             return client.request("PATCH", base + "/current", payload={"index": args.index})
         state = client.request("GET", base)
         return client.request("PATCH", base + "/playback", payload=_party_playback_payload(state, args.action == "play"))
+    if args.command == "connect":
+        if args.action == "status":
+            return client.request("GET", "/api/connect/state")
+        if args.action == "transfer":
+            device_id = args.device_id.strip()
+            if not device_id:
+                raise CliError("invalid_argument", "Geräte-ID darf nicht leer sein.")
+            payload: dict = {"target_device_id": device_id}
+            if args.play:
+                payload["play"] = True
+            elif args.pause:
+                payload["play"] = False
+            return client.request("POST", "/api/connect/transfer", payload=payload)
+        target_device = None
+        if getattr(args, "device", None) is not None:
+            target_device = args.device.strip()
+            if not target_device:
+                raise CliError("invalid_argument", "--device darf nicht leer sein.")
+        if args.action in ("play", "pause", "next", "prev"):
+            payload = {"action": args.action, "payload": {}}
+            if target_device is not None:
+                payload["target_device_id"] = target_device
+            return client.request("POST", "/api/connect/command", payload=payload)
+        if args.action == "queue":
+            track = _track(client, args.track_id)
+            payload = {
+                "action": "queue_play_next" if args.next else "queue_add",
+                "payload": {"track": track},
+            }
+            if target_device is not None:
+                payload["target_device_id"] = target_device
+            return client.request("POST", "/api/connect/command", payload=payload)
+        raise CliError("invalid_argument", "Unbekannte Connect-Aktion.")
     if args.command == "downloads":
         if args.action == "cached":
             return client.request("GET", "/api/cached-tracks")

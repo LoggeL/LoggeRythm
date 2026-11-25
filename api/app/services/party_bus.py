@@ -134,3 +134,54 @@ def publish(code: str, frame: StateFrame) -> None:
 def subscriber_count(code: str) -> int:
     with _subscribers_lock:
         return len(_subscribers.get(code, ()))
+
+
+# Ephemeral in-memory state for live Party Jam 2.0 interactions (vote-to-skip
+# tallies and latest emoji reaction burst). Cleaned up when a party ends.
+_ephemeral_lock = Lock()
+_skip_votes: dict[str, tuple[int, set[str]]] = {}
+_latest_reactions: dict[str, dict[str, Any]] = {}
+
+
+def get_skip_votes(code: str, track_item_id: int | None) -> list[str]:
+    if track_item_id is None:
+        return []
+    with _ephemeral_lock:
+        entry = _skip_votes.get(code)
+        if entry is None or entry[0] != track_item_id:
+            return []
+        return sorted(entry[1])
+
+
+def add_skip_vote(code: str, track_item_id: int, member_key: str) -> list[str]:
+    with _ephemeral_lock:
+        entry = _skip_votes.get(code)
+        if entry is None or entry[0] != track_item_id:
+            voters = {member_key}
+            _skip_votes[code] = (track_item_id, voters)
+        else:
+            entry[1].add(member_key)
+            voters = entry[1]
+        return sorted(voters)
+
+
+def clear_skip_votes(code: str) -> None:
+    with _ephemeral_lock:
+        _skip_votes.pop(code, None)
+
+
+def set_latest_reaction(code: str, reaction: dict[str, Any]) -> None:
+    with _ephemeral_lock:
+        _latest_reactions[code] = dict(reaction)
+
+
+def get_latest_reaction(code: str) -> dict[str, Any] | None:
+    with _ephemeral_lock:
+        reaction = _latest_reactions.get(code)
+        return dict(reaction) if reaction is not None else None
+
+
+def clear_party_ephemeral(code: str) -> None:
+    with _ephemeral_lock:
+        _skip_votes.pop(code, None)
+        _latest_reactions.pop(code, None)

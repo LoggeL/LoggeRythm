@@ -2,6 +2,7 @@ import { AccessibilityInfo } from 'react-native';
 import type { Track } from '../api/types';
 import { strings } from '../localization';
 import { addToQueue, playNext, startRadio } from '../player/controller';
+import { reportPlayerError } from '../player/errors';
 import { activeConnectRouter } from '../connect/activeConnect';
 import { activePartyRouter } from '../party/activeParty';
 import { trackActionFailureMessage } from './trackActionFeedback';
@@ -15,6 +16,7 @@ export const TRACK_ACTION_ORDER = [
   'download',
   'open-album',
   'open-artist',
+  'share',
 ] as const;
 export type TrackActionId =
   | (typeof TRACK_ACTION_ORDER)[number]
@@ -147,6 +149,19 @@ function actionContract(action: TrackQueueAction, track: Track) {
         succeeded: strings.trackActions.startRadioSucceeded(track.title),
         run: () => startRadio(track),
       };
+  }
+}
+
+/** Quick swipe-to-queue helper: routes through active Jam / Connect / local queue and reports failures loudly. */
+export async function quickAddTrackToQueue(track: Track): Promise<boolean> {
+  const contract = actionContract('add-to-queue', track);
+  try {
+    await contract.run();
+    AccessibilityInfo.announceForAccessibility(contract.succeeded);
+    return true;
+  } catch (error) {
+    reportPlayerError(trackActionFailureMessage('add-to-queue', error), error);
+    return false;
   }
 }
 

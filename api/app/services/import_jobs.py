@@ -29,10 +29,12 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..config import SPOTIFY_IMPORT_JOB_LIMIT
-from ..db.models import ImportJob, User
+from ..db.models import ImportJob, Playlist, PlaylistCollaborator, PlaylistTrack, User
 from ..db.session import SessionLocal
-from . import spotify
+from ..schemas.track import Track, dump_artists
+from . import playlist_bus, spotify
 from .spotify_import import ImportCancelled, SourceInfo, resolve_link
+from .track_identity import normalize_isrc
 
 # Two imports at once for the whole server; each one already runs
 # ``spotify_import.MATCH_WORKERS`` Deezer lookups in parallel.
@@ -58,6 +60,15 @@ _cancel_lock = threading.Lock()
 
 class TooManyActiveJobs(Exception):
     """The user already has ``MAX_ACTIVE_JOBS_PER_USER`` unfinished imports."""
+
+
+class InvalidImportTarget(Exception):
+    """Invalid playlist target specification on an import job."""
+
+    def __init__(self, status_code: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
 
 
 class JobVanished(Exception):
@@ -114,11 +125,34 @@ def _prune_finished(db: Session, user_id: int) -> None:
     )
 
 
-def start(db: Session, user: User, url: str) -> ImportJob:
-    """Validate ``url``, store a queued job and schedule it.
+def _can_edit_playlist(db: Session, playlist: Playlist, user_id: int) -> bool:
+    if playlist.user_id == user_id:
+        return True
+    if not playlist.is_collaborative:
+        return False
+    return (
+        db.scalar(
+            select(PlaylistCollaborator.id).where(
+                PlaylistCollaborator.playlist_id == playlist.id,
+                PlaylistCollaborator.user_id == user_id,
+            )
+        )
+        is not None
+    )
 
-    Raises ``spotify.SpotifyBadLink``/``SpotifyNotConfigured`` up front, so a
-    job that can never succeed is not created.
+
+def start(
+    db: Session,
+    user: User,
+    url: str,
+    *,
+    target_playlist_id: int | None = None,
+    create_playlist_name: str | None = None,
+) -> ImportJob:
+    """Validate ``url`` (and optional playlist target), store a queued job and schedule it.
+
+    Raises ``spotify.SpotifyBadLink``/``SpotifyNotConfigured``/``InvalidImportTarget``
+    up front, so a job that can never succeed is not created.
     """
     url = url.strip()
     spotify.parse_link(url)
@@ -127,6 +161,25 @@ def start(db: Session, user: User, url: str) -> ImportJob:
             "Spotify-Import ist nicht konfiguriert "
             "(SPOTIFY_CLIENT_ID/SPOTIFY_CLIENT_SECRET fehlen)."
         )
+    cleaned_create_name = (
+        create_playlist_name.strip() if create_playlist_name is not None else None
+    )
+    if create_playlist_name is not None and not cleaned_create_name:
+        raise InvalidImportTarget(422, "create_playlist_name darf nicht leer sein.")
+    if target_playlist_id is not None and cleaned_create_name is not None:
+        raise InvalidImportTarget(
+            422,
+            "target_playlist_id und create_playlist_name können nicht kombiniert werden.",
+        )
+    if target_playlist_id is not None:
+        pl = db.get(Playlist, target_playlist_id)
+        if pl is None:
+            raise InvalidImportTarget(404, "Ziel-Playlist nicht gefunden.")
+        if not _can_edit_playlist(db, pl, user.id):
+            raise InvalidImportTarget(
+                403, "Keine Berechtigung zum Bearbeiten der Ziel-Playlist."
+            )
+
     active = db.scalar(
         select(func.count())
         .select_from(ImportJob)
@@ -145,6 +198,8 @@ def start(db: Session, user: User, url: str) -> ImportJob:
         user_id=user.id,
         url=url,
         status="queued",
+        target_playlist_id=target_playlist_id,
+        create_playlist_name=cleaned_create_name,
         created_at=now,
         updated_at=now,
     )
@@ -218,6 +273,83 @@ def _run(job_id: str) -> None:
             _cancelled.discard(job_id)
 
 
+def _write_matched_to_playlist(
+    *,
+    user_id: int,
+    target_playlist_id: int | None,
+    create_playlist_name: str | None,
+    fallback_name: str,
+    fallback_image: str,
+    matched_tracks: list[dict],
+) -> int | None:
+    """Persist matched import tracks straight into an existing or newly created playlist."""
+    if target_playlist_id is None and not create_playlist_name:
+        return None
+    with SessionLocal() as db:
+        if target_playlist_id is not None:
+            pl = db.get(Playlist, target_playlist_id)
+            if pl is None:
+                raise RuntimeError(f"Ziel-Playlist {target_playlist_id} wurde gelöscht.")
+            if not _can_edit_playlist(db, pl, user_id):
+                raise RuntimeError(
+                    f"Berechtigung für Ziel-Playlist {target_playlist_id} wurde entzogen."
+                )
+        else:
+            pl = Playlist(
+                user_id=user_id,
+                name=(create_playlist_name or fallback_name or "Spotify Import")[:200],
+                cover_url=fallback_image or None,
+            )
+            db.add(pl)
+            db.flush()
+
+        existing = set(
+            db.scalars(
+                select(PlaylistTrack.deezer_id).where(PlaylistTrack.playlist_id == pl.id)
+            ).all()
+        )
+        pos = db.scalar(
+            select(func.coalesce(func.max(PlaylistTrack.position), -1)).where(
+                PlaylistTrack.playlist_id == pl.id
+            )
+        )
+        pos = int(pos) if pos is not None else -1
+        added = 0
+        for raw in matched_tracks:
+            track = Track.model_validate(raw)
+            if track.id in existing:
+                continue
+            existing.add(track.id)
+            pos += 1
+            db.add(
+                PlaylistTrack(
+                    playlist_id=pl.id,
+                    deezer_id=track.id,
+                    isrc=normalize_isrc(track.isrc),
+                    title=track.title,
+                    artist=track.artist,
+                    artists_json=dump_artists(track),
+                    album=track.album,
+                    album_id=str(track.album_id or ""),
+                    cover_url=track.cover or None,
+                    duration_sec=track.duration_sec,
+                    loudness_gain_db=track.loudness_gain_db,
+                    position=pos,
+                    added_by_user_id=user_id,
+                )
+            )
+            if not pl.cover_url and track.cover:
+                pl.cover_url = track.cover
+            added += 1
+        if added > 0 or target_playlist_id is None:
+            pl.revision = int(pl.revision or 0) + 1
+        playlist_id = pl.id
+        revision = int(pl.revision or 0)
+        db.commit()
+        playlist_bus.publish(playlist_id, revision)
+        return playlist_id
+
+
 def _execute(job_id: str) -> None:
     if _is_cancelled(job_id):
         raise ImportCancelled(job_id)
@@ -226,6 +358,9 @@ def _execute(job_id: str) -> None:
         if job is None:
             raise JobVanished(job_id)
         url = job.url
+        user_id = job.user_id
+        target_playlist_id = job.target_playlist_id
+        create_playlist_name = job.create_playlist_name
     _write(job_id, status="running")
 
     last_write = 0.0
@@ -274,6 +409,26 @@ def _execute(job_id: str) -> None:
         )
         return
 
+    created_playlist_id: int | None = None
+    if target_playlist_id is not None or create_playlist_name:
+        try:
+            created_playlist_id = _write_matched_to_playlist(
+                user_id=user_id,
+                target_playlist_id=target_playlist_id,
+                create_playlist_name=create_playlist_name,
+                fallback_name=resolved.name,
+                fallback_image=resolved.image,
+                matched_tracks=resolved.tracks,
+            )
+        except Exception as exc:  # noqa: BLE001 — fail job loudly if playlist save fails
+            _write(
+                job_id,
+                status="failed",
+                error=f"Playlist-Speicherung fehlgeschlagen: {exc}",
+                finished_at=_utcnow(),
+            )
+            return
+
     result = resolved.as_result()
     _write(
         job_id,
@@ -287,6 +442,7 @@ def _execute(job_id: str) -> None:
         matched=len(resolved.tracks),
         failed_lookups=resolved.lookup_failures.count,
         lookup_error=resolved.lookup_failures.first_error,
+        created_playlist_id=created_playlist_id,
         result_json=json.dumps(result, ensure_ascii=False),
         finished_at=_utcnow(),
     )

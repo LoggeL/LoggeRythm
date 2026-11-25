@@ -24,6 +24,7 @@ import {
   RadarRoute,
   RadioRoute,
   SearchRoute,
+  UserProfileRoute,
 } from './routes';
 import type { SectionStackParams } from './types';
 
@@ -58,6 +59,10 @@ function createDetailOptionBuilders(isTv: boolean) {
     }),
     playlist: ({ route }: { route: { params?: SectionStackParams['Playlist'] } }): NativeStackNavigationOptions => ({
       title: route.params?.name || strings.navigation.playlists,
+      headerRight,
+    }),
+    userProfile: ({ route }: { route: { params?: SectionStackParams['UserProfile'] } }): NativeStackNavigationOptions => ({
+      title: route.params?.name || strings.profile.publicProfileTitle,
       headerRight,
     }),
   };
@@ -128,6 +133,11 @@ function createSectionNavigator(
           name="Playlist"
           component={PlaylistRoute}
           options={detailOptions.playlist}
+        />
+        <SectionStack.Screen
+          name="UserProfile"
+          component={UserProfileRoute}
+          options={detailOptions.userProfile}
         />
       </SectionStack.Navigator>
     );

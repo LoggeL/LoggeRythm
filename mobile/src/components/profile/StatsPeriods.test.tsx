@@ -77,4 +77,25 @@ describe('StatsPeriods', () => {
     expect(byTestId(tree, 'profile-stats-30-days-artists-empty')).toBeDefined();
     expect(queryByTestId(tree, 'profile-stat-all-time')).toBeNull();
   });
+
+  it('invokes track and artist press handlers from ranked stat rows', () => {
+    const onPressTrack = vi.fn();
+    const onPressArtist = vi.fn();
+    mocks.useState.mockReturnValueOnce(['all-time', vi.fn()]);
+    const tree = StatsPeriods({
+      data,
+      testID: 'profile-stats-periods',
+      onPressTrack,
+      onPressArtist,
+    });
+
+    const trackRow = byTestId(tree, 'profile-stats-all-time-tracks-0');
+    const artistRow = byTestId(tree, 'profile-stats-all-time-artists-0');
+    expect(trackRow.props.accessibilityRole).toBe('button');
+    expect(artistRow.props.accessibilityRole).toBe('button');
+    (trackRow.props.onPress as () => void)();
+    (artistRow.props.onPress as () => void)();
+    expect(onPressTrack).toHaveBeenCalledExactlyOnceWith(data.top_tracks[0]);
+    expect(onPressArtist).toHaveBeenCalledExactlyOnceWith(data.top_artists[0]);
+  });
 });

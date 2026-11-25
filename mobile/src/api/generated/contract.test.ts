@@ -16,7 +16,7 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(109);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(129);
     expect(
       GENERATED_API_OPERATIONS.deduplicate_likes_api_admin_likes_deduplicate_post,
     ).toEqual({
@@ -123,8 +123,10 @@ describe('generated OpenAPI contract', () => {
     expectTypeOf<GeneratedApiResponse<'login_api_auth_login_post'>>().toEqualTypeOf<UserOutWire>();
     expectTypeOf<GeneratedApiRequest<'lyrics_api_lyrics_get'>>().toEqualTypeOf<{
       query: {
+        album?: string | null;
         artist: string;
         deezer_id?: string | null;
+        duration_sec?: number | null;
         title: string;
         variant?: string;
       };

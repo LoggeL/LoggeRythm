@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
-from ..db.models import Like, User
+from ..db.models import Like, StoredTrack, User
 from ..db.session import get_db
 from ..schemas.track import Track, load_artists
 from ..services import deezer_client as dc
@@ -14,8 +14,13 @@ from .errors import to_http
 router = APIRouter(prefix="/api/me/likes", tags=["likes"])
 
 
-def _like_to_track(like: Like) -> Track:
+def _like_to_track(like: Like, stored: StoredTrack | None = None) -> Track:
     artists = load_artists(like.artists_json, like.artist)
+    gain_db = (
+        like.loudness_gain_db
+        if like.loudness_gain_db is not None
+        else (stored.loudness_gain_db if stored is not None else None)
+    )
     return Track(
         id=like.deezer_id,
         title=like.title,
@@ -28,6 +33,10 @@ def _like_to_track(like: Like) -> Track:
         duration_sec=like.duration_sec,
         preview_url=None,
         isrc=like.isrc or "",
+        loudness_gain_db=gain_db,
+        loudness_lufs=stored.loudness_lufs if stored is not None else None,
+        loudness_peak=stored.loudness_peak if stored is not None else None,
+        bpm=stored.bpm if stored is not None else None,
     )
 
 
@@ -36,10 +45,21 @@ def list_likes(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[Track]:
-    likes = db.scalars(
-        select(Like).where(Like.user_id == user.id).order_by(Like.created_at.desc())
-    ).all()
-    return [_like_to_track(li) for li in likes]
+    likes = list(
+        db.scalars(
+            select(Like).where(Like.user_id == user.id).order_by(Like.created_at.desc())
+        ).all()
+    )
+    if not likes:
+        return []
+    ids = {li.deezer_id for li in likes}
+    stored_by_id = {
+        row.deezer_id: row
+        for row in db.scalars(
+            select(StoredTrack).where(StoredTrack.deezer_id.in_(ids))
+        ).all()
+    }
+    return [_like_to_track(li, stored_by_id.get(li.deezer_id)) for li in likes]
 
 
 @router.get("/contains")

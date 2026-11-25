@@ -1,11 +1,12 @@
 """User profile: avatar upload/serving and public profile pages."""
 import glob
 import os
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from ..auth import clear_session_cookie, get_current_user, hash_password
@@ -25,12 +26,14 @@ from ..db.models import (
     StoredTrack,
     TrackRequest,
     User,
+    UserPlaybackState,
 )
 from ..db.session import get_db
 from ..email_identity import find_user_by_email, normalize_email
 from ..schemas.auth import UserOut
 from ..schemas.playlist import PlaylistSummary
 from ..schemas.track import ArtistSummary
+from ..services import connect_hub, party_bus, playlist_bus, social_bus
 from ..uploads import image_extension, save_image_upload
 from .playlists import build_playlist_summaries
 
@@ -56,11 +59,15 @@ class MeUpdate(BaseModel):
 class PlaybackSettings(BaseModel):
     crossfade_enabled: bool
     crossfade_duration_sec: int
+    preferred_quality: Literal["lossless", "high", "saver"] = "high"
+    share_listening_activity: bool = False
 
 
 class PlaybackSettingsUpdate(BaseModel):
     crossfade_enabled: bool | None = None
     crossfade_duration_sec: int | None = None
+    preferred_quality: Literal["lossless", "high", "saver"] | None = None
+    share_listening_activity: bool | None = None
 
 
 def _user_out(u: User) -> UserOut:
@@ -75,9 +82,16 @@ def _user_out(u: User) -> UserOut:
 
 
 def _playback_settings(user: User) -> PlaybackSettings:
+    quality = (
+        user.preferred_quality
+        if user.preferred_quality in ("lossless", "high", "saver")
+        else "high"
+    )
     return PlaybackSettings(
         crossfade_enabled=bool(user.crossfade_enabled),
         crossfade_duration_sec=int(user.crossfade_duration_sec or 0),
+        preferred_quality=quality,  # type: ignore[arg-type]
+        share_listening_activity=bool(user.share_listening_activity),
     )
 
 
@@ -167,15 +181,27 @@ def delete_me(
 
 
 def purge_user_account(db: Session, user: User) -> None:
-    """Delete a user plus all rows and files that don't cascade via the ORM.
+    """Delete a user plus all rows, files, and in-memory live state."""
+    from . import party as party_router
 
-    Shared by self-service deletion (`DELETE /me`) and the admin user-delete
-    route so both paths clean up identically.
-    """
     user_id = user.id
-    playlist_ids = list(
-        db.scalars(select(Playlist.id).where(Playlist.user_id == user_id))
+    owned_playlists = list(
+        db.scalars(select(Playlist).where(Playlist.user_id == user_id)).all()
     )
+    playlist_revs = [(pl.id, int(pl.revision or 0) + 1) for pl in owned_playlists]
+
+    # Capture terminal SSE frames for hosted parties before removing rows.
+    hosted_party_frames: list[tuple[str, party_bus.StateFrame]] = []
+    for session in list(
+        db.scalars(select(PartySession).where(PartySession.host_id == user_id)).all()
+    ):
+        party_router._touch_session(db, session)
+        revision = party_bus.utc_revision(session.updated_at)
+        terminal_payload = party_router._state_dict(db, session, ended=True)
+        hosted_party_frames.append(
+            (session.code, party_bus.StateFrame(revision, terminal_payload))
+        )
+        db.delete(session)
 
     db.execute(delete(Play).where(Play.user_id == user_id))
     db.execute(delete(TrackRequest).where(TrackRequest.user_id == user_id))
@@ -186,12 +212,8 @@ def purge_user_account(db: Session, user: User) -> None:
     )
     db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
     db.execute(delete(ImportJob).where(ImportJob.user_id == user_id))
+    db.execute(delete(UserPlaybackState).where(UserPlaybackState.user_id == user_id))
     db.execute(delete(PartyMember).where(PartyMember.user_id == user_id))
-    # Hosted parties die with their host (ORM cascade removes tracks/members).
-    for session in db.scalars(
-        select(PartySession).where(PartySession.host_id == user_id)
-    ):
-        db.delete(session)
     db.execute(delete(PlaylistCollaborator).where(PlaylistCollaborator.user_id == user_id))
     db.execute(
         update(PlaylistCollaborator)
@@ -217,7 +239,14 @@ def purge_user_account(db: Session, user: User) -> None:
     db.delete(user)
     db.commit()
 
-    for pid in playlist_ids:
+    # Evict live in-memory state after commit so no zombie WS/SSE state lingers.
+    connect_hub.hub.evict_user(user_id)
+    social_bus.notify()
+    for code, terminal_frame in hosted_party_frames:
+        party_bus.clear_party_ephemeral(code)
+        party_bus.publish(code, terminal_frame)
+    for pid, next_rev in playlist_revs:
+        playlist_bus.publish_deleted(pid, next_rev)
         _remove_playlist_cover_files(pid)
     _remove_avatar_files(user_id)
 
@@ -241,6 +270,7 @@ def update_settings(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PlaybackSettings:
+    activity_changed = False
     if body.crossfade_duration_sec is not None:
         if body.crossfade_duration_sec < 0 or body.crossfade_duration_sec > 12:
             raise HTTPException(
@@ -250,8 +280,16 @@ def update_settings(
         user.crossfade_duration_sec = body.crossfade_duration_sec
     if body.crossfade_enabled is not None:
         user.crossfade_enabled = body.crossfade_enabled
+    if body.preferred_quality is not None:
+        user.preferred_quality = body.preferred_quality
+    if body.share_listening_activity is not None:
+        if bool(user.share_listening_activity) != body.share_listening_activity:
+            activity_changed = True
+        user.share_listening_activity = body.share_listening_activity
     db.commit()
     db.refresh(user)
+    if activity_changed:
+        social_bus.notify()
     return _playback_settings(user)
 
 
@@ -281,19 +319,56 @@ def public_profile(
     )
     playlists = build_playlist_summaries(db, public_rows, viewer=None)
 
-    follows = db.scalars(
-        select(FollowedArtist)
-        .where(FollowedArtist.user_id == user.id)
-        .order_by(FollowedArtist.created_at.desc())
-    ).all()
-    top_artists = [
-        ArtistSummary(
-            id=fa.artist_id,
-            name=fa.name,
-            picture=fa.picture_url or "",
+    follows = list(
+        db.scalars(
+            select(FollowedArtist)
+            .where(FollowedArtist.user_id == user.id)
+            .order_by(FollowedArtist.created_at.desc())
+        ).all()
+    )
+    followed_pictures_by_id = {
+        fa.artist_id: (fa.picture_url or "") for fa in follows if fa.artist_id
+    }
+    followed_pictures_by_name = {
+        fa.name.casefold(): (fa.picture_url or "") for fa in follows if fa.name
+    }
+
+    play_rows = db.execute(
+        select(
+            Play.artist_id,
+            Play.artist,
+            func.max(Play.cover_url).label("cover_url"),
+            func.count(Play.id).label("plays"),
         )
-        for fa in follows
-    ]
+        .where(Play.user_id == user.id, Play.artist != "")
+        .group_by(Play.artist_id, Play.artist)
+        .order_by(func.count(Play.id).desc())
+        .limit(10)
+    ).all()
+
+    if play_rows:
+        top_artists = [
+            ArtistSummary(
+                id=str(r.artist_id or ""),
+                name=r.artist or "",
+                picture=(
+                    followed_pictures_by_id.get(str(r.artist_id or ""))
+                    or followed_pictures_by_name.get((r.artist or "").casefold())
+                    or r.cover_url
+                    or ""
+                ),
+            )
+            for r in play_rows
+        ]
+    else:
+        top_artists = [
+            ArtistSummary(
+                id=fa.artist_id,
+                name=fa.name,
+                picture=fa.picture_url or "",
+            )
+            for fa in follows
+        ]
 
     return PublicProfile(
         id=user.id,

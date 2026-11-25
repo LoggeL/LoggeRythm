@@ -35,8 +35,10 @@ import {
   rootNavigation,
 } from './navigation/rootNavigation';
 import {
+  InsightsRoute,
   NowPlayingRoute,
   PartyRoute,
+  PartyStartRoute,
   PlaylistInviteRoute,
   ProfileRoute,
   QueueRoute,
@@ -419,6 +421,11 @@ export default function RootNavigator() {
                 options={profileScreenOptions}
               />
               <RootStack.Screen
+                name="Insights"
+                component={InsightsRoute}
+                options={profileScreenOptions}
+              />
+              <RootStack.Screen
                 name="NowPlaying"
                 component={NowPlayingRoute}
                 options={modalScreenOptions}
@@ -427,6 +434,11 @@ export default function RootNavigator() {
                 name="Queue"
                 component={QueueRoute}
                 options={modalScreenOptions}
+              />
+              <RootStack.Screen
+                name="PartyStart"
+                component={PartyStartRoute}
+                options={partyScreenOptions}
               />
               <RootStack.Screen
                 name="Party"

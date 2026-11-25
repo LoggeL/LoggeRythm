@@ -29,6 +29,17 @@ export interface PartyStoreState {
   endedReason: string | null;
 
   /**
+   * True when local playback moved to non-party music (e.g. clicking Play on a
+   * song outside the Jam). Keeps the Jam membership open without overwriting
+   * local audio or broadcasting non-party tracks to the Jam.
+   */
+  detached: boolean;
+  /** Normalized Jam code currently being left/ended by this client. */
+  exitingCode: string | null;
+  /** Most recently exited Jam code so stale active-party restores cannot resurrect it. */
+  lastExitedCode: string | null;
+
+  /**
    * Non-host signed-in member audio mode:
    * - true  → listen locally in sync with the Jam host
    * - false → control/contribute only without double audio in the same room
@@ -61,6 +72,10 @@ export interface PartyStoreState {
     ended?: boolean;
   }) => void;
   setListenLocally: (listen: boolean) => void;
+  setDetached: (detached: boolean) => void;
+  beginExit: (code: string) => void;
+  cancelExit: (code: string) => void;
+  completeExit: (code: string) => void;
   setStreamStatus: (status: "idle" | PartyStreamStatus, error?: string | null) => void;
   markEnded: (reason: string, endedCode?: string | null) => void;
   clearParty: () => void;
@@ -88,6 +103,9 @@ const INITIAL = {
   ended: false,
   endedCode: null as string | null,
   endedReason: null as string | null,
+  detached: false,
+  exitingCode: null as string | null,
+  lastExitedCode: null as string | null,
   listenLocally: true,
   streamStatus: "idle" as const,
   streamError: null as string | null,
@@ -104,15 +122,18 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
             ended: false,
             endedCode: null,
             endedReason: null,
-            ...(s.code === code.toUpperCase() ? {} : { party: null, streamError: null }),
+            exitingCode: null,
+            lastExitedCode: null,
+            ...(s.code === code.toUpperCase() ? {} : { party: null, streamError: null, detached: false }),
           }
         : { ...INITIAL },
     ),
 
   applyPartyState: (party) => {
     const updatedMs = party.playback_updated_at ? Date.parse(party.playback_updated_at) : null;
-    set({
-      code: party.code,
+    const normalizedCode = party.code.toUpperCase();
+    set((s) => ({
+      code: normalizedCode,
       active: !party.ended,
       party,
       name: party.name,
@@ -131,9 +152,11 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
       playbackChangedBy: party.playback_changed_by ?? "",
       playbackRevision: party.playback_revision ?? 0,
       ended: Boolean(party.ended),
-      endedCode: party.ended ? party.code.toUpperCase() : null,
+      endedCode: party.ended ? normalizedCode : null,
       endedReason: party.ended ? "Die Jam wurde vom Host beendet." : null,
-    });
+      detached: party.ended || s.code !== normalizedCode ? false : s.detached,
+      lastExitedCode: s.lastExitedCode === normalizedCode ? null : s.lastExitedCode,
+    }));
   },
 
   setParty: (state) =>
@@ -161,6 +184,19 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
 
   setListenLocally: (listenLocally) => set({ listenLocally }),
 
+  setDetached: (detached) => set({ detached }),
+
+  beginExit: (code) => set({ exitingCode: code.toUpperCase() }),
+
+  cancelExit: (code) =>
+    set((s) => (s.exitingCode === code.toUpperCase() ? { exitingCode: null } : {})),
+
+  completeExit: (code) =>
+    set({
+      ...INITIAL,
+      lastExitedCode: code.toUpperCase(),
+    }),
+
   setStreamStatus: (streamStatus, streamError = null) => set({ streamStatus, streamError }),
 
   markEnded: (reason, endedCode) =>
@@ -175,6 +211,8 @@ export const usePartyStore = create<PartyStoreState>((set) => ({
 }));
 
 /** True when the current signed-in user in a Jam is allowed to control playback/queue order. */
-export function canControlPartyPlayback(state: Pick<PartyStoreState, "active" | "isHost" | "guestsCanControl">): boolean {
-  return !state.active || state.isHost || state.guestsCanControl;
+export function canControlPartyPlayback(
+  state: Pick<PartyStoreState, "active" | "isHost" | "guestsCanControl"> & { detached?: boolean },
+): boolean {
+  return !state.active || Boolean(state.detached) || state.isHost || state.guestsCanControl;
 }

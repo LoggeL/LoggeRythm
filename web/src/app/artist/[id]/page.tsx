@@ -1,10 +1,11 @@
 "use client";
 
-import { use } from "react";
+import { use, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import AlbumCard from "@/components/AlbumCard";
 import ArtistCard from "@/components/ArtistCard";
+import { CARD_GRID } from "@/components/cardGrid";
 import PopularTrackTable from "@/components/PopularTrackTable";
 import ArtistSongSearch from "@/components/ArtistSongSearch";
 import ArtistAbout from "@/components/ArtistAbout";
@@ -75,12 +76,26 @@ function Count({ children }: { children: string }) {
   return <span className="label-mono shrink-0 tabular-nums">{children}</span>;
 }
 
+type DiscographySort = "newest" | "oldest" | "title";
+
 function ArtistView({ artist }: { artist: Artist }) {
+  const [discographySort, setDiscographySort] = useState<DiscographySort>("newest");
+  const [showAllAlbums, setShowAllAlbums] = useState(false);
   const tracks = artist.top ?? [];
-  const albums = artist.albums ?? [];
+  const albums = useMemo(() => artist.albums ?? [], [artist.albums]);
   const related = artist.related ?? [];
   const fans = artist.fans ?? 0;
   const popular = tracks.slice(0, POPULAR_LIMIT);
+  const sortedAlbums = useMemo(() => {
+    const list = [...albums];
+    if (discographySort === "title") {
+      return list.sort((a, b) => a.title.localeCompare(b.title, "de"));
+    }
+    if (discographySort === "oldest") {
+      return list.sort((a, b) => (a.release_date || "9999").localeCompare(b.release_date || "9999"));
+    }
+    return list.sort((a, b) => (b.release_date || "").localeCompare(a.release_date || ""));
+  }, [albums, discographySort]);
   const figures: ArtistFigure[] = [];
   if (fans > 0) figures.push({ value: formatCompact(fans), label: "Fans" });
   if (artist.albums_count) figures.push({ value: String(artist.albums_count), label: "Releases" });
@@ -115,12 +130,47 @@ function ArtistView({ artist }: { artist: Artist }) {
 
         {albums.length > 0 && (
           <section aria-labelledby="artist-discography">
-            <SectionHeader id="artist-discography" title="Diskografie" action={<Count>{`${albums.length} ${albums.length === 1 ? "Release" : "Releases"}`}</Count>} />
-            <Shelf label={`Diskografie von ${artist.name}`}>
-              {albums.map((album) => (
-                <AlbumCard key={String(album.id)} album={album} />
-              ))}
-            </Shelf>
+            <SectionHeader
+              id="artist-discography"
+              title="Diskografie"
+              action={
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    aria-label="Diskografie sortieren"
+                    value={discographySort}
+                    onChange={(event) => setDiscographySort(event.target.value as DiscographySort)}
+                    className="field-input min-h-8 w-auto rounded-full py-1 pl-3 pr-2 text-xs font-semibold"
+                  >
+                    <option value="newest">Neueste zuerst</option>
+                    <option value="oldest">Älteste zuerst</option>
+                    <option value="title">Titel A–Z</option>
+                  </select>
+                  {albums.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllAlbums((v) => !v)}
+                      aria-expanded={showAllAlbums}
+                      className="filter-chip min-h-8 px-3 text-xs"
+                    >
+                      {showAllAlbums ? "Kompakt" : `Alle ${albums.length} anzeigen`}
+                    </button>
+                  )}
+                </div>
+              }
+            />
+            {showAllAlbums ? (
+              <div className={CARD_GRID}>
+                {sortedAlbums.map((album) => (
+                  <AlbumCard key={String(album.id)} album={album} />
+                ))}
+              </div>
+            ) : (
+              <Shelf label={`Diskografie von ${artist.name}`}>
+                {sortedAlbums.map((album) => (
+                  <AlbumCard key={String(album.id)} album={album} />
+                ))}
+              </Shelf>
+            )}
           </section>
         )}
 

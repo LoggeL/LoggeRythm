@@ -7,10 +7,13 @@ import {
   normalizeCatalogQuery, SEARCH_MIN_LENGTH,
   searchAlbumsOptions, searchArtistsOptions, searchPlaylistsOptions, searchTracksOptions,
 } from "@/lib/catalogQueries";
-import { deezerPlaylistPath } from "@/lib/slugs";
+import { deezerPlaylistPath, playlistPath } from "@/lib/slugs";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { matchLibraryTracks } from "@/lib/libraryMatch";
 import { usePlayerStore } from "@/store/player";
+import { useConnectStore } from "@/store/connect";
+import { useUiModalsStore } from "@/store/uiModals";
+import { toast } from "@/store/toast";
 import { SearchIcon, PlayIcon, CloseIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import SearchField from "@/components/SearchField";
@@ -19,9 +22,41 @@ import { useSearchInput } from "@/hooks/useSearchInput";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { useLibraryTracks } from "@/hooks/useLibraryTracks";
-import { movePaletteSelection, paletteRows, paletteRowKey, paletteSelectedIndex, type PaletteRow } from "./commandPaletteModel";
+import { usePlaylists } from "@/hooks/useLibrary";
+import { useFollowing } from "@/hooks/useFollows";
+import {
+  isCommandQuery,
+  matchFollowedArtists,
+  matchOwnPlaylists,
+  matchPaletteCommands,
+  movePaletteSelection,
+  paletteRows,
+  paletteRowKey,
+  paletteSelectedIndex,
+  type PaletteCommand,
+  type PaletteRow,
+} from "./commandPaletteModel";
 
-/** Keyboard search shares catalog requests and history with the search route. */
+const PALETTE_COMMANDS: readonly PaletteCommand[] = [
+  { id: "sleep-15", label: "Sleep-Timer: 15 Minuten", detail: "Wiedergabe nach 15 Min. sanft ausblenden", keywords: ["sleep", "timer", "schlaf", "15"] },
+  { id: "sleep-30", label: "Sleep-Timer: 30 Minuten", detail: "Wiedergabe nach 30 Min. sanft ausblenden", keywords: ["sleep", "timer", "schlaf", "30"] },
+  { id: "sleep-60", label: "Sleep-Timer: 60 Minuten", detail: "Wiedergabe nach 60 Min. sanft ausblenden", keywords: ["sleep", "timer", "schlaf", "60"] },
+  { id: "sleep-track", label: "Sleep-Timer: Ende des Titels", detail: "Nach dem aktuellen Song pausieren", keywords: ["sleep", "timer", "ende", "titel"] },
+  { id: "sleep-off", label: "Sleep-Timer ausschalten", detail: "Aktiven Sleep-Timer abbrechen", keywords: ["sleep", "timer", "aus", "stop"] },
+  { id: "open-devices", label: "Geräte & Connect öffnen", detail: "Wiedergabe auf anderes Gerät übertragen oder Jam starten", keywords: ["connect", "gerät", "device", "jam", "party"], shortcut: "D" },
+  { id: "open-audio", label: "Equalizer & Geschwindigkeit", detail: "5-Band-EQ, Nachtmodus-Kompressor und Tempo", keywords: ["eq", "equalizer", "bass", "klang", "tempo", "speed", "kompressor"] },
+  { id: "toggle-cinema", label: "Kino-Modus umschalten", detail: "Vollbild-Visualizer ohne störende Bedienelemente", keywords: ["kino", "cinema", "visualizer", "vollbild", "ambient"], shortcut: "C" },
+  { id: "cycle-visualizer", label: "Visualizer-Szene wechseln", detail: "Nächste audio-reaktive Szene im Vollbildplayer", keywords: ["visualizer", "szene", "aura", "laser"], shortcut: "V" },
+  { id: "toggle-lyrics", label: "Songtext umschalten", detail: "Karaoke-Songtext-Dock öffnen oder schließen", keywords: ["lyrics", "songtext", "text"], shortcut: "T" },
+  { id: "toggle-queue", label: "Warteschlange umschalten", detail: "Warteschlange & Jam-Steuerung öffnen", keywords: ["queue", "warteschlange"], shortcut: "Q" },
+  { id: "nav-liked", label: "Gelikte Titel öffnen", detail: "Zu deinen Lieblingssongs springen", keywords: ["likes", "favoriten", "gelikte", "lieblingssongs"] },
+  { id: "nav-radar", label: "Release Radar öffnen", detail: "Neue Releases deiner Künstler", keywords: ["radar", "release", "neu"] },
+  { id: "nav-radio", label: "Radio öffnen", detail: "Stimmungs-, Song- und Genre-Radios", keywords: ["radio", "mood", "stimmung", "chill", "fokus"] },
+  { id: "nav-stats", label: "Hörprofil & Statistiken", detail: "Deine Top-Titel, Top-Künstler und Verlauf", keywords: ["stats", "statistik", "hörprofil", "konto", "account"] },
+  { id: "open-shortcuts", label: "Tastenkürzel anzeigen", detail: "Alle Tastaturbefehle im Überblick", keywords: ["shortcuts", "tastenkürzel", "hilfe", "keys"], shortcut: "?" },
+];
+
+/** Keyboard search + command palette sharing catalog requests and history with the search route. */
 export default function CommandPalette() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -56,13 +91,16 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
   useDialogFocus(true, panelRef, closeDialog);
   const router = useRouter();
   const playQueue = usePlayerStore((state) => state.playQueue);
+  const playNext = usePlayerStore((state) => state.playNext);
+  const addToQueue = usePlayerStore((state) => state.addToQueue);
 
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
 
-  const enabled = !search.preparing && search.query.length >= SEARCH_MIN_LENGTH;
+  const commandMode = isCommandQuery(search.input);
+  const enabled = !commandMode && !search.preparing && search.query.length >= SEARCH_MIN_LENGTH;
   const tracks = useQuery({ ...searchTracksOptions(search.query), enabled });
   const artists = useQuery({ ...searchArtistsOptions(search.query), enabled });
   const albums = useQuery({ ...searchAlbumsOptions(search.query), enabled });
@@ -71,11 +109,22 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     { label: "Titel", result: tracks }, { label: "Künstler", result: artists },
     { label: "Alben", result: albums }, { label: "Playlists", result: playlists },
   ];
-  // Saved songs follow the draft itself: no request, so no wait for `enabled`.
+  // Saved songs, own playlists and followed artists follow the draft without blocking catalog queries.
   const library = useLibraryTracks();
-  const libraryMatches = normalizeCatalogQuery(search.input).length >= SEARCH_MIN_LENGTH ? matchLibraryTracks(library.index, search.input) : [];
+  const ownPlaylistsQuery = usePlaylists(true);
+  const followingQuery = useFollowing(true);
+  const term = normalizeCatalogQuery(search.input);
+  const libraryMatches = !commandMode && term.length >= SEARCH_MIN_LENGTH ? matchLibraryTracks(library.index, search.input) : [];
+  const ownPlaylistMatches = matchOwnPlaylists(ownPlaylistsQuery?.data ?? [], search.input);
+  const followedArtistMatches = matchFollowedArtists(followingQuery?.data ?? [], search.input);
+  const commandMatches = matchPaletteCommands(PALETTE_COMMANDS, search.input);
+
   const rows = paletteRows({
+    commands: commandMatches,
+    commandMode,
     library: libraryMatches,
+    ownPlaylists: ownPlaylistMatches,
+    followedArtists: followedArtistMatches,
     ...(enabled ? {
       tracks: tracks.isError ? undefined : tracks.data,
       artists: artists.isError ? undefined : artists.data,
@@ -83,13 +132,19 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
       playlists: playlists.isError ? undefined : playlists.data,
     } : {}),
   });
-  const catalogRows = rows.filter((row) => row.kind !== "library").length;
+  const catalogRows = rows.filter((row) => row.kind === "track" || row.kind === "artist" || row.kind === "album" || row.kind === "playlist").length;
   const selected = paletteSelectedIndex(rows, selectedKey);
-  const term = normalizeCatalogQuery(search.input);
   const fetching = enabled && sources.some(({ result }) => result.isFetching);
-  const empty = enabled && libraryMatches.length === 0 && sources.every(({ result }) => result.isSuccess && result.data.length === 0);
+  const empty =
+    (commandMode && commandMatches.length === 0) ||
+    (enabled &&
+      libraryMatches.length === 0 &&
+      ownPlaylistMatches.length === 0 &&
+      followedArtistMatches.length === 0 &&
+      commandMatches.length === 0 &&
+      sources.every(({ result }) => result.isSuccess && result.data.length === 0));
   const failures = [
-    ...(term.length >= SEARCH_MIN_LENGTH && library.likes.isError ? [{ label: "Lieblingssongs", result: library.likes }] : []),
+    ...(!commandMode && term.length >= SEARCH_MIN_LENGTH && library.likes.isError ? [{ label: "Lieblingssongs", result: library.likes }] : []),
     ...(enabled ? sources.filter(({ result }) => result.isError) : []),
   ];
 
@@ -111,32 +166,135 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     onClose();
   }
   function fullResults(value = inputSnapshot.current) {
-    if (normalizeCatalogQuery(value).length < SEARCH_MIN_LENGTH) return;
+    if (isCommandQuery(value) || normalizeCatalogQuery(value).length < SEARCH_MIN_LENGTH) return;
     navigation.openResults(value);
     closeDialog();
   }
 
-  function activateLibrary(track: PaletteRow & { kind: "library" }) {
-    // Checked against the live draft: a handler from a previous render only
-    // plays a song that still matches what is typed now.
+  function runCommand(commandId: string) {
+    const player = usePlayerStore.getState();
+    switch (commandId) {
+      case "sleep-15":
+        player.setSleepTimer(15);
+        toast.info("Sleep-Timer auf 15 Minuten gestellt.");
+        break;
+      case "sleep-30":
+        player.setSleepTimer(30);
+        toast.info("Sleep-Timer auf 30 Minuten gestellt.");
+        break;
+      case "sleep-60":
+        player.setSleepTimer(60);
+        toast.info("Sleep-Timer auf 60 Minuten gestellt.");
+        break;
+      case "sleep-track":
+        player.setSleepAfterTrack(true);
+        toast.info("Sleep-Timer pausiert am Ende des Titels.");
+        break;
+      case "sleep-off":
+        player.setSleepTimer(null);
+        toast.info("Sleep-Timer ausgeschaltet.");
+        break;
+      case "open-devices":
+        useConnectStore.getState().setSelectorOpen(true, null);
+        break;
+      case "open-audio":
+        useUiModalsStore.getState().setAudioEffectsOpen(true, null);
+        break;
+      case "toggle-cinema":
+        if (player.index >= 0) {
+          player.setNowPlayingOpen(true);
+          useUiModalsStore.getState().toggleCinemaMode();
+        } else {
+          toast.info("Starte zuerst einen Titel für den Kino-Modus.");
+        }
+        break;
+      case "cycle-visualizer":
+        if (player.index >= 0) {
+          useUiModalsStore.getState().cycleVisualizer();
+          player.setNowPlayingOpen(true);
+        } else {
+          toast.info("Starte zuerst einen Titel für den Visualizer.");
+        }
+        break;
+      case "toggle-lyrics":
+        player.toggleLyrics();
+        break;
+      case "toggle-queue":
+        player.toggleQueue();
+        break;
+      case "nav-liked":
+        router.push("/library?tab=liked");
+        break;
+      case "nav-radar":
+        router.push("/radar");
+        break;
+      case "nav-radio":
+        router.push("/radio");
+        break;
+      case "nav-stats":
+        router.push("/account?tab=stats");
+        break;
+      case "open-shortcuts":
+        useUiModalsStore.getState().setShortcutsOpen(true);
+        break;
+    }
+    closeDialog();
+  }
+
+  function activateLibrary(track: PaletteRow & { kind: "library" }, mode: "play" | "next" | "queue" = "play") {
     if (!mounted.current || normalizeCatalogQuery(inputSnapshot.current).length < SEARCH_MIN_LENGTH) return;
     const matches = matchLibraryTracks(library.index, inputSnapshot.current);
     const index = matches.findIndex((match) => String(match.id) === String(track.track.id));
     if (index < 0) return;
-    playQueue(matches, index, `Bibliothek: ${normalizeCatalogQuery(inputSnapshot.current)}`);
+    if (mode === "next") {
+      playNext(track.track);
+      toast.info(`„${track.track.title}“ wird als Nächstes gespielt.`);
+    } else if (mode === "queue") {
+      addToQueue(track.track);
+      toast.info(`„${track.track.title}“ zur Warteschlange hinzugefügt.`);
+    } else {
+      playQueue(matches, index, `Bibliothek: ${normalizeCatalogQuery(inputSnapshot.current)}`);
+    }
     history.remember(inputSnapshot.current);
     closeDialog();
   }
-  function activate(row: PaletteRow) {
-    if (row.kind === "library") return activateLibrary(row);
-    // Event handlers from a previous render must never activate an old term.
+
+  function activate(row: PaletteRow, mode: "play" | "next" | "queue" = "play") {
+    if (row.kind === "command") {
+      if (!mounted.current) return;
+      runCommand(row.command.id);
+      return;
+    }
+    if (row.kind === "library") return activateLibrary(row, mode);
+    if (row.kind === "own-playlist") {
+      if (!mounted.current) return;
+      router.push(playlistPath(row.playlist));
+      history.remember(inputSnapshot.current);
+      closeDialog();
+      return;
+    }
+    if (row.kind === "followed-artist") {
+      if (!mounted.current) return;
+      router.push(`/artist/${encodeURIComponent(String(row.artist.id))}`);
+      history.remember(inputSnapshot.current);
+      closeDialog();
+      return;
+    }
     if (!mounted.current || !enabled || normalizeCatalogQuery(inputSnapshot.current) !== search.query) return;
     if (!rows.some((current) => paletteRowKey(current) === paletteRowKey(row))) return;
     if (row.kind === "track") {
       if (!tracks.data || tracks.isError) throw new Error("Suche: Die ausgewählten Titel sind nicht verfügbar.");
       const index = tracks.data.findIndex((track) => String(track.id) === String(row.track.id));
       if (index < 0) throw new Error("Suche: Der ausgewählte Titel fehlt in den aktuellen Ergebnissen.");
-      playQueue(tracks.data, index, `Suche: ${search.query}`);
+      if (mode === "next") {
+        playNext(row.track);
+        toast.info(`„${row.track.title}“ wird als Nächstes gespielt.`);
+      } else if (mode === "queue") {
+        addToQueue(row.track);
+        toast.info(`„${row.track.title}“ zur Warteschlange hinzugefügt.`);
+      } else {
+        playQueue(tracks.data, index, `Suche: ${search.query}`);
+      }
     } else if (row.kind === "artist") {
       router.push(`/artist/${encodeURIComponent(String(row.artist.id))}`);
     } else if (row.kind === "playlist") {
@@ -147,11 +305,19 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     history.remember(search.query);
     closeDialog();
   }
-  function submitSelection() {
-    // A saved song needs no settled query; catalog rows do.
-    if (rows[selected] && (rows[selected].kind === "library" || !search.preparing)) activate(rows[selected]);
+
+  function submitSelection(mode: "play" | "next" | "queue" = "play") {
+    const chosen = rows[selected];
+    const instantKind =
+      chosen &&
+      (chosen.kind === "library" ||
+        chosen.kind === "command" ||
+        chosen.kind === "own-playlist" ||
+        chosen.kind === "followed-artist");
+    if (chosen && (instantKind || !search.preparing)) activate(chosen, mode);
     else fullResults();
   }
+
   function onInputKey(event: KeyboardEvent<HTMLInputElement>) {
     if (event.nativeEvent.isComposing) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -160,16 +326,18 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
     } else if (event.key === "Enter") {
       event.preventDefault();
       if (event.metaKey || event.ctrlKey) fullResults();
-      else submitSelection();
+      else if (event.shiftKey) submitSelection("next");
+      else if (event.altKey) submitSelection("queue");
+      else submitSelection("play");
     }
   }
 
-  const searching = term.length >= SEARCH_MIN_LENGTH && (search.preparing || (fetching && catalogRows === 0));
+  const searching = !commandMode && term.length >= SEARCH_MIN_LENGTH && (search.preparing || (fetching && catalogRows === 0));
 
   return (
     <div className="fixed inset-0 z-[90] flex items-start justify-center bg-backdrop/80 px-2 pt-[calc(.5rem+env(safe-area-inset-top))] sm:px-4 sm:pt-[11dvh]" onClick={closeDialog}>
       <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Suche" tabIndex={-1} className="pop-in flex max-h-[calc(100dvh-1rem-env(safe-area-inset-top))] w-full max-w-2xl flex-col overflow-hidden rounded-[var(--radius-panel)] border border-hairline bg-panel shadow-[0_28px_70px_rgb(0_0_0/0.6)] outline-none sm:max-h-[74dvh]" onClick={(event) => event.stopPropagation()}>
-        <SearchField value={search.input} onValueChange={changeInput} onSubmit={submitSelection} onClear={clearInput} label="Titel, Künstler, Alben und Playlists suchen" placeholder="Was möchtest du hören?" className="shrink-0 gap-3.5 rounded-none! border-0! border-b! border-hairline! bg-transparent! px-4 sm:px-5"
+        <SearchField value={search.input} onValueChange={changeInput} onSubmit={() => submitSelection("play")} onClear={clearInput} label="Titel, Künstler, Alben, Playlists oder Befehle (>)" placeholder="Was möchtest du hören? Oder > für Befehle…" className="shrink-0 gap-3.5 rounded-none! border-0! border-b! border-hairline! bg-transparent! px-4 sm:px-5"
           inputProps={{
             role: "combobox", "aria-autocomplete": "list", "aria-controls": listId,
             "aria-expanded": rows.length > 0,
@@ -187,9 +355,9 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
         />
         <div className="scroll-area min-h-0 flex-1 overflow-y-auto pb-2">
           {term.length === 0 && history.recent.length === 0 && <div className="px-5 pb-8 pt-7 sm:px-6">
-            <p className="label-mono mb-3 flex items-center gap-2.5"><SearchIcon width={14} height={14} />Schnellsuche</p>
-            <p className="font-display text-xl font-extrabold tracking-[-0.03em]">Suche in der ganzen Bibliothek</p>
-            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">Titel, Künstler, Alben und Playlists – tippe los und spiele direkt aus der Liste ab.</p>
+            <p className="label-mono mb-3 flex items-center gap-2.5"><SearchIcon width={14} height={14} />Schnellsuche & Befehle</p>
+            <p className="font-display text-xl font-extrabold tracking-[-0.03em]">Suche in Bibliothek, Katalog oder tippe &gt;</p>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">Titel, Playlists und Künstler direkt abspielen – oder starte mit <kbd className={KBD}>&gt;</kbd> Befehle wie Sleep-Timer, Equalizer, Gerätewechsel und Kino-Modus.</p>
           </div>}
           {term.length === 0 && history.recent.length > 0 && <section aria-label="Zuletzt gesucht" className="px-2">
             <div className="flex items-center justify-between gap-3 pl-3 pr-1 pt-2"><span className="label-mono">Zuletzt gesucht</span><button type="button" onClick={history.clear} className="label-mono min-h-11 rounded-[var(--radius-control)] px-2 transition-colors hover:text-foreground">Verlauf löschen</button></div>
@@ -198,7 +366,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
               <button type="button" className="action-icon h-10 min-h-10 w-10" aria-label={`${recent} aus dem Suchverlauf entfernen`} onClick={() => history.remove(recent)}><CloseIcon width={14} height={14} /></button>
             </div>)}
           </section>}
-          {term.length > 0 && term.length < SEARCH_MIN_LENGTH && <p role="status" className="label-mono px-5 py-9 text-center">Gib mindestens zwei Zeichen ein.</p>}
+          {!commandMode && term.length > 0 && term.length < SEARCH_MIN_LENGTH && <p role="status" className="label-mono px-5 py-9 text-center">Gib mindestens zwei Zeichen ein (oder &gt; für Befehle).</p>}
           {empty && <div role="status" className="px-5 pb-8 pt-7 sm:px-6">
             <p className="label-mono mb-3">Keine Treffer</p>
             <p className="font-display text-xl font-extrabold tracking-[-0.03em] [overflow-wrap:anywhere]">Keine Treffer für „{term}“</p>
@@ -212,31 +380,71 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
             {rows.map((row, index) => {
               const active = index === selected;
               const key = paletteRowKey(row);
-              const image = row.kind === "artist" ? row.artist.picture : row.kind === "playlist" ? row.playlist.cover : row.kind === "album" ? row.album.cover : row.track.cover;
-              const title = row.kind === "artist" ? row.artist.name : row.kind === "playlist" ? row.playlist.title : row.kind === "album" ? row.album.album || row.album.title : row.track.title;
-              const detail = row.kind === "artist" ? "Künstler" : row.kind === "playlist" ? `${row.playlist.track_count} Titel` : row.kind === "album" ? row.album.artist : trackArtistLabel(row.track);
-              const shape = row.kind === "artist" ? "rounded-full" : "rounded-art";
+              const isCmd = row.kind === "command";
+              const image =
+                isCmd
+                  ? null
+                  : row.kind === "artist" || row.kind === "followed-artist"
+                    ? row.artist.picture
+                    : row.kind === "own-playlist"
+                      ? row.playlist.cover_url
+                      : row.kind === "playlist"
+                        ? row.playlist.cover
+                        : row.kind === "album"
+                          ? row.album.cover
+                          : row.track.cover;
+              const title =
+                isCmd
+                  ? row.command.label
+                  : row.kind === "artist" || row.kind === "followed-artist"
+                    ? row.artist.name
+                    : row.kind === "own-playlist"
+                      ? row.playlist.name
+                      : row.kind === "playlist"
+                        ? row.playlist.title
+                        : row.kind === "album"
+                          ? row.album.album || row.album.title
+                          : row.track.title;
+              const detail =
+                isCmd
+                  ? row.command.detail
+                  : row.kind === "followed-artist"
+                    ? "Gefolgter Künstler"
+                    : row.kind === "artist"
+                      ? "Künstler"
+                      : row.kind === "own-playlist"
+                        ? `Deine Playlist · ${row.playlist.track_count} Titel`
+                        : row.kind === "playlist"
+                          ? `${row.playlist.track_count} Titel`
+                          : row.kind === "album"
+                            ? row.album.artist
+                            : trackArtistLabel(row.track);
+              const shape = row.kind === "artist" || row.kind === "followed-artist" ? "rounded-full" : "rounded-art";
               const startsGroup = index === 0 || rows[index - 1].kind !== row.kind;
               const plays = row.kind === "track" || row.kind === "library";
               return <div key={key} role="presentation">
                 {startsGroup && <div role="presentation" className="label-mono flex items-center gap-3 px-3 pb-1.5 pt-4"><span>{GROUP_LABELS[row.kind]}</span><span aria-hidden="true" className="h-px flex-1 bg-hairline" /></div>}
                 <button id={`${listId}-${key}`} role="option" aria-selected={active} tabIndex={-1} type="button" onMouseEnter={() => setSelectedKey(key)} onClick={() => activate(row)} className={`relative flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left transition-colors ${active ? "bg-foreground/[0.06]" : ""}`}>
                   {active && <span aria-hidden="true" className="absolute left-0 top-1/2 h-6 w-[3px] -translate-y-1/2 rounded-full bg-accent" />}
-                  {image ? (
+                  {isCmd ? (
+                    <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-art border border-hairline bg-foreground/[0.04] font-mono text-xs font-bold text-accent">
+                      &gt;
+                    </span>
+                  ) : image ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={image} alt="" className={`h-10 w-10 ${shape} shrink-0 object-cover`} />
                   ) : <CoverPlaceholder className={`h-10 w-10 ${shape} shrink-0`} />}
                   <div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold tracking-tight">{title}</div><div className="truncate text-[13px] text-muted">{detail}</div></div>
+                  {isCmd && row.command.shortcut && !active && <kbd className={`${KBD} max-sm:hidden`}>{row.command.shortcut}</kbd>}
                   {active && <span className="label-mono flex shrink-0 items-center gap-2 text-foreground">
                     {plays ? <PlayIcon width={13} height={13} className="text-accent" /> : null}
-                    <span className="max-sm:hidden">{plays ? "Abspielen" : "Öffnen"}</span>
+                    <span className="max-sm:hidden">{isCmd ? "Ausführen" : plays ? "Abspielen" : "Öffnen"}</span>
                     <kbd className={`${KBD} max-sm:hidden`}>↵</kbd>
                   </span>}
                 </button>
               </div>;
             })}
           </div>
-          {/* Below the list: saved songs stay in place while the catalog loads. */}
           {searching && <div role="status" aria-label="Suche läuft" className="flex flex-col gap-1 px-2 pt-3">
             {[0, 1, 2, 3, 4].map((row) => <div key={row} className="flex items-center gap-3 px-3 py-2">
               <span className="skeleton h-10 w-10 shrink-0 rounded-art" />
@@ -245,13 +453,14 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
           </div>}
         </div>
         <div className="flex shrink-0 items-center justify-between gap-3 border-t border-hairline px-3 py-2 pb-[calc(.5rem+env(safe-area-inset-bottom))] sm:px-4 sm:pb-2">
-          <div className="label-mono flex items-center gap-4 max-sm:hidden">
-            <span className="flex items-center gap-1.5"><kbd className={KBD}>↑</kbd><kbd className={KBD}>↓</kbd>Navigieren</span>
-            <span className="flex items-center gap-1.5"><kbd className={KBD}>↵</kbd>Auswählen</span>
+          <div className="label-mono flex flex-wrap items-center gap-3 max-sm:hidden">
+            <span className="flex items-center gap-1"><kbd className={KBD}>↑</kbd><kbd className={KBD}>↓</kbd>Navigieren</span>
+            <span className="flex items-center gap-1"><kbd className={KBD}>⇧↵</kbd>Als Nächstes</span>
+            <span className="flex items-center gap-1"><kbd className={KBD}>⌥↵</kbd>Warteschlange</span>
           </div>
-          {term.length >= SEARCH_MIN_LENGTH
+          {!commandMode && term.length >= SEARCH_MIN_LENGTH
             ? <button type="button" onClick={() => fullResults()} className="action-secondary min-h-9 gap-2.5 px-3.5 text-xs max-sm:min-h-11 max-sm:flex-1"><span>Alle Ergebnisse anzeigen</span><kbd className={`${KBD} max-sm:hidden`}>⌘↵</kbd></button>
-            : <span className="label-mono py-2.5"><span className="sm:hidden">Tippe, um zu suchen</span><span className="max-sm:hidden">Mind. zwei Zeichen</span></span>}
+            : <span className="label-mono py-2.5"><span className="sm:hidden">Tippe zum Suchen</span><span className="max-sm:hidden">&gt; für Befehle</span></span>}
         </div>
       </div>
     </div>
@@ -259,7 +468,16 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
 }
 
 const KBD = "inline-grid min-h-[22px] min-w-[22px] shrink-0 place-items-center rounded-[5px] border border-border bg-foreground/[0.04] px-1.5 font-mono text-[11px] font-medium normal-case leading-none tracking-normal text-muted";
-const GROUP_LABELS: Record<PaletteRow["kind"], string> = { library: "In deiner Bibliothek", track: "Titel", artist: "Künstler", album: "Alben", playlist: "Playlists" };
+const GROUP_LABELS: Record<PaletteRow["kind"], string> = {
+  command: "Befehle",
+  library: "In deiner Bibliothek",
+  "own-playlist": "Deine Playlists",
+  "followed-artist": "Gefolgte Künstler",
+  track: "Titel",
+  artist: "Künstler",
+  album: "Alben",
+  playlist: "Playlists",
+};
 
 function ClockGlyph() {
   return (

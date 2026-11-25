@@ -2,6 +2,8 @@ import { offlineScopeOrigin } from './scope';
 import { authenticatedHeadersFor } from '../api/client';
 import type { Playlist, Track } from '../api/types';
 import { getApiBase } from '../config';
+import { buildOfflineTrackStreamUri } from '../player/qualityPreference';
+import { assertDownloadNetworkAllowed } from './downloadSettings';
 import {
   attachDownloadedTrack,
   attachIndividualDownloadedTrack,
@@ -413,18 +415,19 @@ export function downloadPlaylistForOffline(scope: string, playlist: Playlist): P
     }
 
     try {
+      await assertDownloadNetworkAllowed();
       const origin = offlineScopeOrigin(scope);
       const configuredOrigin = new URL(await getApiBase()).origin;
       if (origin !== configuredOrigin) {
         throw new Error('Offline download scope does not match the configured server');
       }
-      const firstUrl = `${origin}/api/tracks/${missing[0][0]}/stream`;
+      const firstUrl = buildOfflineTrackStreamUri(origin, missing[0][0]);
       const headers = authenticatedCookie(await authenticatedHeadersFor(firstUrl));
       assertCurrent(value);
       const requests: NativeOfflineTrackRequest[] = missing.map(([trackId]) => ({
         trackId,
         fileName: offlineTrackFileName(trackId),
-        url: `${origin}/api/tracks/${trackId}/stream`,
+        url: buildOfflineTrackStreamUri(origin, trackId),
         headers,
       }));
       activeDownload = {
@@ -514,6 +517,7 @@ export function downloadTrackForOffline(scope: string, track: Track): Promise<vo
     }
 
     try {
+      await assertDownloadNetworkAllowed();
       // Reject metadata the manifest cannot record before the native download
       // runs; otherwise the audio file would land on disk without an owner.
       validateOfflineTrack(track, 'Individually downloaded track');
@@ -522,7 +526,7 @@ export function downloadTrackForOffline(scope: string, track: Track): Promise<vo
       if (origin !== configuredOrigin) {
         throw new Error('Offline download scope does not match the configured server');
       }
-      const url = `${origin}/api/tracks/${trackId}/stream`;
+      const url = buildOfflineTrackStreamUri(origin, trackId);
       const headers = authenticatedCookie(await authenticatedHeadersFor(url));
       assertCurrent(value);
       const request: NativeOfflineTrackRequest = {
@@ -584,6 +588,183 @@ export function downloadTrackForOffline(scope: string, track: Track): Promise<vo
         && activeDownload.playlistId === trackId
         && !activeDownload.publishPlaylistProgress
       ) activeDownload = null;
+    }
+  });
+}
+
+/**
+ * Download a collection of tracks (e.g., an Album or Liked Songs) as individual
+ * verified downloads using one native batch job with a positive decimal job ID.
+ */
+export function downloadTracksBatchForOffline(
+  scope: string,
+  jobIdValue: unknown,
+  tracks: readonly Track[],
+): Promise<void> {
+  const requestedEpoch = runtimeEpoch;
+  return serialized(async () => {
+    const value = await requireContext(scope, requestedEpoch);
+    const unique = new Map<string, Track>();
+    for (const track of tracks) {
+      const trackId = offlineTrackId(track.id);
+      if (!unique.has(trackId)) {
+        validateOfflineTrack(track, 'Collection downloaded track');
+        unique.set(trackId, track);
+      }
+    }
+    if (unique.size === 0) return;
+
+    const jobId = offlinePlaylistId(jobIdValue);
+    let updatedManifest = value.manifest;
+    let attachedAnyExisting = false;
+    const missing: [string, Track][] = [];
+    const attachedAt = now();
+    for (const [trackId, track] of unique) {
+      const existing = updatedManifest.tracks[trackId];
+      if (existing?.individualDownload === true) continue;
+      if (existing !== undefined) {
+        updatedManifest = attachIndividualDownloadedTrack(
+          updatedManifest,
+          track,
+          existing.sizeBytes,
+          attachedAt,
+        );
+        attachedAnyExisting = true;
+      } else {
+        missing.push([trackId, track]);
+      }
+    }
+    if (attachedAnyExisting) {
+      await persistManifest(value, updatedManifest);
+      value.manifest = updatedManifest;
+      publishContext(value);
+    }
+    if (missing.length === 0) return;
+
+    try {
+      await assertDownloadNetworkAllowed();
+      const origin = offlineScopeOrigin(scope);
+      const configuredOrigin = new URL(await getApiBase()).origin;
+      if (origin !== configuredOrigin) {
+        throw new Error('Offline download scope does not match the configured server');
+      }
+      const firstUrl = buildOfflineTrackStreamUri(origin, missing[0][0]);
+      const headers = authenticatedCookie(await authenticatedHeadersFor(firstUrl));
+      assertCurrent(value);
+      const requests: NativeOfflineTrackRequest[] = missing.map(([trackId]) => ({
+        trackId,
+        fileName: offlineTrackFileName(trackId),
+        url: buildOfflineTrackStreamUri(origin, trackId),
+        headers,
+      }));
+      activeDownload = {
+        scope,
+        playlistId: jobId,
+        publishPlaylistProgress: false,
+        epoch: value.epoch,
+      };
+      const result = await startNativePlaylistDownload({
+        scope,
+        generation: value.generation,
+        playlistId: jobId,
+        tracks: requests,
+        directoryUri: value.directoryUri,
+      });
+      assertCurrent(value);
+      validateNativeOutcomes(
+        new Set(requests.map((request) => request.trackId)),
+        result.successes,
+        result.failures,
+      );
+
+      let completed = value.manifest;
+      const nextTrackUris = { ...value.trackUris };
+      const completedAt = now();
+      for (const success of result.successes) {
+        const track = unique.get(success.trackId);
+        if (track === undefined) {
+          throw new Error('Native offline result lacks matching source metadata');
+        }
+        completed = attachIndividualDownloadedTrack(
+          completed,
+          track,
+          success.sizeBytes,
+          completedAt,
+        );
+        nextTrackUris[success.trackId] = success.uri;
+        value.pendingOrphanedFiles.delete(offlineTrackFileName(success.trackId));
+      }
+      await persistManifest(value, completed);
+      value.manifest = completed;
+      value.trackUris = nextTrackUris;
+      value.availableDiskBytes = result.availableDiskBytes;
+      publishContext(value);
+      if (result.failures.length > 0) {
+        throw new Error(
+          `Offline collection download incomplete: ${result.failures.length} of ${requests.length} tracks failed`,
+        );
+      }
+    } catch (error) {
+      if (value.epoch === runtimeEpoch && context === value) {
+        publishContext(value, { error: 'download-failed' });
+      }
+      throw error;
+    } finally {
+      if (
+        activeDownload?.epoch === value.epoch
+        && activeDownload.scope === value.scope
+        && activeDownload.playlistId === jobId
+        && !activeDownload.publishPlaylistProgress
+      ) activeDownload = null;
+    }
+  });
+}
+
+/** Remove individual download ownership for a batch of tracks in one manifest commit. */
+export function removeTracksBatchOffline(
+  scope: string,
+  trackIdValues: readonly unknown[],
+): Promise<void> {
+  const requestedEpoch = runtimeEpoch;
+  return serialized(async () => {
+    const value = await requireContext(scope, requestedEpoch);
+    const ids = [...new Set(trackIdValues.map((id) => offlineTrackId(id)))];
+    let nextManifest = value.manifest;
+    const orphanedFiles: string[] = [];
+    for (const trackId of ids) {
+      const removal = removeIndividualDownload(nextManifest, trackId);
+      nextManifest = removal.manifest;
+      orphanedFiles.push(...removal.orphanedFiles);
+    }
+    if (nextManifest === value.manifest && value.pendingOrphanedFiles.size === 0) return;
+
+    if (nextManifest !== value.manifest) {
+      await persistManifest(value, nextManifest);
+      value.manifest = nextManifest;
+      value.trackUris = Object.fromEntries(
+        Object.entries(value.trackUris).filter(([id]) => value.manifest.tracks[id] !== undefined),
+      );
+      orphanedFiles.forEach((fileName) => value.pendingOrphanedFiles.add(fileName));
+    }
+    publishContext(value);
+
+    try {
+      if (value.pendingOrphanedFiles.size > 0) {
+        const pendingFiles = [...value.pendingOrphanedFiles].sort();
+        value.availableDiskBytes = await removeNativeOfflineFiles(
+          value.scope,
+          value.generation,
+          pendingFiles,
+        );
+        assertCurrent(value);
+        pendingFiles.forEach((fileName) => value.pendingOrphanedFiles.delete(fileName));
+      }
+      publishContext(value);
+    } catch (error) {
+      if (value.epoch === runtimeEpoch && context === value) {
+        publishContext(value, { error: 'remove-failed' });
+      }
+      throw error;
     }
   });
 }

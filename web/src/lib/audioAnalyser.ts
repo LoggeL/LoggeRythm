@@ -1,32 +1,38 @@
 /**
- * Shared Web Audio analyser for the player's <audio> element.
+ * Shared Web Audio graph for the player's two <audio> decks:
  *
- * The browser only allows ONE MediaElementSource per media element, and once an
- * element is routed through Web Audio its output must be re-connected to the
- * destination or it falls silent. We therefore set this up exactly once (keyed
- * by the element) and keep the graph alive for the lifetime of the page:
+ *   deckA ─┬─> analysisGainA ──┐
+ *          └─> outputGainA  ───┼─> analyser (passive tap, pre-EQ & volume-independent)
+ *                              │
+ *   deckB ─┬─> analysisGainB ──┘
+ *          └─> outputGainB  ───> masterBus ─> [5x BiquadFilter EQ] ─> [Compressor/Bypass] ─> destination
  *
- *   source ─┬─> analysisGain ──> analyser
- *           └─> outputGain ──> destination
- *
- * `ensureAnalyser` is safe to call repeatedly; the visualizer reads the live
- * analyser each animation frame via `getAnalyser`, so it picks up the node as
- * soon as playback initialises it (after a user gesture, per autoplay policy).
+ * `ensureAnalyser` wires each <audio> element once per lifetime (browsers allow
+ * only one MediaElementAudioSourceNode per element). Crossfades schedule sample-
+ * accurate equal-power curves directly onto `outputGain` and `analysisGain` via
+ * `AudioParam.setValueCurveAtTime`, eliminating background-tab timer stutter.
  */
+
+import {
+  DEFAULT_AUDIO_EFFECTS,
+  EQ_BANDS,
+  type AudioEffectsSettings,
+} from "./audioEffects";
 
 type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
 let ctx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
-// Each <audio> element may only have ONE MediaElementSource ever, and once
-// routed through Web Audio it must reach the destination through the graph or
-// it falls silent. We track every connected element (the player uses two decks
-// for gapless crossfades) and give analysis its own mix gain. That gain follows
-// the crossfade but not the user volume, so visuals reflect what is audibly in
-// the mix even while muted:
-//
-//   source ─┬─> analysisGain ──> analyser
-//           └─> outputGain ──> destination
+let masterBus: GainNode | null = null;
+let eqFilters: BiquadFilterNode[] = [];
+let compressor: DynamicsCompressorNode | null = null;
+let dryGain: GainNode | null = null;
+let wetGain: GainNode | null = null;
+let currentEffects: AudioEffectsSettings = {
+  ...DEFAULT_AUDIO_EFFECTS,
+  bands: [...DEFAULT_AUDIO_EFFECTS.bands] as [number, number, number, number, number],
+};
+
 const decks = new Map<
   HTMLAudioElement,
   {
@@ -42,12 +48,65 @@ function getCtor(): typeof AudioContext | null {
   return window.AudioContext ?? (window as WebkitWindow).webkitAudioContext ?? null;
 }
 
+function syncEffectsToGraph(): void {
+  if (!ctx || eqFilters.length !== EQ_BANDS.length || !dryGain || !wetGain) return;
+  const now = ctx.currentTime;
+  for (let i = 0; i < eqFilters.length; i++) {
+    const targetDb = currentEffects.eqEnabled ? currentEffects.bands[i] : 0;
+    eqFilters[i].gain.setTargetAtTime(targetDb, now, 0.015);
+  }
+  const wet = currentEffects.compressorEnabled ? 1 : 0;
+  wetGain.gain.setTargetAtTime(wet, now, 0.02);
+  dryGain.gain.setTargetAtTime(1 - wet, now, 0.02);
+}
+
+function ensureMasterChain(audioCtx: AudioContext): GainNode {
+  if (masterBus) return masterBus;
+  masterBus = audioCtx.createGain();
+  masterBus.gain.value = 1;
+
+  eqFilters = EQ_BANDS.map((band) => {
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = band.type;
+    filter.frequency.value = band.freq;
+    if (band.type === "peaking") filter.Q.value = 1.1;
+    filter.gain.value = 0;
+    return filter;
+  });
+
+  // Chain masterBus -> filter[0] -> ... -> filter[4]
+  let tail: AudioNode = masterBus;
+  for (const filter of eqFilters) {
+    tail.connect(filter);
+    tail = filter;
+  }
+
+  // Parallel dry/wet Late-Night compressor stage (click-free cross-switch).
+  compressor = audioCtx.createDynamicsCompressor();
+  compressor.threshold.value = -24;
+  compressor.knee.value = 18;
+  compressor.ratio.value = 6;
+  compressor.attack.value = 0.005;
+  compressor.release.value = 0.2;
+
+  dryGain = audioCtx.createGain();
+  dryGain.gain.value = 1;
+  wetGain = audioCtx.createGain();
+  wetGain.gain.value = 0;
+
+  tail.connect(dryGain);
+  dryGain.connect(audioCtx.destination);
+  tail.connect(compressor);
+  compressor.connect(wetGain);
+  wetGain.connect(audioCtx.destination);
+
+  syncEffectsToGraph();
+  return masterBus;
+}
+
 /**
- * Wire the given audio element into the shared analyser graph (once per
- * element) and resume the AudioContext. Safe to call repeatedly and for several
- * elements. Call it in response to a user gesture (e.g. pressing play), before
- * the element starts playing, so its output is routed to the speakers + analyser.
- * Returns the analyser, or null if Web Audio is unavailable / setup failed.
+ * Wire the given audio element into the shared analyser + effects graph (once
+ * per element) and resume the AudioContext.
  */
 export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null {
   const Ctor = getCtor();
@@ -71,30 +130,26 @@ export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null
 
   if (!analyser) {
     analyser = ctx.createAnalyser();
-    // 2048 keeps kick/sub bands distinct (≈21.5 Hz per bin at 44.1 kHz).
-    // A moderate analyser-level smoothing preserves drum transients; each
-    // visual consumer can still apply its own time-based release envelope.
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.35;
     analyser.minDecibels = -90;
     analyser.maxDecibels = -8;
-    // Not connected to the destination — it's a passive tap on the source.
   }
+
+  const bus = ensureMasterChain(ctx);
 
   if (el && !decks.has(el)) {
     try {
       const source = ctx.createMediaElementSource(el);
       const outputGain = ctx.createGain();
       const analysisGain = ctx.createGain();
-      // Carry over the element's current volume, then decouple the element so
-      // its `volume` no longer scales the analyser tap.
       outputGain.gain.value = el.volume;
       analysisGain.gain.value = 1;
       el.volume = 1;
       source.connect(analysisGain);
       analysisGain.connect(analyser);
       source.connect(outputGain);
-      outputGain.connect(ctx.destination);
+      outputGain.connect(bus);
       decks.set(el, { source, outputGain, analysisGain });
     } catch {
       // Element already routed elsewhere (or unsupported) — leave it be.
@@ -104,11 +159,32 @@ export function ensureAnalyser(el: HTMLAudioElement | null): AnalyserNode | null
   return analyser;
 }
 
+/** Apply EQ bands + Late-Night compressor live to the master audio chain. */
+export function applyAudioEffects(settings: AudioEffectsSettings): void {
+  currentEffects = {
+    ...settings,
+    bands: [...settings.bands] as [number, number, number, number, number],
+  };
+  syncEffectsToGraph();
+}
+
+/** Set playback speed on an audio deck (preserving pitch when supported). */
+export function applyPlaybackRate(el: HTMLAudioElement | null, rate: number): void {
+  if (!el) return;
+  if (!Number.isFinite(rate) || rate < 0.5 || rate > 2.5) {
+    throw new RangeError(`Playback rate must be between 0.5 and 2.5; received ${rate}.`);
+  }
+  if (el.playbackRate !== rate) el.playbackRate = rate;
+  if (el.defaultPlaybackRate !== rate) el.defaultPlaybackRate = rate;
+  const mediaWithPitch = el as HTMLAudioElement & { preservesPitch?: boolean };
+  if ("preservesPitch" in mediaWithPitch) {
+    mediaWithPitch.preservesPitch = true;
+  }
+}
+
 /**
  * Set an element's output volume (0..1) and its contribution to the shared
- * analyser (0..1). The analysis weight follows crossfade position but remains
- * independent from user volume/mute. Before Web Audio setup, output volume is
- * applied directly to the media element.
+ * analyser (0..1), cancelling any active gain automation first.
  */
 export function applyVolume(
   el: HTMLAudioElement | null,
@@ -125,20 +201,72 @@ export function applyVolume(
     );
   }
   const deck = decks.get(el);
-  if (deck) {
+  if (deck && ctx) {
+    const now = ctx.currentTime;
     el.volume = 1;
-    deck.outputGain.gain.value = v;
-    deck.analysisGain.gain.value = analysisWeight;
+    deck.outputGain.gain.cancelScheduledValues(now);
+    deck.outputGain.gain.setValueAtTime(v, now);
+    deck.analysisGain.gain.cancelScheduledValues(now);
+    deck.analysisGain.gain.setValueAtTime(analysisWeight, now);
   } else {
     el.volume = v;
   }
 }
 
 /**
+ * Schedule sample-accurate crossfade curves directly on a deck's Web Audio
+ * GainNodes (immune to background-tab timer throttling). Returns true when
+ * scheduled on Web Audio, or false if the deck is not yet routed through Web Audio.
+ */
+export function scheduleDeckGainCurve(
+  el: HTMLAudioElement | null,
+  outputCurve: Float32Array,
+  analysisCurve: Float32Array,
+  durationSec: number,
+): boolean {
+  if (!el || !ctx) return false;
+  const deck = decks.get(el);
+  if (!deck) return false;
+  if (!Number.isFinite(durationSec) || durationSec <= 0) {
+    throw new RangeError(`Crossfade schedule duration must be positive; received ${durationSec}.`);
+  }
+  const now = ctx.currentTime;
+  el.volume = 1;
+  deck.outputGain.gain.cancelScheduledValues(now);
+  deck.outputGain.gain.setValueCurveAtTime(outputCurve, now, durationSec);
+
+  deck.analysisGain.gain.cancelScheduledValues(now);
+  deck.analysisGain.gain.setValueCurveAtTime(analysisCurve, now, durationSec);
+  return true;
+}
+
+/**
+ * Smoothly ramp a deck's output gain to `target` over `durationSec` (used for
+ * the 10-second gentle sleep-timer fade-out). Returns true when Web Audio
+ * scheduled the ramp.
+ */
+export function rampOutputGain(
+  el: HTMLAudioElement | null,
+  fromGain: number,
+  targetGain: number,
+  durationSec: number,
+): boolean {
+  if (!el || !ctx) return false;
+  const deck = decks.get(el);
+  if (!deck) return false;
+  if (!Number.isFinite(durationSec) || durationSec <= 0) {
+    applyVolume(el, targetGain);
+    return true;
+  }
+  const now = ctx.currentTime;
+  deck.outputGain.gain.cancelScheduledValues(now);
+  deck.outputGain.gain.setValueAtTime(Math.max(0, Math.min(1, fromGain)), now);
+  deck.outputGain.gain.linearRampToValueAtTime(Math.max(0, Math.min(1, targetGain)), now + durationSec);
+  return true;
+}
+
+/**
  * Disconnect a deck that is being permanently removed from the document.
- * MediaElementAudioSourceNode retains its media element, so leaving the graph
- * connected here would leak every PlayerBar mount. The deferred release lets a
- * React Strict Mode effect re-setup retain the same one-shot media source.
  */
 export function releaseAnalyser(el: HTMLAudioElement | null): void {
   if (!el || !decks.has(el) || pendingRelease.has(el)) return;
@@ -155,6 +283,16 @@ export function releaseAnalyser(el: HTMLAudioElement | null): void {
     if (decks.size === 0 && ctx) {
       analyser?.disconnect();
       analyser = null;
+      masterBus?.disconnect();
+      masterBus = null;
+      eqFilters.forEach((filter) => filter.disconnect());
+      eqFilters = [];
+      compressor?.disconnect();
+      compressor = null;
+      dryGain?.disconnect();
+      dryGain = null;
+      wetGain?.disconnect();
+      wetGain = null;
       const closing = ctx;
       ctx = null;
       closing.close().catch((error) => {
@@ -165,11 +303,6 @@ export function releaseAnalyser(el: HTMLAudioElement | null): void {
   pendingRelease.set(el, timer);
 }
 
-// Human loudness perception is roughly logarithmic, so a linear slider feels
-// like nearly all the change happens in the bottom third. Map the slider
-// position (0..1) through a power curve to the audible gain: quieter low end,
-// finer control up top. Endpoints are preserved (0->0, 1->1). Raise the
-// exponent for a stronger taper.
 const VOLUME_CURVE_EXPONENT = 2;
 
 /** Map a linear slider position (0..1) to a perceptual audio gain (0..1). */

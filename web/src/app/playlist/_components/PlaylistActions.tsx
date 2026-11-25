@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { playlistExportUrl } from "@/lib/api";
-import { playlistMemberCount } from "@/lib/playlistPermissions";
+import { canEditPlaylistTracks, playlistMemberCount } from "@/lib/playlistPermissions";
+import { startSeededRadio } from "@/lib/radio";
 import type { ContextMenuItem } from "@/components/ContextMenu";
 import {
+  DedupIcon,
   DownloadIcon,
   DownloadedIcon,
   EditIcon,
@@ -12,6 +15,7 @@ import {
   ImportIcon,
   LockIcon,
   LogOutIcon,
+  RadioIcon,
   SpinnerIcon,
   TrashIcon,
   UsersIcon,
@@ -21,10 +25,26 @@ import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueue
 import { usePlaylistOffline } from "./usePlaylistOffline";
 import { usePlaylistVisibility } from "./usePlaylistSettings";
 
-/** Icon toggle for the playlist's offline copy, with live download progress. */
+function formatPreviewMb(bytes: number | null): string | null {
+  if (!bytes || bytes <= 0) return null;
+  const mb = bytes / (1024 * 1024);
+  return mb < 1 ? "<1 MB" : `~${mb.toLocaleString("de-DE", { maximumFractionDigits: mb >= 100 ? 0 : 1 })} MB`;
+}
+
+/** Icon toggle for the playlist's offline copy, with sync-manifest size preview & live progress. */
 function OfflineButton({ offline }: { offline: ReturnType<typeof usePlaylistOffline> }) {
-  const { downloaded, pending, progress } = offline;
-  const label = pending === "remove" ? "Offline-Download wird entfernt…" : pending === "download" ? "Wird heruntergeladen…" : downloaded ? "Offline-Download entfernen" : "Offline verfügbar machen";
+  const { downloaded, pending, progress, sizePreviewBytes } = offline;
+  const sizeHint = !downloaded ? formatPreviewMb(sizePreviewBytes) : null;
+  const label =
+    pending === "remove"
+      ? "Offline-Download wird entfernt…"
+      : pending === "download"
+        ? "Wird heruntergeladen…"
+        : downloaded
+          ? "Offline-Download entfernen"
+          : sizeHint
+            ? `Offline verfügbar machen (${sizeHint})`
+            : "Offline verfügbar machen";
   return (
     <>
       <button
@@ -35,7 +55,7 @@ function OfflineButton({ offline }: { offline: ReturnType<typeof usePlaylistOffl
         aria-busy={pending !== null}
         aria-label={label}
         title={label}
-        className="action-icon h-11 w-11"
+        className={`action-icon h-11 ${sizeHint ? "w-auto gap-1.5 px-3" : "w-11"}`}
       >
         {pending ? (
           <SpinnerIcon width={22} height={22} className="animate-spin" />
@@ -43,6 +63,9 @@ function OfflineButton({ offline }: { offline: ReturnType<typeof usePlaylistOffl
           <DownloadedIcon width={22} height={22} className="text-success" />
         ) : (
           <DownloadIcon width={24} height={24} />
+        )}
+        {sizeHint && !pending && (
+          <span className="font-mono text-[11px] tabular-nums text-muted">{sizeHint}</span>
         )}
       </button>
       {progress && (
@@ -55,9 +78,9 @@ function OfflineButton({ offline }: { offline: ReturnType<typeof usePlaylistOffl
 }
 
 /**
- * The playlist hero's action row: play, shuffle, offline download and an
- * overflow menu with the rare (edit, cover, visibility, export) and
- * destructive (delete) actions. Owner-only entries are left out for guests.
+ * The playlist hero's action row: play, shuffle, playlist radio, offline download
+ * and an overflow menu with rare (edit, deduplicate, cover, visibility, export)
+ * and destructive (delete) actions. Owner-only entries are left out for guests.
  */
 export default function PlaylistActions({
   id,
@@ -68,6 +91,7 @@ export default function PlaylistActions({
   onDelete,
   onManageCollaborators,
   onLeave,
+  onDeduplicate,
 }: {
   id: string;
   playlist: Playlist;
@@ -77,18 +101,52 @@ export default function PlaylistActions({
   onDelete: () => void;
   onManageCollaborators: () => void;
   onLeave: () => void;
+  onDeduplicate?: () => void;
 }) {
+  const [startingRadio, setStartingRadio] = useState(false);
   const tracks = playlist.tracks;
   const isOwner = Boolean(playlist.is_owner);
   const isCollaborator = Boolean(playlist.is_collaborator);
   const isCollaborative = Boolean(playlist.is_collaborative);
+  const canEdit = canEditPlaylistTracks(playlist);
   const memberCount = playlistMemberCount(playlist);
-  const offline = usePlaylistOffline(id, playlist.name, tracks);
+  const offline = usePlaylistOffline(id, playlist.name, tracks, {
+    kind: "playlist",
+    cover: playlist.cover_url,
+  });
   const visibility = usePlaylistVisibility(id, !!playlist.is_public);
   const queueAll = useQueueAllItem(tracks);
 
+  async function handleStartRadio() {
+    if (startingRadio || tracks.length === 0) return;
+    setStartingRadio(true);
+    try {
+      await startSeededRadio(tracks, `Radio – ${playlist.name}`);
+    } catch {
+      // startSeededRadio surfaces toast.error loudly.
+    } finally {
+      setStartingRadio(false);
+    }
+  }
+
   const items: ContextMenuItem[] = [];
-  if (tracks.length > 0) items.push(queueAll);
+  if (tracks.length > 0) {
+    items.push(queueAll);
+    items.push({
+      label: startingRadio ? "Playlist-Radio startet…" : "Playlist-Radio starten",
+      icon: <RadioIcon width={18} height={18} />,
+      disabled: startingRadio,
+      onClick: () => void handleStartRadio(),
+    });
+  }
+  if (canEdit && tracks.length > 1 && onDeduplicate) {
+    items.push({
+      label: "Duplikate prüfen",
+      icon: <DedupIcon width={18} height={18} />,
+      separated: items.length > 0,
+      onClick: onDeduplicate,
+    });
+  }
   if (isOwner) {
     items.push(
       { label: "Details bearbeiten", icon: <EditIcon />, separated: items.length > 0, onClick: onEdit },
@@ -122,6 +180,18 @@ export default function PlaylistActions({
     <>
       <PlayCollectionButton tracks={tracks} context={playlist.name} />
       <ShuffleCollectionButton tracks={tracks} context={playlist.name} />
+      {tracks.length > 0 && (
+        <button
+          type="button"
+          onClick={() => void handleStartRadio()}
+          disabled={startingRadio}
+          aria-label="Playlist-Radio starten"
+          title="Playlist-Radio starten"
+          className="action-icon h-11 w-11"
+        >
+          {startingRadio ? <SpinnerIcon width={20} height={20} className="animate-spin" /> : <RadioIcon width={20} height={20} />}
+        </button>
+      )}
       {offline.supported && tracks.length > 0 && <OfflineButton offline={offline} />}
       {(isOwner || isCollaborator) && (
         <button

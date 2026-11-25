@@ -34,6 +34,10 @@ const mocks = vi.hoisted(() => ({
   getLikes: vi.fn(),
   getPlaylists: vi.fn(),
   getPlaylist: vi.fn(),
+  getStats: vi.fn(),
+  getHomeMixes: vi.fn(),
+  getReleaseRadar: vi.fn(),
+  getMood: vi.fn(),
   connectivityStatus: 'unknown' as 'unknown' | 'online' | 'offline',
 }));
 
@@ -52,6 +56,10 @@ vi.mock('../data/repositories', () => ({
     getLikes: mocks.getLikes,
     getPlaylists: mocks.getPlaylists,
     getPlaylist: mocks.getPlaylist,
+    getStats: mocks.getStats,
+    getHomeMixes: mocks.getHomeMixes,
+    getReleaseRadar: mocks.getReleaseRadar,
+    getMood: mocks.getMood,
   },
 }));
 
@@ -155,6 +163,10 @@ describe('Android Auto browse-tree publication', () => {
     mocks.getLikes.mockResolvedValue([]);
     mocks.getPlaylists.mockResolvedValue([]);
     mocks.getPlaylist.mockRejectedValue(new Error('getPlaylist should not be called'));
+    mocks.getStats.mockResolvedValue(null);
+    mocks.getHomeMixes.mockResolvedValue([]);
+    mocks.getReleaseRadar.mockResolvedValue([]);
+    mocks.getMood.mockResolvedValue([]);
   });
 
   it('publishes uploaded playlist and track covers as absolute native URLs', async () => {
@@ -308,10 +320,11 @@ describe('Android Auto browse-tree publication', () => {
     ]);
   });
 
-  it('keeps remote browse nodes online and adds Downloads without cache mislabeling', async () => {
+  it('prefers verified local offline URIs in Liked/Playlist nodes while keeping non-downloaded tracks online', async () => {
     seedPartialOfflinePlaylist();
     mocks.connectivityStatus = 'online';
-    mocks.getLikes.mockResolvedValueOnce([track]);
+    const remoteOnlyTrack: Track = { ...track, id: '999999', title: 'Remote Only' };
+    mocks.getLikes.mockResolvedValueOnce([track, remoteOnlyTrack]);
 
     await publishBrowseTree();
 
@@ -321,13 +334,18 @@ describe('Android Auto browse-tree publication', () => {
       'library:downloads',
     ]);
     expect(categories[0].items[0]).toMatchObject({
+      url: { uri: `${offlineDirectory}${track.id}.mp3` },
+      mimeType: 'audio/mpeg',
+      extras: { radio: false, track, explicitDownload: true },
+    });
+    expect(categories[0].items[1]).toMatchObject({
       url: {
-        uri: `https://music.example.test/api/tracks/${track.id}/stream`,
+        uri: `https://music.example.test/api/tracks/${remoteOnlyTrack.id}/stream`,
         headers: { Cookie: 'sf_session=test' },
       },
-      extras: { radio: false, track },
+      extras: { radio: false, track: remoteOnlyTrack },
     });
-    expect(categories[0].items[0].extras.explicitDownload).toBeUndefined();
+    expect(categories[0].items[1].extras.explicitDownload).toBeUndefined();
     expect(categories[1].items[0].children[0].extras.explicitDownload).toBe(true);
   });
 
@@ -569,5 +587,120 @@ describe('Android Auto browse-tree publication', () => {
     expect(mocks.getLikes).toHaveBeenCalledWith(controller.signal);
     expect(mocks.getPlaylists).toHaveBeenCalledWith(controller.signal);
     expect(mocks.getPlaylist).toHaveBeenCalledWith(7, controller.signal);
+  });
+
+  it('publishes individual downloaded songs inside library:downloads -> download-songs:all', () => {
+    const manifest = createEmptyOfflineManifest(offlineScope);
+    manifest.tracks[track.id] = {
+      track,
+      fileName: `${track.id}.mp3`,
+      sizeBytes: 4096,
+      ownerPlaylistIds: [],
+      individualDownload: true,
+      downloadedAt: offlineTime,
+    };
+    publishOfflineManifest({
+      manifest,
+      directoryUri: offlineDirectory,
+      trackUris: { [track.id]: `${offlineDirectory}${track.id}.mp3` },
+      availableDiskBytes: 1_000_000,
+    });
+
+    const category = buildOfflineDownloadsBrowseCategory(
+      getOfflineSnapshot(),
+      offlineUriForTrack,
+      {
+        downloadsTitle: strings.player.autoDownloads,
+        downloadedSongsTitle: strings.player.autoDownloadedSongs,
+        downloadedProgress: strings.player.autoDownloadedProgress,
+      },
+    );
+
+    expect(category).toMatchObject({
+      mediaId: 'library:downloads',
+      items: [
+        {
+          mediaId: 'download-songs:all',
+          title: strings.player.autoDownloadedSongs,
+          children: [
+            {
+              mediaId: `download-song:0:${track.id}`,
+              title: track.title,
+              url: { uri: `${offlineDirectory}${track.id}.mp3` },
+              mimeType: 'audio/mpeg',
+              extras: { explicitDownload: true },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('publishes Auto 2.0 library:home and library:radio categories with grid hints when data is present', async () => {
+    mocks.getStats.mockResolvedValueOnce({
+      recent: [{ ...track, played_at: offlineTime }],
+      periods: [],
+    });
+    mocks.getHomeMixes.mockResolvedValueOnce([
+      { key: 'mix-1', title: 'Daily Mix 1', subtitle: 'For you', tracks: [track] },
+    ]);
+    mocks.getReleaseRadar.mockResolvedValueOnce([
+      { track, reason: { kind: 'followed', artist_name: 'Artist' }, release_date: '2026-11-20' },
+    ]);
+    mocks.getMood.mockImplementation(async (tag: string) => (tag === 'chill' ? [track] : []));
+
+    await publishBrowseTree();
+
+    const categories = mocks.setBrowseTree.mock.calls.at(-1)?.[0];
+    expect(categories?.map((c: { mediaId: string }) => c.mediaId)).toEqual([
+      'library:home',
+      'library:radio',
+    ]);
+    expect(categories?.[0]).toMatchObject({
+      mediaId: 'library:home',
+      contentStyle: 'grid',
+      contentStyleBrowsable: 'grid',
+      mediaType: 'folder_mixed',
+      items: [
+        { mediaId: 'home:recent', mediaType: 'playlist' },
+        { mediaId: 'home:mix:0', title: 'Daily Mix 1', mediaType: 'playlist' },
+        { mediaId: 'home:radar', mediaType: 'playlist' },
+      ],
+    });
+    expect(categories?.[1]).toMatchObject({
+      mediaId: 'library:radio',
+      contentStyle: 'grid',
+      contentStyleBrowsable: 'grid',
+      mediaType: 'folder_radio_stations',
+      items: [
+        { mediaId: 'radio:mood:chill', mediaType: 'radio_station' },
+      ],
+    });
+    const nativeTree = mapBrowseTreeToNative(categories);
+    expect(nativeTree.root.children?.[0]).toMatchObject({
+      id: 'library:home',
+      contentStyleBrowsable: 'grid',
+      contentStylePlayable: 'list',
+      mediaType: 'folder_mixed',
+    });
+    expect(nativeTree.root.children?.[1]?.children?.[0]).toMatchObject({
+      id: 'radio:mood:chill',
+      mediaType: 'radio_station',
+    });
+  });
+
+  it('reports rejected Auto 2.0 optional reads loudly while still publishing healthy categories', async () => {
+    mocks.getLikes.mockResolvedValueOnce([track]);
+    mocks.getHomeMixes.mockRejectedValueOnce(new Error('mixes timeout'));
+    mocks.getMood.mockImplementation(async (tag: string) => {
+      if (tag === 'party') throw new Error('mood service 503');
+      return [];
+    });
+
+    await expect(publishBrowseTree()).rejects.toThrow(
+      /Personal mixes: Error: mixes timeout.*Mood radio \(party\): Error: mood service 503/,
+    );
+    const categories = mocks.setBrowseTree.mock.calls.at(-1)?.[0];
+    expect(categories?.map((c: { mediaId: string }) => c.mediaId)).toEqual(['library:liked']);
   });
 });

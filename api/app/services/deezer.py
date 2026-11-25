@@ -352,7 +352,7 @@ def get_picture_link(pic_idid):
     return url
 
 
-def writeid3v2(fo, song):
+def writeid3v2(fo, song, *, embed_cover: bool = False):
 
     def make28bit(x):
         return (
@@ -384,28 +384,6 @@ def writeid3v2(fo, song):
         return "\x03{}".format(txt).encode()
 
     def makepic(data):
-        # Picture type:
-        # 0x00     Other
-        # 0x01     32x32 pixels 'file icon' (PNG only)
-        # 0x02     Other file icon
-        # 0x03     Cover (front)
-        # 0x04     Cover (back)
-        # 0x05     Leaflet page
-        # 0x06     Media (e.g. lable side of CD)
-        # 0x07     Lead artist/lead performer/soloist
-        # 0x08     Artist/performer
-        # 0x09     Conductor
-        # 0x0A     Band/Orchestra
-        # 0x0B     Composer
-        # 0x0C     Lyricist/text writer
-        # 0x0D     Recording Location
-        # 0x0E     During recording
-        # 0x0F     During performance
-        # 0x10     Movie/video screen capture
-        # 0x11     A bright coloured fish
-        # 0x12     Illustration
-        # 0x13     Band/artist logotype
-        # 0x14     Publisher/Studio logotype
         imgframe = (
             b"\x00",  # text encoding
             b"image/jpeg",
@@ -450,72 +428,36 @@ def writeid3v2(fo, song):
 
     # http://id3.org/id3v2.3.0#Attached_picture
     id3 = [
-        maketag(
-            "TRCK", makeutf8(track)
-        ),  # The 'Track number/Position in set' frame is a numeric string containing the order number of the audio-file on its original recording. This may be extended with a "/" character and a numeric string containing the total numer of tracks/elements on the original recording. E.g. "4/9".
-        maketag(
-            "TLEN", makeutf8(str(int(song["DURATION"]) * 1000))
-        ),  # The 'Length' frame contains the length of the audiofile in milliseconds, represented as a numeric string.
-        maketag(
-            "TORY", makeutf8(str(album_get("PHYSICAL_RELEASE_DATE")[:4]))
-        ),  # The 'Original release year' frame is intended for the year when the original recording was released. if for example the music in the file should be a cover of a previously released song
-        maketag(
-            "TYER", makeutf8(str(album_get("DIGITAL_RELEASE_DATE")[:4]))
-        ),  # The 'Year' frame is a numeric string with a year of the recording. This frames is always four characters long (until the year 10000).
-        maketag(
-            "TDAT", makeutf8(str(phyDate_DDMM))
-        ),  # The 'Date' frame is a numeric string in the DDMM format containing the date for the recording. This field is always four characters long.
-        maketag(
-            "TPUB", makeutf8(album_get("LABEL_NAME"))
-        ),  # The 'Publisher' frame simply contains the name of the label or publisher.
-        maketag(
-            "TSIZ", makeutf8(str(FileSize))
-        ),  # The 'Size' frame contains the size of the audiofile in bytes, excluding the ID3v2 tag, represented as a numeric string.
+        maketag("TRCK", makeutf8(track)),
+        maketag("TLEN", makeutf8(str(int(song["DURATION"]) * 1000))),
+        maketag("TORY", makeutf8(str(album_get("PHYSICAL_RELEASE_DATE")[:4]))),
+        maketag("TYER", makeutf8(str(album_get("DIGITAL_RELEASE_DATE")[:4]))),
+        maketag("TDAT", makeutf8(str(phyDate_DDMM))),
+        maketag("TPUB", makeutf8(album_get("LABEL_NAME"))),
+        maketag("TSIZ", makeutf8(str(FileSize))),
         maketag("TFLT", makeutf8("MPG/3")),
-    ]  # decimal, no term NUL
+    ]
     id3.extend(
         [
             maketag(ID_id3_frame, makeutf8(song_get(song, ID_song)))
             for (ID_id3_frame, ID_song) in (
-                (
-                    "TALB",
-                    "ALB_TITLE",
-                ),  # The 'Album/Movie/Show title' frame is intended for the title of the recording(/source of sound) which the audio in the file is taken from.
-                (
-                    "TPE1",
-                    "ART_NAME",
-                ),  # The 'Lead artist(s)/Lead performer(s)/Soloist(s)/Performing group' is used for the main artist(s). They are seperated with the "/" character.
-                (
-                    "TPE2",
-                    "ART_NAME",
-                ),  # The 'Band/Orchestra/Accompaniment' frame is used for additional information about the performers in the recording.
-                (
-                    "TPOS",
-                    "DISK_NUMBER",
-                ),  # The 'Part of a set' frame is a numeric string that describes which part of a set the audio came from. This frame is used if the source described in the "TALB" frame is divided into several mediums, e.g. a double CD. The value may be extended with a "/" character and a numeric string containing the total number of parts in the set. E.g. "1/2".
-                (
-                    "TIT2",
-                    "SNG_TITLE",
-                ),  # The 'Title/Songname/Content description' frame is the actual name of the piece (e.g. "Adagio", "Hurricane Donna").
-                (
-                    "TSRC",
-                    "ISRC",
-                ),  # The 'ISRC' frame should contain the International Standard Recording Code (ISRC) (12 characters).
+                ("TALB", "ALB_TITLE"),
+                ("TPE1", "ART_NAME"),
+                ("TPE2", "ART_NAME"),
+                ("TPOS", "DISK_NUMBER"),
+                ("TIT2", "SNG_TITLE"),
+                ("TSRC", "ISRC"),
             )
         ]
     )
 
-    try:
-        id3.append(maketag("APIC", makepic(downloadpicture(song["ALB_PICTURE"]))))
-    except Exception as e:
-        print("ERROR: no album cover?", e)
+    if embed_cover and song.get("ALB_PICTURE"):
+        try:
+            id3.append(maketag("APIC", makepic(downloadpicture(song["ALB_PICTURE"]))))
+        except Exception as e:
+            print("ERROR: no album cover?", e)
 
     id3data = b"".join(id3)
-    # >      big-endian
-    # s      char[]  bytes
-    # H      unsigned short  integer 2
-    # B      unsigned char   integer 1
-    # L      unsigned long   integer 4
 
     hdr = struct.pack(
         ">" "3s" "H" "B" "L",
@@ -527,6 +469,51 @@ def writeid3v2(fo, song):
 
     fo.write(hdr)
     fo.write(id3data)
+
+
+def inject_cover_art_to_mp3(source_path: str, cover_bytes: bytes, dest_path: str) -> None:
+    """Copy an MP3 file to ``dest_path`` with an embedded ID3v2.3 APIC JPEG frame.
+
+    Used exclusively during playlist ZIP export so live streaming avoids fetching
+    and bundling 1200px cover images in every stream.
+    """
+    def _make28bit(x: int) -> int:
+        return (
+            ((x << 3) & 0x7F000000)
+            | ((x << 2) & 0x7F0000)
+            | ((x << 1) & 0x7F00)
+            | (x & 0x7F)
+        )
+
+    def _from28bit(b: bytes) -> int:
+        return ((b[0] & 0x7F) << 21) | ((b[1] & 0x7F) << 14) | ((b[2] & 0x7F) << 7) | (b[3] & 0x7F)
+
+    apic_body = b"".join((b"\x00", b"image/jpeg", b"\x00", b"\x03", b"\x00", cover_bytes))
+    apic_frame = struct.pack(">4sLH", b"APIC", len(apic_body), 0) + apic_body
+
+    with open(source_path, "rb") as src:
+        raw = src.read()
+
+    if raw[:3] == b"ID3" and len(raw) >= 10:
+        existing_size = _from28bit(raw[6:10])
+        existing_frames = raw[10 : 10 + existing_size]
+        audio_payload = raw[10 + existing_size :]
+        if b"APIC" in existing_frames:
+            with open(dest_path, "wb") as dst:
+                dst.write(raw)
+            return
+        new_frames = existing_frames + apic_frame
+        new_hdr = struct.pack(">3sHBL", b"ID3", 0x300, 0x00, _make28bit(len(new_frames)))
+        with open(dest_path, "wb") as dst:
+            dst.write(new_hdr)
+            dst.write(new_frames)
+            dst.write(audio_payload)
+    else:
+        new_hdr = struct.pack(">3sHBL", b"ID3", 0x300, 0x00, _make28bit(len(apic_frame)))
+        with open(dest_path, "wb") as dst:
+            dst.write(new_hdr)
+            dst.write(apic_frame)
+            dst.write(raw)
 
 
 def get_song_url(track_token: str, fmt: str | None = None) -> str:
@@ -576,36 +563,56 @@ def get_song_url(track_token: str, fmt: str | None = None) -> str:
     return entry["media"][0]["sources"][0]["url"]
 
 
-def _candidate_formats(song: dict) -> list[str]:
-    """Formats to attempt, best first: the configured quality, then every other
-    quality the track actually reports (non-zero FILESIZE). Lets a track that
-    isn't offered in the preferred format still download in whatever it has.
+def _candidate_formats(song: dict, preferred_format: str | None = None) -> list[str]:
+    """Formats to attempt, best first for the requested tier.
+
+    ``preferred_format`` overrides the global ``sound_format`` (used for
+    per-request quality tiers: ``FLAC`` for lossless, ``MP3_320`` for high,
+    ``MP3_128`` for data-saver).
     """
-    order = (["FLAC"] if sound_format == "FLAC" else []) + _MP3_FORMATS
-    if sound_format in order:
-        order.remove(sound_format)
-    order.insert(0, sound_format or "MP3_128")
+    target = preferred_format or sound_format or "MP3_128"
+    if target == "MP3_128":
+        order = ["MP3_128", "MP3_64", "MP3_256", "MP3_320"]
+    elif target == "FLAC":
+        order = ["FLAC"] + list(_MP3_FORMATS)
+    else:
+        order = (["FLAC"] if target == "FLAC" else []) + list(_MP3_FORMATS)
+        if target in order:
+            order.remove(target)
+        order.insert(0, target)
 
     available = [f for f in order if int(song.get(f"FILESIZE_{f}", 0) or 0) > 0]
-    # Deduplicate while preserving order.
     seen: set[str] = set()
     available = [f for f in available if not (f in seen or seen.add(f))]
-    # If the track carries no size info, still try the preferred format.
-    return available or [sound_format or "MP3_128"]
+    return available or [target]
 
 
-def _fetch_to_file(url: str, key: bytes, song: dict, fmt: str, output_file: str) -> None:
+def _fetch_to_file(
+    url: str,
+    key: bytes,
+    song: dict,
+    fmt: str,
+    output_file: str,
+    *,
+    embed_cover: bool = False,
+) -> None:
     """Stream + decrypt one CDN URL to disk, then verify it isn't truncated.
+
+    FLAC streams are written verbatim without ID3v2/ID3v1.1 headers because
+    prepending ID3 bytes corrupts native FLAC decoders.
 
     Raises ``TruncatedDownload`` (retryable) on a short body so a CDN glitch
     doesn't get cached as a corrupt, unplayable file.
     """
+    is_flac = fmt.upper() == "FLAC"
     with session.get(url, stream=True, timeout=REQUEST_TIMEOUT) as response:
         response.raise_for_status()
         with open(output_file, "w+b") as fo:
-            writeid3v2(fo, song)  # cover art + first header
+            if not is_flac:
+                writeid3v2(fo, song, embed_cover=embed_cover)
             audio_bytes = decryptfile(response, key, fo)
-            writeid3v1_1(fo, song)
+            if not is_flac:
+                writeid3v1_1(fo, song)
 
     expected = int(song.get(f"FILESIZE_{fmt}", 0) or song.get("FILESIZE", 0) or 0)
     if expected > 0 and audio_bytes < expected * 0.9:
@@ -616,8 +623,14 @@ def _fetch_to_file(url: str, key: bytes, song: dict, fmt: str, output_file: str)
         raise TruncatedDownload(f"only {audio_bytes} audio bytes written ({fmt})")
 
 
-def download_song(song: dict, output_file: str) -> None:
-    """Download + decrypt a Deezer track to ``output_file``.
+def download_song(
+    song: dict,
+    output_file: str,
+    *,
+    fmt_override: str | None = None,
+    embed_cover: bool = False,
+) -> str:
+    """Download + decrypt a Deezer track to ``output_file`` and return the format used.
 
     Resilient to transient failures: retries network/CDN hiccups with backoff,
     falls back across the qualities the track offers, and finally tries Deezer's
@@ -636,7 +649,7 @@ def download_song(song: dict, output_file: str) -> None:
             errors.append(f"track {cand.get('SNG_ID')}: missing token")
             continue
         key = calcbfkey(cand["SNG_ID"])
-        for fmt in _candidate_formats(cand):
+        for fmt in _candidate_formats(cand, preferred_format=fmt_override):
             try:
                 url = _retry_transient(lambda: get_song_url(cand["TRACK_TOKEN"], fmt))
             except Deezer403Exception:
@@ -650,12 +663,16 @@ def download_song(song: dict, output_file: str) -> None:
                 errors.append(f"url {fmt}: {e}")
                 continue
             try:
-                _retry_transient(lambda: _fetch_to_file(url, key, cand, fmt, output_file))
+                _retry_transient(
+                    lambda: _fetch_to_file(
+                        url, key, cand, fmt, output_file, embed_cover=embed_cover
+                    )
+                )
             except Exception as e:  # noqa: BLE001 — recorded and surfaced below
                 errors.append(f"download {fmt}: {e}")
                 continue
             print(f"Download finished ({fmt}, track {cand['SNG_ID']}): {output_file}")
-            return
+            return fmt
 
     raise DeezerApiException(
         f"Track {song.get('SNG_ID')} could not be downloaded after "

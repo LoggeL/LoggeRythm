@@ -18,6 +18,7 @@ export const appLinkingConfig: NonNullable<LinkingOptions<RootStackParams>['conf
       initialRouteName: 'HomeTab',
       screens: {
         HomeTab: {
+          initialRouteName: 'Home' as never,
           screens: {
             Home: '',
             Mix: {
@@ -40,6 +41,10 @@ export const appLinkingConfig: NonNullable<LinkingOptions<RootStackParams>['conf
               path: 'playlist/:playlistId',
               parse: { playlistId: playlistIdFromRouteValue },
             },
+            UserProfile: {
+              path: 'user/:userId',
+              parse: { userId: playlistIdFromRouteValue },
+            },
           },
         },
         RadioTab: { screens: { Radio: 'radio' } },
@@ -47,8 +52,10 @@ export const appLinkingConfig: NonNullable<LinkingOptions<RootStackParams>['conf
       },
     },
     Profile: 'account',
+    Insights: 'insights',
     NowPlaying: 'now-playing',
     Queue: 'queue',
+    PartyStart: 'party/start',
     Party: {
       path: 'party/:code',
       parse: { code: (value: string) => normalizePartyCode(value) ?? '' },

@@ -44,6 +44,7 @@ const stubs = {
     "export function PlayIcon() {return null;} export const RadioIcon = PlayIcon; export const CompassIcon = PlayIcon; export const ChevronLeftIcon = PlayIcon; export const ChevronRightIcon = PlayIcon;",
   ),
   "@/components/CoverPlaceholder": empty,
+  "@/components/social/FriendsListeningPanel": empty,
   "@/components/ShelfCard": moduleUrl(
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function ShelfCard({shelf, statusBadge}) {return createElement('p', null, shelf.title, statusBadge ? ' [' + statusBadge + ']' : '');}`,
   ),
@@ -75,7 +76,7 @@ test("Home fetches only personalized content and keeps discovery features reacha
   const html = screen();
   assert.deepEqual(
     fixture.requests.map((request) => request.queryKey[0]),
-    ["home-mixes", "because-you-listened"],
+    ["home-mixes", "home-personal-mixes", "because-you-listened"],
   );
   assert.ok(fixture.requests.every((request) => request.enabled));
   assert.equal(fixture.radarEnabled, true);

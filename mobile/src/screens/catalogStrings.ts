@@ -26,6 +26,8 @@ export interface CatalogScreenStrings {
     playTrack: (title: string, artist: string) => string;
     refresh: string;
     refreshingNow: string;
+    share: string;
+    shareFailed: string;
   };
   discover: {
     title: string;
@@ -49,6 +51,12 @@ export interface CatalogScreenStrings {
     tracks: string;
     byArtist: (artist: string) => string;
     runtime: (minutes: number) => string;
+    download: string;
+    removeDownload: string;
+    downloading: string;
+    downloaded: string;
+    downloadFailed: string;
+    removeDownloadFailed: string;
   };
   genre: {
     loading: string;
@@ -96,6 +104,9 @@ export interface CatalogScreenStrings {
     clearSongSearch: string;
     showMoreAbout: string;
     showLessAbout: string;
+    startTagRadio: (tag: string) => string;
+    tagRadioFailed: (tag: string) => string;
+    tagRadioEmpty: (tag: string) => string;
   };
 }
 
@@ -126,6 +137,8 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       playTrack: (title, artist) => `${title} von ${artist} abspielen`,
       refresh: 'Aktualisieren',
       refreshingNow: 'Wird aktualisiert…',
+      share: 'Teilen',
+      shareFailed: 'Link konnte nicht geteilt werden.',
     },
     discover: {
       title: 'Entdecken',
@@ -153,6 +166,12 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
         if (minutes < 60) return `${minutes} Min.`;
         return `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
       },
+      download: 'Album herunterladen',
+      removeDownload: 'Album-Download entfernen',
+      downloading: 'Wird heruntergeladen…',
+      downloaded: 'Heruntergeladen',
+      downloadFailed: 'Album konnte nicht heruntergeladen werden.',
+      removeDownloadFailed: 'Album-Download konnte nicht entfernt werden.',
     },
     genre: {
       loading: 'Genre wird geladen…',
@@ -201,6 +220,9 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       clearSongSearch: 'Suche leeren',
       showMoreAbout: 'Mehr anzeigen',
       showLessAbout: 'Weniger anzeigen',
+      startTagRadio: (tag) => `${tag}-Radio starten`,
+      tagRadioFailed: (tag) => `${tag}-Radio konnte nicht gestartet werden.`,
+      tagRadioEmpty: (tag) => `Für „${tag}“ wurden keine Radio-Titel gefunden.`,
     },
   },
   en: {
@@ -229,6 +251,8 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       playTrack: (title, artist) => `Play ${title} by ${artist}`,
       refresh: 'Refresh',
       refreshingNow: 'Refreshing…',
+      share: 'Share',
+      shareFailed: 'Could not share the link.',
     },
     discover: {
       title: 'Discover',
@@ -258,6 +282,12 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
         const hours = Math.floor(minutes / 60);
         return `${hours} ${hours === 1 ? 'hr' : 'hrs'} ${minutes % 60} min`;
       },
+      download: 'Download album',
+      removeDownload: 'Remove album download',
+      downloading: 'Downloading…',
+      downloaded: 'Downloaded',
+      downloadFailed: 'Could not download the album.',
+      removeDownloadFailed: 'Could not remove album download.',
     },
     genre: {
       loading: 'Loading genre…',
@@ -306,6 +336,9 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       clearSongSearch: 'Clear search',
       showMoreAbout: 'Show more',
       showLessAbout: 'Show less',
+      startTagRadio: (tag) => `Start ${tag} radio`,
+      tagRadioFailed: (tag) => `Could not start ${tag} radio.`,
+      tagRadioEmpty: (tag) => `No radio tracks found for “${tag}”.`,
     },
   },
 };

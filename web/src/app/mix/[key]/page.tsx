@@ -13,20 +13,25 @@ import QueryError from "@/components/ui/QueryError";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
 import { CollectionSkeleton, useLoadingPlaceholder } from "@/app/playlist/_components/CollectionPageState";
-import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem } from "@/app/playlist/_components/CollectionActions";
+import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem, useSaveAsPlaylistItem } from "@/app/playlist/_components/CollectionActions";
 import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 import type { HomeShelf } from "@/types";
 
-// Home links to mixes from two feeds. The API prefixes every
-// "because you listened" shelf key with "byl-" (routers/home.py); all other
-// keys belong to the personal mixes. Query keys match the home page so the
-// shelves the user just clicked come straight from the cache.
+// Home links to mixes from three feeds:
+// - `byl-*` ("because you listened")
+// - `on-repeat`, `forgotten-favorites`, `unheard-cuts` (personal mixes from play history)
+// - all other keys belong to the Deezer-backed home mixes.
 const BECAUSE_YOU_LISTENED_PREFIX = "byl-";
+const PERSONAL_MIX_KEYS = new Set(["on-repeat", "forgotten-favorites", "unheard-cuts"]);
 
 function mixSource(key: string, userId: string | null) {
-  return key.startsWith(BECAUSE_YOU_LISTENED_PREFIX)
-    ? { queryKey: ["because-you-listened", userId], queryFn: () => api.becauseYouListened(), label: "Empfehlungen zu deiner Musik" }
-    : { queryKey: ["home-mixes", userId], queryFn: () => api.homeMixes(), label: "Deine Mixe" };
+  if (key.startsWith(BECAUSE_YOU_LISTENED_PREFIX)) {
+    return { queryKey: ["because-you-listened", userId], queryFn: () => api.becauseYouListened(), label: "Empfehlungen zu deiner Musik" };
+  }
+  if (PERSONAL_MIX_KEYS.has(key)) {
+    return { queryKey: ["home-personal-mixes", userId], queryFn: () => api.homePersonalMixes(), label: "Aus deinem Hörverlauf" };
+  }
+  return { queryKey: ["home-mixes", userId], queryFn: () => api.homeMixes(), label: "Deine Mixe" };
 }
 
 export default function MixPage({ params }: { params: Promise<{ key: string }> }) {
@@ -94,6 +99,7 @@ function MixView({ mix }: { mix: HomeShelf }) {
   const tracks = mix.tracks;
   const cover = mix.cover || tracks.find((track) => track.cover)?.cover;
   const queueAll = useQueueAllItem(tracks);
+  const savePlaylist = useSaveAsPlaylistItem(mix.title, tracks, mix.subtitle);
 
   return (
     <>
@@ -108,7 +114,7 @@ function MixView({ mix }: { mix: HomeShelf }) {
           <>
             <PlayCollectionButton tracks={tracks} context={mix.title} />
             <ShuffleCollectionButton tracks={tracks} context={mix.title} />
-            {tracks.length > 0 && <CollectionMenu label="Weitere Optionen für diesen Mix" items={[queueAll]} />}
+            {tracks.length > 0 && <CollectionMenu label="Weitere Optionen für diesen Mix" items={[queueAll, savePlaylist]} />}
           </>
         }
       />

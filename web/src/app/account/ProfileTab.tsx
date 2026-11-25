@@ -8,9 +8,9 @@ import { toast } from "@/store/toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import Modal from "@/components/Modal";
 import { EyeIcon, EyeOffIcon } from "@/components/feedbackIcons";
-import { DownloadIcon, EditIcon, UserIcon } from "@/components/icons";
-import type { User } from "@/types";
-import { errorMessage, SettingsCard, SettingsRow } from "./presentation";
+import { DownloadIcon, EditIcon, UserIcon, UsersIcon } from "@/components/icons";
+import type { PlaybackSettings, User } from "@/types";
+import { errorMessage, SectionError, SettingsCard, SettingsRow, Switch } from "./presentation";
 
 const FORM_ID = "edit-profile-form";
 const LATEST_RELEASE_API = "https://api.github.com/repos/LoggeL/LoggeRythm/releases/latest";
@@ -197,7 +197,59 @@ function EditProfileDialog({ me, onClose }: { me: User; onClose: () => void }) {
   );
 }
 
-/** "Profil" tab: personal data, Android app download, session and account deletion. */
+function SocialPrivacyCard() {
+  const qc = useQueryClient();
+  const { data, isLoading, isFetching, error, refetch } = useQuery<PlaybackSettings>({
+    queryKey: ["playback-settings"],
+    queryFn: api.settings,
+  });
+
+  const update = useMutation({
+    mutationFn: (share: boolean) => api.updateSettings({ share_listening_activity: share }),
+    onSuccess: (next) => {
+      qc.setQueryData(["playback-settings"], next);
+      toast.success(
+        next.share_listening_activity
+          ? "Höraktivität wird jetzt live mit Freunden geteilt."
+          : "Höraktivität ist jetzt privat.",
+      );
+    },
+    onError: (err) => toast.error(`Einstellung konnte nicht gespeichert werden: ${errorMessage(err)}`),
+  });
+
+  return (
+    <SettingsCard
+      title="Privatsphäre & Freunde"
+      description="Entscheide selbst, ob andere Mitglieder dieses Servers sehen dürfen, was du gerade hörst."
+      icon={<UsersIcon width={18} height={18} />}
+    >
+      {isLoading && <span className="skeleton block h-11 rounded-xl" />}
+      {error && (
+        <SectionError
+          label="Die Privatsphäre-Einstellungen"
+          error={error}
+          retrying={isFetching}
+          onRetry={() => void refetch()}
+        />
+      )}
+      {data && (
+        <SettingsRow
+          label="Höraktivität teilen"
+          description="Zeigt Freunden deinen aktuellen Titel und ermöglicht den Direktbeitritt zu deiner aktiven Jam."
+        >
+          <Switch
+            label="Höraktivität mit Freunden teilen"
+            checked={Boolean(data.share_listening_activity)}
+            disabled={update.isPending}
+            onChange={(checked) => update.mutate(checked)}
+          />
+        </SettingsRow>
+      )}
+    </SettingsCard>
+  );
+}
+
+/** "Profil" tab: personal data, privacy, Android app download, session and account deletion. */
 export default function ProfileTab({ me }: { me: User }) {
   const logout = useLogout();
   const qc = useQueryClient();
@@ -257,6 +309,8 @@ export default function ProfileTab({ me }: { me: User }) {
           </span>
         </SettingsRow>
       </SettingsCard>
+
+      <SocialPrivacyCard />
 
       <AndroidAppCard />
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import type { PartyMember, PartyState, PartyTrack, Track } from '../../api/types';
 import { strings } from '../../localization';
+import { wave2Strings } from '../../localization/wave2Strings';
 import {
   canControlPartyPlayback,
   canRemovePartyTrack,
@@ -30,6 +31,11 @@ interface PartyHeaderProps {
   onEnd?: () => void;
   onRename?: (nextName: string) => void;
   onToggleGuestsCanControl?: (enabled: boolean) => void;
+  onToggleAutoDj?: (enabled: boolean) => void;
+  onFillAutoDj?: () => void;
+  fillingAutoDj?: boolean;
+  onSaveAsPlaylist?: () => void;
+  onOpenKiosk?: () => void;
   onToggleControlOnly?: (enabled: boolean) => void;
 }
 
@@ -50,6 +56,11 @@ export function PartyHeader({
   onEnd,
   onRename,
   onToggleGuestsCanControl,
+  onToggleAutoDj,
+  onFillAutoDj,
+  fillingAutoDj = false,
+  onSaveAsPlaylist,
+  onOpenKiosk,
   onToggleControlOnly,
 }: PartyHeaderProps) {
   const stale = phase === 'stale';
@@ -226,7 +237,65 @@ export function PartyHeader({
         </Pressable>
       ) : null}
 
+      {party.is_host && onToggleAutoDj !== undefined ? (
+        <Pressable
+          testID="party-auto-dj-toggle"
+          accessibilityRole="switch"
+          accessibilityLabel={wave2Strings.party2.autoDjLabel}
+          accessibilityHint={wave2Strings.party2.autoDjHint}
+          accessibilityState={{ checked: party.auto_dj === true, disabled: locked }}
+          disabled={locked}
+          onPress={() => onToggleAutoDj(!(party.auto_dj === true))}
+          style={({ pressed }) => [
+            styles.toggleRow,
+            party.auto_dj === true ? styles.toggleRowActive : null,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <View style={styles.toggleCopy}>
+            <AppText variant="bodyStrong">{wave2Strings.party2.autoDjLabel}</AppText>
+            <AppText variant="caption" color="secondary">{wave2Strings.party2.autoDjHint}</AppText>
+          </View>
+          <AppIcon
+            name={party.auto_dj === true ? 'toggle-switch' : 'toggle-switch-off-outline'}
+            size={32}
+            color={party.auto_dj === true ? colors.accent : colors.textMuted}
+          />
+        </Pressable>
+      ) : null}
+
       <View style={styles.headerActions}>
+        {onOpenKiosk !== undefined ? (
+          <ActionButton
+            testID="party-open-kiosk"
+            label={wave2Strings.party2.kioskButton}
+            icon="television"
+            variant="primary"
+            disabled={locked}
+            onPress={onOpenKiosk}
+          />
+        ) : null}
+        {onSaveAsPlaylist !== undefined && party.tracks.length > 0 ? (
+          <ActionButton
+            testID="party-save-playlist"
+            label={wave2Strings.party2.savePlaylistButton}
+            icon="playlist-plus"
+            variant="secondary"
+            disabled={locked}
+            onPress={onSaveAsPlaylist}
+          />
+        ) : null}
+        {party.is_host && onFillAutoDj !== undefined ? (
+          <ActionButton
+            testID="party-fill-auto-dj"
+            label={fillingAutoDj ? wave2Strings.party2.fillingAutoDj : wave2Strings.party2.fillAutoDj}
+            icon="auto-fix"
+            variant="secondary"
+            busy={fillingAutoDj}
+            disabled={locked}
+            onPress={onFillAutoDj}
+          />
+        ) : null}
         {party.is_host && onEnd !== undefined ? (
           <ActionButton
             testID="party-end"
@@ -683,20 +752,28 @@ interface PartyMembersProps {
   isHost?: boolean;
   locked?: boolean;
   onKick?: (member: PartyMember) => void;
+  onTransferHost?: (member: PartyMember) => void;
 }
 
-/** Everyone in the Jam; marks host and guests, and lets the host remove participants. */
+/** Everyone in the Jam; marks host and guests, and lets the host transfer role or remove participants. */
 export function PartyMembers({
   members,
   isHost = false,
   locked = false,
   onKick,
+  onTransferHost,
 }: PartyMembersProps) {
   return (
     <View testID="party-members" style={styles.members}>
       {members.map((member, index) => {
         const memberIsHost = member.is_host;
         const canKick = isHost && !memberIsHost && member.key !== '' && onKick !== undefined;
+        const canTransfer =
+          isHost
+          && !memberIsHost
+          && !member.is_guest
+          && member.key !== ''
+          && onTransferHost !== undefined;
         return (
           <View key={`${member.key || member.name}-${index}`} style={styles.member}>
             <Artwork uri={member.avatar_url ?? ''} size={layout.artwork.xs} icon="account" />
@@ -710,6 +787,16 @@ export function PartyMembers({
               <AppText variant="micro" color="muted" style={styles.memberBadge}>
                 {strings.party.guestBadge}
               </AppText>
+            ) : null}
+            {canTransfer ? (
+              <IconButton
+                testID={`party-member-transfer-${member.key}`}
+                icon="crown-outline"
+                size="sm"
+                accessibilityLabel={wave2Strings.party2.transferHost(member.name)}
+                disabled={locked}
+                onPress={() => onTransferHost(member)}
+              />
             ) : null}
             {canKick ? (
               <IconButton

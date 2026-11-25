@@ -331,3 +331,56 @@ def test_collaborative_playlist_cli_rejects_bad_arguments():
     with pytest.raises(CliError) as err:
         execute(build_parser().parse_args(["playlists", "remove-collaborator", "7", "abc"]), client=api)
     assert err.value.code == "invalid_argument"
+
+
+def test_connect_cli_commands():
+    track = {"id": "555", "title": "Track", "artists": [{"id": "1", "name": "Art"}]}
+    api, transport = client(
+        FakeResponse({"active_device_id": "dev-1", "devices": [], "playback": {}}),
+        FakeResponse({"command_id": "c1", "target_device_id": "dev-1", "ok": True, "error": None}),
+        FakeResponse({"command_id": "c2", "target_device_id": "dev-2", "ok": True, "error": None}),
+        FakeResponse({"command_id": "c3", "target_device_id": "dev-1", "ok": True, "error": None}),
+        FakeResponse({"command_id": "c4", "target_device_id": "dev-1", "ok": True, "error": None}),
+        FakeResponse({"active_device_id": "dev-2", "devices": [], "playback": {}}),
+        FakeResponse({"active_device_id": "dev-3", "devices": [], "playback": {}}),
+        FakeResponse(track),
+        FakeResponse({"command_id": "c5", "target_device_id": "dev-1", "ok": True, "error": None}),
+        FakeResponse(track),
+        FakeResponse({"command_id": "c6", "target_device_id": "dev-2", "ok": True, "error": None}),
+    )
+    execute(build_parser().parse_args(["connect", "status"]), client=api)
+    execute(build_parser().parse_args(["connect", "play"]), client=api)
+    execute(build_parser().parse_args(["connect", "pause", "--device", "dev-2"]), client=api)
+    execute(build_parser().parse_args(["connect", "next"]), client=api)
+    execute(build_parser().parse_args(["connect", "prev"]), client=api)
+    execute(build_parser().parse_args(["connect", "transfer", "dev-2", "--play"]), client=api)
+    execute(build_parser().parse_args(["connect", "transfer", "dev-3", "--pause"]), client=api)
+    execute(build_parser().parse_args(["connect", "queue", "555"]), client=api)
+    execute(build_parser().parse_args(["connect", "queue", "555", "--next", "--device", "dev-2"]), client=api)
+
+    assert [(m, u, kw.get("json")) for m, u, kw in transport.calls] == [
+        ("GET", "https://example.com/api/connect/state", None),
+        ("POST", "https://example.com/api/connect/command", {"action": "play", "payload": {}}),
+        ("POST", "https://example.com/api/connect/command", {"action": "pause", "payload": {}, "target_device_id": "dev-2"}),
+        ("POST", "https://example.com/api/connect/command", {"action": "next", "payload": {}}),
+        ("POST", "https://example.com/api/connect/command", {"action": "prev", "payload": {}}),
+        ("POST", "https://example.com/api/connect/transfer", {"target_device_id": "dev-2", "play": True}),
+        ("POST", "https://example.com/api/connect/transfer", {"target_device_id": "dev-3", "play": False}),
+        ("GET", "https://example.com/api/tracks/555", None),
+        ("POST", "https://example.com/api/connect/command", {"action": "queue_add", "payload": {"track": track}}),
+        ("GET", "https://example.com/api/tracks/555", None),
+        ("POST", "https://example.com/api/connect/command", {"action": "queue_play_next", "payload": {"track": track}, "target_device_id": "dev-2"}),
+    ]
+
+
+def test_connect_cli_rejects_blank_device_or_bad_track():
+    api, _ = client()
+    with pytest.raises(CliError) as err:
+        execute(build_parser().parse_args(["connect", "transfer", "   "]), client=api)
+    assert err.value.code == "invalid_argument"
+    with pytest.raises(CliError) as err:
+        execute(build_parser().parse_args(["connect", "play", "--device", "   "]), client=api)
+    assert err.value.code == "invalid_argument"
+    with pytest.raises(CliError) as err:
+        execute(build_parser().parse_args(["connect", "queue", "not-numeric"]), client=api)
+    assert err.value.code == "invalid_argument"

@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/loggerythm_widget_bg"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="12dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="12dp"
+    android:paddingBottom="10dp">
+
+    <FrameLayout
+        android:id="@+id/widget_artwork_container"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:background="@drawable/loggerythm_widget_art_bg">
+
+        <ImageView
+            android:id="@+id/widget_artwork"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/loggerythm_widget_cd_artwork"
+            android:scaleType="centerCrop"
+            android:src="@drawable/ic_loggerythm_widget_music_note" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/widget_meta"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="8dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/loggerythm_widget_empty_title"
+            android:textColor="#f4f0e6"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_artist"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/loggerythm_widget_empty_subtitle"
+            android:textColor="#a9a296"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/widget_btn_favorite"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/loggerythm_widget_cd_favorite"
+        android:padding="5dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_loggerythm_widget_heart_outline" />
+
+    <ImageButton
+        android:id="@+id/widget_btn_previous"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/loggerythm_widget_cd_previous"
+        android:padding="5dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_loggerythm_widget_prev" />
+
+    <ImageButton
+        android:id="@+id/widget_btn_play_pause"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
+        android:background="@drawable/loggerythm_widget_play_bg"
+        android:contentDescription="@string/loggerythm_widget_cd_play_pause"
+        android:padding="7dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_loggerythm_widget_play" />
+
+    <ImageButton
+        android:id="@+id/widget_btn_next"
+        android:layout_width="34dp"
+        android:layout_height="34dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="@string/loggerythm_widget_cd_next"
+        android:padding="5dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_loggerythm_widget_next" />
+</LinearLayout>

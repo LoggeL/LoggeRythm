@@ -11,10 +11,17 @@ artist radio degrades to "that artist's own three songs" with an empty related
 list — which used to make song radio a single-artist loop.
 """
 import random
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from ..auth import get_current_user_optional
+from ..db.models import Play, User
+from ..db.session import get_db
 from ..schemas.track import Track
 from ..services import deezer_client as dc
 from ..services import recommend
@@ -28,6 +35,13 @@ from ..services.track_identity import (
 from .errors import to_http
 
 router = APIRouter(prefix="/api", tags=["radio"])
+
+
+class RadioSeedRequest(BaseModel):
+    track_ids: list[str] = Field(default_factory=list, max_length=10)
+    exclude_ids: list[str] = Field(default_factory=list, max_length=500)
+    mood_tag: str | None = Field(default=None, max_length=64)
+    limit: int = Field(default=40, ge=5, le=80)
 
 _MIX_SIZE = 40
 # Below this many usable non-seed-artist slots, the mix is not a radio station
@@ -210,5 +224,107 @@ def _radio(deezer_id: str) -> list[dict]:
 async def radio(deezer_id: str) -> list[dict]:
     try:
         return await run_in_threadpool(_radio, deezer_id)
+    except (dc.DeezerClientError, LastfmError, DiscoveryError) as e:
+        raise to_http(e)
+
+
+def _seeded_radio(
+    track_ids: list[str],
+    exclude_ids: set[str],
+    mood_tag: str | None,
+    limit: int,
+) -> list[dict]:
+    pool: list[dict] = []
+    seen: set[str] = set(exclude_ids) | set(track_ids)
+    seed_descs: list[TrackDescriptor] = []
+
+    def _add_filtered(items: list[dict]) -> None:
+        for t in items:
+            tid = str(t.get("id", ""))
+            if not tid or tid in seen:
+                continue
+            desc = descriptor_from_mapping(t)
+            if any(same_recording(s, desc) for s in seed_descs):
+                continue
+            seen.add(tid)
+            pool.append(t)
+
+    if mood_tag and mood_tag.strip():
+        _add_filtered(recommend.tag_top_tracks([mood_tag.strip()], limit))
+
+    seed_metas: list[tuple[str, dict]] = []
+    for tid in track_ids[:5]:
+        seed = _seed_meta(tid)
+        seed_descs.append(descriptor_from_mapping(seed))
+        seed_metas.append((tid, seed))
+
+    for tid, seed in seed_metas:
+        seed_artist = seed.get("artist") or {}
+        artist_name = str(seed_artist.get("name") or "")
+        title = str(seed.get("title") or "")
+        if artist_name and title:
+            _add_filtered(_lastfm_similar(artist_name, title))
+
+    if len(pool) < _MIN_OTHER_ARTIST_SLOTS:
+        for tid, seed in seed_metas:
+            seed_artist = seed.get("artist") or {}
+            artist_id = seed_artist.get("id")
+            if artist_id:
+                _add_filtered(_deezer_mix(tid, artist_id))
+
+    if len(pool) < _MIN_OTHER_ARTIST_SLOTS:
+        for _tid, seed in seed_metas:
+            album_id = (seed.get("album") or {}).get("id")
+            if album_id:
+                _add_filtered(_genre_charts(album_id))
+
+    if len(pool) < _MIN_OTHER_ARTIST_SLOTS:
+        _add_filtered(dc.charts())
+
+    pool = dc.dedupe_public_tracks(pool)
+    pool = [t for t in pool if str(t.get("id", "")) not in exclude_ids]
+    if not pool:
+        raise dc.DeezerClientError(
+            "All radio recommendation sources returned no eligible tracks for the given seed"
+        )
+    random.shuffle(pool)
+    return _diversify(pool)[:limit]
+
+
+@router.post("/radio/seed", response_model=list[Track])
+async def seeded_radio(
+    body: RadioSeedRequest,
+    user: User | None = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    """Context-aware multi-seed radio that excludes recently played tracks (last 7d)."""
+    cleaned_tracks = [tid.strip() for tid in body.track_ids if tid and tid.strip()]
+    mood_tag = body.mood_tag.strip() if body.mood_tag else None
+    if not cleaned_tracks and not mood_tag:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide at least one track_id or mood_tag to seed radio.",
+        )
+    bad = [tid for tid in cleaned_tracks if not tid.isdigit()]
+    if bad:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Radio seed track_ids must be numeric Deezer IDs; got {bad[:5]!r}",
+        )
+
+    exclude_ids: set[str] = {tid.strip() for tid in body.exclude_ids if tid and tid.strip()}
+    if user is not None:
+        cutoff_7d = datetime.utcnow() - timedelta(days=7)
+        recent_ids = db.scalars(
+            select(Play.deezer_id)
+            .where(Play.user_id == user.id, Play.played_at >= cutoff_7d)
+            .distinct()
+        ).all()
+        exclude_ids.update(recent_ids)
+
+    try:
+        return await run_in_threadpool(
+            _seeded_radio, cleaned_tracks, exclude_ids, mood_tag, body.limit
+        )
     except (dc.DeezerClientError, LastfmError, DiscoveryError) as e:
         raise to_http(e)

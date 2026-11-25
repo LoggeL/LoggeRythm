@@ -77,6 +77,8 @@ vi.mock('../components/profile/ProfileSections', () => ({
 }));
 vi.mock('../components/profile/ConnectSettingsPanel', () => ({ default: 'ConnectSettingsPanel' }));
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
+vi.mock('../components/profile/PlaybackSettingsPanel', () => ({ default: 'PlaybackSettingsPanel' }));
+vi.mock('../components/profile/StorageCachePanel', () => ({ default: 'StorageCachePanel' }));
 vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
 // Owns the latched slot's useState; covered by useAndroidUpdatePlacement.test.ts.
 vi.mock('../components/profile/useAndroidUpdatePlacement', () => ({

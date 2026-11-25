@@ -73,6 +73,7 @@ public data class LoggeRythmVoiceTrackSummary(
   val artist: String,
   val album: String,
   val durationMs: Long?,
+  val artworkUrl: String? = null,
 )
 
 public data class LoggeRythmVoiceNowPlaying(
@@ -107,6 +108,13 @@ public data class LoggeRythmVoiceFavoriteResult(
   val track: LoggeRythmVoiceTrackSummary,
   val liked: Boolean,
   val changed: Boolean,
+)
+
+public data class LoggeRythmVoiceSleepTimerResult(
+  val active: Boolean,
+  val minutesRequested: Int,
+  val remainingMs: Long,
+  val fadeOutMs: Long,
 )
 
 /**
@@ -149,6 +157,16 @@ public interface LoggeRythmVoiceCommandExecutor {
   public fun getNowPlaying(
     context: Context,
   ): CompletableFuture<LoggeRythmVoiceNowPlaying>
+
+  public fun startRadio(
+    context: Context,
+    moodOrGenre: String? = null,
+  ): CompletableFuture<LoggeRythmVoicePlayResult>
+
+  public fun setSleepTimer(
+    context: Context,
+    minutes: Int,
+  ): CompletableFuture<LoggeRythmVoiceSleepTimerResult>
 }
 
 internal interface LoggeRythmVoiceServiceControl {
@@ -175,6 +193,16 @@ internal interface LoggeRythmVoiceServiceControl {
 
   fun executeGetNowPlaying(
     callback: (Result<LoggeRythmVoiceNowPlaying>) -> Unit,
+  )
+
+  fun executeStartRadio(
+    moodOrGenre: String?,
+    callback: (Result<LoggeRythmVoicePlayResult>) -> Unit,
+  )
+
+  fun executeSetSleepTimer(
+    minutes: Int,
+    callback: (Result<LoggeRythmVoiceSleepTimerResult>) -> Unit,
   )
 }
 
@@ -313,6 +341,39 @@ public object LoggeRythmVoiceBridge : LoggeRythmVoiceCommandExecutor {
     executeWithService(context) { service, callback ->
       service.executeGetNowPlaying(callback)
     }
+
+  override fun startRadio(
+    context: Context,
+    moodOrGenre: String?,
+  ): CompletableFuture<LoggeRythmVoicePlayResult> {
+    val sanitized = try {
+      sanitizeField(moodOrGenre, "moodOrGenre")
+    } catch (error: LoggeRythmVoiceException) {
+      return failedFuture(error)
+    }
+    return executeWithService(context) { service, callback ->
+      service.executeStartRadio(sanitized, callback)
+    }
+  }
+
+  override fun setSleepTimer(
+    context: Context,
+    minutes: Int,
+  ): CompletableFuture<LoggeRythmVoiceSleepTimerResult> {
+    if (minutes < 0 || minutes > MAX_SLEEP_TIMER_MINUTES) {
+      return failedFuture(
+        LoggeRythmVoiceException(
+          LoggeRythmVoiceErrorCode.INVALID_ARGUMENT,
+          "Sleep timer minutes must be between 0 and $MAX_SLEEP_TIMER_MINUTES",
+        ),
+      )
+    }
+    return executeWithService(context) { service, callback ->
+      service.executeSetSleepTimer(minutes, callback)
+    }
+  }
+
+  internal const val MAX_SLEEP_TIMER_MINUTES = 1_440
 
   internal fun buildValidatedQuery(
     rawQuery: String?,

@@ -16,7 +16,7 @@ import QueryError from "@/components/ui/QueryError";
 import CollectionHero from "@/app/playlist/_components/CollectionHero";
 import CollectionTracks from "@/app/playlist/_components/CollectionTracks";
 import { useLoadingPlaceholder } from "@/app/playlist/_components/CollectionPageState";
-import { PlayCollectionButton, ShuffleCollectionButton } from "@/app/playlist/_components/CollectionActions";
+import { CollectionMenu, PlayCollectionButton, ShuffleCollectionButton, useQueueAllItem, useSaveAsPlaylistItem } from "@/app/playlist/_components/CollectionActions";
 import { tracksSummary } from "@/app/playlist/_components/collectionMeta";
 
 /**
@@ -46,6 +46,8 @@ export default function RadarPage() {
 
   const tracks = radar.data ?? [];
   const cover = tracks.find((t) => t.cover)?.cover;
+  const queueAll = useQueueAllItem(tracks);
+  const savePlaylist = useSaveAsPlaylistItem(RADAR_TITLE, tracks, RADAR_RULE);
   // Deferred, so the loaded titles cross-fade in instead of replacing the placeholder rows at once.
   const loading = useLoadingPlaceholder(account.isLoading || radar.isLoading);
   const { markVisibleTracksSeen } = useReleaseRadarSeen(me?.id, tracks);
@@ -68,6 +70,9 @@ export default function RadarPage() {
           <>
             <PlayCollectionButton tracks={tracks} context={RADAR_TITLE} />
             <ShuffleCollectionButton tracks={tracks} context={RADAR_TITLE} />
+            {tracks.length > 0 && (
+              <CollectionMenu label="Weitere Optionen für den Release Radar" items={[queueAll, savePlaylist]} />
+            )}
             <button
               type="button"
               onClick={() => refreshRadar.mutate()}

@@ -33,6 +33,10 @@ describe('withOfflineDownloads native source contract', () => {
     expect(sources).toContain('Executors.newSingleThreadExecutor');
     expect(sources).toContain('activeJob.compareAndSet(null, job)');
     expect(sources).toContain('target.encodedPath == "/api/tracks/$trackId/stream"');
+    expect(sources).toContain('isAllowedStreamQuery(target)');
+    expect(sources).toContain('target.encodedQuery == "quality=high"');
+    expect(sources).toContain('target.encodedQuery == "quality=saver"');
+    expect(sources).not.toContain('quality=lossless');
     expect(sources).toContain('target.scheme == origin.scheme');
     expect(sources).toContain('value.fileName == "$trackId.mp3"');
     expect(sources).toContain('Regex("sf_session=');
@@ -181,5 +185,53 @@ describe('withOfflineDownloads native source contract', () => {
     expect(treeDelete.indexOf('entry.canonical.listFiles()')).toBeLessThan(
       treeDelete.indexOf('file.delete()'),
     );
+  });
+
+  it('wires WorkManager foreground dataSync service, wifiOnly constraints, and storage metrics cleanly', () => {
+    const manifest = {
+      $: {},
+      'uses-permission': [],
+      application: [{ $: {}, service: [] }],
+    };
+    plugin.configureManifestObject(manifest);
+    const once = JSON.stringify(manifest);
+    plugin.configureManifestObject(manifest);
+    expect(JSON.stringify(manifest)).toBe(once);
+
+    expect(manifest['uses-permission']).toContainEqual({
+      $: { 'android:name': 'android.permission.FOREGROUND_SERVICE_DATA_SYNC' },
+    });
+    expect(manifest['uses-permission']).toContainEqual({
+      $: { 'android:name': 'android.permission.ACCESS_NETWORK_STATE' },
+    });
+    expect(manifest.application[0].service).toContainEqual({
+      $: {
+        'android:name': 'androidx.work.impl.foreground.SystemForegroundService',
+        'android:foregroundServiceType': 'dataSync',
+        'tools:node': 'merge',
+      },
+    });
+
+    const generated = plugin.kotlinSources('top.logge.loggerythm');
+    expect(generated['OfflineDownloadWorker.kt']).toContain('NetworkType.UNMETERED');
+    expect(generated['OfflineDownloadWorker.kt']).toContain('setForegroundAsync(');
+    expect(generated['OfflineDownloadWorker.kt']).toContain('KEY_WORK_TOKEN');
+    expect(generated['OfflineDownloadWorker.kt']).toContain('fun take(token: Long)');
+    expect(generated['OfflineDownloadWorker.kt']).toContain('fun cancelAndRemove(token: Long)');
+    expect(generated['OfflineDownloadWorker.kt']).not.toContain('takeLatest(');
+    expect(generated['OfflineDownloadCoordinator.kt']).toContain('OfflineDownloadWorkRegistry.cancelAndRemove(pendingToken)');
+    expect(generated['OfflineDownloadCoordinator.kt']).toContain('executor.submit {');
+    expect(generated['OfflineDownloadNotification.kt']).toContain('FOREGROUND_SERVICE_TYPE_DATA_SYNC');
+    expect(generated['OfflineDownloadsModule.kt']).toContain('fun setWifiOnly(enabled: Boolean, promise: Promise)');
+    expect(generated['OfflineDownloadsModule.kt']).toContain('fun getWifiOnly(promise: Promise)');
+    expect(generated['OfflineDownloadsModule.kt']).toContain('fun getStorageMetrics(scope: String, promise: Promise)');
+    expect(generated['OfflineDownloadsModule.kt']).toContain('fun clearRollingCache(promise: Promise)');
+    expect(generated['OfflineDownloadsModule.kt']).toContain('fun cancelDownload(promise: Promise)');
+
+    const gradle = 'dependencies {\n    implementation("com.facebook.react:react-android")\n}\n';
+    const transformedGradle = plugin.transformAppBuildGradle(gradle);
+    expect(transformedGradle).toContain(`implementation("${plugin.WORKMANAGER_DEPENDENCY}")`);
+    expect(transformedGradle).toContain(`implementation("${plugin.GUAVA_DEPENDENCY}")`);
+    expect(plugin.transformAppBuildGradle(transformedGradle)).toBe(transformedGradle);
   });
 });

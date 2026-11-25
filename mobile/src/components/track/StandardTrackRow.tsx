@@ -20,6 +20,7 @@ import {
   type TvFocusProps,
 } from '../ui';
 import { TrackArtworkOverlay } from './TrackArtworkOverlay';
+import { SwipeToQueueWrapper } from './SwipeToQueueWrapper';
 import TrackIdentityLinks from './TrackIdentityLinks';
 import {
   buildTrackMetadata,
@@ -55,6 +56,8 @@ export interface StandardTrackRowProps extends TvFocusProps {
   caption?: string;
   /** Spoken form of `caption` where the compact line abbreviates. Defaults to `caption`. */
   captionAccessibilityLabel?: string;
+  /** Disable horizontal swipe-to-queue gesture (e.g. during drag-to-reorder mode). */
+  swipeToQueue?: boolean;
 }
 
 export interface StandardTrackRowViewProps
@@ -95,6 +98,7 @@ export function areStandardTrackRowViewPropsEqual(
     && previous.highlighted === next.highlighted
     && previous.caption === next.caption
     && previous.captionAccessibilityLabel === next.captionAccessibilityLabel
+    && previous.swipeToQueue === next.swipeToQueue
     && previous.focusable === next.focusable
     && previous.hasTVPreferredFocus === next.hasTVPreferredFocus
     && previous.onFocus === next.onFocus
@@ -127,6 +131,7 @@ export function StandardTrackRowView({
   highlighted = false,
   caption,
   captionAccessibilityLabel = caption,
+  swipeToQueue = true,
   focusable,
   hasTVPreferredFocus,
   onFocus,
@@ -173,6 +178,7 @@ export function StandardTrackRowView({
           style={styles.activeAccentBar}
         />
       ) : null}
+      <SwipeToQueueWrapper track={track} testID={testID} enabled={swipeToQueue}>
       <View style={styles.row}>
         <Pressable
           testID={testID}
@@ -269,6 +275,7 @@ export function StandardTrackRowView({
           />
         ) : null}
       </View>
+      </SwipeToQueueWrapper>
       {trailingControls === undefined ? null : (
         <View testID={`${testID}-trailing-controls`} style={styles.trailingControls}>
           {trailingControls}

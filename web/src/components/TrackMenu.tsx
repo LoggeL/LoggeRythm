@@ -27,7 +27,7 @@ export function useTrackMenuItems(
   const router = useRouter();
   const playNext = usePlayerStore((s) => s.playNext);
   const addToQueue = usePlayerStore((s) => s.addToQueue);
-  const partyActive = usePartyStore((s) => s.active);
+  const partyActive = usePartyStore((s) => s.active && !s.detached);
   const { data: me } = useMe();
 
   const items: ContextMenuItem[] = [

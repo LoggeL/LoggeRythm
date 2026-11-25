@@ -25,6 +25,15 @@ class ResolveResult(BaseModel):
 
 class ImportJobCreate(BaseModel):
     url: str = Field(..., min_length=1, max_length=2000, description="Spotify playlist/album/track link")
+    target_playlist_id: int | None = Field(
+        default=None,
+        description="Optional existing playlist ID to append matched tracks into automatically.",
+    )
+    create_playlist_name: str | None = Field(
+        default=None,
+        max_length=200,
+        description="Optional new playlist name to create and populate automatically when matching finishes.",
+    )
 
 
 class ImportJobStatus(BaseModel):
@@ -44,6 +53,9 @@ class ImportJobStatus(BaseModel):
     failed_lookups: int = 0
     lookup_error: str | None = None  # first such failure
     error: str | None = None  # why a failed job ended
+    target_playlist_id: int | None = None
+    create_playlist_name: str | None = None
+    created_playlist_id: int | None = None
     created_at: datetime
     updated_at: datetime
     finished_at: datetime | None = None

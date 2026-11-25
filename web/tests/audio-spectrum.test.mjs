@@ -7,6 +7,9 @@ const resolver = registerHooks({
     if ((specifier === "./audioAnalyser" || specifier === "./visualizerSignal") && context.parentURL.endsWith('/audioSpectrum.ts')) {
       return next(new URL(`../src/lib/${specifier.slice(2)}.ts`, import.meta.url).href, context);
     }
+    if (specifier === "./audioEffects" && context.parentURL.endsWith('/audioAnalyser.ts')) {
+      return next(new URL("../src/lib/audioEffects.ts", import.meta.url).href, context);
+    }
     return next(specifier, context);
   },
 });

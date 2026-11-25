@@ -7,6 +7,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { colors, elevation, radii, spacing } from '../../theme';
+import { useArtworkPalette } from '../../hooks/useArtworkPalette';
 import { usableHiResCover } from './coverUrl';
 
 export const NOW_PLAYING_COVER_SIZE = 1000;
@@ -24,6 +25,31 @@ export interface NowPlayingBackdropProps {
  * It is deliberately non-interactive and hidden as one accessibility subtree;
  * transport and metadata own all TalkBack semantics in the parent screen.
  */
+const BackdropPaletteWash = React.memo(function BackdropPaletteWash({
+  uri,
+  testID,
+}: {
+  uri: string | null;
+  testID: string;
+}) {
+  const ambience = useArtworkPalette(uri);
+  if (ambience === null) return null;
+  return (
+    <>
+      <View
+        testID={`${testID}-palette-wash`}
+        accessible={false}
+        style={[styles.paletteWash, { backgroundColor: ambience.surfaceTint }]}
+      />
+      <View
+        testID={`${testID}-palette-glow`}
+        accessible={false}
+        style={[styles.brandWash, { backgroundColor: ambience.glowColor, opacity: 0.16 }]}
+      />
+    </>
+  );
+});
+
 export function NowPlayingBackdrop({
   coverUri,
   testID = 'now-playing-backdrop',
@@ -52,6 +78,7 @@ export function NowPlayingBackdrop({
         />
       ) : null}
       <View testID={`${testID}-brand-wash`} accessible={false} style={styles.brandWash} />
+      <BackdropPaletteWash uri={uri} testID={testID} />
       <View accessible={false} style={styles.backdropDim} />
     </View>
   );
@@ -143,6 +170,10 @@ const styles = StyleSheet.create({
     ...absoluteFill,
     opacity: 0.25,
     transform: [{ scale: 1.16 }],
+  },
+  paletteWash: {
+    ...absoluteFill,
+    opacity: 0.24,
   },
   brandWash: {
     position: 'absolute',

@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import type {
   NativeStackNavigationProp,
@@ -38,10 +38,12 @@ import PlaylistInviteScreen, {
 } from '../screens/PlaylistInviteScreen';
 import PlaylistScreen from '../screens/PlaylistScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import InsightsScreen from '../screens/InsightsScreen';
 import QueueScreen from '../screens/QueueScreen';
 import RadarScreen from '../screens/RadarScreen';
 import RadioScreen from '../screens/RadioScreen';
 import SearchScreen from '../screens/SearchScreen';
+import UserProfileScreen, { type UserProfileRouteParams } from '../screens/UserProfileScreen';
 import { spotifySharedTextCoordinator } from '../share/sharedTextRuntime';
 import { colors, spacing } from '../theme';
 import { PlayerErrorBanner, PlayerNoticeWithoutMiniPlayer } from './playerOverlays';
@@ -96,6 +98,10 @@ function useSectionCallbacks<Name extends keyof SectionStackParams>(
     () => navigateToSearch(rootNavigation),
     [],
   );
+  const onOpenUser = useCallback(
+    (params: UserProfileRouteParams) => navigation.push('UserProfile', params),
+    [navigation],
+  );
   const onDeleted = useCallback(
     () => navigation.goBack(),
     [navigation],
@@ -109,6 +115,7 @@ function useSectionCallbacks<Name extends keyof SectionStackParams>(
     onOpenMix,
     onOpenRadar,
     onOpenSearch,
+    onOpenUser,
     onDeleted,
   };
 }
@@ -277,7 +284,7 @@ function normalizedPlaylistParams(value: unknown): LibraryPlaylistRouteParams | 
 
 export function PlaylistRoute({ route, navigation }: SectionProps<'Playlist'>) {
   const localeRevision = useLocaleRevision();
-  const { onOpenAlbum, onOpenArtist, onDeleted } = useSectionCallbacks(navigation);
+  const { onOpenAlbum, onOpenArtist, onOpenUser, onDeleted } = useSectionCallbacks(navigation);
   const params = useMemo(
     () => normalizedPlaylistParams(route.params),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fallback labels follow locale
@@ -311,6 +318,44 @@ export function PlaylistRoute({ route, navigation }: SectionProps<'Playlist'>) {
       onDeleted={onDeleted}
       onOpenAlbum={onOpenAlbum}
       onOpenArtist={onOpenArtist}
+      onOpenUser={onOpenUser}
+    />
+  );
+}
+
+export function UserProfileRoute({ route, navigation }: SectionProps<'UserProfile'>) {
+  useLocaleRevision();
+  const { onOpenPlaylist, onOpenArtist } = useSectionCallbacks(navigation);
+  const userId = playlistIdFromRouteValue(route.params?.userId);
+  const handleInvalidBack = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
+  }, [navigation]);
+
+  if (userId === null) {
+    return (
+      <View testID="invalid-content-link" style={styles.invalidLink}>
+        <AppText variant="title" align="center" accessibilityRole="header">
+          {strings.navigation.invalidLinkTitle}
+        </AppText>
+        <AppText color="secondary" align="center" accessibilityRole="alert">
+          {strings.navigation.invalidLinkBody}
+        </AppText>
+        <ActionButton
+          testID="invalid-content-link-back"
+          label={strings.navigation.invalidLinkBack}
+          onPress={handleInvalidBack}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <UserProfileScreen
+      userId={userId}
+      name={safeRouteLabel(route.params?.name, strings.profile.publicProfileTitle)}
+      onOpenPlaylist={onOpenPlaylist}
+      onOpenArtist={onOpenArtist}
     />
   );
 }
@@ -320,6 +365,30 @@ export function ProfileRoute() {
   return (
     <View style={styles.fill}>
       <ProfileScreen />
+      <PlayerErrorBanner hasTabBar={false} />
+      <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
+      <MiniPlayer hasTabBar={false} />
+    </View>
+  );
+}
+
+export function InsightsRoute() {
+  useLocaleRevision();
+  const onOpenArtist = useCallback((params: ArtistRouteParams) => {
+    rootNavigation.navigate('Tabs', {
+      screen: 'HomeTab',
+      params: { screen: 'Artist', params },
+    });
+  }, []);
+  const onOpenAlbum = useCallback((params: AlbumRouteParams) => {
+    rootNavigation.navigate('Tabs', {
+      screen: 'HomeTab',
+      params: { screen: 'Album', params },
+    });
+  }, []);
+  return (
+    <View style={styles.fill}>
+      <InsightsScreen onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} />
       <PlayerErrorBanner hasTabBar={false} />
       <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
       <MiniPlayer hasTabBar={false} />
@@ -337,6 +406,75 @@ export function NowPlayingRoute(
 export function QueueRoute(props: NativeStackScreenProps<RootStackParams, 'Queue'>) {
   useLocaleRevision();
   return <QueueScreen {...props} />;
+}
+
+/** Launcher shortcut (`loggerythm://party/start`): opens active Jam or starts a fresh one. */
+export function PartyStartRoute({
+  navigation,
+}: NativeStackScreenProps<RootStackParams, 'PartyStart'>) {
+  useLocaleRevision();
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const close = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else rootNavigation.navigate('Tabs', { screen: 'HomeTab', params: { screen: 'Home' } });
+  }, [navigation]);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const [{ partySession, startPartyFromQueue }, { partyErrorDetail }] = await Promise.all([
+        import('../party/partyRuntime'),
+        import('../party/partyErrors'),
+      ]);
+      try {
+        const existingCode = partySession().getSnapshot().code;
+        if (existingCode !== null) {
+          if (active) navigation.replace('Party', { code: existingCode });
+          return;
+        }
+        const created = await startPartyFromQueue();
+        if (active) navigation.replace('Party', { code: created.code });
+      } catch (cause) {
+        if (active) setError(strings.party.startPartyFailed(partyErrorDetail(cause)));
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [attempt, navigation]);
+
+  if (error !== null) {
+    return (
+      <View testID="party-start-error" style={styles.invalidLink}>
+        <AppText variant="section" align="center">{strings.party.defaultName}</AppText>
+        <AppText variant="callout" color="danger" align="center">{error}</AppText>
+        <ActionButton
+          testID="party-start-retry"
+          label={strings.common.retry}
+          onPress={() => {
+            setError(null);
+            setAttempt((count) => count + 1);
+          }}
+        />
+        <ActionButton
+          testID="party-start-close"
+          variant="secondary"
+          label={strings.party.back}
+          onPress={close}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View testID="party-start-loading" style={styles.invalidLink}>
+      <ActivityIndicator color={colors.accent} size="large" />
+      <AppText variant="callout" color="secondary" align="center">
+        {strings.party.startingParty}
+      </AppText>
+    </View>
+  );
 }
 
 /** Party links are untrusted: only a well-formed code opens (and joins) a party. */

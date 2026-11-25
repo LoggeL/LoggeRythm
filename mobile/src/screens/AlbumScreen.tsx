@@ -20,6 +20,7 @@ import {
   createFocusRingController,
   EmptyState,
   FocusRingOverlay,
+  IconButton,
   TrackRowSkeleton,
 } from '../components/ui';
 import { getCurrentApiBase } from '../config';
@@ -27,6 +28,8 @@ import { findCachedAlbumSummary, musicCacheScope, musicQueries } from '../data';
 import { resolveRemoteVisualState } from '../data/remoteState';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
+import { useTrackCollectionOffline } from '../offline/useTrackCollectionOffline';
+import { shareAlbum } from '../share/outboundShare';
 import { metrics, opacity, radii } from '../theme';
 import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
 import {
@@ -61,6 +64,14 @@ export default function AlbumScreen(props: AlbumScreenProps) {
   const { runtimeError, setRuntimeError, play, playRow, shuffle } = useCatalogPlayback();
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [artistFocusController] = useState(createFocusRingController);
+  const albumOffline = useTrackCollectionOffline({
+    scope: scope ?? null,
+    jobId: albumId,
+    tracks: album.data?.tracks ?? EMPTY_TRACKS,
+    downloadFailedMessage: catalogStrings.album.downloadFailed,
+    removeFailedMessage: catalogStrings.album.removeDownloadFailed,
+    onError: setRuntimeError,
+  });
 
   const seededAlbum = useMemo(
     () => findCachedAlbumSummary(queryClient, albumId, scope),
@@ -147,6 +158,45 @@ export default function AlbumScreen(props: AlbumScreenProps) {
             eyebrow={catalogStrings.album.typeLabel}
             title={title}
             titleTestID="album-title"
+            actions={
+              <>
+                <IconButton
+                  testID="album-download"
+                  icon={
+                    albumOffline.phase === 'downloaded'
+                      ? 'check-circle'
+                      : 'download-circle-outline'
+                  }
+                  variant="tonal"
+                  selected={albumOffline.phase === 'downloaded'}
+                  busy={albumOffline.busy}
+                  disabled={detail === undefined || detail.tracks.length === 0 || scope === undefined}
+                  accessibilityLabel={
+                    albumOffline.phase === 'downloaded'
+                      ? catalogStrings.album.removeDownload
+                      : catalogStrings.album.download
+                  }
+                  onPress={
+                    albumOffline.phase === 'downloaded'
+                      ? albumOffline.removeAll
+                      : albumOffline.downloadAll
+                  }
+                />
+                <IconButton
+                  testID="album-share"
+                  icon="share-variant"
+                  variant="tonal"
+                  accessibilityLabel={catalogStrings.common.share}
+                  disabled={title.length === 0}
+                  onPress={() => {
+                    setRuntimeError(null);
+                    void shareAlbum(albumId, title, artistName).catch(() => {
+                      setRuntimeError(catalogStrings.common.shareFailed);
+                    });
+                  }}
+                />
+              </>
+            }
             shuffle={{
               testID: 'album-shuffle',
               accessibilityLabel: strings.common.shuffleAll,

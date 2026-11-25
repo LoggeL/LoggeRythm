@@ -33,7 +33,16 @@ from starlette.concurrency import run_in_threadpool
 from starlette.types import Receive, Scope, Send
 
 from ..auth import get_current_user
-from ..db.models import PartyGuest, PartyMember, PartySession, PartyTrack, User
+from ..db.models import (
+    PartyGuest,
+    PartyMember,
+    PartySession,
+    PartyTrack,
+    Playlist,
+    PlaylistCollaborator,
+    PlaylistTrack,
+    User,
+)
 from ..db.session import SessionLocal, get_db
 from ..party_auth import (
     PartyActor,
@@ -46,13 +55,25 @@ from ..party_auth import (
 from ..schemas.party import (
     PartyCachedTracks,
     PartyGuestJoin,
+    PartyHostTransferIn,
     PartyMemberOut,
+    PartyReactIn,
+    PartyReactionOut,
+    PartySavePlaylistIn,
     PartySettingsUpdate,
     PartyState,
     PartyTrackOut,
+    PartyVoteSkipOut,
 )
+from ..schemas.playlist import PlaylistSummary
 from ..schemas.track import Track, dump_artists, load_artists
+from ..services import deezer_client as dc
 from ..services import party_bus, party_preload, storage
+from ..services.discovery import DiscoveryError
+from ..services.lastfm_client import LastfmError
+from . import playlists as playlists_router
+from . import radio as radio_router
+from .errors import to_http
 
 # Seconds between SSE heartbeat comments that keep idle connections alive.
 _HEARTBEAT_SEC = 20.0
@@ -164,8 +185,49 @@ def _upsert_member(db: Session, session: PartySession, user: User) -> None:
         _touch_session(db, session)
 
 
+def _leave_other_parties(
+    db: Session, user: User, *, keep_code: str
+) -> list[tuple[str, party_bus.StateFrame]]:
+    """Remove an authenticated user's membership from any other party.
+
+    A user can only belong to one active Jam at a time; leaving stale
+    PartyMember rows behind causes GET /api/party/active to resurrect an
+    abandoned Jam once the current one ends.
+    """
+    other_codes = list(
+        db.scalars(
+            select(PartyMember.session_code).where(
+                PartyMember.user_id == user.id,
+                PartyMember.session_code != keep_code,
+            )
+        ).all()
+    )
+    published: list[tuple[str, party_bus.StateFrame]] = []
+    for other_code in other_codes:
+        db.execute(
+            delete(PartyMember).where(
+                PartyMember.session_code == other_code,
+                PartyMember.user_id == user.id,
+            )
+        )
+        other = db.get(PartySession, other_code)
+        if other is None:
+            continue
+        _touch_session(db, other)
+        db.flush()
+        db.expire(other, ["members"])
+        published.append((other_code, _canonical_frame(db, other)))
+    return published
+
+
 def _party_track_row(
-    session_code: str, track: Track, position: int, added_by: PartyActor
+    session_code: str,
+    track: Track,
+    position: int,
+    added_by: PartyActor | None = None,
+    *,
+    added_by_name: str | None = None,
+    added_by_member: str | None = None,
 ) -> PartyTrack:
     return PartyTrack(
         session_code=session_code,
@@ -178,9 +240,18 @@ def _party_track_row(
         album_id=str(track.album_id),
         cover_url=track.cover or None,
         duration_sec=track.duration_sec,
+        loudness_gain_db=track.loudness_gain_db,
         position=position,
-        added_by=added_by.display_name,
-        added_by_member=added_by.key,
+        added_by=(
+            added_by_name
+            if added_by_name is not None
+            else (added_by.display_name if added_by is not None else "")
+        ),
+        added_by_member=(
+            added_by_member
+            if added_by_member is not None
+            else (added_by.key if added_by is not None else "")
+        ),
     )
 
 
@@ -208,6 +279,25 @@ def _require_control(session: PartySession, actor: PartyActor) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Nur der Host kann die Wiedergabe steuern.",
         )
+
+
+def _require_participant(session: PartySession, actor: PartyActor) -> None:
+    """Verify the caller is currently a host, member, or active guest of this party."""
+    if actor.user is not None:
+        if actor.user.id == session.host_id:
+            return
+        if any(m.user_id == actor.user.id for m in session.members):
+            return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Du bist kein Mitglied dieser Party.",
+        )
+    if actor.guest is not None and any(g.id == actor.guest.id for g in session.guests):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Du bist kein Mitglied dieser Party.",
+    )
 
 
 def _ordered_tracks(session: PartySession) -> list[PartyTrack]:
@@ -264,18 +354,43 @@ def _state_dict(
             if updated_at.tzinfo is None
             else updated_at.astimezone(timezone.utc)
         )
+    active_participant_keys = {f"u:{m.user_id}" for m in session.members} | {
+        f"g:{g.id}" for g in session.guests
+    }
+    total_participants = max(len(active_participant_keys), 1)
+    skip_votes_needed = max(1, (total_participants // 2) + 1)
+    current_item_id = (
+        ordered_tracks[session.current_index].id
+        if 0 <= session.current_index < len(ordered_tracks)
+        else None
+    )
+    skip_votes = [
+        key
+        for key in party_bus.get_skip_votes(session.code, current_item_id)
+        if key in active_participant_keys
+    ]
+    latest_reaction_raw = party_bus.get_latest_reaction(session.code)
+    latest_reaction = (
+        PartyReactionOut.model_validate(latest_reaction_raw)
+        if latest_reaction_raw is not None
+        else None
+    )
     state = PartyState(
         code=session.code,
         name=session.name,
         host_name=host_name,
         is_host=False,
         guests_can_control=bool(session.guests_can_control),
+        auto_dj=bool(session.auto_dj),
         current_index=session.current_index,
         is_playing=False if ended else session.is_playing,
         position_sec=session.position_sec,
         playback_updated_at=updated_at.isoformat() if updated_at else None,
         playback_changed_by=session.playback_changed_by or "",
         playback_revision=session.playback_revision or 0,
+        skip_votes=skip_votes,
+        skip_votes_needed=skip_votes_needed,
+        latest_reaction=latest_reaction,
         ended=ended,
         server_time=_utcnow().isoformat(),
         members=[
@@ -310,6 +425,7 @@ def _state_dict(
                 album_id=t.album_id,
                 cover=t.cover_url or "",
                 duration_sec=t.duration_sec,
+                loudness_gain_db=t.loudness_gain_db,
                 added_by=t.added_by,
                 added_by_member=t.added_by_member,
                 added_by_avatar_url=avatars.get(
@@ -492,6 +608,7 @@ class PartyCreate(BaseModel):
     is_playing: bool = False
     position_sec: float = 0.0
     guests_can_control: bool = False
+    auto_dj: bool = False
 
 
 class CurrentUpdate(BaseModel):
@@ -505,6 +622,65 @@ class OrderUpdate(BaseModel):
 class PlaybackUpdate(BaseModel):
     is_playing: bool
     position_sec: float
+
+
+def _maybe_refill_auto_dj(
+    db: Session,
+    session: PartySession,
+    *,
+    force: bool = False,
+    count: int = 5,
+) -> int:
+    """Append radio picks when Auto-DJ is enabled and <=1 upcoming track remains."""
+    if not force and not session.auto_dj:
+        return 0
+    ordered = _ordered_tracks(session)
+    if not ordered:
+        return 0
+    upcoming_count = (
+        (len(ordered) - 1 - session.current_index)
+        if 0 <= session.current_index < len(ordered)
+        else len(ordered)
+    )
+    if not force and upcoming_count > 1:
+        return 0
+
+    seed_track = (
+        ordered[session.current_index]
+        if 0 <= session.current_index < len(ordered)
+        else ordered[-1]
+    )
+    try:
+        candidates = radio_router._radio(seed_track.deezer_id)
+    except (dc.DeezerClientError, LastfmError, DiscoveryError) as exc:
+        raise to_http(exc) from exc
+
+    existing_ids = {t.deezer_id for t in ordered}
+    next_pos = max((t.position for t in ordered), default=-1) + 1
+    added = 0
+    for item in candidates:
+        tid = str(item.get("id") or "")
+        if not tid or not tid.isdigit() or tid in existing_ids:
+            continue
+        existing_ids.add(tid)
+        track = Track.model_validate(item)
+        db.add(
+            _party_track_row(
+                session.code,
+                track,
+                next_pos,
+                added_by_name="Auto-DJ",
+                added_by_member="system:autodj",
+            )
+        )
+        next_pos += 1
+        added += 1
+        if added >= count:
+            break
+    if added > 0:
+        db.flush()
+        db.expire(session, ["tracks"])
+    return added
 
 
 @router.post("", response_model=PartyState)
@@ -545,6 +721,7 @@ def create_party(
         position_sec=body.position_sec if selected else 0.0,
         playback_updated_at=_utcnow() if selected else None,
         guests_can_control=body.guests_can_control,
+        auto_dj=body.auto_dj,
         playback_changed_by=host.key if selected else "",
         playback_revision=1 if selected else 0,
     )
@@ -554,8 +731,12 @@ def create_party(
         _party_track_row(session.code, track, position, host)
         for position, track in enumerate(body.tracks)
     )
+    other_departures = _leave_other_parties(db, user, keep_code=session.code)
     _upsert_member(db, session, user)
-    return _commit_state_for(db, session, host)
+    state = _commit_state_for(db, session, host)
+    for other_code, other_frame in other_departures:
+        party_bus.publish(other_code, other_frame)
+    return state
 
 
 @router.get(
@@ -623,7 +804,7 @@ def party_cached_tracks(
 @router.patch(
     "/{code}/settings",
     response_model=PartyState,
-    description="Host-only: update party name and/or shared guest playback controls.",
+    description="Host-only: update party name, shared guest playback controls, and/or Auto-DJ.",
 )
 def update_party_settings(
     code: str,
@@ -631,10 +812,10 @@ def update_party_settings(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PartyState:
-    if body.name is None and body.guests_can_control is None:
+    if body.name is None and body.guests_can_control is None and body.auto_dj is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="At least one party setting (name or guests_can_control) must be provided",
+            detail="At least one party setting (name, guests_can_control, or auto_dj) must be provided",
         )
     session = _get_session(db, code)
     host = PartyActor(user=user)
@@ -643,8 +824,259 @@ def update_party_settings(
         session.name = body.name.strip()
     if body.guests_can_control is not None:
         session.guests_can_control = body.guests_can_control
+    if body.auto_dj is not None:
+        session.auto_dj = body.auto_dj
+        if body.auto_dj:
+            _maybe_refill_auto_dj(db, session)
     _touch_session(db, session)
     return _commit_state_for(db, session, host)
+
+
+@router.patch(
+    "/{code}/host",
+    response_model=PartyState,
+    description="Host-only: transfer Jam host ownership to another authenticated member.",
+)
+def transfer_party_host(
+    code: str,
+    body: PartyHostTransferIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PartyState:
+    session = _get_session(db, code)
+    host = PartyActor(user=user)
+    _require_host(session, host)
+    kind, target_id = _parse_member_key(body.member_key)
+    if kind != "u":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nur angemeldete Mitglieder können zum Host gemacht werden.",
+        )
+    if target_id == session.host_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dieses Mitglied ist bereits der Host dieser Party.",
+        )
+    member = db.scalar(
+        select(PartyMember).where(
+            PartyMember.session_code == session.code,
+            PartyMember.user_id == target_id,
+        )
+    )
+    if member is None:
+        raise HTTPException(status_code=404, detail="Party member not found")
+    session.host_id = target_id
+    _touch_session(db, session)
+    return _commit_state_for(db, session, host)
+
+
+@router.post(
+    "/{code}/save-playlist",
+    response_model=PlaylistSummary,
+    status_code=status.HTTP_201_CREATED,
+    description=(
+        "Save the current Party Jam queue as a permanent playlist, optionally "
+        "adding all authenticated Jam members as collaborators."
+    ),
+)
+def save_party_as_playlist(
+    code: str,
+    body: PartySavePlaylistIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PlaylistSummary:
+    session = _get_session(db, code)
+    _require_participant(session, PartyActor(user=user))
+    ordered = _ordered_tracks(session)
+    playlist_name = (
+        (body.name or "").strip()
+        or (session.name.strip() if session.name and session.name.strip() else f"Party {session.code}")
+    )
+    first_cover = next((t.cover_url for t in ordered if t.cover_url), None)
+    pl = Playlist(
+        user_id=user.id,
+        name=playlist_name,
+        description=f"Gespeichert aus Party {session.code}",
+        cover_url=first_cover,
+        is_collaborative=bool(body.collaborative),
+        revision=1,
+    )
+    db.add(pl)
+    db.flush()
+
+    referenced_uids: set[int] = {m.user_id for m in session.members}
+    for pt in ordered:
+        uid = _user_id_from_member_key(pt.added_by_member)
+        if uid is not None:
+            referenced_uids.add(uid)
+    existing_uids = (
+        set(db.scalars(select(User.id).where(User.id.in_(referenced_uids))).all())
+        if referenced_uids
+        else set()
+    )
+
+    if body.collaborative:
+        now = _utcnow()
+        added_collab_ids: set[int] = {user.id}
+        for member in session.members:
+            if member.user_id in added_collab_ids or member.user_id not in existing_uids:
+                continue
+            added_collab_ids.add(member.user_id)
+            db.add(
+                PlaylistCollaborator(
+                    playlist_id=pl.id,
+                    user_id=member.user_id,
+                    role="editor",
+                    added_by_user_id=user.id,
+                    joined_at=now,
+                )
+            )
+
+    for position, pt in enumerate(ordered):
+        parsed_uid = _user_id_from_member_key(pt.added_by_member)
+        if parsed_uid is not None:
+            adder_id: int | None = parsed_uid if parsed_uid in existing_uids else None
+        else:
+            adder_id = user.id
+        db.add(
+            PlaylistTrack(
+                playlist_id=pl.id,
+                deezer_id=pt.deezer_id,
+                title=pt.title,
+                artist=pt.artist,
+                artists_json=pt.artists_json,
+                album=pt.album,
+                album_id=pt.album_id,
+                cover_url=pt.cover_url,
+                duration_sec=pt.duration_sec,
+                loudness_gain_db=pt.loudness_gain_db,
+                position=position,
+                added_by_user_id=adder_id,
+            )
+        )
+    db.commit()
+    db.refresh(pl)
+    return playlists_router._summary_for(db, pl, viewer=user)
+
+
+@router.post(
+    "/{code}/auto-dj/fill",
+    response_model=PartyState,
+    description="Append radio picks seeded from the current/last Jam track.",
+)
+def fill_party_auto_dj(
+    code: str,
+    count: int = Query(default=5, ge=1, le=20),
+    actor: PartyActor = Depends(get_party_actor),
+    db: Session = Depends(get_db),
+) -> PartyState:
+    session = _get_session(db, code)
+    _require_participant(session, actor)
+    _require_control(session, actor)
+    if not _ordered_tracks(session):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Füge zuerst mindestens einen Titel hinzu, bevor Auto-DJ Titel vorschlagen kann.",
+        )
+    added = _maybe_refill_auto_dj(db, session, force=True, count=count)
+    if added > 0:
+        _touch_session(db, session)
+    return _commit_state_for(db, session, actor)
+
+
+@router.post(
+    "/{code}/react",
+    response_model=PartyReactionOut,
+    description="Broadcast an ephemeral emoji reaction burst to all Jam listeners.",
+)
+def react_in_party(
+    code: str,
+    body: PartyReactIn,
+    actor: PartyActor = Depends(get_party_actor),
+    db: Session = Depends(get_db),
+) -> PartyReactionOut:
+    session = _get_session(db, code)
+    _require_participant(session, actor)
+    emoji = body.emoji.strip()
+    if not emoji:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Emoji darf nicht leer sein.",
+        )
+    reaction = PartyReactionOut(
+        id=secrets.token_hex(6),
+        emoji=emoji,
+        member_key=actor.key,
+        member_name=actor.display_name,
+        created_at=_utcnow().isoformat(),
+    )
+    party_bus.set_latest_reaction(session.code, reaction.model_dump(mode="json"))
+    _touch_session(db, session)
+    _commit_state(db, session)
+    return reaction
+
+
+@router.post(
+    "/{code}/vote-skip",
+    response_model=PartyVoteSkipOut,
+    description=(
+        "Cast a vote to skip the current track. When a strict majority of active "
+        "participants vote, the Jam immediately advances to the next track."
+    ),
+)
+def vote_skip_party_track(
+    code: str,
+    actor: PartyActor = Depends(get_party_actor),
+    db: Session = Depends(get_db),
+) -> PartyVoteSkipOut:
+    session = _get_session(db, code)
+    _require_participant(session, actor)
+    tracks = _ordered_tracks(session)
+    current = _current_track(session, tracks)
+    if current is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Es läuft gerade kein Titel zum Überspringen.",
+        )
+    raw_votes = party_bus.add_skip_vote(session.code, current.id, actor.key)
+    active_keys = {f"u:{m.user_id}" for m in session.members} | {
+        f"g:{g.id}" for g in session.guests
+    }
+    active_votes = [k for k in raw_votes if k in active_keys]
+    votes_needed = max(1, (max(len(active_keys), 1) // 2) + 1)
+
+    skipped = False
+    if len(active_votes) >= votes_needed:
+        skipped = True
+        party_bus.clear_skip_votes(session.code)
+        if session.current_index + 1 >= len(tracks) and session.auto_dj:
+            _maybe_refill_auto_dj(db, session)
+            tracks = _ordered_tracks(session)
+        if session.current_index + 1 < len(tracks):
+            session.current_index += 1
+        else:
+            session.current_index = -1
+            session.is_playing = False
+        session.position_sec = 0.0
+        session.playback_updated_at = _utcnow()
+        session.playback_changed_by = actor.key
+        session.playback_revision = (session.playback_revision or 0) + 1
+        if session.auto_dj and session.current_index >= 0:
+            _maybe_refill_auto_dj(db, session)
+        returned_votes: list[str] = []
+    else:
+        returned_votes = active_votes
+
+    _touch_session(db, session)
+    state = _commit_state_for(db, session, actor)
+    return PartyVoteSkipOut(
+        code=session.code,
+        track_item_id=current.id,
+        votes=returned_votes,
+        votes_needed=votes_needed,
+        skipped=skipped,
+        state=state,
+    )
 
 
 @router.delete(
@@ -667,6 +1099,7 @@ def end_party(
     terminal_payload = _state_dict(db, session, ended=True)
     db.delete(session)
     db.commit()
+    party_bus.clear_party_ephemeral(code)
     party_bus.publish(code, party_bus.StateFrame(revision, terminal_payload))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -722,8 +1155,12 @@ def join_party(
     db: Session = Depends(get_db),
 ) -> PartyState:
     session = _get_session(db, code)
+    other_departures = _leave_other_parties(db, user, keep_code=session.code)
     _upsert_member(db, session, user)
-    return _commit_state_for(db, session, PartyActor(user=user))
+    state = _commit_state_for(db, session, PartyActor(user=user))
+    for other_code, other_frame in other_departures:
+        party_bus.publish(other_code, other_frame)
+    return state
 
 
 @router.post(
@@ -844,6 +1281,7 @@ def remove_track(
     db.delete(removed)
     now = _utcnow()
     if current is removed:
+        party_bus.clear_skip_votes(session.code)
         # Continue with the following track, or the previous one at the end.
         session.current_index = min(session.current_index, len(remaining) - 1)
         session.position_sec = 0.0
@@ -852,6 +1290,10 @@ def remove_track(
         session.playback_revision = (session.playback_revision or 0) + 1
         if not remaining:
             session.is_playing = False
+        elif session.auto_dj:
+            db.flush()
+            db.expire(session, ["tracks"])
+            _maybe_refill_auto_dj(db, session)
     elif current is not None:
         session.current_index = remaining.index(current)
     _touch_session(db, session)
@@ -904,7 +1346,10 @@ def set_current(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Party playback index must be -1 or refer to an existing queue track",
         )
+    old_index = session.current_index
     session.current_index = body.index
+    if body.index != old_index:
+        party_bus.clear_skip_votes(session.code)
     if body.index == -1:
         session.is_playing = False
     # A track change resets the playback clock so listeners re-sync from the top.
@@ -912,6 +1357,8 @@ def set_current(
     session.playback_updated_at = _utcnow()
     session.playback_changed_by = actor.key
     session.playback_revision = (session.playback_revision or 0) + 1
+    if session.auto_dj and body.index >= 0:
+        _maybe_refill_auto_dj(db, session)
     _touch_session(db, session)
     _commit_state(db, session)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -989,10 +1436,20 @@ async def party_events(
         raise
     viewer["is_host"] = viewer_user_id is not None and viewer_user_id == host_id
 
+    def _stamp_viewer(payload: dict[str, Any]) -> dict[str, Any]:
+        stamped = {**payload, **viewer}
+        members = payload.get("members") or []
+        if viewer_user_id is not None and any(m.get("is_host") for m in members):
+            stamped["is_host"] = any(
+                m.get("key") == viewer["viewer_key"] and bool(m.get("is_host"))
+                for m in members
+            )
+        return stamped
+
     async def event_stream() -> AsyncIterator[str]:
         try:
             latest = subscription.take_latest(initial)
-            frame = {**latest.payload, **viewer}
+            frame = _stamp_viewer(latest.payload)
             yield f"data: {json.dumps(frame)}\n\n"
             if frame.get("ended"):
                 return
@@ -1009,7 +1466,7 @@ async def party_events(
                 if incoming.updated_at <= latest.updated_at:
                     continue
                 latest = incoming
-                frame = {**latest.payload, **viewer}
+                frame = _stamp_viewer(latest.payload)
                 yield f"data: {json.dumps(frame)}\n\n"
                 if frame.get("ended"):
                     return

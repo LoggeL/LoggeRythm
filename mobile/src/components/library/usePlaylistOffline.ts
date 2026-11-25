@@ -1,5 +1,11 @@
 import { useState } from 'react';
 import type { Playlist } from '../../api/types';
+import { musicRepository } from '../../data';
+import {
+  assertDownloadNetworkAllowed,
+  WifiOnlyDownloadError,
+} from '../../offline/downloadSettings';
+import { saveOfflineLyrics } from '../../offline/lyricsCache';
 import { downloadPlaylistForOffline, removeOfflinePlaylist } from '../../offline/runtime';
 import { runOfflinePlaylistScreenAction } from '../../screens/offlineScreenActions';
 import type {
@@ -7,6 +13,36 @@ import type {
   OfflineScreenOperation,
 } from '../../screens/offlineScreenModel';
 import { refreshOfflineAutoBrowse } from './autoBrowse';
+
+async function syncPlaylistWithManifest(scope: string, source: Playlist): Promise<void> {
+  await assertDownloadNetworkAllowed();
+  if (musicRepository.getPlaylistSyncManifest === undefined) {
+    throw new Error('musicRepository.getPlaylistSyncManifest is not configured');
+  }
+  const manifest = await musicRepository.getPlaylistSyncManifest(source.id, {
+    includeLyrics: true,
+    preload: true,
+  });
+  if (manifest.lyrics !== undefined && manifest.lyrics !== null) {
+    const entries = Object.entries(manifest.lyrics);
+    const results = await Promise.allSettled(
+      entries.map(([trackId, lyrics]) => saveOfflineLyrics(scope, trackId, lyrics)),
+    );
+    const failures = results
+      .map((entry, idx) =>
+        entry.status === 'rejected'
+          ? `${entries[idx]?.[0] ?? 'unknown'}: ${entry.reason instanceof Error ? entry.reason.message : String(entry.reason)}`
+          : null,
+      )
+      .filter((item): item is string => item !== null);
+    if (failures.length > 0) {
+      throw new Error(
+        `Failed to persist ${failures.length} offline lyrics entries for playlist ${source.id}: ${failures.join('; ')}`,
+      );
+    }
+  }
+  await downloadPlaylistForOffline(scope, source);
+}
 
 export interface PlaylistOfflineActions {
   /** The transaction this screen started and is still waiting for. */
@@ -42,10 +78,12 @@ export function usePlaylistOffline(
       setFailure(null);
       setOperation('downloading');
       void runOfflinePlaylistScreenAction(
-        () => downloadPlaylistForOffline(scope, source),
+        () => syncPlaylistWithManifest(scope, source),
         refreshOfflineAutoBrowse,
       )
-        .catch(() => setFailure('download'))
+        .catch((cause: unknown) =>
+          setFailure(cause instanceof WifiOnlyDownloadError ? 'wifi-required' : 'download'),
+        )
         .finally(() => setOperation(null));
     },
     remove: () => {

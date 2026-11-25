@@ -1,5 +1,6 @@
 package __PACKAGE__
 
+import android.content.Context
 import android.system.Os
 import com.facebook.react.modules.network.OkHttpClientProvider
 import java.io.File
@@ -16,6 +17,8 @@ import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
+import top.logge.loggerythm.player.LoggeRythmRollingCacheBridge
+import top.logge.loggerythm.player.LoggeRythmRollingCacheClearSummary
 
 internal data class OfflineTrackRequest(
   val trackId: String,
@@ -68,11 +71,28 @@ internal class OfflineModuleException(
   cause: Throwable? = null,
 ) : Exception(code, cause)
 
+internal data class OfflineStorageMetricsResult(
+  val scope: String,
+  val scopeBytes: Long,
+  val scopeTrackCount: Int,
+  val allDownloadsBytes: Long,
+  val rollingCacheBytes: Long,
+  val rollingCacheMaxBytes: Long,
+  val rollingCacheEntryCount: Int,
+  val availableDiskBytes: Long,
+  val wifiOnly: Boolean,
+)
+
 /** One process-wide serialized owner for explicit playlist download mutations. */
 internal class OfflineDownloadCoordinator(
+  private val appContext: Context,
   private val storage: OfflineDownloadStorage,
   private val emitProgress: (OfflineNativeProgress) -> Unit,
 ) {
+  private val prefs = appContext.applicationContext.getSharedPreferences(
+    PREFS_NAME,
+    Context.MODE_PRIVATE,
+  )
   private data class OperationAdmission(
     val scope: String,
     val scopeGeneration: Long,
@@ -82,10 +102,15 @@ internal class OfflineDownloadCoordinator(
   private class ActiveJob(val scope: String, val generation: Long, val playlistId: String) {
     val cancelled = AtomicBoolean(false)
     val call = AtomicReference<Call?>(null)
+    val workToken = AtomicLong(0L)
 
     fun cancel() {
       cancelled.set(true)
       call.getAndSet(null)?.cancel()
+      val pendingToken = workToken.getAndSet(0L)
+      if (pendingToken > 0L) {
+        OfflineDownloadWorkRegistry.cancelAndRemove(pendingToken)
+      }
     }
   }
 
@@ -100,6 +125,47 @@ internal class OfflineDownloadCoordinator(
   private val allScopesClearing = AtomicBoolean(false)
   private var allScopesCleanupScheduled = false
   private val allScopesCleanupCallbacks = mutableListOf<(Result<Long>) -> Unit>()
+
+  fun isWifiOnly(): Boolean = prefs.getBoolean(PREF_WIFI_ONLY, false)
+
+  fun setWifiOnly(enabled: Boolean): Boolean {
+    if (!prefs.edit().putBoolean(PREF_WIFI_ONLY, enabled).commit()) {
+      throw OfflineModuleException("storage-unavailable", true)
+    }
+    return enabled
+  }
+
+  fun cancelActiveDownload(): Boolean {
+    val active = activeJob.get() ?: return false
+    active.cancel()
+    OfflineDownloadWorker.cancel(appContext)
+    return true
+  }
+
+  fun getStorageMetrics(scopeValue: String, callback: (Result<OfflineStorageMetricsResult>) -> Unit) {
+    val scope = parseScope(scopeValue, callback) ?: return
+    enqueueScopeOperation(scope, null, false, callback) {
+      val usage = storage.storageUsage(scope.value)
+      val cacheMetrics = LoggeRythmRollingCacheBridge.getMetrics(appContext)
+      OfflineStorageMetricsResult(
+        scope = scope.value,
+        scopeBytes = usage.scopeBytes,
+        scopeTrackCount = usage.scopeTrackCount,
+        allDownloadsBytes = usage.allDownloadsBytes,
+        rollingCacheBytes = cacheMetrics.cacheBytes,
+        rollingCacheMaxBytes = cacheMetrics.maxCacheBytes,
+        rollingCacheEntryCount = cacheMetrics.entryCount,
+        availableDiskBytes = usage.availableDiskBytes,
+        wifiOnly = isWifiOnly(),
+      )
+    }
+  }
+
+  fun clearRollingCache(callback: (Result<LoggeRythmRollingCacheClearSummary>) -> Unit) {
+    LoggeRythmRollingCacheBridge.clearRollingCache(appContext) { result ->
+      callback(result.mapError())
+    }
+  }
 
   fun hydrate(scopeValue: String, callback: (Result<OfflineHydrationResult>) -> Unit) {
     val scope = parseScope(scopeValue, callback) ?: return
@@ -153,6 +219,7 @@ internal class OfflineDownloadCoordinator(
         val cleanupGeneration = globalCleanupGeneration.get()
         val nextGeneration = generationCounter(scope.value).incrementAndGet()
         current?.cancel()
+        if (current != null) OfflineDownloadWorker.cancel(appContext)
         try {
           // Queueing happens while stateLock is held. A global clear therefore
           // cannot be queued ahead of an already-admitted scope operation.
@@ -192,6 +259,8 @@ internal class OfflineDownloadCoordinator(
 
       allScopesClearing.set(true)
       activeJob.get()?.cancel()
+      OfflineDownloadWorkRegistry.clearAll()
+      OfflineDownloadWorker.cancel(appContext)
       val cleanupGeneration = globalCleanupGeneration.incrementAndGet()
       generations.values.forEach { counter -> counter.incrementAndGet() }
       allScopesCleanupScheduled = true
@@ -243,6 +312,12 @@ internal class OfflineDownloadCoordinator(
       return
     }
 
+    val wifiOnly = isWifiOnly()
+    if (wifiOnly && !OfflineDownloadWorker.isUnmeteredNetworkActive(appContext)) {
+      callback(Result.failure(OfflineModuleException("wifi-required", true)))
+      return
+    }
+
     val job = ActiveJob(scope.value, generation, playlistId)
     var rejection: Throwable? = null
     synchronized(stateLock) {
@@ -251,21 +326,65 @@ internal class OfflineDownloadCoordinator(
         if (!activeJob.compareAndSet(null, job)) {
           throw OfflineModuleException("offline-download-busy", true)
         }
+        val settled = AtomicBoolean(false)
+        fun completeOnce(result: Result<OfflinePlaylistDownloadResult>) {
+          if (!settled.compareAndSet(false, true)) return
+          activeJob.compareAndSet(job, null)
+          callback(result)
+        }
+        var registeredToken = 0L
         try {
           // Admission and enqueue are atomic with respect to clearAllScopes().
-          executor.execute {
-            val result = runCatching {
-              requireAdmission(admission)
-              val value = runPlaylistJob(job, scope, validatedRequests)
-              requireAdmission(admission)
-              value
-            }.mapError()
-            activeJob.compareAndSet(job, null)
-            callback(result)
-          }
+          // WorkManager owns the Foreground Service notification and NetworkType.UNMETERED
+          // constraint so the download survives screen-off while cookies remain strictly in RAM.
+          registeredToken = OfflineDownloadWorkRegistry.register(
+            totalTracks = validatedRequests.size,
+            wifiOnly = wifiOnly,
+            run = { onNotificationProgress ->
+              val future = try {
+                executor.submit {
+                  val result = runCatching {
+                    requireAdmission(admission)
+                    val value = runPlaylistJob(
+                      job = job,
+                      scope = scope,
+                      requests = validatedRequests,
+                      wifiOnly = wifiOnly,
+                      onNotificationProgress = onNotificationProgress,
+                    )
+                    requireAdmission(admission)
+                    value
+                  }.mapError()
+                  completeOnce(result)
+                }
+              } catch (error: Exception) {
+                completeOnce(Result.failure(OfflineModuleException("storage-unavailable", true, error)))
+                return@register
+              }
+              try {
+                future.get()
+              } catch (_: InterruptedException) {
+                job.cancel()
+                future.cancel(true)
+                Thread.currentThread().interrupt()
+                completeOnce(Result.failure(OfflineModuleException("interrupted", true)))
+              } catch (error: Exception) {
+                job.cancel()
+                completeOnce(Result.failure(mapThrowable(error)))
+              }
+            },
+            onStopped = {
+              job.cancel()
+              completeOnce(Result.failure(OfflineModuleException("interrupted", true)))
+            },
+          )
+          job.workToken.set(registeredToken)
+          OfflineDownloadWorker.enqueue(appContext, wifiOnly, registeredToken)
         } catch (error: Exception) {
+          if (registeredToken != 0L) OfflineDownloadWorkRegistry.take(registeredToken)
+          job.workToken.set(0L)
           activeJob.compareAndSet(job, null)
-          throw OfflineModuleException("storage-unavailable", true, error)
+          throw OfflineModuleException("offline-worker-unavailable", true, error)
         }
       } catch (error: Throwable) {
         rejection = mapThrowable(error)
@@ -278,6 +397,8 @@ internal class OfflineDownloadCoordinator(
     synchronized(stateLock) {
       allScopesClearing.set(true)
       activeJob.getAndSet(null)?.cancel()
+      OfflineDownloadWorkRegistry.clearAll()
+      OfflineDownloadWorker.cancel(appContext)
       executor.shutdownNow()
     }
   }
@@ -286,6 +407,8 @@ internal class OfflineDownloadCoordinator(
     job: ActiveJob,
     scope: OfflineScope,
     requests: List<OfflineTrackRequest>,
+    wifiOnly: Boolean,
+    onNotificationProgress: (done: Int, total: Int) -> Unit,
   ): OfflinePlaylistDownloadResult {
     val successes = mutableListOf<OfflineTrackSuccess>()
     val failures = mutableListOf<OfflineTrackFailure>()
@@ -293,12 +416,19 @@ internal class OfflineDownloadCoordinator(
     var newBytesWritten = 0L
     var done = 0
     emitProgress(OfflineNativeProgress(job.playlistId, 0, requests.size, null, 0L, 0L, null))
+    onNotificationProgress(0, requests.size)
 
     for (index in requests.indices) {
       val request = requests[index]
       if (job.cancelled.get()) {
         requests.subList(index, requests.size).forEach { pending ->
           failures += OfflineTrackFailure(pending.trackId, "interrupted", true)
+        }
+        break
+      }
+      if (wifiOnly && !OfflineDownloadWorker.isUnmeteredNetworkActive(appContext)) {
+        requests.subList(index, requests.size).forEach { pending ->
+          failures += OfflineTrackFailure(pending.trackId, "wifi-required", true)
         }
         break
       }
@@ -327,6 +457,7 @@ internal class OfflineDownloadCoordinator(
         failures += OfflineTrackFailure(request.trackId, failure.code, failure.retryable)
       }
       done += 1
+      onNotificationProgress(done, requests.size)
       emitProgress(
         OfflineNativeProgress(job.playlistId, done, requests.size, request.trackId, newBytesWritten, 0L, null),
       )
@@ -474,11 +605,16 @@ internal class OfflineDownloadCoordinator(
         && target.host == origin.host
         && target.port == effectivePort(origin.scheme, origin.port)
         && target.encodedPath == "/api/tracks/$trackId/stream"
-        && target.query == null
+        && isAllowedStreamQuery(target)
         && target.fragment == null,
     ) { "stream-url-scope-mismatch" }
     return value.copy(trackId = trackId, fileName = "$trackId.mp3", url = target.toString())
   }
+
+  private fun isAllowedStreamQuery(target: HttpUrl): Boolean =
+    target.encodedQuery == null
+      || target.encodedQuery == "quality=high"
+      || target.encodedQuery == "quality=saver"
 
   private fun effectivePort(scheme: String, port: Int): Int = when {
     port >= 0 -> port
@@ -593,6 +729,8 @@ internal class OfflineDownloadCoordinator(
     generations.computeIfAbsent(scope) { AtomicLong(globalCleanupGeneration.get()) }
 
   companion object {
+    private const val PREFS_NAME = "loggerythm_offline_downloads_prefs"
+    private const val PREF_WIFI_ONLY = "wifi_only"
     private const val BUFFER_BYTES = 64 * 1024
     private const val PROGRESS_STEP_BYTES = 256 * 1024L
     private val PLAYLIST_ID = Regex("[1-9][0-9]{0,31}")

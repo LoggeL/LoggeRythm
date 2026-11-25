@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { decodeTrack } from '../api/decoders';
 import type { Playlist, Track } from '../api/types';
+import {
+  resetAudioQualityPreference,
+  setAudioQualityPreference,
+} from '../player/qualityPreference';
 import { decodeOfflineManifest } from './model';
 import { getOfflineSnapshot } from './registry';
 import {
@@ -25,6 +29,14 @@ const mocks = vi.hoisted(() => ({
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   progressListener: null as null | ((value: unknown) => void),
+}));
+
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: vi.fn(async () => null),
+    setItem: vi.fn(async () => undefined),
+    removeItem: vi.fn(async () => undefined),
+  },
 }));
 
 vi.mock('../api/client', () => ({
@@ -112,6 +124,7 @@ function success(trackId: string, sizeBytes = 1_000) {
 }
 
 beforeEach(() => {
+  resetAudioQualityPreference();
   resetOfflineRuntimeStateForTests();
   vi.clearAllMocks();
   mocks.progressListener = null;
@@ -159,20 +172,20 @@ describe('offline runtime', () => {
     await downloadPlaylistForOffline(scope, source);
 
     expect(mocks.authenticatedHeadersFor).toHaveBeenCalledExactlyOnceWith(
-      'https://music.test/api/tracks/42/stream',
+      'https://music.test/api/tracks/42/stream?quality=high',
     );
     const request = mocks.start.mock.calls[0]?.[0];
     expect(request.tracks).toEqual([
       {
         trackId: '42',
         fileName: '42.mp3',
-        url: 'https://music.test/api/tracks/42/stream',
+        url: 'https://music.test/api/tracks/42/stream?quality=high',
         headers: { Cookie: 'sf_session=test-session' },
       },
       {
         trackId: '43',
         fileName: '43.mp3',
-        url: 'https://music.test/api/tracks/43/stream',
+        url: 'https://music.test/api/tracks/43/stream?quality=high',
         headers: { Cookie: 'sf_session=test-session' },
       },
     ]);
@@ -719,5 +732,37 @@ describe('offline runtime loudness compatibility', () => {
     expect(mocks.start).not.toHaveBeenCalled();
     expect(getOfflineSnapshot().error).toBe('download-failed');
     expect(getOfflineSnapshot().downloadedTrackIds.size).toBe(0);
+  });
+
+  it('requests explicit MP3 quality=high for lossless users and quality=saver for saver users', async () => {
+    await initializeOfflineDownloads(scope);
+
+    setAudioQualityPreference('lossless');
+    mocks.start.mockResolvedValueOnce({
+      scope,
+      generation: 1,
+      playlistId: '42',
+      successes: [success('42')],
+      failures: [],
+      availableDiskBytes: 9_000,
+    });
+    await downloadTrackForOffline(scope, track('42'));
+    expect(mocks.start.mock.calls[0]?.[0].tracks[0].url).toBe(
+      'https://music.test/api/tracks/42/stream?quality=high',
+    );
+
+    setAudioQualityPreference('saver');
+    mocks.start.mockResolvedValueOnce({
+      scope,
+      generation: 1,
+      playlistId: '43',
+      successes: [success('43')],
+      failures: [],
+      availableDiskBytes: 8_000,
+    });
+    await downloadTrackForOffline(scope, track('43'));
+    expect(mocks.start.mock.calls[1]?.[0].tracks[0].url).toBe(
+      'https://music.test/api/tracks/43/stream?quality=saver',
+    );
   });
 });

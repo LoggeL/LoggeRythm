@@ -7,8 +7,8 @@
     "scheme": "loggerythm",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "backgroundColor": "#0a0a14",
-    "primaryColor": "#7c5cff",
+    "backgroundColor": "#0f0e11",
+    "primaryColor": "#d6ff4b",
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -76,7 +76,8 @@
       "./plugins/withMusicVolumeControl",
       "./plugins/withOfflineDownloads",
       "./plugins/withSharedTextIntent",
-      "./plugins/withAndroidLauncherAssets"
+      "./plugins/withAndroidLauncherAssets",
+      "./plugins/withAndroidSystemSurfaces"
     ]
   }
 }

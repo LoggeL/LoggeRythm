@@ -6,44 +6,46 @@
  */
 export const colors = {
   /** Behind everything: tab bar, system bars, modal scrims' base. */
-  backdrop: '#050608',
-  /** Default screen background. */
-  background: '#0c0d11',
-  backgroundElevated: '#12141a',
-  /** Cards, rows, inputs. */
-  surface: '#171a21',
-  /** Floating surfaces: mini player, sheets, menus, pressed cards. */
-  surfaceElevated: '#20242d',
-  surfacePressed: '#2a2f3a',
-  /** Translucent white fills for neutral controls (web `.action-secondary`, `.filter-chip`). */
-  fill: 'rgba(255,255,255,0.07)',
-  fillStrong: 'rgba(255,255,255,0.12)',
-  textPrimary: '#f4f4f7',
-  textSecondary: '#a0a4b2',
+  backdrop: '#09090b',
+  /** Default screen background (web --background, Ink). */
+  background: '#0f0e11',
+  backgroundElevated: '#151418',
+  /** Cards, rows, inputs (web --panel). */
+  surface: '#1a191e',
+  /** Floating surfaces: mini player, sheets, menus, pressed cards (web --panel-hover). */
+  surfaceElevated: '#25232a',
+  surfacePressed: '#2f2d36',
+  /** Translucent paper fills for neutral controls (web `.action-secondary`, `.filter-chip`). */
+  fill: 'rgba(244,240,230,0.07)',
+  fillStrong: 'rgba(244,240,230,0.12)',
+  /** Warm paper ink (web --foreground). */
+  textPrimary: '#f4f0e6',
+  textSecondary: '#a9a59c',
   /** Tertiary copy. Still >= 4.5:1 on every surface up to surfaceElevated. */
-  textMuted: '#8a8fa0',
-  accent: '#8f73ff',
-  accentSolid: '#7a5cf5',
-  accentPressed: '#6a4ee0',
-  accentSoft: '#c3b5ff',
-  accentSubtle: '#262040',
+  textMuted: '#949088',
+  /** Signal lime accent (web --accent / --brand). */
+  accent: '#d6ff4b',
+  accentSolid: '#c9f53c',
+  accentPressed: '#b5df2c',
+  accentSoft: '#d6ff4b',
+  accentSubtle: '#262d11',
   /** Logo fill and the "Rythm" half of the wordmark (web --brand / web/public/Logo.svg). */
   brand: '#d6ff4b',
-  /** Ink on accent / accentSolid fills (dark, like the web play FAB). */
-  onAccent: '#050308',
-  /** Ink on light (textPrimary) fills such as the primary ActionButton. */
-  onLight: '#0b0c10',
-  border: '#272b35',
-  borderSubtle: '#1f232c',
-  /** 1px separators and card outlines. Not a hex: never feed it to contrast maths. */
-  hairline: 'rgba(255,255,255,0.07)',
-  scrim: 'rgba(5,6,8,0.72)',
-  success: '#5fd6a0',
-  successSubtle: '#143a2e',
+  /** Ink on accent / accentSolid fills (web --on-accent). */
+  onAccent: '#10140a',
+  /** Ink on light (textPrimary) fills such as the primary ActionButton (web --on-light). */
+  onLight: '#0c0b0d',
+  border: '#302e36',
+  borderSubtle: '#24222a',
+  /** 1px separators and card outlines (web --hairline). Not a hex: never feed it to contrast maths. */
+  hairline: 'rgba(244,240,230,0.09)',
+  scrim: 'rgba(9,9,11,0.74)',
+  success: '#6fe0a8',
+  successSubtle: '#143326',
   warning: '#f6c768',
-  warningSubtle: '#3d321b',
-  danger: '#ff7a8a',
-  dangerSubtle: '#3a1f27',
+  warningSubtle: '#3b3019',
+  danger: '#ff7a6b',
+  dangerSubtle: '#3c1e1d',
 } as const;
 
 export type ColorToken = keyof typeof colors;

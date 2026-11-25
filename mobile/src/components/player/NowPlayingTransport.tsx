@@ -1,4 +1,4 @@
-import React, { useCallback, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { triggerHaptic } from '../../hooks/useHaptics';
@@ -8,6 +8,11 @@ import { colors, elevation, metrics, radii, spacing } from '../../theme';
 import { TvFocusable } from '../../tv';
 import AppIcon from '../AppIcon';
 import { AppText, IconButton, PlayButton } from '../ui';
+import {
+  unexpectedAudioMetaErrorMessage,
+  useTrackAudioMeta,
+  WaveformScrubberView,
+} from './WaveformScrubber';
 
 export interface NowPlayingTransportProps {
   position: number;
@@ -306,7 +311,18 @@ const LiveTransportScrubber = React.memo(function LiveTransportScrubber({
 }) {
   const { position, duration } = useEffectiveProgress(0.5);
   const [seekState, setSeekState] = useState<{ trackId: string; value: number } | null>(null);
+  const audioMetaQuery = useTrackAudioMeta(trackId);
+  const unexpectedAudioMetaError = unexpectedAudioMetaErrorMessage(audioMetaQuery.error);
   const sliderPosition = seekState?.trackId === trackId ? seekState.value : position;
+
+  useEffect(() => {
+    if (unexpectedAudioMetaError !== null) {
+      console.error(
+        `[LoggeRythm] Unexpected waveform audio-meta failure for track ${trackId}:`,
+        audioMetaQuery.error,
+      );
+    }
+  }, [audioMetaQuery.error, trackId, unexpectedAudioMetaError]);
 
   const handlePositionChange = useCallback(
     (seconds: number) => setSeekState({ trackId, value: seconds }),
@@ -320,7 +336,45 @@ const LiveTransportScrubber = React.memo(function LiveTransportScrubber({
     [onSeek],
   );
 
-  return renderScrubberSection({
+  const meta = audioMetaQuery.data;
+  if (!compact && meta !== undefined && meta.peaks.length > 0) {
+    const usableDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+    const displayPosition = Number.isFinite(sliderPosition) ? Math.max(sliderPosition, 0) : 0;
+    return (
+      <>
+        <WaveformScrubberView
+          meta={meta}
+          position={displayPosition}
+          duration={usableDuration}
+          compact={compact}
+          isTv={isTv}
+          testIDPrefix={testIDPrefix}
+          onPositionChange={handlePositionChange}
+          onSeek={handleSeek}
+        />
+        <View style={styles.timeRow}>
+          <AppText
+            testID={`${testIDPrefix}-position`}
+            variant="caption"
+            color="secondary"
+            style={styles.time}
+          >
+            {formatTime(displayPosition)}
+          </AppText>
+          <AppText
+            testID={`${testIDPrefix}-duration`}
+            variant="caption"
+            color="secondary"
+            style={styles.time}
+          >
+            {formatTime(usableDuration)}
+          </AppText>
+        </View>
+      </>
+    );
+  }
+
+  const scrubber = renderScrubberSection({
     position: sliderPosition,
     duration,
     compact,
@@ -329,6 +383,23 @@ const LiveTransportScrubber = React.memo(function LiveTransportScrubber({
     onPositionChange: handlePositionChange,
     onSeek: handleSeek,
   });
+  if (!compact && unexpectedAudioMetaError !== null) {
+    return (
+      <>
+        {scrubber}
+        <AppText
+          testID={`${testIDPrefix}-waveform-error`}
+          accessibilityRole="alert"
+          variant="micro"
+          color="warning"
+          numberOfLines={2}
+        >
+          {unexpectedAudioMetaError}
+        </AppText>
+      </>
+    );
+  }
+  return scrubber;
 });
 
 const MemoTransportControls = React.memo(function MemoTransportControls(

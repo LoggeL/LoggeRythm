@@ -28,12 +28,43 @@ export interface Track {
   loudness_lufs?: number | null;
   /** True/sample peak as a linear full-scale ratio when known. */
   loudness_peak?: number | null;
+  /** Track tempo in beats per minute when known. */
+  bpm?: number | null;
+  /** Whether the track carries explicit lyrics when known. */
+  explicit?: boolean | null;
   /** Stable database identity of this exact occurrence in a playlist detail. */
   playlist_entry_id?: PlaylistEntryId;
   /** User who added this occurrence to a playlist (present on playlist detail tracks). */
   added_by?: PlaylistCollaboratorUser | null;
   /** ISO-8601 UTC timestamp when this occurrence was added to a playlist. */
   added_at?: string | null;
+}
+
+export type AudioQualityTier = 'lossless' | 'high' | 'saver';
+
+export interface TrackAudioMeta {
+  deezer_id: DeezerId;
+  peaks: number[];
+  loudness_lufs: number | null;
+  loudness_gain_db: number | null;
+  loudness_peak: number | null;
+  bpm: number | null;
+  duration_sec: number | null;
+  intro_end_sec: number | null;
+  outro_start_sec: number | null;
+  analyzed_at: string;
+}
+
+export interface BatchPreloadResponse {
+  queued: DeezerId[];
+  already_cached: DeezerId[];
+}
+
+export interface RadioSeedRequest {
+  track_ids?: DeezerId[];
+  mood_tag?: string | null;
+  limit?: number;
+  exclude_ids?: DeezerId[];
 }
 
 /** Fail closed when a playlist mutation is attempted with catalog-only data. */
@@ -272,6 +303,128 @@ export interface PublicProfile {
 export interface PlaybackSettings {
   crossfade_enabled: boolean;
   crossfade_duration_sec: number;
+  preferred_quality?: AudioQualityTier;
+  share_listening_activity?: boolean;
+}
+
+export interface PlaylistSyncTrackItem {
+  playlist_entry_id: PlaylistEntryId;
+  deezer_id: DeezerId;
+  title: string;
+  artist: string;
+  duration_sec: number;
+  is_stored: boolean;
+  size_bytes: number | null;
+  audio_format: string | null;
+  loudness_gain_db: number | null;
+  loudness_lufs: number | null;
+  loudness_peak: number | null;
+  has_lyrics: boolean;
+}
+
+export interface PlaylistSyncManifest {
+  playlist_id: number;
+  revision: number;
+  track_count: number;
+  stored_count: number;
+  total_known_bytes: number;
+  tracks: PlaylistSyncTrackItem[];
+  lyrics?: Record<DeezerId, LyricsResponse> | null;
+}
+
+export interface PlaylistDuplicateGroup {
+  keep_entry_id: PlaylistEntryId;
+  duplicate_entry_ids: PlaylistEntryId[];
+  title: string;
+  artist: string;
+  isrc: string;
+}
+
+export interface PlaylistDuplicatesResponse {
+  playlist_id: number;
+  total_duplicates: number;
+  groups: PlaylistDuplicateGroup[];
+}
+
+export interface PlaylistDeduplicateResult {
+  playlist_id: number;
+  groups_merged: number;
+  removed_count: number;
+  removed_entry_ids: PlaylistEntryId[];
+  revision: number;
+}
+
+export interface PlaylistBlendResult {
+  playlist: Playlist;
+  match_percent: number;
+  shared_artists: string[];
+  shared_tracks_count: number;
+  other_user: PlaylistCollaboratorUser;
+}
+
+export type PlaylistLiveEventType = 'snapshot' | 'updated' | 'revoked' | 'deleted';
+
+export interface PlaylistLiveEvent {
+  playlist_id: number;
+  revision: number;
+  event: PlaylistLiveEventType;
+}
+
+export type StatsInsightsRange = '7d' | '30d' | '90d' | 'year' | 'all';
+
+export interface InsightsStatEntry {
+  key: string | number;
+  label: string;
+  sublabel: string;
+  cover: string;
+  count: number;
+}
+
+export interface TimestampedPlay {
+  id: DeezerId;
+  title: string;
+  artist: string;
+  artist_id: string | number;
+  artists: ArtistRef[];
+  album: string;
+  album_id: string | number;
+  cover: string;
+  duration_sec: number;
+  played_at: string;
+}
+
+export interface UserStatsInsights {
+  range: StatsInsightsRange;
+  listening_sec: number;
+  play_count: number;
+  unique_tracks: number;
+  unique_artists: number;
+  top_tracks: InsightsStatEntry[];
+  top_artists: InsightsStatEntry[];
+  top_albums: InsightsStatEntry[];
+  current_streak_days: number;
+  longest_streak_days: number;
+  hourly_distribution: number[];
+  weekday_distribution: number[];
+  new_artists_count: number;
+  recent_plays: TimestampedPlay[];
+}
+
+export interface FriendActivityItem {
+  user_id: number;
+  display_name: string | null;
+  avatar_url: string | null;
+  is_playing: boolean;
+  track: Track | null;
+  device_name: string | null;
+  device_type: ConnectDeviceType | null;
+  party_code: string | null;
+  updated_at: string | null;
+}
+
+export interface SocialActivityResponse {
+  items: FriendActivityItem[];
+  server_time: string;
 }
 
 export interface PlaylistCreateRequest {
@@ -328,6 +481,9 @@ export interface ImportJobStatus {
   lookup_error: string | null;
   /** Why a failed job ended. */
   error: string | null;
+  target_playlist_id?: number | null;
+  create_playlist_name?: string | null;
+  created_playlist_id?: number | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -348,15 +504,23 @@ export interface DeezerPlaylistDetail {
   tracks: DeezerPlaylistTrack[];
 }
 
+export interface LyricsWord {
+  t: number;
+  end: number;
+  text: string;
+}
+
 export interface LyricsLine {
   t: number;
   text: string;
+  words?: LyricsWord[];
 }
 
 /** `cached` is present only when the server serves a persisted lyrics row. */
 export interface LyricsResponse {
   lines: LyricsLine[] | null;
   synced: boolean;
+  instrumental?: boolean;
   source: string | null;
   ai_generated: boolean;
   cached?: true;
@@ -401,9 +565,19 @@ export interface PartyTrack {
   load_error: string | null;
   /** Authoritative server-stored boolean from backend storage. */
   is_stored: boolean;
+  /** Optional ReplayGain/R128 track gain adjustment in dB. */
+  loudness_gain_db?: number | null;
 }
 
 export type PartyLoadState = 'ready' | 'loading' | 'queued' | 'failed' | 'idle';
+
+export interface PartyReaction {
+  id: string;
+  emoji: string;
+  member_key: string;
+  member_name: string;
+  created_at: string;
+}
 
 export interface PartyMember {
   key: string;
@@ -425,6 +599,10 @@ export interface PartyState {
   playback_updated_at: string | null;
   server_time: string;
   guests_can_control: boolean;
+  auto_dj?: boolean;
+  skip_votes?: string[];
+  skip_votes_needed?: number;
+  latest_reaction?: PartyReaction | null;
   playback_changed_by: string;
   playback_revision: number;
   ended: boolean;
@@ -434,6 +612,15 @@ export interface PartyState {
   viewer_key: string;
   viewer_name: string;
   viewer_is_guest: boolean;
+}
+
+export interface PartyVoteSkipResult {
+  code: string;
+  track_item_id: number;
+  votes: string[];
+  votes_needed: number;
+  skipped: boolean;
+  state: PartyState;
 }
 
 export type ConnectDeviceType =

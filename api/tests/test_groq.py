@@ -33,8 +33,21 @@ class WordLineTests(unittest.TestCase):
         self.assertEqual(
             lines,
             [
-                {"t": 0.17, "text": "Wir tanzen, bis morgen."},
-                {"t": 2.0, "text": "Nochmal!"},
+                {
+                    "t": 0.17,
+                    "text": "Wir tanzen, bis morgen.",
+                    "words": [
+                        {"t": 0.17, "end": 0.4, "text": "Wir"},
+                        {"t": 0.45, "end": 0.9, "text": "tanzen,"},
+                        {"t": 0.95, "end": 1.1, "text": "bis"},
+                        {"t": 1.2, "end": 1.7, "text": "morgen."},
+                    ],
+                },
+                {
+                    "t": 2.0,
+                    "text": "Nochmal!",
+                    "words": [{"t": 2.0, "end": 2.5, "text": "Nochmal!"}],
+                },
             ],
         )
 
@@ -54,8 +67,23 @@ class WordLineTests(unittest.TestCase):
         self.assertEqual(
             lines,
             [
-                {"t": 0.0, "text": "Hello, world"},
-                {"t": 1.6, "text": "again!"},
+                {
+                    "t": 0.0,
+                    "text": "Hello, world",
+                    "words": [
+                        {"t": 0.0, "end": 0.3, "text": "Hello"},
+                        {"t": 0.3, "end": 0.32, "text": ","},
+                        {"t": 0.4, "end": 0.7, "text": "world"},
+                    ],
+                },
+                {
+                    "t": 1.6,
+                    "text": "again!",
+                    "words": [
+                        {"t": 1.6, "end": 1.9, "text": "again"},
+                        {"t": 1.9, "end": 1.91, "text": "!"},
+                    ],
+                },
             ],
         )
 
@@ -75,8 +103,21 @@ class WordLineTests(unittest.TestCase):
         self.assertEqual(
             lines,
             [
-                {"t": 0.0, "text": '"Hello."'},
-                {"t": 0.8, "text": "Again."},
+                {
+                    "t": 0.0,
+                    "text": '"Hello."',
+                    "words": [
+                        {"t": 0.0, "end": 0.01, "text": '"'},
+                        {"t": 0.02, "end": 0.4, "text": "Hello"},
+                        {"t": 0.4, "end": 0.42, "text": "."},
+                        {"t": 0.42, "end": 0.43, "text": '"'},
+                    ],
+                },
+                {
+                    "t": 0.8,
+                    "text": "Again.",
+                    "words": [{"t": 0.8, "end": 1.2, "text": "Again."}],
+                },
             ],
         )
 
@@ -131,13 +172,16 @@ class WordLineTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            lines,
+            [(line["t"], line["text"]) for line in lines],
             [
-                {"t": 53.0, "text": "ziemlich satt heute"},
-                {"t": 53.84, "text": "Meine Kinder gehen mir auf den Sack"},
-                {"t": 55.66, "text": "Geh alleine"},
+                (53.0, "ziemlich satt heute"),
+                (53.84, "Meine Kinder gehen mir auf den Sack"),
+                (55.66, "Geh alleine"),
             ],
         )
+        self.assertEqual(len(lines[0]["words"]), 3)
+        self.assertEqual(len(lines[1]["words"]), 7)
+        self.assertEqual(len(lines[2]["words"]), 2)
 
     def test_does_not_split_continuous_capitalized_german_nouns(self) -> None:
         lines = _word_lines(
@@ -151,7 +195,21 @@ class WordLineTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(lines, [{"t": 56.02, "text": "mit dem Lego spielen"}])
+        self.assertEqual(
+            lines,
+            [
+                {
+                    "t": 56.02,
+                    "text": "mit dem Lego spielen",
+                    "words": [
+                        {"t": 56.02, "end": 56.22, "text": "mit"},
+                        {"t": 56.22, "end": 56.36, "text": "dem"},
+                        {"t": 56.36, "end": 56.6, "text": "Lego"},
+                        {"t": 56.6, "end": 57.16, "text": "spielen"},
+                    ],
+                }
+            ],
+        )
 
     def test_sorts_valid_out_of_order_words_from_overlapping_vocals(self) -> None:
         lines = _word_lines(
@@ -166,8 +224,16 @@ class WordLineTests(unittest.TestCase):
         self.assertEqual(
             lines,
             [
-                {"t": 1.0, "text": "earlier"},
-                {"t": 2.0, "text": "later"},
+                {
+                    "t": 1.0,
+                    "text": "earlier",
+                    "words": [{"t": 1.0, "end": 1.2, "text": "earlier"}],
+                },
+                {
+                    "t": 2.0,
+                    "text": "later",
+                    "words": [{"t": 2.0, "end": 2.2, "text": "later"}],
+                },
             ],
         )
 
@@ -200,7 +266,16 @@ class TranscriptionRequestTests(unittest.TestCase):
         with patch.object(groq, "GROQ_API_KEY", "unit-test-key"):
             lines = groq.transcribe_file(audio_path)
 
-        self.assertEqual(lines, [{"t": 0.12, "text": "Lyrics."}])
+        self.assertEqual(
+            lines,
+            [
+                {
+                    "t": 0.12,
+                    "text": "Lyrics.",
+                    "words": [{"t": 0.12, "end": 0.8, "text": "Lyrics."}],
+                }
+            ],
+        )
         request = post.call_args.kwargs
         self.assertEqual(request["data"]["response_format"], "verbose_json")
         self.assertEqual(request["data"]["timestamp_granularities[]"], "word")
