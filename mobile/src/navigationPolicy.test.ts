@@ -16,7 +16,6 @@ describe('root navigation dismissal policy', () => {
       'Queue',
       'PartyStart',
       'Party',
-      'PlaylistInvite',
     ]);
     expect(transientModalScreenOptions).toEqual({
       headerShown: false,

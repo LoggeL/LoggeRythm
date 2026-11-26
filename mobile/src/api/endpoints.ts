@@ -31,13 +31,13 @@ import {
   decodePlaybackSettings,
   decodePlaylist,
   decodePlaylistBlendResult,
-  decodePlaylistCollaborator,
   decodePlaylistDeduplicateResult,
   decodePlaylistDuplicates,
-  decodePlaylistInvite,
-  decodePlaylistInvitePreview,
-  decodePlaylistInviteStatus,
+  decodePlaylistIncomingInvitations,
+  decodePlaylistInviteCandidates,
   decodePlaylistJoinResult,
+  decodePlaylistOutgoingInvitation,
+  decodePlaylistOutgoingInvitations,
   decodePlaylistSummary,
   decodePlaylistSearchResults,
   decodePlaylistSummaries,
@@ -85,14 +85,13 @@ import type {
   PlaybackSettings,
   Playlist,
   PlaylistBlendResult,
-  PlaylistCollaborator,
   PlaylistCreateRequest,
   PlaylistDeduplicateResult,
   PlaylistDuplicatesResponse,
-  PlaylistInvite,
-  PlaylistInvitePreview,
-  PlaylistInviteStatus,
+  PlaylistIncomingInvitation,
+  PlaylistInviteCandidate,
   PlaylistJoinResult,
+  PlaylistOutgoingInvitation,
   PlaylistListScope,
   PlaylistSearchResult,
   PlaylistSummary,
@@ -638,58 +637,92 @@ export function setPlaylistCollaborative(
   });
 }
 
-export function getPlaylistInvite(
+/** Owner-only: approved accounts whose display name contains `q` (max 20, owner excluded). */
+export function searchPlaylistInviteCandidates(
+  id: number,
+  q: string,
+  signal?: AbortSignal,
+): Promise<PlaylistInviteCandidate[]> {
+  const needle = q.trim();
+  if (needle.length === 0) {
+    throw new Error('searchPlaylistInviteCandidates requires a non-empty display-name query');
+  }
+  return apiRequest<PlaylistInviteCandidate[]>(
+    `/api/playlists/${pathSegment(id)}/invite-candidates?q=${encodeURIComponent(needle)}`,
+    {
+      signal,
+      decode: decodePlaylistInviteCandidates,
+    },
+  );
+}
+
+/** Owner-only: pending invitations the invitees have not answered yet. */
+export function getPlaylistOutgoingInvitations(
   id: number,
   signal?: AbortSignal,
-): Promise<PlaylistInviteStatus> {
-  return apiRequest<PlaylistInviteStatus>(`/api/playlists/${pathSegment(id)}/invite`, {
-    signal,
-    decode: decodePlaylistInviteStatus,
-  });
+): Promise<PlaylistOutgoingInvitation[]> {
+  return apiRequest<PlaylistOutgoingInvitation[]>(
+    `/api/playlists/${pathSegment(id)}/invitations`,
+    {
+      signal,
+      decode: decodePlaylistOutgoingInvitations,
+    },
+  );
 }
 
-export function createPlaylistInvite(id: number): Promise<PlaylistInvite> {
-  return apiRequest<PlaylistInvite>(`/api/playlists/${pathSegment(id)}/invite`, {
-    method: 'POST',
-    successStatuses: [201],
-    decode: decodePlaylistInvite,
-  });
-}
-
-export function revokePlaylistInvite(id: number): Promise<void> {
-  return apiRequest<void>(`/api/playlists/${pathSegment(id)}/invite`, {
-    method: 'DELETE',
-    successStatuses: [204],
-  });
-}
-
-export function getPlaylistInvitePreview(
-  token: string,
-  signal?: AbortSignal,
-): Promise<PlaylistInvitePreview> {
-  return apiRequest<PlaylistInvitePreview>(`/api/playlists/invites/${pathSegment(token)}`, {
-    signal,
-    decode: decodePlaylistInvitePreview,
-  });
-}
-
-export function acceptPlaylistInvite(token: string): Promise<PlaylistJoinResult> {
-  return apiRequest<PlaylistJoinResult>(`/api/playlists/invites/${pathSegment(token)}/accept`, {
-    method: 'POST',
-    decode: decodePlaylistJoinResult,
-  });
-}
-
-export function addPlaylistCollaborator(
+export function invitePlaylistCollaborator(
   id: number,
-  email: string,
-): Promise<PlaylistCollaborator> {
-  return apiRequest<PlaylistCollaborator>(`/api/playlists/${pathSegment(id)}/collaborators`, {
-    method: 'POST',
-    body: { email },
-    successStatuses: [201],
-    decode: decodePlaylistCollaborator,
+  userId: number,
+): Promise<PlaylistOutgoingInvitation> {
+  return apiRequest<PlaylistOutgoingInvitation>(
+    `/api/playlists/${pathSegment(id)}/invitations`,
+    {
+      method: 'POST',
+      body: { user_id: userId },
+      successStatuses: [201],
+      decode: decodePlaylistOutgoingInvitation,
+    },
+  );
+}
+
+export function withdrawPlaylistInvitation(id: number, userId: number): Promise<void> {
+  return apiRequest<void>(
+    `/api/playlists/${pathSegment(id)}/invitations/${pathSegment(userId)}`,
+    {
+      method: 'DELETE',
+      successStatuses: [204],
+    },
+  );
+}
+
+/** Pending playlist invitations addressed to the current account, newest first. */
+export function getMyPlaylistInvitations(
+  signal?: AbortSignal,
+): Promise<PlaylistIncomingInvitation[]> {
+  return apiRequest<PlaylistIncomingInvitation[]>('/api/playlists/invitations', {
+    signal,
+    decode: decodePlaylistIncomingInvitations,
   });
+}
+
+export function acceptPlaylistInvitation(invitationId: number): Promise<PlaylistJoinResult> {
+  return apiRequest<PlaylistJoinResult>(
+    `/api/playlists/invitations/${pathSegment(invitationId)}/accept`,
+    {
+      method: 'POST',
+      decode: decodePlaylistJoinResult,
+    },
+  );
+}
+
+export function declinePlaylistInvitation(invitationId: number): Promise<void> {
+  return apiRequest<void>(
+    `/api/playlists/invitations/${pathSegment(invitationId)}/decline`,
+    {
+      method: 'POST',
+      successStatuses: [204],
+    },
+  );
 }
 
 export function removePlaylistCollaborator(id: number, userId: number): Promise<void> {

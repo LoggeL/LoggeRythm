@@ -72,12 +72,13 @@ loggerythm playlists create "Roadtrip" --collaborative
 loggerythm playlists add-track 12 42
 loggerythm playlists get 12
 loggerythm playlists collaborative 12 on
-loggerythm playlists invite 12 --create
-loggerythm playlists invite 12
-loggerythm playlists invite 12 --revoke
-loggerythm playlists join <TOKEN> --preview
-loggerythm playlists join <TOKEN>
-loggerythm playlists add-collaborator 12 freund@example.org
+loggerythm playlists find-users 12 "Clara"
+loggerythm playlists invite 12 7
+loggerythm playlists invitations 12
+loggerythm playlists withdraw-invite 12 7
+loggerythm playlists inbox
+loggerythm playlists accept 3
+loggerythm playlists decline 3
 loggerythm playlists remove-collaborator 12 7
 loggerythm playlists leave 12
 loggerythm likes add 42
@@ -91,8 +92,11 @@ die vollständigen Track-Metadaten, damit auch mehrere beteiligte Künstler erha
 bleiben. Eine bereits vorhandene Track-ID wird beim Hinzufügen zur Playlist nicht
 nochmals angehängt. Bei gemeinsamen Playlists (`--collaborative` bzw. `collaborative on`)
 können Mitwirkende Tracks hinzufügen, neu anordnen und entfernen; Metadaten, Cover,
-Sichtbarkeit, Einladungen und Löschung bleiben dem Eigentümer vorbehalten. Einladungslinks
-verwenden die Web-/App-Adresse `/playlist/join/<TOKEN>`.
+Sichtbarkeit, Einladungen und Löschung bleiben dem Eigentümer vorbehalten. Eingeladen
+werden nur bestehende, freigegebene Konten: `find-users` sucht sie per Anzeigename (nie
+per E-Mail) und liefert die Benutzer-ID für `invite`. Die eingeladene Person sieht die
+Einladung mit `inbox` und wird erst mit `accept` Mitwirkende; `decline` lehnt ab.
+Einladungslinks gibt es nicht.
 
 ## Downloads und Servercache
 

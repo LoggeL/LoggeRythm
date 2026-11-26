@@ -3,8 +3,6 @@ import {
   deezerReferenceIdFromRouteValue,
   mixKeyFromRouteValue,
   playlistIdFromRouteValue,
-  playlistInviteTokenFromRouteValue,
-  playlistInviteUrl,
   safeRouteLabel,
   trackAlbumRoute,
   trackArtistRoute,
@@ -85,38 +83,5 @@ describe('track detail routes', () => {
     });
     expect(trackAlbumRoute({ album_id: '', album: 'Legacy' })).toBeNull();
     expect(trackArtistRoute({ artist_id: 0, artist: 'Legacy' })).toBeNull();
-  });
-});
-
-describe('playlist invite tokens and URLs', () => {
-  const validToken = 'abcDEF_0123456789-xyz';
-
-  it('validates canonical URL-safe playlist invite tokens', () => {
-    expect(playlistInviteTokenFromRouteValue(validToken)).toBe(validToken);
-    expect(playlistInviteTokenFromRouteValue(`  ${validToken}  `)).toBe(validToken);
-    expect(playlistInviteTokenFromRouteValue('a'.repeat(16))).toBe('a'.repeat(16));
-    expect(playlistInviteTokenFromRouteValue('a'.repeat(128))).toBe('a'.repeat(128));
-  });
-
-  it.each([
-    undefined,
-    null,
-    42,
-    '',
-    'short_token_15c',
-    'a'.repeat(129),
-    'invalid/token_12345678',
-    'invalid?token_12345678',
-    'invalid space_12345678',
-  ])('rejects malformed invite token %j', (value) => {
-    expect(playlistInviteTokenFromRouteValue(value)).toBeNull();
-  });
-
-  it('builds a canonical share URL and fails loud on invalid inputs', () => {
-    expect(playlistInviteUrl('https://loggerythm.logge.top/', validToken)).toBe(
-      `https://loggerythm.logge.top/playlist/join/${validToken}`,
-    );
-    expect(() => playlistInviteUrl('   ', validToken)).toThrow(/API base/);
-    expect(() => playlistInviteUrl('https://loggerythm.logge.top', 'short')).toThrow(/token/);
   });
 });

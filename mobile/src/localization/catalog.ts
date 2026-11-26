@@ -107,7 +107,6 @@ export interface StringCatalog {
     genre: string;
     likedSongs: string;
     playlists: string;
-    playlistInvite: string;
     insights: string;
     openProfile: string;
     openProfileUpdateAvailable: string;
@@ -1141,7 +1140,6 @@ export const de: StringCatalog = {
     genre: 'Genre',
     likedSongs: 'Lieblingstitel',
     playlists: 'Playlists',
-    playlistInvite: 'Playlist-Einladung',
     insights: 'Hör-Insights',
     openProfile: 'Profil öffnen',
     openProfileUpdateAvailable: 'Profil öffnen, App-Update verfügbar',
@@ -2163,7 +2161,7 @@ export const en: StringCatalog = {
   navigation: {
     home: 'Home', search: 'Search', discover: 'Discover', radio: 'Radio', library: 'Library',
     profile: 'Profile', album: 'Album', artist: 'Artist', genre: 'Genre',
-    likedSongs: 'Liked Songs', playlists: 'Playlists', playlistInvite: 'Playlist Invite', insights: 'Listening insights', openProfile: 'Open profile',
+    likedSongs: 'Liked Songs', playlists: 'Playlists', insights: 'Listening insights', openProfile: 'Open profile',
     openProfileUpdateAvailable: 'Open profile, app update available',
     openProfileUpdateFailed: 'Open profile, update failed',
     profileUnavailable: 'Profile is not available right now.',

@@ -5,9 +5,6 @@ const AUTH_PATHS = new Set([
   "/reset-password",
 ]);
 
-const PLAYLIST_INVITE_PATH_RE = /^\/playlist\/join\/([^/]+)\/?$/;
-const INVITE_TOKEN_RE = /^[A-Za-z0-9_-]{16,128}$/;
-
 /**
  * Validate a relative in-app redirect target (`?next=...`).
  * Rejects external origins, protocol-relative URLs, backslashes, control
@@ -42,14 +39,4 @@ export function buildAuthHref(
   const safe = sanitizeNextPath(nextPath);
   if (!safe || safe === "/") return authPath;
   return `${authPath}?next=${encodeURIComponent(safe)}`;
-}
-
-/** True for `/playlist/join/<token>` invite URLs. */
-export function isPlaylistInvitePath(pathname: string): boolean {
-  return PLAYLIST_INVITE_PATH_RE.test(pathname);
-}
-
-/** Matches backend `secrets.token_urlsafe(24)` token shape (`^[A-Za-z0-9_-]{16,128}$`). */
-export function isValidPlaylistInviteToken(token: string): boolean {
-  return INVITE_TOKEN_RE.test(token);
 }

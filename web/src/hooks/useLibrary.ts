@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  keepPreviousData,
   useIsMutating,
   useQuery,
   useMutation,
@@ -19,11 +20,10 @@ import type {
   PlaylistSummary,
   Playlist,
   PlaylistTrack,
-  PlaylistInvite,
-  PlaylistInvitePreview,
-  PlaylistInviteStatus,
-  PlaylistCollaborator,
+  PlaylistIncomingInvitation,
+  PlaylistInviteCandidate,
   PlaylistJoinResult,
+  PlaylistOutgoingInvitation,
 } from "@/types";
 
 export function useLikes(enabled = true) {
@@ -167,7 +167,8 @@ export function useDeletePlaylist() {
     mutationFn: (id: string) => api.deletePlaylist(id),
     onSuccess: (_data, id) => {
       qc.removeQueries({ queryKey: ["playlist", id] });
-      qc.removeQueries({ queryKey: ["playlist-invite", id] });
+      qc.removeQueries({ queryKey: ["playlist-invitations", id] });
+      qc.removeQueries({ queryKey: ["playlist-invite-candidates", id] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
       qc.invalidateQueries({ queryKey: ["public-playlists"] });
       toast.success("Playlist gelöscht.");
@@ -295,14 +296,11 @@ export function useSetPlaylistCollaborative(id: string) {
     mutationFn: (isCollaborative) =>
       api.setPlaylistCollaborative(id, isCollaborative),
     onSuccess: (_data, isCollaborative) => {
-      if (!isCollaborative) {
-        qc.setQueryData<PlaylistInviteStatus>(["playlist-invite", id], {
-          invite: null,
-        });
-      }
       qc.invalidateQueries({ queryKey: ["playlist", id] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
-      qc.invalidateQueries({ queryKey: ["playlist-invite", id] });
+      // Disabling collaboration deletes every pending invitation server-side.
+      qc.invalidateQueries({ queryKey: ["playlist-invitations", id] });
+      qc.invalidateQueries({ queryKey: ["playlist-invite-candidates", id] });
       qc.invalidateQueries({ queryKey: ["public-playlists"] });
       toast.success(
         isCollaborative
@@ -317,57 +315,54 @@ export function useSetPlaylistCollaborative(id: string) {
   });
 }
 
-export function usePlaylistInvite(id: string, enabled = true) {
-  return useQuery<PlaylistInviteStatus>({
-    queryKey: ["playlist-invite", id],
-    queryFn: () => api.playlistInvite(id),
+/**
+ * Owner-only account search for the invite dialog. `query` must already be
+ * trimmed and debounced; an empty query disables the request.
+ */
+export function usePlaylistInviteCandidates(id: string, query: string, enabled = true) {
+  return useQuery<PlaylistInviteCandidate[]>({
+    queryKey: ["playlist-invite-candidates", id, query],
+    queryFn: ({ signal }) => api.playlistInviteCandidates(id, query, signal),
+    enabled: Boolean(id) && query.length > 0 && enabled,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+/** Owner-only: invitations of this playlist that are still unanswered. */
+export function usePlaylistOutgoingInvitations(id: string, enabled = true) {
+  return useQuery<PlaylistOutgoingInvitation[]>({
+    queryKey: ["playlist-invitations", id],
+    queryFn: () => api.playlistInvitations(id),
     enabled: Boolean(id) && enabled,
     retry: false,
   });
 }
 
-export function useCreatePlaylistInvite(id: string) {
+export function useInviteToPlaylist(id: string) {
   const qc = useQueryClient();
-  return useMutation<PlaylistInvite, Error, void>({
-    mutationFn: () => api.createPlaylistInvite(id),
-    onSuccess: (invite) => {
-      qc.setQueryData<PlaylistInviteStatus>(["playlist-invite", id], { invite });
-      qc.invalidateQueries({ queryKey: ["playlist", id] });
+  return useMutation<
+    PlaylistOutgoingInvitation,
+    Error,
+    { userId: number; name: string }
+  >({
+    mutationFn: ({ userId }) => api.inviteToPlaylist(id, userId),
+    onSuccess: (_invitation, vars) => {
+      qc.invalidateQueries({ queryKey: ["playlist-invitations", id] });
+      qc.invalidateQueries({ queryKey: ["playlist-invite-candidates", id] });
+      toast.success(`${vars.name} wurde eingeladen.`);
     },
-    onError: (err) =>
-      toast.error(
-        `Einladungslink konnte nicht erstellt werden: ${errorMessage(err)}`,
-      ),
   });
 }
 
-export function useRevokePlaylistInvite(id: string) {
+export function useWithdrawPlaylistInvitation(id: string) {
   const qc = useQueryClient();
-  return useMutation<void, Error, void>({
-    mutationFn: () => api.revokePlaylistInvite(id),
-    onSuccess: () => {
-      qc.setQueryData<PlaylistInviteStatus>(["playlist-invite", id], {
-        invite: null,
-      });
-      toast.success("Einladungslink widerrufen.");
-    },
-    onError: (err) =>
-      toast.error(
-        `Einladungslink konnte nicht widerrufen werden: ${errorMessage(err)}`,
-      ),
-  });
-}
-
-export function useAddPlaylistCollaborator(id: string) {
-  const qc = useQueryClient();
-  return useMutation<PlaylistCollaborator, Error, string>({
-    mutationFn: (email) => api.addPlaylistCollaborator(id, email),
-    onSuccess: (collaborator) => {
-      qc.invalidateQueries({ queryKey: ["playlist", id] });
-      qc.invalidateQueries({ queryKey: ["playlists"] });
-      toast.success(
-        `${collaborator.display_name || "Person"} wurde als Mitwirkende:r hinzugefügt.`,
-      );
+  return useMutation<void, Error, { userId: number; name: string }>({
+    mutationFn: ({ userId }) => api.withdrawPlaylistInvitation(id, userId),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["playlist-invitations", id] });
+      qc.invalidateQueries({ queryKey: ["playlist-invite-candidates", id] });
+      toast.success(`Einladung an ${vars.name} zurückgezogen.`);
     },
   });
 }
@@ -379,6 +374,7 @@ export function useRemovePlaylistCollaborator(id: string) {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["playlist", id] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
+      qc.invalidateQueries({ queryKey: ["playlist-invite-candidates", id] });
       toast.success(
         `${vars.name || "Mitwirkende:r"} wurde entfernt.`,
       );
@@ -394,7 +390,6 @@ export function useLeavePlaylist() {
     mutationFn: (id) => api.leavePlaylist(id),
     onSuccess: (_data, id) => {
       qc.removeQueries({ queryKey: ["playlist", id] });
-      qc.removeQueries({ queryKey: ["playlist-invite", id] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
       qc.invalidateQueries({ queryKey: ["public-playlists"] });
       toast.success("Playlist verlassen.");
@@ -404,26 +399,38 @@ export function useLeavePlaylist() {
   });
 }
 
-export function usePlaylistInvitePreview(token: string, enabled = true) {
-  return useQuery<PlaylistInvitePreview>({
-    queryKey: ["playlist-invite-preview", token],
-    queryFn: () => api.previewPlaylistInvite(token),
-    enabled: Boolean(token) && enabled,
+/** Pending playlist invitations addressed to the current account. */
+export function useMyPlaylistInvitations(enabled = true) {
+  return useQuery<PlaylistIncomingInvitation[]>({
+    queryKey: ["my-playlist-invitations"],
+    queryFn: () => api.myPlaylistInvitations(),
+    enabled,
     retry: false,
   });
 }
 
-export function useAcceptPlaylistInvite(token: string) {
+export function useAcceptPlaylistInvitation() {
   const qc = useQueryClient();
-  return useMutation<PlaylistJoinResult, Error, void>({
-    mutationFn: () => api.acceptPlaylistInvite(token),
+  return useMutation<PlaylistJoinResult, Error, number>({
+    mutationFn: (invitationId) => api.acceptPlaylistInvitation(invitationId),
     onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["my-playlist-invitations"] });
       qc.invalidateQueries({ queryKey: ["playlists"] });
       qc.invalidateQueries({
         queryKey: ["playlist", String(result.playlist_id)],
       });
-      qc.invalidateQueries({ queryKey: ["playlist-invite-preview", token] });
       qc.invalidateQueries({ queryKey: ["public-playlists"] });
+    },
+  });
+}
+
+export function useDeclinePlaylistInvitation() {
+  const qc = useQueryClient();
+  return useMutation<void, Error, { invitationId: number; playlistName: string }>({
+    mutationFn: ({ invitationId }) => api.declinePlaylistInvitation(invitationId),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["my-playlist-invitations"] });
+      toast.success(`Einladung zu „${vars.playlistName}“ abgelehnt.`);
     },
   });
 }

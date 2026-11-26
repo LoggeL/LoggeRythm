@@ -9,6 +9,7 @@ import { InlineNotice } from '../components/library/InlineNotice';
 import { LibraryCreatePlaylistSheet } from '../components/library/LibraryCreatePlaylistSheet';
 import { LibraryDownloadsList } from '../components/library/LibraryDownloadsList';
 import { LibraryFilterBar } from '../components/library/LibraryFilterBar';
+import { LibraryInvitations } from '../components/library/LibraryInvitations';
 import { LibraryRecentRow } from '../components/library/LibraryRecentRow';
 import {
   LibraryFollowingRow,
@@ -31,7 +32,7 @@ import StandardTrackRow from '../components/track/StandardTrackRow';
 import { showTrackActions } from '../components/trackActions';
 import { ActionButton, IconButton, ScreenHeader } from '../components/ui';
 import { getCurrentApiBase } from '../config';
-import { musicCacheScope, musicQueries } from '../data';
+import { musicCacheScope, musicQueries, queryKeys } from '../data';
 import type { RecentPlay } from '../domain/listeningStats';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
@@ -179,9 +180,19 @@ export default function LibraryScreen(props: LibraryScreenProps) {
   const refresh = useCallback(() => {
     setRuntimeError(null);
     setManualRefreshing(true);
-    void refreshLibraryQueries([playlists, likes, stats, following], refreshAutoBrowse)
-      .finally(() => setManualRefreshing(false));
-  }, [following, likes, playlists, stats]);
+    // Pending invitations live in their own section; pulling refreshes them too.
+    const invitations = {
+      refetch: () =>
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.playlists.incomingInvitations(scope),
+          exact: true,
+        }),
+    };
+    void refreshLibraryQueries(
+      [playlists, likes, stats, following, invitations],
+      refreshAutoBrowse,
+    ).finally(() => setManualRefreshing(false));
+  }, [following, likes, playlists, queryClient, scope, stats]);
 
   const playLiked = useCallback((tracks: readonly Track[], index: number) => {
     try {
@@ -592,6 +603,11 @@ export default function LibraryScreen(props: LibraryScreenProps) {
                     onPress={openCreateSheet}
                   />
                 }
+              />
+              <LibraryInvitations
+                scope={scope}
+                apiBase={apiBase}
+                onOpenPlaylist={onOpenPlaylist}
               />
               <LibraryFilterBar filter={filter} onChange={setFilter} />
               {runtimeError !== null ? (

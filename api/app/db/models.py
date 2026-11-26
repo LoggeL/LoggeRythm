@@ -87,10 +87,10 @@ class Playlist(Base):
         cascade="all, delete-orphan",
         order_by=lambda: (PlaylistCollaborator.joined_at, PlaylistCollaborator.id),
     )
-    invites: Mapped[list["PlaylistInvite"]] = relationship(
+    invitations: Mapped[list["PlaylistInvitation"]] = relationship(
         back_populates="playlist",
         cascade="all, delete-orphan",
-        order_by=lambda: (PlaylistInvite.created_at, PlaylistInvite.id),
+        order_by=lambda: (PlaylistInvitation.created_at, PlaylistInvitation.id),
     )
 
 
@@ -147,24 +147,34 @@ class PlaylistCollaborator(Base):
     playlist: Mapped["Playlist"] = relationship(back_populates="collaborators")
 
 
-class PlaylistInvite(Base):
-    """Shareable invite link token allowing approved accounts to join a collaborative playlist."""
+class PlaylistInvitation(Base):
+    """Pending invitation of an existing account to collaborate on a playlist.
 
-    __tablename__ = "playlist_invites"
+    The owner picks the account; the invitee accepts (becomes a
+    ``PlaylistCollaborator``) or declines. Either answer deletes the row, so a
+    row always means "still waiting for the invitee".
+    """
+
+    __tablename__ = "playlist_invitations"
+    __table_args__ = (
+        UniqueConstraint(
+            "playlist_id", "invitee_user_id", name="uq_playlist_invitation"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     playlist_id: Mapped[int] = mapped_column(
         ForeignKey("playlists.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
-    created_by_user_id: Mapped[int | None] = mapped_column(
+    invitee_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    inviter_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    playlist: Mapped["Playlist"] = relationship(back_populates="invites")
+    playlist: Mapped["Playlist"] = relationship(back_populates="invitations")
 
 
 class Like(Base):

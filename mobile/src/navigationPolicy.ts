@@ -5,7 +5,6 @@ export const TRANSIENT_ROOT_ROUTE_NAMES = [
   'Queue',
   'PartyStart',
   'Party',
-  'PlaylistInvite',
 ] as const;
 
 /**

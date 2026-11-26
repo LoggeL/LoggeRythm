@@ -334,17 +334,23 @@ export interface PlaylistCollaborator {
   joined_at?: string | null;
 }
 
-export interface PlaylistInvite {
-  token: string;
+export type PlaylistInviteCandidateStatus = "available" | "invited" | "collaborator";
+
+/** An approved account the owner found by display name (never by email). */
+export interface PlaylistInviteCandidate {
+  user: PlaylistCollaboratorUser;
+  status: PlaylistInviteCandidateStatus;
+}
+
+/** Owner view of an invitation the invitee has not answered yet. */
+export interface PlaylistOutgoingInvitation {
+  invitee: PlaylistCollaboratorUser;
+  invited_by?: PlaylistCollaboratorUser | null;
   created_at: string;
-  expires_at?: string | null;
 }
 
-export interface PlaylistInviteStatus {
-  invite: PlaylistInvite | null;
-}
-
-export interface PlaylistInvitePreview {
+/** What an invitee sees of a playlist before accepting. */
+export interface PlaylistInvitationPlaylist {
   playlist_id: number;
   name: string;
   description?: string | null;
@@ -352,8 +358,14 @@ export interface PlaylistInvitePreview {
   track_count: number;
   collaborator_count: number;
   owner: PlaylistCollaboratorUser;
-  is_owner: boolean;
-  already_collaborator: boolean;
+}
+
+/** A pending invitation addressed to the current account. */
+export interface PlaylistIncomingInvitation {
+  id: number;
+  playlist: PlaylistInvitationPlaylist;
+  invited_by?: PlaylistCollaboratorUser | null;
+  created_at: string;
 }
 
 export interface PlaylistJoinResult {

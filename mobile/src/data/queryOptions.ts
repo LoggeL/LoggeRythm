@@ -322,10 +322,28 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         queryFn: ({ signal }) => repository.getPlaylist(id, signal),
       });
     },
-    playlistInvite(scope: QueryScope, id: number) {
+    playlistOutgoingInvitations(scope: QueryScope, id: number) {
       return queryOptions({
-        queryKey: queryKeys.playlists.invite(scope, id),
-        queryFn: ({ signal }) => repository.getPlaylistInvite(id, signal),
+        queryKey: queryKeys.playlists.outgoingInvitations(scope, id),
+        queryFn: ({ signal }) => repository.getPlaylistOutgoingInvitations(id, signal),
+        staleTime: 0,
+      });
+    },
+    /** Disabled while `q` is blank; the endpoint itself rejects a blank query. */
+    playlistInviteCandidates(scope: QueryScope, id: number, q: string) {
+      const normalized = q.trim();
+      return queryOptions({
+        queryKey: queryKeys.playlists.inviteCandidates(scope, id, normalized),
+        queryFn: ({ signal }) =>
+          repository.searchPlaylistInviteCandidates(id, normalized, signal),
+        enabled: normalized.length > 0,
+        staleTime: 0,
+      });
+    },
+    incomingPlaylistInvitations(scope: QueryScope) {
+      return queryOptions({
+        queryKey: queryKeys.playlists.incomingInvitations(scope),
+        queryFn: ({ signal }) => repository.getMyPlaylistInvitations(signal),
         staleTime: 0,
       });
     },
@@ -339,15 +357,6 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
           return repository.getPlaylistDuplicates(id, signal);
         },
         staleTime: 0,
-      });
-    },
-    playlistInvitePreview(scope: QueryScope, token: string) {
-      const normalized = token.trim();
-      return queryOptions({
-        queryKey: queryKeys.playlists.invitePreview(scope, normalized),
-        queryFn: ({ signal }) => repository.getPlaylistInvitePreview(normalized, signal),
-        staleTime: 0,
-        retry: false,
       });
     },
     likes(scope: QueryScope) {

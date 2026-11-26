@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from './types';
 import type { AuthenticatedRequestAuthority } from './client';
 import {
-  acceptPlaylistInvite,
-  addPlaylistCollaborator,
   addToPlaylist,
   addTracksBulk,
   approveAdminUser,
@@ -12,7 +10,6 @@ import {
   createConnectTicket,
   createParty,
   createPlaylist,
-  createPlaylistInvite,
   deleteAdminUser,
   deleteImportJob,
   deletePlaylist,
@@ -36,8 +33,6 @@ import {
   getMood,
   getPartyCachedTrackIds,
   getPlaylist,
-  getPlaylistInvite,
-  getPlaylistInvitePreview,
   getPlaylists,
   getPublicPlaylists,
   getRadio,
@@ -63,10 +58,16 @@ import {
   register,
   removeFromPlaylist,
   removePlaylistCollaborator,
+  acceptPlaylistInvitation,
+  declinePlaylistInvitation,
+  getMyPlaylistInvitations,
+  getPlaylistOutgoingInvitations,
+  invitePlaylistCollaborator,
+  searchPlaylistInviteCandidates,
+  withdrawPlaylistInvitation,
   removePlaylistEntry,
   reorderPlaylistEntries,
   reorderPlaylistTracks,
-  revokePlaylistInvite,
   setPlaylistCollaborative,
   setPlaylistVisibility,
   startImportJob,
@@ -373,12 +374,13 @@ describe('web-parity endpoint contracts', () => {
     getPlaylists(signal, 'collaborative');
     createPlaylist({ name: 'Shared', description: null, is_collaborative: true });
     setPlaylistCollaborative(7, true);
-    getPlaylistInvite(7, signal);
-    createPlaylistInvite(7);
-    revokePlaylistInvite(7);
-    getPlaylistInvitePreview('tok/../en?', signal);
-    acceptPlaylistInvite('tok/../en?');
-    addPlaylistCollaborator(7, 'jule@example.test');
+    searchPlaylistInviteCandidates(7, '  Jule & Co/  ', signal);
+    getPlaylistOutgoingInvitations(7, signal);
+    invitePlaylistCollaborator(7, 9);
+    withdrawPlaylistInvitation(7, 9);
+    getMyPlaylistInvitations(signal);
+    acceptPlaylistInvitation(77);
+    declinePlaylistInvitation(77);
     removePlaylistCollaborator(7, 9);
     leavePlaylist(7);
 
@@ -400,41 +402,50 @@ describe('web-parity endpoint contracts', () => {
       body: { is_collaborative: true },
       decode: expect.any(Function),
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(5, '/api/playlists/7/invite', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(
+      5,
+      '/api/playlists/7/invite-candidates?q=Jule%20%26%20Co%2F',
+      { signal, decode: expect.any(Function) },
+    );
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(6, '/api/playlists/7/invitations', {
       signal,
       decode: expect.any(Function),
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(6, '/api/playlists/7/invite', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(7, '/api/playlists/7/invitations', {
       method: 'POST',
+      body: { user_id: 9 },
       successStatuses: [201],
       decode: expect.any(Function),
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(7, '/api/playlists/7/invite', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(8, '/api/playlists/7/invitations/9', {
       method: 'DELETE',
       successStatuses: [204],
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(8, '/api/playlists/invites/tok%2F..%2Fen%3F', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(9, '/api/playlists/invitations', {
       signal,
       decode: expect.any(Function),
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(9, '/api/playlists/invites/tok%2F..%2Fen%3F/accept', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(10, '/api/playlists/invitations/77/accept', {
       method: 'POST',
       decode: expect.any(Function),
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(10, '/api/playlists/7/collaborators', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(11, '/api/playlists/invitations/77/decline', {
       method: 'POST',
-      body: { email: 'jule@example.test' },
-      successStatuses: [201],
-      decode: expect.any(Function),
+      successStatuses: [204],
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(11, '/api/playlists/7/collaborators/9', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(12, '/api/playlists/7/collaborators/9', {
       method: 'DELETE',
       successStatuses: [204],
     });
-    expect(mocks.apiRequest).toHaveBeenNthCalledWith(12, '/api/playlists/7/leave', {
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(13, '/api/playlists/7/leave', {
       method: 'POST',
       successStatuses: [204],
     });
+  });
+
+  it('refuses a blank invite-candidate search before any request', () => {
+    expect(() => searchPlaylistInviteCandidates(7, '   ')).toThrow(/non-empty display-name query/);
+    expect(mocks.apiRequest).not.toHaveBeenCalled();
   });
 
   it('routes album search through the generated operation descriptor', () => {

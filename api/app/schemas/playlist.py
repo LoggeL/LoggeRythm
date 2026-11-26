@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from .track import Track
 
@@ -22,8 +22,10 @@ class PlaylistCollaborativeUpdate(BaseModel):
     is_collaborative: bool
 
 
-class PlaylistCollaboratorAdd(BaseModel):
-    email: EmailStr
+class PlaylistInvitationCreate(BaseModel):
+    """Owner invites an existing, approved account picked from the account search."""
+
+    user_id: int = Field(gt=0)
 
 
 class PlaylistCollaboratorUser(BaseModel):
@@ -44,22 +46,23 @@ class PlaylistCollaboratorOut(BaseModel):
     joined_at: datetime | None = None
 
 
-class PlaylistInviteOut(BaseModel):
-    """Active shareable invite token for a collaborative playlist."""
+class PlaylistInviteCandidate(BaseModel):
+    """An approved account the owner can find by display name and invite."""
 
-    token: str
+    user: PlaylistCollaboratorUser
+    status: Literal["available", "invited", "collaborator"]
+
+
+class PlaylistOutgoingInvitation(BaseModel):
+    """Owner view of a pending invitation that the invitee has not answered yet."""
+
+    invitee: PlaylistCollaboratorUser
+    invited_by: PlaylistCollaboratorUser | None = None
     created_at: datetime
-    expires_at: datetime | None = None
 
 
-class PlaylistInviteStatus(BaseModel):
-    """Owner-only view of the active invite link (or null if none/revoked)."""
-
-    invite: PlaylistInviteOut | None = None
-
-
-class PlaylistInvitePreview(BaseModel):
-    """Metadata shown to an authenticated account before accepting an invite link."""
+class PlaylistInvitationPlaylist(BaseModel):
+    """What an invitee sees of a playlist before accepting."""
 
     playlist_id: int
     name: str
@@ -68,12 +71,19 @@ class PlaylistInvitePreview(BaseModel):
     track_count: int = 0
     collaborator_count: int = 0
     owner: PlaylistCollaboratorUser
-    is_owner: bool = False
-    already_collaborator: bool = False
+
+
+class PlaylistIncomingInvitation(BaseModel):
+    """A pending invitation addressed to the current account."""
+
+    id: int
+    playlist: PlaylistInvitationPlaylist
+    invited_by: PlaylistCollaboratorUser | None = None
+    created_at: datetime
 
 
 class PlaylistJoinResult(BaseModel):
-    """Result of accepting a collaborative playlist invite link."""
+    """Result of accepting a playlist invitation."""
 
     playlist_id: int
     playlist_name: str

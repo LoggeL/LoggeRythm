@@ -8,11 +8,10 @@ import type {
   ArtistAbout,
   ArtistSummary,
   Playlist,
-  PlaylistCollaborator,
-  PlaylistInvite,
-  PlaylistInvitePreview,
-  PlaylistInviteStatus,
+  PlaylistIncomingInvitation,
+  PlaylistInviteCandidate,
   PlaylistJoinResult,
+  PlaylistOutgoingInvitation,
   PlaylistSummary,
   Genre,
   GenreDetail,
@@ -342,32 +341,44 @@ export const api = {
         body: JSON.stringify({ is_collaborative: isCollaborative }),
       },
     ),
-  playlistInvite: (id: string) =>
-    req<PlaylistInviteStatus>(`/playlists/${encodeURIComponent(id)}/invite`),
-  createPlaylistInvite: (id: string) =>
-    req<PlaylistInvite>(`/playlists/${encodeURIComponent(id)}/invite`, {
-      method: "POST",
-    }),
-  revokePlaylistInvite: (id: string) =>
-    req<void>(`/playlists/${encodeURIComponent(id)}/invite`, {
-      method: "DELETE",
-    }),
-  previewPlaylistInvite: (token: string) =>
-    req<PlaylistInvitePreview>(
-      `/playlists/invites/${encodeURIComponent(token)}`,
+  /** Owner-only: approved accounts whose display name contains `query`. */
+  playlistInviteCandidates: (id: string, query: string, signal?: AbortSignal) =>
+    req<PlaylistInviteCandidate[]>(
+      `/playlists/${encodeURIComponent(id)}/invite-candidates?q=${encodeURIComponent(query)}`,
+      { signal },
     ),
-  acceptPlaylistInvite: (token: string) =>
-    req<PlaylistJoinResult>(
-      `/playlists/invites/${encodeURIComponent(token)}/accept`,
-      { method: "POST" },
+  /** Owner-only: invitations the invitees have not answered yet. */
+  playlistInvitations: (id: string) =>
+    req<PlaylistOutgoingInvitation[]>(
+      `/playlists/${encodeURIComponent(id)}/invitations`,
     ),
-  addPlaylistCollaborator: (id: string, email: string) =>
-    req<PlaylistCollaborator>(
-      `/playlists/${encodeURIComponent(id)}/collaborators`,
+  inviteToPlaylist: (id: string, userId: number) =>
+    req<PlaylistOutgoingInvitation>(
+      `/playlists/${encodeURIComponent(id)}/invitations`,
       {
         method: "POST",
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ user_id: userId }),
       },
+    ),
+  withdrawPlaylistInvitation: (id: string, userId: number) =>
+    req<void>(
+      `/playlists/${encodeURIComponent(id)}/invitations/${encodeURIComponent(
+        String(userId),
+      )}`,
+      { method: "DELETE" },
+    ),
+  /** Pending invitations addressed to the current account, newest first. */
+  myPlaylistInvitations: () =>
+    req<PlaylistIncomingInvitation[]>(`/playlists/invitations`),
+  acceptPlaylistInvitation: (invitationId: number) =>
+    req<PlaylistJoinResult>(
+      `/playlists/invitations/${encodeURIComponent(String(invitationId))}/accept`,
+      { method: "POST" },
+    ),
+  declinePlaylistInvitation: (invitationId: number) =>
+    req<void>(
+      `/playlists/invitations/${encodeURIComponent(String(invitationId))}/decline`,
+      { method: "POST" },
     ),
   removePlaylistCollaborator: (id: string, userId: string | number) =>
     req<void>(

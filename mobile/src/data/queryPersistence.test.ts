@@ -23,12 +23,22 @@ describe('account-scoped query cache persistence', () => {
     const writer = createMusicQueryClient();
     writer.setQueryData(queryKeys.library.likes(scopeA), [{ id: '1', title: 'Track 1' }]);
     writer.setQueryData(queryKeys.playlists.owned(scopeA), [{ id: 10, name: 'Roadtrip' }]);
-    writer.setQueryData(queryKeys.playlists.invite(scopeA, 10), { token: 'secret-token' });
+    writer.setQueryData(queryKeys.playlists.outgoingInvitations(scopeA, 10), [
+      { invitee: { id: 9, display_name: 'pending-invitee', avatar_url: null } },
+    ]);
+    writer.setQueryData(queryKeys.playlists.incomingInvitations(scopeA), [
+      { id: 3, playlist: { name: 'incoming-invitation' } },
+    ]);
+    writer.setQueryData(queryKeys.playlists.inviteCandidates(scopeA, 10, 'Ju'), [
+      { user: { id: 9, display_name: 'candidate-search' }, status: 'available' },
+    ]);
     writer.setQueryData(queryKeys.library.likes(scopeB), [{ id: '2', title: 'Other Account' }]);
 
     await persistAccountQueryCache(writer, storage, scopeA);
     expect(store.has(queryCacheStorageKey(scopeA))).toBe(true);
-    expect(store.get(queryCacheStorageKey(scopeA))).not.toContain('secret-token');
+    expect(store.get(queryCacheStorageKey(scopeA))).not.toContain('pending-invitee');
+    expect(store.get(queryCacheStorageKey(scopeA))).not.toContain('incoming-invitation');
+    expect(store.get(queryCacheStorageKey(scopeA))).not.toContain('candidate-search');
     expect(store.get(queryCacheStorageKey(scopeA))).not.toContain('Other Account');
 
     const reader = createMusicQueryClient();
@@ -48,7 +58,12 @@ describe('account-scoped query cache persistence', () => {
     expect(isPersistableQueryKey(queryKeys.home.mixes(scopeA), scopeA)).toBe(true);
     expect(isPersistableQueryKey(queryKeys.profile.stats(scopeA), scopeA)).toBe(true);
     expect(isPersistableQueryKey(queryKeys.playlists.detail(scopeA, 42), scopeA)).toBe(true);
-    expect(isPersistableQueryKey(queryKeys.playlists.invite(scopeA, 42), scopeA)).toBe(false);
+    expect(isPersistableQueryKey(queryKeys.playlists.outgoingInvitations(scopeA, 42), scopeA))
+      .toBe(false);
+    expect(isPersistableQueryKey(queryKeys.playlists.inviteCandidates(scopeA, 42, 'Ju'), scopeA))
+      .toBe(false);
+    expect(isPersistableQueryKey(queryKeys.playlists.incomingInvitations(scopeA), scopeA))
+      .toBe(false);
     expect(isPersistableQueryKey(queryKeys.library.likes(scopeB), scopeA)).toBe(false);
     expect(isPersistableQueryKey(queryKeys.search.tracks('daft'), scopeA)).toBe(false);
   });

@@ -39,7 +39,6 @@ import {
   NowPlayingRoute,
   PartyRoute,
   PartyStartRoute,
-  PlaylistInviteRoute,
   ProfileRoute,
   QueueRoute,
 } from './navigation/routes';
@@ -397,11 +396,6 @@ export default function RootNavigator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
     [localeRevision],
   );
-  const playlistInviteScreenOptions = useMemo<NativeStackNavigationOptions>(
-    () => ({ title: strings.navigation.playlistInvite }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
-    [localeRevision],
-  );
 
   if (player.error) return <PlayerStartupError error={player.error} retry={retry} />;
   if (!player.ready || !restoration.ready) return <PlayerStartupStatus />;
@@ -450,11 +444,6 @@ export default function RootNavigator() {
                 name="Party"
                 component={PartyRoute}
                 options={partyScreenOptions}
-              />
-              <RootStack.Screen
-                name="PlaylistInvite"
-                component={PlaylistInviteRoute}
-                options={playlistInviteScreenOptions}
               />
             </RootStack.Navigator>
           </TvShellHost>

@@ -15,7 +15,7 @@ from app.db.models import (
     Play,
     Playlist,
     PlaylistCollaborator,
-    PlaylistInvite,
+    PlaylistInvitation,
     PlaylistTrack,
     StoredTrack,
     TrackRequest,
@@ -255,13 +255,23 @@ class AccountDeletionTests(unittest.TestCase):
             position=0,
             added_by_user_id=departing_collab.id,
         )
-        invite = PlaylistInvite(
+        invited_by_departing = self.add_user("invitee@example.test")
+        invite = PlaylistInvitation(
             playlist_id=shared.id,
-            token="tok_collaborator_delete_123456",
-            created_by_user_id=departing_collab.id,
+            invitee_user_id=invited_by_departing.id,
+            inviter_user_id=departing_collab.id,
         )
-        self.db.add_all([collab_row, other_row, collab_track, invite])
+        other_owned = Playlist(user_id=owner.id, name="Other", is_collaborative=True)
+        self.db.add(other_owned)
+        self.db.flush()
+        invite_to_departing = PlaylistInvitation(
+            playlist_id=other_owned.id,
+            invitee_user_id=departing_collab.id,
+            inviter_user_id=owner.id,
+        )
+        self.db.add_all([collab_row, other_row, collab_track, invite, invite_to_departing])
         self.db.commit()
+        invite_to_departing_id = invite_to_departing.id
 
         collab_row_id = collab_row.id
         other_row_id = other_row.id
@@ -283,9 +293,10 @@ class AccountDeletionTests(unittest.TestCase):
         surviving_track = self.db.get(PlaylistTrack, collab_track_id)
         self.assertIsNotNone(surviving_track)
         self.assertIsNone(surviving_track.added_by_user_id)
-        surviving_invite = self.db.get(PlaylistInvite, invite_id)
+        surviving_invite = self.db.get(PlaylistInvitation, invite_id)
         self.assertIsNotNone(surviving_invite)
-        self.assertIsNone(surviving_invite.created_by_user_id)
+        self.assertIsNone(surviving_invite.inviter_user_id)
+        self.assertIsNone(self.db.get(PlaylistInvitation, invite_to_departing_id))
 
     def test_collaborative_owner_deletion_cascades_playlist_members_and_invites(self) -> None:
         departing_owner = self.add_user("owner-del@example.test")
@@ -310,10 +321,11 @@ class AccountDeletionTests(unittest.TestCase):
             position=0,
             added_by_user_id=survivor.id,
         )
-        invite = PlaylistInvite(
+        invitee = self.add_user("pending-invitee@example.test")
+        invite = PlaylistInvitation(
             playlist_id=owned_collab.id,
-            token="tok_owner_delete_1234567890",
-            created_by_user_id=departing_owner.id,
+            invitee_user_id=invitee.id,
+            inviter_user_id=departing_owner.id,
         )
         self.db.add_all([member, track, invite])
         self.db.commit()
@@ -333,7 +345,7 @@ class AccountDeletionTests(unittest.TestCase):
         self.assertIsNone(self.db.get(Playlist, pid))
         self.assertIsNone(self.db.get(PlaylistCollaborator, member_id))
         self.assertIsNone(self.db.get(PlaylistTrack, track_id))
-        self.assertIsNone(self.db.get(PlaylistInvite, invite_id))
+        self.assertIsNone(self.db.get(PlaylistInvitation, invite_id))
         self.assertIsNotNone(self.db.get(User, survivor.id))
         remove_cover.assert_called_once_with(pid)
 

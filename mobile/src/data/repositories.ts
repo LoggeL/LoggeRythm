@@ -26,16 +26,15 @@ import type {
   PlaybackSettings,
   Playlist,
   PlaylistBlendResult,
-  PlaylistCollaborator,
   PlaylistDeduplicateResult,
   PlaylistDuplicatesResponse,
   PlaylistEntryId,
   PlaylistCreateRequest,
-  PlaylistInvite,
-  PlaylistInvitePreview,
-  PlaylistInviteStatus,
+  PlaylistIncomingInvitation,
+  PlaylistInviteCandidate,
   PlaylistJoinResult,
   PlaylistListScope,
+  PlaylistOutgoingInvitation,
   PlaylistSearchResult,
   PlaylistSummary,
   PlaylistSyncManifest,
@@ -146,12 +145,20 @@ export interface PlaylistsRepository {
   addTracksBulk(id: number, tracks: TrackInput[]): Promise<AddedTracksResult>;
   setPlaylistVisibility(id: number, isPublic: boolean): Promise<PlaylistSummary>;
   setPlaylistCollaborative(id: number, isCollaborative: boolean): Promise<PlaylistSummary>;
-  getPlaylistInvite(id: number, signal?: AbortSignal): Promise<PlaylistInviteStatus>;
-  createPlaylistInvite(id: number): Promise<PlaylistInvite>;
-  revokePlaylistInvite(id: number): Promise<void>;
-  getPlaylistInvitePreview(token: string, signal?: AbortSignal): Promise<PlaylistInvitePreview>;
-  acceptPlaylistInvite(token: string): Promise<PlaylistJoinResult>;
-  addPlaylistCollaborator(id: number, email: string): Promise<PlaylistCollaborator>;
+  searchPlaylistInviteCandidates(
+    id: number,
+    q: string,
+    signal?: AbortSignal,
+  ): Promise<PlaylistInviteCandidate[]>;
+  getPlaylistOutgoingInvitations(
+    id: number,
+    signal?: AbortSignal,
+  ): Promise<PlaylistOutgoingInvitation[]>;
+  invitePlaylistCollaborator(id: number, userId: number): Promise<PlaylistOutgoingInvitation>;
+  withdrawPlaylistInvitation(id: number, userId: number): Promise<void>;
+  getMyPlaylistInvitations(signal?: AbortSignal): Promise<PlaylistIncomingInvitation[]>;
+  acceptPlaylistInvitation(invitationId: number): Promise<PlaylistJoinResult>;
+  declinePlaylistInvitation(invitationId: number): Promise<void>;
   removePlaylistCollaborator(id: number, userId: number): Promise<void>;
   leavePlaylist(id: number): Promise<void>;
   getPlaylistSyncManifest?(
@@ -315,12 +322,13 @@ export const musicRepository: MusicRepository = {
   addTracksBulk: api.addTracksBulk,
   setPlaylistVisibility: api.setPlaylistVisibility,
   setPlaylistCollaborative: api.setPlaylistCollaborative,
-  getPlaylistInvite: api.getPlaylistInvite,
-  createPlaylistInvite: api.createPlaylistInvite,
-  revokePlaylistInvite: api.revokePlaylistInvite,
-  getPlaylistInvitePreview: api.getPlaylistInvitePreview,
-  acceptPlaylistInvite: api.acceptPlaylistInvite,
-  addPlaylistCollaborator: api.addPlaylistCollaborator,
+  searchPlaylistInviteCandidates: api.searchPlaylistInviteCandidates,
+  getPlaylistOutgoingInvitations: api.getPlaylistOutgoingInvitations,
+  invitePlaylistCollaborator: api.invitePlaylistCollaborator,
+  withdrawPlaylistInvitation: api.withdrawPlaylistInvitation,
+  getMyPlaylistInvitations: api.getMyPlaylistInvitations,
+  acceptPlaylistInvitation: api.acceptPlaylistInvitation,
+  declinePlaylistInvitation: api.declinePlaylistInvitation,
   removePlaylistCollaborator: api.removePlaylistCollaborator,
   leavePlaylist: api.leavePlaylist,
   getPlaylistSyncManifest: api.getPlaylistSyncManifest,

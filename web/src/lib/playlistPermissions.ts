@@ -1,4 +1,9 @@
-import type { Playlist, PlaylistSummary } from "@/types";
+import type {
+  Playlist,
+  PlaylistCollaboratorUser,
+  PlaylistInviteCandidateStatus,
+  PlaylistSummary,
+} from "@/types";
 
 type PermissionShape = Pick<
   Playlist | PlaylistSummary,
@@ -90,4 +95,65 @@ export function playlistMemberCount(
       ? playlist.collaborator_count
       : (playlist.collaborators?.length ?? 0);
   return 1 + collabCount;
+}
+
+/**
+ * Only the owner of a playlist with collaboration switched on may invite
+ * accounts; the server answers 409 for a playlist with collaboration off.
+ */
+export function canInviteToPlaylist(
+  playlist: Pick<Playlist, "is_owner" | "is_collaborative">,
+): boolean {
+  return Boolean(playlist.is_owner) && Boolean(playlist.is_collaborative);
+}
+
+/**
+ * Text sent to the account search, or `null` while there is nothing to search
+ * for. The server rejects a query that is empty after trimming.
+ */
+export function inviteSearchQuery(raw: string): string | null {
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Button state of one account search result in the invite dialog. */
+export function inviteCandidateAction(status: PlaylistInviteCandidateStatus): {
+  label: string;
+  canInvite: boolean;
+} {
+  switch (status) {
+    case "available":
+      return { label: "Einladen", canInvite: true };
+    case "invited":
+      return { label: "Eingeladen", canInvite: false };
+    case "collaborator":
+      return { label: "Mitwirkend", canInvite: false };
+    default: {
+      const unknown: never = status;
+      throw new Error(`Unbekannter Einladungsstatus vom Server: ${String(unknown)}`);
+    }
+  }
+}
+
+/**
+ * Name shown for an account in invitation lists. The account search only finds
+ * accounts with a display name, but a name can be removed later.
+ */
+export function invitationUserName(user: PlaylistCollaboratorUser): string {
+  return user.display_name || `Nutzer #${user.id}`;
+}
+
+const invitationDateFormatter = new Intl.DateTimeFormat("de-DE", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+/** "Eingeladen am 20. Nov. 2026"; a malformed server timestamp is an error. */
+export function invitationDateLabel(createdAt: string): string {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Ungültiger Einladungszeitpunkt vom Server: ${createdAt}`);
+  }
+  return `Eingeladen am ${invitationDateFormatter.format(date)}`;
 }

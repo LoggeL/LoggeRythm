@@ -3304,20 +3304,6 @@
         "title": "PlaylistCollaborativeUpdate",
         "type": "object"
       },
-      "PlaylistCollaboratorAdd": {
-        "properties": {
-          "email": {
-            "format": "email",
-            "title": "Email",
-            "type": "string"
-          }
-        },
-        "required": [
-          "email"
-        ],
-        "title": "PlaylistCollaboratorAdd",
-        "type": "object"
-      },
       "PlaylistCollaboratorOut": {
         "description": "A non-owner collaborator on a playlist.",
         "properties": {
@@ -3680,46 +3666,58 @@
         "title": "PlaylistEntryReorder",
         "type": "object"
       },
-      "PlaylistInviteOut": {
-        "description": "Active shareable invite token for a collaborative playlist.",
+      "PlaylistIncomingInvitation": {
+        "description": "A pending invitation addressed to the current account.",
         "properties": {
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
-          "expires_at": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "invited_by": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "$ref": "#/components/schemas/PlaylistCollaboratorUser"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Expires At"
+            ]
           },
-          "token": {
-            "title": "Token",
-            "type": "string"
+          "playlist": {
+            "$ref": "#/components/schemas/PlaylistInvitationPlaylist"
           }
         },
         "required": [
-          "token",
+          "id",
+          "playlist",
           "created_at"
         ],
-        "title": "PlaylistInviteOut",
+        "title": "PlaylistIncomingInvitation",
         "type": "object"
       },
-      "PlaylistInvitePreview": {
-        "description": "Metadata shown to an authenticated account before accepting an invite link.",
+      "PlaylistInvitationCreate": {
+        "description": "Owner invites an existing, approved account picked from the account search.",
         "properties": {
-          "already_collaborator": {
-            "default": false,
-            "title": "Already Collaborator",
-            "type": "boolean"
-          },
+          "user_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "User Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "user_id"
+        ],
+        "title": "PlaylistInvitationCreate",
+        "type": "object"
+      },
+      "PlaylistInvitationPlaylist": {
+        "description": "What an invitee sees of a playlist before accepting.",
+        "properties": {
           "collaborator_count": {
             "default": 0,
             "title": "Collaborator Count",
@@ -3747,11 +3745,6 @@
             ],
             "title": "Description"
           },
-          "is_owner": {
-            "default": false,
-            "title": "Is Owner",
-            "type": "boolean"
-          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -3774,28 +3767,34 @@
           "name",
           "owner"
         ],
-        "title": "PlaylistInvitePreview",
+        "title": "PlaylistInvitationPlaylist",
         "type": "object"
       },
-      "PlaylistInviteStatus": {
-        "description": "Owner-only view of the active invite link (or null if none/revoked).",
+      "PlaylistInviteCandidate": {
+        "description": "An approved account the owner can find by display name and invite.",
         "properties": {
-          "invite": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlaylistInviteOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "status": {
+            "enum": [
+              "available",
+              "invited",
+              "collaborator"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PlaylistCollaboratorUser"
           }
         },
-        "title": "PlaylistInviteStatus",
+        "required": [
+          "user",
+          "status"
+        ],
+        "title": "PlaylistInviteCandidate",
         "type": "object"
       },
       "PlaylistJoinResult": {
-        "description": "Result of accepting a collaborative playlist invite link.",
+        "description": "Result of accepting a playlist invitation.",
         "properties": {
           "already_member": {
             "default": false,
@@ -3830,6 +3829,35 @@
           "role"
         ],
         "title": "PlaylistJoinResult",
+        "type": "object"
+      },
+      "PlaylistOutgoingInvitation": {
+        "description": "Owner view of a pending invitation that the invitee has not answered yet.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "invited_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlaylistCollaboratorUser"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "invitee": {
+            "$ref": "#/components/schemas/PlaylistCollaboratorUser"
+          }
+        },
+        "required": [
+          "invitee",
+          "created_at"
+        ],
+        "title": "PlaylistOutgoingInvitation",
         "type": "object"
       },
       "PlaylistReorder": {
@@ -10553,27 +10581,20 @@
         ]
       }
     },
-    "/api/playlists/invites/{token}": {
+    "/api/playlists/invitations": {
       "get": {
-        "description": "Preview a collaborative playlist before accepting an invite link.",
-        "operationId": "preview_playlist_invite_api_playlists_invites__token__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "token",
-            "required": true,
-            "schema": {
-              "title": "Token",
-              "type": "string"
-            }
-          }
-        ],
+        "description": "Pending playlist invitations addressed to the current account, newest first.",
+        "operationId": "list_my_playlist_invitations_api_playlists_invitations_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlaylistInvitePreview"
+                  "items": {
+                    "$ref": "#/components/schemas/PlaylistIncomingInvitation"
+                  },
+                  "title": "Response List My Playlist Invitations Api Playlists Invitations Get",
+                  "type": "array"
                 }
               }
             },
@@ -10598,16 +10619,6 @@
               }
             },
             "description": "The authenticated account is pending approval or lacks permission for this operation."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "security": [
@@ -10615,24 +10626,24 @@
             "sf_session": []
           }
         ],
-        "summary": "Preview Playlist Invite",
+        "summary": "List My Playlist Invitations",
         "tags": [
           "playlists"
         ]
       }
     },
-    "/api/playlists/invites/{token}/accept": {
+    "/api/playlists/invitations/{invitation_id}/accept": {
       "post": {
-        "description": "Accept a collaborative playlist invite link and join as an editor.",
-        "operationId": "accept_playlist_invite_api_playlists_invites__token__accept_post",
+        "description": "Accept an invitation addressed to the current account and join as an editor.",
+        "operationId": "accept_playlist_invitation_api_playlists_invitations__invitation_id__accept_post",
         "parameters": [
           {
             "in": "path",
-            "name": "token",
+            "name": "invitation_id",
             "required": true,
             "schema": {
-              "title": "Token",
-              "type": "string"
+              "title": "Invitation Id",
+              "type": "integer"
             }
           }
         ],
@@ -10683,7 +10694,68 @@
             "sf_session": []
           }
         ],
-        "summary": "Accept Playlist Invite",
+        "summary": "Accept Playlist Invitation",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/invitations/{invitation_id}/decline": {
+      "post": {
+        "description": "Decline an invitation addressed to the current account.",
+        "operationId": "decline_playlist_invitation_api_playlists_invitations__invitation_id__decline_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "title": "Invitation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Decline Playlist Invitation",
         "tags": [
           "playlists"
         ]
@@ -10936,7 +11008,7 @@
     },
     "/api/playlists/{playlist_id}/collaborative": {
       "patch": {
-        "description": "Owner-only: toggle collaboration. Disabling revokes active invite links while keeping collaborators read-only.",
+        "description": "Owner-only: toggle collaboration. Disabling withdraws pending invitations while keeping collaborators read-only.",
         "operationId": "set_collaborative_api_playlists__playlist_id__collaborative_patch",
         "parameters": [
           {
@@ -11007,84 +11079,6 @@
           }
         ],
         "summary": "Set Collaborative",
-        "tags": [
-          "playlists"
-        ]
-      }
-    },
-    "/api/playlists/{playlist_id}/collaborators": {
-      "post": {
-        "description": "Owner-only: directly add an approved user as a collaborator by email.",
-        "operationId": "add_collaborator_api_playlists__playlist_id__collaborators_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlist_id",
-            "required": true,
-            "schema": {
-              "title": "Playlist Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlaylistCollaboratorAdd"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlaylistCollaboratorOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthError"
-                }
-              }
-            },
-            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthError"
-                }
-              }
-            },
-            "description": "The authenticated account is pending approval or lacks permission for this operation."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "sf_session": []
-          }
-        ],
-        "summary": "Add Collaborator",
         "tags": [
           "playlists"
         ]
@@ -11579,10 +11573,10 @@
         ]
       }
     },
-    "/api/playlists/{playlist_id}/invite": {
-      "delete": {
-        "description": "Owner-only: revoke the active invite link without removing existing collaborators.",
-        "operationId": "revoke_playlist_invite_api_playlists__playlist_id__invite_delete",
+    "/api/playlists/{playlist_id}/invitations": {
+      "get": {
+        "description": "Owner-only: pending invitations the invitees have not answered yet.",
+        "operationId": "list_playlist_invitations_api_playlists__playlist_id__invitations_get",
         "parameters": [
           {
             "in": "path",
@@ -11590,6 +11584,163 @@
             "required": true,
             "schema": {
               "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlaylistOutgoingInvitation"
+                  },
+                  "title": "Response List Playlist Invitations Api Playlists  Playlist Id  Invitations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "List Playlist Invitations",
+        "tags": [
+          "playlists"
+        ]
+      },
+      "post": {
+        "description": "Owner-only: invite an existing approved account; it joins once the invitee accepts.",
+        "operationId": "invite_to_playlist_api_playlists__playlist_id__invitations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaylistInvitationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaylistOutgoingInvitation"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Invite To Playlist",
+        "tags": [
+          "playlists"
+        ]
+      }
+    },
+    "/api/playlists/{playlist_id}/invitations/{user_id}": {
+      "delete": {
+        "description": "Owner-only: withdraw a pending invitation before the invitee answers.",
+        "operationId": "withdraw_playlist_invitation_api_playlists__playlist_id__invitations__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "playlist_id",
+            "required": true,
+            "schema": {
+              "title": "Playlist Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
               "type": "integer"
             }
           }
@@ -11634,14 +11785,16 @@
             "sf_session": []
           }
         ],
-        "summary": "Revoke Playlist Invite",
+        "summary": "Withdraw Playlist Invitation",
         "tags": [
           "playlists"
         ]
-      },
+      }
+    },
+    "/api/playlists/{playlist_id}/invite-candidates": {
       "get": {
-        "description": "Owner-only: inspect the active invite link for this playlist, if any.",
-        "operationId": "get_playlist_invite_api_playlists__playlist_id__invite_get",
+        "description": "Owner-only: find approved accounts by display name to invite (never by email).",
+        "operationId": "search_invite_candidates_api_playlists__playlist_id__invite_candidates_get",
         "parameters": [
           {
             "in": "path",
@@ -11650,6 +11803,19 @@
             "schema": {
               "title": "Playlist Id",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Case-insensitive part of the account's display name.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "description": "Case-insensitive part of the account's display name.",
+              "maxLength": 120,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
             }
           }
         ],
@@ -11658,7 +11824,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlaylistInviteStatus"
+                  "items": {
+                    "$ref": "#/components/schemas/PlaylistInviteCandidate"
+                  },
+                  "title": "Response Search Invite Candidates Api Playlists  Playlist Id  Invite Candidates Get",
+                  "type": "array"
                 }
               }
             },
@@ -11700,73 +11870,7 @@
             "sf_session": []
           }
         ],
-        "summary": "Get Playlist Invite",
-        "tags": [
-          "playlists"
-        ]
-      },
-      "post": {
-        "description": "Owner-only: create or rotate the active invite token (revokes any previous link).",
-        "operationId": "create_or_rotate_playlist_invite_api_playlists__playlist_id__invite_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlist_id",
-            "required": true,
-            "schema": {
-              "title": "Playlist Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlaylistInviteOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthError"
-                }
-              }
-            },
-            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthError"
-                }
-              }
-            },
-            "description": "The authenticated account is pending approval or lacks permission for this operation."
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "sf_session": []
-          }
-        ],
-        "summary": "Create Or Rotate Playlist Invite",
+        "summary": "Search Invite Candidates",
         "tags": [
           "playlists"
         ]

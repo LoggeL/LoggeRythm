@@ -3,7 +3,7 @@ import type {
   AddedTracksResult,
   Playlist,
   PlaylistCreateRequest,
-  PlaylistInviteStatus,
+  PlaylistOutgoingInvitation,
   PlaylistSummary,
   PlaylistUpdateRequest,
   Track,
@@ -16,9 +16,9 @@ export interface PlaylistCacheSnapshot {
   detail: Playlist | undefined;
   owned: PlaylistSummary[] | undefined;
   public: PlaylistSummary[] | undefined;
-  invite?: {
+  outgoingInvitations?: {
     captured: true;
-    value: PlaylistInviteStatus | undefined;
+    value: PlaylistOutgoingInvitation[] | undefined;
   };
 }
 
@@ -94,12 +94,12 @@ export function restorePlaylistCache(
   if (snapshot.public === undefined) client.removeQueries({ queryKey: queryKey.public, exact: true });
   else client.setQueryData(queryKey.public, snapshot.public);
 
-  if (snapshot.invite?.captured === true) {
-    const inviteKey = queryKeys.playlists.invite(scope, id);
-    if (snapshot.invite.value === undefined) {
-      client.removeQueries({ queryKey: inviteKey, exact: true });
+  if (snapshot.outgoingInvitations?.captured === true) {
+    const invitationsKey = queryKeys.playlists.outgoingInvitations(scope, id);
+    if (snapshot.outgoingInvitations.value === undefined) {
+      client.removeQueries({ queryKey: invitationsKey, exact: true });
     } else {
-      client.setQueryData(inviteKey, snapshot.invite.value);
+      client.setQueryData(invitationsKey, snapshot.outgoingInvitations.value);
     }
   }
 }
@@ -145,11 +145,11 @@ export async function optimisticallySetPlaylistCollaborative(
   id: number,
   isCollaborative: boolean,
 ): Promise<PlaylistCacheSnapshot> {
-  const inviteKey = queryKeys.playlists.invite(scope, id);
-  let previousInvite: PlaylistInviteStatus | undefined;
+  const invitationsKey = queryKeys.playlists.outgoingInvitations(scope, id);
+  let previousInvitations: PlaylistOutgoingInvitation[] | undefined;
   if (!isCollaborative) {
-    await client.cancelQueries({ queryKey: inviteKey, exact: true });
-    previousInvite = client.getQueryData<PlaylistInviteStatus>(inviteKey);
+    await client.cancelQueries({ queryKey: invitationsKey, exact: true });
+    previousInvitations = client.getQueryData<PlaylistOutgoingInvitation[]>(invitationsKey);
   }
   const snapshot = await beginOptimisticPlaylistChange(
     client,
@@ -167,12 +167,12 @@ export async function optimisticallySetPlaylistCollaborative(
     }),
   );
   if (!isCollaborative) {
-    // Disabling collaboration revokes the active invite server-side; clear it
-    // immediately so re-enabling cannot flash a revoked token from cache.
-    client.setQueryData<PlaylistInviteStatus>(inviteKey, { invite: null });
+    // Disabling collaboration withdraws every pending invitation server-side;
+    // clear them immediately so re-enabling cannot flash withdrawn invitations.
+    client.setQueryData<PlaylistOutgoingInvitation[]>(invitationsKey, []);
     return {
       ...snapshot,
-      invite: { captured: true, value: previousInvite },
+      outgoingInvitations: { captured: true, value: previousInvitations },
     };
   }
   return snapshot;
@@ -359,7 +359,11 @@ export function removeDeletedPlaylistFromCache(
 ): void {
   const queryKey = keys(scope, id);
   client.removeQueries({ queryKey: queryKey.detail, exact: true });
-  client.removeQueries({ queryKey: queryKeys.playlists.invite(scope, id), exact: true });
+  client.removeQueries({
+    queryKey: queryKeys.playlists.outgoingInvitations(scope, id),
+    exact: true,
+  });
+  client.removeQueries({ queryKey: queryKeys.playlists.inviteCandidatesRoot(scope, id) });
   for (const listKey of [queryKey.owned, queryKey.public]) {
     client.setQueryData<PlaylistSummary[]>(listKey, (current) =>
       current?.filter((playlist) => playlist.id !== id),
@@ -383,8 +387,11 @@ export async function invalidatePlaylistCaches(
         exact: true,
       }),
       client.invalidateQueries({
-        queryKey: queryKeys.playlists.invite(scope, id),
+        queryKey: queryKeys.playlists.outgoingInvitations(scope, id),
         exact: true,
+      }),
+      client.invalidateQueries({
+        queryKey: queryKeys.playlists.inviteCandidatesRoot(scope, id),
       }),
     );
   }

@@ -22,10 +22,11 @@ import {
   decodePlaybackSettings,
   decodePlaylist,
   decodePlaylistCollaborator,
-  decodePlaylistInvite,
-  decodePlaylistInvitePreview,
-  decodePlaylistInviteStatus,
+  decodePlaylistIncomingInvitations,
+  decodePlaylistInviteCandidates,
   decodePlaylistJoinResult,
+  decodePlaylistOutgoingInvitation,
+  decodePlaylistOutgoingInvitations,
   decodePlaylistSummaries,
   decodePublicProfile,
   decodeReleaseRadar,
@@ -271,29 +272,63 @@ describe('API response decoders', () => {
     expect(decodePlaylistCollaborator(collab)).toEqual(collab);
     expect(() => decodePlaylistCollaborator({ ...collab, role: 'viewer' })).toThrow(/role/);
 
-    const invite = {
-      token: 'abcdef1234567890_XYZ',
-      created_at: '2026-11-24T09:00:00Z',
-      expires_at: null,
-    };
-    expect(decodePlaylistInvite(invite)).toEqual(invite);
-    expect(decodePlaylistInviteStatus({ invite })).toEqual({ invite });
-    expect(decodePlaylistInviteStatus({ invite: null })).toEqual({ invite: null });
-    expect(() => decodePlaylistInvite({ ...invite, token: '   ' })).toThrow(/token/);
+    const owner = { id: 5, display_name: 'Tariq', avatar_url: null };
+    const jule = { id: 9, display_name: 'Jule', avatar_url: '/api/users/9/avatar' };
+    const candidates = [
+      { user: jule, status: 'available' },
+      { user: { id: 10, display_name: 'Julian', avatar_url: null }, status: 'invited' },
+      { user: { id: 11, display_name: null, avatar_url: null }, status: 'collaborator' },
+    ];
+    expect(decodePlaylistInviteCandidates(candidates)).toEqual(candidates);
+    expect(decodePlaylistInviteCandidates([])).toEqual([]);
+    expect(() => decodePlaylistInviteCandidates([{ user: jule, status: 'pending' }]))
+      .toThrow(/PlaylistInviteCandidate\[\]\[0\]\.status/);
+    expect(() => decodePlaylistInviteCandidates([{ status: 'available' }]))
+      .toThrow(/\.user must be an object/);
+    expect(() => decodePlaylistInviteCandidates({ items: candidates })).toThrow(/must be an array/);
 
-    const preview = {
-      playlist_id: 51,
-      name: 'Kellerparty 2026',
-      description: 'Bring tracks',
-      cover_url: null,
-      track_count: 14,
-      collaborator_count: 3,
-      owner: { id: 5, display_name: 'Tariq', avatar_url: null },
-      is_owner: false,
-      already_collaborator: false,
+    const outgoing = {
+      invitee: jule,
+      invited_by: owner,
+      created_at: '2026-11-24T09:00:00Z',
     };
-    expect(decodePlaylistInvitePreview(preview)).toEqual(preview);
-    expect(() => decodePlaylistInvitePreview({ ...preview, owner: null })).toThrow(/owner/);
+    expect(decodePlaylistOutgoingInvitation(outgoing)).toEqual(outgoing);
+    expect(decodePlaylistOutgoingInvitations([{ ...outgoing, invited_by: null }]))
+      .toEqual([{ ...outgoing, invited_by: null }]);
+    expect(() => decodePlaylistOutgoingInvitation({ ...outgoing, created_at: ' ' }))
+      .toThrow(/created_at must not be empty/);
+    expect(() => decodePlaylistOutgoingInvitation({ ...outgoing, invited_by: undefined }))
+      .toThrow(/invited_by must be an object/);
+    expect(() => decodePlaylistOutgoingInvitation({ ...outgoing, invitee: { ...jule, id: '9' } }))
+      .toThrow(/invitee\.id/);
+
+    const incoming = {
+      id: 77,
+      playlist: {
+        playlist_id: 51,
+        name: 'Kellerparty 2026',
+        description: 'Bring tracks',
+        cover_url: '/api/playlists/51/cover',
+        track_count: 14,
+        collaborator_count: 3,
+        owner,
+      },
+      invited_by: owner,
+      created_at: '2026-11-25T10:00:00Z',
+    };
+    expect(decodePlaylistIncomingInvitations([incoming])).toEqual([incoming]);
+    expect(() => decodePlaylistIncomingInvitations([{ ...incoming, id: 0 }]))
+      .toThrow(/\[0\]\.id must be positive/);
+    expect(() =>
+      decodePlaylistIncomingInvitations([
+        { ...incoming, playlist: { ...incoming.playlist, owner: null } },
+      ]),
+    ).toThrow(/playlist\.owner/);
+    expect(() =>
+      decodePlaylistIncomingInvitations([
+        { ...incoming, playlist: { ...incoming.playlist, track_count: -1 } },
+      ]),
+    ).toThrow(/playlist\.track_count/);
 
     const joined = {
       playlist_id: 51,

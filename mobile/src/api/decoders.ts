@@ -51,10 +51,12 @@ import type {
   PlaylistDeduplicateResult,
   PlaylistDuplicateGroup,
   PlaylistDuplicatesResponse,
-  PlaylistInvite,
-  PlaylistInvitePreview,
-  PlaylistInviteStatus,
+  PlaylistIncomingInvitation,
+  PlaylistInvitationPlaylist,
+  PlaylistInviteCandidate,
+  PlaylistInviteCandidateStatus,
   PlaylistJoinResult,
+  PlaylistOutgoingInvitation,
   PlaylistLiveEvent,
   PlaylistLiveEventType,
   PlaylistRole,
@@ -323,48 +325,83 @@ export function decodePlaylistCollaborator(
   };
 }
 
-export function decodePlaylistInvite(
+const PLAYLIST_INVITE_CANDIDATE_STATUSES = [
+  'available',
+  'invited',
+  'collaborator',
+] as const satisfies readonly PlaylistInviteCandidateStatus[];
+
+function nonEmptyTimestamp(value: unknown, path: string): string {
+  const parsed = string(value, path);
+  if (parsed.trim().length === 0) throw new Error(`${path} must not be empty`);
+  return parsed;
+}
+
+function decodePlaylistInviteCandidate(
   value: unknown,
-  path = 'PlaylistInvite',
-): PlaylistInvite {
+  path: string,
+): PlaylistInviteCandidate {
   const source = object(value, path);
-  const token = string(source.token, `${path}.token`);
-  if (token.trim().length === 0) throw new Error(`${path}.token must not be empty`);
-  const createdAt = string(source.created_at, `${path}.created_at`);
-  if (createdAt.trim().length === 0) throw new Error(`${path}.created_at must not be empty`);
   return {
-    token,
-    created_at: createdAt,
-    expires_at: nullableString(source.expires_at, `${path}.expires_at`),
+    user: decodePlaylistCollaboratorUser(source.user, `${path}.user`),
+    status: literal(source.status, `${path}.status`, PLAYLIST_INVITE_CANDIDATE_STATUSES),
   };
 }
 
-export function decodePlaylistInviteStatus(value: unknown): PlaylistInviteStatus {
-  const source = object(value, 'PlaylistInviteStatus');
+export function decodePlaylistInviteCandidates(value: unknown): PlaylistInviteCandidate[] {
+  return array(value, 'PlaylistInviteCandidate[]', decodePlaylistInviteCandidate);
+}
+
+export function decodePlaylistOutgoingInvitation(
+  value: unknown,
+  path = 'PlaylistOutgoingInvitation',
+): PlaylistOutgoingInvitation {
+  const source = object(value, path);
   return {
-    invite: nullable(source.invite, 'PlaylistInviteStatus.invite', decodePlaylistInvite),
+    invitee: decodePlaylistCollaboratorUser(source.invitee, `${path}.invitee`),
+    invited_by: nullable(source.invited_by, `${path}.invited_by`, decodePlaylistCollaboratorUser),
+    created_at: nonEmptyTimestamp(source.created_at, `${path}.created_at`),
   };
 }
 
-export function decodePlaylistInvitePreview(value: unknown): PlaylistInvitePreview {
-  const source = object(value, 'PlaylistInvitePreview');
+export function decodePlaylistOutgoingInvitations(value: unknown): PlaylistOutgoingInvitation[] {
+  return array(value, 'PlaylistOutgoingInvitation[]', decodePlaylistOutgoingInvitation);
+}
+
+function decodePlaylistInvitationPlaylist(
+  value: unknown,
+  path: string,
+): PlaylistInvitationPlaylist {
+  const source = object(value, path);
   return {
-    playlist_id: positiveInteger(source.playlist_id, 'PlaylistInvitePreview.playlist_id'),
-    name: string(source.name, 'PlaylistInvitePreview.name'),
-    description: nullableString(source.description, 'PlaylistInvitePreview.description'),
-    cover_url: nullableString(source.cover_url, 'PlaylistInvitePreview.cover_url'),
-    track_count: nonNegativeInteger(source.track_count, 'PlaylistInvitePreview.track_count'),
+    playlist_id: positiveInteger(source.playlist_id, `${path}.playlist_id`),
+    name: string(source.name, `${path}.name`),
+    description: nullableString(source.description, `${path}.description`),
+    cover_url: nullableString(source.cover_url, `${path}.cover_url`),
+    track_count: nonNegativeInteger(source.track_count, `${path}.track_count`),
     collaborator_count: nonNegativeInteger(
       source.collaborator_count,
-      'PlaylistInvitePreview.collaborator_count',
+      `${path}.collaborator_count`,
     ),
-    owner: decodePlaylistCollaboratorUser(source.owner, 'PlaylistInvitePreview.owner'),
-    is_owner: boolean(source.is_owner, 'PlaylistInvitePreview.is_owner'),
-    already_collaborator: boolean(
-      source.already_collaborator,
-      'PlaylistInvitePreview.already_collaborator',
-    ),
+    owner: decodePlaylistCollaboratorUser(source.owner, `${path}.owner`),
   };
+}
+
+function decodePlaylistIncomingInvitation(
+  value: unknown,
+  path: string,
+): PlaylistIncomingInvitation {
+  const source = object(value, path);
+  return {
+    id: positiveInteger(source.id, `${path}.id`),
+    playlist: decodePlaylistInvitationPlaylist(source.playlist, `${path}.playlist`),
+    invited_by: nullable(source.invited_by, `${path}.invited_by`, decodePlaylistCollaboratorUser),
+    created_at: nonEmptyTimestamp(source.created_at, `${path}.created_at`),
+  };
+}
+
+export function decodePlaylistIncomingInvitations(value: unknown): PlaylistIncomingInvitation[] {
+  return array(value, 'PlaylistIncomingInvitation[]', decodePlaylistIncomingInvitation);
 }
 
 export function decodePlaylistJoinResult(value: unknown): PlaylistJoinResult {

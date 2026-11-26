@@ -156,7 +156,9 @@ const playlists = new Map([
     collaborators: [
       { user_id: 2, display_name: "Jule", avatar_url: null, role: "editor", joined_at: "2026-11-18T14:30:00Z" },
     ],
-    invite: { token: "demo-collab-token-logge-recent-01", created_at: "2026-11-20T12:00:00Z", expires_at: null },
+    invitations: [
+      { id: 1, invitee_user_id: 5, inviter_user_id: me.id, created_at: "2026-11-20T12:00:00Z" },
+    ],
     revision: 4,
     tracks: makePlaylistEntries(pick(0, 42, 5), [me, MOCK_USERS[1]]),
     cover_url: cover("playlist", 1),
@@ -169,7 +171,7 @@ const playlists = new Map([
     is_collaborative: false,
     owner_id: me.id,
     collaborators: [],
-    invite: null,
+    invitations: [],
     revision: 1,
     tracks: makePlaylistEntries(pick(8, 18, 9), [me]),
     cover_url: cover("playlist", 2),
@@ -182,7 +184,7 @@ const playlists = new Map([
     is_collaborative: false,
     owner_id: me.id,
     collaborators: [],
-    invite: null,
+    invitations: [],
     revision: 1,
     tracks: makePlaylistEntries(pick(30, 27, 4), [me]),
     cover_url: "",
@@ -200,7 +202,7 @@ const externalPlaylists = new Map([
       { user_id: me.id, display_name: me.display_name, avatar_url: me.avatar_url, role: "editor", joined_at: "2026-11-19T19:00:00Z" },
       { user_id: 3, display_name: "Tariq", avatar_url: null, role: "editor", joined_at: "2026-11-20T09:15:00Z" },
     ],
-    invite: { token: "demo-collab-token-wg-kueche-04", created_at: "2026-11-19T18:00:00Z", expires_at: null },
+    invitations: [],
     revision: 3,
     tracks: makePlaylistEntries(pick(12, 16, 7), [MOCK_USERS[1], me, MOCK_USERS[2]]),
     cover_url: cover("playlist", 4),
@@ -213,7 +215,7 @@ const externalPlaylists = new Map([
     is_collaborative: false,
     owner_id: 2,
     collaborators: [],
-    invite: null,
+    invitations: [],
     revision: 1,
     tracks: makePlaylistEntries(pick(6, 22, 8), [MOCK_USERS[1]]),
     cover_url: cover("playlist", 50),
@@ -228,13 +230,15 @@ const externalPlaylists = new Map([
     collaborators: [
       { user_id: 2, display_name: "Jule", avatar_url: null, role: "editor", joined_at: "2026-11-21T16:30:00Z" },
     ],
-    invite: { token: "demo-join-token-kellerparty-2026", created_at: "2026-11-21T16:00:00Z", expires_at: null },
+    invitations: [
+      { id: 2, invitee_user_id: me.id, inviter_user_id: 3, created_at: "2026-11-21T16:00:00Z" },
+    ],
     revision: 2,
     tracks: makePlaylistEntries(pick(15, 14, 6), [MOCK_USERS[2], MOCK_USERS[1]]),
     cover_url: cover("playlist", 51),
   }],
 ]);
-const revokedPlaylistTokens = new Set(["demo-revoked-token-expired-0001"]);
+let nextInvitationId = 100;
 const plays = pick(4, 12, 3);
 const parties = new Map();
 const SERVER_CACHED_IDS = new Set(pick(0, 30, 5).map((track) => track.id));
@@ -300,8 +304,43 @@ const playlistDetail = (playlist) => ({
   tracks: playlist.tracks,
 });
 const findPlaylist = (id) => playlists.get(String(id)) ?? externalPlaylists.get(String(id));
-const findPlaylistByInviteToken = (token) =>
-  allPlaylists().find((playlist) => playlist.invite?.token === token) ?? null;
+const requireUser = (id, context) => {
+  const user = userById(id);
+  if (!user) throw new Error(`${context} references missing mock user ${id}`);
+  return user;
+};
+const isInvitable = (user) => Boolean(user.is_approved || user.is_admin);
+const hasPendingInvitation = (playlist, userId) =>
+  playlist.invitations.some((inv) => Number(inv.invitee_user_id) === Number(userId));
+const outgoingInvitation = (playlist, inv) => ({
+  invitee: userRef(requireUser(inv.invitee_user_id, `Invitation ${inv.id}`)),
+  invited_by: inv.inviter_user_id == null ? null : userRef(requireUser(inv.inviter_user_id, `Invitation ${inv.id}`)),
+  created_at: inv.created_at,
+});
+const incomingInvitation = (playlist, inv) => ({
+  id: inv.id,
+  playlist: {
+    playlist_id: playlist.id,
+    name: playlist.name,
+    description: playlist.description || null,
+    cover_url: playlist.cover_url || null,
+    track_count: playlist.tracks.length,
+    collaborator_count: playlist.collaborators.length,
+    owner: userRef(requireUser(playlist.owner_id, `Playlist ${playlist.id} owner`)),
+  },
+  invited_by: inv.inviter_user_id == null ? null : userRef(requireUser(inv.inviter_user_id, `Invitation ${inv.id}`)),
+  created_at: inv.created_at,
+});
+/** The invitation with `id` addressed to the current account, with its playlist. */
+const findMyInvitation = (id) => {
+  for (const playlist of allPlaylists()) {
+    const inv = playlist.invitations.find(
+      (candidate) => candidate.id === Number(id) && Number(candidate.invitee_user_id) === Number(me.id),
+    );
+    if (inv) return { playlist, inv };
+  }
+  return null;
+};
 
 // ------------------------------------------------------------- generators --
 
@@ -762,7 +801,7 @@ async function handle(req, res) {
       is_collaborative: Boolean(body.is_collaborative),
       owner_id: me.id,
       collaborators: [],
-      invite: null,
+      invitations: [],
       revision: 0,
       tracks: [],
       cover_url: "",
@@ -770,49 +809,25 @@ async function handle(req, res) {
     playlists.set(String(playlist.id), playlist);
     return send(res, 201, playlistSummary(playlist));
   }
-  // Static playlist invite preview / accept routes before `/{playlist_id}`.
-  if (is("GET", "/playlists/invites/[^/]+")) {
-    const token = seg[2];
-    if (revokedPlaylistTokens.has(token)) {
-      return fail(res, 410, "Dieser Einladungslink ist nicht mehr aktiv.");
+  // Invitee routes are static and must match before `/{playlist_id}`.
+  if (is("GET", "/playlists/invitations")) {
+    const incoming = [];
+    for (const playlist of allPlaylists()) {
+      for (const inv of playlist.invitations) {
+        if (Number(inv.invitee_user_id) === Number(me.id)) incoming.push(incomingInvitation(playlist, inv));
+      }
     }
-    const playlist = findPlaylistByInviteToken(token);
-    if (!playlist) return fail(res, 404, "Einladungslink nicht gefunden.");
-    if (!playlist.is_collaborative) {
-      return fail(res, 410, "Die gemeinsame Bearbeitung dieser Playlist ist deaktiviert.");
-    }
-    const owner = userById(playlist.owner_id) ?? me;
-    return send(res, 200, {
-      playlist_id: playlist.id,
-      name: playlist.name,
-      description: playlist.description || null,
-      cover_url: playlist.cover_url || null,
-      track_count: playlist.tracks.length,
-      collaborator_count: playlist.collaborators.length,
-      owner: userRef(owner),
-      is_owner: isOwnerOf(playlist),
-      already_collaborator: isCollaboratorOf(playlist),
-    });
+    incoming.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.id - a.id);
+    return send(res, 200, incoming);
   }
-  if (is("POST", "/playlists/invites/[^/]+/accept")) {
-    const token = seg[2];
-    if (revokedPlaylistTokens.has(token)) {
-      return fail(res, 410, "Dieser Einladungslink ist nicht mehr aktiv.");
-    }
-    const playlist = findPlaylistByInviteToken(token);
-    if (!playlist) return fail(res, 404, "Einladungslink nicht gefunden.");
+  if (is("POST", "/playlists/invitations/\\d+/accept")) {
+    const found = findMyInvitation(seg[2]);
+    if (!found) return fail(res, 404, "Einladung nicht gefunden.");
+    const { playlist, inv } = found;
     if (!playlist.is_collaborative) {
-      return fail(res, 410, "Die gemeinsame Bearbeitung dieser Playlist ist deaktiviert.");
+      throw new Error(`Mock invitation ${inv.id} is pending on playlist ${playlist.id} with collaboration disabled`);
     }
-    if (isOwnerOf(playlist)) {
-      return send(res, 200, {
-        playlist_id: playlist.id,
-        playlist_name: playlist.name,
-        joined: false,
-        already_member: true,
-        role: "owner",
-      });
-    }
+    playlist.invitations = playlist.invitations.filter((candidate) => candidate.id !== inv.id);
     if (isCollaboratorOf(playlist)) {
       return send(res, 200, {
         playlist_id: playlist.id,
@@ -837,6 +852,12 @@ async function handle(req, res) {
       already_member: false,
       role: "editor",
     });
+  }
+  if (is("POST", "/playlists/invitations/\\d+/decline")) {
+    const found = findMyInvitation(seg[2]);
+    if (!found) return fail(res, 404, "Einladung nicht gefunden.");
+    found.playlist.invitations = found.playlist.invitations.filter((candidate) => candidate.id !== found.inv.id);
+    return send(res, 204);
   }
   if (seg[0] === "playlists" && seg[1]) {
     const playlist = findPlaylist(seg[1]);
@@ -934,7 +955,6 @@ async function handle(req, res) {
       return send(res, 200, playlistSummary(playlist));
     }
     if (is("DELETE", "/playlists/[^/]+")) {
-      if (playlist.invite) revokedPlaylistTokens.add(playlist.invite.token);
       playlists.delete(String(playlist.id));
       return send(res, 204);
     }
@@ -946,58 +966,52 @@ async function handle(req, res) {
     if (is("PATCH", "/playlists/[^/]+/collaborative")) {
       const next = Boolean((await readJson(req)).is_collaborative);
       playlist.is_collaborative = next;
-      if (!next && playlist.invite) {
-        revokedPlaylistTokens.add(playlist.invite.token);
-        playlist.invite = null;
-      }
+      // Disabling collaboration deletes every pending invitation.
+      if (!next) playlist.invitations = [];
       playlist.revision = (playlist.revision ?? 0) + 1;
       return send(res, 200, playlistSummary(playlist));
     }
-    if (is("GET", "/playlists/[^/]+/invite")) {
-      return send(res, 200, { invite: playlist.is_collaborative ? playlist.invite : null });
+    if (is("GET", "/playlists/[^/]+/invite-candidates")) {
+      const needle = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+      if (!needle) return fail(res, 422, "Suchbegriff darf nicht leer sein.");
+      const found = MOCK_USERS
+        .filter((u) => Number(u.id) !== Number(playlist.owner_id) && u.display_name && isInvitable(u))
+        .filter((u) => u.display_name.toLowerCase().includes(needle))
+        .sort((a, b) => a.display_name.toLowerCase().localeCompare(b.display_name.toLowerCase()) || a.id - b.id)
+        .slice(0, 20)
+        .map((u) => ({
+          user: userRef(u),
+          status: isCollaboratorOf(playlist, u) ? "collaborator" : hasPendingInvitation(playlist, u.id) ? "invited" : "available",
+        }));
+      return send(res, 200, found);
     }
-    if (is("POST", "/playlists/[^/]+/invite")) {
+    if (is("GET", "/playlists/[^/]+/invitations")) {
+      const rows = [...playlist.invitations].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id);
+      return send(res, 200, rows.map((inv) => outgoingInvitation(playlist, inv)));
+    }
+    if (is("POST", "/playlists/[^/]+/invitations")) {
       if (!playlist.is_collaborative) {
-        return fail(res, 409, "Gemeinsame Bearbeitung muss erst aktiviert werden.");
+        return fail(res, 409, "Aktiviere zuerst die Zusammenarbeit für diese Playlist.");
       }
-      if (playlist.invite) revokedPlaylistTokens.add(playlist.invite.token);
-      playlist.invite = {
-        token: randomBytes(24).toString("base64url"),
-        created_at: new Date().toISOString(),
-        expires_at: null,
-      };
-      return send(res, 201, playlist.invite);
-    }
-    if (is("DELETE", "/playlists/[^/]+/invite")) {
-      if (playlist.invite) {
-        revokedPlaylistTokens.add(playlist.invite.token);
-        playlist.invite = null;
-      }
-      return send(res, 204);
-    }
-    if (is("POST", "/playlists/[^/]+/collaborators")) {
-      if (!playlist.is_collaborative) {
-        return fail(res, 409, "Gemeinsame Bearbeitung muss erst aktiviert werden.");
-      }
-      const email = String((await readJson(req)).email ?? "").trim().toLowerCase();
-      const target = MOCK_USERS.find((u) => u.email.toLowerCase() === email && u.is_approved);
-      if (!target) return fail(res, 404, `Kein freigegebenes Konto mit „${email}“ gefunden.`);
+      const userId = Number((await readJson(req)).user_id);
+      const target = userById(userId);
+      if (!target || !isInvitable(target)) return fail(res, 404, "Kein freigegebenes Konto gefunden.");
       if (Number(target.id) === Number(playlist.owner_id)) {
-        return fail(res, 400, "Der Eigentümer ist bereits Mitglied.");
+        return fail(res, 400, "Der Eigentümer ist bereits Mitglied dieser Playlist.");
       }
-      if (playlist.collaborators.some((c) => Number(c.user_id) === Number(target.id))) {
-        return fail(res, 409, `${target.display_name} ist bereits Mitwirkende:r.`);
+      if (isCollaboratorOf(playlist, target)) {
+        return fail(res, 409, "Dieses Konto ist bereits Mitwirkender dieser Playlist.");
       }
-      const collab = {
-        user_id: target.id,
-        display_name: target.display_name,
-        avatar_url: target.avatar_url ?? null,
-        role: "editor",
-        joined_at: new Date().toISOString(),
-      };
-      playlist.collaborators.push(collab);
-      playlist.revision = (playlist.revision ?? 0) + 1;
-      return send(res, 201, collab);
+      if (hasPendingInvitation(playlist, target.id)) return fail(res, 409, "Dieses Konto ist bereits eingeladen.");
+      const inv = { id: nextInvitationId++, invitee_user_id: target.id, inviter_user_id: me.id, created_at: new Date().toISOString() };
+      playlist.invitations.push(inv);
+      return send(res, 201, outgoingInvitation(playlist, inv));
+    }
+    if (is("DELETE", "/playlists/[^/]+/invitations/\\d+")) {
+      const targetId = Number(seg[3]);
+      if (!hasPendingInvitation(playlist, targetId)) return fail(res, 404, "Einladung nicht gefunden.");
+      playlist.invitations = playlist.invitations.filter((inv) => Number(inv.invitee_user_id) !== targetId);
+      return send(res, 204);
     }
     if (is("DELETE", "/playlists/[^/]+/collaborators/[^/]+")) {
       const targetId = Number(seg[3]);

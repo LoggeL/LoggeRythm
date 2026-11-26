@@ -16,7 +16,7 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(129);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(130);
     expect(
       GENERATED_API_OPERATIONS.deduplicate_likes_api_admin_likes_deduplicate_post,
     ).toEqual({
@@ -88,23 +88,82 @@ describe('generated OpenAPI contract', () => {
     });
     expect(
       GENERATED_API_OPERATIONS
-        .create_or_rotate_playlist_invite_api_playlists__playlist_id__invite_post,
-    ).toEqual({
-      method: 'POST',
-      path: '/api/playlists/{playlist_id}/invite',
-      auth: 'required',
-      requestMediaTypes: [],
-      successStatuses: [201],
-    });
-    expect(
-      GENERATED_API_OPERATIONS.preview_playlist_invite_api_playlists_invites__token__get,
+        .search_invite_candidates_api_playlists__playlist_id__invite_candidates_get,
     ).toEqual({
       method: 'GET',
-      path: '/api/playlists/invites/{token}',
+      path: '/api/playlists/{playlist_id}/invite-candidates',
       auth: 'required',
       requestMediaTypes: [],
       successStatuses: [200],
     });
+    expect(
+      GENERATED_API_OPERATIONS
+        .list_playlist_invitations_api_playlists__playlist_id__invitations_get,
+    ).toEqual({
+      method: 'GET',
+      path: '/api/playlists/{playlist_id}/invitations',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS.invite_to_playlist_api_playlists__playlist_id__invitations_post,
+    ).toEqual({
+      method: 'POST',
+      path: '/api/playlists/{playlist_id}/invitations',
+      auth: 'required',
+      requestMediaTypes: ['application/json'],
+      successStatuses: [201],
+    });
+    expect(
+      GENERATED_API_OPERATIONS
+        .withdraw_playlist_invitation_api_playlists__playlist_id__invitations__user_id__delete,
+    ).toEqual({
+      method: 'DELETE',
+      path: '/api/playlists/{playlist_id}/invitations/{user_id}',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [204],
+    });
+    expect(
+      GENERATED_API_OPERATIONS.list_my_playlist_invitations_api_playlists_invitations_get,
+    ).toEqual({
+      method: 'GET',
+      path: '/api/playlists/invitations',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS
+        .accept_playlist_invitation_api_playlists_invitations__invitation_id__accept_post,
+    ).toEqual({
+      method: 'POST',
+      path: '/api/playlists/invitations/{invitation_id}/accept',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [200],
+    });
+    expect(
+      GENERATED_API_OPERATIONS
+        .decline_playlist_invitation_api_playlists_invitations__invitation_id__decline_post,
+    ).toEqual({
+      method: 'POST',
+      path: '/api/playlists/invitations/{invitation_id}/decline',
+      auth: 'required',
+      requestMediaTypes: [],
+      successStatuses: [204],
+    });
+    // Invite links and email-based collaborator adds no longer exist.
+    const operations: string[] = Object.values(GENERATED_API_OPERATIONS).map(
+      (op) => `${op.method} ${op.path}`,
+    );
+    expect(operations).not.toContain('GET /api/playlists/{playlist_id}/invite');
+    expect(operations).not.toContain('POST /api/playlists/{playlist_id}/invite');
+    expect(operations).not.toContain('DELETE /api/playlists/{playlist_id}/invite');
+    expect(operations).not.toContain('GET /api/playlists/invites/{token}');
+    expect(operations).not.toContain('POST /api/playlists/invites/{token}/accept');
+    expect(operations).not.toContain('POST /api/playlists/{playlist_id}/collaborators');
     expect(
       GENERATED_API_OPERATIONS.leave_playlist_api_playlists__playlist_id__leave_post,
     ).toEqual({

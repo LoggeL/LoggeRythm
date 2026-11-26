@@ -6,12 +6,11 @@ import { useMe, useLogout } from "@/hooks/useAuth";
 import { AuthShell } from "@/components/AuthCard";
 import { ClockIcon, SpinnerIcon } from "@/components/icons";
 import { CheckCircleIcon } from "@/components/feedbackIcons";
-import { buildAuthHref, isPlaylistInvitePath } from "@/lib/authRedirect";
+import { buildAuthHref } from "@/lib/authRedirect";
 import { toast } from "@/store/toast";
 
 /** Shown to logged-out visitors — the app is otherwise fully locked. */
 export function LandingScreen({ nextPath }: { nextPath?: string | null }) {
-  const isPlaylistInvite = Boolean(nextPath && isPlaylistInvitePath(nextPath));
   const loginHref = buildAuthHref("/login", nextPath);
   const registerHref = buildAuthHref("/register", nextPath);
   return (
@@ -19,13 +18,9 @@ export function LandingScreen({ nextPath }: { nextPath?: string | null }) {
       <AuthShell claimHeading>
         <section aria-labelledby="landing-access">
           <h2 id="landing-access" className="text-[clamp(1.75rem,4vw,2.25rem)] font-extrabold leading-none tracking-[-0.04em]">
-            {isPlaylistInvite ? "Einladung annehmen" : "Einsteigen"}
+            Einsteigen
           </h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted">
-            {isPlaylistInvite
-              ? "Danach trittst du der gemeinsamen Playlist bei. Neue Konten gibt ein Admin frei."
-              : "Neue Konten gibt ein Admin frei."}
-          </p>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">Neue Konten gibt ein Admin frei.</p>
           <div className="mt-8 flex flex-col gap-3">
             <Link href={loginHref} className="action-primary min-h-12 w-full text-[15px]">
               Anmelden

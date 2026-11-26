@@ -1,10 +1,6 @@
 import { getStateFromPath as getReactNavigationStateFromPath } from '@react-navigation/core';
 import type { LinkingOptions } from '@react-navigation/native';
-import {
-  mixKeyFromRouteValue,
-  playlistIdFromRouteValue,
-  playlistInviteTokenFromRouteValue,
-} from './navigationLinks';
+import { mixKeyFromRouteValue, playlistIdFromRouteValue } from './navigationLinks';
 import { normalizePartyCode } from './party/partyCode';
 import { sanitizeNavigationState } from './navigationPersistence';
 import { TRANSIENT_ROOT_ROUTE_NAMES } from './navigationPolicy';
@@ -60,10 +56,6 @@ export const appLinkingConfig: NonNullable<LinkingOptions<RootStackParams>['conf
       path: 'party/:code',
       parse: { code: (value: string) => normalizePartyCode(value) ?? '' },
     },
-    PlaylistInvite: {
-      path: 'playlist/join/:token',
-      parse: { token: (value: string) => playlistInviteTokenFromRouteValue(value) ?? '' },
-    },
   },
 };
 
@@ -74,12 +66,6 @@ function hasValidTransientParams(name: unknown, params: unknown): boolean {
     const keys = Object.keys(params);
     return keys.length === 1 && keys[0] === 'code' &&
       normalizePartyCode((params as { code?: unknown }).code) !== null;
-  }
-  if (name === 'PlaylistInvite') {
-    if (params === null || typeof params !== 'object') return false;
-    const keys = Object.keys(params);
-    return keys.length === 1 && keys[0] === 'token' &&
-      playlistInviteTokenFromRouteValue((params as { token?: unknown }).token) !== null;
   }
   return params === undefined || (
     params !== null && typeof params === 'object' && Object.keys(params).length === 0
@@ -135,9 +121,6 @@ function transientRoute(value: unknown): TransientRoute | null {
       const transientName = name as TransientRoute['name'];
       if (name === 'Party' && params !== null && typeof params === 'object') {
         return { name: transientName, params: { code: (params as { code?: unknown }).code } };
-      }
-      if (name === 'PlaylistInvite' && params !== null && typeof params === 'object') {
-        return { name: transientName, params: { token: (params as { token?: unknown }).token } };
       }
       return { name: transientName };
     }

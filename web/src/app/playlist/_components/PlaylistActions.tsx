@@ -151,7 +151,7 @@ export default function PlaylistActions({
     items.push(
       { label: "Details bearbeiten", icon: <EditIcon />, separated: items.length > 0, onClick: onEdit },
       { label: coverUploading ? "Cover wird hochgeladen…" : "Cover ändern", icon: <ImageIcon />, disabled: coverUploading, onClick: onPickCover },
-      { label: "Mitwirkende & Einladung", icon: <UsersIcon />, onClick: onManageCollaborators },
+      { label: "Mitwirkende & Einladungen", icon: <UsersIcon />, onClick: onManageCollaborators },
       {
         label: visibility.pending ? "Sichtbarkeit wird geändert…" : playlist.is_public ? "Privat machen" : "Öffentlich machen",
         icon: playlist.is_public ? <LockIcon /> : <GlobeIcon />,
@@ -198,7 +198,7 @@ export default function PlaylistActions({
           type="button"
           onClick={onManageCollaborators}
           aria-label={isOwner ? "Mitwirkende verwalten" : "Mitwirkende anzeigen"}
-          title={isOwner ? "Mitwirkende & Einladung" : "Mitwirkende"}
+          title={isOwner ? "Mitwirkende & Einladungen" : "Mitwirkende"}
           className={`action-secondary h-11 min-h-0 px-3.5 text-sm ${
             isCollaborative
               ? "border-accent/45 text-foreground hover:border-accent"

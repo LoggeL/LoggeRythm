@@ -62,9 +62,9 @@ export interface PlaylistCollaborativeVariables {
   isCollaborative: boolean;
 }
 
-export interface AddPlaylistCollaboratorVariables {
+export interface PlaylistInvitationVariables {
   id: number;
-  email: string;
+  userId: number;
 }
 
 export interface RemovePlaylistCollaboratorVariables {
@@ -157,29 +157,30 @@ export function createMusicMutationOptions(repository: MusicRepository = musicRe
           repository.setPlaylistCollaborative(id, isCollaborative),
       });
     },
-    createPlaylistInvite(scope: QueryScope) {
+    invitePlaylistCollaborator(scope: QueryScope) {
       return mutationOptions({
-        mutationKey: mutationKeys.playlist(scope, 'create-invite'),
-        mutationFn: (id: number) => repository.createPlaylistInvite(id),
+        mutationKey: mutationKeys.playlist(scope, 'invite-collaborator'),
+        mutationFn: ({ id, userId }: PlaylistInvitationVariables) =>
+          repository.invitePlaylistCollaborator(id, userId),
       });
     },
-    revokePlaylistInvite(scope: QueryScope) {
+    withdrawPlaylistInvitation(scope: QueryScope) {
       return mutationOptions({
-        mutationKey: mutationKeys.playlist(scope, 'revoke-invite'),
-        mutationFn: (id: number) => repository.revokePlaylistInvite(id),
+        mutationKey: mutationKeys.playlist(scope, 'withdraw-invitation'),
+        mutationFn: ({ id, userId }: PlaylistInvitationVariables) =>
+          repository.withdrawPlaylistInvitation(id, userId),
       });
     },
-    acceptPlaylistInvite(scope: QueryScope) {
+    acceptPlaylistInvitation(scope: QueryScope) {
       return mutationOptions({
-        mutationKey: mutationKeys.playlist(scope, 'accept-invite'),
-        mutationFn: (token: string) => repository.acceptPlaylistInvite(token),
+        mutationKey: mutationKeys.playlist(scope, 'accept-invitation'),
+        mutationFn: (invitationId: number) => repository.acceptPlaylistInvitation(invitationId),
       });
     },
-    addPlaylistCollaborator(scope: QueryScope) {
+    declinePlaylistInvitation(scope: QueryScope) {
       return mutationOptions({
-        mutationKey: mutationKeys.playlist(scope, 'add-collaborator'),
-        mutationFn: ({ id, email }: AddPlaylistCollaboratorVariables) =>
-          repository.addPlaylistCollaborator(id, email),
+        mutationKey: mutationKeys.playlist(scope, 'decline-invitation'),
+        mutationFn: (invitationId: number) => repository.declinePlaylistInvitation(invitationId),
       });
     },
     removePlaylistCollaborator(scope: QueryScope) {

@@ -21,7 +21,7 @@ from ..db.models import (
     Play,
     Playlist,
     PlaylistCollaborator,
-    PlaylistInvite,
+    PlaylistInvitation,
     PlaylistTrack,
     StoredTrack,
     TrackRequest,
@@ -226,9 +226,12 @@ def purge_user_account(db: Session, user: User) -> None:
         .values(added_by_user_id=None)
     )
     db.execute(
-        update(PlaylistInvite)
-        .where(PlaylistInvite.created_by_user_id == user_id)
-        .values(created_by_user_id=None)
+        delete(PlaylistInvitation).where(PlaylistInvitation.invitee_user_id == user_id)
+    )
+    db.execute(
+        update(PlaylistInvitation)
+        .where(PlaylistInvitation.inviter_user_id == user_id)
+        .values(inviter_user_id=None)
     )
     db.execute(delete(InviteCode).where(InviteCode.created_by == user_id))
     db.execute(

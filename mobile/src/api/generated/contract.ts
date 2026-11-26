@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "5849f78312944f6af55a0942d44a4130f8b558536f6cab45a54dec72b64edf3c" as const;
+export const GENERATED_OPENAPI_SHA256 = "cec540ecc7d64208401320f5e6b12fae3827577aec6c48b7f728d1fce86396ad" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -581,9 +581,6 @@ export interface PlaylistBlendOutWire {
 export interface PlaylistCollaborativeUpdateWire {
   is_collaborative: boolean;
 }
-export interface PlaylistCollaboratorAddWire {
-  email: string;
-}
 export interface PlaylistCollaboratorOutWire {
   avatar_url?: string | null;
   display_name?: string | null;
@@ -641,24 +638,27 @@ export interface PlaylistDuplicatesOutWire {
 export interface PlaylistEntryReorderWire {
   entry_ids: number[];
 }
-export interface PlaylistInviteOutWire {
+export interface PlaylistIncomingInvitationWire {
   created_at: string;
-  expires_at?: string | null;
-  token: string;
+  id: number;
+  invited_by?: PlaylistCollaboratorUserWire | null;
+  playlist: PlaylistInvitationPlaylistWire;
 }
-export interface PlaylistInvitePreviewWire {
-  already_collaborator?: boolean;
+export interface PlaylistInvitationCreateWire {
+  user_id: number;
+}
+export interface PlaylistInvitationPlaylistWire {
   collaborator_count?: number;
   cover_url?: string | null;
   description?: string | null;
-  is_owner?: boolean;
   name: string;
   owner: PlaylistCollaboratorUserWire;
   playlist_id: number;
   track_count?: number;
 }
-export interface PlaylistInviteStatusWire {
-  invite?: PlaylistInviteOutWire | null;
+export interface PlaylistInviteCandidateWire {
+  status: "available" | "invited" | "collaborator";
+  user: PlaylistCollaboratorUserWire;
 }
 export interface PlaylistJoinResultWire {
   already_member?: boolean;
@@ -666,6 +666,11 @@ export interface PlaylistJoinResultWire {
   playlist_id: number;
   playlist_name: string;
   role: "owner" | "editor";
+}
+export interface PlaylistOutgoingInvitationWire {
+  created_at: string;
+  invited_by?: PlaylistCollaboratorUserWire | null;
+  invitee: PlaylistCollaboratorUserWire;
 }
 export interface PlaylistReorderWire {
   deezer_ids: string[];
@@ -1061,7 +1066,6 @@ export interface GeneratedApiSchemas {
   "PlaybackUpdate": PlaybackUpdateWire;
   "PlaylistBlendOut": PlaylistBlendOutWire;
   "PlaylistCollaborativeUpdate": PlaylistCollaborativeUpdateWire;
-  "PlaylistCollaboratorAdd": PlaylistCollaboratorAddWire;
   "PlaylistCollaboratorOut": PlaylistCollaboratorOutWire;
   "PlaylistCollaboratorUser": PlaylistCollaboratorUserWire;
   "PlaylistCreate": PlaylistCreateWire;
@@ -1070,10 +1074,12 @@ export interface GeneratedApiSchemas {
   "PlaylistDuplicateGroup": PlaylistDuplicateGroupWire;
   "PlaylistDuplicatesOut": PlaylistDuplicatesOutWire;
   "PlaylistEntryReorder": PlaylistEntryReorderWire;
-  "PlaylistInviteOut": PlaylistInviteOutWire;
-  "PlaylistInvitePreview": PlaylistInvitePreviewWire;
-  "PlaylistInviteStatus": PlaylistInviteStatusWire;
+  "PlaylistIncomingInvitation": PlaylistIncomingInvitationWire;
+  "PlaylistInvitationCreate": PlaylistInvitationCreateWire;
+  "PlaylistInvitationPlaylist": PlaylistInvitationPlaylistWire;
+  "PlaylistInviteCandidate": PlaylistInviteCandidateWire;
   "PlaylistJoinResult": PlaylistJoinResultWire;
+  "PlaylistOutgoingInvitation": PlaylistOutgoingInvitationWire;
   "PlaylistReorder": PlaylistReorderWire;
   "PlaylistSearchResult": PlaylistSearchResultWire;
   "PlaylistSummary": PlaylistSummaryWire;
@@ -1114,10 +1120,10 @@ export interface GeneratedApiSchemas {
 }
 
 export interface GeneratedApiOperations {
-  "accept_playlist_invite_api_playlists_invites__token__accept_post": {
+  "accept_playlist_invitation_api_playlists_invitations__invitation_id__accept_post": {
     request: {
       path: {
-        token: string;
+        invitation_id: number;
       };
     };
     responses: {
@@ -1127,21 +1133,6 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: PlaylistJoinResultWire;
-  };
-  "add_collaborator_api_playlists__playlist_id__collaborators_post": {
-    request: {
-      path: {
-        playlist_id: number;
-      };
-      body: PlaylistCollaboratorAddWire;
-    };
-    responses: {
-      "201": PlaylistCollaboratorOutWire;
-      "401": AuthErrorWire;
-      "403": AuthErrorWire;
-      "422": HTTPValidationErrorWire;
-    };
-    response: PlaylistCollaboratorOutWire;
   };
   "add_like_api_me_likes__deezer_id__put": {
     request: {
@@ -1366,20 +1357,6 @@ export interface GeneratedApiOperations {
     };
     response: InviteInfoWire;
   };
-  "create_or_rotate_playlist_invite_api_playlists__playlist_id__invite_post": {
-    request: {
-      path: {
-        playlist_id: number;
-      };
-    };
-    responses: {
-      "201": PlaylistInviteOutWire;
-      "401": AuthErrorWire;
-      "403": AuthErrorWire;
-      "422": HTTPValidationErrorWire;
-    };
-    response: PlaylistInviteOutWire;
-  };
   "create_party_api_party_post": {
     request: {
       body: PartyCreateWire;
@@ -1403,6 +1380,20 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: PlaylistSummaryWire;
+  };
+  "decline_playlist_invitation_api_playlists_invitations__invitation_id__decline_post": {
+    request: {
+      path: {
+        invitation_id: number;
+      };
+    };
+    responses: {
+      "204": undefined;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: undefined;
   };
   "deduplicate_likes_api_admin_likes_deduplicate_post": {
     request: Record<never, never>;
@@ -1711,20 +1702,6 @@ export interface GeneratedApiOperations {
     };
     response: PlaylistDuplicatesOutWire;
   };
-  "get_playlist_invite_api_playlists__playlist_id__invite_get": {
-    request: {
-      path: {
-        playlist_id: number;
-      };
-    };
-    responses: {
-      "200": PlaylistInviteStatusWire;
-      "401": AuthErrorWire;
-      "403": AuthErrorWire;
-      "422": HTTPValidationErrorWire;
-    };
-    response: PlaylistInviteStatusWire;
-  };
   "get_settings_api_me_settings_get": {
     request: Record<never, never>;
     responses: {
@@ -1779,6 +1756,21 @@ export interface GeneratedApiOperations {
       "200": unknown;
     };
     response: unknown;
+  };
+  "invite_to_playlist_api_playlists__playlist_id__invitations_post": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+      body: PlaylistInvitationCreateWire;
+    };
+    responses: {
+      "201": PlaylistOutgoingInvitationWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistOutgoingInvitationWire;
   };
   "join_as_guest_api_party__code__guest_post": {
     request: {
@@ -1899,6 +1891,29 @@ export interface GeneratedApiOperations {
       "403": AuthErrorWire;
     };
     response: TrackWire[];
+  };
+  "list_my_playlist_invitations_api_playlists_invitations_get": {
+    request: Record<never, never>;
+    responses: {
+      "200": PlaylistIncomingInvitationWire[];
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+    };
+    response: PlaylistIncomingInvitationWire[];
+  };
+  "list_playlist_invitations_api_playlists__playlist_id__invitations_get": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+    };
+    responses: {
+      "200": PlaylistOutgoingInvitationWire[];
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistOutgoingInvitationWire[];
   };
   "list_playlists_api_playlists_get": {
     request: {
@@ -2096,20 +2111,6 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: BatchPreloadResponseWire;
-  };
-  "preview_playlist_invite_api_playlists_invites__token__get": {
-    request: {
-      path: {
-        token: string;
-      };
-    };
-    responses: {
-      "200": PlaylistInvitePreviewWire;
-      "401": AuthErrorWire;
-      "403": AuthErrorWire;
-      "422": HTTPValidationErrorWire;
-    };
-    response: PlaylistInvitePreviewWire;
   };
   "public_playlists_api_playlists_public_get": {
     request: {
@@ -2343,20 +2344,6 @@ export interface GeneratedApiOperations {
     };
     response: ResolveResultWire;
   };
-  "revoke_playlist_invite_api_playlists__playlist_id__invite_delete": {
-    request: {
-      path: {
-        playlist_id: number;
-      };
-    };
-    responses: {
-      "204": undefined;
-      "401": AuthErrorWire;
-      "403": AuthErrorWire;
-      "422": HTTPValidationErrorWire;
-    };
-    response: undefined;
-  };
   "save_party_as_playlist_api_party__code__save_playlist_post": {
     request: {
       path: {
@@ -2396,6 +2383,23 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: ArtistSummaryWire[];
+  };
+  "search_invite_candidates_api_playlists__playlist_id__invite_candidates_get": {
+    request: {
+      path: {
+        playlist_id: number;
+      };
+      query: {
+        q: string;
+      };
+    };
+    responses: {
+      "200": PlaylistInviteCandidateWire[];
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: PlaylistInviteCandidateWire[];
   };
   "search_playlist_api_search_playlist_get": {
     request: {
@@ -2736,6 +2740,21 @@ export interface GeneratedApiOperations {
     };
     response: PartyVoteSkipOutWire;
   };
+  "withdraw_playlist_invitation_api_playlists__playlist_id__invitations__user_id__delete": {
+    request: {
+      path: {
+        playlist_id: number;
+        user_id: number;
+      };
+    };
+    responses: {
+      "204": undefined;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: undefined;
+  };
 }
 
 export type GeneratedApiOperationId = keyof GeneratedApiOperations;
@@ -2767,19 +2786,12 @@ export interface GeneratedOperationDescriptor {
 }
 
 export const GENERATED_API_OPERATIONS = {
-  "accept_playlist_invite_api_playlists_invites__token__accept_post": {
+  "accept_playlist_invitation_api_playlists_invitations__invitation_id__accept_post": {
     method: "POST",
-    path: "/api/playlists/invites/{token}/accept",
+    path: "/api/playlists/invitations/{invitation_id}/accept",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
-  },
-  "add_collaborator_api_playlists__playlist_id__collaborators_post": {
-    method: "POST",
-    path: "/api/playlists/{playlist_id}/collaborators",
-    auth: "required",
-    requestMediaTypes: ["application/json"],
-    successStatuses: [201],
   },
   "add_like_api_me_likes__deezer_id__put": {
     method: "PUT",
@@ -2907,13 +2919,6 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
-  "create_or_rotate_playlist_invite_api_playlists__playlist_id__invite_post": {
-    method: "POST",
-    path: "/api/playlists/{playlist_id}/invite",
-    auth: "required",
-    requestMediaTypes: [],
-    successStatuses: [201],
-  },
   "create_party_api_party_post": {
     method: "POST",
     path: "/api/party",
@@ -2927,6 +2932,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "required",
     requestMediaTypes: ["application/json"],
     successStatuses: [201],
+  },
+  "decline_playlist_invitation_api_playlists_invitations__invitation_id__decline_post": {
+    method: "POST",
+    path: "/api/playlists/invitations/{invitation_id}/decline",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [204],
   },
   "deduplicate_likes_api_admin_likes_deduplicate_post": {
     method: "POST",
@@ -3103,13 +3115,6 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
-  "get_playlist_invite_api_playlists__playlist_id__invite_get": {
-    method: "GET",
-    path: "/api/playlists/{playlist_id}/invite",
-    auth: "required",
-    requestMediaTypes: [],
-    successStatuses: [200],
-  },
   "get_settings_api_me_settings_get": {
     method: "GET",
     path: "/api/me/settings",
@@ -3151,6 +3156,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "none",
     requestMediaTypes: [],
     successStatuses: [200],
+  },
+  "invite_to_playlist_api_playlists__playlist_id__invitations_post": {
+    method: "POST",
+    path: "/api/playlists/{playlist_id}/invitations",
+    auth: "required",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [201],
   },
   "join_as_guest_api_party__code__guest_post": {
     method: "POST",
@@ -3218,6 +3230,20 @@ export const GENERATED_API_OPERATIONS = {
   "list_likes_api_me_likes_get": {
     method: "GET",
     path: "/api/me/likes",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "list_my_playlist_invitations_api_playlists_invitations_get": {
+    method: "GET",
+    path: "/api/playlists/invitations",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "list_playlist_invitations_api_playlists__playlist_id__invitations_get": {
+    method: "GET",
+    path: "/api/playlists/{playlist_id}/invitations",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
@@ -3332,13 +3358,6 @@ export const GENERATED_API_OPERATIONS = {
     path: "/api/tracks/preload",
     auth: "required",
     requestMediaTypes: ["application/json"],
-    successStatuses: [200],
-  },
-  "preview_playlist_invite_api_playlists_invites__token__get": {
-    method: "GET",
-    path: "/api/playlists/invites/{token}",
-    auth: "required",
-    requestMediaTypes: [],
     successStatuses: [200],
   },
   "public_playlists_api_playlists_public_get": {
@@ -3460,13 +3479,6 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
-  "revoke_playlist_invite_api_playlists__playlist_id__invite_delete": {
-    method: "DELETE",
-    path: "/api/playlists/{playlist_id}/invite",
-    auth: "required",
-    requestMediaTypes: [],
-    successStatuses: [204],
-  },
   "save_party_as_playlist_api_party__code__save_playlist_post": {
     method: "POST",
     path: "/api/party/{code}/save-playlist",
@@ -3485,6 +3497,13 @@ export const GENERATED_API_OPERATIONS = {
     method: "GET",
     path: "/api/search/artist",
     auth: "none",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "search_invite_candidates_api_playlists__playlist_id__invite_candidates_get": {
+    method: "GET",
+    path: "/api/playlists/{playlist_id}/invite-candidates",
+    auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
   },
@@ -3669,6 +3688,13 @@ export const GENERATED_API_OPERATIONS = {
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],
+  },
+  "withdraw_playlist_invitation_api_playlists__playlist_id__invitations__user_id__delete": {
+    method: "DELETE",
+    path: "/api/playlists/{playlist_id}/invitations/{user_id}",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [204],
   },
 } as const satisfies Record<GeneratedApiOperationId, GeneratedOperationDescriptor>;
 

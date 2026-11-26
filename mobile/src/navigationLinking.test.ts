@@ -92,19 +92,14 @@ describe('cold app-link state construction', () => {
     })).toBeUndefined();
   });
 
-  it('opens a playlist invite link with its validated token above Home, and rejects bad tokens', () => {
-    const validToken = 'demo_invite-token_1234567890';
-    const state = getAppStateFromPath(`playlist/join/${validToken}`);
-    expect(state?.index).toBe(1);
-    expect(state?.routes.map((route) => route.name)).toEqual(['Tabs', 'PlaylistInvite']);
-    expect(findRoute(state, 'PlaylistInvite')?.params).toEqual({ token: validToken });
-    expect(findRoute(state, 'Home')).toBeDefined();
-
-    expect(getAppStateFromPath('playlist/join/short')).toBeUndefined();
-    expect(getAppStateFromPath('playlist/join/bad%2Ftoken1234567890')).toBeUndefined();
+  it('no longer opens playlist invite links; invitations are answered in the Library', () => {
+    expect(getAppStateFromPath('playlist/join/demo_invite-token_1234567890')).toBeUndefined();
     expect(validateAppLinkedState({
-      routes: [{ name: 'PlaylistInvite', params: { token: validToken, extra: true } }],
+      routes: [{ name: 'PlaylistInvite', params: { token: 'demo_invite-token_1234567890' } }],
     })).toBeUndefined();
+    // Plain playlist links keep working.
+    expect(findRoute(getAppStateFromPath('playlist/42'), 'Playlist')?.params)
+      .toEqual({ playlistId: 42 });
   });
 
   it('rejects a malformed Tabs route even when followed by a params-free transient route', () => {

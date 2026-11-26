@@ -237,17 +237,22 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 124)
-        self.assertEqual(len(schema["paths"]), 115)
-        self.assertEqual(len(operation_ids), 129)
+        self.assertEqual(len(schemas), 125)
+        self.assertEqual(len(schema["paths"]), 117)
+        self.assertEqual(len(operation_ids), 130)
         self.assertIn("/api/admin/likes/deduplicate", schema["paths"])
         self.assertIn("/api/admin/usage", schema["paths"])
         self.assertIn("/api/admin/usage/users/{user_id}", schema["paths"])
         self.assertIn("/api/playlists/{playlist_id}/collaborative", schema["paths"])
-        self.assertIn("/api/playlists/{playlist_id}/invite", schema["paths"])
-        self.assertIn("/api/playlists/invites/{token}", schema["paths"])
-        self.assertIn("/api/playlists/invites/{token}/accept", schema["paths"])
-        self.assertIn("/api/playlists/{playlist_id}/collaborators", schema["paths"])
+        self.assertIn("/api/playlists/{playlist_id}/invite-candidates", schema["paths"])
+        self.assertIn("/api/playlists/{playlist_id}/invitations", schema["paths"])
+        self.assertIn("/api/playlists/{playlist_id}/invitations/{user_id}", schema["paths"])
+        self.assertIn("/api/playlists/invitations", schema["paths"])
+        self.assertIn("/api/playlists/invitations/{invitation_id}/accept", schema["paths"])
+        self.assertIn("/api/playlists/invitations/{invitation_id}/decline", schema["paths"])
+        self.assertNotIn("/api/playlists/{playlist_id}/invite", schema["paths"])
+        self.assertNotIn("/api/playlists/invites/{token}", schema["paths"])
+        self.assertNotIn("/api/playlists/{playlist_id}/collaborators", schema["paths"])
         self.assertIn(
             "/api/playlists/{playlist_id}/collaborators/{user_id}",
             schema["paths"],

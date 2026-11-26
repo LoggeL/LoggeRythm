@@ -79,7 +79,7 @@ export function isPersistableQueryKey(
   if (domain === 'library' && queryKey[2] === accountScope) return true;
   if (domain === 'follows' && queryKey[2] === accountScope) return true;
   if (domain === 'playlists' && queryKey[2] === 'scope' && queryKey[3] === accountScope) {
-    // Exclude volatile invite tokens/previews.
+    // Exclude volatile invitation lists and invite-candidate searches.
     const sub = queryKey[4];
     return sub === 'owned' || sub === 'public' || (sub === 'detail' && queryKey.length === 6);
   }

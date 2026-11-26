@@ -1,11 +1,9 @@
-"""Tests for collaborative playlists: migrations, invites, permissions, attribution, and listing."""
+"""Tests for collaborative playlists: migrations, account invitations, permissions, attribution, and listing."""
 from __future__ import annotations
 
 import os
-import re
 import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -20,7 +18,7 @@ from app.config import SESSION_COOKIE
 from app.db.models import (
     Playlist,
     PlaylistCollaborator,
-    PlaylistInvite,
+    PlaylistInvitation,
     PlaylistTrack,
     User,
 )
@@ -29,16 +27,13 @@ from app.main import _run_column_migrations, app
 from app.routers import playlists, profile
 from app.schemas.playlist import (
     PlaylistCollaborativeUpdate,
-    PlaylistCollaboratorAdd,
+    PlaylistInvitationCreate,
     PlaylistCreate,
     PlaylistEntryReorder,
     PlaylistReorder,
     PlaylistUpdate,
 )
 from app.schemas.track import Track
-
-_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
-
 
 def _sample_track(track_id: str, title: str = "Song", cover: str = "") -> Track:
     return Track(
@@ -130,7 +125,7 @@ class CollaborativePlaylistMigrationTests(unittest.TestCase):
             self.assertIn("added_by_user_id", track_cols)
             self.assertIn("ix_playlist_tracks_added_by_user_id", track_indexes)
             self.assertTrue(inspector.has_table("playlist_collaborators"))
-            self.assertTrue(inspector.has_table("playlist_invites"))
+            self.assertTrue(inspector.has_table("playlist_invitations"))
 
             with Session(engine) as db:
                 pl = db.get(Playlist, 10)
@@ -219,18 +214,38 @@ class CollaborativePlaylistTests(unittest.TestCase):
             self.db.commit()
         return pl
 
+    def _invite(self, playlist_id: int, invitee: User) -> None:
+        playlists.invite_to_playlist(
+            playlist_id,
+            body=PlaylistInvitationCreate(user_id=invitee.id),
+            user=self.owner,
+            db=self.db,
+        )
+
+    def _incoming_id(self, playlist_id: int, invitee: User) -> int:
+        matches = [
+            inv.id
+            for inv in playlists.list_my_playlist_invitations(user=invitee, db=self.db)
+            if inv.playlist.playlist_id == playlist_id
+        ]
+        self.assertEqual(len(matches), 1)
+        return matches[0]
+
+    def _join(self, playlist_id: int, invitee: User) -> None:
+        """Owner invites ``invitee`` and the invitee accepts."""
+        self._invite(playlist_id, invitee)
+        joined = playlists.accept_playlist_invitation(
+            self._incoming_id(playlist_id, invitee), user=invitee, db=self.db
+        )
+        self.assertTrue(joined.joined)
+
     def test_create_toggle_and_invite_lifecycle(self) -> None:
         pl = self._create_playlist(self.owner, "Solo", collaborative=False)
         self.assertFalse(pl.is_collaborative)
-        self.assertEqual(
-            playlists.get_playlist_invite(pl.id, user=self.owner, db=self.db).invite,
-            None,
-        )
-        with self.assertRaises(HTTPException) as exc:
-            playlists.create_or_rotate_playlist_invite(pl.id, user=self.owner, db=self.db)
-        self.assertEqual(exc.exception.status_code, 409)
+        with self.assertRaises(HTTPException) as disabled:
+            self._invite(pl.id, self.collab)
+        self.assertEqual(disabled.exception.status_code, 409)
 
-        # Enable collaboration, create invite, verify token format and retrieval.
         updated = playlists.set_collaborative(
             pl.id,
             body=PlaylistCollaborativeUpdate(is_collaborative=True),
@@ -242,205 +257,196 @@ class CollaborativePlaylistTests(unittest.TestCase):
         self.assertTrue(updated.can_edit_tracks)
         self.assertEqual(updated.owner_id, self.owner.id)
 
-        first_invite = playlists.create_or_rotate_playlist_invite(
-            pl.id, user=self.owner, db=self.db
+        # Owner invites Bob: Bob is NOT a collaborator until he accepts.
+        created = playlists.invite_to_playlist(
+            pl.id,
+            body=PlaylistInvitationCreate(user_id=self.collab.id),
+            user=self.owner,
+            db=self.db,
         )
-        self.assertRegex(first_invite.token, _TOKEN_RE)
-        self.assertIsNotNone(first_invite.created_at.tzinfo)
-        status_resp = playlists.get_playlist_invite(pl.id, user=self.owner, db=self.db)
-        self.assertIsNotNone(status_resp.invite)
-        assert status_resp.invite is not None
-        self.assertEqual(status_resp.invite.token, first_invite.token)
+        self.assertEqual(created.invitee.id, self.collab.id)
+        self.assertEqual(created.invitee.display_name, "Bob")
+        assert created.invited_by is not None
+        self.assertEqual(created.invited_by.id, self.owner.id)
+        self.assertIsNotNone(created.created_at.tzinfo)
+        outgoing = playlists.list_playlist_invitations(pl.id, user=self.owner, db=self.db)
+        self.assertEqual([o.invitee.id for o in outgoing], [self.collab.id])
+        self.assertFalse(playlists._is_collaborator(self.db, pl.id, self.collab.id))
+        with self.assertRaises(HTTPException) as hidden_before_accept:
+            playlists.get_playlist(pl.id, user=self.collab, db=self.db)
+        self.assertEqual(hidden_before_accept.exception.status_code, 404)
 
-        # Preview before joining.
-        preview = playlists.preview_playlist_invite(
-            first_invite.token, user=self.collab, db=self.db
-        )
-        self.assertEqual(preview.playlist_id, pl.id)
-        self.assertEqual(preview.name, "Solo")
-        self.assertEqual(preview.owner.id, self.owner.id)
-        self.assertFalse(preview.is_owner)
-        self.assertFalse(preview.already_collaborator)
+        # Duplicate invite -> 409; self-invite -> 400; unknown/unapproved -> 404.
+        with self.assertRaises(HTTPException) as dup:
+            self._invite(pl.id, self.collab)
+        self.assertEqual(dup.exception.status_code, 409)
+        with self.assertRaises(HTTPException) as self_invite:
+            self._invite(pl.id, self.owner)
+        self.assertEqual(self_invite.exception.status_code, 400)
+        for bad_id in (self.pending.id, 999999):
+            with self.assertRaises(HTTPException) as nf:
+                playlists.invite_to_playlist(
+                    pl.id,
+                    body=PlaylistInvitationCreate(user_id=bad_id),
+                    user=self.owner,
+                    db=self.db,
+                )
+            self.assertEqual(nf.exception.status_code, 404)
 
-        # Accept invite & verify idempotent repeat.
-        joined = playlists.accept_playlist_invite(
-            first_invite.token, user=self.collab, db=self.db
-        )
+        # Bob sees the invitation with a playlist preview.
+        incoming = playlists.list_my_playlist_invitations(user=self.collab, db=self.db)
+        self.assertEqual(len(incoming), 1)
+        self.assertEqual(incoming[0].playlist.playlist_id, pl.id)
+        self.assertEqual(incoming[0].playlist.name, "Solo")
+        self.assertEqual(incoming[0].playlist.owner.id, self.owner.id)
+        assert incoming[0].invited_by is not None
+        self.assertEqual(incoming[0].invited_by.id, self.owner.id)
+        self.assertEqual(playlists.list_my_playlist_invitations(user=self.collab2, db=self.db), [])
+
+        # Someone else cannot accept or decline Bob's invitation (no existence oracle).
+        for action in (
+            playlists.accept_playlist_invitation,
+            playlists.decline_playlist_invitation,
+        ):
+            with self.assertRaises(HTTPException) as foreign:
+                action(incoming[0].id, user=self.collab2, db=self.db)
+            self.assertEqual(foreign.exception.status_code, 404)
+            self.assertEqual(foreign.exception.detail, "Einladung nicht gefunden.")
+
+        # Bob accepts: becomes editor, invitation is consumed.
+        joined = playlists.accept_playlist_invitation(incoming[0].id, user=self.collab, db=self.db)
         self.assertTrue(joined.joined)
         self.assertFalse(joined.already_member)
         self.assertEqual(joined.role, "editor")
+        self.assertEqual(joined.playlist_id, pl.id)
+        self.assertTrue(playlists._is_collaborator(self.db, pl.id, self.collab.id))
+        collab_row = self.db.scalar(
+            select(PlaylistCollaborator).where(PlaylistCollaborator.user_id == self.collab.id)
+        )
+        assert collab_row is not None
+        self.assertEqual(collab_row.added_by_user_id, self.owner.id)
+        self.assertEqual(playlists.list_my_playlist_invitations(user=self.collab, db=self.db), [])
+        self.assertEqual(playlists.list_playlist_invitations(pl.id, user=self.owner, db=self.db), [])
+        with self.assertRaises(HTTPException) as consumed:
+            playlists.accept_playlist_invitation(incoming[0].id, user=self.collab, db=self.db)
+        self.assertEqual(consumed.exception.status_code, 404)
 
-        preview_after = playlists.preview_playlist_invite(
-            first_invite.token, user=self.collab, db=self.db
-        )
-        self.assertTrue(preview_after.already_collaborator)
-        self.assertEqual(preview_after.collaborator_count, 1)
+        # Inviting an existing collaborator -> 409.
+        with self.assertRaises(HTTPException) as member:
+            self._invite(pl.id, self.collab)
+        self.assertEqual(member.exception.status_code, 409)
 
-        rejoined = playlists.accept_playlist_invite(
-            first_invite.token, user=self.collab, db=self.db
+        # Clara declines: no membership, invitation gone, owner may invite again.
+        self._invite(pl.id, self.collab2)
+        declined = playlists.decline_playlist_invitation(
+            self._incoming_id(pl.id, self.collab2), user=self.collab2, db=self.db
         )
-        self.assertFalse(rejoined.joined)
-        self.assertTrue(rejoined.already_member)
-        self.assertEqual(rejoined.role, "editor")
+        self.assertEqual(declined.status_code, 204)
+        self.assertFalse(playlists._is_collaborator(self.db, pl.id, self.collab2.id))
+        self.assertEqual(playlists.list_playlist_invitations(pl.id, user=self.owner, db=self.db), [])
+        self._invite(pl.id, self.collab2)
 
-        # Owner clicking own link is idempotent and does not duplicate into collaborators.
-        owner_join = playlists.accept_playlist_invite(
-            first_invite.token, user=self.owner, db=self.db
+        # Owner withdraws Clara's invitation; withdrawing again -> 404.
+        withdrawn = playlists.withdraw_playlist_invitation(
+            pl.id, self.collab2.id, user=self.owner, db=self.db
         )
-        self.assertFalse(owner_join.joined)
-        self.assertTrue(owner_join.already_member)
-        self.assertEqual(owner_join.role, "owner")
-        self.assertEqual(
-            len(self.db.scalars(select(PlaylistCollaborator)).all()),
-            1,
-        )
-
-        # Rotate invite: old token returns 410, new token works.
-        second_invite = playlists.create_or_rotate_playlist_invite(
-            pl.id, user=self.owner, db=self.db
-        )
-        self.assertNotEqual(second_invite.token, first_invite.token)
-        with self.assertRaises(HTTPException) as revoked_exc:
-            playlists.preview_playlist_invite(
-                first_invite.token, user=self.collab2, db=self.db
+        self.assertEqual(withdrawn.status_code, 204)
+        self.assertEqual(playlists.list_my_playlist_invitations(user=self.collab2, db=self.db), [])
+        with self.assertRaises(HTTPException) as gone:
+            playlists.withdraw_playlist_invitation(
+                pl.id, self.collab2.id, user=self.owner, db=self.db
             )
-        self.assertEqual(revoked_exc.exception.status_code, 410)
-        with self.assertRaises(HTTPException) as revoked_accept:
-            playlists.accept_playlist_invite(
-                first_invite.token, user=self.collab2, db=self.db
-            )
-        self.assertEqual(revoked_accept.exception.status_code, 410)
+        self.assertEqual(gone.exception.status_code, 404)
 
-        # Revoke invite: new token also becomes 410; existing collaborators remain.
-        playlists.revoke_playlist_invite(pl.id, user=self.owner, db=self.db)
-        self.assertIsNone(
-            playlists.get_playlist_invite(pl.id, user=self.owner, db=self.db).invite
+        # Disabling collaboration deletes pending invitations, keeps collaborators.
+        self._invite(pl.id, self.collab2)
+        playlists.set_collaborative(
+            pl.id,
+            body=PlaylistCollaborativeUpdate(is_collaborative=False),
+            user=self.owner,
+            db=self.db,
         )
-        with self.assertRaises(HTTPException) as rev2:
-            playlists.preview_playlist_invite(
-                second_invite.token, user=self.collab2, db=self.db
-            )
-        self.assertEqual(rev2.exception.status_code, 410)
+        self.assertEqual(playlists.list_my_playlist_invitations(user=self.collab2, db=self.db), [])
+        self.assertIsNone(self.db.scalar(select(PlaylistInvitation)))
+        self.assertTrue(playlists._is_collaborator(self.db, pl.id, self.collab.id))
 
-        # Unknown & malformed tokens return 404.
-        for bad_token in ("short", "bad token with spaces", "A" * 32):
-            with self.assertRaises(HTTPException) as not_found:
-                playlists.preview_playlist_invite(bad_token, user=self.collab2, db=self.db)
-            self.assertEqual(not_found.exception.status_code, 404)
-
-        # Expired invite returns 410 and GET /invite reports None.
-        third = playlists.create_or_rotate_playlist_invite(
-            pl.id, user=self.owner, db=self.db
-        )
-        row = self.db.scalar(
-            select(PlaylistInvite).where(PlaylistInvite.token == third.token)
-        )
-        assert row is not None
-        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=5)
+    def test_accept_with_pending_invitation_on_disabled_playlist_fails_loudly(self) -> None:
+        pl = self._create_playlist(self.owner, "Corrupt Invite", collaborative=True)
+        self._invite(pl.id, self.collab)
+        invitation_id = self._incoming_id(pl.id, self.collab)
+        # Bypass set_collaborative (which deletes invitations) to simulate corrupt state.
+        pl.is_collaborative = False
         self.db.commit()
-        self.assertIsNone(
-            playlists.get_playlist_invite(pl.id, user=self.owner, db=self.db).invite
-        )
-        with self.assertRaises(HTTPException) as expired_exc:
-            playlists.accept_playlist_invite(third.token, user=self.collab2, db=self.db)
-        self.assertEqual(expired_exc.exception.status_code, 410)
+        with self.assertRaisesRegex(RuntimeError, "collaboration is disabled"):
+            playlists.accept_playlist_invitation(invitation_id, user=self.collab, db=self.db)
+
+    def test_invite_candidate_search_by_display_name_only(self) -> None:
+        pl = self._create_playlist(self.owner, "Search Mix", collaborative=True)
+        self._add_user("nameless@example.com", None)  # type: ignore[arg-type]
+        self._add_user("percent@example.com", "100% Clara_Fan")
+        self.db.commit()
+        self._join(pl.id, self.collab)
+        self._invite(pl.id, self.collab2)
+
+        def search(q: str) -> dict[str, str]:
+            return {
+                c.user.display_name or "": c.status
+                for c in playlists.search_invite_candidates(pl.id, q=q, user=self.owner, db=self.db)
+            }
+
+        # Case-insensitive substring; statuses reflect membership and pending invites.
+        self.assertEqual(search("CLA"), {"Clara": "invited", "100% Clara_Fan": "available"})
+        self.assertEqual(search("bo"), {"Bob": "collaborator"})
+        # Owner, unapproved and nameless accounts are never offered; emails don't match.
+        self.assertEqual(search("Owner"), {})
+        self.assertEqual(search("Pending"), {})
+        self.assertEqual(search("example.com"), {})
+        self.assertEqual(search("outsider@"), {})
+        # LIKE wildcards are literal.
+        self.assertEqual(search("%"), {"100% Clara_Fan": "available"})
+        self.assertEqual(search("_"), {"100% Clara_Fan": "available"})
+        with self.assertRaises(HTTPException) as blank:
+            playlists.search_invite_candidates(pl.id, q="   ", user=self.owner, db=self.db)
+        self.assertEqual(blank.exception.status_code, 422)
+        with self.assertRaises(HTTPException) as not_owner:
+            playlists.search_invite_candidates(pl.id, q="Cla", user=self.collab, db=self.db)
+        self.assertEqual(not_owner.exception.status_code, 403)
 
     def test_concurrent_accept_integrity_error_race_and_non_duplicate_re_raise(self) -> None:
         pl = self._create_playlist(self.owner, "Race Mix", collaborative=True)
-        invite = playlists.create_or_rotate_playlist_invite(
-            pl.id, user=self.owner, db=self.db
-        )
-
-        # Simulate another transaction inserting the collaborator right before commit.
-        real_commit = self.db.commit
+        self._invite(pl.id, self.collab)
+        invitation_id = self._incoming_id(pl.id, self.collab)
 
         def racing_commit() -> None:
-            # Insert via a second connection on the same SQLite memory? No, write directly then raise.
             raise IntegrityError("INSERT", {}, Exception("UNIQUE constraint failed"))
 
+        # Another request added Bob between our check and commit: report membership,
+        # and the invitation is consumed.
+        real_commit = self.db.commit
+        commits = iter([racing_commit, real_commit])
         with (
-            patch.object(self.db, "commit", side_effect=racing_commit),
+            patch.object(self.db, "commit", side_effect=lambda: next(commits)()),
             patch.object(playlists, "_is_collaborator", side_effect=[False, True]),
         ):
-            res = playlists.accept_playlist_invite(
-                invite.token, user=self.collab, db=self.db
-            )
+            res = playlists.accept_playlist_invitation(invitation_id, user=self.collab, db=self.db)
         self.assertFalse(res.joined)
         self.assertTrue(res.already_member)
         self.assertEqual(res.role, "editor")
+        self.assertIsNone(self.db.get(PlaylistInvitation, invitation_id))
 
-        # Unrelated IntegrityError (user still NOT a collaborator) must re-raise loudly!
+        # Unrelated IntegrityError (user still NOT a collaborator) must re-raise loudly.
+        self._invite(pl.id, self.collab2)
+        second_id = self._incoming_id(pl.id, self.collab2)
         with (
             patch.object(self.db, "commit", side_effect=racing_commit),
             patch.object(playlists, "_is_collaborator", side_effect=[False, False]),
             self.assertRaises(IntegrityError),
         ):
-            playlists.accept_playlist_invite(invite.token, user=self.collab, db=self.db)
-        # Restore commit for tearDown sanity.
-        self.db.commit = real_commit  # type: ignore[method-assign]
+            playlists.accept_playlist_invitation(second_id, user=self.collab2, db=self.db)
 
-    def test_direct_add_remove_and_leave_collaborators(self) -> None:
-        pl = self._create_playlist(self.owner, "Direct Mix", collaborative=False)
-
-        with self.assertRaises(HTTPException) as not_collab:
-            playlists.add_collaborator(
-                pl.id,
-                body=PlaylistCollaboratorAdd(email="collab@example.com"),
-                user=self.owner,
-                db=self.db,
-            )
-        self.assertEqual(not_collab.exception.status_code, 409)
-
-        playlists.set_collaborative(
-            pl.id,
-            body=PlaylistCollaborativeUpdate(is_collaborative=True),
-            user=self.owner,
-            db=self.db,
-        )
-
-        # Case-insensitive email lookup works.
-        added = playlists.add_collaborator(
-            pl.id,
-            body=PlaylistCollaboratorAdd(email="COLLAB@EXAMPLE.COM"),
-            user=self.owner,
-            db=self.db,
-        )
-        self.assertEqual(
-            added.user_id, self.collab.id
-        )
-        self.assertEqual(added.role, "editor")
-        self.assertIsNotNone(added.joined_at)
-
-        # Duplicate add -> 409.
-        with self.assertRaises(HTTPException) as dup:
-            playlists.add_collaborator(
-                pl.id,
-                body=PlaylistCollaboratorAdd(email="collab@example.com"),
-                user=self.owner,
-                db=self.db,
-            )
-        self.assertEqual(dup.exception.status_code, 409)
-
-        # Owner self-add -> 400.
-        with self.assertRaises(HTTPException) as self_add:
-            playlists.add_collaborator(
-                pl.id,
-                body=PlaylistCollaboratorAdd(email="owner@example.com"),
-                user=self.owner,
-                db=self.db,
-            )
-        self.assertEqual(self_add.exception.status_code, 400)
-
-        # Unapproved or unknown user -> 404.
-        for bad_email in ("pending@example.com", "nobody@example.com"):
-            with self.assertRaises(HTTPException) as nf:
-                playlists.add_collaborator(
-                    pl.id,
-                    body=PlaylistCollaboratorAdd(email=bad_email),
-                    user=self.owner,
-                    db=self.db,
-                )
-            self.assertEqual(nf.exception.status_code, 404)
+    def test_remove_and_leave_collaborators(self) -> None:
+        pl = self._create_playlist(self.owner, "Direct Mix", collaborative=True)
+        self._join(pl.id, self.collab)
 
         # Owner cannot remove self (400); removing non-member -> 404.
         with self.assertRaises(HTTPException) as rm_self:
@@ -451,12 +457,7 @@ class CollaborativePlaylistTests(unittest.TestCase):
         self.assertEqual(rm_missing.exception.status_code, 404)
 
         # Collaborator cannot remove another collaborator (403).
-        playlists.add_collaborator(
-            pl.id,
-            body=PlaylistCollaboratorAdd(email="collab2@example.com"),
-            user=self.owner,
-            db=self.db,
-        )
+        self._join(pl.id, self.collab2)
         with self.assertRaises(HTTPException) as collab_rm:
             playlists.remove_collaborator(pl.id, self.collab2.id, user=self.collab, db=self.db)
         self.assertEqual(collab_rm.exception.status_code, 403)
@@ -504,13 +505,8 @@ class CollaborativePlaylistTests(unittest.TestCase):
 
     def test_permissions_matrix_track_attribution_and_freeze(self) -> None:
         pl = self._create_playlist(self.owner, "Private Collab", collaborative=True, public=False)
-        invite = playlists.create_or_rotate_playlist_invite(pl.id, user=self.owner, db=self.db)
-        playlists.add_collaborator(
-            pl.id,
-            body=PlaylistCollaboratorAdd(email="collab@example.com"),
-            user=self.owner,
-            db=self.db,
-        )
+        self._invite(pl.id, self.collab2)
+        self._join(pl.id, self.collab)
 
         # Owner adds track 1; collaborator adds track 2 + bulk track 3.
         playlists.add_track(pl.id, _sample_track("101", "Owner Song"), user=self.owner, db=self.db)
@@ -581,10 +577,10 @@ class CollaborativePlaylistTests(unittest.TestCase):
             lambda: playlists.update_playlist(pl.id, PlaylistUpdate(name="Hack"), user=self.collab, db=self.db),
             lambda: playlists.set_visibility(pl.id, playlists._VisibilityUpdate(is_public=True), user=self.collab, db=self.db),
             lambda: playlists.set_collaborative(pl.id, PlaylistCollaborativeUpdate(is_collaborative=False), user=self.collab, db=self.db),
-            lambda: playlists.get_playlist_invite(pl.id, user=self.collab, db=self.db),
-            lambda: playlists.create_or_rotate_playlist_invite(pl.id, user=self.collab, db=self.db),
-            lambda: playlists.revoke_playlist_invite(pl.id, user=self.collab, db=self.db),
-            lambda: playlists.add_collaborator(pl.id, PlaylistCollaboratorAdd(email="collab2@example.com"), user=self.collab, db=self.db),
+            lambda: playlists.search_invite_candidates(pl.id, q="Cla", user=self.collab, db=self.db),
+            lambda: playlists.list_playlist_invitations(pl.id, user=self.collab, db=self.db),
+            lambda: playlists.invite_to_playlist(pl.id, PlaylistInvitationCreate(user_id=self.collab2.id), user=self.collab, db=self.db),
+            lambda: playlists.withdraw_playlist_invitation(pl.id, self.collab2.id, user=self.collab, db=self.db),
             lambda: playlists.delete_playlist(pl.id, user=self.collab, db=self.db),
         ):
             with self.assertRaises(HTTPException) as forbidden:
@@ -612,16 +608,14 @@ class CollaborativePlaylistTests(unittest.TestCase):
                 cover_resp = playlists.get_cover(pl.id, user=self.collab, db=self.db)
                 self.assertEqual(cover_resp.path, cover_path)
 
-        # Toggle collaborative OFF: revokes invite link, preserves collaborator read-only.
+        # Toggle collaborative OFF: withdraws Clara's pending invitation, preserves collaborator read-only.
         playlists.set_collaborative(
             pl.id,
             body=PlaylistCollaborativeUpdate(is_collaborative=False),
             user=self.owner,
             db=self.db,
         )
-        with self.assertRaises(HTTPException) as revoked:
-            playlists.preview_playlist_invite(invite.token, user=self.collab2, db=self.db)
-        self.assertEqual(revoked.exception.status_code, 410)
+        self.assertEqual(playlists.list_my_playlist_invitations(user=self.collab2, db=self.db), [])
 
         frozen_detail = playlists.get_playlist(pl.id, user=self.collab, db=self.db)
         self.assertTrue(frozen_detail.is_collaborator)
@@ -663,18 +657,8 @@ class CollaborativePlaylistTests(unittest.TestCase):
         other_pub = self._create_playlist(self.outsider, "Other Public", collaborative=False, public=True)
 
         # Add 3 tracks and 2 collaborators to verify no join-multiplication on counts.
-        playlists.add_collaborator(
-            owned_collab.id,
-            PlaylistCollaboratorAdd(email="collab@example.com"),
-            user=self.owner,
-            db=self.db,
-        )
-        playlists.add_collaborator(
-            owned_collab.id,
-            PlaylistCollaboratorAdd(email="collab2@example.com"),
-            user=self.owner,
-            db=self.db,
-        )
+        self._join(owned_collab.id, self.collab)
+        self._join(owned_collab.id, self.collab2)
         playlists.add_tracks_bulk(
             owned_collab.id,
             [_sample_track("1"), _sample_track("2"), _sample_track("3")],
@@ -730,12 +714,7 @@ class CollaborativePlaylistTests(unittest.TestCase):
 
     def test_collaborator_can_export_private_playlist(self) -> None:
         pl = self._create_playlist(self.owner, "Export Collab", collaborative=True, public=False)
-        playlists.add_collaborator(
-            pl.id,
-            PlaylistCollaboratorAdd(email="collab@example.com"),
-            user=self.owner,
-            db=self.db,
-        )
+        self._join(pl.id, self.collab)
         playlists.add_track(pl.id, _sample_track("123", "Track"), user=self.collab, db=self.db)
 
         import asyncio
@@ -767,7 +746,7 @@ class CollaborativePlaylistTests(unittest.TestCase):
             if os.path.exists(zip_path):
                 os.remove(zip_path)
 
-    def test_http_routes_auth_enforcement_and_invite_route_ordering(self) -> None:
+    def test_http_routes_auth_enforcement_and_invitation_route_ordering(self) -> None:
         SessionTesting = sessionmaker(
             bind=self.engine, autoflush=False, expire_on_commit=False
         )
@@ -788,15 +767,9 @@ class CollaborativePlaylistTests(unittest.TestCase):
             pending_headers = {"Cookie": f"{SESSION_COOKIE}={create_token(self.pending.id)}"}
 
             # Unauthenticated -> 401; pending -> 403.
+            self.assertEqual(client.get("/api/playlists/invitations").status_code, 401)
             self.assertEqual(
-                client.get("/api/playlists/invites/abcdefghijklmnop").status_code,
-                401,
-            )
-            self.assertEqual(
-                client.get(
-                    "/api/playlists/invites/abcdefghijklmnop",
-                    headers=pending_headers,
-                ).status_code,
+                client.get("/api/playlists/invitations", headers=pending_headers).status_code,
                 403,
             )
 
@@ -808,22 +781,67 @@ class CollaborativePlaylistTests(unittest.TestCase):
             self.assertEqual(created.status_code, 201)
             pid = created.json()["id"]
 
-            inv = client.post(f"/api/playlists/{pid}/invite", headers=owner_headers)
-            self.assertEqual(inv.status_code, 201)
-            token = inv.json()["token"]
-
-            # Static /invites/{token} routes cleanly before /{playlist_id}.
-            prev = client.get(
-                f"/api/playlists/invites/{token}", headers=collab_headers
+            found = client.get(
+                f"/api/playlists/{pid}/invite-candidates",
+                params={"q": "bo"},
+                headers=owner_headers,
             )
-            self.assertEqual(prev.status_code, 200)
-            self.assertEqual(prev.json()["playlist_id"], pid)
+            self.assertEqual(found.status_code, 200)
+            self.assertEqual(
+                found.json(),
+                [
+                    {
+                        "user": {
+                            "id": self.collab.id,
+                            "display_name": "Bob",
+                            "avatar_url": "/api/users/2/avatar",
+                        },
+                        "status": "available",
+                    }
+                ],
+            )
+            self.assertEqual(
+                client.get(
+                    f"/api/playlists/{pid}/invite-candidates", headers=owner_headers
+                ).status_code,
+                422,
+            )
+
+            inv = client.post(
+                f"/api/playlists/{pid}/invitations",
+                json={"user_id": self.collab.id},
+                headers=owner_headers,
+            )
+            self.assertEqual(inv.status_code, 201)
+            self.assertNotIn("email", inv.text)
+
+            # Static /invitations routes cleanly before /{playlist_id}.
+            mine = client.get("/api/playlists/invitations", headers=collab_headers)
+            self.assertEqual(mine.status_code, 200)
+            self.assertEqual(len(mine.json()), 1)
+            self.assertEqual(mine.json()[0]["playlist"]["playlist_id"], pid)
+            self.assertNotIn("email", mine.text)
+            invitation_id = mine.json()[0]["id"]
 
             acc = client.post(
-                f"/api/playlists/invites/{token}/accept", headers=collab_headers
+                f"/api/playlists/invitations/{invitation_id}/accept", headers=collab_headers
             )
             self.assertEqual(acc.status_code, 200)
             self.assertTrue(acc.json()["joined"])
+
+            # The removed link and email routes are gone.
+            self.assertEqual(
+                client.post(f"/api/playlists/{pid}/invite", headers=owner_headers).status_code,
+                404,
+            )
+            self.assertEqual(
+                client.post(
+                    f"/api/playlists/{pid}/collaborators",
+                    json={"email": "collab2@example.com"},
+                    headers=owner_headers,
+                ).status_code,
+                404,
+            )
 
             # Collaborator leaves cleanly.
             left = client.post(f"/api/playlists/{pid}/leave", headers=collab_headers)
@@ -868,12 +886,7 @@ class CollaborativePlaylistTests(unittest.TestCase):
 
     def test_missing_collaborator_joined_at_fails_loudly(self) -> None:
         pl = self._create_playlist(self.owner, "Corrupt Timestamp", collaborative=True)
-        playlists.add_collaborator(
-            pl.id,
-            body=PlaylistCollaboratorAdd(email="collab@example.com"),
-            user=self.owner,
-            db=self.db,
-        )
+        self._join(pl.id, self.collab)
         row = self.db.scalar(
             select(PlaylistCollaborator).where(
                 PlaylistCollaborator.playlist_id == pl.id,

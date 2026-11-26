@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
-import type { Playlist, PlaylistSummary, Track } from '../api/types';
+import type { Playlist, PlaylistOutgoingInvitation, PlaylistSummary, Track } from '../api/types';
 import { refreshLibraryAutoBrowse } from './autoBrowseRefresh';
 import { queryKeys } from './queryKeys';
 import {
@@ -20,6 +20,11 @@ import {
 } from './playlistCache';
 
 const scope = 'account-7';
+const pendingInvitation: PlaylistOutgoingInvitation = {
+  invitee: { id: 9, display_name: 'Jule', avatar_url: null },
+  invited_by: { id: 7, display_name: 'Logge', avatar_url: null },
+  created_at: '2026-11-24T09:00:00Z',
+};
 const track = (id: string, title = `Track ${id}`, entryId = Number(id)): Track => ({
   id,
   title,
@@ -216,27 +221,23 @@ describe('playlist cache parity contract', () => {
     expect(client.getQueryData(queryKeys.playlists.detail(scope, 4))).toEqual(detail());
   });
 
-  it('removes a deleted playlist from detail, invite, owned, and public caches', () => {
+  it('removes a deleted playlist from detail, invitation, owned, and public caches', () => {
     const client = clientWithPlaylist();
-    client.setQueryData(queryKeys.playlists.invite(scope, 4), {
-      invite: { token: 'a'.repeat(24), created_at: '2026-11-24T00:00:00Z', expires_at: null },
-    });
+    client.setQueryData(queryKeys.playlists.outgoingInvitations(scope, 4), [pendingInvitation]);
+    client.setQueryData(queryKeys.playlists.inviteCandidates(scope, 4, 'Ju'), [
+      { user: pendingInvitation.invitee, status: 'invited' },
+    ]);
     removeDeletedPlaylistFromCache(client, scope, 4);
     expect(client.getQueryData(queryKeys.playlists.detail(scope, 4))).toBeUndefined();
-    expect(client.getQueryData(queryKeys.playlists.invite(scope, 4))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.playlists.outgoingInvitations(scope, 4))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.playlists.inviteCandidates(scope, 4, 'Ju')))
+      .toBeUndefined();
     expect(client.getQueryData(queryKeys.playlists.owned(scope))).toEqual([]);
     expect(client.getQueryData(queryKeys.playlists.public(scope))).toEqual([]);
   });
 
-  it('optimistically toggles collaborative mode, clears revoked invites on disable, and restores cleanly', async () => {
+  it('optimistically toggles collaborative mode, clears withdrawn invitations on disable, and restores cleanly', async () => {
     const client = clientWithPlaylist();
-    const activeInvite = {
-      invite: {
-        token: 'active_invite_token_123456',
-        created_at: '2026-11-24T09:00:00Z',
-        expires_at: null,
-      },
-    };
     const enableSnapshot = await optimisticallySetPlaylistCollaborative(client, scope, 4, true);
 
     expect(client.getQueryData<Playlist>(queryKeys.playlists.detail(scope, 4))?.is_collaborative)
@@ -246,14 +247,15 @@ describe('playlist cache parity contract', () => {
     expect(client.getQueryData<PlaylistSummary[]>(queryKeys.playlists.public(scope))?.[0]?.is_collaborative)
       .toBe(true);
 
-    client.setQueryData(queryKeys.playlists.invite(scope, 4), activeInvite);
+    client.setQueryData(queryKeys.playlists.outgoingInvitations(scope, 4), [pendingInvitation]);
     const disableSnapshot = await optimisticallySetPlaylistCollaborative(client, scope, 4, false);
     expect(client.getQueryData<Playlist>(queryKeys.playlists.detail(scope, 4))?.is_collaborative)
       .toBe(false);
-    expect(client.getQueryData(queryKeys.playlists.invite(scope, 4))).toEqual({ invite: null });
+    expect(client.getQueryData(queryKeys.playlists.outgoingInvitations(scope, 4))).toEqual([]);
 
     restorePlaylistCache(client, scope, 4, disableSnapshot);
-    expect(client.getQueryData(queryKeys.playlists.invite(scope, 4))).toEqual(activeInvite);
+    expect(client.getQueryData(queryKeys.playlists.outgoingInvitations(scope, 4)))
+      .toEqual([pendingInvitation]);
 
     restorePlaylistCache(client, scope, 4, enableSnapshot);
     expect(client.getQueryData<Playlist>(queryKeys.playlists.detail(scope, 4))?.is_collaborative)

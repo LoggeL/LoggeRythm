@@ -102,18 +102,22 @@ export const queryKeys = {
     details: (scope: QueryScope) => [...queryKeys.playlists.scoped(scope), 'detail'] as const,
     detail: (scope: QueryScope, id: number) =>
       [...queryKeys.playlists.details(scope), scalar(id, 'playlist id')] as const,
-    invite: (scope: QueryScope, id: number) =>
-      [...queryKeys.playlists.detail(scope, id), 'invite'] as const,
+    /** Owner view: pending invitations of one playlist. */
+    outgoingInvitations: (scope: QueryScope, id: number) =>
+      [...queryKeys.playlists.detail(scope, id), 'invitations'] as const,
+    /** Owner view: display-name search for accounts to invite. */
+    inviteCandidatesRoot: (scope: QueryScope, id: number) =>
+      [...queryKeys.playlists.detail(scope, id), 'invite-candidates'] as const,
+    /** `q` is the trimmed display-name query; empty only for a disabled search. */
+    inviteCandidates: (scope: QueryScope, id: number, q: string) =>
+      [...queryKeys.playlists.inviteCandidatesRoot(scope, id), q.trim()] as const,
     duplicates: (scope: QueryScope, id: number) =>
       [...queryKeys.playlists.detail(scope, id), 'duplicates'] as const,
     syncManifest: (scope: QueryScope, id: number) =>
       [...queryKeys.playlists.detail(scope, id), 'sync-manifest'] as const,
-    invitePreview: (scope: QueryScope, token: string) =>
-      [
-        ...queryKeys.playlists.scoped(scope),
-        'invite-preview',
-        scalar(token, 'playlist invite token'),
-      ] as const,
+    /** Invitee view: pending invitations addressed to the current account. */
+    incomingInvitations: (scope: QueryScope) =>
+      [...queryKeys.playlists.scoped(scope), 'invitations'] as const,
   },
   library: {
     root: (scope: QueryScope) =>

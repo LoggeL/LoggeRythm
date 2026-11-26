@@ -13,6 +13,7 @@ import { LibraryIcon, PlusIcon } from "@/components/icons";
 import CreatePlaylistDialog from "./CreatePlaylistDialog";
 import { libraryTabFromParam, libraryTabHref, type LibraryTab } from "./navigation";
 import PlaylistsTab from "./_tabs/PlaylistsTab";
+import PlaylistInvitations from "./_tabs/PlaylistInvitations";
 import LikedTab from "./_tabs/LikedTab";
 import FollowingTab from "./_tabs/FollowingTab";
 import RecentTab from "./_tabs/RecentTab";
@@ -93,6 +94,7 @@ function LibraryContent() {
         </nav>
       </header>
 
+      {tab === "playlists" && <PlaylistInvitations />}
       {tab === "playlists" && <PlaylistsTab query={playlistsQuery} likedHref={tabHref("liked")} onCreate={() => setCreating(true)} />}
       {tab === "liked" && <LikedTab query={likesQuery} />}
       {tab === "following" && <FollowingTab query={followingQuery} />}

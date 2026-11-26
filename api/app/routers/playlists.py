@@ -3,8 +3,6 @@ import asyncio
 import glob
 import json
 import os
-import re
-import secrets
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone
 from typing import Literal
@@ -27,19 +25,17 @@ from ..db.models import (
     Play,
     Playlist,
     PlaylistCollaborator,
-    PlaylistInvite,
+    PlaylistInvitation,
     PlaylistTrack,
     StoredLyrics,
     StoredTrack,
     User,
 )
 from ..db.session import SessionLocal, get_db
-from ..email_identity import find_user_by_email
 from ..schemas.playlist import (
     OfflineLyricsEntry,
     PlaylistBlendOut,
     PlaylistCollaborativeUpdate,
-    PlaylistCollaboratorAdd,
     PlaylistCollaboratorOut,
     PlaylistCollaboratorUser,
     PlaylistCreate,
@@ -48,10 +44,12 @@ from ..schemas.playlist import (
     PlaylistDuplicateGroup,
     PlaylistDuplicatesOut,
     PlaylistEntryReorder,
-    PlaylistInviteOut,
-    PlaylistInvitePreview,
-    PlaylistInviteStatus,
+    PlaylistIncomingInvitation,
+    PlaylistInvitationCreate,
+    PlaylistInvitationPlaylist,
+    PlaylistInviteCandidate,
     PlaylistJoinResult,
+    PlaylistOutgoingInvitation,
     PlaylistReorder,
     PlaylistSummary,
     PlaylistSyncManifest,
@@ -89,7 +87,7 @@ class _VisibilityUpdate(BaseModel):
 
 
 _COVERS_DIR = os.path.join(STORAGE_DIR, "covers")
-_INVITE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+_INVITE_SEARCH_LIMIT = 20
 
 
 def _utcnow() -> datetime:
@@ -332,75 +330,85 @@ def _summary_for(db: Session, pl: Playlist, *, viewer: User | None) -> PlaylistS
     return build_playlist_summaries(db, [pl], viewer=viewer)[0]
 
 
-def _invite_out(invite: PlaylistInvite) -> PlaylistInviteOut:
-    created_at = _as_utc(invite.created_at)
+def _require_created_at(invitation: PlaylistInvitation) -> datetime:
+    created_at = _as_utc(invitation.created_at)
     if created_at is None:
-        raise RuntimeError(f"Playlist invite {invite.id} has no created_at timestamp")
-    return PlaylistInviteOut(
-        token=invite.token,
-        created_at=created_at,
-        expires_at=_as_utc(invite.expires_at),
-    )
-
-
-def _generate_invite_token(db: Session) -> str:
-    for _ in range(20):
-        token = secrets.token_urlsafe(24)
-        exists = db.scalar(
-            select(PlaylistInvite.id).where(PlaylistInvite.token == token)
-        )
-        if exists is None:
-            return token
-    raise RuntimeError("Could not allocate a unique playlist invite token")
-
-
-def _revoke_active_invites(db: Session, playlist_id: int, now: datetime) -> int:
-    result = db.execute(
-        update(PlaylistInvite)
-        .where(
-            PlaylistInvite.playlist_id == playlist_id,
-            PlaylistInvite.revoked_at.is_(None),
-        )
-        .values(revoked_at=now)
-    )
-    return int(result.rowcount or 0)
-
-
-def _resolve_active_invite(db: Session, token: str) -> tuple[PlaylistInvite, Playlist]:
-    """Validate an invite token; 404 unknown, 410 revoked/expired/disabled."""
-    if not _INVITE_TOKEN_RE.fullmatch(token):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Einladungslink wurde nicht gefunden.",
-        )
-    invite = db.scalar(select(PlaylistInvite).where(PlaylistInvite.token == token))
-    if invite is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Einladungslink wurde nicht gefunden.",
-        )
-    pl = db.get(Playlist, invite.playlist_id)
-    if pl is None:
         raise RuntimeError(
-            f"Playlist invite {invite.id} references missing playlist {invite.playlist_id}"
+            f"Playlist invitation {invitation.id} has no created_at timestamp"
         )
-    if invite.revoked_at is not None:
+    return created_at
+
+
+def _is_invitable(user: User) -> bool:
+    return bool(user.is_approved or user.is_admin)
+
+
+def _has_pending_invitation(db: Session, playlist_id: int, user_id: int) -> bool:
+    return (
+        db.scalar(
+            select(PlaylistInvitation.id).where(
+                PlaylistInvitation.playlist_id == playlist_id,
+                PlaylistInvitation.invitee_user_id == user_id,
+            )
+        )
+        is not None
+    )
+
+
+def _users_by_ids(db: Session, user_ids: set[int]) -> dict[int, User]:
+    if not user_ids:
+        return {}
+    return {u.id: u for u in db.scalars(select(User).where(User.id.in_(user_ids))).all()}
+
+
+def _require_user(users_by_id: dict[int, User], user_id: int, context: str) -> User:
+    found = users_by_id.get(user_id)
+    if found is None:
+        raise RuntimeError(f"{context} references missing user {user_id}")
+    return found
+
+
+def _outgoing_invitations(
+    db: Session, pl: Playlist
+) -> list[PlaylistOutgoingInvitation]:
+    rows = list(
+        db.scalars(
+            select(PlaylistInvitation)
+            .where(PlaylistInvitation.playlist_id == pl.id)
+            .order_by(PlaylistInvitation.created_at, PlaylistInvitation.id)
+        ).all()
+    )
+    user_ids = {row.invitee_user_id for row in rows}
+    user_ids.update(row.inviter_user_id for row in rows if row.inviter_user_id is not None)
+    users_by_id = _users_by_ids(db, user_ids)
+    result: list[PlaylistOutgoingInvitation] = []
+    for row in rows:
+        context = f"Playlist invitation {row.id} on playlist {pl.id}"
+        invitee = _require_user(users_by_id, row.invitee_user_id, context)
+        inviter = (
+            _require_user(users_by_id, row.inviter_user_id, context)
+            if row.inviter_user_id is not None
+            else None
+        )
+        result.append(
+            PlaylistOutgoingInvitation(
+                invitee=_user_ref(invitee),
+                invited_by=_user_ref(inviter) if inviter is not None else None,
+                created_at=_require_created_at(row),
+            )
+        )
+    return result
+
+
+def _incoming_invitation_for(db: Session, invitation_id: int, user: User) -> PlaylistInvitation:
+    """Return the invitation addressed to ``user``; 404 for unknown or someone else's."""
+    invitation = db.get(PlaylistInvitation, invitation_id)
+    if invitation is None or invitation.invitee_user_id != user.id:
         raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Dieser Einladungslink wurde widerrufen.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Einladung nicht gefunden.",
         )
-    expires_at = _as_utc(invite.expires_at)
-    if expires_at is not None and expires_at <= _utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Dieser Einladungslink ist abgelaufen.",
-        )
-    if not pl.is_collaborative:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="Die Zusammenarbeit für diese Playlist ist deaktiviert.",
-        )
-    return invite, pl
+    return invitation
 
 
 @router.get("", response_model=list[PlaylistSummary])
@@ -484,78 +492,108 @@ def public_playlists(
     return build_playlist_summaries(db, rows, viewer=user)
 
 
-@router.get("/invites/{token}", response_model=PlaylistInvitePreview)
-def preview_playlist_invite(
-    token: str,
+@router.get("/invitations", response_model=list[PlaylistIncomingInvitation])
+def list_my_playlist_invitations(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> PlaylistInvitePreview:
-    """Preview a collaborative playlist before accepting an invite link."""
-    _, pl = _resolve_active_invite(db, token)
-    owner = _require_owner_user(db, pl)
-    track_count = int(
-        db.scalar(
-            select(func.count(PlaylistTrack.id)).where(
-                PlaylistTrack.playlist_id == pl.id
+) -> list[PlaylistIncomingInvitation]:
+    """Pending playlist invitations addressed to the current account, newest first."""
+    rows = list(
+        db.scalars(
+            select(PlaylistInvitation)
+            .where(PlaylistInvitation.invitee_user_id == user.id)
+            .order_by(PlaylistInvitation.created_at.desc(), PlaylistInvitation.id.desc())
+        ).all()
+    )
+    if not rows:
+        return []
+    playlist_ids = {row.playlist_id for row in rows}
+    playlists_by_id = {
+        pl.id: pl
+        for pl in db.scalars(select(Playlist).where(Playlist.id.in_(playlist_ids))).all()
+    }
+    summaries = {
+        summary.id: summary
+        for summary in build_playlist_summaries(
+            db, list(playlists_by_id.values()), viewer=user
+        )
+    }
+    user_ids = {pl.user_id for pl in playlists_by_id.values()}
+    user_ids.update(row.inviter_user_id for row in rows if row.inviter_user_id is not None)
+    users_by_id = _users_by_ids(db, user_ids)
+
+    result: list[PlaylistIncomingInvitation] = []
+    for row in rows:
+        context = f"Playlist invitation {row.id}"
+        pl = playlists_by_id.get(row.playlist_id)
+        if pl is None:
+            raise RuntimeError(f"{context} references missing playlist {row.playlist_id}")
+        summary = summaries[pl.id]
+        owner = _require_user(users_by_id, pl.user_id, f"Playlist {pl.id} owner")
+        inviter = (
+            _require_user(users_by_id, row.inviter_user_id, context)
+            if row.inviter_user_id is not None
+            else None
+        )
+        result.append(
+            PlaylistIncomingInvitation(
+                id=row.id,
+                playlist=PlaylistInvitationPlaylist(
+                    playlist_id=pl.id,
+                    name=pl.name,
+                    description=pl.description,
+                    cover_url=pl.cover_url,
+                    track_count=summary.track_count,
+                    collaborator_count=summary.collaborator_count,
+                    owner=_user_ref(owner),
+                ),
+                invited_by=_user_ref(inviter) if inviter is not None else None,
+                created_at=_require_created_at(row),
             )
         )
-        or 0
-    )
-    collaborator_count = int(
-        db.scalar(
-            select(func.count(PlaylistCollaborator.id)).where(
-                PlaylistCollaborator.playlist_id == pl.id
-            )
-        )
-        or 0
-    )
-    is_owner = pl.user_id == user.id
-    already_collaborator = not is_owner and _is_collaborator(db, pl.id, user.id)
-    return PlaylistInvitePreview(
-        playlist_id=pl.id,
-        name=pl.name,
-        description=pl.description,
-        cover_url=pl.cover_url,
-        track_count=track_count,
-        collaborator_count=collaborator_count,
-        owner=_user_ref(owner),
-        is_owner=is_owner,
-        already_collaborator=already_collaborator,
-    )
+    return result
 
 
-@router.post("/invites/{token}/accept", response_model=PlaylistJoinResult)
-def accept_playlist_invite(
-    token: str,
+@router.post(
+    "/invitations/{invitation_id}/accept", response_model=PlaylistJoinResult
+)
+def accept_playlist_invitation(
+    invitation_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PlaylistJoinResult:
-    """Accept a collaborative playlist invite link and join as an editor."""
-    invite, pl = _resolve_active_invite(db, token)
-    if pl.user_id == user.id:
-        return PlaylistJoinResult(
-            playlist_id=pl.id,
-            playlist_name=pl.name,
-            joined=False,
-            already_member=True,
-            role="owner",
+    """Accept an invitation addressed to the current account and join as an editor."""
+    invitation = _incoming_invitation_for(db, invitation_id, user)
+    pl = db.get(Playlist, invitation.playlist_id)
+    if pl is None:
+        raise RuntimeError(
+            f"Playlist invitation {invitation.id} references missing playlist "
+            f"{invitation.playlist_id}"
         )
-    if _is_collaborator(db, pl.id, user.id):
+    if not pl.is_collaborative:
+        raise RuntimeError(
+            f"Playlist invitation {invitation.id} is pending on playlist {pl.id} "
+            "whose collaboration is disabled; disabling must delete invitations"
+        )
+    playlist_id = pl.id
+    playlist_name = pl.name
+    inviter_id = invitation.inviter_user_id
+    db.delete(invitation)
+    if _is_collaborator(db, playlist_id, user.id):
+        db.commit()
         return PlaylistJoinResult(
-            playlist_id=pl.id,
-            playlist_name=pl.name,
+            playlist_id=playlist_id,
+            playlist_name=playlist_name,
             joined=False,
             already_member=True,
             role="editor",
         )
-    playlist_id = pl.id
-    playlist_name = pl.name
     db.add(
         PlaylistCollaborator(
             playlist_id=playlist_id,
             user_id=user.id,
             role="editor",
-            added_by_user_id=invite.created_by_user_id,
+            added_by_user_id=inviter_id,
             joined_at=_utcnow(),
         )
     )
@@ -565,6 +603,10 @@ def accept_playlist_invite(
     except IntegrityError:
         db.rollback()
         if _is_collaborator(db, playlist_id, user.id):
+            db.execute(
+                delete(PlaylistInvitation).where(PlaylistInvitation.id == invitation_id)
+            )
+            db.commit()
             return PlaylistJoinResult(
                 playlist_id=playlist_id,
                 playlist_name=playlist_name,
@@ -580,6 +622,21 @@ def accept_playlist_invite(
         already_member=False,
         role="editor",
     )
+
+
+@router.post(
+    "/invitations/{invitation_id}/decline", status_code=status.HTTP_204_NO_CONTENT
+)
+def decline_playlist_invitation(
+    invitation_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Decline an invitation addressed to the current account."""
+    invitation = _incoming_invitation_for(db, invitation_id, user)
+    db.delete(invitation)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _blend_candidate_pool(db: Session, user_id: int) -> tuple[list[dict], set[str]]:
@@ -1346,117 +1403,124 @@ def set_collaborative(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> PlaylistSummary:
-    """Owner-only: toggle collaboration. Disabling revokes active invite links while keeping collaborators read-only."""
+    """Owner-only: toggle collaboration. Disabling withdraws pending invitations while keeping collaborators read-only."""
     pl = _require_owner(db, playlist_id, user)
     pl.is_collaborative = body.is_collaborative
     if not body.is_collaborative:
-        _revoke_active_invites(db, pl.id, _utcnow())
+        db.execute(
+            delete(PlaylistInvitation).where(PlaylistInvitation.playlist_id == pl.id)
+        )
     _bump_revision(pl)
     _commit_and_publish(db, pl)
     db.refresh(pl)
     return _summary_for(db, pl, viewer=user)
 
 
-@router.get("/{playlist_id}/invite", response_model=PlaylistInviteStatus)
-def get_playlist_invite(
-    playlist_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> PlaylistInviteStatus:
-    """Owner-only: inspect the active invite link for this playlist, if any."""
-    pl = _require_owner(db, playlist_id, user)
-    if not pl.is_collaborative:
-        return PlaylistInviteStatus(invite=None)
-    invite = db.scalar(
-        select(PlaylistInvite)
-        .where(
-            PlaylistInvite.playlist_id == pl.id,
-            PlaylistInvite.revoked_at.is_(None),
-        )
-        .order_by(PlaylistInvite.created_at.desc(), PlaylistInvite.id.desc())
-        .limit(1)
-    )
-    if invite is None:
-        return PlaylistInviteStatus(invite=None)
-    expires_at = _as_utc(invite.expires_at)
-    if expires_at is not None and expires_at <= _utcnow():
-        return PlaylistInviteStatus(invite=None)
-    return PlaylistInviteStatus(invite=_invite_out(invite))
-
-
-@router.post(
-    "/{playlist_id}/invite",
-    response_model=PlaylistInviteOut,
-    status_code=status.HTTP_201_CREATED,
+@router.get(
+    "/{playlist_id}/invite-candidates", response_model=list[PlaylistInviteCandidate]
 )
-def create_or_rotate_playlist_invite(
+def search_invite_candidates(
     playlist_id: int,
+    q: str = Query(
+        min_length=1,
+        max_length=120,
+        description="Case-insensitive part of the account's display name.",
+    ),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> PlaylistInviteOut:
-    """Owner-only: create or rotate the active invite token (revokes any previous link)."""
+) -> list[PlaylistInviteCandidate]:
+    """Owner-only: find approved accounts by display name to invite (never by email)."""
     pl = _require_owner(db, playlist_id, user)
-    if not pl.is_collaborative:
+    needle = q.strip()
+    if not needle:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Aktiviere zuerst die Zusammenarbeit für diese Playlist, um einen Einladungslink zu erstellen.",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Suchbegriff darf nicht leer sein.",
         )
-    now = _utcnow()
-    _revoke_active_invites(db, pl.id, now)
-    invite = PlaylistInvite(
-        playlist_id=pl.id,
-        token=_generate_invite_token(db),
-        created_by_user_id=user.id,
-        created_at=now,
-        expires_at=None,
+    escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    matches = list(
+        db.scalars(
+            select(User)
+            .where(
+                User.id != pl.user_id,
+                User.display_name.is_not(None),
+                func.lower(User.display_name).like(
+                    f"%{escaped.lower()}%", escape="\\"
+                ),
+                or_(User.is_approved.is_(True), User.is_admin.is_(True)),
+            )
+            .order_by(func.lower(User.display_name), User.id)
+            .limit(_INVITE_SEARCH_LIMIT)
+        ).all()
     )
-    db.add(invite)
-    _bump_revision(pl)
-    _commit_and_publish(db, pl)
-    db.refresh(invite)
-    return _invite_out(invite)
+    if not matches:
+        return []
+    match_ids = [m.id for m in matches]
+    collaborator_ids = set(
+        db.scalars(
+            select(PlaylistCollaborator.user_id).where(
+                PlaylistCollaborator.playlist_id == pl.id,
+                PlaylistCollaborator.user_id.in_(match_ids),
+            )
+        ).all()
+    )
+    invited_ids = set(
+        db.scalars(
+            select(PlaylistInvitation.invitee_user_id).where(
+                PlaylistInvitation.playlist_id == pl.id,
+                PlaylistInvitation.invitee_user_id.in_(match_ids),
+            )
+        ).all()
+    )
+    result: list[PlaylistInviteCandidate] = []
+    for match in matches:
+        candidate_status: Literal["available", "invited", "collaborator"] = "available"
+        if match.id in collaborator_ids:
+            candidate_status = "collaborator"
+        elif match.id in invited_ids:
+            candidate_status = "invited"
+        result.append(
+            PlaylistInviteCandidate(user=_user_ref(match), status=candidate_status)
+        )
+    return result
 
 
-@router.delete("/{playlist_id}/invite", status_code=status.HTTP_204_NO_CONTENT)
-def revoke_playlist_invite(
+@router.get(
+    "/{playlist_id}/invitations", response_model=list[PlaylistOutgoingInvitation]
+)
+def list_playlist_invitations(
     playlist_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> Response:
-    """Owner-only: revoke the active invite link without removing existing collaborators."""
+) -> list[PlaylistOutgoingInvitation]:
+    """Owner-only: pending invitations the invitees have not answered yet."""
     pl = _require_owner(db, playlist_id, user)
-    revoked = _revoke_active_invites(db, pl.id, _utcnow())
-    if revoked > 0:
-        _bump_revision(pl)
-        _commit_and_publish(db, pl)
-    else:
-        db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return _outgoing_invitations(db, pl)
 
 
 @router.post(
-    "/{playlist_id}/collaborators",
-    response_model=PlaylistCollaboratorOut,
+    "/{playlist_id}/invitations",
+    response_model=PlaylistOutgoingInvitation,
     status_code=status.HTTP_201_CREATED,
 )
-def add_collaborator(
+def invite_to_playlist(
     playlist_id: int,
-    body: PlaylistCollaboratorAdd,
+    body: PlaylistInvitationCreate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> PlaylistCollaboratorOut:
-    """Owner-only: directly add an approved user as a collaborator by email."""
+) -> PlaylistOutgoingInvitation:
+    """Owner-only: invite an existing approved account; it joins once the invitee accepts."""
     pl = _require_owner(db, playlist_id, user)
     if not pl.is_collaborative:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Aktiviere zuerst die Zusammenarbeit für diese Playlist.",
         )
-    target = find_user_by_email(db, str(body.email))
-    if target is None or (not target.is_approved and not target.is_admin):
+    target = db.get(User, body.user_id)
+    if target is None or not _is_invitable(target):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Kein freigegebenes Konto mit dieser E-Mail-Adresse gefunden.",
+            detail="Kein freigegebenes Konto gefunden.",
         )
     if target.id == pl.user_id:
         raise HTTPException(
@@ -1468,34 +1532,60 @@ def add_collaborator(
             status_code=status.HTTP_409_CONFLICT,
             detail="Dieses Konto ist bereits Mitwirkender dieser Playlist.",
         )
-    playlist_id_val = pl.id
-    collab = PlaylistCollaborator(
-        playlist_id=playlist_id_val,
-        user_id=target.id,
-        role="editor",
-        added_by_user_id=user.id,
-        joined_at=_utcnow(),
+    already_invited = HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Dieses Konto ist bereits eingeladen.",
     )
-    db.add(collab)
-    _bump_revision(pl)
+    if _has_pending_invitation(db, pl.id, target.id):
+        raise already_invited
+    playlist_id_val = pl.id
+    invitation = PlaylistInvitation(
+        playlist_id=playlist_id_val,
+        invitee_user_id=target.id,
+        inviter_user_id=user.id,
+        created_at=_utcnow(),
+    )
+    db.add(invitation)
     try:
-        _commit_and_publish(db, pl)
+        db.commit()
     except IntegrityError as exc:
         db.rollback()
-        if _is_collaborator(db, playlist_id_val, target.id):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Dieses Konto ist bereits Mitwirkender dieser Playlist.",
-            ) from exc
+        if _has_pending_invitation(db, playlist_id_val, target.id):
+            raise already_invited from exc
         raise
-    db.refresh(collab)
-    return PlaylistCollaboratorOut(
-        user_id=target.id,
-        display_name=target.display_name,
-        avatar_url=target.avatar_url,
-        role="editor",
-        joined_at=_as_utc(collab.joined_at),
+    db.refresh(invitation)
+    return PlaylistOutgoingInvitation(
+        invitee=_user_ref(target),
+        invited_by=_user_ref(user),
+        created_at=_require_created_at(invitation),
     )
+
+
+@router.delete(
+    "/{playlist_id}/invitations/{user_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def withdraw_playlist_invitation(
+    playlist_id: int,
+    user_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Owner-only: withdraw a pending invitation before the invitee answers."""
+    pl = _require_owner(db, playlist_id, user)
+    invitation = db.scalar(
+        select(PlaylistInvitation).where(
+            PlaylistInvitation.playlist_id == pl.id,
+            PlaylistInvitation.invitee_user_id == user_id,
+        )
+    )
+    if invitation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Einladung nicht gefunden.",
+        )
+    db.delete(invitation)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete(

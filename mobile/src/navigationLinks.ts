@@ -1,27 +1,6 @@
 import type { Track } from './api/types';
 import type { AlbumRouteParams, ArtistRouteParams } from './screens/catalogModel';
 
-const PLAYLIST_INVITE_TOKEN = /^[A-Za-z0-9_-]{16,128}$/u;
-
-export function playlistInviteTokenFromRouteValue(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const token = value.trim();
-  return PLAYLIST_INVITE_TOKEN.test(token) ? token : null;
-}
-
-/** Build the canonical collaborative playlist invite URL shared with web and Android App Links. */
-export function playlistInviteUrl(apiBase: string, token: string): string {
-  const validToken = playlistInviteTokenFromRouteValue(token);
-  if (validToken === null) {
-    throw new Error('Playlist invite link requires a valid invite token');
-  }
-  const normalizedBase = apiBase.trim().replace(/\/+$/u, '');
-  if (normalizedBase.length === 0) {
-    throw new Error('Playlist invite link requires a non-empty API base');
-  }
-  return `${normalizedBase}/playlist/join/${encodeURIComponent(validToken)}`;
-}
-
 export function playlistIdFromRouteValue(value: unknown): number | null {
   const segment = String(value ?? '').trim().split('-')[0];
   if (!/^0*[1-9]\d*$/u.test(segment)) return null;

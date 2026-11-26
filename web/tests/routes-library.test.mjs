@@ -17,6 +17,7 @@ const fixture = {
   recent: [],
   enabled: {},
   downloads: {},
+  invitations: null,
 };
 globalThis.__libraryRouteFixture = fixture;
 
@@ -30,13 +31,13 @@ const stubs = {
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function Link({href, children, scroll, ...props}) { return createElement("a", {...props, href}, children); }`,
   ),
   "next/navigation": moduleUrl(
-    `export const useSearchParams = () => new URLSearchParams(globalThis.__libraryRouteFixture.search);`,
+    `export const useSearchParams = () => new URLSearchParams(globalThis.__libraryRouteFixture.search); export const useRouter = () => ({ push() {} });`,
   ),
   "@/hooks/useAuth": moduleUrl(
     `export const useMe = () => globalThis.__libraryRouteFixture.me;`,
   ),
   "@/hooks/useLibrary": moduleUrl(
-    `export const useLikes = (enabled) => {globalThis.__libraryRouteFixture.enabled.likes = enabled; return globalThis.__libraryRouteFixture.likes;}; export const usePlaylists = (enabled) => {globalThis.__libraryRouteFixture.enabled.playlists = enabled; return globalThis.__libraryRouteFixture.playlists;};`,
+    `export const useLikes = (enabled) => {globalThis.__libraryRouteFixture.enabled.likes = enabled; return globalThis.__libraryRouteFixture.likes;}; export const usePlaylists = (enabled) => {globalThis.__libraryRouteFixture.enabled.playlists = enabled; return globalThis.__libraryRouteFixture.playlists;}; export const useMyPlaylistInvitations = () => {globalThis.__libraryRouteFixture.enabled.invitations = true; return globalThis.__libraryRouteFixture.invitations;}; const idle = () => ({ isPending: false, isError: false, error: null, mutate() {} }); export const useAcceptPlaylistInvitation = idle; export const useDeclinePlaylistInvitation = idle;`,
   ),
   "@/hooks/useFollows": moduleUrl(
     `export const useFollowing = (enabled) => {globalThis.__libraryRouteFixture.enabled.following = enabled; return globalThis.__libraryRouteFixture.following;};`,
@@ -93,6 +94,7 @@ const stubs = {
 // so errors and empty states are exercised.
 await compileInto(stubs, [
   ["@/lib/playlistPermissions", "src/lib/playlistPermissions.ts"],
+  ["@/components/Avatar", "src/components/Avatar.tsx"],
   ["@/hooks/useRecentTracks", "src/hooks/useRecentTracks.ts"],
   ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
   ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
@@ -103,6 +105,7 @@ await compileInto(stubs, [
   ["./ListFilter", "src/app/library/_tabs/ListFilter.tsx"],
   ["./TrackCollection", "src/app/library/_tabs/TrackCollection.tsx"],
   ["./_tabs/PlaylistsTab", "src/app/library/_tabs/PlaylistsTab.tsx"],
+  ["./_tabs/PlaylistInvitations", "src/app/library/_tabs/PlaylistInvitations.tsx"],
   ["./_tabs/LikedTab", "src/app/library/_tabs/LikedTab.tsx"],
   ["./_tabs/FollowingTab", "src/app/library/_tabs/FollowingTab.tsx"],
   ["./_tabs/RecentTab", "src/app/library/_tabs/RecentTab.tsx"],
@@ -144,6 +147,7 @@ function reset() {
   fixture.recent = [];
   fixture.enabled = {};
   fixture.downloads = {};
+  fixture.invitations = success([]);
 }
 
 function assertActiveTab(html, href) {
@@ -243,7 +247,9 @@ test("library requests only the collection selected by the current tab", () => {
     likes: false,
     playlists: true,
     following: false,
+    invitations: true,
   });
+  fixture.enabled = {};
   screen("tab=liked");
   assert.deepEqual(fixture.enabled, {
     likes: true,
@@ -357,4 +363,25 @@ test("the history tab lists the titles kept on this device and explains an empty
   assert.match(html, /2 Titel auf diesem Gerät/);
   assert.match(html, /aria-label="Zuletzt gehört abspielen"/);
   assert.equal(html.match(/data-track=/g).length, 2);
+});
+
+test("pending playlist invitations appear above the playlists and nowhere else", () => {
+  reset();
+  assert.doesNotMatch(screen(), /playlist-invitations-heading/);
+  fixture.invitations = success([
+    {
+      id: 9,
+      playlist: { playlist_id: 51, name: "Kellerparty 2026", cover_url: null, track_count: 14, collaborator_count: 1, owner: { id: 3, display_name: "Tariq" } },
+      invited_by: { id: 3, display_name: "Tariq", avatar_url: null },
+      created_at: "2026-11-21T16:00:00Z",
+    },
+  ]);
+  const html = screen();
+  const invitationsAt = html.indexOf('id="playlist-invitations-heading"');
+  assert.ok(invitationsAt > 0, "Einladungen section missing");
+  assert.ok(invitationsAt < html.indexOf('id="playlist-heading"'), "Einladungen must come before Deine Playlists");
+  assert.match(html, /Kellerparty 2026/);
+  assert.match(html, />Annehmen</);
+  assert.match(html, />Ablehnen</);
+  assert.doesNotMatch(screen("tab=liked"), /playlist-invitations-heading/);
 });

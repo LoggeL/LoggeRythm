@@ -252,16 +252,24 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     expectedArguments: (signal) => [9, signal],
   },
   {
-    factory: 'playlistInvite', repositoryMethod: 'getPlaylistInvite',
-    option: (queries) => queries.playlistInvite('  account-a  ', 9),
-    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'detail', '9', 'invite'],
+    factory: 'playlistOutgoingInvitations', repositoryMethod: 'getPlaylistOutgoingInvitations',
+    option: (queries) => queries.playlistOutgoingInvitations('  account-a  ', 9),
+    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'detail', '9', 'invitations'],
     expectedArguments: (signal) => [9, signal],
   },
   {
-    factory: 'playlistInvitePreview', repositoryMethod: 'getPlaylistInvitePreview',
-    option: (queries) => queries.playlistInvitePreview('  account-a  ', '  invite_token_123456  '),
-    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'invite-preview', 'invite_token_123456'],
-    expectedArguments: (signal) => ['invite_token_123456', signal],
+    factory: 'playlistInviteCandidates', repositoryMethod: 'searchPlaylistInviteCandidates',
+    option: (queries) => queries.playlistInviteCandidates('  account-a  ', 9, '  Jule  '),
+    expectedKey: [
+      'music', 'playlists', 'scope', 'account-a', 'detail', '9', 'invite-candidates', 'Jule',
+    ],
+    expectedArguments: (signal) => [9, 'Jule', signal],
+  },
+  {
+    factory: 'incomingPlaylistInvitations', repositoryMethod: 'getMyPlaylistInvitations',
+    option: (queries) => queries.incomingPlaylistInvitations('  account-a  '),
+    expectedKey: ['music', 'playlists', 'scope', 'account-a', 'invitations'],
+    expectedArguments: (signal) => [signal],
   },
   {
     factory: 'likes', repositoryMethod: 'getLikes',
@@ -441,6 +449,8 @@ describe('music query options', () => {
     expect(queries.searchAlbums('\n').enabled).toBe(false);
     expect(queries.searchArtists('\t').enabled).toBe(false);
     expect(queries.searchPlaylists(' ').enabled).toBe(false);
+    expect(queries.playlistInviteCandidates('account-a', 9, '  ').enabled).toBe(false);
+    expect(queries.playlistInviteCandidates('account-a', 9, ' Ju ').enabled).toBe(true);
   });
 
   it('canonicalizes batch follow ids before calling the repository', async () => {

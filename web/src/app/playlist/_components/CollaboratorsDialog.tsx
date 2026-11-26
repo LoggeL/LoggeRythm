@@ -1,65 +1,241 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { useId, useState } from "react";
 import Link from "next/link";
-import { QRCodeSVG } from "qrcode.react";
 import {
-  useAddPlaylistCollaborator,
-  useCreatePlaylistInvite,
-  usePlaylistInvite,
+  useInviteToPlaylist,
+  usePlaylistInviteCandidates,
+  usePlaylistOutgoingInvitations,
   useRemovePlaylistCollaborator,
-  useRevokePlaylistInvite,
   useSetPlaylistCollaborative,
+  useWithdrawPlaylistInvitation,
 } from "@/hooks/useLibrary";
-import { emailError } from "@/components/AuthFields";
-import { playlistJoinPath } from "@/lib/slugs";
-import { playlistMemberCount } from "@/lib/playlistPermissions";
-import { toast } from "@/store/toast";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import {
+  canInviteToPlaylist,
+  invitationDateLabel,
+  invitationUserName,
+  inviteCandidateAction,
+  inviteSearchQuery,
+  playlistMemberCount,
+} from "@/lib/playlistPermissions";
 import Avatar from "@/components/Avatar";
 import Modal from "@/components/Modal";
 import QueryError from "@/components/ui/QueryError";
-import { CheckCircleIcon, CopyIcon, InfoCircleIcon } from "@/components/feedbackIcons";
-import { CloseIcon, LinkIcon, LogOutIcon, RefreshIcon, TrashIcon, UserPlusIcon } from "@/components/icons";
+import { InfoCircleIcon } from "@/components/feedbackIcons";
+import { CloseIcon, LogOutIcon, SearchIcon, UserPlusIcon } from "@/components/icons";
 import type { Playlist } from "@/types";
 
-const subscribeNever = () => () => {};
-const onClient = () => true;
-const onServer = () => false;
+const SEARCH_DEBOUNCE_MS = 300;
 
-function useCopyText() {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+/**
+ * Owner-only: find existing accounts by display name and invite them. The
+ * invitee joins only after accepting in their library.
+ */
+function InviteSearch({ id, playlistName }: { id: string; playlistName: string }) {
+  const [term, setTerm] = useState("");
+  const query = inviteSearchQuery(useDebouncedValue(term, SEARCH_DEBOUNCE_MS));
+  const typedQuery = inviteSearchQuery(term);
+  const candidates = usePlaylistInviteCandidates(id, query ?? "", query !== null);
+  const invite = useInviteToPlaylist(id);
+  const inputId = useId();
+  const hintId = useId();
 
-  useEffect(
-    () => () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    },
-    [],
+  const results = query !== null ? candidates.data : undefined;
+  const stale = candidates.isPlaceholderData || typedQuery !== query;
+
+  return (
+    <section aria-labelledby={`${inputId}-heading`} className="flex flex-col gap-2.5">
+      <h3 id={`${inputId}-heading`} className="label-mono">
+        Personen einladen
+      </h3>
+      <div className="relative">
+        <SearchIcon
+          width={16}
+          height={16}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted"
+        />
+        <label htmlFor={inputId} className="sr-only">
+          Konto nach Anzeigenamen suchen
+        </label>
+        <input
+          id={inputId}
+          type="search"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          value={term}
+          onChange={(event) => {
+            setTerm(event.target.value);
+            if (invite.isError) invite.reset();
+          }}
+          placeholder="Anzeigename suchen…"
+          aria-describedby={hintId}
+          className="field-input w-full pl-10 text-sm"
+        />
+      </div>
+      <p id={hintId} className="text-xs leading-relaxed text-muted">
+        Eingeladene sehen die Einladung zu „{playlistName}“ in ihrer Bibliothek und können sie annehmen oder ablehnen.
+      </p>
+
+      {query !== null && (
+        <QueryError label="Die Suchergebnisse" query={candidates} />
+      )}
+
+      {query !== null && candidates.isLoading && (
+        <div
+          role="status"
+          aria-label="Konten werden gesucht"
+          className="skeleton h-14 w-full rounded-[var(--radius-control)]"
+        />
+      )}
+
+      {results && results.length === 0 && !stale && (
+        <p className="rounded-[var(--radius-control)] border border-dashed border-border px-4 py-3 text-xs leading-relaxed text-muted">
+          Kein Konto mit „{query}“ im Anzeigenamen gefunden.
+        </p>
+      )}
+
+      {results && results.length > 0 && (
+        <ul
+          aria-label="Suchergebnisse"
+          aria-busy={stale || undefined}
+          className={`divide-y divide-hairline rounded-[var(--radius-control)] border border-hairline transition-opacity ${
+            stale ? "opacity-60" : ""
+          }`}
+        >
+          {results.map((candidate) => {
+            const name = invitationUserName(candidate.user);
+            const action = inviteCandidateAction(candidate.status);
+            const invitingThis =
+              invite.isPending && invite.variables?.userId === candidate.user.id;
+            return (
+              <li
+                key={candidate.user.id}
+                className="flex items-center gap-3 px-3.5 py-2.5"
+              >
+                <Avatar src={candidate.user.avatar_url} name={name} size={36} />
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                  {name}
+                </span>
+                {action.canInvite ? (
+                  <button
+                    type="button"
+                    disabled={invite.isPending}
+                    onClick={() =>
+                      invite.mutate({ userId: candidate.user.id, name })
+                    }
+                    aria-label={`${name} einladen`}
+                    className="action-secondary min-h-9 shrink-0 px-3.5 text-xs"
+                  >
+                    <UserPlusIcon width={15} height={15} aria-hidden="true" />
+                    {invitingThis ? "Wird eingeladen…" : action.label}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="action-secondary min-h-9 shrink-0 px-3.5 text-xs"
+                  >
+                    {action.label}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {invite.isError && (
+        <p role="alert" className="error-panel">
+          {invite.variables?.name} konnte nicht eingeladen werden:{" "}
+          {invite.error.message}
+        </p>
+      )}
+    </section>
   );
+}
 
-  async function copy(text: string) {
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setCopied(false), 1800);
-    } catch (error) {
-      toast.error(
-        `Link konnte nicht kopiert werden: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+/** Owner-only: invitations the invitees have not answered yet. */
+function PendingInvitations({ id }: { id: string }) {
+  const invitations = usePlaylistOutgoingInvitations(id);
+  const withdraw = useWithdrawPlaylistInvitation(id);
+  const list = invitations.data;
+
+  if (invitations.isLoading) {
+    return (
+      <div
+        role="status"
+        aria-label="Offene Einladungen werden geladen"
+        className="skeleton h-14 w-full rounded-[var(--radius-control)]"
+      />
+    );
   }
 
-  return { copied, copy };
+  return (
+    <>
+      <QueryError label="Die offenen Einladungen" query={invitations} />
+      {list && list.length > 0 && (
+        <section aria-labelledby="collab-pending-heading" className="flex flex-col gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 id="collab-pending-heading" className="label-mono">
+              Offene Einladungen
+            </h3>
+            <span className="label-mono tabular-nums">{list.length}</span>
+          </div>
+          <ul className="divide-y divide-hairline rounded-[var(--radius-control)] border border-hairline">
+            {list.map((invitation) => {
+              const name = invitationUserName(invitation.invitee);
+              const withdrawingThis =
+                withdraw.isPending &&
+                withdraw.variables?.userId === invitation.invitee.id;
+              return (
+                <li
+                  key={invitation.invitee.id}
+                  className="flex items-center gap-3 px-3.5 py-2.5"
+                >
+                  <Avatar src={invitation.invitee.avatar_url} name={name} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-foreground">
+                      {name}
+                    </span>
+                    <span className="label-mono text-[10px]">
+                      {invitationDateLabel(invitation.created_at)}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={withdraw.isPending}
+                    onClick={() =>
+                      withdraw.mutate({ userId: invitation.invitee.id, name })
+                    }
+                    aria-label={`Einladung an ${name} zurückziehen`}
+                    className="action-secondary action-danger min-h-9 shrink-0 border-danger/35 px-3 text-xs hover:border-danger/70"
+                  >
+                    {withdrawingThis ? "Wird zurückgezogen…" : "Zurückziehen"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+      {withdraw.isError && (
+        <p role="alert" className="error-panel">
+          Einladung an {withdraw.variables?.name} konnte nicht zurückgezogen werden:{" "}
+          {withdraw.error.message}
+        </p>
+      )}
+    </>
+  );
 }
 
 /**
- * Manage collaborative playlist settings, invite link (+ QR code), direct email
- * invites, and collaborator membership. Owners get full controls; collaborators
- * see the member list and can leave the playlist.
+ * Manage collaborative playlist settings, account invitations, and collaborator
+ * membership. Owners get full controls; collaborators see the member list and
+ * can leave the playlist.
  */
 export default function CollaboratorsDialog({
   id,
@@ -77,61 +253,10 @@ export default function CollaboratorsDialog({
   const isCollaborative = Boolean(playlist.is_collaborative);
   const collaborators = playlist.collaborators ?? [];
   const memberCount = playlistMemberCount(playlist);
-  const isClient = useSyncExternalStore(subscribeNever, onClient, onServer);
+  const canInvite = canInviteToPlaylist(playlist);
 
   const toggleCollaborative = useSetPlaylistCollaborative(id);
-  const inviteQuery = usePlaylistInvite(id, isOwner && isCollaborative);
-  const createInvite = useCreatePlaylistInvite(id);
-  const revokeInvite = useRevokePlaylistInvite(id);
-  const addCollaborator = useAddPlaylistCollaborator(id);
   const removeCollaborator = useRemovePlaylistCollaborator(id);
-  const clipboard = useCopyText();
-
-  const [showQr, setShowQr] = useState(false);
-  const [email, setEmail] = useState("");
-  const [emailValidation, setEmailValidation] = useState<string | null>(null);
-  const emailInputId = useId();
-  const emailErrorId = useId();
-
-  const invite = inviteQuery.data?.invite ?? null;
-  const inviteUrl =
-    isClient && invite
-      ? new URL(playlistJoinPath(invite.token), window.location.origin).toString()
-      : "";
-
-  const busy =
-    toggleCollaborative.isPending ||
-    createInvite.isPending ||
-    revokeInvite.isPending ||
-    addCollaborator.isPending;
-
-  function submitEmailInvite(event: FormEvent) {
-    event.preventDefault();
-    if (addCollaborator.isPending) return;
-    const trimmed = email.trim();
-    const invalid = emailError(trimmed);
-    setEmailValidation(invalid);
-    if (invalid) return;
-    addCollaborator.mutate(trimmed, {
-      onSuccess: () => {
-        setEmail("");
-        setEmailValidation(null);
-      },
-    });
-  }
-
-  function handleRotateOrCreateInvite(isRotation: boolean) {
-    if (createInvite.isPending) return;
-    createInvite.mutate(undefined, {
-      onSuccess: () => {
-        toast.success(
-          isRotation
-            ? "Neuer Einladungslink erstellt. Der alte Link ist nicht mehr gültig."
-            : "Einladungslink erstellt.",
-        );
-      },
-    });
-  }
 
   const ownerName = playlist.owner_name || "Unbekannt";
 
@@ -140,7 +265,7 @@ export default function CollaboratorsDialog({
       open
       size="md"
       onClose={onClose}
-      title={isOwner ? "Mitwirkende & Einladung" : "Mitwirkende"}
+      title={isOwner ? "Mitwirkende & Einladungen" : "Mitwirkende"}
       footer={
         <>
           {!isOwner && isCollaborator && (
@@ -169,8 +294,8 @@ export default function CollaboratorsDialog({
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-muted">
                   {isCollaborative
-                    ? "Beim Deaktivieren werden Einladungslinks widerrufen; bestehende Mitwirkende behalten Lesezugriff."
-                    : "Aktiviere die Zusammenarbeit, um Einladungslinks zu erstellen oder Personen per E-Mail hinzuzufügen."}
+                    ? "Beim Deaktivieren werden offene Einladungen zurückgezogen; bestehende Mitwirkende behalten Lesezugriff."
+                    : "Aktiviere die Zusammenarbeit, um Personen mit Konto einzuladen."}
                 </p>
               </div>
               <button
@@ -214,171 +339,25 @@ export default function CollaboratorsDialog({
           </div>
         )}
 
-        {isOwner && isCollaborative && (
-          <section aria-labelledby="collab-invite-heading" className="flex flex-col gap-3">
-            <h3 id="collab-invite-heading" className="label-mono">
-              Einladungslink
+        {isOwner && !isCollaborative && (
+          <section
+            aria-labelledby="collab-invite-off-heading"
+            className="flex flex-col gap-2.5"
+          >
+            <h3 id="collab-invite-off-heading" className="label-mono">
+              Personen einladen
             </h3>
-            <QueryError label="Der Einladungslink" query={inviteQuery} />
-            {inviteQuery.isLoading ? (
-              <div role="status" aria-label="Einladungslink wird geladen" className="skeleton h-11 w-full rounded-[var(--radius-control)]" />
-            ) : invite ? (
-              <>
-                <div className="flex items-center gap-2">
-                  <input
-                    readOnly
-                    value={inviteUrl}
-                    aria-label="Einladungslink"
-                    onFocus={(event) => event.currentTarget.select()}
-                    className="field-input min-w-0 flex-1 font-mono text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void clipboard.copy(inviteUrl)}
-                    disabled={!inviteUrl}
-                    aria-label="Einladungslink kopieren"
-                    className="action-primary shrink-0 px-4"
-                  >
-                    {clipboard.copied ? (
-                      <CheckCircleIcon width={16} height={16} aria-hidden="true" />
-                    ) : (
-                      <CopyIcon width={16} height={16} aria-hidden="true" />
-                    )}
-                    <span>{clipboard.copied ? "Kopiert" : "Kopieren"}</span>
-                  </button>
-                </div>
-
-                {showQr && inviteUrl && (
-                  <div className="w-fit rounded-[var(--radius-card)] bg-white p-2">
-                    <QRCodeSVG
-                      value={inviteUrl}
-                      size={144}
-                      level="M"
-                      marginSize={1}
-                      title={`QR-Code zur Einladung für ${playlist.name}`}
-                      className="h-auto w-28"
-                    />
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowQr((value) => !value)}
-                    className="action-secondary min-h-9 px-3 text-xs"
-                  >
-                    {showQr ? "QR-Code ausblenden" : "QR-Code anzeigen"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleRotateOrCreateInvite(true)}
-                    className="action-secondary min-h-9 px-3 text-xs"
-                  >
-                    <RefreshIcon
-                      width={14}
-                      height={14}
-                      aria-hidden="true"
-                      className={createInvite.isPending ? "animate-spin" : undefined}
-                    />
-                    {createInvite.isPending ? "Wird erneuert…" : "Link erneuern"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => revokeInvite.mutate()}
-                    className="action-secondary action-danger min-h-9 border-danger/35 px-3 text-xs hover:border-danger/70"
-                  >
-                    <TrashIcon width={14} height={14} aria-hidden="true" />
-                    {revokeInvite.isPending ? "Wird widerrufen…" : "Widerrufen"}
-                  </button>
-                </div>
-              </>
-            ) : !inviteQuery.isError ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-control)] border border-dashed border-border px-4 py-3">
-                <p className="text-xs leading-relaxed text-muted">
-                  Derzeit ist kein Einladungslink aktiv.
-                </p>
-                <button
-                  type="button"
-                  disabled={createInvite.isPending}
-                  onClick={() => handleRotateOrCreateInvite(false)}
-                  className="action-secondary min-h-9 px-3.5 text-xs"
-                >
-                  <LinkIcon width={15} height={15} aria-hidden="true" />
-                  {createInvite.isPending
-                    ? "Wird erstellt…"
-                    : "Einladungslink erstellen"}
-                </button>
-              </div>
-            ) : null}
-
-            {createInvite.isError && (
-              <p role="alert" className="error-panel">
-                Einladungslink konnte nicht erstellt werden:{" "}
-                {createInvite.error.message}
-              </p>
-            )}
-            {revokeInvite.isError && (
-              <p role="alert" className="error-panel">
-                Einladungslink konnte nicht widerrufen werden:{" "}
-                {revokeInvite.error.message}
-              </p>
-            )}
+            <div className="flex items-start gap-3 rounded-[var(--radius-control)] border border-dashed border-border px-4 py-3 text-sm text-muted">
+              <InfoCircleIcon width={18} height={18} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                Einladen ist nur möglich, solange die gemeinsame Bearbeitung aktiv ist. Schalte sie oben ein, um Konten zu suchen und einzuladen.
+              </span>
+            </div>
           </section>
         )}
 
-        {isOwner && isCollaborative && (
-          <form onSubmit={submitEmailInvite} noValidate className="flex flex-col gap-2">
-            <label htmlFor={emailInputId} className="label-mono">
-              Direkt per E-Mail einladen
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                id={emailInputId}
-                type="email"
-                inputMode="email"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                value={email}
-                onChange={(event) => {
-                  setEmail(event.target.value);
-                  setEmailValidation(null);
-                  if (addCollaborator.isError) addCollaborator.reset();
-                }}
-                placeholder="name@beispiel.de"
-                disabled={addCollaborator.isPending}
-                aria-invalid={
-                  emailValidation || addCollaborator.isError ? true : undefined
-                }
-                aria-describedby={emailValidation ? emailErrorId : undefined}
-                className="field-input min-w-0 flex-1 text-sm"
-              />
-              <button
-                type="submit"
-                disabled={addCollaborator.isPending || !email.trim()}
-                className="action-secondary shrink-0 px-4"
-              >
-                <UserPlusIcon width={16} height={16} aria-hidden="true" />
-                <span>
-                  {addCollaborator.isPending ? "Lädt…" : "Hinzufügen"}
-                </span>
-              </button>
-            </div>
-            {emailValidation && (
-              <span id={emailErrorId} role="alert" className="text-xs text-danger">
-                {emailValidation}
-              </span>
-            )}
-            {addCollaborator.isError && (
-              <p role="alert" className="error-panel mt-1">
-                Person konnte nicht hinzugefügt werden:{" "}
-                {addCollaborator.error.message}
-              </p>
-            )}
-          </form>
-        )}
+        {canInvite && <InviteSearch id={id} playlistName={playlist.name} />}
+        {canInvite && <PendingInvitations id={id} />}
 
         <section aria-labelledby="collab-members-heading" className="flex flex-col gap-2.5">
           <div className="flex items-center justify-between gap-2">

@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import test, { beforeEach } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { compileInto, compileSource, moduleUrl } from "./support/compile.mjs";
 import {
   canEditPlaylistTracks,
+  canInviteToPlaylist,
+  invitationDateLabel,
+  invitationUserName,
+  inviteCandidateAction,
+  inviteSearchQuery,
   isOwnedLibraryPlaylist,
   libraryPlaylistSubtitle,
   playlistHeroEyebrow,
@@ -12,10 +18,32 @@ import {
   sidebarPlaylistMeta,
 } from "../src/lib/playlistPermissions.ts";
 
+const apiResolver = registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "@/lib/searchDecoders") {
+      return nextResolve(new URL("../src/lib/searchDecoders.ts", import.meta.url).href, context);
+    }
+    if (specifier === "@/lib/releaseRadar") {
+      return nextResolve(new URL("../src/lib/releaseRadar.ts", import.meta.url).href, context);
+    }
+    return nextResolve(specifier, context);
+  },
+});
+const { api, ApiError } = await import("../src/lib/api.ts");
+apiResolver.deregister();
+
+const idleMutation = () => ({ isPending: false, isError: false, error: null, variables: undefined, mutate() {}, reset() {} });
+
 const fixture = {
   playlist: null,
-  invitePreview: null,
-  acceptState: { isPending: false, isError: false, error: null, mutate() {} },
+  searchTerm: "",
+  candidates: null,
+  outgoing: null,
+  incoming: null,
+  inviteState: idleMutation(),
+  withdrawState: idleMutation(),
+  acceptState: idleMutation(),
+  declineState: idleMutation(),
   addModal: {
     track: null,
     session: 1,
@@ -54,6 +82,7 @@ const iconsStub = moduleUrl(`
   export const GripIcon = ${emptyIcon};
   export const PlusIcon = ${emptyIcon};
   export const CloseIcon = ${emptyIcon};
+  export const UserPlusIcon = ${emptyIcon};
   export const SearchIcon = ${emptyIcon};
   export const RadioIcon = ${emptyIcon};
   export const DedupIcon = ${emptyIcon};
@@ -135,9 +164,22 @@ const commonStubs = {
     export const useCreatePlaylist = () => ({ isPending: false, mutate() {} });
     export const useRemoveFromPlaylist = () => ({ isPending: false, isError: false, error: null, mutate() {} });
     export const useReorderPlaylist = () => ({ isPending: false, isError: false, error: null, mutate() {} });
-    export const usePlaylistInvitePreview = () => globalThis.__collabFixture.invitePreview;
-    export const useAcceptPlaylistInvite = () => globalThis.__collabFixture.acceptState;
+    export const useSetPlaylistCollaborative = () => ({ isPending: false, isError: false, error: null, mutate() {} });
+    export const useRemovePlaylistCollaborator = () => ({ isPending: false, isError: false, error: null, variables: undefined, mutate() {} });
+    export const usePlaylistInviteCandidates = (_id, query, enabled) => {
+      globalThis.__collabFixture.candidateRequest = { query, enabled };
+      return globalThis.__collabFixture.candidates;
+    };
+    export const usePlaylistOutgoingInvitations = () => globalThis.__collabFixture.outgoing;
+    export const useInviteToPlaylist = () => globalThis.__collabFixture.inviteState;
+    export const useWithdrawPlaylistInvitation = () => globalThis.__collabFixture.withdrawState;
+    export const useMyPlaylistInvitations = () => globalThis.__collabFixture.incoming;
+    export const useAcceptPlaylistInvitation = () => globalThis.__collabFixture.acceptState;
+    export const useDeclinePlaylistInvitation = () => globalThis.__collabFixture.declineState;
   `),
+  "@/hooks/useDebouncedValue": moduleUrl(
+    `export const useDebouncedValue = () => globalThis.__collabFixture.searchTerm;`,
+  ),
   "@/store/player": moduleUrl(
     `export const usePlayerStore = (selector) => selector({ playQueue() {}, toggle() {}, toggleShuffle() {}, addToQueue() {}, addManyToQueue() {}, index: -1, queue: [], origins: [], queueContext: null, isPlaying: false, shuffle: false });`,
   ),
@@ -203,6 +245,7 @@ await compileInto(
     ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
     ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
     ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
+    ["./TabHeader", "src/app/library/_tabs/TabHeader.tsx"],
     ["./collectionPlayback", "src/app/playlist/_components/collectionPlayback.ts"],
     ["./collectionMeta", "src/app/playlist/_components/collectionMeta.ts"],
     ["../_components/collectionMeta", "src/app/playlist/_components/collectionMeta.ts"],
@@ -241,8 +284,11 @@ commonStubs["../_components/PlaylistActions"] = await compileSource(
 const { default: PlaylistPage } = await import(
   await compileSource("src/app/playlist/[id]/page.tsx", commonStubs, "PlaylistPage"),
 );
-const { default: PlaylistJoinPage } = await import(
-  await compileSource("src/app/playlist/join/[token]/page.tsx", commonStubs, "PlaylistJoinPage"),
+const { default: CollaboratorsDialog } = await import(
+  await compileSource("src/app/playlist/_components/CollaboratorsDialog.tsx", commonStubs, "CollaboratorsDialog"),
+);
+const { default: PlaylistInvitations } = await import(
+  await compileSource("src/app/library/_tabs/PlaylistInvitations.tsx", commonStubs, "PlaylistInvitations"),
 );
 const { default: AddToPlaylistModal } = await import(
   await compileSource("src/components/AddToPlaylistModal.tsx", commonStubs, "AddToPlaylistModal"),
@@ -269,6 +315,18 @@ const failure = (error) => ({
   refetch: async () => {},
 });
 
+const idle = () => ({
+  data: undefined,
+  error: null,
+  isPending: true,
+  isLoading: false,
+  isError: false,
+  isFetching: false,
+  isSuccess: false,
+  isPlaceholderData: false,
+  refetch: async () => {},
+});
+
 const baseTrack = (id, title, addedBy = null) => ({
   id,
   playlist_entry_id: Number(id) * 10,
@@ -282,8 +340,15 @@ const baseTrack = (id, title, addedBy = null) => ({
 
 beforeEach(() => {
   fixture.playlist = success(null);
-  fixture.invitePreview = success(null);
-  fixture.acceptState = { isPending: false, isError: false, error: null, mutate() {} };
+  fixture.searchTerm = "";
+  fixture.candidates = idle();
+  fixture.candidateRequest = null;
+  fixture.outgoing = success([]);
+  fixture.incoming = success([]);
+  fixture.inviteState = idleMutation();
+  fixture.withdrawState = idleMutation();
+  fixture.acceptState = idleMutation();
+  fixture.declineState = idleMutation();
   fixture.addModal = {
     track: null,
     session: 1,
@@ -399,55 +464,6 @@ test("PlaylistPage renders paused collaborator view as read-only with pause noti
   assert.doesNotMatch(html, /Playlist löschen/);
 });
 
-test("PlaylistJoinPage rejects malformed tokens, shows specific 404/410 errors, and renders preview/member states", () => {
-  const invalidHtml = renderToStaticMarkup(
-    createElement(PlaylistJoinPage, { params: { token: "short" } }),
-  );
-  assert.match(invalidHtml, /Ungültiger Einladungslink/);
-
-  fixture.invitePreview = failure(new FakeApiError(404, "Not found"));
-  const notFoundHtml = renderToStaticMarkup(
-    createElement(PlaylistJoinPage, { params: { token: "valid-token-12345678" } }),
-  );
-  assert.match(notFoundHtml, /Einladungslink nicht gefunden/);
-
-  fixture.invitePreview = failure(new FakeApiError(410, "Revoked"));
-  const goneHtml = renderToStaticMarkup(
-    createElement(PlaylistJoinPage, { params: { token: "valid-token-12345678" } }),
-  );
-  assert.match(goneHtml, /Einladungslink nicht mehr aktiv/);
-
-  fixture.invitePreview = success({
-    playlist_id: 51,
-    name: "Kellerparty 2026",
-    description: "Bringt Songs mit",
-    cover_url: null,
-    track_count: 12,
-    collaborator_count: 2,
-    owner: { id: 3, display_name: "Tariq", avatar_url: null },
-    is_owner: false,
-    already_collaborator: false,
-  });
-  const previewHtml = renderToStaticMarkup(
-    createElement(PlaylistJoinPage, { params: { token: "valid-token-12345678" } }),
-  );
-  assert.match(previewHtml, /Kellerparty 2026/);
-  assert.match(previewHtml, /Tariq/);
-  assert.match(previewHtml, /12 Titel/);
-  assert.match(previewHtml, /3 Personen/);
-  assert.match(previewHtml, /Playlist beitreten/);
-
-  fixture.invitePreview = success({
-    ...fixture.invitePreview.data,
-    already_collaborator: true,
-  });
-  const memberHtml = renderToStaticMarkup(
-    createElement(PlaylistJoinPage, { params: { token: "valid-token-12345678" } }),
-  );
-  assert.match(memberHtml, /Du bist bereits Mitwirkende:r dieser Playlist/);
-  assert.match(memberHtml, /href="\/playlist\/51-kellerparty-2026"[^>]*>Playlist öffnen/);
-});
-
 test("PlaylistPage omits Hinzugefügt von on solo playlists with owner-attributed tracks, but keeps it if an external contributor added a track", () => {
   fixture.playlist = success({
     id: 2,
@@ -496,4 +512,217 @@ test("AddToPlaylistModal includes active collaborative playlists and excludes re
   assert.match(html, /Gemeinsam · von Jule/);
   assert.doesNotMatch(html, /Pausiert/);
   assert.doesNotMatch(html, /Ohne Rechteflags/);
+});
+
+test("invitation helpers gate inviting on ownership plus collaboration and map candidate status to actions", () => {
+  assert.equal(canInviteToPlaylist({ is_owner: true, is_collaborative: true }), true);
+  assert.equal(canInviteToPlaylist({ is_owner: true, is_collaborative: false }), false);
+  assert.equal(canInviteToPlaylist({ is_owner: false, is_collaborative: true }), false);
+
+  assert.equal(inviteSearchQuery("  Ju "), "Ju");
+  assert.equal(inviteSearchQuery("j"), "j");
+  assert.equal(inviteSearchQuery("   "), null);
+  assert.equal(inviteSearchQuery(""), null);
+
+  assert.deepEqual(inviteCandidateAction("available"), { label: "Einladen", canInvite: true });
+  assert.deepEqual(inviteCandidateAction("invited"), { label: "Eingeladen", canInvite: false });
+  assert.deepEqual(inviteCandidateAction("collaborator"), { label: "Mitwirkend", canInvite: false });
+  assert.throws(() => inviteCandidateAction("pending"), /Unbekannter Einladungsstatus vom Server: pending/);
+
+  assert.equal(invitationUserName({ id: 5, display_name: "Mara" }), "Mara");
+  assert.equal(invitationUserName({ id: 5, display_name: null }), "Nutzer #5");
+  assert.equal(invitationDateLabel("2026-11-20T12:00:00Z"), "Eingeladen am 20. Nov. 2026");
+  assert.throws(() => invitationDateLabel("gestern"), /Ungültiger Einladungszeitpunkt vom Server: gestern/);
+});
+
+test("invitation API client calls the account-invitation endpoints with the documented methods and bodies", async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, method: options.method ?? "GET", body: options.body ?? null });
+    if (options.method === "DELETE" || String(url).endsWith("/decline")) return new Response(null, { status: 204 });
+    if (String(url).endsWith("/accept")) {
+      return Response.json({ playlist_id: 51, playlist_name: "Kellerparty 2026", joined: true, already_member: false, role: "editor" });
+    }
+    if (options.method === "POST") {
+      return Response.json({ invitee: { id: 3, display_name: "Tariq", avatar_url: null }, invited_by: null, created_at: "2026-11-26T10:00:00Z" }, { status: 201 });
+    }
+    return Response.json([]);
+  });
+
+  assert.deepEqual(await api.playlistInviteCandidates("1", "Jü & Co"), []);
+  assert.deepEqual(await api.playlistInvitations("1"), []);
+  assert.equal((await api.inviteToPlaylist("1", 3)).invitee.display_name, "Tariq");
+  assert.equal(await api.withdrawPlaylistInvitation("1", 3), undefined);
+  assert.deepEqual(await api.myPlaylistInvitations(), []);
+  assert.equal((await api.acceptPlaylistInvitation(7)).playlist_id, 51);
+  assert.equal(await api.declinePlaylistInvitation(8), undefined);
+
+  assert.deepEqual(calls, [
+    { url: "/api/playlists/1/invite-candidates?q=J%C3%BC%20%26%20Co", method: "GET", body: null },
+    { url: "/api/playlists/1/invitations", method: "GET", body: null },
+    { url: "/api/playlists/1/invitations", method: "POST", body: JSON.stringify({ user_id: 3 }) },
+    { url: "/api/playlists/1/invitations/3", method: "DELETE", body: null },
+    { url: "/api/playlists/invitations", method: "GET", body: null },
+    { url: "/api/playlists/invitations/7/accept", method: "POST", body: null },
+    { url: "/api/playlists/invitations/8/decline", method: "POST", body: null },
+  ]);
+  for (const removed of ["playlistInvite", "createPlaylistInvite", "revokePlaylistInvite", "previewPlaylistInvite", "acceptPlaylistInvite", "addPlaylistCollaborator"]) {
+    assert.equal(removed in api, false, `${removed} must be gone`);
+  }
+});
+
+test("invitation API errors keep status and the server's German detail", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ detail: "Aktiviere zuerst die Zusammenarbeit für diese Playlist." }, { status: 409 }),
+  );
+  await assert.rejects(api.inviteToPlaylist("2", 3), (error) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 409);
+    assert.match(error.message, /Aktiviere zuerst die Zusammenarbeit/);
+    return true;
+  });
+});
+
+const ownerPlaylist = (overrides = {}) => ({
+  id: 1,
+  name: "Sommer-Mix",
+  is_owner: true,
+  owner_id: 1,
+  owner_name: "Demo",
+  is_collaborative: true,
+  is_collaborator: false,
+  collaborators: [{ user_id: 2, display_name: "Jule", avatar_url: null, role: "editor" }],
+  collaborator_count: 1,
+  tracks: [],
+  ...overrides,
+});
+
+function renderDialog(playlist) {
+  return renderToStaticMarkup(
+    createElement(CollaboratorsDialog, { id: String(playlist.id), playlist, onClose() {}, onRequestLeave() {} }),
+  );
+}
+
+test("CollaboratorsDialog lets the owner search accounts, shows per-status buttons, and lists pending invitations to withdraw", () => {
+  fixture.searchTerm = "a";
+  fixture.candidates = success([
+    { user: { id: 3, display_name: "Tariq", avatar_url: null }, status: "available" },
+    { user: { id: 5, display_name: "Mara", avatar_url: null }, status: "invited" },
+    { user: { id: 7, display_name: "Jana", avatar_url: null }, status: "collaborator" },
+  ]);
+  fixture.outgoing = success([
+    { invitee: { id: 5, display_name: "Mara", avatar_url: null }, invited_by: { id: 1, display_name: "Demo" }, created_at: "2026-11-20T12:00:00Z" },
+  ]);
+
+  const html = renderDialog(ownerPlaylist());
+  assert.match(html, /data-title="Mitwirkende &amp; Einladungen"/);
+  assert.match(html, /Personen einladen/);
+  assert.match(html, /type="search"/);
+  assert.deepEqual(fixture.candidateRequest, { query: "a", enabled: true });
+  assert.match(html, /aria-label="Tariq einladen"[^>]*>Einladen</);
+  assert.match(html, /<button type="button" disabled=""[^>]*>Eingeladen<\/button>/);
+  assert.match(html, /<button type="button" disabled=""[^>]*>Mitwirkend<\/button>/);
+  assert.match(html, /Offene Einladungen/);
+  assert.match(html, /Eingeladen am 20\. Nov\. 2026/);
+  assert.match(html, /aria-label="Einladung an Mara zurückziehen"[^>]*>Zurückziehen</);
+  assert.match(html, /href="\/users\/2"[^>]*>Jule<\/a>/);
+  assert.doesNotMatch(html, /E-Mail|Einladungslink|QR-Code/);
+});
+
+test("CollaboratorsDialog surfaces search, invite and pending-list failures instead of empty results", () => {
+  fixture.searchTerm = "zz";
+  fixture.candidates = failure(new Error("API /playlists/1/invite-candidates: HTTP 503"));
+  fixture.outgoing = failure(new Error("API /playlists/1/invitations: HTTP 500"));
+  fixture.inviteState = {
+    ...idleMutation(),
+    isError: true,
+    error: new Error("API /playlists/1/invitations: Dieses Konto ist bereits eingeladen."),
+    variables: { userId: 3, name: "Tariq" },
+  };
+
+  const html = renderDialog(ownerPlaylist());
+  assert.match(html, /Die Suchergebnisse konnten nicht geladen werden: API \/playlists\/1\/invite-candidates: HTTP 503/);
+  assert.match(html, /Die offenen Einladungen konnten nicht geladen werden: API \/playlists\/1\/invitations: HTTP 500/);
+  assert.match(html, /Tariq konnte nicht eingeladen werden: API \/playlists\/1\/invitations: Dieses Konto ist bereits eingeladen\./);
+  assert.doesNotMatch(html, /Kein Konto mit/);
+});
+
+test("CollaboratorsDialog replaces the search with a clear notice while collaboration is off", () => {
+  fixture.searchTerm = "a";
+  const html = renderDialog(ownerPlaylist({ is_collaborative: false }));
+  assert.match(html, /Einladen ist nur möglich, solange die gemeinsame Bearbeitung aktiv ist/);
+  assert.doesNotMatch(html, /type="search"/);
+  assert.doesNotMatch(html, /Offene Einladungen/);
+  assert.equal(fixture.candidateRequest, null);
+});
+
+test("CollaboratorsDialog shows collaborators only the member list, without invite controls", () => {
+  fixture.searchTerm = "a";
+  const html = renderDialog(
+    ownerPlaylist({ is_owner: false, is_collaborator: true, owner_id: 2, owner_name: "Jule", collaborators: [{ user_id: 1, display_name: "Demo", role: "editor" }] }),
+  );
+  assert.match(html, /data-title="Mitwirkende"/);
+  assert.doesNotMatch(html, /Personen einladen|Offene Einladungen|Zurückziehen/);
+  assert.equal(fixture.candidateRequest, null);
+});
+
+test("PlaylistInvitations lists incoming invitations with cover, owner, inviter, track count and answer buttons", () => {
+  fixture.incoming = success([
+    {
+      id: 2,
+      playlist: {
+        playlist_id: 51,
+        name: "Kellerparty 2026",
+        description: null,
+        cover_url: "/cover/51.jpg",
+        track_count: 14,
+        collaborator_count: 1,
+        owner: { id: 3, display_name: "Tariq", avatar_url: null },
+      },
+      invited_by: { id: 3, display_name: "Tariq", avatar_url: null },
+      created_at: "2026-11-21T16:00:00Z",
+    },
+  ]);
+  const html = renderToStaticMarkup(createElement(PlaylistInvitations));
+  assert.match(html, /<h2 id="playlist-invitations-heading">Einladungen<\/h2>/);
+  assert.match(html, /Eine gemeinsame Playlist wartet auf deine Antwort/);
+  assert.match(html, /Kellerparty 2026/);
+  assert.match(html, /src="\/cover\/51.jpg"/);
+  assert.match(html, /von Tariq · 14 Titel/);
+  assert.match(html, /Eingeladen von <strong[^>]*>Tariq<\/strong>/);
+  assert.match(html, /aria-label="Einladung zu „Kellerparty 2026“ annehmen"[^>]*>Annehmen</);
+  assert.match(html, /aria-label="Einladung zu „Kellerparty 2026“ ablehnen"[^>]*>Ablehnen</);
+});
+
+test("PlaylistInvitations stays hidden without invitations but reports a failed load", () => {
+  fixture.incoming = success([]);
+  assert.equal(renderToStaticMarkup(createElement(PlaylistInvitations)), "");
+  fixture.incoming = idle();
+  assert.equal(renderToStaticMarkup(createElement(PlaylistInvitations)), "");
+  fixture.incoming = failure(new Error("API /playlists/invitations: HTTP 502"));
+  const html = renderToStaticMarkup(createElement(PlaylistInvitations));
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Deine Playlist-Einladungen konnten nicht geladen werden: API \/playlists\/invitations: HTTP 502/);
+});
+
+test("PlaylistInvitations shows accept and decline failures with the server message", () => {
+  fixture.incoming = success([
+    {
+      id: 2,
+      playlist: { playlist_id: 51, name: "Kellerparty 2026", track_count: 14, collaborator_count: 1, owner: { id: 3, display_name: "Tariq" } },
+      invited_by: null,
+      created_at: "2026-11-21T16:00:00Z",
+    },
+  ]);
+  fixture.acceptState = { ...idleMutation(), isError: true, error: new Error("API /playlists/invitations/2/accept: Einladung nicht gefunden."), variables: 2 };
+  fixture.declineState = {
+    ...idleMutation(),
+    isError: true,
+    error: new Error("API /playlists/invitations/2/decline: HTTP 500"),
+    variables: { invitationId: 2, playlistName: "Kellerparty 2026" },
+  };
+  const html = renderToStaticMarkup(createElement(PlaylistInvitations));
+  assert.doesNotMatch(html, /Eingeladen von/);
+  assert.match(html, /Einladung konnte nicht angenommen werden: API \/playlists\/invitations\/2\/accept: Einladung nicht gefunden\./);
+  assert.match(html, /Einladung zu „Kellerparty 2026“ konnte nicht abgelehnt werden: API \/playlists\/invitations\/2\/decline: HTTP 500/);
 });

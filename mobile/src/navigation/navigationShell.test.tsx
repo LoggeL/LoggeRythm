@@ -199,10 +199,6 @@ vi.mock('../screens/PartyScreen', () => ({
   default: 'PartyScreen',
   InvalidPartyLink: 'InvalidPartyLink',
 }));
-vi.mock('../screens/PlaylistInviteScreen', () => ({
-  default: 'PlaylistInviteScreen',
-  InvalidPlaylistInviteLink: 'InvalidPlaylistInviteLink',
-}));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 
