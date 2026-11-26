@@ -26,6 +26,11 @@ class DjTransitionClip(BaseModel):
     join_out_s: float
     a_speed: float
     limiter_reduction_db: float
+    a_start_skip_s: float = Field(
+        description="Seconds ffmpeg dropped at the start of A's file (LAME delay + 529 samples for tagged MP3, else 0); "
+        "the player maps its own position onto the clip's timeline with it",
+    )
+    b_start_skip_s: float = Field(description="Same for B")
 
 
 class DjTransition(BaseModel):

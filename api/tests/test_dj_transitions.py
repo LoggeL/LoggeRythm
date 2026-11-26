@@ -349,7 +349,8 @@ class DjApiTests(unittest.TestCase):
         timeline = {"render_version": 1, "duration_s": 27.0, "a_start_s": 150.0, "b_offset_s": -4.0,
                     "cue_s": 8.0, "deck_start_s": 1.0, "join_in_s": 6.1, "primary_seek_s": 6.4,
                     "mix_start_s": 8.0, "bass_swap_s": 15.5, "mix_end_s": 23.0, "join_out_s": 24.2,
-                    "a_speed": 1.024, "limiter_reduction_db": 1.2}
+                    "a_speed": 1.024, "limiter_reduction_db": 1.2,
+                    "a_start_skip_s": 0.025057, "b_start_skip_s": 0.0}
         Path(meta).write_text(json.dumps(timeline))
         r = self.client.get("/api/dj/transition", params=self._query(), headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
@@ -447,6 +448,44 @@ class DjJobQueueTest(unittest.TestCase):
             service._run_job(*service._next_job())
         self.assertIsNone(service._running)
         self.assertIn("worker exited 1", service._failures["x"][1])
+
+
+class DjAudioIoTest(unittest.TestCase):
+    """ffmpeg round trips (silent; nothing is played). The api-contract workflow installs
+    ffmpeg; the self-hosted Android runner has none and reports these as skipped."""
+
+    def setUp(self) -> None:
+        import shutil
+
+        if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+            raise unittest.SkipTest("ffmpeg/ffprobe not installed on this test host")
+
+    def test_flac_clip_round_trips_without_offset(self) -> None:
+        from app.services.dj import audio
+
+        x = (np.random.default_rng(3).standard_normal((SR * 2, 2)) * 0.05).astype(np.float32)
+        x[SR // 2] = 0.9
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "clip.flac")
+            audio.write_flac(path, x)
+            y = audio.decode(path)
+            self.assertEqual(audio.start_skip_s(path), 0.0)
+        self.assertEqual(y.shape, x.shape)
+        self.assertLess(float(np.max(np.abs(x - y))), 2.0 / 32768)
+
+    def test_start_skip_of_a_tagged_mp3_is_encoder_plus_decoder_delay(self) -> None:
+        import subprocess
+
+        from app.services.dj import audio
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "t.mp3")
+            subprocess.run(
+                ["ffmpeg", "-v", "error", "-nostdin", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                 "-t", "1", "-codec:a", "libmp3lame", "-b:a", "320k", path],
+                check=True, capture_output=True,
+            )
+            self.assertAlmostEqual(audio.start_skip_s(path) * SR, 576 + 529, delta=0.5)
 
 
 class DjClipPruneTest(unittest.TestCase):

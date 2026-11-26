@@ -1,8 +1,12 @@
 """Audio I/O for DJ transitions.
 
 Every decode goes through one pinned ffmpeg invocation so analysis and rendering see
-exactly the same sample timeline. ffmpeg trims the LAME/Xing encoder delay like
-Media3's Mp3Extractor does, so these times match the player's media positions.
+exactly the same sample timeline. For an MP3 with a LAME/Lavf Info tag, ffmpeg skips
+the encoder delay plus the 529-sample decoder delay; without a tag it skips nothing.
+The player's positions match this timeline only up to a per-track offset that depends
+on its own trimming state, so every clip carries ``start_skip_s`` (see
+``start_skip_s()``) and the Android player applies the offset
+(``LoggeRythmDjDecoderOffset``).
 Beat This!'s own ``load_audio`` is deliberately not used: it silently falls back
 across torchaudio/soundfile/madmom, and each treats MP3 encoder delay differently.
 """
@@ -54,10 +58,11 @@ def decode(path: str) -> np.ndarray:
 
 
 def write_flac(path: str, audio: np.ndarray) -> None:
-    """Encode as 16-bit FLAC. FLAC has no encoder delay and Media3 seeks it
-    sample-exactly, so the player's reported clip position is the clip sample
-    index even after seeks (MP3 is not: Media3 only trims the LAME encoder delay
-    on the first flush, so every later seek would shift the audio by ~25 ms)."""
+    """Encode as 16-bit FLAC with 1024-sample frames. FLAC has no encoder delay, so
+    Media3's reported position is the clip sample index in every state; MP3 is not
+    (Media3 trims the encoder delay only after a reconfiguration, so a seek shifts it
+    by ~13 ms). Media3 starts a seek at the first frame at or after the target, so the
+    small frames keep that jump under 24 ms."""
     if audio.ndim != 2 or audio.shape[1] != CHANNELS:
         raise AudioError(f"write_flac expects (n, {CHANNELS}) audio, got {audio.shape}")
     peak = float(np.max(np.abs(audio)))
@@ -66,7 +71,8 @@ def write_flac(path: str, audio: np.ndarray) -> None:
     cmd = [
         _ffmpeg(), "-v", "error", "-nostdin", "-y",
         "-f", "f32le", "-ar", str(SR), "-ac", str(CHANNELS), "-i", "-",
-        "-codec:a", "flac", "-sample_fmt", "s16", "-compression_level", "5", "-f", "flac", path,
+        "-codec:a", "flac", "-sample_fmt", "s16", "-compression_level", "5", "-frame_size", "1024",
+        "-f", "flac", path,
     ]
     try:
         proc = subprocess.run(
@@ -81,3 +87,30 @@ def write_flac(path: str, audio: np.ndarray) -> None:
         raise AudioError(
             f"ffmpeg failed to encode {path}: {proc.stderr.decode(errors='replace').strip()}"
         )
+
+
+def start_skip_s(path: str) -> float:
+    """Seconds of decoded audio ffmpeg drops at the start of ``path`` (its ``start_time``).
+
+    LAME/Lavf-tagged MP3: (encoder delay + 529) / rate. Untagged MP3, FLAC: 0.
+    """
+    exe = shutil.which("ffprobe")
+    if exe is None:
+        raise AudioError("DJ transitions require ffprobe on PATH, but it was not found")
+    cmd = [exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=start_time",
+           "-of", "default=noprint_wrappers=1:nokey=1", path]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=_FFMPEG_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired as exc:
+        raise AudioError(f"ffprobe timed out on {path}") from exc
+    out = proc.stdout.decode(errors="replace").strip()
+    err = proc.stderr.decode(errors="replace").strip()
+    if proc.returncode != 0 or err:
+        raise AudioError(f"ffprobe failed on {path}: {err or proc.returncode}")
+    try:
+        value = float(out)
+    except ValueError as exc:
+        raise AudioError(f"ffprobe returned no start_time for {path}: {out!r}") from exc
+    if not 0.0 <= value < 0.2:
+        raise AudioError(f"implausible start_time {value} s for {path}")
+    return value

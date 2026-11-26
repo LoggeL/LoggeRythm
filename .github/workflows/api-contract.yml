@@ -39,6 +39,9 @@ jobs:
           python -m app.openapi_contract check
           python -m app.android_contract check
 
+      - name: Install ffmpeg for audio tests
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+
       - name: Build DJ time-stretch library
         working-directory: api
         run: app/services/dj/native/build.sh

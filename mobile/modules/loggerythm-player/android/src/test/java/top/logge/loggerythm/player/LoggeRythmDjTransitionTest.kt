@@ -30,7 +30,8 @@ class LoggeRythmDjTransitionTest {
     {"id":"0123456789abcdef0123456789abcdef","render_version":1,"duration_s":27.195,
      "a_start_s":118.741,"b_offset_s":14.526,"cue_s":8.0,"deck_start_s":1.0,"join_in_s":6.32,
      "primary_seek_s":6.62,"mix_start_s":8.02,"bass_swap_s":15.52,"mix_end_s":23.02,
-     "join_out_s":24.19,"a_speed":1.024,"limiter_reduction_db":2.8}
+     "join_out_s":24.19,"a_speed":1.024,"limiter_reduction_db":2.8,
+     "a_start_skip_s":0.025057,"b_start_skip_s":0.0}
   """.trimIndent()
 
   @Test
@@ -65,6 +66,21 @@ class LoggeRythmDjTransitionTest {
       LoggeRythmDjPlanResponse.parse(
         """{"status":"ready","kind":"beatmatch","reason":"OK","clip":${clipJson.replace("\"join_in_s\":6.32", "\"join_in_s\":0.5")}}""",
       )
+    }
+  }
+
+  @Test
+  fun decoderOffsetMapsPlayerPositionsOntoFfmpegsTimeline() {
+    val tagged = (576 + 529) / 44_100.0 // ffprobe start_time of a LAME-tagged MP3
+    // trimmed (prepare, item change, cross-item seek): both drop D + 529 -> no offset
+    assertEquals(0.0, LoggeRythmDjDecoderOffset.offsetMs("audio/mpeg", 44_100, 576, trimmed = true, startSkipS = tagged), 1e-9)
+    // after a seek within the item the encoder delay is no longer trimmed: player is D ahead
+    assertEquals(-576_000.0 / 44_100, LoggeRythmDjDecoderOffset.offsetMs("audio/mpeg", 44_100, 576, trimmed = false, startSkipS = tagged), 1e-9)
+    // untagged MP3: ffmpeg keeps the decoder delay, the player drops it
+    assertEquals(529_000.0 / 44_100, LoggeRythmDjDecoderOffset.offsetMs("audio/mpeg", 44_100, 0, trimmed = true, startSkipS = 0.0), 1e-9)
+    assertEquals(0.0, LoggeRythmDjDecoderOffset.offsetMs("audio/flac", 44_100, 0, trimmed = false, startSkipS = 0.0), 1e-9)
+    assertThrows(IllegalArgumentException::class.java) {
+      LoggeRythmDjDecoderOffset.offsetMs("audio/opus", 48_000, 0, trimmed = true, startSkipS = 0.0)
     }
   }
 

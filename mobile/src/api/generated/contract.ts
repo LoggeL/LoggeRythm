@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "21200852254eeddb4dcecb5e130d5a48768ba49d083684a584d1b369cd28de0d" as const;
+export const GENERATED_OPENAPI_SHA256 = "9fdfe593d19e0a95b734202dffbffb70021aeac4a65d8ba32e20da81ab203f0e" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -344,7 +344,9 @@ export interface DjTransitionWire {
 export interface DjTransitionClipWire {
   a_speed: number;
   a_start_s: number;
+  a_start_skip_s: number;
   b_offset_s: number;
+  b_start_skip_s: number;
   bass_swap_s: number;
   cue_s: number;
   deck_start_s: number;

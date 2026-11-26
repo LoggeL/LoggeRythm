@@ -1880,8 +1880,18 @@
             "title": "A Start S",
             "type": "number"
           },
+          "a_start_skip_s": {
+            "description": "Seconds ffmpeg dropped at the start of A's file (LAME delay + 529 samples for tagged MP3, else 0); the player maps its own position onto the clip's timeline with it",
+            "title": "A Start Skip S",
+            "type": "number"
+          },
           "b_offset_s": {
             "title": "B Offset S",
+            "type": "number"
+          },
+          "b_start_skip_s": {
+            "description": "Same for B",
+            "title": "B Start Skip S",
             "type": "number"
           },
           "bass_swap_s": {
@@ -1949,7 +1959,9 @@
           "mix_end_s",
           "join_out_s",
           "a_speed",
-          "limiter_reduction_db"
+          "limiter_reduction_db",
+          "a_start_skip_s",
+          "b_start_skip_s"
         ],
         "title": "DjTransitionClip",
         "type": "object"

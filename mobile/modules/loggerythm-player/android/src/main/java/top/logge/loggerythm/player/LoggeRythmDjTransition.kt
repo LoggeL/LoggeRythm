@@ -8,12 +8,16 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import java.io.File
 import java.io.IOException
 import java.net.URI
@@ -79,11 +83,15 @@ internal data class LoggeRythmDjClip(
   val mixEndS: Double,
   val joinOutS: Double,
   val aSpeed: Double,
+  /** Seconds ffmpeg dropped at the start of A's / B's file; see [LoggeRythmDjDecoderOffset]. */
+  val aStartSkipS: Double,
+  val bStartSkipS: Double,
 ) {
   init {
     require(Regex("^[0-9a-f]{32}$").matches(id)) { "dj-clip-id-invalid" }
     require(deckStartS < joinInS && joinInS < cueS && cueS <= mixStartS + 1.0) { "dj-clip-timeline-order" }
     require(primarySeekS < mixEndS && mixEndS < joinOutS && joinOutS < durationS) { "dj-clip-timeline-order" }
+    require(aStartSkipS in 0.0..0.2 && bStartSkipS in 0.0..0.2) { "dj-clip-start-skip-range" }
   }
 
   /** A media position (ms) for a clip position (ms); valid before [cueS]. */
@@ -106,6 +114,8 @@ internal data class LoggeRythmDjClip(
       mixEndS = json.getDouble("mix_end_s"),
       joinOutS = json.getDouble("join_out_s"),
       aSpeed = json.getDouble("a_speed"),
+      aStartSkipS = json.getDouble("a_start_skip_s"),
+      bStartSkipS = json.getDouble("b_start_skip_s"),
     )
   }
 }
@@ -136,6 +146,35 @@ internal sealed class LoggeRythmDjPlanResponse {
         throw IllegalStateException("dj-plan-field-invalid: ${error.message}", error)
       }
     }
+  }
+}
+
+/**
+ * Maps the primary player's position onto ffmpeg's decode timeline, which the server's
+ * analysis and the clip use (Media3 1.10.1, AOSP codec2 software decoders):
+ *
+ * - MP3: c2.android.mp3.decoder drops its 529-sample delay after every start/flush.
+ *   Media3 trims the LAME encoder delay D only after a sink reconfiguration (prepare, item
+ *   change, cross-item seek), not after a seek within the same item (TrimmingAudioProcessor
+ *   re-arms only on configure). ffmpeg drops `startSkipS` = (D + 529) / rate for tagged
+ *   files and nothing for untagged ones.
+ * - FLAC: no delay anywhere.
+ *
+ * ffmpeg position = player position + [offsetMs].
+ */
+internal object LoggeRythmDjDecoderOffset {
+  const val MP3_DECODER_DELAY_SAMPLES = 529
+  /** Decoders whose delay handling the offsets above were derived from. */
+  val VERIFIED_DECODERS = setOf("c2.android.mp3.decoder", "c2.android.flac.decoder")
+
+  fun offsetMs(mimeType: String?, sampleRate: Int, encoderDelay: Int, trimmed: Boolean, startSkipS: Double): Double {
+    require(sampleRate > 0) { "dj-offset-sample-rate:$sampleRate" }
+    val playerSkipSamples = when (mimeType) {
+      MimeTypes.AUDIO_MPEG -> (if (trimmed) encoderDelay else 0) + MP3_DECODER_DELAY_SAMPLES
+      MimeTypes.AUDIO_FLAC -> 0
+      else -> throw IllegalArgumentException("dj-offset-unsupported-mime:$mimeType")
+    }
+    return playerSkipSamples * 1000.0 / sampleRate - startSkipS * 1000.0
   }
 }
 
@@ -304,6 +343,9 @@ internal class LoggeRythmDjTransitionController(
   private var run: Run? = null
   /** Seeks this controller issued on the primary player, matched exactly in onPositionDiscontinuity. */
   private val pendingSelfSeeks = ArrayDeque<Pair<Int, Long>>()
+  /** Whether Media3 trimmed the current item's encoder delay since its last flush; see [LoggeRythmDjDecoderOffset]. */
+  private var primaryTrimmed = true
+  private var primaryDecoderName: String? = null
   /** The primary's playback parameters as this controller last set them during a run. */
   private var expectedPrimaryParameters = PlaybackParameters.DEFAULT
   private var monitorScheduled = false
@@ -328,6 +370,13 @@ internal class LoggeRythmDjTransitionController(
       newPosition: Player.PositionInfo,
       reason: Int,
     ) {
+      when (reason) {
+        // a seek within the item flushes without reconfiguring the sink: no trim afterwards
+        Player.DISCONTINUITY_REASON_SEEK, Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT ->
+          primaryTrimmed = oldPosition.mediaItemIndex != newPosition.mediaItemIndex
+        Player.DISCONTINUITY_REASON_AUTO_TRANSITION, Player.DISCONTINUITY_REASON_REMOVE -> primaryTrimmed = true
+        else -> Unit
+      }
       val active = run ?: return
       if (reason == Player.DISCONTINUITY_REASON_SEEK && consumeSelfSeek(newPosition)) return
       if (
@@ -367,7 +416,12 @@ internal class LoggeRythmDjTransitionController(
       if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) abort("playback-suppressed")
     }
 
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+      primaryTrimmed = true
+    }
+
     override fun onPlaybackStateChanged(playbackState: Int) {
+      if (playbackState == Player.STATE_IDLE) primaryTrimmed = true // the next prepare reconfigures
       if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) abort("primary-state:$playbackState")
       scheduleMonitor()
     }
@@ -377,8 +431,29 @@ internal class LoggeRythmDjTransitionController(
     }
   }
 
+  private val primaryAnalytics = object : AnalyticsListener {
+    override fun onAudioDecoderInitialized(
+      eventTime: AnalyticsListener.EventTime,
+      decoderName: String,
+      initializedTimestampMs: Long,
+      initializationDurationMs: Long,
+    ) {
+      primaryDecoderName = decoderName
+      Log.i(TAG, "Primary audio decoder: $decoderName")
+    }
+
+    override fun onAudioInputFormatChanged(
+      eventTime: AnalyticsListener.EventTime,
+      format: Format,
+      decoderReuseEvaluation: DecoderReuseEvaluation?,
+    ) {
+      decoderReuseEvaluation?.let { primaryDecoderName = it.decoderName }
+    }
+  }
+
   init {
     primaryPlayer.addListener(primaryListener)
+    primaryPlayer.addAnalyticsListener(primaryAnalytics)
   }
 
   fun isEnabled(): Boolean = enabled
@@ -413,6 +488,7 @@ internal class LoggeRythmDjTransitionController(
     released = true
     mainHandler.removeCallbacks(monitor)
     primaryPlayer.removeListener(primaryListener)
+    primaryPlayer.removeAnalyticsListener(primaryAnalytics)
     releaseDeck()
     io.shutdownNow()
   }
@@ -611,6 +687,11 @@ internal class LoggeRythmDjTransitionController(
       return
     }
     if (positionMs >= deckStartAMs && d.playbackState == Player.STATE_READY) {
+      unverifiedPrimaryTiming()?.let { problem ->
+        Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: $problem")
+        planState = PlanState.Declined("unverified-primary-timing")
+        return
+      }
       if (d.audioSessionId != sessionId) {
         Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: deck session ${d.audioSessionId} != primary $sessionId")
         planState = PlanState.Declined("audio-session-mismatch")
@@ -644,8 +725,9 @@ internal class LoggeRythmDjTransitionController(
           return
         }
         if (!r.deck.playWhenReady) r.deck.play()
-        val expected = primaryPlayer.currentPosition - (r.clip.aStartS * 1000).toLong()
-        val locked = applyLock(r, r.deck, (clipMs - expected).toDouble(), now) { correction ->
+        val aOffsetMs = primaryOffsetMs(r.clip.aStartSkipS) ?: return abort("primary-format-unknown")
+        val expected = primaryPlayer.currentPosition + aOffsetMs - r.clip.aStartS * 1000
+        val locked = applyLock(r, r.deck, clipMs - expected, now) { correction ->
           r.deck.seekTo(clipMs + correction)
         }
         val joinWindowEndMs = ((r.clip.cueS - JOIN_IN_LATEST_BEFORE_CUE_S) * 1000).toLong()
@@ -680,14 +762,19 @@ internal class LoggeRythmDjTransitionController(
         if (primaryPlayer.currentMediaItem?.mediaId != r.pair.toMediaId) return abort("primary-left-b")
         primaryPlayer.volume = 0f
         val expected = r.clip.bMediaMs(clipMs)
-        val locked = applyLock(r, primaryPlayer, (primaryPlayer.currentPosition - expected).toDouble(), now) { correction ->
+        val bOffsetMs = primaryOffsetMs(r.clip.bStartSkipS)
+        val locked = bOffsetMs != null && applyLock(r, primaryPlayer, primaryPlayer.currentPosition + bOffsetMs - expected, now) { correction ->
           selfSeek(primaryPlayer.currentMediaItemIndex, primaryPlayer.currentPosition + correction)
         }
         val joinOutMs = (r.clip.joinOutS * 1000).toLong()
         val deadlineMs = ((r.clip.durationS - JOIN_OUT_LATEST_BEFORE_END_S) * 1000).toLong()
         if ((locked && clipMs >= joinOutMs) || clipMs >= deadlineMs) {
           if (!locked) {
-            Log.w(TAG, "DJ transition joins back to B unlocked (last error ${r.lock.lastErrorMs} ms)")
+            Log.w(
+              TAG,
+              "DJ transition joins back to B unlocked (last error ${r.lock.lastErrorMs} ms; " +
+                "timing ${unverifiedPrimaryTiming() ?: "verified"})",
+            )
           }
           setPrimaryParameters(PlaybackParameters.DEFAULT)
           r.phase = Phase.JOIN_OUT
@@ -722,6 +809,27 @@ internal class LoggeRythmDjTransitionController(
         false
       }
     }
+
+  /** Why the primary's position cannot be mapped onto the clip timeline, or null when it can. */
+  private fun unverifiedPrimaryTiming(): String? {
+    val decoder = primaryDecoderName ?: return "primary audio decoder not known yet"
+    if (decoder !in LoggeRythmDjDecoderOffset.VERIFIED_DECODERS) {
+      return "primary audio decoder $decoder has no verified delay handling"
+    }
+    val format = primaryPlayer.audioFormat ?: return "primary audio format not known yet"
+    val mime = format.sampleMimeType
+    if (mime != MimeTypes.AUDIO_MPEG && mime != MimeTypes.AUDIO_FLAC) return "unsupported primary format $mime"
+    if (format.sampleRate <= 0) return "primary sample rate unknown"
+    return null
+  }
+
+  /** ms to add to the primary's position to get ffmpeg's timeline; null while the format is not known. */
+  private fun primaryOffsetMs(startSkipS: Double): Double? {
+    if (unverifiedPrimaryTiming() != null) return null
+    val format = primaryPlayer.audioFormat ?: return null
+    val encoderDelay = if (format.encoderDelay == Format.NO_VALUE) 0 else format.encoderDelay
+    return LoggeRythmDjDecoderOffset.offsetMs(format.sampleMimeType, format.sampleRate, encoderDelay, primaryTrimmed, startSkipS)
+  }
 
   /** Seeks the primary and records the seek so the discontinuity is not taken for the user's. */
   private fun selfSeek(index: Int, positionMs: Long) {
