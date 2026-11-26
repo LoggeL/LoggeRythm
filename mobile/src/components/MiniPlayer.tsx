@@ -33,6 +33,7 @@ import {
   shouldCaptureMiniPlayerSwipe,
 } from '../player/playerGestures';
 import { useArtworkPalette } from '../hooks/useArtworkPalette';
+import { MINI_PLAYER_OUTPUT_STRIP_HEIGHT } from '../hooks/useBottomInset';
 import { useHaptics } from '../hooks/useHaptics';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import type { RootStackParams } from '../navigation';
@@ -52,8 +53,8 @@ import { createFocusRingController, FocusRingOverlay } from './ui/PressableScale
 export const TAB_BAR_HEIGHT = metrics.tabBarHeight;
 /** Content reserves the surface and the gap above the tab bar or safe area. */
 export const MINI_PLAYER_HEIGHT = metrics.miniPlayerSurfaceHeight + metrics.miniPlayerGap;
-/** Extra height occupied by the Spotify-style remote-output / Jam strip when active. */
-export const MINI_PLAYER_OUTPUT_STRIP_HEIGHT = 32;
+// One definition (hooks/useBottomInset) for the bar, the scroll padding and the overlays above it.
+export { MINI_PLAYER_OUTPUT_STRIP_HEIGHT };
 
 const MAX_DRAG_X = 96;
 const MAX_DRAG_Y = 56;

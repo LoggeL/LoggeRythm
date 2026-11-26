@@ -100,7 +100,7 @@ export default function RadarScreen(props: RadarScreenProps) {
   // Playback, the queue and the seen-state work on the plain tracks, as before.
   const tracks = useMemo(() => releaseRadarTracks(entries), [entries]);
   const trackIds = useMemo(() => releaseRadarTrackIds(tracks), [tracks]);
-  const { runtimeError, setRuntimeError, play, playRow } = useCatalogPlayback('home-playback');
+  const { runtimeError, setRuntimeError, play, playRow } = useCatalogPlayback();
   const { newTrackIds, seenStateError } = useNewRadarTracks(scope, trackIds);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const refetch = useCallback(() => void radar.refetch(), [radar]);

@@ -112,7 +112,17 @@ describe('LibraryRecentRow', () => {
     expect(identity.props.onOpenArtist).toBe(onOpenArtist);
   });
 
-  it('keeps Play, identity links, and overflow actions as sibling responders', () => {
+  it('plays from the title too, like every other track row', () => {
+    const row = render();
+    const play = byTestID(row, 'library-recent-track-track-1-2');
+    const identity = byTestID(row, 'library-recent-track-track-1-2-identity');
+
+    // The identity is inside the play target and has no links of its own.
+    expect(byTestID(play, 'library-recent-track-track-1-2-identity')).toBe(identity);
+    expect(identity.props.interactive).toBe(false);
+  });
+
+  it('keeps Play and overflow actions as sibling responders', () => {
     const row = render();
     const play = byTestID(row, 'library-recent-track-track-1-2');
     const actions = byTestID(row, 'library-recent-track-track-1-2-actions');

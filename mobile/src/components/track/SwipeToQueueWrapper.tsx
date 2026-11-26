@@ -4,15 +4,14 @@ import { StyleSheet, View } from 'react-native';
 import type { Track } from '../../api/types';
 import { triggerHaptic } from '../../hooks/useHaptics';
 import { getReducedMotionSnapshot } from '../../hooks/useReducedMotion';
-import { strings } from '../../localization';
-import { colors, radii, spacing } from '../../theme';
+import { colors, radii } from '../../theme';
 import { isTvMode } from '../../tv';
 import AppIcon from '../AppIcon';
-import { AppText } from '../ui';
 
 const SWIPE_ACTIVATE_DX = 14;
 const SWIPE_COMMIT_DX = 56;
 const SWIPE_MAX_DX = 88;
+const REVEAL_ICON_SIZE = 24;
 
 export interface SwipeToQueueWrapperProps {
   track: Track;
@@ -102,20 +101,31 @@ function SwipeToQueueAnimatedBody({
     [onQueue, track, translateX],
   );
 
+  // The row above is transparent, so the action has to be invisible at rest:
+  // it fades in with the drag and is fully opaque once a release would commit.
+  const revealOpacity = useMemo(
+    () =>
+      translateX.interpolate({
+        inputRange: [0, SWIPE_COMMIT_DX],
+        outputRange: [0, 1],
+        extrapolate: 'clamp',
+      }),
+    [translateX],
+  );
+
   return (
     <View style={styles.wrap}>
-      <View
+      <RN.Animated.View
         testID={`${testID}-swipe-queue-action`}
         accessible={false}
         importantForAccessibility="no-hide-descendants"
         pointerEvents="none"
-        style={styles.reveal}
+        style={[styles.reveal, { opacity: revealOpacity }]}
       >
-        <AppIcon name="playlist-plus" size={20} color={colors.onAccent} />
-        <AppText variant="micro" color="onAccent">
-          {strings.trackActions.swipeToQueue}
-        </AppText>
-      </View>
+        <View style={styles.revealGlyph}>
+          <AppIcon name="playlist-plus" size={REVEAL_ICON_SIZE} color={colors.onAccent} />
+        </View>
+      </RN.Animated.View>
       <RN.Animated.View
         testID={`${testID}-swipe-surface`}
         style={{ transform: [{ translateX }] }}
@@ -168,11 +178,16 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     width: SWIPE_MAX_DX,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xxs,
     backgroundColor: colors.accent,
     borderRadius: radii.md,
+  },
+  // Only the strip the row has uncovered is visible. The glyph is centred in
+  // the part that is open when a release starts to commit, so it is whole at
+  // that moment; a text label ("Warteschlange") never fitted there.
+  revealGlyph: {
+    width: SWIPE_COMMIT_DX,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

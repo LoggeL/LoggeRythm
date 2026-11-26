@@ -45,7 +45,8 @@ export default function StorageCachePanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void hydrateWifiOnlyDownloads().catch(() => {
+    void hydrateWifiOnlyDownloads().catch((cause: unknown) => {
+      console.error('[LoggeRythm] Failed to read the Wi-Fi-only download setting:', cause);
       setError(strings.profile.wifiOnlySaveFailed);
     });
   }, []);
@@ -80,7 +81,8 @@ export default function StorageCachePanel() {
     setStatusMessage(null);
     try {
       await setWifiOnlyDownloads(next);
-    } catch {
+    } catch (cause) {
+      console.error('[LoggeRythm] Failed to save the Wi-Fi-only download setting:', cause);
       setError(strings.profile.wifiOnlySaveFailed);
     } finally {
       setSavingWifi(false);
@@ -94,7 +96,8 @@ export default function StorageCachePanel() {
     try {
       await cancelNativeOfflineDownload();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : strings.common.retry);
+      // The cause itself, never a button label standing in for an error text.
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setCancellingDownload(false);
     }
@@ -116,7 +119,8 @@ export default function StorageCachePanel() {
       }
       setStatusMessage(strings.profile.streamCacheCleared);
       AccessibilityInfo.announceForAccessibility(strings.profile.streamCacheCleared);
-    } catch {
+    } catch (cause) {
+      console.error('[LoggeRythm] Failed to clear the stream cache:', cause);
       setError(strings.profile.streamCacheClearFailed);
     } finally {
       setClearingCache(false);

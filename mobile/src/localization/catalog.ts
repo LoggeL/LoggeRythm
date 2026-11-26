@@ -110,6 +110,7 @@ export interface StringCatalog {
     likedSongs: string;
     playlists: string;
     playlistInvite: string;
+    insights: string;
     openProfile: string;
     openProfileUpdateAvailable: string;
     /** The header dot stands for a final install failure the user has not seen yet. */
@@ -756,7 +757,6 @@ export interface StringCatalog {
     share: string;
     shareFailed: string;
     shareSucceeded: (title: string) => string;
-    swipeToQueue: string;
     searchPlaylistsPlaceholder: string;
     alreadyInPlaylist: string;
     addToSelectedPlaylists: (count: number) => string;
@@ -1158,6 +1158,7 @@ export const de: StringCatalog = {
     likedSongs: 'Lieblingstitel',
     playlists: 'Playlists',
     playlistInvite: 'Playlist-Einladung',
+    insights: 'Hör-Insights',
     openProfile: 'Profil öffnen',
     openProfileUpdateAvailable: 'Profil öffnen, App-Update verfügbar',
     openProfileUpdateFailed: 'Profil öffnen, Update fehlgeschlagen',
@@ -1817,7 +1818,6 @@ export const de: StringCatalog = {
     share: 'Teilen',
     shareFailed: 'Titel konnte nicht geteilt werden',
     shareSucceeded: (title) => `„${title}“ wurde geteilt.`,
-    swipeToQueue: 'Warteschlange',
     searchPlaylistsPlaceholder: 'Playlists filtern…',
     alreadyInPlaylist: 'Bereits enthalten',
     addToSelectedPlaylists: (count) => `Zu ${count} Playlists hinzufügen`,
@@ -2198,7 +2198,7 @@ export const en: StringCatalog = {
   navigation: {
     home: 'Home', search: 'Search', discover: 'Discover', radio: 'Radio', library: 'Library',
     profile: 'Profile', album: 'Album', artist: 'Artist', genre: 'Genre',
-    likedSongs: 'Liked Songs', playlists: 'Playlists', playlistInvite: 'Playlist Invite', openProfile: 'Open profile',
+    likedSongs: 'Liked Songs', playlists: 'Playlists', playlistInvite: 'Playlist Invite', insights: 'Listening insights', openProfile: 'Open profile',
     openProfileUpdateAvailable: 'Open profile, app update available',
     openProfileUpdateFailed: 'Open profile, update failed',
     profileUnavailable: 'Profile is not available right now.',
@@ -2765,7 +2765,6 @@ export const en: StringCatalog = {
     share: 'Share',
     shareFailed: 'Track could not be shared',
     shareSucceeded: (title) => `Shared ${title}.`,
-    swipeToQueue: 'Queue',
     searchPlaylistsPlaceholder: 'Filter playlists…',
     alreadyInPlaylist: 'Already added',
     addToSelectedPlaylists: (count) => `Add to ${count} playlists`,

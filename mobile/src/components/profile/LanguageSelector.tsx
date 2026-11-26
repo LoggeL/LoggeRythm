@@ -111,7 +111,8 @@ export default function LanguageSelector() {
         ? strings.profile.languageGerman
         : strings.profile.languageEnglish;
       AccessibilityInfo.announceForAccessibility(strings.profile.languageChanged(label));
-    } catch {
+    } catch (cause) {
+      console.error('[LoggeRythm] Failed to change the app language:', cause);
       setError(strings.profile.languageChangeFailed);
     } finally {
       selectionLocked.current = false;

@@ -57,6 +57,21 @@ export interface UseBottomInsetOptions {
 }
 
 /**
+ * Height of the mini player's second row ("Wiedergabe auf …" / Jam), or 0
+ * while it is not shown. Everything that sits above the mini player has to
+ * add it, or it lands on top of the bar while that row is visible.
+ */
+export function useMiniPlayerOutputStripHeight(): number {
+  const miniPlayerVisible = useHasEffectiveActiveTrack();
+  const connect = useActiveConnectSnapshot();
+  const party = useActivePartySnapshot();
+  const hasOutputStrip =
+    miniPlayerVisible
+    && (connect.isControllingRemote || (party.party !== null && !party.detached));
+  return hasOutputStrip ? MINI_PLAYER_OUTPUT_STRIP_HEIGHT : 0;
+}
+
+/**
  * The `paddingBottom` a scroll view's content container needs so its last
  * item clears the floating mini player (only while a track is loaded, using
  * the taller 92dp footprint on Android TV) and, outside the phone tabs, the
@@ -65,17 +80,13 @@ export interface UseBottomInsetOptions {
 export function useBottomInset({ hasTabBar = true, extra = 0 }: UseBottomInsetOptions = {}): number {
   const insets = useSafeAreaInsets();
   const miniPlayerVisible = useHasEffectiveActiveTrack();
-  const connect = useActiveConnectSnapshot();
-  const party = useActivePartySnapshot();
+  const outputStripHeight = useMiniPlayerOutputStripHeight();
   const { isTv } = useTvEnvironment();
-  const hasOutputStrip =
-    miniPlayerVisible
-    && (connect.isControllingRemote || (party.party !== null && !party.detached));
   return bottomInset({
     safeAreaBottom: insets.bottom,
     hasTabBar,
     miniPlayerVisible,
     isTv,
-    extra: extra + (hasOutputStrip ? MINI_PLAYER_OUTPUT_STRIP_HEIGHT : 0),
+    extra: extra + outputStripHeight,
   });
 }

@@ -1,7 +1,7 @@
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../../api/types';
-import { byTestId, queryByTestId } from '../../test/render';
+import { byTestId, flatStyle, queryByTestId } from '../../test/render';
 import {
   shouldCaptureHorizontalQueueSwipe,
   shouldCommitHorizontalQueueSwipe,
@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   reducedMotion: false,
   hapticTrigger: vi.fn(),
   setValue: vi.fn(),
+  interpolate: vi.fn((config: unknown) => ({ interpolation: config })),
   springStart: vi.fn(),
   quickAdd: vi.fn(async () => true),
 }));
@@ -30,6 +31,8 @@ vi.mock('react-native', () => ({
   Animated: {
     Value: class MockAnimatedValue {
       setValue = mocks.setValue;
+
+      interpolate = mocks.interpolate;
     },
     View: 'Animated.View',
     spring: () => ({ start: mocks.springStart }),
@@ -54,7 +57,6 @@ vi.mock('../../hooks/useReducedMotion', () => ({
 }));
 vi.mock('../../tv', () => ({ isTvMode: () => mocks.isTv }));
 vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
-vi.mock('../ui', () => ({ AppText: 'AppText' }));
 vi.mock('../trackActions', () => ({ quickAddTrackToQueue: mocks.quickAdd }));
 
 const track: Track = {
@@ -115,6 +117,22 @@ describe('SwipeToQueueWrapper', () => {
     );
     expect(mocks.hapticTrigger).toHaveBeenCalledWith('commit');
     expect(onQueue).toHaveBeenCalledExactlyOnceWith(track);
+  });
+
+  it('keeps the queue action invisible until the row is dragged', () => {
+    const wrapper = SwipeToQueueWrapper({
+      track,
+      testID: 'row-99',
+      children: React.createElement('View', { testID: 'child-row' }),
+    });
+    const tree = (wrapper.type as (props: unknown) => React.ReactElement)(wrapper.props);
+    const action = byTestId(tree, 'row-99-swipe-queue-action');
+
+    // The row in front is transparent: a static reveal would always show through.
+    expect(action.type).toBe('Animated.View');
+    expect(flatStyle(action.props.style).opacity).toEqual({
+      interpolation: { inputRange: [0, 56], outputRange: [0, 1], extrapolate: 'clamp' },
+    });
   });
 
   it('disables swipe gesture wrapper on Android TV', () => {

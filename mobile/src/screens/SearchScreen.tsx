@@ -406,10 +406,14 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         case 'album':
           return openSearchAlbum({ albumId: result.album.id, title: result.album.title });
         case 'track':
-          return play(result.index);
+          // Play the track the card shows. Its index is a position in the
+          // unfiltered hits, while `play(index)` addresses the list below the
+          // library section, which drops liked recordings: the same index is
+          // then another song, or outside the list.
+          return playWithRadio(result.track);
       }
     },
-    [openSearchAlbum, openSearchArtist, play],
+    [openSearchAlbum, openSearchArtist, playWithRadio],
   );
 
   const tvPaddingHorizontal = tv.isTv ? tv.contentPaddingHorizontal : undefined;

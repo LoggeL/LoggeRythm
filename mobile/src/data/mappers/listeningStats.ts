@@ -231,6 +231,21 @@ function requireCountsWithinTotal(
   });
 }
 
+/**
+ * The wire lists the last plays, one row per play: replaying a song, or
+ * coming back to it, repeats it. "Recently heard" is a list of songs, so each
+ * track is kept once, at its most recent position (the wire is newest first).
+ */
+export function distinctRecentPlays(recent: readonly RecentPlay[]): RecentPlay[] {
+  const seen = new Set<string>();
+  return recent.filter((play) => {
+    const id = String(play.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 /** Map the generated transport response into the human-owned product model. */
 export function mapListeningStatsWire(wire: ListeningStatsWire): UserStats {
   const topTracks = wire.top_tracks.map((entry, index) =>
@@ -288,7 +303,7 @@ export function mapListeningStatsWire(wire: ListeningStatsWire): UserStats {
     total_plays: wire.total_plays,
     top_tracks: topTracks,
     top_artists: topArtists,
-    recent,
+    recent: distinctRecentPlays(recent),
     total_plays_month: wire.total_plays_month,
     top_tracks_month: topTracksMonth,
     top_artists_month: topArtistsMonth,

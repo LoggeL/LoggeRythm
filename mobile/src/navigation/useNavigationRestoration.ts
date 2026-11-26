@@ -42,9 +42,9 @@ export function useNavigationRestoration(accountScope: string): NavigationRestor
           setRestoration({ scope: accountScope, ready: true, state: state ?? undefined });
         }
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (active) {
-          console.error('[LoggeRythm] navigation restoration failed');
+          console.error('[LoggeRythm] navigation restoration failed', cause);
           setRestoration({ scope: accountScope, ready: true, state: undefined });
         }
       });
@@ -55,8 +55,8 @@ export function useNavigationRestoration(accountScope: string): NavigationRestor
 
   const persist = (state: NavigationState | undefined) => {
     if (state === undefined) return;
-    void persistNavigationState(AsyncStorage, accountScope, state).catch(() => {
-      console.error('[LoggeRythm] navigation persistence failed');
+    void persistNavigationState(AsyncStorage, accountScope, state).catch((cause: unknown) => {
+      console.error('[LoggeRythm] navigation persistence failed', cause);
     });
   };
 

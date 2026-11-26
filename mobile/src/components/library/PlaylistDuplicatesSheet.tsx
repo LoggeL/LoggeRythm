@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PlaylistDuplicatesResponse } from '../../api/types';
 import { musicQueries, musicRepository, queryKeys } from '../../data';
 import { wave2Strings } from '../../localization/wave2Strings';
+import { libraryStrings } from '../../screens/libraryStrings';
 import { colors, radii, spacing } from '../../theme';
 import {
   ActionButton,
@@ -51,7 +52,7 @@ export function PlaylistDuplicatesView({
           testID="playlist-duplicates-close"
           icon="close"
           size="sm"
-          accessibilityLabel={wave2Strings.party2.kioskClose}
+          accessibilityLabel={libraryStrings.common.dismiss}
           onPress={onClose}
         />
       </View>
@@ -192,7 +193,7 @@ export function PlaylistDuplicatesSheet({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      closeLabel={wave2Strings.party2.kioskClose}
+      closeLabel={libraryStrings.common.dismiss}
       testID="playlist-duplicates-sheet"
     >
       <PlaylistDuplicatesView

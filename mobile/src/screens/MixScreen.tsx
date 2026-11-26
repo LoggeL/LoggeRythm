@@ -71,7 +71,7 @@ export default function MixScreen(props: MixScreenProps) {
     enabled: validRoute,
   });
   // Hook order (useAuth → useQuery → one useState inside this hook) is pinned by MixScreen.test.
-  const { runtimeError, setRuntimeError, play, playRow } = useCatalogPlayback('home-playback');
+  const { runtimeError, setRuntimeError, play, playRow } = useCatalogPlayback();
   const refetch = () => void mixes.refetch();
 
   if (!validRoute) {

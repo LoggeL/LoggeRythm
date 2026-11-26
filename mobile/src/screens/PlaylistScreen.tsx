@@ -736,6 +736,9 @@ export default function PlaylistScreen(props: PlaylistScreenProps) {
         refreshing={manualRefreshing}
         onRefresh={pullToRefresh}
         showsVerticalScrollIndicator={false}
+        // With the filter field focused, the first tap on a row or sort chip
+        // must act, not just close the keyboard.
+        keyboardShouldPersistTaps="handled"
         initialNumToRender={12}
         maxToRenderPerBatch={10}
         windowSize={9}

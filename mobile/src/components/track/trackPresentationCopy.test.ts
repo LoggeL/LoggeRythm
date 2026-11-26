@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { strings } from '../../localization';
+import { activateLocale, strings } from '../../localization';
 import {
   trackIdentityCopy,
   trackStateIndicatorCopy,
@@ -18,6 +18,20 @@ describe('track presentation copy', () => {
     expect(trackStateIndicatorCopy.rollingDeviceCache(61.9)).toBe(
       strings.trackPresentation.rollingDeviceCache('1:01'),
     );
+  });
+
+  it('follows a locale switch instead of freezing the start-up language', () => {
+    try {
+      activateLocale('en');
+      expect(trackIdentityCopy.duration('3:05')).toBe('Duration 3:05');
+      expect(trackStateIndicatorCopy.playing).toBe(strings.trackPresentation.playing);
+      const english = trackStateIndicatorCopy.downloaded;
+      activateLocale('de');
+      expect(trackIdentityCopy.duration('3:05')).toBe('Dauer 3:05');
+      expect(trackStateIndicatorCopy.downloaded).not.toBe(english);
+    } finally {
+      activateLocale('de');
+    }
   });
 
   it('rejects impossible rolling-cache evidence before copy is produced', () => {

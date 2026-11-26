@@ -64,91 +64,99 @@ export default function TrackIdentityLinks({
     : metadata.popularity.kind === 'plays'
       ? copy.playCount(metadata.popularity.plays, metadata.popularity.listeners)
       : copy.popularity(metadata.popularity.percent);
-  const durationText = showDuration && metadata.duration !== null
+  // The bare runtime is what is shown; the worded form is its spoken label.
+  const durationLabel = showDuration && metadata.duration !== null
     ? copy.duration(metadata.duration)
     : null;
   const hasAlbum = showAlbumLabel && metadata.album.trim().length > 0;
-  const hasFacts = durationText !== null || popularityText !== null;
   const titleStyle = active ? [styles.title, styles.titleActive] : styles.title;
   const primaryArtist = interactive
     ? metadata.artists.find((artist) => artist.route !== null)
     : undefined;
 
+  // Names share one ellipsized run; the runtime sits beside it and never
+  // shrinks, so a long artist or album cannot cut "3:25" down to "3…".
   const details = (
-    <Text
-      testID={`${testID}-details`}
-      style={styles.details}
-      numberOfLines={1}
-      ellipsizeMode="tail"
-    >
-      {metadata.artists.map((artist, index) => (
-        <React.Fragment key={artist.key}>
-          {index > 0 ? (
-            <Text
-              testID={`${testID}-artist-separator-${index}`}
-              accessible={false}
-              style={styles.secondary}
-            >
-              {', '}
-            </Text>
-          ) : null}
-          {interactive && artist.route !== null ? (
-            <Text
-              testID={`${testID}-artist-link-${index}`}
-              accessibilityRole="link"
-              accessibilityLabel={copy.openArtist(artist.name)}
-              onPress={() => onOpenArtist(artist.route as ArtistRouteParams)}
-              style={styles.secondary}
-            >
-              {artist.name}
-            </Text>
-          ) : (
-            <Text
-              testID={`${testID}-artist-text-${index}`}
-              style={styles.secondary}
-            >
-              {artist.name}
-            </Text>
-          )}
-        </React.Fragment>
-      ))}
+    <View style={styles.detailsRow}>
+      <Text
+        testID={`${testID}-details`}
+        style={styles.details}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {metadata.artists.map((artist, index) => (
+          <React.Fragment key={artist.key}>
+            {index > 0 ? (
+              <Text
+                testID={`${testID}-artist-separator-${index}`}
+                accessible={false}
+                style={styles.secondary}
+              >
+                {', '}
+              </Text>
+            ) : null}
+            {interactive && artist.route !== null ? (
+              <Text
+                testID={`${testID}-artist-link-${index}`}
+                accessibilityRole="link"
+                accessibilityLabel={copy.openArtist(artist.name)}
+                onPress={() => onOpenArtist(artist.route as ArtistRouteParams)}
+                style={styles.secondary}
+              >
+                {artist.name}
+              </Text>
+            ) : (
+              <Text
+                testID={`${testID}-artist-text-${index}`}
+                style={styles.secondary}
+              >
+                {artist.name}
+              </Text>
+            )}
+          </React.Fragment>
+        ))}
 
-      {hasAlbum ? (
-        <>
-          <Text accessible={false} style={styles.secondary}>{' · '}</Text>
-          {interactive && metadata.albumRoute !== null ? (
-            <Text
-              testID={`${testID}-album-label-link`}
-              accessibilityRole="link"
-              accessibilityLabel={copy.openAlbum(metadata.album)}
-              onPress={() => onOpenAlbum(metadata.albumRoute as AlbumRouteParams)}
-              style={styles.secondary}
-            >
-              {metadata.album}
-            </Text>
-          ) : (
-            <Text testID={`${testID}-album-label-text`} style={styles.secondary}>
-              {metadata.album}
-            </Text>
-          )}
-        </>
-      ) : null}
+        {hasAlbum ? (
+          <>
+            <Text accessible={false} style={styles.secondary}>{' · '}</Text>
+            {interactive && metadata.albumRoute !== null ? (
+              <Text
+                testID={`${testID}-album-label-link`}
+                accessibilityRole="link"
+                accessibilityLabel={copy.openAlbum(metadata.album)}
+                onPress={() => onOpenAlbum(metadata.albumRoute as AlbumRouteParams)}
+                style={styles.secondary}
+              >
+                {metadata.album}
+              </Text>
+            ) : (
+              <Text testID={`${testID}-album-label-text`} style={styles.secondary}>
+                {metadata.album}
+              </Text>
+            )}
+          </>
+        ) : null}
 
-      {hasFacts ? (
-        <>
-          <Text accessible={false} style={styles.fact}>{' · '}</Text>
-          {durationText !== null ? (
-            <Text testID={`${testID}-duration`} style={styles.fact}>{durationText}</Text>
-          ) : null}
-          {durationText !== null && popularityText !== null ? (
+        {popularityText !== null ? (
+          <>
             <Text accessible={false} style={styles.fact}>{' · '}</Text>
-          ) : null}
-          {popularityText !== null ? (
             <Text testID={`${testID}-popularity`} style={styles.fact}>{popularityText}</Text>
-          ) : null}
+          </>
+        ) : null}
+      </Text>
+      {durationLabel !== null ? (
+        <>
+          <Text accessible={false} style={styles.durationSeparator}>{' · '}</Text>
+          <Text
+            testID={`${testID}-duration`}
+            accessibilityLabel={durationLabel}
+            style={styles.duration}
+          >
+            {metadata.duration}
+          </Text>
         </>
       ) : null}
-    </Text>
+    </View>
   );
 
   return (
@@ -203,7 +211,10 @@ const styles = StyleSheet.create({
   container: { minWidth: 0, flex: 1, justifyContent: 'center' },
   title: { ...typography.bodyStrong, color: colors.textPrimary },
   titleActive: { color: colors.accentSoft },
-  details: { ...typography.callout, color: colors.textSecondary },
+  detailsRow: { minWidth: 0, flexDirection: 'row', alignItems: 'center' },
+  details: { ...typography.callout, flexShrink: 1, color: colors.textSecondary },
+  durationSeparator: { ...typography.callout, flexShrink: 0, color: colors.textMuted },
+  duration: { ...typography.callout, flexShrink: 0, color: colors.textMuted },
   secondary: { color: colors.textSecondary },
   fact: { color: colors.textMuted },
   pressed: { opacity: opacity.pressed },

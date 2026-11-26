@@ -32,6 +32,7 @@ import {
 import { colors, metrics, opacity, radii, spacing } from '../../theme';
 import { isTvMode, tvFocusRegistry } from '../../tv';
 import AppIcon from '../AppIcon';
+import { useKeyboardInset } from '../library/useKeyboardInset';
 import { spotifyImportInputStyle } from '../search/SpotifyImportForm';
 import { MemoEqualizerBars } from '../TrackStateIndicator';
 import {
@@ -312,6 +313,14 @@ export function DevicePickerSheetContent({
   const [savingName, setSavingName] = useState(false);
   const [togglingSync, setTogglingSync] = useState(false);
   const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
+  // The Jam code and device name fields are the last things in the sheet, and
+  // the keyboard does not resize it (see useKeyboardInset): make room below
+  // them and bring them into view, or they are typed into blind.
+  const keyboardInset = useKeyboardInset();
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (keyboardInset > 0) scrollRef.current?.scrollToEnd({ animated: true });
+  }, [keyboardInset]);
 
   const devices = connect.state?.devices ?? [];
   const activeDevice = connect.activeDevice;
@@ -426,6 +435,7 @@ export function DevicePickerSheetContent({
 
   return (
     <ScrollView
+      ref={scrollRef}
       testID="device-picker-scroll"
       style={styles.scroll}
       contentContainerStyle={styles.content}
@@ -715,6 +725,7 @@ export function DevicePickerSheetContent({
           </View>
         )}
       </View>
+      <View testID="device-picker-keyboard-spacer" style={{ height: keyboardInset }} />
     </ScrollView>
   );
 }
@@ -735,6 +746,12 @@ export default function DevicePickerHost({
   const party = usePartySession();
   const visible = request !== null;
   const wasVisibleRef = useRef(false);
+  // Dismissing clears the request at once, but the sheet stays mounted for
+  // its slide-out. Keep rendering the request it was opened with, or the body
+  // vanishes first and only a title stub slides away.
+  const [shownRequest, setShownRequest] = useState(request);
+  if (request !== null && request !== shownRequest) setShownRequest(request);
+  const content = request ?? shownRequest;
 
   useEffect(() => {
     if (visible && !wasVisibleRef.current) {
@@ -756,12 +773,12 @@ export default function DevicePickerHost({
       title={strings.connect.connectToDevice}
       testID="device-picker-sheet"
     >
-      {request !== null ? (
+      {content !== null ? (
         <DevicePickerSheetContent
-          key={request.requestId}
+          key={content.requestId}
           connect={connect}
           party={party}
-          initialFocus={request.initialFocus}
+          initialFocus={content.initialFocus}
           onClose={close}
           onOpenParty={onOpenParty}
           onTransfer={(device) =>

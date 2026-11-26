@@ -6,6 +6,7 @@ import {
   View,
 } from 'react-native';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
+import { strings } from '../../localization';
 import { wave2Strings } from '../../localization/wave2Strings';
 import {
   isNativeMethodAvailable,
@@ -241,7 +242,13 @@ export function VisualizerStage({
         {error.kind !== 'unsupported' ? (
           <ActionButton
             testID={`${testID}-retry`}
-            label={wave2Strings.visualizer.permissionButton}
+            // Only a refused permission is fixed by granting it; "no audio
+            // session" and other failures are simply tried again.
+            label={
+              error.kind === 'permission-denied'
+                ? wave2Strings.visualizer.permissionButton
+                : strings.common.retry
+            }
             variant="secondary"
             busy={starting}
             disabled={starting}

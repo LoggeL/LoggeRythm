@@ -140,6 +140,11 @@ export function BottomSheet({
         if (shouldDismissSheet(gesture)) {
           triggerHaptic('commit');
           onClose();
+          // The owner may decline to close (an action is still running). The
+          // sheet must not stay parked where the finger left it. If the close
+          // is accepted, the exit animation starts on the same value, which
+          // replaces this spring.
+          settle();
         } else {
           settle();
         }

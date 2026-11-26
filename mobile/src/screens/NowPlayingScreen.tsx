@@ -398,7 +398,9 @@ export default function NowPlayingScreen({ navigation }: Props) {
           </AppText>
         ) : null}
       </View>
-      {!isTvSplit ? (
+      {/* Only with a track: in the loading and empty states there is no tab
+          body to switch, so the button would only toggle its own highlight. */}
+      {!isTvSplit && body === 'content' ? (
         <IconButton
           testID="now-playing-open-queue"
           icon="playlist-music-outline"

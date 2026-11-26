@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { HomeSectionState } from '../components/home/HomeSection';
 import type { RemoteFetchStatus } from '../data/remoteState';
@@ -36,13 +37,6 @@ export function homeFeedSection<T>(query: HomeFeedQuery<T>): HomeFeedSection<T> 
   };
 }
 
-/** Pull-to-refresh spins only for a background refetch, never for a first load. */
-export function isHomeFeedRefreshing(
-  queries: readonly Pick<HomeFeedQuery<unknown>, 'isFetching' | 'isPending'>[],
-): boolean {
-  return queries.some((query) => query.isFetching && !query.isPending);
-}
-
 /**
  * Every remote source of the Home feed. `moodTag === null` is the "Top"
  * discovery view (nine sections); any other tag loads only that mood rail.
@@ -51,6 +45,10 @@ export function isHomeFeedRefreshing(
  */
 export function useHomeFeed(scope: string, moodTag: string | null) {
   const top = moodTag === null;
+  // The spinner belongs to a pull the user made. Background refetches (the
+  // stats are invalidated after every recorded play) must not drop it into
+  // the page on their own; each section reports its own refresh state.
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const stats = useQuery({ ...musicQueries.stats(scope), enabled: top });
   const mixes = useQuery({ ...musicQueries.homeMixes(scope), enabled: top });
   const radar = useQuery({ ...musicQueries.releaseRadar(scope), enabled: top });
@@ -77,9 +75,12 @@ export function useHomeFeed(scope: string, moodTag: string | null) {
     publicPlaylists: homeFeedSection(publicPlaylists),
     genres: homeFeedSection(genres),
     mood: homeFeedSection(mood),
-    refreshing: isHomeFeedRefreshing(active),
+    refreshing: manualRefreshing,
     refresh: () => {
-      void Promise.allSettled(active.map((query) => query.refetch()));
+      setManualRefreshing(true);
+      void Promise.allSettled(active.map((query) => query.refetch())).finally(() => {
+        setManualRefreshing(false);
+      });
     },
   };
 }

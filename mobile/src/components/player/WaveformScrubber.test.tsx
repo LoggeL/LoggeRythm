@@ -76,9 +76,51 @@ describe('WaveformScrubber', () => {
       onSeek: vi.fn(),
     });
     expect(queryByTestId(tree, 'now-playing-waveform')).not.toBeNull();
+    // The bars must never be the touch target: Android reports locationX
+    // relative to the hit view, which would seek to the start of the song.
+    expect(byTestId(tree, 'now-playing-waveform').props.pointerEvents).toBe('box-only');
     const metaText = textContent(byTestId(tree, 'now-playing-waveform-meta')).join(' ');
     expect(metaText).toContain('124 BPM');
     expect(metaText).toContain('-9.4 LUFS');
+  });
+
+  it('seeks in 10 second steps for screen readers, clamped to the track', () => {
+    const meta = {
+      deezer_id: '42',
+      peaks: [0.2, 0.5, 0.8],
+      loudness_lufs: null,
+      loudness_gain_db: null,
+      loudness_peak: null,
+      bpm: null,
+      duration_sec: 180,
+      intro_end_sec: null,
+      outro_start_sec: null,
+      analyzed_at: '2026-11-25T00:00:00Z',
+    };
+    const act = (position: number, actionName: string): number => {
+      const onSeek = vi.fn();
+      const tree = WaveformScrubberView({
+        meta,
+        position,
+        duration: 180,
+        onPositionChange: vi.fn(),
+        onSeek,
+      });
+      const waveform = byTestId(tree, 'now-playing-waveform');
+      expect(waveform.props.accessibilityActions).toEqual([
+        { name: 'increment' },
+        { name: 'decrement' },
+      ]);
+      (waveform.props.onAccessibilityAction as (event: unknown) => void)({
+        nativeEvent: { actionName },
+      });
+      return onSeek.mock.calls[0][0] as number;
+    };
+
+    expect(act(90, 'increment')).toBe(100);
+    expect(act(90, 'decrement')).toBe(80);
+    expect(act(175, 'increment')).toBe(180);
+    expect(act(4, 'decrement')).toBe(0);
   });
 
   it('keeps 404/503 analysis absence quiet while surfacing unexpected 500/decode errors loudly', () => {

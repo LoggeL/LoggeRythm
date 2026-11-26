@@ -40,6 +40,13 @@ export function sampleWaveformPeaks(
   return sampled;
 }
 
+/** One TalkBack swipe on the adjustable waveform, matching a "skip 10 s" step. */
+const ACCESSIBILITY_SEEK_SECONDS = 10;
+const WAVEFORM_ACCESSIBILITY_ACTIONS = [
+  { name: 'increment' },
+  { name: 'decrement' },
+] as const;
+
 function createWaveformResponder(params: {
   width: number;
   duration: number;
@@ -173,6 +180,19 @@ export function WaveformScrubberView({
           max: Math.max(usableDuration, 1),
           now: Math.min(effectivePosition, Math.max(usableDuration, 1)),
         }}
+        accessibilityActions={WAVEFORM_ACCESSIBILITY_ACTIONS}
+        onAccessibilityAction={(event) => {
+          if (usableDuration <= 0) return;
+          const direction = event.nativeEvent.actionName === 'increment' ? 1 : -1;
+          onSeek(
+            Math.max(0, Math.min(usableDuration, position + direction * ACCESSIBILITY_SEEK_SECONDS)),
+          );
+        }}
+        // The bars are real child views. Android reports `locationX` relative
+        // to the view that was hit, so a touch that landed on a bar read as
+        // "x within that bar" and seeked to the start. `box-only` makes the
+        // track itself the only touch target: `locationX` is then track-relative.
+        pointerEvents="box-only"
         onLayout={handleLayout}
         style={[
           styles.track,
@@ -227,7 +247,8 @@ export function isExpectedAudioMetaAbsence(error: unknown): boolean {
 export function unexpectedAudioMetaErrorMessage(error: unknown): string | null {
   if (error === null || error === undefined || isExpectedAudioMetaAbsence(error)) return null;
   const detail = error instanceof Error ? error.message : String(error);
-  return `${wave2Strings.waveform.metaUnavailable} (${detail})`;
+  // A failure, not progress: never word it as "still analysing".
+  return `${wave2Strings.waveform.metaFailed} (${detail})`;
 }
 
 /**

@@ -3,21 +3,24 @@ import type { TrackStateIndicatorCopy } from '../TrackStateIndicator';
 import type { TrackIdentityCopy } from './TrackIdentityLinks';
 import { formatTrackDuration } from './trackMetadata';
 
+// `strings` resolves the active locale on access. Reading it here at module
+// load would freeze every row's copy in the start-up language, so each entry
+// looks its string up when it is used.
 export const trackIdentityCopy: TrackIdentityCopy = {
-  openAlbum: strings.trackActions.openAlbum,
-  openArtist: strings.trackActions.openArtist,
-  duration: strings.search.trackDuration,
-  playCount: strings.search.trackPlayCount,
-  popularity: strings.search.trackPopularity,
+  openAlbum: (album) => strings.trackActions.openAlbum(album),
+  openArtist: (artist) => strings.trackActions.openArtist(artist),
+  duration: (value) => strings.search.trackDuration(value),
+  playCount: (plays, listeners) => strings.search.trackPlayCount(plays, listeners),
+  popularity: (percent) => strings.search.trackPopularity(percent),
 };
 
 export const trackStateIndicatorCopy: TrackStateIndicatorCopy = {
-  playing: strings.trackPresentation.playing,
-  paused: strings.trackPresentation.paused,
-  buffering: strings.trackPresentation.buffering,
-  active: strings.trackPresentation.active,
-  downloaded: strings.trackPresentation.downloaded,
-  serverCached: strings.trackPresentation.serverCached,
+  get playing() { return strings.trackPresentation.playing; },
+  get paused() { return strings.trackPresentation.paused; },
+  get buffering() { return strings.trackPresentation.buffering; },
+  get active() { return strings.trackPresentation.active; },
+  get downloaded() { return strings.trackPresentation.downloaded; },
+  get serverCached() { return strings.trackPresentation.serverCached; },
   rollingDeviceCache: (seconds) => {
     const duration = formatTrackDuration(seconds);
     if (duration === null) {

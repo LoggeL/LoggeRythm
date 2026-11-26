@@ -133,7 +133,14 @@ describe('TrackIdentityLinks', () => {
       { artistId: '7', name: 'Primary Artist' },
     ]);
 
-    expect(byTestId(rendered, 'track-identity-duration').props.children).toBe('Duration 3:05');
+    // Shown as the bare runtime so it never crowds out the names; the worded
+    // form is the spoken label. It is a sibling of the ellipsized run, not part of it.
+    const duration = byTestId(rendered, 'track-identity-duration');
+    expect(duration.props.children).toBe('3:05');
+    expect(duration.props.accessibilityLabel).toBe('Duration 3:05');
+    expect(elements(byTestId(rendered, 'track-identity-details')).some(
+      (element) => element.props.testID === 'track-identity-duration',
+    )).toBe(false);
     expect(byTestId(rendered, 'track-identity-popularity').props.children)
       .toBe('12345 plays, 6789 listeners');
   });

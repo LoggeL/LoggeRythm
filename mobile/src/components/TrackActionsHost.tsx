@@ -553,7 +553,9 @@ export default function TrackActionsHost() {
       onBack={handleBack}
       closeLabel={strings.trackActions.close}
       testID="track-actions-modal"
-      contentStyle={mode === 'create' ? { paddingBottom: keyboardHeight } : undefined}
+      // Both playlist steps have a text field (filter, new name); the keyboard
+      // does not resize the sheet, so it would cover their lists and buttons.
+      contentStyle={mode === 'actions' ? undefined : { paddingBottom: keyboardHeight }}
     >
       <TrackActionsHeader
         title={

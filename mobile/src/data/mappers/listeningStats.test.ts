@@ -52,6 +52,25 @@ describe('listening stats v2 wire-to-domain contract', () => {
     expect(() => decodeListeningStatsWire(wire)).toThrow('recent[0].artists');
   });
 
+  it('lists a replayed song once in recently heard, at its newest position', () => {
+    const populated = contract.valid.find(
+      (fixture) => fixture.id === 'legacy-ids-and-missing-optional-media',
+    );
+    if (populated === undefined) throw new Error('missing populated stats fixture');
+    const first = populated.wire.recent[0];
+    const other = { ...first, id: 777, title: 'Other Song' };
+    // Newest first: A, A, B, A — as after replaying A and coming back to it.
+    const wire = {
+      ...populated.wire,
+      recent: [first, first, other, first],
+      total_plays: Math.max(populated.wire.total_plays, 4),
+    };
+
+    const recent = mapListeningStatsWire(decodeListeningStatsWire(wire)).recent;
+
+    expect(recent.map((play) => play.id)).toEqual([String(first.id), '777']);
+  });
+
   it('does not manufacture complete Track-only fields for recent history', () => {
     const populated = contract.valid.find(
       (fixture) => fixture.id === 'legacy-ids-and-missing-optional-media',

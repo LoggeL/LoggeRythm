@@ -107,6 +107,7 @@ export function NowPlayingToolsBar({ track }: NowPlayingToolsBarProps) {
             variant="caption"
             color={timerBadge !== null ? 'accent' : 'secondary'}
             numberOfLines={1}
+            style={styles.pillLabel}
           >
             {timerBadge ?? strings.player.sleepTimer}
           </AppText>
@@ -155,18 +156,24 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
+  // The row holds five controls and does not wrap. The timer pill is the one
+  // that gives way (its label ellipsizes), so on a narrow phone the row stays
+  // inside the page instead of being clipped on both sides.
   pill: {
+    flexShrink: 1,
+    minWidth: metrics.minimumTouchTarget,
     minHeight: metrics.minimumTouchTarget,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
+    gap: spacing.xxs + 2,
+    paddingHorizontal: spacing.sm,
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.hairline,
     backgroundColor: colors.fill,
   },
+  pillLabel: { flexShrink: 1 },
   pillActive: {
     borderColor: colors.accent,
     backgroundColor: colors.accentSubtle,

@@ -1,4 +1,4 @@
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Platform, ToastAndroid } from 'react-native';
 import type { Track } from '../api/types';
 import { strings } from '../localization';
 import { addToQueue, playNext, startRadio } from '../player/controller';
@@ -152,12 +152,17 @@ function actionContract(action: TrackQueueAction, track: Track) {
   }
 }
 
-/** Quick swipe-to-queue helper: routes through active Jam / Connect / local queue and reports failures loudly. */
+/**
+ * Quick swipe-to-queue helper: routes through active Jam / Connect / local queue
+ * and reports failures loudly. A swipe has no sheet that closes on success, so
+ * the confirmation is shown as a toast, not only announced.
+ */
 export async function quickAddTrackToQueue(track: Track): Promise<boolean> {
   const contract = actionContract('add-to-queue', track);
   try {
     await contract.run();
     AccessibilityInfo.announceForAccessibility(contract.succeeded);
+    if (Platform.OS === 'android') ToastAndroid.show(contract.succeeded, ToastAndroid.SHORT);
     return true;
   } catch (error) {
     reportPlayerError(trackActionFailureMessage('add-to-queue', error), error);

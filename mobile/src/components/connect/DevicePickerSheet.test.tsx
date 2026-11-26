@@ -8,6 +8,7 @@ import { DevicePickerSheetContent } from './DevicePickerSheet';
 vi.mock('react', async (importOriginal) => ({
   ...await importOriginal<typeof import('react')>(),
   useEffect: vi.fn(),
+  useRef: <T,>(initial: T) => ({ current: initial }),
   useState: <T,>(initial: T | (() => T)) => [
     typeof initial === 'function' ? (initial as () => T)() : initial,
     vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('react-native', () => ({
 vi.mock('@react-native-community/slider', () => ({ default: 'Slider' }));
 vi.mock('../AppIcon', () => ({ default: 'AppIcon' }));
 vi.mock('../TrackStateIndicator', () => ({ MemoEqualizerBars: 'MemoEqualizerBars' }));
+vi.mock('../library/useKeyboardInset', () => ({ useKeyboardInset: () => 301 }));
 vi.mock('../search/SpotifyImportForm', () => ({ spotifyImportInputStyle: {} }));
 vi.mock('../../tv', () => ({ isTvMode: () => false, tvFocusRegistry: { pushCheckpoint: vi.fn(), popAndRestore: vi.fn() } }));
 vi.mock('../../connect/connectRuntime', () => ({ connectSession: vi.fn(), useConnectSession: vi.fn() }));
@@ -94,6 +96,27 @@ function makeState(devices: ConnectDevice[], activeId: string): ConnectState {
 }
 
 describe('DevicePickerSheetContent', () => {
+  it('keeps the Jam code and device name fields above the keyboard', () => {
+    const tree = DevicePickerSheetContent({
+      connect: IDLE_CONNECT_SNAPSHOT,
+      party: { party: null, detached: false } as unknown as PartySessionSnapshot,
+      initialFocus: 'jam',
+      onClose: vi.fn(),
+      onOpenParty: vi.fn(),
+      onTransfer: vi.fn(),
+      onRetryConnect: vi.fn(),
+      onToggleConnectEnabled: vi.fn(),
+      onRenameDevice: vi.fn(),
+      onSetRemoteVolume: vi.fn(),
+      onSetRemoteMute: vi.fn(),
+      onStartJam: vi.fn(),
+      onResumePersisted: vi.fn(),
+    });
+
+    // The sheet is not resized by the keyboard: the spacer is what lifts the fields.
+    expect(byTestId(tree, 'device-picker-keyboard-spacer').props.style).toEqual({ height: 301 });
+  });
+
   it('shows active remote device with volume slider and allows transferring to another device', () => {
     const onTransfer = vi.fn(async () => undefined);
     const connect: ConnectSessionSnapshot = {

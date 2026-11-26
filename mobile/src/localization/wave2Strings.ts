@@ -45,6 +45,7 @@ export interface Wave2Strings {
     bpmBadge: (bpm: number) => string;
     lufsBadge: (lufs: number) => string;
     metaUnavailable: string;
+    metaFailed: string;
   };
   lyrics: {
     instrumentalTitle: string;
@@ -67,6 +68,7 @@ export interface Wave2Strings {
   party2: {
     savePlaylistButton: string;
     savePlaylistTitle: string;
+    savePlaylistClose: string;
     savePlaylistNameLabel: string;
     savePlaylistCollaborative: string;
     savePlaylistConfirm: string;
@@ -260,6 +262,7 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       bpmBadge: (bpm) => `${Math.round(bpm)} BPM`,
       lufsBadge: (lufs) => `${lufs.toFixed(1)} LUFS`,
       metaUnavailable: 'Wellenform wird analysiert …',
+      metaFailed: 'Wellenform konnte nicht geladen werden',
     },
     lyrics: {
       instrumentalTitle: 'Instrumental',
@@ -285,6 +288,7 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     party2: {
       savePlaylistButton: 'Als Playlist speichern',
       savePlaylistTitle: 'Jam als Playlist speichern',
+      savePlaylistClose: 'Speichern abbrechen',
       savePlaylistNameLabel: 'Playlist-Name',
       savePlaylistCollaborative: 'Als gemeinsame Playlist anlegen',
       savePlaylistConfirm: 'Speichern',
@@ -488,6 +492,7 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       bpmBadge: (bpm) => `${Math.round(bpm)} BPM`,
       lufsBadge: (lufs) => `${lufs.toFixed(1)} LUFS`,
       metaUnavailable: 'Analyzing waveform…',
+      metaFailed: 'The waveform could not be loaded',
     },
     lyrics: {
       instrumentalTitle: 'Instrumental',
@@ -513,6 +518,7 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     party2: {
       savePlaylistButton: 'Save as Playlist',
       savePlaylistTitle: 'Save Jam as Playlist',
+      savePlaylistClose: 'Cancel saving',
       savePlaylistNameLabel: 'Playlist name',
       savePlaylistCollaborative: 'Create as collaborative playlist',
       savePlaylistConfirm: 'Save',

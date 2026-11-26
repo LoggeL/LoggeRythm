@@ -4,6 +4,7 @@ import { strings } from '../localization';
 import {
   dismissTrackActions,
   getTrackActionRequest,
+  quickAddTrackToQueue,
   runAuthorizedTrackRemoval,
   runTrackQueueAction,
   showTrackActions,
@@ -16,6 +17,7 @@ import { IDLE_PARTY_SNAPSHOT, installActivePartyRouter } from '../party/activePa
 
 const mocks = vi.hoisted(() => ({
   announce: vi.fn(),
+  toast: vi.fn(),
   playNext: vi.fn(),
   addToQueue: vi.fn(),
   startRadio: vi.fn(),
@@ -23,6 +25,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-native', () => ({
   AccessibilityInfo: { announceForAccessibility: mocks.announce },
+  Platform: { OS: 'android' },
+  ToastAndroid: { show: mocks.toast, SHORT: 0 },
 }));
 
 vi.mock('../player/controller', () => ({
@@ -174,6 +178,24 @@ describe('track action sheet contract', () => {
     expect(onError).not.toHaveBeenCalledWith(expect.stringContaining('native queue rejected mutation'));
     expect(mocks.announce).not.toHaveBeenCalled();
     expect(getTrackActionRequest()?.requestId).toBe(request.requestId);
+  });
+
+  it('confirms a swipe-to-queue visibly, because no sheet closes to signal success', async () => {
+    await expect(quickAddTrackToQueue(track)).resolves.toBe(true);
+
+    const message = strings.trackActions.addToQueueSucceeded(track.title);
+    expect(mocks.addToQueue).toHaveBeenCalledExactlyOnceWith(track);
+    expect(mocks.announce).toHaveBeenCalledExactlyOnceWith(message);
+    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith(message, 0);
+  });
+
+  it('never confirms a swipe-to-queue that the queue rejected', async () => {
+    mocks.addToQueue.mockRejectedValueOnce(new Error('native queue rejected mutation'));
+
+    await expect(quickAddTrackToQueue(track)).resolves.toBe(false);
+
+    expect(mocks.announce).not.toHaveBeenCalled();
+    expect(mocks.toast).not.toHaveBeenCalled();
   });
 
   it('does not let completion from an older sheet close a newer request', async () => {

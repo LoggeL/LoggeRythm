@@ -15,6 +15,12 @@ export interface ArtistTrackListItem {
 
 export interface ArtistTrackListSection {
   id: ArtistTrackSectionId;
+  /**
+   * SectionList keys its cells by section: without one it uses the section's
+   * position, so the liked block appearing or disappearing (first like, last
+   * unlike) shifts every key and remounts all rows, search field included.
+   */
+  key: ArtistTrackSectionId;
   data: ArtistTrackListItem[];
 }
 
@@ -98,12 +104,14 @@ export function createArtistTrackListSections({
   if (liked !== null) {
     sections.push({
       id: 'liked',
+      key: 'liked',
       data: (liked.expanded ? liked.tracks : []).map((track, index) => ({ kind: 'liked', track, index })),
     });
   }
   sections.push(
     {
       id: 'popular',
+      key: 'popular',
       data: popularTracks.map((track, index) => ({
         kind: 'popular',
         track,
@@ -112,6 +120,7 @@ export function createArtistTrackListSections({
     },
     {
       id: 'search',
+      key: 'search',
       data: searchActive
         ? searchTracks.map((track, index) => ({
             kind: 'search',

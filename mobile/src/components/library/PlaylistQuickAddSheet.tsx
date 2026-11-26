@@ -18,9 +18,10 @@ import {
 } from '../../data';
 import { libraryStrings } from '../../screens/libraryStrings';
 import { colors, layout, metrics, radii, spacing, typography } from '../../theme';
-import { ActionButton, AppText, Artwork, BottomSheet, IconButton } from '../ui';
+import { AppText, Artwork, BottomSheet, IconButton } from '../ui';
 import { refreshAutoBrowse } from './autoBrowse';
 import { InlineNotice } from './InlineNotice';
+import { useKeyboardInset } from './useKeyboardInset';
 
 export interface PlaylistQuickAddSheetProps {
   visible: boolean;
@@ -87,8 +88,14 @@ export function PlaylistQuickAddSheet({
     };
   }, [query, visible]);
 
+  // The field is focused on open and the keyboard does not resize the sheet:
+  // without the spacer it covers the field and the results.
+  const keyboardInset = useKeyboardInset();
+
   const handleAdd = async (track: Track) => {
     if (addingId !== null) return;
+    // A row that already shows the check mark must not add the song again.
+    if (existingTrackIds.has(track.id) || addedIds.has(track.id)) return;
     setAddingId(track.id);
     setError(null);
     const snapshot = await optimisticallyAddPlaylistTrack(queryClient, scope, playlistId, track);
@@ -106,7 +113,8 @@ export function PlaylistQuickAddSheet({
         invalidatePlaylistCaches(queryClient, scope, playlistId),
         refreshAutoBrowse(),
       ]);
-    } catch {
+    } catch (cause) {
+      console.error('[LoggeRythm] Quick-add to playlist failed:', cause);
       restorePlaylistCache(queryClient, scope, playlistId, snapshot);
       setError(libraryStrings.playlist.quickAddFailed);
     } finally {
@@ -181,23 +189,27 @@ export function PlaylistQuickAddSheet({
                   {trackArtistLabel(track)}
                 </AppText>
               </View>
-              <ActionButton
+              {/* An icon, not a labelled pill: the label took most of the row and
+                  left the song title a few characters. */}
+              <IconButton
                 testID={`playlist-quick-add-btn-${track.id}`}
-                variant={alreadyAdded ? 'ghost' : 'secondary'}
+                variant={alreadyAdded ? 'plain' : 'tonal'}
                 icon={alreadyAdded ? 'check' : 'plus'}
-                label={
+                color={alreadyAdded ? colors.accent : undefined}
+                accessibilityLabel={
                   alreadyAdded
-                    ? libraryStrings.playlist.quickAddInPlaylist
-                    : libraryStrings.playlist.quickAdd
+                    ? `${libraryStrings.playlist.quickAddInPlaylist}: ${track.title}`
+                    : `${libraryStrings.playlist.quickAdd}: ${track.title}`
                 }
                 busy={busy}
-                disabled={addingId !== null}
+                disabled={addingId !== null || alreadyAdded}
                 onPress={() => void handleAdd(track)}
               />
             </View>
           );
         })}
       </ScrollView>
+      <View testID="playlist-quick-add-keyboard-spacer" style={{ height: keyboardInset }} />
     </BottomSheet>
   );
 }

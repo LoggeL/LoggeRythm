@@ -9,6 +9,7 @@ import {
 } from '../components/ui/PressableScale';
 import { strings } from '../localization';
 import { useHasEffectiveActiveTrack } from '../connect/effectivePlaybackState';
+import { useMiniPlayerOutputStripHeight } from '../hooks/useBottomInset';
 import { clearPlayerError, usePlayerError } from '../player/errors';
 import { colors, elevation, metrics, opacity, radii, spacing, typography } from '../theme';
 import { useTvEnvironment } from '../tv';
@@ -21,6 +22,8 @@ export interface PlayerOverlayBottomOffsetInput {
   bottomInset: number;
   isTv: boolean;
   aboveMiniPlayer: boolean;
+  /** Height of the mini player's output strip row while it is shown; see `useMiniPlayerOutputStripHeight`. */
+  outputStripHeight?: number;
 }
 
 /**
@@ -33,18 +36,19 @@ export function playerOverlayBottomOffset({
   bottomInset,
   isTv,
   aboveMiniPlayer,
+  outputStripHeight = 0,
 }: PlayerOverlayBottomOffsetInput): number {
   if (isTv) {
     if (!aboveMiniPlayer) {
       return Math.max(spacing.md, bottomInset + spacing.xs);
     }
     const tvBarBottom = Math.max(spacing.md, bottomInset + metrics.miniPlayerGap);
-    return tvBarBottom + TV_MINI_PLAYER_SURFACE_HEIGHT + spacing.xs;
+    return tvBarBottom + TV_MINI_PLAYER_SURFACE_HEIGHT + outputStripHeight + spacing.xs;
   }
   return (
     (hasTabBar ? TAB_BAR_HEIGHT : 0) +
     bottomInset +
-    (aboveMiniPlayer ? MINI_PLAYER_HEIGHT : 0) +
+    (aboveMiniPlayer ? MINI_PLAYER_HEIGHT + outputStripHeight : 0) +
     spacing.xs
   );
 }
@@ -55,12 +59,14 @@ export function PlayerErrorBanner({ hasTabBar = true }: { hasTabBar?: boolean })
   const insets = useSafeAreaInsets();
   const tv = useTvEnvironment();
   const [dismissFocus] = useState(createFocusRingController);
+  const outputStripHeight = useMiniPlayerOutputStripHeight();
   if (!error) return null;
   const bottom = playerOverlayBottomOffset({
     hasTabBar: hasTabBar && !tv.isTv,
     bottomInset: insets.bottom,
     isTv: tv.isTv,
     aboveMiniPlayer: true,
+    outputStripHeight,
   });
   return (
     <View

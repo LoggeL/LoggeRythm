@@ -381,7 +381,8 @@ export default function InsightsScreen({ onOpenArtist, onOpenAlbum }: InsightsSc
       data.play_count,
       data.top_artists[0]?.label ?? '',
     );
-    void Share.share({ message }).catch(() => {
+    void Share.share({ message }).catch((cause: unknown) => {
+      console.error('[LoggeRythm] Failed to share listening insights:', cause);
       setShareError(wave2Strings.insights.shareFailed);
     });
   };

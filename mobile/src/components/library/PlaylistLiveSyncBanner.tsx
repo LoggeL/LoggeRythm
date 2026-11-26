@@ -6,6 +6,7 @@ import { getConnectivitySnapshot, subscribeConnectivity } from '../../connectivi
 import { openPlaylistEventsStream } from '../../data/playlistEventsStream';
 import { queryKeys } from '../../data/queryKeys';
 import { wave2Strings } from '../../localization/wave2Strings';
+import { libraryStrings } from '../../screens/libraryStrings';
 import { colors, radii, spacing } from '../../theme';
 import { ActionButton, AppText } from '../ui';
 
@@ -147,7 +148,7 @@ export function PlaylistLiveSyncBanner({
         <ActionButton
           testID="playlist-live-exit"
           variant="secondary"
-          label={wave2Strings.party2.kioskClose}
+          label={libraryStrings.common.dismiss}
           onPress={onExit}
         />
       </View>

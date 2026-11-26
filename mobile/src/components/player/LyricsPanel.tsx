@@ -563,7 +563,8 @@ export default function LyricsPanel({ track, position, onSeek }: LyricsPanelProp
     (index: number) => {
       triggerHaptic('tap');
       setShareError(null);
-      void shareLyricQuote(track, lines, index).catch(() => {
+      void shareLyricQuote(track, lines, index).catch((cause: unknown) => {
+        console.error('[LoggeRythm] Failed to share a lyric line:', cause);
         setShareError(strings.player.lyrics.shareQuoteFailed);
       });
     },

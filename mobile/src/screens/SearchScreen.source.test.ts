@@ -79,8 +79,11 @@ describe('SearchScreen track playback source', () => {
     expect(source).not.toContain("type: 'search'");
   });
 
-  it('routes the top track result through the same radio start', () => {
-    expect(source).toContain("case 'track':\n          return play(result.index);");
+  it('plays the track the top-result card shows, through the same radio start', () => {
+    // Not `play(result.index)`: that index addresses the list below the
+    // library section, which omits liked recordings the card may still show.
+    expect(source).toContain('return playWithRadio(result.track);');
+    expect(source).not.toContain('play(result.index)');
   });
 
   it('reports a failed radio separately from a failed playback start', () => {

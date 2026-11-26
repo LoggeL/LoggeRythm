@@ -66,7 +66,7 @@ function RecentArtwork({
   );
 }
 
-/** Keep history playback and catalog destinations as separate, non-overlapping responders. */
+/** A recently heard song: the row plays it, the overflow button opens its actions. */
 export function LibraryRecentRow({
   play,
   index,
@@ -113,27 +113,31 @@ export function LibraryRecentRow({
           {index + 1}
         </AppText>
         <RecentArtwork play={play} busy={busy} playback={presentation.playback} />
+        {/* Part of the play target, like every other track row: a tap on the
+            title plays the song instead of opening its album. Album and
+            artist stay one tap away in the actions sheet. */}
+        <View style={styles.meta}>
+          <TrackIdentityLinks
+            metadata={metadata}
+            testID={`${testID}-identity`}
+            copy={trackIdentityCopy}
+            onOpenAlbum={onOpenAlbum}
+            onOpenArtist={onOpenArtist}
+            showPopularity={false}
+            interactive={false}
+          />
+          <TrackStateIndicator
+            presentation={presentation}
+            copy={trackStateIndicatorCopy}
+            testID={`${testID}-state`}
+          />
+        </View>
         <FocusRingOverlay
           controller={focusController}
           borderRadius={radii.md}
           disabled={disabled}
         />
       </Pressable>
-      <View style={styles.meta}>
-        <TrackIdentityLinks
-          metadata={metadata}
-          testID={`${testID}-identity`}
-          copy={trackIdentityCopy}
-          onOpenAlbum={onOpenAlbum}
-          onOpenArtist={onOpenArtist}
-          showPopularity={false}
-        />
-        <TrackStateIndicator
-          presentation={presentation}
-          copy={trackStateIndicatorCopy}
-          testID={`${testID}-state`}
-        />
-      </View>
       <IconButton
         testID={`${testID}-actions`}
         icon="dots-vertical"
@@ -153,6 +157,7 @@ const styles = StyleSheet.create({
   },
   activeRow: { backgroundColor: colors.accentSubtle },
   playControl: {
+    flex: 1,
     minWidth: metrics.minimumTouchTarget * 2,
     minHeight: layout.rowHeight + spacing.xs,
     flexDirection: 'row',
@@ -178,8 +183,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flex: 1,
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: spacing.xs,
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    paddingLeft: spacing.xxs,
   },
   actions: { marginRight: spacing.xs },
   pressed: { opacity: opacity.pressed },

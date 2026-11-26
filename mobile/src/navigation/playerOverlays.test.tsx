@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   error: null as string | null,
   hasActiveTrack: false,
   bottomInset: 0,
+  outputStripHeight: 0,
   tvEnv: null as unknown as TvEnvironment,
   clearPlayerError: vi.fn(),
 }));
@@ -40,6 +41,9 @@ vi.mock('react-native-safe-area-context', () => ({
 vi.mock('../components/MiniPlayer', () => ({
   MINI_PLAYER_HEIGHT: 72,
   TAB_BAR_HEIGHT: 64,
+}));
+vi.mock('../hooks/useBottomInset', () => ({
+  useMiniPlayerOutputStripHeight: () => mocks.outputStripHeight,
 }));
 vi.mock('../components/PlayerNoticeBanner', () => ({ default: 'PlayerNoticeBanner' }));
 vi.mock('../player/errors', () => ({
@@ -74,6 +78,7 @@ describe('playerOverlays TV & phone clearance', () => {
     mocks.error = null;
     mocks.hasActiveTrack = false;
     mocks.bottomInset = 0;
+    mocks.outputStripHeight = 0;
     mocks.tvEnv = computeTvEnvironment({ width: 390, height: 844 }, false);
     mocks.clearPlayerError.mockClear();
   });
@@ -118,6 +123,19 @@ describe('playerOverlays TV & phone clearance', () => {
         aboveMiniPlayer: false,
       }),
     ).toBe(spacing.md);
+  });
+
+  it('lifts the error banner above the mini player output strip instead of covering the bar', () => {
+    mocks.error = 'Playback failed';
+    mocks.bottomInset = 12;
+    const bottomOf = () =>
+      flatStyle(byTestId(PlayerErrorBanner({ hasTabBar: true }), 'player-error-banner').props.style)
+        .bottom;
+
+    expect(bottomOf()).toBe(64 + 12 + 72 + spacing.xs);
+    // "Wiedergabe auf …" / Jam row: the bar is 32dp taller, so is the offset.
+    mocks.outputStripHeight = 32;
+    expect(bottomOf()).toBe(64 + 12 + 72 + 32 + spacing.xs);
   });
 
   it('positions PlayerErrorBanner and PlayerNoticeWithoutMiniPlayer cleanly on Android TV', () => {

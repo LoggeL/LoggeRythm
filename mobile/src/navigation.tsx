@@ -386,6 +386,12 @@ export default function RootNavigator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
     [localeRevision],
   );
+  // Insights is not the profile: no "Profil" title, no sign-out button.
+  const insightsScreenOptions = useMemo<NativeStackNavigationOptions>(
+    () => ({ title: strings.navigation.insights }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
+    [localeRevision],
+  );
   const partyScreenOptions = useMemo<NativeStackNavigationOptions>(
     () => ({ title: strings.party.defaultName }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
@@ -423,7 +429,7 @@ export default function RootNavigator() {
               <RootStack.Screen
                 name="Insights"
                 component={InsightsRoute}
-                options={profileScreenOptions}
+                options={insightsScreenOptions}
               />
               <RootStack.Screen
                 name="NowPlaying"

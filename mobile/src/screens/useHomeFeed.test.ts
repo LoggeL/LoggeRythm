@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { homeFeedSection, isHomeFeedRefreshing, useHomeFeed } from './useHomeFeed';
+import { homeFeedSection, useHomeFeed } from './useHomeFeed';
 
 interface FakeQueryOptions {
   queryKey: string[];
@@ -10,6 +10,12 @@ const harness = vi.hoisted(() => ({
   options: [] as { queryKey: string[]; enabled: boolean }[],
   refetch: new Map<string, ReturnType<typeof vi.fn>>(),
   fetching: new Set<string>(),
+  setRefreshing: vi.fn(),
+}));
+
+vi.mock('react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react')>()),
+  useState: <T,>(initial: T) => [initial, harness.setRefreshing],
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -108,24 +114,12 @@ describe('homeFeedSection', () => {
   });
 });
 
-describe('isHomeFeedRefreshing', () => {
-  it('is true only for a background refetch, never for a first load', () => {
-    expect(isHomeFeedRefreshing([{ isFetching: true, isPending: true }])).toBe(false);
-    expect(isHomeFeedRefreshing([{ isFetching: false, isPending: false }])).toBe(false);
-    expect(
-      isHomeFeedRefreshing([
-        { isFetching: true, isPending: true },
-        { isFetching: true, isPending: false },
-      ]),
-    ).toBe(true);
-  });
-});
-
 describe('useHomeFeed', () => {
   beforeEach(() => {
     harness.options.length = 0;
     harness.refetch.clear();
     harness.fetching.clear();
+    harness.setRefreshing.mockClear();
   });
 
   it('loads and refreshes the nine discovery sources on the top view only', () => {
@@ -142,6 +136,16 @@ describe('useHomeFeed', () => {
     expect(refetched()).toEqual(DISCOVERY);
   });
 
+  it('spins for a pull-to-refresh until every source has settled', async () => {
+    const feed = useHomeFeed('origin::user:7', null);
+
+    feed.refresh();
+    expect(harness.setRefreshing.mock.calls).toEqual([[true]]);
+    await vi.waitFor(() => {
+      expect(harness.setRefreshing.mock.calls).toEqual([[true], [false]]);
+    });
+  });
+
   it('loads and refreshes only the mood rail while a mood is selected', () => {
     harness.fetching.add('mood');
     harness.fetching.add('charts');
@@ -149,14 +153,11 @@ describe('useHomeFeed', () => {
 
     expect(enabledQueries()).toEqual(['mood']);
     expect(harness.options[9].queryKey).toEqual(['mood', 'chill']);
-    expect(feed.refreshing).toBe(true);
+    // A background refetch (e.g. stats after a recorded play) is not a pull:
+    // the spinner must not drop into the page by itself.
+    expect(feed.refreshing).toBe(false);
 
     feed.refresh();
     expect(refetched()).toEqual(['mood']);
-  });
-
-  it('does not report a refresh for sources that are not on screen', () => {
-    harness.fetching.add('mood');
-    expect(useHomeFeed('origin::user:7', null).refreshing).toBe(false);
   });
 });

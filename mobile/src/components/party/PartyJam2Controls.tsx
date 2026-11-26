@@ -5,6 +5,7 @@ import { triggerHaptic } from '../../hooks/useHaptics';
 import { wave2Strings } from '../../localization/wave2Strings';
 import { partyDisplayName } from '../../party/partyModel';
 import { colors, layout, metrics, opacity, radii, spacing } from '../../theme';
+import { useKeyboardInset } from '../library/useKeyboardInset';
 import { spotifyImportInputStyle } from '../search/SpotifyImportForm';
 import { ActionButton, AppText, BottomSheet } from '../ui';
 
@@ -104,12 +105,15 @@ export function PartySavePlaylistSheet({
 }: PartySavePlaylistSheetProps) {
   const [name, setName] = useState(partyDisplayName(party));
   const [collaborative, setCollaborative] = useState(false);
+  // The keyboard does not resize a bottom sheet; without the spacer it covers
+  // the name field, the switch and the save button.
+  const keyboardInset = useKeyboardInset();
 
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      closeLabel={wave2Strings.party2.kioskClose}
+      closeLabel={wave2Strings.party2.savePlaylistClose}
       title={wave2Strings.party2.savePlaylistTitle}
       testID="party-save-playlist-sheet"
     >
@@ -147,6 +151,7 @@ export function PartySavePlaylistSheet({
           onPress={() => onSave(name.trim() || partyDisplayName(party), collaborative)}
         />
       </View>
+      <View testID="party-save-playlist-keyboard-spacer" style={{ height: keyboardInset }} />
     </BottomSheet>
   );
 }
