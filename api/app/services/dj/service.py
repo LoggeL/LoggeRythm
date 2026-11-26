@@ -224,11 +224,17 @@ def _prune_clips() -> None:
 
     Usage is the newest mtime of the pair; ``get_transition`` touches both on every hit.
     """
-    cutoff = time.time() - CLIP_MAX_AGE_SEC
+    now = time.time()
+    cutoff = now - CLIP_MAX_AGE_SEC
     groups: dict[str, list[str]] = {}
     for path in glob.glob(os.path.join(_dj_dir("clips"), "*")):
         if path.endswith(".plan") or path.endswith(".part"):
-            continue  # owned by a running render job
+            # leftovers of a render that was killed (timeout, restart); renders run on this
+            # thread only, so none is live now, but keep a margin for clock skew
+            if os.path.getmtime(path) < now - RENDER_TIMEOUT_SEC:
+                logger.info("DJ: removing leftover %s of an interrupted render", path)
+                os.remove(path)
+            continue
         groups.setdefault(os.path.basename(path).split(".", 1)[0], []).append(path)
     with _lock:  # get_transition reads and touches a clip under the same lock
         for files in groups.values():

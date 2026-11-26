@@ -31,6 +31,10 @@ class DjTransitionClip(BaseModel):
         "the player maps its own position onto the clip's timeline with it",
     )
     b_start_skip_s: float = Field(description="Same for B")
+    a_mime: Literal["audio/mpeg", "audio/flac"] = Field(
+        description="Codec of the analysed A file; the player declines when it plays a different one",
+    )
+    b_mime: Literal["audio/mpeg", "audio/flac"] = Field(description="Same for B")
 
 
 class DjTransition(BaseModel):

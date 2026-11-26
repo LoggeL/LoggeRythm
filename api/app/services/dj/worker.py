@@ -57,8 +57,8 @@ def cmd_render(a_path: str, b_path: str, plan_json: str, a_gain: str, b_gain: st
         _write_json_atomic(out_json, {"status": "unsuitable", "detail": str(exc)})
         return
     # how far ffmpeg's timeline (the clip's) is shifted against each source file's start
-    timeline["a_start_skip_s"] = audio.start_skip_s(a_path)
-    timeline["b_start_skip_s"] = audio.start_skip_s(b_path)
+    timeline["a_start_skip_s"], timeline["a_mime"] = audio.probe(a_path)
+    timeline["b_start_skip_s"], timeline["b_mime"] = audio.probe(b_path)
     tmp = out_flac + ".part"
     audio.write_flac(tmp, clip)
     os.replace(tmp, out_flac)

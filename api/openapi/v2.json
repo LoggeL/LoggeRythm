@@ -1872,6 +1872,15 @@
       "DjTransitionClip": {
         "description": "Server-rendered transition clip and its timeline (clip seconds).\n\nA media time = ``a_start_s + t`` for ``t <= cue_s``; B media time = ``t + b_offset_s``.",
         "properties": {
+          "a_mime": {
+            "description": "Codec of the analysed A file; the player declines when it plays a different one",
+            "enum": [
+              "audio/mpeg",
+              "audio/flac"
+            ],
+            "title": "A Mime",
+            "type": "string"
+          },
           "a_speed": {
             "title": "A Speed",
             "type": "number"
@@ -1884,6 +1893,15 @@
             "description": "Seconds ffmpeg dropped at the start of A's file (LAME delay + 529 samples for tagged MP3, else 0); the player maps its own position onto the clip's timeline with it",
             "title": "A Start Skip S",
             "type": "number"
+          },
+          "b_mime": {
+            "description": "Same for B",
+            "enum": [
+              "audio/mpeg",
+              "audio/flac"
+            ],
+            "title": "B Mime",
+            "type": "string"
           },
           "b_offset_s": {
             "title": "B Offset S",
@@ -1961,7 +1979,9 @@
           "a_speed",
           "limiter_reduction_db",
           "a_start_skip_s",
-          "b_start_skip_s"
+          "b_start_skip_s",
+          "a_mime",
+          "b_mime"
         ],
         "title": "DjTransitionClip",
         "type": "object"

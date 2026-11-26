@@ -41,7 +41,13 @@ Android (track A playing, B next)
 
 The following abort the DJ transition and restore the loudness: user pause, skip or seek, a speed change, queue changes, focus loss, and the sleep fade. The controller's own seeks are matched exactly (index and position), so every other seek counts as a user action. A sleep fade aborts before it reads the base volume.
 
-The app falls back to the regular transition (logged) in these cases: the deck does not lock before the cue, the crossfade is already running, a "sleep after this track" timer targets A, A and B have different quality tiers, or A and B need different LoudnessEnhancer boosts.
+The app falls back to the regular transition (logged) in these cases:
+- the deck does not lock before the cue, or the crossfade is already running;
+- a "sleep after this track" timer targets A (also when it is set during the run, as long as the primary is still on A);
+- A and B have different quality tiers, or need different LoudnessEnhancer boosts;
+- the player plays a different codec than the server analysed (`a_mime` / `b_mime`), for example a cached MP3 after the account switched to lossless.
+
+Declines that depend on position or transient state (past the clip start, crossfade running, deck lock timeout, decoder not known yet) are planned again after a user seek.
 
 **Timing.** The server analyses and renders on ffmpeg's decode timeline. The player's positions differ from it by a per-track offset (`LoggeRythmDjDecoderOffset`; source: Media3 1.10.1, AOSP codec2):
 - MP3: `c2.android.mp3.decoder` drops its 529-sample delay after every start and every flush.

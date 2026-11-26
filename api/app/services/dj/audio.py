@@ -5,13 +5,14 @@ exactly the same sample timeline. For an MP3 with a LAME/Lavf Info tag, ffmpeg s
 the encoder delay plus the 529-sample decoder delay; without a tag it skips nothing.
 The player's positions match this timeline only up to a per-track offset that depends
 on its own trimming state, so every clip carries ``start_skip_s`` (see
-``start_skip_s()``) and the Android player applies the offset
+``probe()``) and the Android player applies the offset
 (``LoggeRythmDjDecoderOffset``).
 Beat This!'s own ``load_audio`` is deliberately not used: it silently falls back
 across torchaudio/soundfile/madmom, and each treats MP3 encoder delay differently.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 
@@ -89,16 +90,21 @@ def write_flac(path: str, audio: np.ndarray) -> None:
         )
 
 
-def start_skip_s(path: str) -> float:
-    """Seconds of decoded audio ffmpeg drops at the start of ``path`` (its ``start_time``).
+_CODEC_MIME = {"mp3": "audio/mpeg", "flac": "audio/flac"}
 
-    LAME/Lavf-tagged MP3: (encoder delay + 529) / rate. Untagged MP3, FLAC: 0.
+
+def probe(path: str) -> tuple[float, str]:
+    """``(start_skip_s, mime)`` of ``path``.
+
+    ``start_skip_s`` is how much decoded audio ffmpeg drops at the start (its
+    ``start_time``): (encoder delay + 529) / rate for LAME/Lavf-tagged MP3, 0 for
+    untagged MP3 and FLAC. ``mime`` lets the player check it plays the same codec.
     """
     exe = shutil.which("ffprobe")
     if exe is None:
         raise AudioError("DJ transitions require ffprobe on PATH, but it was not found")
-    cmd = [exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=start_time",
-           "-of", "default=noprint_wrappers=1:nokey=1", path]
+    cmd = [exe, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name,start_time",
+           "-of", "json", path]
     try:
         proc = subprocess.run(cmd, capture_output=True, timeout=_FFMPEG_TIMEOUT_SEC)
     except subprocess.TimeoutExpired as exc:
@@ -108,9 +114,13 @@ def start_skip_s(path: str) -> float:
     if proc.returncode != 0 or err:
         raise AudioError(f"ffprobe failed on {path}: {err or proc.returncode}")
     try:
-        value = float(out)
-    except ValueError as exc:
-        raise AudioError(f"ffprobe returned no start_time for {path}: {out!r}") from exc
+        stream = json.loads(out)["streams"][0]
+        value = float(stream["start_time"])
+        codec = stream["codec_name"]
+    except (ValueError, KeyError, IndexError) as exc:
+        raise AudioError(f"ffprobe returned no codec/start_time for {path}: {out!r}") from exc
     if not 0.0 <= value < 0.2:
         raise AudioError(f"implausible start_time {value} s for {path}")
-    return value
+    if codec not in _CODEC_MIME:
+        raise AudioError(f"unsupported codec {codec!r} in {path}")
+    return value, _CODEC_MIME[codec]

@@ -31,7 +31,7 @@ class LoggeRythmDjTransitionTest {
      "a_start_s":118.741,"b_offset_s":14.526,"cue_s":8.0,"deck_start_s":1.0,"join_in_s":6.32,
      "primary_seek_s":6.62,"mix_start_s":8.02,"bass_swap_s":15.52,"mix_end_s":23.02,
      "join_out_s":24.19,"a_speed":1.024,"limiter_reduction_db":2.8,
-     "a_start_skip_s":0.025057,"b_start_skip_s":0.0}
+     "a_start_skip_s":0.025057,"b_start_skip_s":0.0,"a_mime":"audio/mpeg","b_mime":"audio/mpeg"}
   """.trimIndent()
 
   @Test

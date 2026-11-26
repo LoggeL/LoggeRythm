@@ -86,12 +86,16 @@ internal data class LoggeRythmDjClip(
   /** Seconds ffmpeg dropped at the start of A's / B's file; see [LoggeRythmDjDecoderOffset]. */
   val aStartSkipS: Double,
   val bStartSkipS: Double,
+  /** Codec of the files the server analysed; the primary must play the same one. */
+  val aMime: String,
+  val bMime: String,
 ) {
   init {
     require(Regex("^[0-9a-f]{32}$").matches(id)) { "dj-clip-id-invalid" }
     require(deckStartS < joinInS && joinInS < cueS && cueS <= mixStartS + 1.0) { "dj-clip-timeline-order" }
     require(primarySeekS < mixEndS && mixEndS < joinOutS && joinOutS < durationS) { "dj-clip-timeline-order" }
     require(aStartSkipS in 0.0..0.2 && bStartSkipS in 0.0..0.2) { "dj-clip-start-skip-range" }
+    require(aMime in CLIP_SOURCE_MIMES && bMime in CLIP_SOURCE_MIMES) { "dj-clip-source-mime" }
   }
 
   /** A media position (ms) for a clip position (ms); valid before [cueS]. */
@@ -116,7 +120,11 @@ internal data class LoggeRythmDjClip(
       aSpeed = json.getDouble("a_speed"),
       aStartSkipS = json.getDouble("a_start_skip_s"),
       bStartSkipS = json.getDouble("b_start_skip_s"),
+      aMime = json.getString("a_mime"),
+      bMime = json.getString("b_mime"),
     )
+
+    private val CLIP_SOURCE_MIMES = setOf(MimeTypes.AUDIO_MPEG, MimeTypes.AUDIO_FLAC)
   }
 }
 
@@ -319,7 +327,8 @@ internal class LoggeRythmDjTransitionController(
   private sealed class PlanState {
     data object Fetching : PlanState()
     data class RetryAt(val elapsedMs: Long) : PlanState()
-    data class Declined(val reason: String) : PlanState()
+    /** [retryable]: depends on position or transient state; a user seek plans the pair again. */
+    data class Declined(val reason: String, val retryable: Boolean = false) : PlanState()
     data class Ready(val clip: LoggeRythmDjClip, val file: File) : PlanState()
   }
 
@@ -345,6 +354,8 @@ internal class LoggeRythmDjTransitionController(
   private val pendingSelfSeeks = ArrayDeque<Pair<Int, Long>>()
   /** Whether Media3 trimmed the current item's encoder delay since its last flush; see [LoggeRythmDjDecoderOffset]. */
   private var primaryTrimmed = true
+  /** A reconfiguration (prepare, item change) has armed the trim but no audio went through yet. */
+  private var trimPending = true
   private var primaryDecoderName: String? = null
   /** The primary's playback parameters as this controller last set them during a run. */
   private var expectedPrimaryParameters = PlaybackParameters.DEFAULT
@@ -371,13 +382,23 @@ internal class LoggeRythmDjTransitionController(
       reason: Int,
     ) {
       when (reason) {
-        // a seek within the item flushes without reconfiguring the sink: no trim afterwards
         Player.DISCONTINUITY_REASON_SEEK, Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT ->
-          primaryTrimmed = oldPosition.mediaItemIndex != newPosition.mediaItemIndex
-        Player.DISCONTINUITY_REASON_AUTO_TRANSITION, Player.DISCONTINUITY_REASON_REMOVE -> primaryTrimmed = true
+          if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+            armTrim()
+          } else if (!trimPending) {
+            // a seek within the item after audio flowed flushes without reconfiguring the
+            // sink, so the encoder delay is not trimmed again; before that the armed trim holds
+            primaryTrimmed = false
+          }
+        Player.DISCONTINUITY_REASON_AUTO_TRANSITION, Player.DISCONTINUITY_REASON_REMOVE -> armTrim()
         else -> Unit
       }
-      val active = run ?: return
+      val active = run
+      if (active == null) {
+        val declined = planState as? PlanState.Declined
+        if (reason == Player.DISCONTINUITY_REASON_SEEK && declined?.retryable == true) clearPlan()
+        return
+      }
       if (reason == Player.DISCONTINUITY_REASON_SEEK && consumeSelfSeek(newPosition)) return
       if (
         reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION &&
@@ -417,11 +438,16 @@ internal class LoggeRythmDjTransitionController(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-      primaryTrimmed = true
+      armTrim()
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
-      if (playbackState == Player.STATE_IDLE) primaryTrimmed = true // the next prepare reconfigures
+      when (playbackState) {
+        Player.STATE_IDLE -> armTrim() // the next prepare reconfigures the sink
+        // READY: the renderer has pushed audio through the sink, so the armed trim is spent
+        Player.STATE_READY -> trimPending = false
+        else -> Unit
+      }
       if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) abort("primary-state:$playbackState")
       scheduleMonitor()
     }
@@ -531,15 +557,20 @@ internal class LoggeRythmDjTransitionController(
     }
   }
 
-  private fun decline(pair: DjPair, reason: String) {
+  private fun decline(pair: DjPair, reason: String, retryable: Boolean = false) {
     Log.i(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} declined: $reason; regular transition instead")
-    planState = PlanState.Declined(reason)
+    planState = PlanState.Declined(reason, retryable)
+  }
+
+  private fun armTrim() {
+    primaryTrimmed = true
+    trimPending = true
   }
 
   private fun fetchPlan(pair: DjPair) {
     val session = LoggeRythmPlayerRuntime.sessionCookieForCurrentOrigin()
     if (session == null || session.first != pair.from.origin) {
-      planState = PlanState.Declined("no-session-for-origin")
+      planState = PlanState.Declined("no-session-for-origin", retryable = true)
       Log.e(TAG, "DJ transition skipped: no session cookie for ${pair.from.origin}")
       return
     }
@@ -650,14 +681,14 @@ internal class LoggeRythmDjTransitionController(
         Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: the clip deck failed to prepare", deckError)
         planState = PlanState.Declined("deck-prepare-failed")
       } else {
-        decline(pair, "past-clip-start (at ${positionMs} ms, deck starts at A ${deckStartAMs} ms)")
+        decline(pair, "past-clip-start (at ${positionMs} ms, deck starts at A ${deckStartAMs} ms)", retryable = true)
       }
       return
     }
     if (positionMs < deckStartAMs - DECK_PREPARE_LEAD_MS) return
     if (isCrossfadeActive()) {
       // the crossfade started while the plan was still pending; it owns this transition now
-      return decline(pair, "crossfade-already-running")
+      return decline(pair, "crossfade-already-running", retryable = true)
     }
     val sessionId = primaryPlayer.audioSessionId
     if (sessionId == C.AUDIO_SESSION_ID_UNSET) {
@@ -689,7 +720,14 @@ internal class LoggeRythmDjTransitionController(
     if (positionMs >= deckStartAMs && d.playbackState == Player.STATE_READY) {
       unverifiedPrimaryTiming()?.let { problem ->
         Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: $problem")
-        planState = PlanState.Declined("unverified-primary-timing")
+        planState = PlanState.Declined("unverified-primary-timing", retryable = true)
+        return
+      }
+      val playing = primaryPlayer.audioFormat?.sampleMimeType
+      if (playing != clip.aMime) {
+        // e.g. the player still plays a cached MP3 after the account switched to lossless
+        Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: server analysed ${clip.aMime}, player plays $playing")
+        planState = PlanState.Declined("source-codec-mismatch")
         return
       }
       if (d.audioSessionId != sessionId) {
@@ -707,6 +745,11 @@ internal class LoggeRythmDjTransitionController(
 
   private fun advance(r: Run) {
     if (isSleepFading()) return abort("sleep-fade")
+    if (r.phase <= Phase.CLIP && sleepsAfterCurrentItem()) {
+      // still on A: hand back so A ends naturally and the sleep timer sees an AUTO transition
+      planState = PlanState.Declined("sleep-after-current-item")
+      return abort("sleep-after-current-item")
+    }
     val now = SystemClock.elapsedRealtime()
     val clipMs = r.deck.currentPosition
     r.deck.playerError?.let { error ->
@@ -736,7 +779,7 @@ internal class LoggeRythmDjTransitionController(
           r.rampStartMs = now
         } else if (clipMs >= joinWindowEndMs) {
           Log.w(TAG, "DJ transition deck never locked onto A (last error ${r.lock.lastErrorMs} ms); regular transition instead")
-          planState = PlanState.Declined("deck-lock-timeout")
+          planState = PlanState.Declined("deck-lock-timeout", retryable = true)
           abort("deck-lock-timeout")
         }
       }
@@ -761,6 +804,12 @@ internal class LoggeRythmDjTransitionController(
       Phase.PRIMARY_LOCK -> {
         if (primaryPlayer.currentMediaItem?.mediaId != r.pair.toMediaId) return abort("primary-left-b")
         primaryPlayer.volume = 0f
+        primaryPlayer.audioFormat?.sampleMimeType?.let { playing ->
+          if (playing != r.clip.bMime) {
+            Log.e(TAG, "DJ transition: server analysed B as ${r.clip.bMime}, player plays $playing")
+            return abort("source-codec-mismatch-b")
+          }
+        }
         val expected = r.clip.bMediaMs(clipMs)
         val bOffsetMs = primaryOffsetMs(r.clip.bStartSkipS)
         val locked = bOffsetMs != null && applyLock(r, primaryPlayer, primaryPlayer.currentPosition + bOffsetMs - expected, now) { correction ->
@@ -870,9 +919,11 @@ internal class LoggeRythmDjTransitionController(
     active.deck.stop()
     active.deck.clearMediaItems()
     deckPreparedFor = null
-    if (primaryPlayer.playbackParameters.speed != 1f && active.phase >= Phase.CLIP) {
+    // undo only our own Sonic nudge; a speed the user just chose (the abort reason) stays
+    if (expectedPrimaryParameters != PlaybackParameters.DEFAULT && primaryPlayer.playbackParameters == expectedPrimaryParameters) {
       primaryPlayer.playbackParameters = PlaybackParameters.DEFAULT
     }
+    expectedPrimaryParameters = PlaybackParameters.DEFAULT
     if (active.phase != Phase.DECK_LOCK && !isSleepFading()) restorePrimaryLoudness()
     if (planState !is PlanState.Declined) clearPlan()
     Log.w(TAG, "DJ transition ${active.pair.from.trackId}->${active.pair.to.trackId} aborted in ${active.phase}: $reason")

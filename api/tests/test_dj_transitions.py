@@ -350,7 +350,8 @@ class DjApiTests(unittest.TestCase):
                     "cue_s": 8.0, "deck_start_s": 1.0, "join_in_s": 6.1, "primary_seek_s": 6.4,
                     "mix_start_s": 8.0, "bass_swap_s": 15.5, "mix_end_s": 23.0, "join_out_s": 24.2,
                     "a_speed": 1.024, "limiter_reduction_db": 1.2,
-                    "a_start_skip_s": 0.025057, "b_start_skip_s": 0.0}
+                    "a_start_skip_s": 0.025057, "b_start_skip_s": 0.0,
+                    "a_mime": "audio/mpeg", "b_mime": "audio/mpeg"}
         Path(meta).write_text(json.dumps(timeline))
         r = self.client.get("/api/dj/transition", params=self._query(), headers=self.headers)
         self.assertEqual(r.status_code, 200, r.text)
@@ -469,7 +470,7 @@ class DjAudioIoTest(unittest.TestCase):
             path = os.path.join(tmp, "clip.flac")
             audio.write_flac(path, x)
             y = audio.decode(path)
-            self.assertEqual(audio.start_skip_s(path), 0.0)
+            self.assertEqual(audio.probe(path), (0.0, "audio/flac"))
         self.assertEqual(y.shape, x.shape)
         self.assertLess(float(np.max(np.abs(x - y))), 2.0 / 32768)
 
@@ -485,7 +486,9 @@ class DjAudioIoTest(unittest.TestCase):
                  "-t", "1", "-codec:a", "libmp3lame", "-b:a", "320k", path],
                 check=True, capture_output=True,
             )
-            self.assertAlmostEqual(audio.start_skip_s(path) * SR, 576 + 529, delta=0.5)
+            skip, mime = audio.probe(path)
+            self.assertAlmostEqual(skip * SR, 576 + 529, delta=0.5)
+            self.assertEqual(mime, "audio/mpeg")
 
 
 class DjClipPruneTest(unittest.TestCase):
@@ -497,9 +500,15 @@ class DjClipPruneTest(unittest.TestCase):
             for f in (old_flac, old_meta, used_flac, used_meta):
                 Path(f).write_bytes(b"x")
             stale = time.time() - service.CLIP_MAX_AGE_SEC - 60
-            for f in (old_flac, old_meta, used_flac):
+            leftover, fresh_part = old_flac + ".part", used_flac + ".part"
+            Path(leftover).write_bytes(b"x")
+            Path(fresh_part).write_bytes(b"x")
+            for f in (old_flac, old_meta, used_flac, leftover):
                 os.utime(f, (stale, stale))
             service._prune_clips()  # used_meta was touched recently -> its clip stays
+            self.assertFalse(os.path.exists(leftover))
+            self.assertTrue(os.path.exists(fresh_part))  # may belong to a render; kept
+            os.remove(fresh_part)
             self.assertEqual(sorted(os.path.basename(p) for p in Path(tmp, "dj", "clips").iterdir()),
                              sorted(os.path.basename(p) for p in (used_flac, used_meta)))
 
