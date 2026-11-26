@@ -34,7 +34,7 @@ Android (track A playing, B next)
 - Without `quality`, the server resolves the quality the same way as `/api/tracks/{id}/stream` (the account's preferred quality).
 
 **Android** (`LoggeRythmDjTransition.kt`). The second deck is invisible to the session, Auto and persistence. It shares the primary player's audio session, so EQ, bass boost and the LoudnessEnhancer apply to the clip as well.
-1. The deck starts muted at `deck_start_s` and phase-locks to the primary player (A). It corrects with seeks first, then with ±3 % speed (Sonic). While the primary rebuffers, the deck pauses with it.
+1. The deck starts muted at `deck_start_s` and phase-locks to the primary player (A), see "Phase lock" below. While the primary rebuffers, the deck pauses with it.
 2. At `join_in_s` (between two beats) there is a 150 ms equal-gain join from primary to deck. Both play the same audio there.
 3. At `primary_seek_s` the muted primary player seeks into B and locks onto the deck's B audio.
 4. At `join_out_s` it joins back to the primary player and the deck stops.
@@ -54,7 +54,29 @@ Declines that depend on position or transient state (past the clip start, crossf
 - Media3 trims the LAME encoder delay D only after a reconfiguration (prepare, item change, cross-item seek). A seek within the same item does not trim it again.
 - ffmpeg drops (D + 529) samples for tagged MP3 files and nothing for untagged ones. The clip carries that value as `a_start_skip_s` / `b_start_skip_s` (from ffprobe).
 - The controller tracks whether the primary is currently "trimmed". It only mixes with verified decoders (`c2.android.mp3.decoder`, `c2.android.flac.decoder`); with any other decoder it declines and logs the decoder name.
-- Seeks start at the next frame (MP3 26 ms, clip FLAC 1024 samples = 23 ms). After every seek the lock waits 300 ms before it measures again.
+- Seeks start at the next frame (MP3 26 ms, clip FLAC 1024 samples = 23 ms).
+
+**Phase lock** (`LoggeRythmDjPhaseLock`, `LoggeRythmDjClockEnvelope`).
+- What it measures: in Media3 1.10.1, `Player.getCurrentPosition()` is the snapshot that the player's playback thread published last. It is refreshed about every 10 ms and never extrapolated. If that thread is busy, the position freezes while the audio keeps playing. On the emulator that happened about 35 % of the time, for up to 400 ms per player. Main-thread ticks were sometimes 40–160 ms late.
+- How it estimates: a read can lag the audio but is never ahead of it. So for each player the lock tracks `position − speed·now` over 600 ms of fresh reads and takes its upper envelope.
+- When it acts: only on an error that stayed stable (three estimates at least 100 ms apart, within 8 ms of each other).
+- How it corrects:
+  - Mainly with **timed speed nudges**, up to 10 %. The follower is muted in both lock phases, so a large nudge is inaudible. A speed change reaches the audio (and the reported position) only once the AudioTrack buffer has drained. That is 250–750 ms, read from `onAudioTrackInitialized`. Because the start and the end of a nudge are delayed by the same amount, a timed nudge integrates exactly, where a continuous controller hunts.
+  - If the ending tick comes late, the predicted residual is corrected by a follow-up nudge right away, at most twice.
+  - It seeks only when no nudge can close the gap in time. Seeks are imprecise: the restart delay varies and playback resumes on a frame boundary. The lock learns the lead as the median of the restart lags it measured. The deck keeps a back buffer, so backward corrections stay in memory.
+- Locked: within 5 ms at 1.0×. Once locked it stays locked up to 12 ms. If no time is left for a nudge, an error of up to 12 ms also counts as locked, since a held lock tolerates the same.
+- Rebuffer: if the leader stops during a nudge, the nudge is cancelled and speed goes back to 1.0 on resume. The drain wait is paused, and the lock measures again from scratch.
+- Failures are loud. The DJ transition is declined, or in PRIMARY_LOCK it joins back unlocked, with the measurement state in the log in each of these cases:
+  - `timing-too-noisy`: no stable error within 2.5 s;
+  - `leader-stalled`: more than 3 interruptions;
+  - `lock-infeasible`: the error can no longer be removed before the deadline.
+- Simulation (`LoggeRythmDjTransitionTest`, 6.5 s budget, randomized publish phase, lock time near 1e9 ms like `elapsedRealtime`):
+  - start errors of −140 to +90 ms lock without a seek, within 6–6.3 s, and stay within the 12 ms latch;
+  - −350/+420 ms lock after 1–3 seeks;
+  - with 50–400 ms snapshot freezes twice a second, at least 36 of 40 seeds lock within 8 ms;
+  - a rebuffer in the middle of a nudge and a follower that starts 3 s late still lock;
+  - slow 600 ms stream restarts either lock or fail with `lock-infeasible`.
+- Trace: `adb shell setprop log.tag.LoggeRythmDj VERBOSE` logs both positions on every tick.
 
 Logs: `adb logcat -s LoggeRythmDj`.
 
