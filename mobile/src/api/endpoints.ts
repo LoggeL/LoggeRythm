@@ -140,6 +140,7 @@ export interface PlaybackSettingsUpdate {
   crossfade_duration_sec?: number | null;
   preferred_quality?: AudioQualityTier | null;
   share_listening_activity?: boolean | null;
+  dj_transitions_enabled?: boolean | null;
 }
 
 export interface PartyCreateRequest {

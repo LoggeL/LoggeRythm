@@ -296,6 +296,8 @@ export interface StringCatalog {
     crossfadeSaved: string;
     crossfadeSaveFailed: string;
     crossfadeLoadFailed: string;
+    djTransitionsEnabled: string;
+    djTransitionsHint: string;
     storageTitle: string;
     storageDownloadsLabel: string;
     storageDownloadsSummary: (count: number, size: string) => string;
@@ -1321,6 +1323,9 @@ export const de: StringCatalog = {
     crossfadeSaved: 'Wiedergabe-Einstellungen gespeichert.',
     crossfadeSaveFailed: 'Wiedergabe-Einstellungen konnten nicht gespeichert werden.',
     crossfadeLoadFailed: 'Wiedergabe-Einstellungen konnten nicht geladen werden.',
+    djTransitionsEnabled: 'DJ-Übergänge',
+    djTransitionsHint:
+      'Passende Titel werden im Takt ineinander gemischt, mit angeglichenem Tempo. Alle anderen Übergänge folgen der Crossfade-Einstellung.',
     storageTitle: 'Speicher & Downloads',
     storageDownloadsLabel: 'Offline-Downloads',
     storageDownloadsSummary: (count, size) =>
@@ -2300,6 +2305,9 @@ export const en: StringCatalog = {
     crossfadeSaved: 'Playback settings saved.',
     crossfadeSaveFailed: 'Could not save playback settings.',
     crossfadeLoadFailed: 'Could not load playback settings.',
+    djTransitionsEnabled: 'DJ transitions',
+    djTransitionsHint:
+      'Matching tracks are mixed on the beat with their tempo aligned. All other transitions follow the crossfade setting.',
     storageTitle: 'Storage & Downloads',
     storageDownloadsLabel: 'Offline downloads',
     storageDownloadsSummary: (count, size) =>

@@ -6,3 +6,4 @@ web/.next
 api/spotifrei*.db
 api/storage
 .DS_Store
+**/libstretch.*

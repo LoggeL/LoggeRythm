@@ -44,6 +44,7 @@ export function PlaybackSettingsPanelView({
   const durationSec = settings?.crossfade_duration_sec ?? 4;
   const quality: AudioQualityTier = settings?.preferred_quality ?? 'high';
   const shareActivity = settings?.share_listening_activity === true;
+  const djTransitions = settings?.dj_transitions_enabled === true;
 
   return (
     <ProfileGroup
@@ -105,6 +106,24 @@ export function PlaybackSettingsPanelView({
                 />
               );
             })}
+          </View>
+
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleCopy}>
+              <AppText variant="bodyStrong">{strings.profile.djTransitionsEnabled}</AppText>
+              <AppText variant="caption" color="secondary">
+                {strings.profile.djTransitionsHint}
+              </AppText>
+            </View>
+            <Switch
+              testID="profile-dj-transitions-toggle"
+              accessibilityLabel={strings.profile.djTransitionsEnabled}
+              disabled={saving}
+              value={djTransitions}
+              onValueChange={(next) => onUpdate({ dj_transitions_enabled: next })}
+              trackColor={{ false: colors.border, true: colors.accentSolid }}
+              thumbColor={djTransitions ? colors.onAccent : colors.textSecondary}
+            />
           </View>
 
           <ListSeparator />

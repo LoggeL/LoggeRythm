@@ -10,6 +10,7 @@ Correctness guarantees:
 - per-track lock -> no concurrent double-download of the same id
 - atomic rename (.part -> final) -> never serve a half-written file
 """
+import glob
 import json
 import logging
 import math
@@ -664,7 +665,10 @@ def _remove_paths(deezer_id: str, paths: tuple[str, ...]) -> int:
 
 
 def _remove_files(deezer_id: str) -> int:
-    """Delete a track's audio variants + sidecar. Returns bytes freed."""
+    """Delete a track's audio variants, sidecar and DJ analyses. Returns bytes freed."""
+    dj_analyses = glob.glob(
+        os.path.join(_storage_dir(), "dj", "analysis", f"{glob.escape(deezer_id)}.*.json")
+    )
     return _remove_paths(
         deezer_id,
         (
@@ -672,6 +676,7 @@ def _remove_files(deezer_id: str) -> int:
             path_for_quality(deezer_id, "lossless"),
             path_for_quality(deezer_id, "saver"),
             meta_path_for(deezer_id),
+            *dj_analyses,
         ),
     )
 

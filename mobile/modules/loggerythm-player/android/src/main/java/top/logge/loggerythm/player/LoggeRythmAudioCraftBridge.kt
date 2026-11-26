@@ -24,6 +24,8 @@ internal interface LoggeRythmAudioCraftServiceControl {
   fun setPlaybackSpeed(speed: Float, pitch: Float): LoggeRythmPlaybackSpeedState
   fun getCrossfadeConfig(): LoggeRythmCrossfadeConfig
   fun setCrossfadeConfig(enabled: Boolean, durationSec: Double): LoggeRythmCrossfadeConfig
+  fun getDjTransitionsEnabled(): Boolean
+  fun setDjTransitionsEnabled(enabled: Boolean): Boolean
   fun setRemoteVolumeControl(
     active: Boolean,
     currentVolume: Int,

@@ -1799,6 +1799,193 @@
         "title": "DeviceCapabilities",
         "type": "object"
       },
+      "DjTransition": {
+        "properties": {
+          "clip": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DjTransitionClip"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "beatmatch",
+                  "crossfade"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "reason": {
+            "description": "OK, a crossfade reason code, or what a pending request waits for",
+            "title": "Reason",
+            "type": "string"
+          },
+          "retry_after_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry After S"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "pending"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "reason"
+        ],
+        "title": "DjTransition",
+        "type": "object"
+      },
+      "DjTransitionClip": {
+        "description": "Server-rendered transition clip and its timeline (clip seconds).\n\nA media time = ``a_start_s + t`` for ``t <= cue_s``; B media time = ``t + b_offset_s``.",
+        "properties": {
+          "a_mime": {
+            "description": "Codec of the analysed A file; the player declines when it plays a different one",
+            "enum": [
+              "audio/mpeg",
+              "audio/flac"
+            ],
+            "title": "A Mime",
+            "type": "string"
+          },
+          "a_speed": {
+            "title": "A Speed",
+            "type": "number"
+          },
+          "a_start_s": {
+            "title": "A Start S",
+            "type": "number"
+          },
+          "a_start_skip_s": {
+            "description": "Seconds ffmpeg dropped at the start of A's file (LAME delay + 529 samples for tagged MP3, else 0); the player maps its own position onto the clip's timeline with it",
+            "title": "A Start Skip S",
+            "type": "number"
+          },
+          "b_mime": {
+            "description": "Same for B",
+            "enum": [
+              "audio/mpeg",
+              "audio/flac"
+            ],
+            "title": "B Mime",
+            "type": "string"
+          },
+          "b_offset_s": {
+            "title": "B Offset S",
+            "type": "number"
+          },
+          "b_start_skip_s": {
+            "description": "Same for B",
+            "title": "B Start Skip S",
+            "type": "number"
+          },
+          "bass_swap_s": {
+            "title": "Bass Swap S",
+            "type": "number"
+          },
+          "cue_s": {
+            "title": "Cue S",
+            "type": "number"
+          },
+          "deck_start_s": {
+            "title": "Deck Start S",
+            "type": "number"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "number"
+          },
+          "id": {
+            "description": "Clip id for GET /api/dj/clips/{clip_id}",
+            "title": "Id",
+            "type": "string"
+          },
+          "join_in_s": {
+            "title": "Join In S",
+            "type": "number"
+          },
+          "join_out_s": {
+            "title": "Join Out S",
+            "type": "number"
+          },
+          "limiter_reduction_db": {
+            "title": "Limiter Reduction Db",
+            "type": "number"
+          },
+          "mix_end_s": {
+            "title": "Mix End S",
+            "type": "number"
+          },
+          "mix_start_s": {
+            "title": "Mix Start S",
+            "type": "number"
+          },
+          "primary_seek_s": {
+            "title": "Primary Seek S",
+            "type": "number"
+          },
+          "render_version": {
+            "title": "Render Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "render_version",
+          "duration_s",
+          "a_start_s",
+          "b_offset_s",
+          "cue_s",
+          "deck_start_s",
+          "join_in_s",
+          "primary_seek_s",
+          "mix_start_s",
+          "bass_swap_s",
+          "mix_end_s",
+          "join_out_s",
+          "a_speed",
+          "limiter_reduction_db",
+          "a_start_skip_s",
+          "b_start_skip_s",
+          "a_mime",
+          "b_mime"
+        ],
+        "title": "DjTransitionClip",
+        "type": "object"
+      },
       "FriendActivityItem": {
         "properties": {
           "avatar_url": {
@@ -3160,6 +3347,11 @@
             "title": "Crossfade Enabled",
             "type": "boolean"
           },
+          "dj_transitions_enabled": {
+            "default": false,
+            "title": "Dj Transitions Enabled",
+            "type": "boolean"
+          },
           "preferred_quality": {
             "default": "high",
             "enum": [
@@ -3206,6 +3398,17 @@
               }
             ],
             "title": "Crossfade Enabled"
+          },
+          "dj_transitions_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dj Transitions Enabled"
           },
           "preferred_quality": {
             "anyOf": [
@@ -7333,6 +7536,220 @@
         "summary": "Deezer Playlist",
         "tags": [
           "browse"
+        ]
+      }
+    },
+    "/api/dj/clips/{clip_id}": {
+      "get": {
+        "description": "Rendered transition clip (audio/flac), with Range support.",
+        "operationId": "get_clip_api_dj_clips__clip_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clip_id",
+            "required": true,
+            "schema": {
+              "title": "Clip Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "audio/flac": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "206": {
+            "content": {
+              "audio/flac": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Partial Content"
+          },
+          "304": {
+            "description": "Clip unchanged (ETag matched)."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "404": {
+            "description": "Unknown or pruned clip."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Clip",
+        "tags": [
+          "dj"
+        ]
+      }
+    },
+    "/api/dj/transition": {
+      "get": {
+        "description": "Plan the transition from one track into the next. Returns `pending` while the server downloads, analyses or renders (ask again after `retry_after_s`), a `crossfade` decision with its reason code when the pair cannot be beat-matched, or a `beatmatch` decision with the rendered clip's timeline.",
+        "operationId": "get_transition_api_dj_transition_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from_id",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d+$",
+              "title": "From Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to_id",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d+$",
+              "title": "To Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Quality of both stream URLs; omit when they carry no `quality` parameter (then the account's preferred quality applies, as for /api/tracks/{id}/stream)",
+            "in": "query",
+            "name": "quality",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "lossless",
+                    "high",
+                    "saver"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Quality of both stream URLs; omit when they carry no `quality` parameter (then the account's preferred quality applies, as for /api/tracks/{id}/stream)",
+              "title": "Quality"
+            }
+          },
+          {
+            "description": "Linear volume the player applies to the outgoing track",
+            "in": "query",
+            "name": "a_gain",
+            "required": true,
+            "schema": {
+              "description": "Linear volume the player applies to the outgoing track",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "title": "A Gain",
+              "type": "number"
+            }
+          },
+          {
+            "description": "Linear volume the player applies to the incoming track",
+            "in": "query",
+            "name": "b_gain",
+            "required": true,
+            "schema": {
+              "description": "Linear volume the player applies to the incoming track",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "title": "B Gain",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DjTransition"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Transition",
+        "tags": [
+          "dj"
         ]
       }
     },

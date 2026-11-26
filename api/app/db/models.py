@@ -43,6 +43,10 @@ class User(Base):
     preferred_quality: Mapped[str] = mapped_column(
         String(16), nullable=False, default="high", server_default="high"
     )
+    # Beat-matched DJ transitions in the Android player (opt-in).
+    dj_transitions_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     playlists: Mapped[list["Playlist"]] = relationship(

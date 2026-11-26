@@ -125,6 +125,8 @@ export interface PlaybackSettings {
   crossfade_duration_sec: number;
   preferred_quality?: AudioQuality;
   share_listening_activity?: boolean;
+  /** Beat-matched DJ transitions; only the Android player implements them. */
+  dj_transitions_enabled?: boolean;
 }
 
 export interface LyricsWord {

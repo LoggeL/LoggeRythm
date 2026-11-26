@@ -229,6 +229,8 @@ export interface LoggeRythmPlayerNativeSpec {
   setPlaybackSpeed(speed: number, pitch: number): Promise<PlaybackSpeedState>;
   getCrossfadeConfig(): Promise<CrossfadeConfig>;
   setCrossfadeConfig(enabled: boolean, durationSec: number): Promise<CrossfadeConfig>;
+  getDjTransitionsEnabled(): Promise<boolean>;
+  setDjTransitionsEnabled(enabled: boolean): Promise<boolean>;
   openAudioOutputSwitcher(): Promise<AudioOutputSwitcherResult>;
   getAudioOutputDevices(): Promise<AudioOutputDevice[]>;
   getDeviceVolume(): Promise<DeviceVolumeState>;

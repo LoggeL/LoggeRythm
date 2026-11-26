@@ -10,3 +10,5 @@ argon2-cffi
 python-jose[cryptography]
 python-multipart
 email-validator
+numpy==2.5.5
+scipy==1.18.1

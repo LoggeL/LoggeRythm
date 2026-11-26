@@ -715,6 +715,9 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   private val onSleepFadeStarted: (() -> Unit)? = null,
 ) : LoggeRythmPersistedServiceControl {
   private val sharedCacheClear = LoggeRythmSharedCacheClear(clearCache)
+
+  /** True while another engine (DJ transition) drives `player.volume`; loudness waits. */
+  internal var primaryVolumeOwnedElsewhere: () -> Boolean = { false }
   private val appContext = context.applicationContext
   private val mainHandler = Handler(Looper.getMainLooper())
   private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor { task ->
@@ -2648,6 +2651,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
 
   internal fun isSleepFading(): Boolean = fadeBaseVolume != null
 
+  /** True while a "sleep after this track" timer stops playback when the current item ends. */
+  internal fun sleepsAfterCurrentItem(): Boolean =
+    (sleep as? LoggeRythmPersistedSleepState.MediaItem)?.targetIndex == player.currentMediaItemIndex
+
   internal fun refreshLoudnessGain() {
     applyCurrentLoudnessGain()
   }
@@ -2658,7 +2665,7 @@ internal class LoggeRythmPersistedPlayerCoordinator(
   }
 
   private fun applyCurrentLoudnessGain() {
-    if (!isReady() || fadeBaseVolume != null) return
+    if (!isReady() || fadeBaseVolume != null || primaryVolumeOwnedElsewhere()) return
     val mediaId = player.currentMediaItem?.mediaId
     val gain = applyLoudnessForMediaId?.invoke(mediaId, false)
       ?: LoggeRythmPlayerRuntime.loudnessGainFor(mediaId)

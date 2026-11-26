@@ -1,0 +1,9 @@
+# Beat analysis for DJ transitions. Only the worker subprocess imports these
+# (python -m app.services.dj.worker); the API process never loads torch.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.11.0+cpu
+torchaudio==2.11.0+cpu
+beat-this==1.1.0
+einops==0.8.2
+rotary-embedding-torch==0.9.2
+soxr==1.1.0

@@ -895,6 +895,24 @@ class LoggeRythmPlayerModule(
   }
 
   @ReactMethod
+  fun getDjTransitionsEnabled(promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        LoggeRythmAudioCraftServiceBridge.requireControl().getDjTransitionsEnabled()
+      }
+    }
+  }
+
+  @ReactMethod
+  fun setDjTransitionsEnabled(enabled: Boolean, promise: Promise) {
+    withController(promise) {
+      settleOnMain(promise) {
+        LoggeRythmAudioCraftServiceBridge.requireControl().setDjTransitionsEnabled(enabled)
+      }
+    }
+  }
+
+  @ReactMethod
   fun openAudioOutputSwitcher(promise: Promise) {
     mainHandler.post {
       if (invalidated.get()) {

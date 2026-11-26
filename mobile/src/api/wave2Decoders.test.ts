@@ -63,9 +63,14 @@ describe('Wave 2 API decoders', () => {
       crossfade_duration_sec: 6,
       preferred_quality: 'lossless',
       share_listening_activity: true,
+      dj_transitions_enabled: true,
     });
     expect(settings.preferred_quality).toBe('lossless');
     expect(settings.share_listening_activity).toBe(true);
+    expect(settings.dj_transitions_enabled).toBe(true);
+    expect(() =>
+      decodePlaybackSettings({ crossfade_enabled: true, crossfade_duration_sec: 6, dj_transitions_enabled: 'yes' }),
+    ).toThrow(/dj_transitions_enabled/);
     expect(() =>
       decodePlaybackSettings({
         crossfade_enabled: true,

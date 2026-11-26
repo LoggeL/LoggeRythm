@@ -164,6 +164,14 @@ export function setCrossfadeConfig(
   return requireMethod('setCrossfadeConfig')(enabled, clamped);
 }
 
+export function getDjTransitionsEnabled(): Promise<boolean> {
+  return requireMethod('getDjTransitionsEnabled')();
+}
+
+export function setDjTransitionsEnabled(enabled: boolean): Promise<boolean> {
+  return requireMethod('setDjTransitionsEnabled')(enabled);
+}
+
 export function openAudioOutputSwitcher(): Promise<AudioOutputSwitcherResult> {
   return requireMethod('openAudioOutputSwitcher')();
 }
