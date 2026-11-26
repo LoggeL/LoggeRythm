@@ -384,6 +384,44 @@ class LoggeRythmSeamlessQueueEditInstrumentedTest {
     }
   }
 
+  @Test
+  fun crossfadeKeepsIncomingPositionWhenPrimaryAdvancesBeforeTheFadeFinishes() {
+    val outgoing = createWavFixture("fade_out.wav", durationSec = 25, hz = 220.0)
+    val incoming = createWavFixture("fade_in.wav", durationSec = 25, hz = 440.0)
+    val connected = connectController()
+    try {
+      bindPersistenceOnMain(binding)
+      val observer = ContinuityObserver()
+      instrumentation.runOnMainSync {
+        LoggeRythmAudioCraftServiceBridge.requireControl().setCrossfadeConfig(true, 4.0)
+        assertTrue(LoggeRythmExoPlayerObservationHook.addListeners(observer, AudioPipelineObserver()))
+      }
+      onLooper(connected.handler) {
+        applyPlayerCommand(
+          connected.controller,
+          PlayerCommand.SetQueue(
+            listOf(localSpec("fade:a", outgoing), localSpec("fade:b", incoming, contextOrder = 1)),
+            startIndex = 0,
+            // Only three seconds remain, so the four-second fade cannot finish before EOF.
+            startPositionMs = 22_000L,
+          ),
+        )
+        applyPlayerCommand(connected.controller, PlayerCommand.Play)
+      }
+      awaitPlayingAtLeast(connected, expectedMediaId = "fade:b", minPosMs = 0L)
+      val position = currentPosition(connected)
+      assertTrue(observer.discontinuityReasons.contains(Player.DISCONTINUITY_REASON_AUTO_TRANSITION))
+      assertTrue("Crossfade restarted the incoming item at ${position}ms", position >= 1_500L)
+      awaitPlayingAtLeast(connected, expectedMediaId = "fade:b", minPosMs = position + 250L)
+    } finally {
+      try {
+        clearBoundPlayerTestState(instrumentation)
+      } finally {
+        connected.close()
+      }
+    }
+  }
+
   private fun localSpec(
     id: String,
     wav: File,

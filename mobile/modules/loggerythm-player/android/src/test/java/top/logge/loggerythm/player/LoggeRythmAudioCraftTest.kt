@@ -190,7 +190,7 @@ class LoggeRythmAudioCraftTest {
       assertEquals(1.0, (outG * outG + inG * inG).toDouble(), 0.001)
     }
 
-    // Playback speed scaling: at 2.0x speed, a 5s wall-clock fade consumes 10s of media timeline
+    // At 2.0x, the 5s fade and 200ms handoff lead span 10.4s of media time.
     val fastPlan = LoggeRythmCrossfadePlanner.plan(
       config = config,
       outgoingDurationMs = 180_000L,
@@ -203,11 +203,11 @@ class LoggeRythmAudioCraftTest {
       playbackSpeed = 2.0f,
     )
     assertNotNull(fastPlan)
-    assertEquals(170_000L, fastPlan!!.startAtMs)
-    assertEquals(167_000L, fastPlan.prepareAtMs)
+    assertEquals(169_600L, fastPlan!!.startAtMs)
+    assertEquals(166_600L, fastPlan.prepareAtMs)
     assertEquals(5_000L, fastPlan.fadeDurationMs)
 
-    // At 0.5x speed, a 5s wall-clock fade consumes 2.5s of media timeline
+    // At 0.5x, the fade and handoff lead span 2.6s of media time.
     val slowPlan = LoggeRythmCrossfadePlanner.plan(
       config = config,
       outgoingDurationMs = 180_000L,
@@ -220,8 +220,8 @@ class LoggeRythmAudioCraftTest {
       playbackSpeed = 0.5f,
     )
     assertNotNull(slowPlan)
-    assertEquals(177_500L, slowPlan!!.startAtMs)
-    assertEquals(176_750L, slowPlan.prepareAtMs)
+    assertEquals(177_400L, slowPlan!!.startAtMs)
+    assertEquals(176_650L, slowPlan.prepareAtMs)
     assertEquals(5_000L, slowPlan.fadeDurationMs)
   }
 

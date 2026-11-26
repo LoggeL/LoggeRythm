@@ -118,15 +118,16 @@ internal object LoggeRythmCrossfadePlanner {
     if (requestedWallFadeMs <= 0L) return null
     if (outgoingDurationMs < MIN_TRACK_DURATION_MS) return null
 
-    // Convert desired wall-clock fade duration into media-timeline ms at the current playback speed
-    // so speed > 1x triggers proportionally earlier and never runs off the end of the outgoing track.
+    // Convert the wall-clock fade and handoff lead to media time at the current speed.
     val requestedMediaFadeMs = (requestedWallFadeMs * speed.toDouble()).roundToLong()
     val maxMediaFadeMs = (outgoingDurationMs * 45L) / 100L
     val mediaFadeMs = requestedMediaFadeMs.coerceAtMost(maxMediaFadeMs)
     val clampedWallFadeMs = (mediaFadeMs / speed.toDouble()).roundToLong()
     if (clampedWallFadeMs < 250L) return null
 
-    val defaultStartMs = (outgoingDurationMs - mediaFadeMs).coerceAtLeast(0L)
+    // Leave time for the monitor to start and complete the fade before Media3 advances the queue.
+    val handoffLeadMs = (HANDOFF_LEAD_MS * speed.toDouble()).roundToLong()
+    val defaultStartMs = (outgoingDurationMs - mediaFadeMs - handoffLeadMs).coerceAtLeast(0L)
     val startAtMs = when (val outro = outgoingCuePoints.outroStartMs) {
       null -> defaultStartMs
       else -> if (outro in 1_000L until outgoingDurationMs) {
@@ -162,6 +163,7 @@ internal object LoggeRythmCrossfadePlanner {
   }
 
   private const val MAX_INTRO_SKIP_MS = 30_000L
+  private const val HANDOFF_LEAD_MS = 200L
 }
 
 /**
@@ -194,6 +196,7 @@ internal class LoggeRythmDualPlayerCrossfadeController(
   private var released = false
 
   private data class ActiveFade(
+    val sourceIndex: Int,
     val sourceMediaId: String,
     val targetIndex: Int,
     val targetMediaId: String,
@@ -213,6 +216,27 @@ internal class LoggeRythmDualPlayerCrossfadeController(
   }
 
   private val primaryListener = object : Player.Listener {
+    override fun onPositionDiscontinuity(
+      oldPosition: Player.PositionInfo,
+      newPosition: Player.PositionInfo,
+      reason: Int,
+    ) {
+      val fade = activeFade ?: return
+      val deck = secondaryPlayer ?: return
+      if (
+        reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION &&
+        oldPosition.mediaItemIndex == fade.sourceIndex &&
+        oldPosition.mediaItem?.mediaId == fade.sourceMediaId &&
+        newPosition.mediaItemIndex == fade.targetIndex &&
+        newPosition.mediaItem?.mediaId == fade.targetMediaId &&
+        !isSleepFading()
+      ) {
+        // The outgoing item ended before the monitor could hand off. Keep the incoming
+        // deck's progress before onEvents clears the fade for the item change.
+        completeHandoff(fade, deck)
+      }
+    }
+
     override fun onEvents(player: Player, events: Player.Events) {
       if (released) return
       if (
@@ -344,6 +368,7 @@ internal class LoggeRythmDualPlayerCrossfadeController(
     deck.volume = 0f
     deck.play()
     activeFade = ActiveFade(
+      sourceIndex = primaryPlayer.currentMediaItemIndex,
       sourceMediaId = sourceMediaId,
       targetIndex = targetIndex,
       targetMediaId = targetItem.mediaId,
@@ -356,7 +381,11 @@ internal class LoggeRythmDualPlayerCrossfadeController(
 
   private fun advanceFade(fade: ActiveFade) {
     val deck = secondaryPlayer
-    if (deck == null || primaryPlayer.currentMediaItem?.mediaId != fade.sourceMediaId) {
+    if (
+      deck == null ||
+      primaryPlayer.currentMediaItemIndex != fade.sourceIndex ||
+      primaryPlayer.currentMediaItem?.mediaId != fade.sourceMediaId
+    ) {
       abortCrossfade(restoreVolume = true)
       return
     }
@@ -381,9 +410,13 @@ internal class LoggeRythmDualPlayerCrossfadeController(
       fade.targetIndex in 0 until primaryPlayer.mediaItemCount &&
       primaryPlayer.getMediaItemAt(fade.targetIndex).mediaId == fade.targetMediaId
     ) {
+      if (
+        primaryPlayer.currentMediaItemIndex != fade.targetIndex ||
+        primaryPlayer.currentPosition < handoffPositionMs
+      ) {
+        primaryPlayer.seekTo(fade.targetIndex, handoffPositionMs)
+      }
       primaryPlayer.volume = fade.incomingBaseVolume
-      primaryPlayer.seekTo(fade.targetIndex, handoffPositionMs)
-      if (!primaryPlayer.playWhenReady) primaryPlayer.play()
     } else {
       restorePrimaryLoudness()
     }
