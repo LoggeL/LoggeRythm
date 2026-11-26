@@ -355,6 +355,7 @@ class LoggeRythmMediaLibraryService :
   private lateinit var remoteCommandInstaller: LoggeRythmDurableRemoteCommandInstaller
   private lateinit var sessionActivity: PendingIntent
   private lateinit var crossfadeController: LoggeRythmDualPlayerCrossfadeController
+  private lateinit var djController: LoggeRythmDjTransitionController
   private lateinit var visualizerController: LoggeRythmAudioVisualizerController
   private val audioEffects = LoggeRythmAudioEffectsController()
   private val mainHandler = Handler(Looper.getMainLooper())
@@ -453,7 +454,12 @@ class LoggeRythmMediaLibraryService :
         activeExtrasJson = activeExtras,
         isSleepFading = isFading,
       )
-      if (!isFading && !crossfadeController.isCrossfadeActive() && player.volume != volumeScale) {
+      if (
+        !isFading &&
+        !crossfadeController.isCrossfadeActive() &&
+        !djController.ownsPrimaryVolume() &&
+        player.volume != volumeScale
+      ) {
         player.volume = volumeScale
       }
       return state
@@ -479,6 +485,13 @@ class LoggeRythmMediaLibraryService :
       val validated = LoggeRythmCrossfadeConfig.validated(enabled, durationSec)
       crossfadeController.setConfig(validated)
       return validated
+    }
+
+    override fun getDjTransitionsEnabled(): Boolean = djController.isEnabled()
+
+    override fun setDjTransitionsEnabled(enabled: Boolean): Boolean {
+      djController.setEnabled(enabled)
+      return djController.isEnabled()
     }
 
     override fun setRemoteVolumeControl(
@@ -513,6 +526,7 @@ class LoggeRythmMediaLibraryService :
     override fun resetForAccountBoundary() {
       if (serviceDestroyed) return
       crossfadeController.setConfig(crossfadeController.currentConfig().copy(enabled = false))
+      djController.setEnabled(false)
       visualizerController.setEnabled(false)
       sessionPlayer.setRemoteVolumeControl(
         active = false,
@@ -633,21 +647,32 @@ class LoggeRythmMediaLibraryService :
       },
       onSleepFadeStarted = audioEffects::resetLoudnessBoostForFade,
     )
+    val loudnessScaleForMediaId: (String?) -> Float = { mediaId ->
+      val extras = mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
+      LoggeRythmLoudnessNormalization.computePlan(
+        extrasJson = extras,
+        enabled = audioEffects.getLoudnessState().enabled,
+        preset = LoggeRythmLoudnessPreset.parse(audioEffects.getLoudnessState().preset),
+      ).volumeScale
+    }
+    djController = LoggeRythmDjTransitionController(
+      context = this,
+      primaryPlayer = player,
+      audioAttributes = audioAttributes,
+      isSleepFading = persistedCoordinator::isSleepFading,
+      loudnessScaleForMediaId = loudnessScaleForMediaId,
+      restorePrimaryLoudness = persistedCoordinator::refreshLoudnessGain,
+    )
+    persistedCoordinator.primaryVolumeOwnedElsewhere = djController::ownsPrimaryVolume
     crossfadeController = LoggeRythmDualPlayerCrossfadeController(
       context = this,
       primaryPlayer = player,
       playerCache = playerCache,
       audioAttributes = audioAttributes,
       isSleepFading = persistedCoordinator::isSleepFading,
-      loudnessScaleForMediaId = { mediaId ->
-        val extras = mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
-        LoggeRythmLoudnessNormalization.computePlan(
-          extrasJson = extras,
-          enabled = audioEffects.getLoudnessState().enabled,
-          preset = LoggeRythmLoudnessPreset.parse(audioEffects.getLoudnessState().preset),
-        ).volumeScale
-      },
+      loudnessScaleForMediaId = loudnessScaleForMediaId,
       restorePrimaryLoudness = persistedCoordinator::refreshLoudnessGain,
+      isTransitionClaimed = djController::claimsTransition,
     )
     sessionActivity = LoggeRythmSessionActivity.pendingIntent(this)
     librarySession = MediaLibrarySession.Builder(this, sessionPlayer, LibraryCallback())
@@ -747,6 +772,7 @@ class LoggeRythmMediaLibraryService :
     // Coordinator.close() clears the runtime tree; the session is being released, so detach first.
     LoggeRythmBrowseTreeServiceBridge.detach(browseTreeObserver)
     crossfadeController.release()
+    djController.release()
     visualizerController.release()
     audioEffects.release()
     remoteCommandInstaller.close()

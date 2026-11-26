@@ -54,6 +54,25 @@ describe('PlaybackSettingsPanelView', () => {
     expect(onUpdate).toHaveBeenCalledWith({ crossfade_enabled: false, crossfade_duration_sec: 0 });
   });
 
+  it('shows DJ transitions off by default and saves the toggle', () => {
+    const onUpdate = vi.fn();
+    const tree = PlaybackSettingsPanelView({
+      settings: { crossfade_enabled: false, crossfade_duration_sec: 0 },
+      isPending: false,
+      isError: false,
+      saving: false,
+      savedNotice: false,
+      saveError: null,
+      onRetry: vi.fn(),
+      onUpdate,
+    });
+    const toggle = byTestId(tree, 'profile-dj-transitions-toggle');
+    expect(toggle.props.value).toBe(false);
+    expect(toggle.props.accessibilityLabel).toBe(strings.profile.djTransitionsEnabled);
+    (toggle.props.onValueChange as (next: boolean) => void)(true);
+    expect(onUpdate).toHaveBeenCalledWith({ dj_transitions_enabled: true });
+  });
+
   it('shows retryable load error and assertive save errors', () => {
     const onRetry = vi.fn();
     const errTree = PlaybackSettingsPanelView({

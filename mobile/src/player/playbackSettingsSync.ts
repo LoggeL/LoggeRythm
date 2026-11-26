@@ -17,8 +17,8 @@ async function loadNativeAudioCraft(): Promise<typeof import('./nativeAudioCraft
 }
 
 /**
- * Push account-level playback preferences (stream quality tier + native crossfade)
- * into the in-memory quality store and native Media3 crossfade engine.
+ * Push account-level playback preferences (stream quality tier, native crossfade and
+ * DJ transitions) into the in-memory quality store and the native Media3 engines.
  */
 export async function syncNativePlaybackSettings(settings: PlaybackSettings): Promise<void> {
   if (settings.preferred_quality !== undefined) {
@@ -30,6 +30,9 @@ export async function syncNativePlaybackSettings(settings: PlaybackSettings): Pr
       settings.crossfade_enabled,
       settings.crossfade_duration_sec,
     );
+  }
+  if (craft !== null && craft.isNativeMethodAvailable('setDjTransitionsEnabled')) {
+    await craft.setDjTransitionsEnabled(settings.dj_transitions_enabled === true);
   }
 }
 
@@ -43,6 +46,13 @@ export function resetNativePlaybackSettings(): void {
     .then((craft) => {
       if (craft !== null && craft.isNativeMethodAvailable('setCrossfadeConfig')) {
         return craft.setCrossfadeConfig(false, 0);
+      }
+      return undefined;
+    })
+    .then(() => loadNativeAudioCraft())
+    .then((craft) => {
+      if (craft !== null && craft.isNativeMethodAvailable('setDjTransitionsEnabled')) {
+        return craft.setDjTransitionsEnabled(false);
       }
       return undefined;
     })

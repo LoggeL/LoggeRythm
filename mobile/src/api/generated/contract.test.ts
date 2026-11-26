@@ -16,7 +16,7 @@ import {
 
 describe('generated OpenAPI contract', () => {
   it('describes every versioned operation and preserves compatibility metadata', () => {
-    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(130);
+    expect(Object.keys(GENERATED_API_OPERATIONS)).toHaveLength(132);
     expect(
       GENERATED_API_OPERATIONS.deduplicate_likes_api_admin_likes_deduplicate_post,
     ).toEqual({

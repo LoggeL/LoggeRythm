@@ -317,6 +317,7 @@ export interface PlaybackSettings {
   crossfade_duration_sec: number;
   preferred_quality?: AudioQualityTier;
   share_listening_activity?: boolean;
+  dj_transitions_enabled?: boolean;
 }
 
 export interface PlaylistSyncTrackItem {

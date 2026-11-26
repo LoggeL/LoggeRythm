@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "cec540ecc7d64208401320f5e6b12fae3827577aec6c48b7f728d1fce86396ad" as const;
+export const GENERATED_OPENAPI_SHA256 = "6beb3576af8e02bf5add2c708f7a2d097c5ee201c8d4b3964254f32ac0e1cb4d" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -333,6 +333,31 @@ export interface DeviceCapabilitiesWire {
   can_control_volume?: boolean;
   can_play_audio?: boolean;
 }
+export interface DjTransitionWire {
+  clip?: DjTransitionClipWire | null;
+  detail?: string | null;
+  kind?: "beatmatch" | "crossfade" | null;
+  reason: string;
+  retry_after_s?: number | null;
+  status: "ready" | "pending";
+}
+export interface DjTransitionClipWire {
+  a_speed: number;
+  a_start_s: number;
+  b_offset_s: number;
+  bass_swap_s: number;
+  cue_s: number;
+  deck_start_s: number;
+  duration_s: number;
+  id: string;
+  join_in_s: number;
+  join_out_s: number;
+  limiter_reduction_db: number;
+  mix_end_s: number;
+  mix_start_s: number;
+  primary_seek_s: number;
+  render_version: number;
+}
 export interface FriendActivityItemWire {
   avatar_url?: string | null;
   device_name?: string | null;
@@ -558,12 +583,14 @@ export interface PlayQueryWire {
 export interface PlaybackSettingsWire {
   crossfade_duration_sec: number;
   crossfade_enabled: boolean;
+  dj_transitions_enabled?: boolean;
   preferred_quality?: "lossless" | "high" | "saver";
   share_listening_activity?: boolean;
 }
 export interface PlaybackSettingsUpdateWire {
   crossfade_duration_sec?: number | null;
   crossfade_enabled?: boolean | null;
+  dj_transitions_enabled?: boolean | null;
   preferred_quality?: "lossless" | "high" | "saver" | null;
   share_listening_activity?: boolean | null;
 }
@@ -1032,6 +1059,8 @@ export interface GeneratedApiSchemas {
   "CurrentUpdate": CurrentUpdateWire;
   "DeezerStatus": DeezerStatusWire;
   "DeviceCapabilities": DeviceCapabilitiesWire;
+  "DjTransition": DjTransitionWire;
+  "DjTransitionClip": DjTransitionClipWire;
   "FriendActivityItem": FriendActivityItemWire;
   "Genre": GenreWire;
   "GenreDetail": GenreDetailWire;
@@ -1621,6 +1650,23 @@ export interface GeneratedApiOperations {
     };
     response: unknown;
   };
+  "get_clip_api_dj_clips__clip_id__get": {
+    request: {
+      path: {
+        clip_id: string;
+      };
+    };
+    responses: {
+      "200": Blob;
+      "206": Blob;
+      "304": undefined;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "404": undefined;
+      "422": HTTPValidationErrorWire;
+    };
+    response: Blob;
+  };
   "get_connect_state_api_connect_state_get": {
     request: Record<never, never>;
     responses: {
@@ -1742,6 +1788,24 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: UserStatsInsightsWire;
+  };
+  "get_transition_api_dj_transition_get": {
+    request: {
+      query: {
+        a_gain: number;
+        b_gain: number;
+        from_id: string;
+        quality: "lossless" | "high" | "saver";
+        to_id: string;
+      };
+    };
+    responses: {
+      "200": DjTransitionWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: DjTransitionWire;
   };
   "health_deezer_api_health_deezer_get": {
     request: Record<never, never>;
@@ -3073,6 +3137,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "get_clip_api_dj_clips__clip_id__get": {
+    method: "GET",
+    path: "/api/dj/clips/{clip_id}",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200, 206],
+  },
   "get_connect_state_api_connect_state_get": {
     method: "GET",
     path: "/api/connect/state",
@@ -3139,6 +3210,13 @@ export const GENERATED_API_OPERATIONS = {
   "get_stats_insights_api_me_stats_insights_get": {
     method: "GET",
     path: "/api/me/stats/insights",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "get_transition_api_dj_transition_get": {
+    method: "GET",
+    path: "/api/dj/transition",
     auth: "required",
     requestMediaTypes: [],
     successStatuses: [200],

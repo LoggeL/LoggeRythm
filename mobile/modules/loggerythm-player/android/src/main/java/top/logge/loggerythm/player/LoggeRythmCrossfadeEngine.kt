@@ -181,6 +181,8 @@ internal class LoggeRythmDualPlayerCrossfadeController(
   private val isSleepFading: () -> Boolean,
   private val loudnessScaleForMediaId: (String?) -> Float,
   private val restorePrimaryLoudness: () -> Unit,
+  /** True while a DJ transition owns the current A -> B transition. */
+  private val isTransitionClaimed: () -> Boolean = { false },
 ) {
   private val mainHandler = Handler(Looper.getMainLooper())
   private var config = LoggeRythmCrossfadeConfig()
@@ -269,6 +271,10 @@ internal class LoggeRythmDualPlayerCrossfadeController(
     val currentFade = activeFade
     if (currentFade != null) {
       advanceFade(currentFade)
+      return
+    }
+    if (isTransitionClaimed()) {
+      if (preparedTargetIndex != C.INDEX_UNSET) abortCrossfade(restoreVolume = false)
       return
     }
 

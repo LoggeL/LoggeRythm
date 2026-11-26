@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   fetchQuery: vi.fn(),
   isNativeMethodAvailable: vi.fn(),
   setCrossfadeConfig: vi.fn(),
+  setDjTransitionsEnabled: vi.fn(),
 }));
 
 vi.mock('../data', () => ({
@@ -25,6 +26,7 @@ vi.mock('../data', () => ({
 vi.mock('./nativeAudioCraft', () => ({
   isNativeMethodAvailable: mocks.isNativeMethodAvailable,
   setCrossfadeConfig: mocks.setCrossfadeConfig,
+  setDjTransitionsEnabled: mocks.setDjTransitionsEnabled,
 }));
 
 const sampleSettings: PlaybackSettings = {
@@ -32,6 +34,7 @@ const sampleSettings: PlaybackSettings = {
   crossfade_duration_sec: 6,
   preferred_quality: 'lossless',
   share_listening_activity: true,
+  dj_transitions_enabled: true,
 };
 
 describe('playbackSettingsSync', () => {
@@ -40,6 +43,7 @@ describe('playbackSettingsSync', () => {
     resetAudioQualityPreference();
     mocks.isNativeMethodAvailable.mockReturnValue(true);
     mocks.setCrossfadeConfig.mockResolvedValue({ enabled: true, durationSec: 6 });
+    mocks.setDjTransitionsEnabled.mockImplementation((enabled: boolean) => Promise.resolve(enabled));
   });
 
   it('hydrates preferred_quality and native crossfade once per approved session', async () => {
@@ -52,6 +56,12 @@ describe('playbackSettingsSync', () => {
     });
     expect(getAudioQualityPreference()).toBe('lossless');
     expect(mocks.setCrossfadeConfig).toHaveBeenCalledExactlyOnceWith(true, 6);
+    expect(mocks.setDjTransitionsEnabled).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('treats a server without the DJ field as DJ transitions off', async () => {
+    await syncNativePlaybackSettings({ crossfade_enabled: false, crossfade_duration_sec: 0 });
+    expect(mocks.setDjTransitionsEnabled).toHaveBeenCalledExactlyOnceWith(false);
   });
 
   it('skips applying hydrated settings if the session is no longer current', async () => {
@@ -67,10 +77,12 @@ describe('playbackSettingsSync', () => {
     await syncNativePlaybackSettings(sampleSettings);
     expect(getAudioQualityPreference()).toBe('lossless');
     mocks.setCrossfadeConfig.mockClear();
+    mocks.setDjTransitionsEnabled.mockClear();
 
     resetNativePlaybackSettings();
     await vi.waitFor(() => {
       expect(mocks.setCrossfadeConfig).toHaveBeenCalledExactlyOnceWith(false, 0);
+      expect(mocks.setDjTransitionsEnabled).toHaveBeenCalledExactlyOnceWith(false);
     });
     expect(getAudioQualityPreference()).toBe('high');
   });

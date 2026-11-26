@@ -38,6 +38,7 @@ from .routers import (
     browse,
     compatibility,
     connect,
+    dj,
     follows,
     home,
     likes,
@@ -157,6 +158,7 @@ _PORTABLE_COLUMN_MIGRATIONS = (
     Like.__table__.c.loudness_gain_db,
     User.__table__.c.share_listening_activity,
     User.__table__.c.preferred_quality,
+    User.__table__.c.dj_transitions_enabled,
     StoredLyrics.__table__.c.instrumental,
     ImportJob.__table__.c.target_playlist_id,
     ImportJob.__table__.c.create_playlist_name,
@@ -347,6 +349,7 @@ app.include_router(radio.router)
 app.include_router(social.router)
 app.include_router(stats.router)
 app.include_router(home.router)
+app.include_router(dj.router)
 
 # Install after every router so the dependency walk sees the complete API.
 install_auth_openapi(app)

@@ -651,6 +651,12 @@ export function decodePlaybackSettings(value: unknown): PlaybackSettings {
       'PlaybackSettings.share_listening_activity',
     );
   }
+  if ('dj_transitions_enabled' in source && source.dj_transitions_enabled !== undefined) {
+    settings.dj_transitions_enabled = boolean(
+      source.dj_transitions_enabled,
+      'PlaybackSettings.dj_transitions_enabled',
+    );
+  }
   return settings;
 }
 

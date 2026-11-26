@@ -61,6 +61,7 @@ class PlaybackSettings(BaseModel):
     crossfade_duration_sec: int
     preferred_quality: Literal["lossless", "high", "saver"] = "high"
     share_listening_activity: bool = False
+    dj_transitions_enabled: bool = False
 
 
 class PlaybackSettingsUpdate(BaseModel):
@@ -68,6 +69,7 @@ class PlaybackSettingsUpdate(BaseModel):
     crossfade_duration_sec: int | None = None
     preferred_quality: Literal["lossless", "high", "saver"] | None = None
     share_listening_activity: bool | None = None
+    dj_transitions_enabled: bool | None = None
 
 
 def _user_out(u: User) -> UserOut:
@@ -92,6 +94,7 @@ def _playback_settings(user: User) -> PlaybackSettings:
         crossfade_duration_sec=int(user.crossfade_duration_sec or 0),
         preferred_quality=quality,  # type: ignore[arg-type]
         share_listening_activity=bool(user.share_listening_activity),
+        dj_transitions_enabled=bool(user.dj_transitions_enabled),
     )
 
 
@@ -289,6 +292,8 @@ def update_settings(
         if bool(user.share_listening_activity) != body.share_listening_activity:
             activity_changed = True
         user.share_listening_activity = body.share_listening_activity
+    if body.dj_transitions_enabled is not None:
+        user.dj_transitions_enabled = body.dj_transitions_enabled
     db.commit()
     db.refresh(user)
     if activity_changed:

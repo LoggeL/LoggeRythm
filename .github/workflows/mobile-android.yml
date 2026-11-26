@@ -81,6 +81,7 @@ jobs:
           python -m pip install -r requirements-test.txt
           python -m app.openapi_contract check
           python -m app.android_contract check
+          app/services/dj/native/build.sh
           python -m unittest discover -s tests
 
       - name: Typecheck, lint, and unit test
