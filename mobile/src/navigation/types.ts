@@ -38,6 +38,9 @@ export type AppTabParams = {
 export type RootStackParams = {
   Tabs: NavigatorScreenParams<AppTabParams> | undefined;
   Profile: undefined;
+  PlaybackSettings: undefined;
+  DevicesStorageSettings: undefined;
+  AccountAppSettings: undefined;
   Insights: undefined;
   NowPlaying: undefined;
   Queue: undefined;

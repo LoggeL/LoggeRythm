@@ -74,6 +74,9 @@ describe('account-scoped navigation persistence', () => {
   it('keeps only Tabs and sanitized nested stacks, never transient roots or unknown params', () => {
     const state = sanitizeNavigationState(durableState([
       { name: 'Profile', params: { email: 'private@example.test' } },
+      { name: 'PlaybackSettings' },
+      { name: 'DevicesStorageSettings' },
+      { name: 'AccountAppSettings' },
       { name: 'NowPlaying', params: { stream: 'https://secret.test' } },
       { name: 'Queue' },
     ]));
@@ -102,6 +105,9 @@ describe('account-scoped navigation persistence', () => {
     });
     const serialized = JSON.stringify(state);
     expect(serialized).not.toContain('Profile');
+    expect(serialized).not.toContain('PlaybackSettings');
+    expect(serialized).not.toContain('DevicesStorageSettings');
+    expect(serialized).not.toContain('AccountAppSettings');
     expect(serialized).not.toContain('NowPlaying');
     expect(serialized).not.toContain('Queue');
     expect(serialized).not.toContain('must-not-persist');

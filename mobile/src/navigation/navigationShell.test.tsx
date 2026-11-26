@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TvShellHost } from '../navigation';
 import { computeTvEnvironment, type TvEnvironment } from '../tv/tvEnvironment';
 import { brandedRootOptions, buildSectionScreenOptions } from './headerChrome';
-import { HomeRoute } from './routes';
+import { HomeRoute, ProfileRoute } from './routes';
 import { renderHiddenTabBar } from './tabBar';
 
 const mocks = vi.hoisted(() => ({
@@ -191,6 +191,9 @@ vi.mock('../screens/MixScreen', () => ({ default: 'MixScreen' }));
 vi.mock('../screens/RadarScreen', () => ({ default: 'RadarScreen' }));
 vi.mock('../screens/PlaylistScreen', () => ({ default: 'PlaylistScreen' }));
 vi.mock('../screens/ProfileScreen', () => ({ default: 'ProfileScreen' }));
+vi.mock('../screens/PlaybackSettingsScreen', () => ({ default: 'PlaybackSettingsScreen' }));
+vi.mock('../screens/DevicesStorageSettingsScreen', () => ({ default: 'DevicesStorageSettingsScreen' }));
+vi.mock('../screens/AccountAppSettingsScreen', () => ({ default: 'AccountAppSettingsScreen' }));
 vi.mock('../screens/InsightsScreen', () => ({ default: 'InsightsScreen' }));
 vi.mock('../screens/UserProfileScreen', () => ({ default: 'UserProfileScreen' }));
 vi.mock('../screens/NowPlayingScreen', () => ({ default: 'NowPlayingScreen' }));
@@ -309,5 +312,37 @@ describe('navigation shell & TV rail integration', () => {
     expect(second.props.onOpenMix).toBe(first.props.onOpenMix);
     expect(second.props.onOpenRadar).toBe(first.props.onOpenRadar);
     expect(second.props.onOpenSearch).toBe(first.props.onOpenSearch);
+  });
+
+  it('memoizes ProfileRoute callbacks and routes cleanly to all thematic settings pages and Insights', () => {
+    mocks.trackHooks = true;
+    const navigate = vi.fn();
+    const navigation = { navigate, goBack: vi.fn(), canGoBack: vi.fn() } as never;
+    const route = { key: 'Profile-1', name: 'Profile' } as never;
+
+    mocks.hookCursor = 0;
+    const first = ProfileRoute({ navigation, route });
+    const firstScreen = (first.props.children as React.ReactElement<ElementProps>[])[0];
+
+    mocks.hookCursor = 0;
+    const second = ProfileRoute({ navigation, route });
+    const secondScreen = (second.props.children as React.ReactElement<ElementProps>[])[0];
+
+    expect(secondScreen.props.onOpenPlaybackSettings).toBe(firstScreen.props.onOpenPlaybackSettings);
+    expect(secondScreen.props.onOpenDevicesStorageSettings).toBe(firstScreen.props.onOpenDevicesStorageSettings);
+    expect(secondScreen.props.onOpenAccountAppSettings).toBe(firstScreen.props.onOpenAccountAppSettings);
+    expect(secondScreen.props.onOpenInsights).toBe(firstScreen.props.onOpenInsights);
+
+    (firstScreen.props.onOpenPlaybackSettings as () => void)();
+    (firstScreen.props.onOpenDevicesStorageSettings as () => void)();
+    (firstScreen.props.onOpenAccountAppSettings as () => void)();
+    (firstScreen.props.onOpenInsights as () => void)();
+
+    expect(navigate.mock.calls).toEqual([
+      ['PlaybackSettings'],
+      ['DevicesStorageSettings'],
+      ['AccountAppSettings'],
+      ['Insights'],
+    ]);
   });
 });

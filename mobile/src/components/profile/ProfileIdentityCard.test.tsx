@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../../api/types';
 import { activateLocale, strings } from '../../localization';
-import { byTestId, byType } from '../../test/render';
-import { ProfileIdentityCard } from './ProfileIdentityCard';
+import { byTestId, byType, queryByTestId } from '../../test/render';
+import { ProfileAccountDetailsCard, ProfileIdentityCard } from './ProfileIdentityCard';
 
 vi.mock('react-native', () => ({
   Image: 'Image',
@@ -72,4 +72,44 @@ describe('ProfileIdentityCard', () => {
     });
     expect(byTestId(tree, 'profile-name').props.children).toBe('person@example.test');
   });
+
+  it('renders a compact horizontal overview header while preserving the untruncated server origin', () => {
+    const origin = 'https://a-very-long-self-hosted-music-server.example.test';
+    const tree = ProfileIdentityCard({
+      user,
+      avatarUri: null,
+      serverOrigin: origin,
+      compact: true,
+    });
+
+    expect(byTestId(tree, 'profile-avatar').props.accessibilityLabel).toBe('Ada Lovelace');
+    expect(byTestId(tree, 'profile-name').props.children).toBe('Ada Lovelace');
+    expect(byTestId(tree, 'profile-email-value').props.children).toBe('person@example.test');
+    expect(byTestId(tree, 'profile-server-origin').props.children).toBe(
+      strings.profile.serverOrigin(origin),
+    );
+    expect(byTestId(tree, 'profile-server-origin').props.numberOfLines).toBeUndefined();
+    expect(queryByTestId(tree, 'profile-role')).toBeNull();
+    expect(queryByTestId(tree, 'profile-approval')).toBeNull();
+    expect(queryByTestId(tree, 'profile-avatar-deferred')).toBeNull();
+  });
+
+  it.each(['de', 'en'] as const)(
+    'exposes secondary account details in ProfileAccountDetailsCard in %s',
+    (locale) => {
+      activateLocale(locale);
+      const origin = 'https://music.example.test';
+      const tree = ProfileAccountDetailsCard({ user, serverOrigin: origin });
+
+      expect(byTestId(tree, 'profile-account-details')).toBeDefined();
+      expect(byType(byTestId(tree, 'profile-role'), 'Text')[0].props.children)
+        .toBe(strings.profile.administrator);
+      expect(byType(byTestId(tree, 'profile-approval'), 'Text')[0].props.children)
+        .toBe(strings.profile.pendingApproval);
+      expect(byTestId(tree, 'profile-server-origin').props.children)
+        .toBe(strings.profile.serverOrigin(origin));
+      expect(byTestId(tree, 'profile-avatar-deferred').props.children)
+        .toBe(strings.profile.avatarDeferred);
+    },
+  );
 });

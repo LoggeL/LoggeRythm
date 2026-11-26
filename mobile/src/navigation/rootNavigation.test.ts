@@ -92,6 +92,19 @@ describe('rootNavigation active-tab routing', () => {
       index: 0,
       routes: [{ name: 'Tabs', state: { index: 2, routes: [{ name: 'HomeTab' }, { name: 'DiscoverTab' }, { name: 'SearchTab' }] } }],
     })).toBe('SearchTab');
+
+    for (const profileRoute of [
+      'Profile',
+      'PlaybackSettings',
+      'DevicesStorageSettings',
+      'AccountAppSettings',
+      'Insights',
+    ]) {
+      expect(resolveActiveTvRoute({
+        index: 1,
+        routes: [{ name: 'Tabs' }, { name: profileRoute }],
+      })).toBe('Profile');
+    }
   });
 
   it('pushes Album and Artist onto the active tab stack instead of forcing DiscoverTab', () => {

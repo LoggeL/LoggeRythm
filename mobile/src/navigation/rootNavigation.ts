@@ -76,15 +76,22 @@ export function resolveActiveTabName(state: NavStateLike): AppTabName {
   return 'HomeTab';
 }
 
+const PROFILE_FAMILY_ROUTES: ReadonlySet<string> = new Set([
+  'Profile',
+  'PlaybackSettings',
+  'DevicesStorageSettings',
+  'AccountAppSettings',
+  'Insights',
+]);
+
 /** Resolves the active destination key for the Android TV left navigation rail. */
 export function resolveActiveTvRoute(state: NavStateLike): TvNavDestinationKey {
   const topRoot = activeChildRoute(state);
-  if (
-    topRoot?.name === 'NowPlaying'
-    || topRoot?.name === 'Queue'
-    || topRoot?.name === 'Profile'
-  ) {
+  if (topRoot?.name === 'NowPlaying' || topRoot?.name === 'Queue') {
     return topRoot.name;
+  }
+  if (topRoot !== null && PROFILE_FAMILY_ROUTES.has(topRoot.name)) {
+    return 'Profile';
   }
   return resolveActiveTabName(state);
 }

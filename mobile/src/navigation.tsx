@@ -19,6 +19,7 @@ import { useEffectivePlayback } from './connect/effectivePlaybackState';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { strings } from './localization';
 import { useLocaleRevision } from './localization/LocaleProvider';
+import { accountStrings } from './screens/accountStrings';
 import { partyErrorDetail } from './party/partyErrors';
 import { partySession } from './party/partyRuntime';
 import { reportPlayerNotice } from './player/notices';
@@ -35,10 +36,13 @@ import {
   rootNavigation,
 } from './navigation/rootNavigation';
 import {
+  AccountAppSettingsRoute,
+  DevicesStorageSettingsRoute,
   InsightsRoute,
   NowPlayingRoute,
   PartyRoute,
   PartyStartRoute,
+  PlaybackSettingsRoute,
   ProfileRoute,
   QueueRoute,
 } from './navigation/routes';
@@ -385,6 +389,21 @@ export default function RootNavigator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
     [localeRevision],
   );
+  const playbackSettingsScreenOptions = useMemo<NativeStackNavigationOptions>(
+    () => ({ title: accountStrings.profile.settingsPlaybackTitle }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
+    [localeRevision],
+  );
+  const devicesStorageSettingsScreenOptions = useMemo<NativeStackNavigationOptions>(
+    () => ({ title: accountStrings.profile.settingsDevicesStorageTitle }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
+    [localeRevision],
+  );
+  const accountAppSettingsScreenOptions = useMemo<NativeStackNavigationOptions>(
+    () => ({ title: accountStrings.profile.settingsAccountAppTitle }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- localized title tracks localeRevision
+    [localeRevision],
+  );
   // Insights is not the profile: no "Profil" title, no sign-out button.
   const insightsScreenOptions = useMemo<NativeStackNavigationOptions>(
     () => ({ title: strings.navigation.insights }),
@@ -419,6 +438,21 @@ export default function RootNavigator() {
                 name="Profile"
                 component={ProfileRoute}
                 options={profileScreenOptions}
+              />
+              <RootStack.Screen
+                name="PlaybackSettings"
+                component={PlaybackSettingsRoute}
+                options={playbackSettingsScreenOptions}
+              />
+              <RootStack.Screen
+                name="DevicesStorageSettings"
+                component={DevicesStorageSettingsRoute}
+                options={devicesStorageSettingsScreenOptions}
+              />
+              <RootStack.Screen
+                name="AccountAppSettings"
+                component={AccountAppSettingsRoute}
+                options={accountAppSettingsScreenOptions}
               />
               <RootStack.Screen
                 name="Insights"

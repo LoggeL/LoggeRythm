@@ -545,6 +545,11 @@ function cardHeader(
   return { icon: 'cellphone-check', title: update.titleVersion };
 }
 
+export interface AndroidUpdateCardProps {
+  /** Optional guard suppressing duplicate announcements while a parent screen is covered. */
+  shouldAnnounce?: () => boolean;
+}
+
 /**
  * The app's own version and its update state, read from the shared Android
  * update store. Opening the profile asks the store for a check; the store
@@ -552,7 +557,9 @@ function cardHeader(
  * once per visit, in the slot `useAndroidUpdatePlacement` latched; the card
  * renders in every state there (nothing off Android).
  */
-export default function AndroidUpdateCard() {
+export default function AndroidUpdateCard({
+  shouldAnnounce,
+}: AndroidUpdateCardProps = {}) {
   const snapshot = useAndroidUpdateSnapshot();
 
   useEffect(() => {
@@ -560,7 +567,11 @@ export default function AndroidUpdateCard() {
     // a result that was already there when the profile opened is not.
     const stopAnnouncing = announceAndroidUpdateCheckOutcomes(
       androidUpdateStore,
-      (text) => AccessibilityInfo.announceForAccessibility(text),
+      (text) => {
+        if (shouldAnnounce?.() !== false) {
+          AccessibilityInfo.announceForAccessibility(text);
+        }
+      },
     );
     void androidUpdateStore.check('profile');
     return () => {
@@ -569,6 +580,7 @@ export default function AndroidUpdateCard() {
       // next visit shows it at the bottom, without the header dot.
       androidUpdateStore.acknowledgeFinalFailure();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount/unmount lifecycle owns check & acknowledgment
   }, []);
 
   if (!snapshot.supported) return null;

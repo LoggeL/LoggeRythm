@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { strings } from '../../localization';
-import { byTestId } from '../../test/render';
+import { byTestId, textContent } from '../../test/render';
 import { PlaybackSettingsPanelView } from './PlaybackSettingsPanel';
 
 vi.mock('react-native', () => ({
@@ -99,5 +99,28 @@ describe('PlaybackSettingsPanelView', () => {
       onUpdate: vi.fn(),
     });
     expect(byTestId(saveErrTree, 'profile-crossfade-save-error').props.accessibilityRole).toBe('alert');
+  });
+
+  it('omits the duplicate Playback group heading when hideHeader is enabled while keeping all controls', () => {
+    const tree = PlaybackSettingsPanelView({
+      settings: { crossfade_enabled: true, crossfade_duration_sec: 4, preferred_quality: 'high' },
+      isPending: false,
+      isError: false,
+      saving: false,
+      savedNotice: false,
+      saveError: null,
+      onRetry: vi.fn(),
+      onUpdate: vi.fn(),
+      onOpenAudioEffects: vi.fn(),
+      hideHeader: true,
+    });
+
+    expect(byTestId(tree, 'profile-playback')).toBeDefined();
+    expect(textContent(tree)).not.toContain(strings.profile.playbackTitle);
+    expect(byTestId(tree, 'profile-crossfade-toggle')).toBeDefined();
+    expect(byTestId(tree, 'profile-dj-transitions-toggle')).toBeDefined();
+    expect(byTestId(tree, 'profile-quality-high')).toBeDefined();
+    expect(byTestId(tree, 'profile-share-activity-toggle')).toBeDefined();
+    expect(byTestId(tree, 'profile-open-audio-effects')).toBeDefined();
   });
 });
