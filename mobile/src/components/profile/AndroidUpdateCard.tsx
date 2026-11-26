@@ -355,7 +355,6 @@ function ReleaseOffer({
             {update.downloading(release.versionName)}
           </AppText>
           <AndroidUpdateProgress progress={state.progress} />
-          <AppText variant="caption" color="muted">{update.downloadingHint}</AppText>
         </View>
       ) : null}
       {state.kind === 'awaiting-confirmation' ? (

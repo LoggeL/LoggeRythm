@@ -16,7 +16,7 @@ export default function FollowingTab({ query }: { query: StatefulQuery<ArtistSum
   const [term, setTerm] = useState("");
   return (
     <section aria-labelledby="following-heading">
-      <TabHeader id="following-heading" title="Deine Künstler" meta="Ihre neuen Titel findest du im Release Radar.">
+      <TabHeader id="following-heading" title="Deine Künstler">
         <Link href="/radar" className="action-secondary">
           Release Radar
         </Link>

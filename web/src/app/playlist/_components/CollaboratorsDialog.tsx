@@ -141,11 +141,6 @@ export default function CollaboratorsDialog({
       size="md"
       onClose={onClose}
       title={isOwner ? "Mitwirkende & Einladung" : "Mitwirkende"}
-      description={
-        isOwner
-          ? "Lade andere ein, gemeinsam Titel zu dieser Playlist hinzuzufügen und zu sortieren."
-          : `Mitglieder von „${playlist.name}“`
-      }
       footer={
         <>
           {!isOwner && isCollaborator && (
@@ -174,7 +169,7 @@ export default function CollaboratorsDialog({
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-muted">
                   {isCollaborative
-                    ? "Aktiv: Mitwirkende können Titel hinzufügen, entfernen und neu anordnen. Beim Deaktivieren werden Einladungslinks widerrufen; bestehende Mitwirkende behalten Lesezugriff."
+                    ? "Beim Deaktivieren werden Einladungslinks widerrufen; bestehende Mitwirkende behalten Lesezugriff."
                     : "Aktiviere die Zusammenarbeit, um Einladungslinks zu erstellen oder Personen per E-Mail hinzuzufügen."}
                 </p>
               </div>
@@ -254,20 +249,15 @@ export default function CollaboratorsDialog({
                 </div>
 
                 {showQr && inviteUrl && (
-                  <div className="flex items-center gap-4 rounded-[var(--radius-control)] border border-hairline bg-foreground/[0.03] p-3">
-                    <div className="shrink-0 rounded-[var(--radius-card)] bg-white p-2">
-                      <QRCodeSVG
-                        value={inviteUrl}
-                        size={144}
-                        level="M"
-                        marginSize={1}
-                        title={`QR-Code zur Einladung für ${playlist.name}`}
-                        className="h-auto w-28"
-                      />
-                    </div>
-                    <p className="min-w-0 text-xs leading-relaxed text-muted">
-                      QR-Code scannen, um direkt über Web oder App beizutreten.
-                    </p>
+                  <div className="w-fit rounded-[var(--radius-card)] bg-white p-2">
+                    <QRCodeSVG
+                      value={inviteUrl}
+                      size={144}
+                      level="M"
+                      marginSize={1}
+                      title={`QR-Code zur Einladung für ${playlist.name}`}
+                      className="h-auto w-28"
+                    />
                   </div>
                 )}
 
@@ -476,12 +466,6 @@ export default function CollaboratorsDialog({
               );
             })}
           </ul>
-
-          {collaborators.length === 0 && (
-            <p className="text-xs leading-relaxed text-muted">
-              Noch keine weiteren Mitwirkenden.
-            </p>
-          )}
 
           {removeCollaborator.isError && (
             <p role="alert" className="error-panel">

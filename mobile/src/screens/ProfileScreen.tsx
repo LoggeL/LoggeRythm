@@ -91,7 +91,6 @@ function ProfileInsightsEntry() {
       testID="profile-insights-entry"
       icon="chart-bar"
       title={wave2Strings.insights.title}
-      description={wave2Strings.insights.openHint}
     >
       <ActionButton
         testID="profile-open-insights"
@@ -195,7 +194,6 @@ export default function ProfileScreen() {
       tone="danger"
       icon="delete-outline"
       title={strings.profile.dangerTitle}
-      description={strings.profile.dangerBody}
     >
       <ActionButton
         testID="profile-delete"
@@ -265,11 +263,7 @@ export default function ProfileScreen() {
               },
             ]}
           >
-            <ScreenHeader
-              testID="profile-hero"
-              title={strings.profile.title}
-              subtitle={strings.profile.subtitle}
-            />
+            <ScreenHeader testID="profile-hero" title={strings.profile.title} />
             {updatePlacement === 'top' ? <AndroidUpdateCard /> : null}
             <View testID="profile-tv-columns" style={[styles.tvColumns, { gap: tv.gridGap }]}>
               <View style={styles.tvColumn}>
@@ -313,11 +307,7 @@ export default function ProfileScreen() {
         }
         contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
       >
-        <ScreenHeader
-          testID="profile-hero"
-          title={strings.profile.title}
-          subtitle={strings.profile.subtitle}
-        />
+        <ScreenHeader testID="profile-hero" title={strings.profile.title} />
         {updatePlacement === 'top' ? <AndroidUpdateCard /> : null}
 
         {identityCard}

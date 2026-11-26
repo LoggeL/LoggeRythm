@@ -66,7 +66,6 @@ export default function ConnectSettingsPanel() {
       testID="profile-connect"
       icon="devices"
       title={strings.connect.settingsTitle}
-      description={strings.connect.settingsDescription}
     >
       <Pressable
         testID="profile-connect-toggle"
@@ -78,10 +77,7 @@ export default function ConnectSettingsPanel() {
         onPress={handleToggle}
         style={({ pressed }) => [styles.toggleRow, pressed ? styles.pressed : null]}
       >
-        <View style={styles.toggleCopy}>
-          <AppText variant="bodyStrong">{strings.connect.syncEnabledLabel}</AppText>
-          <AppText variant="caption" color="secondary">{strings.connect.syncEnabledHint}</AppText>
-        </View>
+        <AppText variant="bodyStrong" style={styles.toggleLabel}>{strings.connect.syncEnabledLabel}</AppText>
         <AppIcon
           name={connect.enabled ? 'toggle-switch' : 'toggle-switch-off-outline'}
           size={32}
@@ -152,7 +148,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: metrics.minimumTouchTarget,
   },
-  toggleCopy: { flex: 1, minWidth: 0, gap: 2 },
+  toggleLabel: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   nameInput: { flex: 1, minWidth: 0, borderRadius: radii.md },
   pressed: { opacity: opacity.pressed },

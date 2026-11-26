@@ -72,7 +72,7 @@ export default function SaveAsPlaylistModal() {
         if (!saving) close();
       }}
       title="Als Playlist speichern"
-      description={`${draft.tracks.length} ${draft.tracks.length === 1 ? "Titel wird" : "Titel werden"} in eine neue Playlist übernommen.`}
+      description={`${draft.tracks.length} Titel`}
       footer={
         <>
           <button type="button" onClick={close} disabled={saving} className="action-secondary">

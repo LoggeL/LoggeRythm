@@ -10,7 +10,7 @@ import { RADIO_PLAY_DISC, RADIO_TILE_WIDTH, RADIO_WIDE_HEIGHT, RADIO_WIDE_WIDTH 
 export interface RadioStationCardProps {
   testID: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   cover: string;
   /** personal / genre render a square tile, mood a wide horizontal card. */
   variant: 'personal' | 'mood' | 'genre';
@@ -52,7 +52,7 @@ function PlayDisc({
 
 /**
  * RadioStationCard is one startable station: artwork, the RADIO eyebrow,
- * title, subtitle and a play disc that turns into a spinner while the
+ * title, an optional subtitle and a play disc that turns into a spinner while the
  * station starts and into an equalizer while it is actively playing. The whole
  * card is a single button named "start <title>"; the disc is decoration.
  */
@@ -111,7 +111,9 @@ export function RadioStationCard({
           <View style={styles.wideCopy}>
             {badge}
             <AppText variant="bodyStrong" numberOfLines={2}>{title}</AppText>
-            <AppText variant="callout" color="secondary" numberOfLines={2}>{subtitle}</AppText>
+            {subtitle !== undefined ? (
+              <AppText variant="callout" color="secondary" numberOfLines={2}>{subtitle}</AppText>
+            ) : null}
           </View>
           <PlayDisc busy={busy} onAir={onAir} playing={onAirPlaying} />
         </>
@@ -126,7 +128,9 @@ export function RadioStationCard({
           <View style={styles.tileCopy}>
             {badge}
             <AppText variant="bodyStrong" numberOfLines={1}>{title}</AppText>
-            <AppText variant="callout" color="secondary" numberOfLines={1}>{subtitle}</AppText>
+            {subtitle !== undefined ? (
+              <AppText variant="callout" color="secondary" numberOfLines={1}>{subtitle}</AppText>
+            ) : null}
           </View>
         </>
       )}

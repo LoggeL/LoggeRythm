@@ -109,7 +109,7 @@ export default function Lyrics() {
                   <span className="skeleton h-3.5 w-1/2 rounded" />
                 </span>
               ) : instrumental ? (
-                <p className="truncate text-sm font-medium text-accent">Instrumental – dieser Titel hat keinen Gesang.</p>
+                <p className="truncate text-sm font-medium text-accent">Instrumental</p>
               ) : (
                 <p className="truncate text-sm text-muted">Für diesen Titel gibt es keinen Songtext.</p>
               )}

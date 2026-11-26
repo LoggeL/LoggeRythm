@@ -35,9 +35,6 @@ export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
           <MusicNoteIcon width={24} height={24} />
         </span>
         <p className="font-display text-lg font-extrabold tracking-tight text-foreground">Instrumental</p>
-        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">
-          Dieser Titel ist rein instrumental – lehne dich zurück und genieße die Musik.
-        </p>
       </div>
     );
   }
@@ -48,7 +45,7 @@ export default function LyricsStatus({ lyrics }: { lyrics: LyricsData }) {
         <LyricsIcon width={24} height={24} />
       </span>
       <p className="text-base font-semibold text-foreground">Kein Songtext verfügbar</p>
-      <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">Für diesen Titel haben wir keinen Text gefunden. Unter „Ähnliche Titel“ geht die Musik weiter.</p>
+      <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">Unter „Ähnliche Titel“ geht die Musik weiter.</p>
     </div>
   );
 }

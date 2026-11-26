@@ -155,7 +155,7 @@ function MemberParty({ code }: { code: string }) {
     <div className="animate-in">
       <header className="mb-8 grid gap-x-10 gap-y-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div className="min-w-0">
-          <p className="page-eyebrow">Gemeinsam hören · Jam</p>
+          <p className="page-eyebrow">Jam</p>
           {editingName ? (
             <form onSubmit={submitRename} className="mt-2 flex flex-wrap items-center gap-2">
               <input
@@ -338,9 +338,7 @@ function MemberParty({ code }: { code: string }) {
           <>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">Gäste dürfen Wiedergabe steuern</p>
-              <p className="text-xs leading-relaxed text-muted">
-                Wenn aktiv, können alle in der Jam Songs abspielen, pausieren, überspringen und die Reihenfolge ändern.
-              </p>
+              <p className="text-xs leading-relaxed text-muted">Abspielen, pausieren, überspringen und Reihenfolge ändern.</p>
             </div>
             <button
               type="button"
@@ -635,7 +633,7 @@ function MemberParty({ code }: { code: string }) {
         {confirmExit === "end"
           ? "Die Jam wird für alle Teilnehmer beendet und die gemeinsame Warteschlange geschlossen."
           : isHost
-            ? "Du verlässt diese Jam als Host."
+            ? null
             : "Deine Wiedergabe folgt danach nicht mehr dem Host. Über den Einladungslink kannst du wieder beitreten."}
       </ConfirmDialog>
     </div>

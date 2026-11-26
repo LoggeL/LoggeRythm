@@ -272,9 +272,7 @@ function DetailBody({ detail }: { detail: AdminUserUsageDetailResponse }) {
           </h3>
           <span className="label-mono">{formatCount(detail.active_devices.length)} verbunden</span>
         </div>
-        {detail.active_devices.length === 0 ? (
-          <p className="mt-2.5 text-xs text-muted">Derzeit keine Connect-Geräte verbunden.</p>
-        ) : (
+        {detail.active_devices.length > 0 && (
           <ul className="mt-3 flex flex-col">
             {detail.active_devices.map((device) => (
               <DeviceRow

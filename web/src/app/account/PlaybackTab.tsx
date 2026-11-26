@@ -36,7 +36,7 @@ function CrossfadeSettings() {
   const dirty = data !== undefined && draftDuration !== null && draftDuration !== data.crossfade_duration_sec;
 
   return (
-    <SettingsCard title="Übergänge" description="Blende den nächsten Titel ein, bevor der aktuelle endet." icon={<VisualizerIcon width={18} height={18} />}>
+    <SettingsCard title="Übergänge" icon={<VisualizerIcon width={18} height={18} />}>
       {isLoading && (
         <div role="status" aria-label="Wiedergabe-Einstellungen werden geladen" className="flex flex-col gap-4">
           <span className="skeleton block h-11 rounded-xl" />
@@ -46,7 +46,7 @@ function CrossfadeSettings() {
       {error && <SectionError label="Die Wiedergabe-Einstellungen" error={error} retrying={isFetching} onRetry={() => void refetch()} />}
       {data && (
         <>
-          <SettingsRow label="Crossfade" description="Titel gehen fließend ineinander über.">
+          <SettingsRow label="Crossfade">
             <Switch
               label="Crossfade aktivieren"
               checked={data.crossfade_enabled}
@@ -56,7 +56,7 @@ function CrossfadeSettings() {
           </SettingsRow>
           <SettingsRow
             label="Dauer des Übergangs"
-            description={data.crossfade_enabled ? "Wie lange sich zwei Titel überlappen." : "Schalte Crossfade ein, um die Dauer zu ändern."}
+            description={data.crossfade_enabled ? undefined : "Schalte Crossfade ein, um die Dauer zu ändern."}
           >
             <div className="flex w-full flex-col gap-2 sm:w-64">
               <div className="flex items-center gap-3">
@@ -129,7 +129,7 @@ function SleepTimer() {
   const endsAt = sleepAt == null ? null : new Date(sleepAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <SettingsCard title="Sleep-Timer" description="Die Wiedergabe pausiert automatisch – praktisch zum Einschlafen." icon={<ClockIcon width={18} height={18} />}>
+    <SettingsCard title="Sleep-Timer" icon={<ClockIcon width={18} height={18} />}>
       <div
         role="timer"
         aria-live="off"
@@ -146,13 +146,11 @@ function SleepTimer() {
                 ? "Titelende"
                 : "Aus"}
           </p>
-          <p className="mt-1 text-sm text-muted">
-            {remainingSec != null
-              ? `Pause um ${endsAt} Uhr`
-              : sleepAfterTrack
-                ? "Pause, sobald der aktuelle Titel endet"
-                : "Die Musik läuft weiter, bis du sie stoppst."}
-          </p>
+          {armed && (
+            <p className="mt-1 text-sm text-muted">
+              {remainingSec != null ? `Pause um ${endsAt} Uhr` : "Pause, sobald der aktuelle Titel endet"}
+            </p>
+          )}
         </div>
         {armed && (
           <button type="button" onClick={() => selectTimer(null)} className="action-secondary">
@@ -225,12 +223,11 @@ function ConnectSettings() {
   return (
     <SettingsCard
       title="Geräte & Connect"
-      description="Steuere alle angemeldeten Geräte per WebSocket und übertrage die Wiedergabe nahtlos."
       icon={<DevicesIcon width={18} height={18} />}
     >
       <SettingsRow
         label="Multi-Device Connect"
-        description="Dieses Browser-Fenster als steuerbares Gerät im eigenen Konto anmelden."
+        description="Dieses Browser-Fenster als steuerbares Gerät anmelden."
       >
         <Switch
           label="Multi-Device Connect aktivieren"
@@ -238,7 +235,7 @@ function ConnectSettings() {
           onChange={(checked) => setEnabled(checked)}
         />
       </SettingsRow>
-      <SettingsRow label="Status" description="Echtzeit-Verbindung über WebSocket.">
+      <SettingsRow label="Status">
         <div className="flex items-center gap-2 text-xs">
           <span
             aria-hidden="true"
@@ -307,7 +304,7 @@ function AudioQualitySettings() {
   return (
     <SettingsCard
       title="Audioqualität"
-      description="Wähle die bevorzugte Streaming-Qualität für neue Titel."
+      description="Gilt für neue Titel."
       icon={<SlidersIcon width={18} height={18} />}
     >
       {isLoading && <span className="skeleton block h-24 rounded-xl" />}

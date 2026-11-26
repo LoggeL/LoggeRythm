@@ -26,7 +26,6 @@ export default function FriendsListeningPanel() {
       <SectionHeader
         id="friends-listening-heading"
         title="Freunde hören gerade"
-        description="Live-Aktivität auf diesem Server"
         href="/account?tab=profile"
         linkLabel="Privatsphäre"
       />

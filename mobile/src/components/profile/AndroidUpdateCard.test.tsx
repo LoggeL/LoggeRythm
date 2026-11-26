@@ -802,7 +802,6 @@ describe('AndroidUpdateCard', () => {
     expect(flatStyle(byTestId(tree, 'android-update-progress-fill').props.style).width)
       .toBe('50%');
     expect(text(byTestId(tree, 'android-update-progress-text'))).not.toBe('');
-    expect(textContent(tree)).toContain(update.downloadingHint);
     expect(actionButton(tree, 'android-update-install').props.busy).toBe(true);
     expect(actionButton(tree, 'android-update-recheck').props.disabled).toBe(true);
   });

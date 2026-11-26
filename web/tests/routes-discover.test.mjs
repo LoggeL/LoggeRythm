@@ -148,7 +148,7 @@ test("the playlists row lists the user's own playlists first, marked as theirs, 
   const html = screen();
   const section = html.match(/<section id="playlists"[\s\S]*?<\/section>/)?.[0];
   assert.ok(section);
-  assert.match(section, /Deine eigenen und die der Community\./);
+  assert.doesNotMatch(section, /Deine eigenen und die der Community/, "no description under the heading");
   assert.deepEqual(
     [...section.matchAll(/href="\/playlist\/([^"]+)"/g)].map((match) => match[1]),
     ["4", "2", "9"],

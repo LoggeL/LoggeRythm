@@ -128,7 +128,6 @@ export default function RadioScreen() {
                     key={mood.tag}
                     testID={`radio-mood-${mood.tag}`}
                     title={copy.title}
-                    subtitle={copy.subtitle}
                     cover={mood.cover}
                     state={mood.state}
                     queryBusy={mood.busy}
@@ -168,7 +167,6 @@ export default function RadioScreen() {
                     key={genre.id}
                     testID={`radio-genre-${genre.id}`}
                     title={strings.radio.genreRadio(genre.name)}
-                    subtitle={genre.name}
                     cover={genre.picture}
                     variant="genre"
                     {...stationState(key)}

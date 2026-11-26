@@ -45,7 +45,6 @@ function UsersSection() {
   return (
     <SettingsCard
       title="Benutzer"
-      description="Gib neue Konten frei oder entferne Zugänge."
       icon={<UserIcon width={18} height={18} />}
       action={pendingCount > 0 ? <Badge tone="warning">{formatCount(pendingCount)} wartend</Badge> : undefined}
     >
@@ -142,7 +141,7 @@ function StorageSection() {
           ? data.retention_days > 0
             ? `Titel, die ${data.retention_days} Tage nicht gespielt wurden, werden automatisch gelöscht. Gelikte Titel und Titel in Playlists bleiben erhalten.`
             : "Es ist keine automatische Löschung eingerichtet."
-          : "Belegung des Titel-Caches auf dem Server."
+          : undefined
       }
       icon={<StatusIcon width={18} height={18} />}
       action={
@@ -322,7 +321,7 @@ function LikesDeduplicationSection() {
   return (
     <SettingsCard
       title="Song-Duplikate zusammenführen"
-      description="Führt doppelte Likes desselben Songs über Singles, EPs und Alben per ISRC zusammen (bevorzugt Album vor EP vor Single) und ergänzt fehlende ISRCs."
+      description="Doppelte Likes per ISRC – bevorzugt Album vor EP vor Single. Ergänzt fehlende ISRCs."
       icon={<HeartIcon width={18} height={18} />}
       action={
         <button type="button" onClick={() => run.mutate()} disabled={run.isPending} className="action-secondary">
@@ -356,20 +355,14 @@ export default function AdministrationTab() {
           <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/12 text-accent-soft">
             <VisualizerIcon width={18} height={18} />
           </span>
-          <span className="min-w-0 flex-1">
-            <strong className="block text-base font-semibold">Nutzungs-Dashboard</strong>
-            <span className="mt-0.5 block text-sm text-muted">Wiedergaben, Hörzeit, angeforderte Titel und Speicher pro Benutzer.</span>
-          </span>
+          <strong className="min-w-0 flex-1 text-base font-semibold">Nutzungs-Dashboard</strong>
           <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
         </Link>
         <Link href="/status" className="surface-card group flex items-center gap-4 p-4 transition-colors hover:bg-panel-hover sm:p-5">
           <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/12 text-accent-soft">
             <StatusIcon width={18} height={18} />
           </span>
-          <span className="min-w-0 flex-1">
-            <strong className="block text-base font-semibold">Systemstatus</strong>
-            <span className="mt-0.5 block text-sm text-muted">Deezer-Anmeldung, Speicher, Benutzer und Konfiguration live prüfen.</span>
-          </span>
+          <strong className="min-w-0 flex-1 text-base font-semibold">Systemstatus</strong>
           <ChevronRightIcon aria-hidden="true" className="shrink-0 text-muted transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" />
         </Link>
       </div>

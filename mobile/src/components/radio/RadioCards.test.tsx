@@ -43,7 +43,6 @@ function mood(
   return RadioQueryStation({
     testID: 'radio-mood-chill',
     title: strings.radio.moods.chill.title,
-    subtitle: strings.radio.moods.chill.subtitle,
     cover: '',
     state,
     queryBusy: false,
@@ -82,6 +81,21 @@ describe('Radio query-state presentation', () => {
     expect(elements(tree).some((element) => element.props.children === 'Seed artist')).toBe(true);
     (card?.props.onPress as () => void)();
     expect(onPress).toHaveBeenCalledOnce();
+  });
+
+  it('renders no subtitle line when a station has none', () => {
+    const tree = RadioStationCard({
+      testID: 'radio-genre-9',
+      title: 'Rock radio',
+      cover: '',
+      variant: 'genre',
+      busy: false,
+      blocked: false,
+      onPress: vi.fn(),
+    });
+
+    expect(elements(tree).some((element) => element.props.variant === 'callout')).toBe(false);
+    expect(elements(tree).some((element) => element.props.children === 'Rock radio')).toBe(true);
   });
 
   it.each(['de', 'en'] as const)('resolves the visible radio badge from the %s catalog', (locale) => {

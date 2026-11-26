@@ -215,7 +215,7 @@ export default function PlaylistJoinPage({
         aria-labelledby="invite-invalid-title"
         className="surface-card mx-auto my-8 max-w-lg p-6 sm:p-8"
       >
-        <p className="page-eyebrow">Einladung · Ungültig</p>
+        <p className="page-eyebrow">Einladung</p>
         <h1
           id="invite-invalid-title"
           className="font-display text-2xl font-extrabold tracking-[-0.03em]"

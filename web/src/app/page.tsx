@@ -74,7 +74,7 @@ export default function HomePage() {
 
       {recent.length > 0 ? (
         <section aria-labelledby="resume-heading">
-          <SectionHeader id="resume-heading" title="Weiterhören" description={`${RECENT_QUEUE_CONTEXT} auf diesem Gerät`} href="/library?tab=recent" linkLabel="Verlauf öffnen" />
+          <SectionHeader id="resume-heading" title="Weiterhören" href="/library?tab=recent" linkLabel="Verlauf öffnen" />
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-3">
             {recent.slice(0, QUICK_TILE_COUNT).map((track, index) => (
               <QuickTile
@@ -113,7 +113,6 @@ export default function HomePage() {
           <SectionHeader
             id="personal-mixes-heading"
             title="Aus deinem Hörverlauf"
-            description="On Repeat, vergessene Favoriten und ungehörte Schätze aus deiner Bibliothek."
             href="/account?tab=stats"
             linkLabel="Hörprofil"
           />
@@ -134,7 +133,6 @@ export default function HomePage() {
           <SectionHeader
             id="personal-heading"
             title="Für dich zusammengestellt"
-            description="Deine Mixe und neue Musik von Künstlern, denen du folgst."
             href="/radar"
             linkLabel="Release Radar"
           />
@@ -211,7 +209,7 @@ export default function HomePage() {
           <BrowseTile
             href="/radio"
             title="Radio"
-            hint="Einfach laufen lassen: deine Radios oder Musik für Fokus, Chill, Workout und Party."
+            hint="Deine Radios oder Musik für Fokus, Chill, Workout und Party."
             icon={<RadioIcon width={88} height={88} />}
             tone={4}
           />

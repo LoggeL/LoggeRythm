@@ -57,7 +57,6 @@ export function SearchArtistSection({
   paddingHorizontal,
   gap,
   titleStyle,
-  subtitleStyle,
   onCardFocus,
 }: SearchArtistSectionProps) {
   return (
@@ -79,13 +78,11 @@ export function SearchArtistSection({
               testID={cardTestId}
               accessibilityLabel={strings.search.openArtist(artist.name)}
               title={artist.name}
-              subtitle={strings.search.tabs.artist}
               imageUri={artist.picture}
               icon="account-music"
               round
               cardSize={cardSize}
               titleStyle={titleStyle}
-              subtitleStyle={subtitleStyle}
               onFocus={onCardFocus ? () => onCardFocus(cardTestId) : undefined}
               onPress={() => onOpenArtist({ artistId: artist.id, name: artist.name })}
             />

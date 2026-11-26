@@ -54,7 +54,7 @@ export function PartyBlocked({
 }) {
   return (
     <div className="animate-in max-w-2xl py-6 sm:py-10">
-      <p className="page-eyebrow">Gemeinsam hören · Jam</p>
+      <p className="page-eyebrow">Jam</p>
       <h1 className="font-display text-[clamp(2rem,5vw,3.25rem)] font-extrabold leading-none tracking-[-0.04em] text-balance">{title}</h1>
       <p role="alert" className="error-panel mt-6">
         {message}
@@ -77,7 +77,6 @@ export function PartyEnded({
 }) {
   return (
     <div className="animate-in max-w-2xl py-6 sm:py-10">
-      <p className="page-eyebrow">Gemeinsam hören · Jam</p>
       <h1 className="font-display text-[clamp(2rem,5vw,3.25rem)] font-extrabold leading-none tracking-[-0.04em] text-balance">
         Jam beendet
       </h1>

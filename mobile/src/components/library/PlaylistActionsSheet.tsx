@@ -124,7 +124,6 @@ export function PlaylistActionsSheet({
             testID="playlist-start-radio"
             icon="radio-tower"
             label={wave2Strings.playlistTools.startRadio}
-            description={wave2Strings.playlistTools.startRadioHint}
             onPress={onStartRadio}
           />
         )}
@@ -134,7 +133,6 @@ export function PlaylistActionsSheet({
             testID="playlist-find-duplicates"
             icon="broom"
             label={wave2Strings.playlistTools.findDuplicates}
-            description={wave2Strings.playlistTools.findDuplicatesHint}
             onPress={onFindDuplicates}
           />
         )}
@@ -144,7 +142,6 @@ export function PlaylistActionsSheet({
             testID="playlist-share"
             icon="share-variant"
             label={libraryStrings.playlist.share}
-            description={libraryStrings.playlist.shareHint}
             onPress={onShare}
           />
         )}
@@ -206,7 +203,7 @@ export function PlaylistActionsSheet({
                 description={
                   owner.collaboratorCount !== undefined && owner.collaboratorCount > 0
                     ? libraryStrings.playlist.collaboratorCount(owner.collaboratorCount)
-                    : libraryStrings.playlist.collaboratorsHint
+                    : undefined
                 }
                 disabled={owner.busy}
                 onPress={owner.onOpenCollaborators}
@@ -216,7 +213,6 @@ export function PlaylistActionsSheet({
               testID="playlist-edit"
               icon="pencil-outline"
               label={libraryStrings.playlist.edit}
-              description={libraryStrings.playlist.editHint}
               disabled={owner.busy}
               onPress={owner.onEdit}
             />
@@ -227,7 +223,6 @@ export function PlaylistActionsSheet({
                 label={owner.reordering
                   ? libraryStrings.playlist.reorderDone
                   : libraryStrings.playlist.reorder}
-                description={libraryStrings.playlist.reorderHint}
                 onPress={owner.onToggleReorder}
               />
             ) : null}
@@ -252,7 +247,7 @@ export function PlaylistActionsSheet({
               description={
                 collaborator.collaboratorCount > 0
                   ? libraryStrings.playlist.collaboratorCount(collaborator.collaboratorCount)
-                  : libraryStrings.playlist.collaboratorsViewHint
+                  : undefined
               }
               disabled={collaborator.busy}
               onPress={collaborator.onOpenCollaborators}
@@ -264,7 +259,6 @@ export function PlaylistActionsSheet({
                 label={collaborator.reordering
                   ? libraryStrings.playlist.reorderDone
                   : libraryStrings.playlist.reorder}
-                description={libraryStrings.playlist.reorderHint}
                 onPress={collaborator.onToggleReorder}
               />
             ) : null}

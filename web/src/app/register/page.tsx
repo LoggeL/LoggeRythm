@@ -58,7 +58,6 @@ function RegisterForm() {
 
   return (
     <AuthCard
-      eyebrow={invite ? "Registrierung · Einladung" : "Registrierung"}
       title="Konto erstellen"
       subtitle={invite ? undefined : "Nach der Registrierung gibt ein Admin dein Konto frei."}
       footer={

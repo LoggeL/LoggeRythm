@@ -19,7 +19,6 @@ const catalogs = {
     },
     library: {
       title: 'Deine Mediathek',
-      subtitle: 'Playlists, Favoriten und deine persönliche Hörhistorie an einem Ort.',
       playlists: 'Playlists',
       likedTracks: 'Lieblingstitel',
       recentlyHeard: 'Zuletzt gehört',
@@ -66,13 +65,11 @@ const catalogs = {
       filterAll: 'Alle',
       artists: 'Künstler:innen',
       showSection: (title: string) => `${title}: alle anzeigen`,
-      noPlaylistsHint: 'Erstelle deine erste Playlist und sammle darin deine Musik.',
       noLikesHint: 'Tippe bei einem Titel auf das Herz, um ihn hier zu sammeln.',
-      noRecentHint: 'Starte einen Titel – deine Hörhistorie baut sich von selbst auf.',
       noFollowingHint: 'Folge Künstler:innen auf ihrer Seite, um sie hier wiederzufinden.',
       downloadedSongs: 'Heruntergeladene Titel',
       removeTrackDownload: (title: string) => `Download von „${title}“ entfernen`,
-      downloadedSongsCount: (count: number) => `${count} ${count === 1 ? 'Titel' : 'Titel'} offline`,
+      downloadedSongsCount: (count: number) => `${count} Titel`,
     },
     playlist: {
       loading: 'Playlist wird geladen …',
@@ -103,7 +100,7 @@ const catalogs = {
       localCopy: 'Offline-Kopie. Nur heruntergeladene Titel werden ohne Verbindung abgespielt.',
       localTrackUnavailable: 'Dieser Titel ist in der Offline-Kopie nicht verfügbar.',
       offlineUnavailable: 'Offline-Downloads werden vorbereitet oder sind nicht verfügbar.',
-      offlineIdle: 'Diese Playlist für die Offline-Wiedergabe speichern.',
+      offlineIdle: 'Nicht heruntergeladen.',
       offlineDownloading: (downloaded: number, total: number) =>
         `Wird heruntergeladen: ${downloaded} von ${total} Titeln sind verfügbar.`,
       offlinePartial: (downloaded: number, total: number, failed: number) =>
@@ -130,9 +127,7 @@ const catalogs = {
       noTracksHint: 'Öffne das Menü eines Titels, um ihn dieser Playlist hinzuzufügen.',
       publicHint: 'Für alle Nutzer:innen sichtbar',
       privateHint: 'Nur für dich sichtbar',
-      editHint: 'Name und Beschreibung ändern',
       reorder: 'Titel sortieren',
-      reorderHint: 'Titel verschieben oder entfernen',
       reorderActive: 'Sortiermodus: Verschiebe oder entferne Titel.',
       reorderDone: 'Fertig',
       reorderConflict:
@@ -145,8 +140,6 @@ const catalogs = {
       disableCollaborative: 'Gemeinsame Bearbeitung deaktivieren',
       collaborators: 'Mitwirkende',
       collaboratorsTitle: 'Mitwirkende',
-      collaboratorsHint: 'Mitglieder verwalten und Einladungslink teilen',
-      collaboratorsViewHint: 'Mitglieder dieser Playlist ansehen',
       collaboratorCount: (count: number) =>
         count === 1 ? '1 Mitwirkende:r' : `${count} Mitwirkende`,
       openCollaborators: 'Mitwirkende öffnen',
@@ -212,7 +205,6 @@ const catalogs = {
       addedBy: (name: string) => `Hinzugefügt von ${name}`,
       addedByYou: 'Von dir hinzugefügt',
       share: 'Playlist teilen',
-      shareHint: 'Link zu dieser Playlist teilen',
       shareFailed: 'Playlist konnte nicht geteilt werden.',
       filterPlaceholder: 'Titel filtern…',
       filterLabel: 'Titel in dieser Playlist filtern',
@@ -273,7 +265,6 @@ const catalogs = {
     },
     library: {
       title: 'Your Library',
-      subtitle: 'Playlists, favorites, and your listening history in one place.',
       playlists: 'Playlists',
       likedTracks: 'Liked Tracks',
       recentlyHeard: 'Recently Heard',
@@ -320,13 +311,11 @@ const catalogs = {
       filterAll: 'All',
       artists: 'Artists',
       showSection: (title: string) => `Show all: ${title}`,
-      noPlaylistsHint: 'Create your first playlist and collect your music in it.',
       noLikesHint: 'Tap the heart on any track to collect it here.',
-      noRecentHint: 'Start a track — your listening history builds itself.',
       noFollowingHint: 'Follow artists on their page to find them here again.',
       downloadedSongs: 'Downloaded Songs',
       removeTrackDownload: (title: string) => `Remove download for ${title}`,
-      downloadedSongsCount: (count: number) => `${count} ${count === 1 ? 'track' : 'tracks'} offline`,
+      downloadedSongsCount: (count: number) => `${count} ${count === 1 ? 'track' : 'tracks'}`,
     },
     playlist: {
       loading: 'Loading playlist…',
@@ -357,7 +346,7 @@ const catalogs = {
       localCopy: 'Offline copy. Only downloaded tracks play without a connection.',
       localTrackUnavailable: 'This track is not available in the offline copy.',
       offlineUnavailable: 'Offline downloads are being prepared or are unavailable.',
-      offlineIdle: 'Save this playlist for offline playback.',
+      offlineIdle: 'Not downloaded.',
       offlineDownloading: (downloaded: number, total: number) =>
         `Downloading: ${downloaded} of ${total} tracks are available.`,
       offlinePartial: (downloaded: number, total: number, failed: number) =>
@@ -384,9 +373,7 @@ const catalogs = {
       noTracksHint: 'Open the menu of any track to add it to this playlist.',
       publicHint: 'Visible to everyone',
       privateHint: 'Only visible to you',
-      editHint: 'Change name and description',
       reorder: 'Reorder tracks',
-      reorderHint: 'Move or remove tracks',
       reorderActive: 'Reorder mode: move or remove tracks.',
       reorderDone: 'Done',
       reorderConflict:
@@ -399,8 +386,6 @@ const catalogs = {
       disableCollaborative: 'Disable collaboration',
       collaborators: 'Collaborators',
       collaboratorsTitle: 'Collaborators',
-      collaboratorsHint: 'Manage members and share invite link',
-      collaboratorsViewHint: 'View members of this playlist',
       collaboratorCount: (count: number) =>
         count === 1 ? '1 collaborator' : `${count} collaborators`,
       openCollaborators: 'Open collaborators',
@@ -466,7 +451,6 @@ const catalogs = {
       addedBy: (name: string) => `Added by ${name}`,
       addedByYou: 'Added by you',
       share: 'Share playlist',
-      shareHint: 'Share a link to this playlist',
       shareFailed: 'Could not share the playlist.',
       filterPlaceholder: 'Filter tracks…',
       filterLabel: 'Filter tracks in this playlist',

@@ -30,12 +30,9 @@ export default function PartySearch({
   const { query, results, searching, searchedTerm, error } = search;
   return (
     <section id="party-search" aria-labelledby="party-search-title" className="min-w-0 scroll-mt-24">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="party-search-title" className="font-display text-[1.625rem] font-bold leading-tight tracking-tight">
-          Songs hinzufügen
-        </h2>
-        <p className="text-sm text-muted">Jeder in der Jam kann Titel zur gemeinsamen Warteschlange beisteuern.</p>
-      </div>
+      <h2 id="party-search-title" className="mb-3 font-display text-[1.625rem] font-bold leading-tight tracking-tight">
+        Songs hinzufügen
+      </h2>
       <SearchField
         value={query}
         onValueChange={search.change}

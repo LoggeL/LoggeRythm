@@ -40,9 +40,7 @@ export default function DiscoverPage() {
   return (
     <div className="flex flex-col gap-9 md:gap-11">
       <header>
-        <p className="page-eyebrow">Dein nächster Lieblingssong</p>
         <h1 className="page-title">Entdecken</h1>
-        <p className="page-description">Neue Alben, aktuelle Charts und Musik abseits deiner täglichen Rotation.</p>
         <nav aria-label="Bereiche auf dieser Seite" className="no-scrollbar -mx-4 mt-6 flex gap-2 overflow-x-auto px-4 py-1 sm:mx-0 sm:flex-wrap sm:px-0">
           <a href="#genres" className="filter-chip shrink-0 max-sm:min-h-11">Genres</a>
           <a href="#charts" className="filter-chip shrink-0 max-sm:min-h-11">Charts</a>
@@ -52,7 +50,7 @@ export default function DiscoverPage() {
       </header>
 
       <section id="genres" aria-labelledby="genres-title" aria-busy={genres.isLoading} className="scroll-mt-20">
-        <SectionHeader id="genres-title" title="Nach Genre stöbern" description="Finde deinen Sound oder probiere etwas Neues." />
+        <SectionHeader id="genres-title" title="Nach Genre stöbern" />
         <QueryState
           query={genres}
           label="Genres"
@@ -76,7 +74,7 @@ export default function DiscoverPage() {
       </section>
 
       <section id="charts" aria-labelledby="charts-title" aria-busy={collections.isLoading} className="scroll-mt-20">
-        <SectionHeader id="charts-title" title="Charts" description="Was gerade gehört wird. Ein Klick startet die Wiedergabe." />
+        <SectionHeader id="charts-title" title="Charts" />
         <QueryState
           query={collections}
           label="Charts"
@@ -98,7 +96,7 @@ export default function DiscoverPage() {
       </section>
 
       <section id="new-releases" aria-labelledby="releases-title" aria-busy={releases.isLoading} className="scroll-mt-20">
-        <SectionHeader id="releases-title" title="Neue Veröffentlichungen" description="Frische Alben für deine Bibliothek." />
+        <SectionHeader id="releases-title" title="Neue Veröffentlichungen" />
         <QueryState
           query={releases}
           label="Neue Veröffentlichungen"
@@ -120,7 +118,7 @@ export default function DiscoverPage() {
       </section>
 
       <section id="playlists" aria-labelledby="playlists-title" aria-busy={playlists.isLoading} className="scroll-mt-20">
-        <SectionHeader id="playlists-title" title="Playlists" description="Deine eigenen und die der Community." />
+        <SectionHeader id="playlists-title" title="Playlists" />
         <QueryState
           query={playlists}
           label="Playlists"

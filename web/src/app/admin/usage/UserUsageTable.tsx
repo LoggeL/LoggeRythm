@@ -173,9 +173,7 @@ export default function UserUsageTable({
             Filter zurücksetzen
           </button>
         }
-      >
-        Suche nach einem anderen Anzeigenamen oder einer anderen E-Mail-Adresse.
-      </EmptyState>
+      />
     );
   }
 

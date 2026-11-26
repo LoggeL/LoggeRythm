@@ -62,9 +62,7 @@ function DeezerPlaylistView({ playlist }: { playlist: DeezerPlaylistDetail }) {
                 Zur Suche
               </Link>
             }
-          >
-            Für diese Playlist sind keine abspielbaren Titel hinterlegt.
-          </EmptyState>
+          />
         ) : (
           tracks.map((track, index) => <TrackRow key={track.id} track={track} index={index} onPlay={() => playQueue(tracks, index, playlist.name)} />)
         )}

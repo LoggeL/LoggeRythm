@@ -284,7 +284,7 @@ export default function PartyQueue({
             </div>
             {upcomingEntries.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border px-4 py-5 text-sm text-muted">
-                Keine weiteren Titel in der Warteschlange – such oben nach dem nächsten Song für alle.
+                Such oben nach dem nächsten Song.
               </p>
             ) : (
               <ol className="-mx-2 flex flex-col gap-0.5 sm:-mx-3">

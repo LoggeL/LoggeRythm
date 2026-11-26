@@ -3,7 +3,7 @@ import type { ArtistSummary, PlaylistSearchResult, PlaylistSummary, Track } from
 export interface PaletteCommand {
   id: string;
   label: string;
-  detail: string;
+  detail?: string;
   keywords: readonly string[];
   shortcut?: string;
 }
@@ -48,7 +48,7 @@ export function matchPaletteCommands(
   const tokens = raw.split(/\s+/).filter(Boolean);
   return commands
     .filter((cmd) => {
-      const haystack = `${cmd.label} ${cmd.detail} ${cmd.keywords.join(" ")}`.toLowerCase();
+      const haystack = [cmd.label, cmd.detail, ...cmd.keywords].filter(Boolean).join(" ").toLowerCase();
       return tokens.every((token) => haystack.includes(token));
     })
     .slice(0, commandMode ? limit : Math.min(limit, 4));

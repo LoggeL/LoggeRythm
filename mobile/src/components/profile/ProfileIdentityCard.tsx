@@ -65,9 +65,6 @@ export function ProfileIdentityCard({ user, avatarUri, serverOrigin }: ProfileId
         </View>
       )}
       <View style={styles.copy}>
-        <AppText variant="overline" color="accent" align="center">
-          {strings.profile.accountTitle}
-        </AppText>
         <AppText testID="profile-name" variant="title" align="center" numberOfLines={2}>
           {name}
         </AppText>

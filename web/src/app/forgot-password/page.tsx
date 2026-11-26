@@ -36,7 +36,6 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthCard
-      eyebrow="Passwort"
       title="Passwort vergessen?"
       subtitle="Wir schicken dir einen Link, mit dem du ein neues Passwort setzen kannst."
       footer={

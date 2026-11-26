@@ -137,7 +137,7 @@ export default function AlbumScreen(props: AlbumScreenProps) {
     playRow(detail.tracks, index, context);
   };
   const facts = [
-    year ? catalogStrings.common.releaseYear(year) : null,
+    year,
     detail !== undefined ? catalogStrings.common.tracks(detail.nb_tracks) : null,
   ].filter((fact): fact is string => fact !== null);
 
@@ -223,13 +223,13 @@ export default function AlbumScreen(props: AlbumScreenProps) {
                 style={({ pressed }) => [styles.artistLink, pressed && styles.pressed]}
               >
                 <AppText variant="label" numberOfLines={1}>
-                  {catalogStrings.album.byArtist(artistName)}
+                  {artistName}
                 </AppText>
                 <FocusRingOverlay controller={artistFocusController} borderRadius={radii.sm} />
               </Pressable>
             ) : artistName.length > 0 ? (
               <AppText variant="label" numberOfLines={1}>
-                {catalogStrings.album.byArtist(artistName)}
+                {artistName}
               </AppText>
             ) : null}
             {facts.length > 0 || runtimeMinutes !== null ? (

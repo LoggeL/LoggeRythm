@@ -49,9 +49,7 @@ function LoginForm() {
 
   return (
     <AuthCard
-      eyebrow="Anmeldung"
       title="Willkommen zurück"
-      subtitle="Melde dich an und hör dort weiter, wo du aufgehört hast."
       footer={
         <>
           <span>Noch kein Konto?</span>

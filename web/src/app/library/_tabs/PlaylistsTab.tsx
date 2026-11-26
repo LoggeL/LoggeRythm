@@ -89,7 +89,7 @@ export default function PlaylistsTab({ query, likedHref, onCreate }: { query: St
               </button>
             }
           >
-            Sammle Titel, die zusammengehören, oder importiere eine Playlist über die Suche.
+            Oder importiere eine Playlist über die Suche.
           </EmptyState>
         }
       >
@@ -162,9 +162,7 @@ export default function PlaylistsTab({ query, likedHref, onCreate }: { query: St
                         Alle anzeigen
                       </button>
                     }
-                  >
-                    Wähle einen anderen Filter, um deine übrigen Playlists zu sehen.
-                  </EmptyState>
+                  />
                 )
               ) : (
                 <ul className={GRID}>
@@ -175,7 +173,6 @@ export default function PlaylistsTab({ query, likedHref, onCreate }: { query: St
                           <HeartIcon filled width={44} height={44} />
                         </span>
                         <span className="block truncate text-sm font-semibold">Gelikte Titel</span>
-                        <span className="mt-1 block truncate text-xs text-muted">Deine Lieblingstitel</span>
                       </Link>
                     </li>
                   )}
@@ -191,7 +188,6 @@ export default function PlaylistsTab({ query, likedHref, onCreate }: { query: St
                           <PlusIcon width={36} height={36} />
                         </span>
                         <span className="block truncate text-sm font-semibold">Neue Playlist</span>
-                        <span className="mt-1 block truncate text-xs text-muted">Leer starten</span>
                       </button>
                     </li>
                   )}

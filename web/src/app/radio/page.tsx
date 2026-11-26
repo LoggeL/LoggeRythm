@@ -18,10 +18,10 @@ import SectionHeader from "@/components/ui/SectionHeader";
 import type { Genre } from "@/types";
 
 const MOOD_STATIONS = [
-  { tag: "chill", title: "Chill-Radio", subtitle: "Entspannte Töne für ruhige Momente", label: "Zur Ruhe kommen", tone: "gradient-teal" },
-  { tag: "focus", title: "Fokus-Radio", subtitle: "Konzentriert bleiben, ohne Ablenkung", label: "Im Flow bleiben", tone: "gradient-blue" },
-  { tag: "workout", title: "Workout-Radio", subtitle: "Energie für dein Training", label: "In Bewegung", tone: "gradient-orange" },
-  { tag: "party", title: "Party-Radio", subtitle: "Voller Beats für die Nacht", label: "Zusammen feiern", tone: "gradient-pink" },
+  { tag: "chill", title: "Chill-Radio", tone: "gradient-teal" },
+  { tag: "focus", title: "Fokus-Radio", tone: "gradient-blue" },
+  { tag: "workout", title: "Workout-Radio", tone: "gradient-orange" },
+  { tag: "party", title: "Party-Radio", tone: "gradient-pink" },
 ] as const;
 
 const GENRE_GRID = "grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6";
@@ -99,9 +99,7 @@ export default function RadioPage() {
   return (
     <div className="flex flex-col gap-10">
       <header>
-        <p className="page-eyebrow">Ein Start, immer neue Musik</p>
         <h1 className="page-title">Radio</h1>
-        <p className="page-description">Wähle einen Song, eine Stimmung oder ein Genre. Wir spielen passende Musik weiter.</p>
         {liveStation && (
           <p className="mt-5 inline-flex max-w-full items-center gap-3 rounded-full bg-white/[0.06] py-1.5 pl-1.5 pr-4 text-sm">
             <StationSignal busy={false} live className="h-8 w-8 shadow-none" />
@@ -122,7 +120,7 @@ export default function RadioPage() {
       </div>
 
       <section aria-labelledby="mood-radio-title">
-        <SectionHeader id="mood-radio-title" title="Was passt gerade?" description="Stimmungs-Radios für deinen Tag." />
+        <SectionHeader id="mood-radio-title" title="Was passt gerade?" />
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
           {MOOD_STATIONS.map((station) => {
             const busy = startingKey === `mood:${station.tag}`;
@@ -142,12 +140,10 @@ export default function RadioPage() {
                 }}
                 className={`group press relative flex min-h-36 flex-col items-start overflow-hidden rounded-xl p-4 text-left disabled:cursor-wait sm:min-h-44 sm:p-5 ${station.tone} ${starting && !busy ? "opacity-60" : ""} ${live ? "ring-2 ring-accent-soft" : ""}`}
               >
-                <span className="flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/70">
-                  {station.label}
+                <h3 className="flex flex-wrap items-center gap-2 text-xl font-bold tracking-tight">
+                  {station.title}
                   {live && <LiveBadge />}
-                </span>
-                <h3 className="mt-2 text-xl font-bold tracking-tight">{station.title}</h3>
-                <span className="mt-1 max-w-[80%] text-sm text-foreground/75">{station.subtitle}</span>
+                </h3>
                 <span className="mt-auto flex w-full items-center justify-between gap-3 pt-4">
                   <span className="text-xs font-semibold text-foreground/85">{busy ? "Wird gestartet…" : live ? "Neu starten" : "Radio starten"}</span>
                   <StationSignal busy={busy} live={live} className="h-11 w-11 transition-transform group-hover:scale-105" />
@@ -159,7 +155,7 @@ export default function RadioPage() {
       </section>
 
       <section aria-labelledby="personal-radio-title">
-        <SectionHeader id="personal-radio-title" title="Von deinen letzten Songs inspiriert" description="Starte mit einem vertrauten Titel und entdecke mehr davon." />
+        <SectionHeader id="personal-radio-title" title="Von deinen letzten Songs inspiriert" />
         {personal.length === 0 ? (
           <EmptyState
             icon={<RadioIcon width={24} height={24} />}
@@ -208,7 +204,7 @@ export default function RadioPage() {
       </section>
 
       <section aria-labelledby="genre-radio-title" aria-busy={genres.isLoading}>
-        <SectionHeader id="genre-radio-title" title="Genre-Radios" description="Ein Sound, viele Entdeckungen." />
+        <SectionHeader id="genre-radio-title" title="Genre-Radios" />
         <QueryError label="Genre-Radios" query={genres} className="mb-4" />
         {genres.isError && genres.data !== undefined && <p className="mb-4 text-xs text-subtle">Der zuletzt geladene Stand bleibt sichtbar.</p>}
         {genres.isLoading ? (

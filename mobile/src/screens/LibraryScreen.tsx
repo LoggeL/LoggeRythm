@@ -312,7 +312,6 @@ export default function LibraryScreen(props: LibraryScreenProps) {
         playlistsData?.length === 0,
       ),
       emptyText: libraryStrings.library.noPlaylists,
-      emptyHint: libraryStrings.library.noPlaylistsHint,
       emptyIcon: 'playlist-plus' as const,
       emptyAction: (
         <ActionButton
@@ -380,7 +379,6 @@ export default function LibraryScreen(props: LibraryScreenProps) {
         statsData?.recent.length === 0,
       ),
       emptyText: libraryStrings.library.noRecent,
-      emptyHint: libraryStrings.library.noRecentHint,
       emptyIcon: 'history' as const,
       onRetry: () => void refetchStats(),
     }),

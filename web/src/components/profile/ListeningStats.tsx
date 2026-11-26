@@ -542,7 +542,7 @@ export default function ListeningStats() {
             </Link>
           }
         >
-          Sobald du Titel in diesem Zeitraum abspielst, erscheinen hier dein Rückblick, Serien, Heatmaps und Top-Listen.
+          Spiel Musik ab, dann füllt sich dein Rückblick.
         </EmptyState>
       ) : (
         <>
@@ -557,21 +557,19 @@ export default function ListeningStats() {
 
           <dl aria-label="Hörprofil-Kennzahlen" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Kpi label="Hörzeit" value={formatListeningHours(data.listening_sec)} hint={`${numberFormatter.format(data.play_count)} ${playLabel(data.play_count)}`} />
-            <Kpi label="Verschiedene Titel" value={numberFormatter.format(data.unique_tracks)} hint={`Im Zeitraum ${periodLabel}`} />
+            <Kpi label="Verschiedene Titel" value={numberFormatter.format(data.unique_tracks)} />
             <Kpi
               label="Künstler"
               value={numberFormatter.format(data.unique_artists)}
-              hint={data.new_artists_count > 0 ? `+${numberFormatter.format(data.new_artists_count)} neu entdeckt` : "Bekannte Favoriten"}
+              hint={data.new_artists_count > 0 ? `+${numberFormatter.format(data.new_artists_count)} neu entdeckt` : undefined}
             />
             <Kpi
               label="Aktuelle Serie"
               value={`${data.current_streak_days} ${data.current_streak_days === 1 ? "Tag" : "Tage"}`}
-              hint={data.current_streak_days > 0 ? "Täglich gehört" : "Heute starten"}
             />
             <Kpi
               label="Längste Serie"
               value={`${data.longest_streak_days} ${data.longest_streak_days === 1 ? "Tag" : "Tage"}`}
-              hint="Persönlicher Rekord"
             />
           </dl>
 

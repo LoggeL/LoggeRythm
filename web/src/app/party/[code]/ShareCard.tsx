@@ -37,7 +37,6 @@ export default function ShareCard({
         ) : (
           <div role="status" aria-label="QR-Code wird erstellt" className="skeleton aspect-square w-36 shrink-0 rounded-[var(--radius-card)]" />
         )}
-        <p className="min-w-0 text-sm leading-relaxed text-muted">QR-Code scannen oder den Link teilen – wer ihn öffnet, ist dabei.</p>
       </div>
       <div className="mt-4 flex items-center gap-2">
         <input

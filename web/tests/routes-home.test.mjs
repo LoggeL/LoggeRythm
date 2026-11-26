@@ -121,7 +121,7 @@ test("a failed personal mix remains explicit while real local history stays avai
   assert.match(html, /Mixe: HTTP 503/);
   assert.match(html, /Mein letzter Titel/);
   assert.match(html, /Weiterhören/);
-  assert.match(html, /Zuletzt gehört/);
+  assert.doesNotMatch(html, /Zuletzt gehört auf diesem Gerät/, "no description under Weiterhören");
 });
 
 test("recent tiles, shelves and the release radar badge render without the old hero card", () => {

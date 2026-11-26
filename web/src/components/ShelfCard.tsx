@@ -9,7 +9,6 @@ import { Morph, useMorphSource } from "@/components/motion/Morph";
 import styles from "./cards.module.css";
 
 const THEMES = ["gradient-violet", "gradient-blue", "gradient-teal", "gradient-orange"];
-const TAGS: Record<string, string> = { weekly: "Dein Mix", chill: "Entspannt", discover: "Neue Entdeckungen", "release-radar": "Release Radar" };
 
 /**
  * A generated collection (mix, radar, genre shelf). With `href` the tile opens
@@ -52,7 +51,6 @@ export default function ShelfCard({ shelf, index = 0, variant = "collection", hr
     const contents = (
       <>
         <div className="min-w-0 flex-1">
-          <p className="page-eyebrow mb-2">{TAGS[shelf.key] || "Für dich"}</p>
           <Morph name={morph.title} part="title">
             <h3 className="text-lg font-semibold leading-tight tracking-tight">{shelf.title}</h3>
           </Morph>

@@ -71,7 +71,6 @@ export function StatusBody({ status }: { status: SystemStatus }) {
         >
           {healthy ? "Alle Kernsysteme laufen" : faults.length === 1 ? "1 Störung braucht deine Aufmerksamkeit" : `${faults.length} Störungen brauchen deine Aufmerksamkeit`}
         </h2>
-        <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">Live-Prüfung von Zugriff, Kapazität und sicherheitsrelevanter Konfiguration.</p>
 
         {!healthy && (
           <ul aria-label="Störungen" className="mt-6 border-t border-danger/40">

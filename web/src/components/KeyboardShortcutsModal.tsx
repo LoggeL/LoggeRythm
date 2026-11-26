@@ -64,7 +64,7 @@ export default function KeyboardShortcutsModal() {
       size="md"
       onClose={() => setOpen(false)}
       title="Tastenkürzel"
-      description="Steuere LoggeRythm direkt über die Tastatur – aktiv, sobald kein Eingabefeld fokussiert ist."
+      description="Aktiv, sobald kein Eingabefeld fokussiert ist."
       footer={
         <button data-dialog-autofocus type="button" onClick={() => setOpen(false)} className="action-secondary">
           Schließen

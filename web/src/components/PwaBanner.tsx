@@ -76,10 +76,7 @@ export default function PwaBanner() {
           className="animate-in fixed inset-x-3 bottom-[calc(9.75rem+env(safe-area-inset-bottom))] z-[90] flex items-center gap-3 rounded-[var(--radius-panel)] border border-hairline bg-panel py-2 pl-4 pr-2 shadow-[0_18px_44px_rgb(0_0_0/0.55)] sm:inset-x-auto sm:right-5 sm:max-w-md lg:bottom-28"
         >
           <DownloadIcon width={18} height={18} className="shrink-0 text-muted" />
-          <p className="min-w-0 flex-1">
-            <span className="font-display block text-[15px] font-bold leading-tight tracking-tight sm:truncate">LoggeRythm installieren</span>
-            <span className="block text-xs leading-snug text-muted max-sm:hidden">Schneller Start, eigener Platz auf dem Homescreen.</span>
-          </p>
+          <p className="font-display min-w-0 flex-1 text-[15px] font-bold leading-tight tracking-tight sm:truncate">LoggeRythm installieren</p>
           <button type="button" onClick={install} className="action-primary min-h-10 shrink-0 px-4 text-[13px]">
             Installieren
           </button>

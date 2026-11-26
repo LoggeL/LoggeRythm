@@ -44,11 +44,7 @@ export function ArtistLikedTracksHeader({
   const heading = (
     <SectionHeader
       title={title}
-      subtitle={
-        expandable
-          ? catalogStrings.artist.likedTracksSummary(artistName, trackCount)
-          : catalogStrings.artist.likedTracksBy(artistName)
-      }
+      subtitle={expandable ? catalogStrings.artist.likedTracksSummary(trackCount) : undefined}
       trailing={
         expandable ? (
           <View style={styles.toggle}>

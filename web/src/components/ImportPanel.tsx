@@ -175,8 +175,7 @@ function ImportProgress({ job }: { job: ImportJobStatus }) {
         </div>
       </div>
       <p className="mt-4 text-sm leading-relaxed text-muted">
-        Der Import läuft im Hintergrund weiter. Du kannst den Import schließen oder woanders hingehen und das
-        Ergebnis später hier abholen. Wenn er fertig ist, bekommst du eine Meldung.
+        Läuft im Hintergrund weiter – du bekommst eine Meldung, wenn er fertig ist.
       </p>
     </div>
   );
@@ -505,13 +504,11 @@ export default function ImportPanel() {
   return (
     <div className="flex flex-col gap-8 border-t border-hairline pt-6">
       <form onSubmit={submit} className="max-w-3xl">
-        <p className="page-eyebrow">Spotify → Deezer</p>
         <label htmlFor="spotify-import-url" className="font-display block text-2xl font-extrabold leading-tight tracking-[-0.035em] sm:text-3xl">
           Spotify-Link importieren
         </label>
         <p id="spotify-import-hint" className="mb-5 mt-2 text-sm leading-relaxed text-muted">
-          Füge den Link zu einer Playlist, einem Album oder einem Titel ein. Der Import läuft im Hintergrund, auch große
-          Playlists – du kannst ihn schließen und später hier abholen. Die Titel werden über Deezer abgespielt.
+          Link zu einer Playlist, einem Album oder einem Titel. Der Import läuft im Hintergrund weiter.
         </p>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <input

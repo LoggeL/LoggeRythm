@@ -50,7 +50,6 @@ export default function PlaylistQuickAdd({
   return (
     <section aria-label="Titel zur Playlist hinzufügen" className="mt-8 border-t border-hairline pt-6">
       <h2 className="font-display text-lg font-bold tracking-tight">Titel schnell hinzufügen</h2>
-      <p className="mt-1 text-xs text-muted">Suche direkt hier nach Songs und füge sie mit einem Klick hinzu.</p>
       <SearchField
         value={search.input}
         onValueChange={search.setInput}

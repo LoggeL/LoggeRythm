@@ -98,9 +98,7 @@ vi.mock('../localization', () => ({
   strings: {
     profile: {
       title: 'Profile',
-      subtitle: 'Account settings',
       dangerTitle: 'Danger zone',
-      dangerBody: 'Deletion is permanent.',
       deleteAccount: 'Delete account',
       deleteTitle: 'Permanently delete account?',
       deleteWarning: 'This cannot be undone.',

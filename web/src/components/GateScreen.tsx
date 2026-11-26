@@ -18,16 +18,13 @@ export function LandingScreen({ nextPath }: { nextPath?: string | null }) {
     <div className="h-full overflow-y-auto bg-background">
       <AuthShell claimHeading>
         <section aria-labelledby="landing-access">
-          <p className="page-eyebrow">
-            {isPlaylistInvite ? "Gemeinsame Playlist" : "Zugang"}
-          </p>
           <h2 id="landing-access" className="text-[clamp(1.75rem,4vw,2.25rem)] font-extrabold leading-none tracking-[-0.04em]">
             {isPlaylistInvite ? "Einladung annehmen" : "Einsteigen"}
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-muted">
             {isPlaylistInvite
-              ? "Melde dich an oder lege ein Konto an, um dieser gemeinsamen Playlist beizutreten."
-              : "Melde dich an oder lege ein Konto an. Neue Konten gibt ein Admin frei."}
+              ? "Danach trittst du der gemeinsamen Playlist bei. Neue Konten gibt ein Admin frei."
+              : "Neue Konten gibt ein Admin frei."}
           </p>
           <div className="mt-8 flex flex-col gap-3">
             <Link href={loginHref} className="action-primary min-h-12 w-full text-[15px]">
@@ -37,7 +34,6 @@ export function LandingScreen({ nextPath }: { nextPath?: string | null }) {
               Konto erstellen
             </Link>
           </div>
-          <p className="label-mono mt-8 border-t border-hairline pt-5 leading-relaxed">Nur für eingeladene und freigegebene Konten.</p>
         </section>
       </AuthShell>
     </div>
@@ -65,11 +61,10 @@ export function PendingScreen() {
     <div className="h-full overflow-y-auto bg-background">
       <AuthShell compact>
         <section aria-labelledby="pending-title">
-          <p className="page-eyebrow">Wartet auf Freigabe</p>
           <h1 id="pending-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [overflow-wrap:anywhere] [text-wrap:balance]">
             Fast geschafft{name ? `, ${name}` : ""}
           </h1>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted">Dein Konto ist angelegt und wartet auf die Freigabe durch einen Admin. Sobald das erledigt ist, kannst du loshören.</p>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted">Ein Admin muss dein Konto noch freigeben.</p>
           <dl className="mt-8 border-t border-hairline">
             <div className="flex min-h-12 items-center justify-between gap-4 border-b border-hairline">
               <dt className="label-mono">Konto</dt>

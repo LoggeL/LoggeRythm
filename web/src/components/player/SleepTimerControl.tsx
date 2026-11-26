@@ -194,13 +194,11 @@ function SleepTimerPopover({
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="font-display text-base font-extrabold tracking-tight text-foreground">Sleep-Timer</h2>
-            <p className="label-mono mt-0.5 text-[10px]">
-              {sleepAt != null
-                ? `Blendet um ${endsAt} Uhr sanft aus`
-                : sleepAfterTrack
-                  ? "Pause nach dem aktuellen Titel"
-                  : "Sanftes Ausblenden vor Pause"}
-            </p>
+            {(sleepAt != null || sleepAfterTrack) && (
+              <p className="label-mono mt-0.5 text-[10px]">
+                {sleepAt != null ? `Blendet um ${endsAt} Uhr sanft aus` : "Pause nach dem aktuellen Titel"}
+              </p>
+            )}
           </div>
           <button data-dialog-autofocus type="button" onClick={onClose} aria-label="Sleep-Timer schließen" className="action-icon h-9 w-9">
             <CloseIcon width={18} height={18} />

@@ -205,12 +205,7 @@ export function AudioEffectsSheet({ onClose }: AudioEffectsSheetProps) {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <AppText variant="title">{wave2Strings.audioEffects.title}</AppText>
-          <AppText variant="caption" color="secondary">
-            {wave2Strings.audioEffects.subtitle}
-          </AppText>
-        </View>
+        <AppText variant="title" style={styles.headerTitle}>{wave2Strings.audioEffects.title}</AppText>
         {onClose !== undefined ? (
           <ActionButton
             testID="audio-effects-close"
@@ -483,9 +478,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  headerCopy: {
+  headerTitle: {
     flex: 1,
-    gap: spacing.xxs,
   },
   section: {
     gap: spacing.sm,

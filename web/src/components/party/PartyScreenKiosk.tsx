@@ -347,11 +347,11 @@ export default function PartyScreenKiosk({
                 </p>
               );
             })
-          ) : (
+          ) : lyrics.isLoading ? (
             <p className="label-mono text-sm text-foreground/80 [text-shadow:0_1px_8px_rgb(0_0_0/0.75)]">
-              {lyrics.isLoading ? "Songtext wird geladen…" : "Live-Visualisierung aktiv"}
+              Songtext wird geladen…
             </p>
-          )}
+          ) : null}
         </div>
       </div>
 

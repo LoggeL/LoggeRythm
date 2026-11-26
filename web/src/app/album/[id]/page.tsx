@@ -129,9 +129,7 @@ function AlbumView({ album }: { album: Album }) {
                 </Link>
               )
             }
-          >
-            Für diese Veröffentlichung sind keine abspielbaren Titel hinterlegt.
-          </EmptyState>
+          />
         ) : (
           tracks.map((track, index) => (
             <TrackRow key={track.id} track={track} index={index} showAlbum={false} showCover={false} onPlay={() => playQueue(tracks, index, album.title)} />

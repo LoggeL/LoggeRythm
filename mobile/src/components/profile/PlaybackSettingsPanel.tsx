@@ -50,7 +50,6 @@ export function PlaybackSettingsPanelView({
       testID="profile-playback"
       icon="transition"
       title={strings.profile.playbackTitle}
-      description={strings.profile.playbackSubtitle}
     >
       {isPending && settings === undefined ? (
         <View testID="profile-playback-loading" style={styles.skeleton}>
@@ -70,9 +69,6 @@ export function PlaybackSettingsPanelView({
           <View style={styles.toggleRow}>
             <View style={styles.toggleCopy}>
               <AppText variant="bodyStrong">{strings.profile.crossfadeEnabled}</AppText>
-              <AppText variant="caption" color="secondary">
-                {strings.profile.crossfadeHint}
-              </AppText>
             </View>
             <Switch
               testID="profile-crossfade-toggle"

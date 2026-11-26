@@ -622,7 +622,6 @@ export default function HomeScreen(props: HomeScreenProps) {
             <ScreenHeader
               title={greeting}
               titleTestID="home-greeting"
-              subtitle={strings.home.subtitle}
               style={
                 tvPaddingHorizontal === undefined
                   ? styles.header

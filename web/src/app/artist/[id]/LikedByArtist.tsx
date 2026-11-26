@@ -41,7 +41,7 @@ export default function LikedByArtist({ artistId, artistName }: { artistId: stri
       <SectionHeader
         id="artist-liked"
         title="Deine Lieblingssongs"
-        description={liked.length > 0 ? `${countLabel} von ${artistName}, die du geliked hast` : `Songs von ${artistName}, die du geliked hast`}
+        description={liked.length > 0 ? countLabel : undefined}
         action={
           liked.length > 0 ? (
             <button

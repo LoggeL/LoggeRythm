@@ -12,7 +12,7 @@ import { RadioStationCard } from './RadioStationCard';
 export interface RadioQueryStationProps {
   testID: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   cover: string;
   state: RemoteVisualState;
   queryBusy: boolean;

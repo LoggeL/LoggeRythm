@@ -215,7 +215,7 @@ describe('ArtistLikedTracksHeader', () => {
     });
   }
 
-  it('starts as one collapsed expander row naming the artist and the song count', () => {
+  it('starts as one collapsed expander row naming the song count', () => {
     const onToggleExpanded = vi.fn();
     const rendered = header({ trackCount: 6, onToggleExpanded });
     const heading = byType(rendered, 'Text').find(
@@ -225,11 +225,11 @@ describe('ArtistLikedTracksHeader', () => {
     expect(heading?.props.children).toBe(catalogStrings.artist.likedTracks);
     expect(textContent(rendered)).toEqual([
       catalogStrings.artist.likedTracks,
-      catalogStrings.artist.likedTracksSummary('LoggeRythm', 6),
+      catalogStrings.artist.likedTracksSummary(6),
       catalogStrings.artist.showLikedTracks,
     ]);
-    expect(catalogStrings.artist.likedTracksSummary('LoggeRythm', 6)).toBe('6 Songs von LoggeRythm');
-    expect(catalogStrings.artist.likedTracksSummary('LoggeRythm', 1)).toBe('1 Song von LoggeRythm');
+    expect(catalogStrings.artist.likedTracksSummary(6)).toBe('6 Songs');
+    expect(catalogStrings.artist.likedTracksSummary(1)).toBe('1 Song');
 
     const toggle = byTestId(rendered, 'artist-liked-tracks-toggle');
     expect(toggle.props.accessibilityRole).toBe('button');

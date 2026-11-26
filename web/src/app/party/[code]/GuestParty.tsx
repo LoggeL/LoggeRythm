@@ -74,7 +74,7 @@ export default function GuestParty({ code }: { code: string }) {
     <GuestFrame>
       <div className="animate-in">
         <header className="mb-8">
-          <p className="page-eyebrow">Gemeinsam hören · Jam {party.code}</p>
+          <p className="page-eyebrow">Jam {party.code}</p>
           <h1 className="page-title">{party.name || "Jam"}</h1>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
             <p className="label-mono flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -196,12 +196,12 @@ function NicknameForm({
   return (
     <AuthShell compact>
       <form onSubmit={submit} aria-labelledby="guest-join-title">
-        <p className="page-eyebrow">{left ? "Du hast die Jam verlassen" : `Einladung · Jam ${code}`}</p>
+        <p className="page-eyebrow">{left ? "Du hast die Jam verlassen" : `Jam ${code}`}</p>
         <h1 id="guest-join-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [text-wrap:balance]">
           {left ? "Wieder mitmachen?" : "Bei der Jam mitmachen"}
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-muted">
-          Ohne Konto: Gib einen Nickname ein, dann siehst du die Warteschlange live und kannst Songs hinzufügen.
+          Ohne Konto – nur mit einem Nickname.
         </p>
         <div className="mt-8">
           <TextField

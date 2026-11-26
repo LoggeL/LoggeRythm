@@ -74,7 +74,8 @@ interface SearchEntityCardProps extends TvFocusProps {
   testID: string;
   accessibilityLabel: string;
   title: string;
-  subtitle: string;
+  /** Meta line under the title; omitted when it would only repeat the section. */
+  subtitle?: string;
   imageUri: string | null;
   /** Round artwork for artists. */
   round?: boolean;
@@ -89,7 +90,7 @@ interface SearchEntityCardProps extends TvFocusProps {
   subtitleStyle?: TextStyle;
 }
 
-/** One card of a horizontal result rail: artwork, title and one meta line. */
+/** One card of a horizontal result rail: artwork, title and an optional meta line. */
 export function SearchEntityCard({
   testID,
   accessibilityLabel,
@@ -153,15 +154,17 @@ export function SearchEntityCard({
         >
           {title}
         </AppText>
-        <AppText
-          variant="caption"
-          color="secondary"
-          numberOfLines={1}
-          align={round ? 'center' : undefined}
-          style={subtitleStyle}
-        >
-          {subtitle}
-        </AppText>
+        {subtitle !== undefined ? (
+          <AppText
+            variant="caption"
+            color="secondary"
+            numberOfLines={1}
+            align={round ? 'center' : undefined}
+            style={subtitleStyle}
+          >
+            {subtitle}
+          </AppText>
+        ) : null}
       </View>
     </PressableScale>
   );

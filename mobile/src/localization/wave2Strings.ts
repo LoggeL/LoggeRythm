@@ -8,7 +8,6 @@ export interface Wave2Strings {
     openButton: string;
     closeButton: string;
     title: string;
-    subtitle: string;
     eqTitle: string;
     eqEnabled: string;
     eqUnsupported: string;
@@ -103,9 +102,7 @@ export interface Wave2Strings {
   };
   insights: {
     title: string;
-    subtitle: string;
     openButton: string;
-    openHint: string;
     ranges: Record<StatsInsightsRange, string>;
     listeningTime: string;
     formatDuration: (hours: number, minutes: number) => string;
@@ -132,7 +129,6 @@ export interface Wave2Strings {
   };
   friends: {
     title: string;
-    subtitle: string;
     empty: string;
     shareActivityLabel: string;
     shareActivityHint: string;
@@ -163,12 +159,10 @@ export interface Wave2Strings {
   };
   playlistTools: {
     startRadio: string;
-    startRadioHint: string;
     startingRadio: string;
     radioStarted: (name: string) => string;
     radioFailed: string;
     findDuplicates: string;
-    findDuplicatesHint: string;
     duplicatesTitle: string;
     duplicatesLoading: string;
     duplicatesEmpty: string;
@@ -203,7 +197,6 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       openButton: 'Klang',
       closeButton: 'Klang-Einstellungen schließen',
       title: 'Klang & Effekte',
-      subtitle: 'Equalizer, Bass-Boost, Lautstärke-Normalisierung und Stream-Qualität.',
       eqTitle: '5-Band-Equalizer',
       eqEnabled: 'Equalizer aktivieren',
       eqUnsupported: 'Equalizer wird auf diesem Gerät nicht unterstützt.',
@@ -235,9 +228,9 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       qualityTitle: 'Audio-Qualität',
       qualitySubtitle: 'Gilt für neue Streams und Offline-Downloads.',
       qualityOptions: {
-        lossless: { label: 'Lossless (FLAC)', hint: 'Verlustfrei, höchster Datenverbrauch' },
-        high: { label: 'Hoch (320 kbit/s)', hint: 'Standard-MP3 in hoher Qualität' },
-        saver: { label: 'Datensparmodus (128 kbit/s)', hint: 'Geringerer Datenverbrauch unterwegs' },
+        lossless: { label: 'Lossless (FLAC)', hint: 'Höchster Datenverbrauch' },
+        high: { label: 'Hoch (320 kbit/s)', hint: 'MP3' },
+        saver: { label: 'Datensparmodus (128 kbit/s)', hint: 'Geringster Datenverbrauch' },
       },
       qualityBadges: {
         lossless: 'FLAC',
@@ -324,9 +317,7 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     },
     insights: {
       title: 'Deine Hör-Insights',
-      subtitle: 'Hörzeit, Serien, Spitzenzeiten und deine Favoriten im Überblick.',
       openButton: 'Alle Hör-Insights öffnen',
-      openHint: 'Serien, Top-Alben, Uhrzeiten und Rückblick ansehen',
       ranges: {
         '7d': '7 Tage',
         '30d': '30 Tage',
@@ -361,7 +352,6 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     },
     friends: {
       title: 'Freunde hören gerade',
-      subtitle: 'Live-Aktivität aus deiner Community.',
       empty: 'Gerade teilt niemand seine Wiedergabe.',
       shareActivityLabel: 'Höraktivität teilen',
       shareActivityHint: 'Zeigt anderen, welchen Titel du gerade hörst.',
@@ -392,12 +382,10 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     },
     playlistTools: {
       startRadio: 'Playlist-Radio starten',
-      startRadioHint: 'Ähnliche Titel passend zu dieser Auswahl abspielen',
       startingRadio: 'Radio wird gestartet …',
       radioStarted: (name) => `Radio basierend auf „${name}“ gestartet.`,
       radioFailed: 'Radio konnte nicht gestartet werden.',
       findDuplicates: 'Duplikate suchen',
-      findDuplicatesHint: 'Doppelte Einträge prüfen und bereinigen',
       duplicatesTitle: 'Duplikate in Playlist',
       duplicatesLoading: 'Suche nach doppelten Titeln …',
       duplicatesEmpty: 'Keine Duplikate gefunden – deine Playlist ist sauber.',
@@ -433,7 +421,6 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       openButton: 'Audio',
       closeButton: 'Close audio effects',
       title: 'Audio Craft',
-      subtitle: 'Equalizer, bass boost, loudness normalization, and stream quality.',
       eqTitle: '5-Band Equalizer',
       eqEnabled: 'Enable equalizer',
       eqUnsupported: 'Equalizer is not supported on this device.',
@@ -465,9 +452,9 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       qualityTitle: 'Audio Quality',
       qualitySubtitle: 'Applies to new streams and offline downloads.',
       qualityOptions: {
-        lossless: { label: 'Lossless (FLAC)', hint: 'Bit-perfect audio, highest data usage' },
-        high: { label: 'High (320 kbps)', hint: 'Standard high-quality MP3' },
-        saver: { label: 'Data Saver (128 kbps)', hint: 'Lower bandwidth on cellular' },
+        lossless: { label: 'Lossless (FLAC)', hint: 'Highest data usage' },
+        high: { label: 'High (320 kbps)', hint: 'MP3' },
+        saver: { label: 'Data Saver (128 kbps)', hint: 'Lowest data usage' },
       },
       qualityBadges: {
         lossless: 'FLAC',
@@ -554,9 +541,7 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     },
     insights: {
       title: 'Listening Insights',
-      subtitle: 'Listening time, streaks, peak hours, and your favorites.',
       openButton: 'Open Listening Insights',
-      openHint: 'View streaks, top albums, listening clock, and recap',
       ranges: {
         '7d': '7 Days',
         '30d': '30 Days',
@@ -591,7 +576,6 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     },
     friends: {
       title: 'Friends Listening Now',
-      subtitle: 'Live listening activity from your community.',
       empty: 'Nobody is sharing their listening activity right now.',
       shareActivityLabel: 'Share listening activity',
       shareActivityHint: 'Let friends see what track you are listening to.',
@@ -622,12 +606,10 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
     },
     playlistTools: {
       startRadio: 'Start Playlist Radio',
-      startRadioHint: 'Play similar tracks seeded from this selection',
       startingRadio: 'Starting radio…',
       radioStarted: (name) => `Started radio from “${name}”.`,
       radioFailed: 'Could not start radio.',
       findDuplicates: 'Find Duplicates',
-      findDuplicatesHint: 'Inspect and remove duplicate entries',
       duplicatesTitle: 'Playlist Duplicates',
       duplicatesLoading: 'Scanning for duplicate tracks…',
       duplicatesEmpty: 'No duplicates found — this playlist is clean.',

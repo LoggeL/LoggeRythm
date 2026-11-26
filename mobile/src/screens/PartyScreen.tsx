@@ -517,7 +517,7 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
         <PartyNotice
           testID="party-follow-hint"
           tone="info"
-          message={sharedControl ? strings.party.sharedControlHint : strings.party.followHint(party.host_name)}
+          message={sharedControl ? strings.party.sharedControlHint : strings.party.followHint}
         />
       ) : null}
     </>

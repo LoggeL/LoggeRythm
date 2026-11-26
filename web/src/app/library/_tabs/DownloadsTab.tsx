@@ -103,7 +103,7 @@ export default function DownloadsTab({
 
   return (
     <section aria-labelledby="download-heading">
-      <TabHeader id="download-heading" title="Offline hören" meta="Auf diesem Gerät gespeicherte Playlists, Alben und Lieblingssongs.">
+      <TabHeader id="download-heading" title="Offline hören" meta="Nur auf diesem Gerät gespeichert.">
         {supported && entries.length > 0 && (
           <button
             type="button"

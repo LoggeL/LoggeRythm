@@ -156,9 +156,7 @@ function AdminUsageContent() {
             Zur Startseite
           </Link>
         }
-      >
-        Das Nutzungs-Dashboard ist ausschließlich für Administratoren zugänglich.
-      </EmptyState>
+      />
     );
   }
 
@@ -189,11 +187,7 @@ function AdminUsageContent() {
 
       <header className="page-header mb-0">
         <div className="min-w-0">
-          <p className="page-eyebrow">Administration</p>
           <h1 className="page-title">Nutzungs-Dashboard</h1>
-          <p className="page-description">
-            Wiedergaben, Hörzeit, angeforderte Titel und Audio-Cache-Speicher pro Benutzer auf einen Blick.
-          </p>
         </div>
 
         <div className="flex items-center gap-5 max-sm:w-full max-sm:justify-between">
@@ -325,16 +319,13 @@ function AdminUsageContent() {
             requestTrackingSince={data.request_tracking_since}
           />
 
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="font-display text-xl font-extrabold tracking-[-0.03em]">
-              Benutzer ({countFormatter.format(visibleUsers.length)}
-              {visibleUsers.length !== data.users.length
-                ? ` von ${countFormatter.format(data.users.length)}`
-                : ""}
-              )
-            </h2>
-            <p className="label-mono">Klicke auf einen Benutzer für Details</p>
-          </div>
+          <h2 className="font-display text-xl font-extrabold tracking-[-0.03em]">
+            Benutzer ({countFormatter.format(visibleUsers.length)}
+            {visibleUsers.length !== data.users.length
+              ? ` von ${countFormatter.format(data.users.length)}`
+              : ""}
+            )
+          </h2>
 
           <UserUsageTable
             users={visibleUsers}

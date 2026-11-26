@@ -71,7 +71,6 @@ export function SleepTimerPanel() {
       testID="profile-sleep"
       icon="timer-outline"
       title={strings.profile.sleepTitle}
-      description={strings.profile.sleepSubtitle}
     >
       <View
         testID="profile-sleep-status"

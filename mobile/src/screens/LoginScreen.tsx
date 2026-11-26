@@ -224,12 +224,7 @@ export default function LoginScreen() {
       >
         <View testID="auth-card" style={styles.card}>
           <BrandLockup style={styles.logo} />
-          <View style={styles.heading}>
-            <AppText variant="title" align="center" accessibilityRole="header">{submitLabel}</AppText>
-            <AppText color="secondary" align="center">
-              {creatingAccount ? strings.auth.createAccountSubtitle : strings.auth.signInSubtitle}
-            </AppText>
-          </View>
+          <AppText variant="title" align="center" accessibilityRole="header">{submitLabel}</AppText>
 
           <View style={styles.fields}>
             <FormField
@@ -387,7 +382,6 @@ const styles = StyleSheet.create({
   scrollContent: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
   card: { gap: spacing.xl, width: '100%', maxWidth: FORM_MAX_WIDTH },
   logo: { alignSelf: 'center' },
-  heading: { gap: spacing.xxs },
   fields: { gap: layout.stackGap },
   error: {
     flexDirection: 'row',

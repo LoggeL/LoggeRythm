@@ -19,7 +19,6 @@ export interface CatalogScreenStrings {
     sectionEmpty: (title: string) => string;
     retrySection: (title: string) => string;
     tracks: (count: number) => string;
-    releaseYear: (year: string) => string;
     openAlbum: (title: string, artist: string) => string;
     openArtist: (name: string) => string;
     openGenre: (name: string) => string;
@@ -31,7 +30,6 @@ export interface CatalogScreenStrings {
   };
   discover: {
     title: string;
-    subtitle: string;
     charts: string;
     genres: string;
     newReleases: string;
@@ -49,7 +47,6 @@ export interface CatalogScreenStrings {
     loading: string;
     empty: string;
     tracks: string;
-    byArtist: (artist: string) => string;
     runtime: (minutes: number) => string;
     download: string;
     removeDownload: string;
@@ -71,8 +68,7 @@ export interface CatalogScreenStrings {
     empty: string;
     topTracks: string;
     likedTracks: string;
-    likedTracksBy: (name: string) => string;
-    likedTracksSummary: (name: string, count: number) => string;
+    likedTracksSummary: (count: number) => string;
     likedTracksFailed: string;
     showLikedTracks: string;
     hideLikedTracks: string;
@@ -130,7 +126,6 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       sectionEmpty: (title) => `Für „${title}“ sind gerade keine Inhalte verfügbar.`,
       retrySection: (title) => `${title} erneut laden`,
       tracks: (count) => `${count} Titel`,
-      releaseYear: (year) => `Veröffentlicht ${year}`,
       openAlbum: (title, artist) => `Album „${title}“ von ${artist} öffnen`,
       openArtist: (name) => `Interpret ${name} öffnen`,
       openGenre: (name) => `Genre ${name} öffnen`,
@@ -142,7 +137,6 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
     },
     discover: {
       title: 'Entdecken',
-      subtitle: 'Charts, Genres und neue Musik aus der Community.',
       charts: 'Charts',
       genres: 'Genres',
       newReleases: 'Neue Veröffentlichungen',
@@ -161,7 +155,6 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       loading: 'Album wird geladen…',
       empty: 'Dieses Album enthält keine verfügbaren Titel.',
       tracks: 'Titelliste',
-      byArtist: (artist) => `Album von ${artist}`,
       runtime: (minutes) => {
         if (minutes < 60) return `${minutes} Min.`;
         return `${Math.floor(minutes / 60)} Std. ${minutes % 60} Min.`;
@@ -186,8 +179,7 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       empty: 'Für diesen Interpreten sind gerade keine Inhalte verfügbar.',
       topTracks: 'Beliebt',
       likedTracks: 'Deine Lieblingssongs',
-      likedTracksBy: (name) => `von ${name}`,
-      likedTracksSummary: (name, count) => `${count} ${count === 1 ? 'Song' : 'Songs'} von ${name}`,
+      likedTracksSummary: (count) => `${count} ${count === 1 ? 'Song' : 'Songs'}`,
       likedTracksFailed: 'Deine Lieblingssongs konnten nicht geladen werden',
       showLikedTracks: 'Anzeigen',
       hideLikedTracks: 'Ausblenden',
@@ -244,7 +236,6 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       sectionEmpty: (title) => `There is nothing available for “${title}” right now.`,
       retrySection: (title) => `Reload ${title}`,
       tracks: (count) => `${count} ${count === 1 ? 'track' : 'tracks'}`,
-      releaseYear: (year) => `Released ${year}`,
       openAlbum: (title, artist) => `Open album ${title} by ${artist}`,
       openArtist: (name) => `Open artist ${name}`,
       openGenre: (name) => `Open ${name} genre`,
@@ -256,7 +247,6 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
     },
     discover: {
       title: 'Discover',
-      subtitle: 'Charts, genres, and new music from the community.',
       charts: 'Charts',
       genres: 'Genres',
       newReleases: 'New releases',
@@ -276,7 +266,6 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       loading: 'Loading album…',
       empty: 'This album has no available tracks.',
       tracks: 'Track list',
-      byArtist: (artist) => `Album by ${artist}`,
       runtime: (minutes) => {
         if (minutes < 60) return `${minutes} min`;
         const hours = Math.floor(minutes / 60);
@@ -302,8 +291,7 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       empty: 'There is nothing available for this artist right now.',
       topTracks: 'Popular tracks',
       likedTracks: 'Your liked songs',
-      likedTracksBy: (name) => `by ${name}`,
-      likedTracksSummary: (name, count) => `${count} ${count === 1 ? 'song' : 'songs'} by ${name}`,
+      likedTracksSummary: (count) => `${count} ${count === 1 ? 'song' : 'songs'}`,
       likedTracksFailed: 'Could not load your liked songs',
       showLikedTracks: 'Show',
       hideLikedTracks: 'Hide',

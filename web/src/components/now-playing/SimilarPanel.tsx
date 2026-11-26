@@ -36,8 +36,8 @@ export default function SimilarPanel({ seedId, onClose }: { seedId: string | num
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-9 flex-shrink-0 items-center justify-between gap-3 pb-2">
-        <h2 className="label-mono">Radio zu diesem Titel</h2>
+      <div className="flex min-h-9 flex-shrink-0 items-center justify-end gap-3 pb-2">
+        <h2 className="sr-only">Ähnliche Titel</h2>
         {tracks && tracks.length > 0 && (
           <button type="button" onClick={() => playSimilarRadio(0)} className="action-secondary min-h-9 border-white/15 bg-[#0f0e11]/68 px-4 text-xs hover:bg-[#0f0e11]/88">
             <PlayIcon width={14} height={14} />
@@ -66,7 +66,6 @@ export default function SimilarPanel({ seedId, onClose }: { seedId: string | num
               <RadioIcon width={24} height={24} />
             </span>
             <p className="text-base font-semibold text-foreground">Nichts Ähnliches gefunden</p>
-            <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-foreground/78">Zu diesem Titel gibt es noch keine Empfehlungen. Probier es mit dem nächsten Song.</p>
           </div>
         )}
         {tracks && tracks.length > 0 && (

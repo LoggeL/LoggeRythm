@@ -28,7 +28,6 @@ export function AuthShell({ children, compact = false, claimHeading = false }: {
             <br />
             Dein Stream.
           </Claim>
-          <p className="page-description max-w-md">Der private Musikplayer für dich und deine Freunde – mit Songtexten, Partys und Offline-Downloads.</p>
         </div>
         <ul aria-hidden="true" className="hidden grid-cols-3 border-t border-hairline pt-4 lg:grid">
           {FEATURES.map((feature, index) => (

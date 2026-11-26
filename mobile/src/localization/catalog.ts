@@ -48,8 +48,6 @@ export interface StringCatalog {
     forgetSessionFailed: string;
     restoringSession: string;
     inviteLinkFailed: string;
-    signInSubtitle: string;
-    createAccountSubtitle: string;
     server: string;
     serverPlaceholder: string;
     serverCredentialNotice: string;
@@ -126,7 +124,6 @@ export interface StringCatalog {
     greetingDay: string;
     greetingEvening: string;
     greeting: (salutation: string, name: string | null) => string;
-    subtitle: string;
     moods: {
       top: string;
       chill: string;
@@ -202,7 +199,6 @@ export interface StringCatalog {
   radio: {
     badge: string;
     title: string;
-    subtitle: string;
     personalTitle: string;
     personalSubtitle: string;
     personalLoading: string;
@@ -228,16 +224,14 @@ export interface StringCatalog {
     dismissError: string;
     genreRadio: (name: string) => string;
     moods: {
-      chill: { title: string; subtitle: string };
-      focus: { title: string; subtitle: string };
-      workout: { title: string; subtitle: string };
-      party: { title: string; subtitle: string };
+      chill: { title: string };
+      focus: { title: string };
+      workout: { title: string };
+      party: { title: string };
     };
   };
   profile: {
     title: string;
-    subtitle: string;
-    accountTitle: string;
     member: string;
     administrator: string;
     approved: string;
@@ -287,7 +281,6 @@ export interface StringCatalog {
     statsRefreshFailed: string;
     refreshStats: string;
     sleepTitle: string;
-    sleepSubtitle: string;
     timerOff: string;
     timerRemaining: (remaining: string) => string;
     timerEndOfTrack: string;
@@ -299,15 +292,12 @@ export interface StringCatalog {
     noRemainingTime: string;
     sleepSetFailed: string;
     playbackTitle: string;
-    playbackSubtitle: string;
     crossfadeEnabled: string;
-    crossfadeHint: string;
     crossfadeDuration: (seconds: number) => string;
     crossfadeSaved: string;
     crossfadeSaveFailed: string;
     crossfadeLoadFailed: string;
     storageTitle: string;
-    storageSubtitle: string;
     storageDownloadsLabel: string;
     storageDownloadsSummary: (count: number, size: string) => string;
     storageFreeSpace: (size: string) => string;
@@ -318,7 +308,6 @@ export interface StringCatalog {
     streamCacheCleared: string;
     streamCacheClearFailed: string;
     wifiOnlyLabel: string;
-    wifiOnlyHint: string;
     wifiOnlySaveFailed: string;
     wifiRequiredError: string;
     playTopTrack: (title: string) => string;
@@ -355,7 +344,6 @@ export interface StringCatalog {
       install: (size: string) => string;
       preparing: string;
       downloading: (version: string) => string;
-      downloadingHint: string;
       /** Static TalkBack label of the download bar; the progress is its value. */
       progressLabel: string;
       confirm: (version: string) => string;
@@ -455,7 +443,6 @@ export interface StringCatalog {
       safety: string;
     };
     dangerTitle: string;
-    dangerBody: string;
     deleteAccount: string;
     deleteTitle: string;
     deleteWarning: string;
@@ -857,7 +844,7 @@ export interface StringCatalog {
     leaveConfirm: string;
     leaveStay: string;
     leaveFailed: (detail: string) => string;
-    followHint: (host: string) => string;
+    followHint: string;
     detachedTitle: string;
     detachedBody: string;
     rejoinPlayback: string;
@@ -1014,7 +1001,6 @@ export interface StringCatalog {
     devicesButton: (deviceName: string | null) => string;
     closeSheet: string;
     settingsTitle: string;
-    settingsDescription: string;
     deviceTypes: {
       web: string;
       mobile: string;
@@ -1089,8 +1075,6 @@ export const de: StringCatalog = {
     restoringSession: 'Sitzung wird wiederhergestellt…',
     inviteLinkFailed:
       'Der Einladungslink konnte nicht geöffnet werden. Gib den Einladungscode bei Bedarf manuell ein.',
-    signInSubtitle: 'Melde dich bei deiner Mediathek an',
-    createAccountSubtitle: 'Erstelle dein Konto',
     server: 'Server-URL',
     serverPlaceholder: 'https://dein-server.example',
     serverCredentialNotice:
@@ -1173,7 +1157,6 @@ export const de: StringCatalog = {
     greetingDay: 'Guten Tag',
     greetingEvening: 'Guten Abend',
     greeting: (salutation, name) => `${salutation}${name ? `, ${name}` : ''} 👋`,
-    subtitle: 'Entdecke neue Musik, die dich bewegt.',
     moods: { top: 'Top-Auswahl', chill: 'Chill', focus: 'Fokus', workout: 'Workout', party: 'Party' },
     moodResults: (mood) => `${mood} für dich`,
     recentlyHeard: 'Zuletzt gehört',
@@ -1182,8 +1165,7 @@ export const de: StringCatalog = {
     releaseRadar: 'Dein Release Radar',
     radarSubtitle: 'Neues von Künstler:innen, die du hörst und folgst',
     radarTypeLabel: 'Playlist',
-    radarEmpty:
-      'Noch keine frischen Releases von deinen Künstler:innen. Folge Artists oder höre mehr, dann füllt sich dein Radar.',
+    radarEmpty: 'Folge Artists oder höre mehr, dann füllt sich dein Radar.',
     radarNewCount: (count) => `${count} neu`,
     radarNewTrack: 'Neu',
     radarRule:
@@ -1243,7 +1225,6 @@ export const de: StringCatalog = {
   radio: {
     badge: 'RADIO',
     title: 'Radio',
-    subtitle: 'Endlose Musik, abgestimmt auf deinen Geschmack.',
     personalTitle: 'Für dich gemacht',
     personalSubtitle: 'Radios auf Basis deiner zuletzt gehörten Titel.',
     personalLoading: 'Deine persönlichen Radios werden vorbereitet…',
@@ -1269,16 +1250,14 @@ export const de: StringCatalog = {
     dismissError: 'Radio-Fehler schließen',
     genreRadio: (name) => `${name}-Radio`,
     moods: {
-      chill: { title: 'Chill-Radio', subtitle: 'Entspannte Töne für ruhige Momente' },
-      focus: { title: 'Fokus-Radio', subtitle: 'Konzentriert bleiben, ohne Ablenkung' },
-      workout: { title: 'Workout-Radio', subtitle: 'Energie für dein Training' },
-      party: { title: 'Party-Radio', subtitle: 'Voller Beats für die Nacht' },
+      chill: { title: 'Chill-Radio' },
+      focus: { title: 'Fokus-Radio' },
+      workout: { title: 'Workout-Radio' },
+      party: { title: 'Party-Radio' },
     },
   },
   profile: {
     title: 'Profil',
-    subtitle: 'Konto, Hörstatistik und Wiedergabe-Timer verwalten.',
-    accountTitle: 'Dein Konto',
     member: 'Mitglied',
     administrator: 'Administrator',
     approved: 'Freigegeben',
@@ -1286,7 +1265,7 @@ export const de: StringCatalog = {
     serverOrigin: (origin) => `Server: ${origin}`,
     avatarDeferred: 'Das Profilbild kann derzeit nur im Web geändert werden.',
     languageTitle: 'Sprache',
-    languageSubtitle: 'Gilt für die LoggeRythm-App auf diesem Gerät.',
+    languageSubtitle: 'Nur auf diesem Gerät.',
     languageGerman: 'Deutsch',
     languageEnglish: 'Englisch',
     languageChanging: 'Sprache wird gespeichert…',
@@ -1328,7 +1307,6 @@ export const de: StringCatalog = {
     statsRefreshFailed: 'Aktualisierung fehlgeschlagen. Gespeicherte Statistik bleibt sichtbar.',
     refreshStats: 'Hörstatistik erneut laden',
     sleepTitle: 'Sleep-Timer',
-    sleepSubtitle: 'Wiedergabe nach einer Zeitspanne oder am Titelende pausieren.',
     timerOff: 'Kein Sleep-Timer aktiv',
     timerRemaining: (remaining) => `Verbleibende Zeit: ${remaining}`,
     timerEndOfTrack: 'Wiedergabe endet nach dem aktuellen Titel.',
@@ -1340,27 +1318,23 @@ export const de: StringCatalog = {
     noRemainingTime: 'Für den aktuellen Titel ist keine Restzeit verfügbar.',
     sleepSetFailed: 'Sleep-Timer konnte nicht geändert werden',
     playbackTitle: 'Wiedergabe',
-    playbackSubtitle: 'Crossfade-Übergänge zwischen Titeln für dein Konto.',
     crossfadeEnabled: 'Crossfade aktivieren',
-    crossfadeHint: 'Blendet aufeinanderfolgende Titel sanft ineinander über.',
     crossfadeDuration: (seconds) => `${seconds} Sek.`,
     crossfadeSaved: 'Wiedergabe-Einstellungen gespeichert.',
     crossfadeSaveFailed: 'Wiedergabe-Einstellungen konnten nicht gespeichert werden.',
     crossfadeLoadFailed: 'Wiedergabe-Einstellungen konnten nicht geladen werden.',
     storageTitle: 'Speicher & Downloads',
-    storageSubtitle: 'Offline-Downloads, Stream-Cache und Download-Regeln verwalten.',
     storageDownloadsLabel: 'Offline-Downloads',
     storageDownloadsSummary: (count, size) =>
       `${count} ${count === 1 ? 'Titel' : 'Titel'} · ${size}`,
     storageFreeSpace: (size) => `${size} freier Gerätespeicher`,
     storageStreamCacheLabel: 'Rolling Stream-Cache',
-    storageStreamCacheHint: 'Bis zu 500 MiB zwischengespeicherte Streams für sofortige Wiedergabe.',
+    storageStreamCacheHint: 'Bis zu 500 MiB',
     clearStreamCache: 'Stream-Cache leeren',
     clearingStreamCache: 'Cache wird geleert…',
     streamCacheCleared: 'Stream-Cache wurde geleert.',
     streamCacheClearFailed: 'Stream-Cache konnte nicht geleert werden.',
     wifiOnlyLabel: 'Nur über WLAN herunterladen',
-    wifiOnlyHint: 'Blockiert Offline-Downloads über Mobilfunk.',
     wifiOnlySaveFailed: 'WLAN-Einstellung konnte nicht gespeichert werden.',
     wifiRequiredError:
       'Downloads sind auf WLAN beschränkt. Verbinde dich mit einem WLAN oder ändere die Einstellung im Profil.',
@@ -1395,7 +1369,6 @@ export const de: StringCatalog = {
       install: (size) => `Installieren (${size})`,
       preparing: 'Installation wird vorbereitet…',
       downloading: (version) => `Version ${version} wird geladen und geprüft…`,
-      downloadingHint: 'Du kannst die App währenddessen weiter nutzen.',
       progressLabel: 'Update-Download',
       confirm: (version) =>
         `Version ${version} ist geprüft. Bestätige die Installation im Android-Dialog.`,
@@ -1497,11 +1470,9 @@ export const de: StringCatalog = {
         unknownShort: 'Unbekannter Fehler.',
         linkFailed: 'Die Release-Seite konnte nicht geöffnet werden.',
       },
-      safety:
-        'Nur signierte APKs aus LoggeL/LoggeRythm. Build-Nummer, Prüfsumme, Paket, Version und Signatur werden vor der Installation geprüft.',
+      safety: 'Nur signierte Releases aus LoggeL/LoggeRythm, vor der Installation geprüft.',
     },
     dangerTitle: 'Gefahrenbereich',
-    dangerBody: 'Das Konto und alle zugehörigen Daten werden dauerhaft gelöscht.',
     deleteAccount: 'Konto löschen',
     deleteTitle: 'Konto dauerhaft löschen?',
     deleteWarning: 'Dieser Vorgang kann nicht rückgängig gemacht werden. Playlists, Likes und Hörverlauf werden gelöscht.',
@@ -1719,8 +1690,7 @@ export const de: StringCatalog = {
     importTitle: 'Von Spotify importieren',
     importOpen: 'Spotify-Link importieren',
     importClose: 'Spotify-Import schließen',
-    importIntro:
-      'Füge einen Spotify-Link für einen Titel, ein Album oder eine Playlist ein. Der Import läuft im Hintergrund, auch bei großen Playlists – du kannst ihn verlassen und das Ergebnis später hier abholen. Die gefundenen Titel werden über Deezer abgespielt.',
+    importIntro: 'Spotify-Link zu einem Titel, Album oder einer Playlist einfügen. Abgespielt wird über Deezer.',
     importInputLabel: 'Spotify-Link',
     importPlaceholder: 'https://open.spotify.com/playlist/…',
     importResolve: 'Importieren',
@@ -1750,8 +1720,7 @@ export const de: StringCatalog = {
     importStartFailed: (detail) => `Import konnte nicht gestartet werden: ${detail}`,
     importServerUnreachable: 'Der Server ist nicht erreichbar.',
     importServerNoDetail: 'Der Server hat keinen Grund genannt.',
-    importBackgroundHint:
-      'Der Import läuft im Hintergrund weiter. Du kannst woanders hingehen und das Ergebnis später unter „Deine Importe“ abholen.',
+    importBackgroundHint: 'Läuft im Hintergrund weiter – das Ergebnis findest du unter „Deine Importe“.',
     importReadingLink: 'Spotify-Link wird gelesen…',
     importProgressLabel: 'Import-Fortschritt',
     importJobsTitle: 'Deine Importe',
@@ -1937,8 +1906,7 @@ export const de: StringCatalog = {
     leaveConfirm: 'Verlassen',
     leaveStay: 'Bleiben',
     leaveFailed: (detail) => `Die Party konnte nicht verlassen werden: ${detail}`,
-    followHint: (host) =>
-      `${host} steuert die Wiedergabe. Deine Wiedergabe folgt automatisch – Songs kannst du jederzeit hinzufügen.`,
+    followHint: 'Deine Wiedergabe folgt dem Host automatisch.',
     detachedTitle: 'Deine Wiedergabe folgt der Party nicht mehr',
     detachedBody: 'Du hast andere Musik gestartet. Die Party läuft ohne dich weiter.',
     rejoinPlayback: 'Wieder mithören',
@@ -2039,7 +2007,7 @@ export const de: StringCatalog = {
     restoreActiveFailed: (detail) => `Aktive Jam konnte nicht wiederhergestellt werden: ${detail}`,
     guestJoinButton: 'Als Gast einer Jam beitreten',
     guestJoinTitle: 'Als Gast beitreten',
-    guestJoinSubtitle: 'Tritt ohne Konto per 6-stelligem Jam-Code bei und füge Songs hinzu.',
+    guestJoinSubtitle: 'Ohne Konto, per Jam-Code.',
     guestNicknameLabel: 'Dein Name',
     guestNicknamePlaceholder: 'z. B. Alex',
     guestNicknameRequired: 'Bitte gib einen Namen ein.',
@@ -2100,7 +2068,6 @@ export const de: StringCatalog = {
       deviceName === null ? 'Geräte auswählen' : `Geräte · Aktiv: ${deviceName}`,
     closeSheet: 'Geräte-Auswahl schließen',
     settingsTitle: 'Geräte & Connect',
-    settingsDescription: 'Steuere alle verbundenen Geräte deines Kontos in Echtzeit.',
     deviceTypes: {
       web: 'Webplayer',
       mobile: 'Smartphone',
@@ -2159,8 +2126,6 @@ export const en: StringCatalog = {
     forgetSessionFailed: 'The saved session could not be safely removed from this device. Please retry.',
     restoringSession: 'Restoring session…',
     inviteLinkFailed: 'The invite link could not be opened. Enter the invite code manually if needed.',
-    signInSubtitle: 'Sign in to your library',
-    createAccountSubtitle: 'Create your account',
     server: 'Server URL',
     serverPlaceholder: 'https://your-server.example',
     serverCredentialNotice:
@@ -2210,12 +2175,11 @@ export const en: StringCatalog = {
     greetingNight: 'Good night', greetingMorning: 'Good morning', greetingDay: 'Good afternoon',
     greetingEvening: 'Good evening',
     greeting: (salutation, name) => `${salutation}${name ? `, ${name}` : ''} 👋`,
-    subtitle: 'Discover new music that moves you.',
     moods: { top: 'Top picks', chill: 'Chill', focus: 'Focus', workout: 'Workout', party: 'Party' },
     moodResults: (mood) => `${mood} for you`, recentlyHeard: 'Recently Heard',
     mixes: 'For you', mixNotFound: 'This personal playlist was not found', releaseRadar: 'Your Release Radar',
     radarSubtitle: 'New from artists you listen to and follow', radarTypeLabel: 'Playlist',
-    radarEmpty: 'No fresh releases from your artists yet. Follow artists or listen more to fill your radar.',
+    radarEmpty: 'Follow artists or listen more to fill your radar.',
     radarNewCount: (count) => `${count} new`,
     radarNewTrack: 'New',
     radarRule:
@@ -2264,7 +2228,7 @@ export const en: StringCatalog = {
   },
   radio: {
     badge: 'RADIO',
-    title: 'Radio', subtitle: 'Endless music tuned to your taste.',
+    title: 'Radio',
     personalTitle: 'Made for you', personalSubtitle: 'Stations based on your recent listening.',
     personalLoading: 'Preparing your personal stations…',
     personalEmpty: 'Listen to a few tracks and your personal stations will appear here.',
@@ -2283,20 +2247,20 @@ export const en: StringCatalog = {
     dismissError: 'Dismiss radio error',
     genreRadio: (name) => `${name} radio`,
     moods: {
-      chill: { title: 'Chill radio', subtitle: 'Relaxed sounds for quiet moments' },
-      focus: { title: 'Focus radio', subtitle: 'Stay focused without distraction' },
-      workout: { title: 'Workout radio', subtitle: 'Energy for your workout' },
-      party: { title: 'Party radio', subtitle: 'Full of beats for the night' },
+      chill: { title: 'Chill radio' },
+      focus: { title: 'Focus radio' },
+      workout: { title: 'Workout radio' },
+      party: { title: 'Party radio' },
     },
   },
   profile: {
-    title: 'Profile', subtitle: 'Manage your account, listening history, and playback timer.',
-    accountTitle: 'Your account', member: 'Member', administrator: 'Administrator',
+    title: 'Profile',
+    member: 'Member', administrator: 'Administrator',
     approved: 'Approved', pendingApproval: 'Approval pending',
     serverOrigin: (origin) => `Server: ${origin}`,
     avatarDeferred: 'Your profile picture can currently be changed on the web only.',
     languageTitle: 'Language',
-    languageSubtitle: 'Applies to the LoggeRythm app on this device.',
+    languageSubtitle: 'Only on this device.',
     languageGerman: 'German',
     languageEnglish: 'English',
     languageChanging: 'Saving language…',
@@ -2326,7 +2290,6 @@ export const en: StringCatalog = {
     statsStale: 'Showing saved listening stats.',
     statsRefreshFailed: 'Refresh failed. Saved listening stats remain visible.',
     refreshStats: 'Reload listening stats', sleepTitle: 'Sleep timer',
-    sleepSubtitle: 'Pause playback after a duration or at the end of the current track.',
     timerOff: 'No sleep timer is active', timerRemaining: (remaining) => `Time remaining: ${remaining}`,
     timerEndOfTrack: 'Playback will stop after the current track.', minutes: (minutes) => `${minutes} min`,
     endOfTrack: 'End of track', currentTrackRemaining: 'Current time remaining',
@@ -2334,27 +2297,23 @@ export const en: StringCatalog = {
     noRemainingTime: 'The current track has no available time remaining.',
     sleepSetFailed: 'The sleep timer could not be changed',
     playbackTitle: 'Playback',
-    playbackSubtitle: 'Crossfade transitions between tracks on your account.',
     crossfadeEnabled: 'Enable crossfade',
-    crossfadeHint: 'Smoothly blend between consecutive tracks.',
     crossfadeDuration: (seconds) => `${seconds}s`,
     crossfadeSaved: 'Playback settings saved.',
     crossfadeSaveFailed: 'Could not save playback settings.',
     crossfadeLoadFailed: 'Could not load playback settings.',
     storageTitle: 'Storage & Downloads',
-    storageSubtitle: 'Manage offline downloads, stream cache, and download rules.',
     storageDownloadsLabel: 'Offline downloads',
     storageDownloadsSummary: (count, size) =>
       `${count} ${count === 1 ? 'track' : 'tracks'} · ${size}`,
     storageFreeSpace: (size) => `${size} free device storage`,
     storageStreamCacheLabel: 'Rolling stream cache',
-    storageStreamCacheHint: 'Up to 500 MiB of cached streams for instant replay.',
+    storageStreamCacheHint: 'Up to 500 MiB',
     clearStreamCache: 'Clear stream cache',
     clearingStreamCache: 'Clearing cache…',
     streamCacheCleared: 'Stream cache cleared.',
     streamCacheClearFailed: 'Could not clear stream cache.',
     wifiOnlyLabel: 'Download on Wi-Fi only',
-    wifiOnlyHint: 'Blocks offline downloads over cellular data.',
     wifiOnlySaveFailed: 'Could not save Wi-Fi preference.',
     wifiRequiredError:
       'Downloads are restricted to Wi-Fi. Connect to Wi-Fi or change this setting in Profile.',
@@ -2389,7 +2348,6 @@ export const en: StringCatalog = {
       install: (size) => `Install update (${size})`,
       preparing: 'Preparing the installation…',
       downloading: (version) => `Downloading and verifying version ${version}…`,
-      downloadingHint: 'You can keep using the app meanwhile.',
       progressLabel: 'Update download',
       confirm: (version) =>
         `Version ${version} is verified. Confirm the installation in the Android dialog.`,
@@ -2490,11 +2448,9 @@ export const en: StringCatalog = {
         unknownShort: 'Unknown error.',
         linkFailed: 'The release page couldn’t be opened.',
       },
-      safety:
-        'Only signed APKs from LoggeL/LoggeRythm. Build number, checksum, package, version and signature are verified before installing.',
+      safety: 'Only signed releases from LoggeL/LoggeRythm, verified before install.',
     },
     dangerTitle: 'Danger zone',
-    dangerBody: 'Your account and all associated data will be permanently deleted.',
     deleteAccount: 'Delete account', deleteTitle: 'Permanently delete account?',
     deleteWarning: 'This cannot be undone. Your playlists, likes, and listening history will be deleted.',
     deleteCancel: 'Keep account', deleteConfirm: 'Delete permanently', deleting: 'Deleting account…',
@@ -2677,8 +2633,7 @@ export const en: StringCatalog = {
     radioFailed: 'Track is playing, but its radio could not be loaded',
     importTitle: 'Import from Spotify', importOpen: 'Import a Spotify link',
     importClose: 'Close Spotify import',
-    importIntro:
-      'Paste a Spotify track, album, or playlist link. The import runs in the background, even for large playlists – you can leave and pick up the result here later. Matching tracks play through Deezer.',
+    importIntro: 'Paste a Spotify track, album, or playlist link. Playback runs through Deezer.',
     importInputLabel: 'Spotify link',
     importPlaceholder: 'https://open.spotify.com/playlist/…', importResolve: 'Import',
     importResolving: 'Matching the Spotify link with Deezer…',
@@ -2704,8 +2659,7 @@ export const en: StringCatalog = {
     importStartFailed: (detail) => `Import could not be started: ${detail}`,
     importServerUnreachable: 'The server cannot be reached.',
     importServerNoDetail: 'The server gave no reason.',
-    importBackgroundHint:
-      'The import keeps running in the background. You can go elsewhere and pick up the result later under “Your imports”.',
+    importBackgroundHint: 'Keeps running in the background – find the result under “Your imports”.',
     importReadingLink: 'Reading the Spotify link…',
     importProgressLabel: 'Import progress',
     importJobsTitle: 'Your imports',
@@ -2853,8 +2807,7 @@ export const en: StringCatalog = {
     leaveConfirm: 'Leave',
     leaveStay: 'Stay',
     leaveFailed: (detail) => `Leaving the party failed: ${detail}`,
-    followHint: (host) =>
-      `${host} controls playback. Yours follows automatically – you can add songs any time.`,
+    followHint: 'Your playback follows the host automatically.',
     detachedTitle: 'Your playback no longer follows the party',
     detachedBody: 'You started other music. The party continues without you.',
     rejoinPlayback: 'Listen along again',
@@ -2955,7 +2908,7 @@ export const en: StringCatalog = {
     restoreActiveFailed: (detail) => `Restoring active Jam failed: ${detail}`,
     guestJoinButton: 'Join a Jam as Guest',
     guestJoinTitle: 'Join Jam as Guest',
-    guestJoinSubtitle: 'Join without an account using a 6-character Jam code and add songs.',
+    guestJoinSubtitle: 'No account needed, just a Jam code.',
     guestNicknameLabel: 'Your nickname',
     guestNicknamePlaceholder: 'e.g. Alex',
     guestNicknameRequired: 'Please enter a nickname.',
@@ -3016,7 +2969,6 @@ export const en: StringCatalog = {
       deviceName === null ? 'Select device' : `Devices · Active: ${deviceName}`,
     closeSheet: 'Close device selector',
     settingsTitle: 'Devices & Connect',
-    settingsDescription: 'Control playback across every connected device on your account.',
     deviceTypes: {
       web: 'Web player',
       mobile: 'Phone',

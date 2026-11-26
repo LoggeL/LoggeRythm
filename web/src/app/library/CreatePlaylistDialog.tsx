@@ -20,7 +20,6 @@ export default function CreatePlaylistDialog({
     <Modal
       open={open}
       title="Playlist erstellen"
-      description="Gib ihr einen Namen – Titel fügst du danach hinzu."
       onClose={onClose}
       footer={
         <>

@@ -73,7 +73,6 @@ function ResetPasswordForm({ token }: { token: string }) {
 
   return (
     <AuthCard
-      eyebrow="Passwort"
       title="Neues Passwort setzen"
       subtitle="Danach bist du direkt angemeldet."
       footer={

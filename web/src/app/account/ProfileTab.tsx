@@ -48,7 +48,7 @@ function AndroidAppCard() {
   return (
     <SettingsCard
       title="Android-App"
-      description="Installiere LoggeRythm auf deinem Android-Gerät. Beim ersten Mal musst du die Installation aus unbekannten Quellen erlauben."
+      description="Beim ersten Mal musst du die Installation aus unbekannten Quellen erlauben."
       icon={<DownloadIcon width={18} height={18} />}
       action={
         apk.data ? (
@@ -107,7 +107,6 @@ function EditProfileDialog({ me, onClose }: { me: User; onClose: () => void }) {
       open
       onClose={onClose}
       title="Profil bearbeiten"
-      description="Änderungen gelten sofort auf allen Geräten."
       footer={
         <>
           <button type="button" onClick={onClose} disabled={save.isPending} className="action-secondary">
@@ -220,7 +219,6 @@ function SocialPrivacyCard() {
   return (
     <SettingsCard
       title="Privatsphäre & Freunde"
-      description="Entscheide selbst, ob andere Mitglieder dieses Servers sehen dürfen, was du gerade hörst."
       icon={<UsersIcon width={18} height={18} />}
     >
       {isLoading && <span className="skeleton block h-11 rounded-xl" />}
@@ -289,7 +287,6 @@ export default function ProfileTab({ me }: { me: User }) {
 
       <SettingsCard
         title="Persönliche Daten"
-        description="So erscheinst du in LoggeRythm und so meldest du dich an."
         icon={<UserIcon width={18} height={18} />}
         action={
           <button type="button" onClick={() => setEditing(true)} className="action-secondary">
@@ -300,7 +297,7 @@ export default function ProfileTab({ me }: { me: User }) {
         <SettingsRow label="Anzeigename" description="Für andere in Partys und geteilten Playlists sichtbar.">
           <span className="text-sm text-muted [overflow-wrap:anywhere]">{me.display_name || "Nicht gesetzt"}</span>
         </SettingsRow>
-        <SettingsRow label="E-Mail" description="Dein Login.">
+        <SettingsRow label="E-Mail">
           <span className="text-sm text-muted [overflow-wrap:anywhere]">{me.email}</span>
         </SettingsRow>
         <SettingsRow label="Passwort" description="Mindestens 8 Zeichen.">
@@ -315,12 +312,12 @@ export default function ProfileTab({ me }: { me: User }) {
       <AndroidAppCard />
 
       <SettingsCard title="Sitzung & Konto">
-        <SettingsRow label="Abmelden" description="Beendet die Sitzung auf diesem Gerät.">
+        <SettingsRow label="Abmelden" description="Nur auf diesem Gerät.">
           <button type="button" onClick={() => signOut.mutate()} disabled={signOut.isPending} className="action-secondary">
             {signOut.isPending ? "Wird abgemeldet…" : "Abmelden"}
           </button>
         </SettingsRow>
-        <SettingsRow label="Konto löschen" description="Entfernt dein Konto und alle persönlichen Daten dauerhaft.">
+        <SettingsRow label="Konto löschen">
           <button type="button" onClick={() => setConfirmingDelete(true)} className="action-secondary action-danger">
             Konto löschen…
           </button>

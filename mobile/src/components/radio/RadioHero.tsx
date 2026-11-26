@@ -26,11 +26,7 @@ export function RadioHero({ onAir }: RadioHeroProps) {
       <View accessible={false} style={styles.glyph}>
         <AppIcon name="radio" color={colors.onAccent} size={30} />
       </View>
-      <ScreenHeader
-        eyebrow={strings.radio.badge}
-        title={strings.radio.title}
-        subtitle={strings.radio.subtitle}
-      />
+      <ScreenHeader title={strings.radio.title} />
       {onAir !== null ? (
         <View
           testID="radio-on-air"

@@ -132,7 +132,6 @@ export default function StorageCachePanel() {
       testID="profile-storage"
       icon="harddisk"
       title={strings.profile.storageTitle}
-      description={strings.profile.storageSubtitle}
     >
       <View testID="profile-storage-downloads" style={styles.metricCard}>
         <AppText variant="label">{strings.profile.storageDownloadsLabel}</AppText>
@@ -158,10 +157,7 @@ export default function StorageCachePanel() {
       </View>
 
       <View style={styles.toggleRow}>
-        <View style={styles.toggleCopy}>
-          <AppText variant="bodyStrong">{strings.profile.wifiOnlyLabel}</AppText>
-          <AppText variant="caption" color="secondary">{strings.profile.wifiOnlyHint}</AppText>
-        </View>
+        <AppText variant="bodyStrong" style={styles.toggleLabel}>{strings.profile.wifiOnlyLabel}</AppText>
         <Switch
           testID="profile-storage-wifi-only"
           accessibilityLabel={strings.profile.wifiOnlyLabel}
@@ -234,10 +230,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
   },
-  toggleCopy: {
+  toggleLabel: {
     flex: 1,
     minWidth: 0,
-    gap: spacing.xxs / 2,
   },
   cacheSection: {
     gap: spacing.xs,

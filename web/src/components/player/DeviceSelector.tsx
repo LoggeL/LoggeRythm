@@ -463,7 +463,7 @@ function DeviceSelectorPopover({
                   {activeDevice.name}
                 </p>
                 <p className="text-[11px] text-muted">
-                  {activeDevice.device_id === deviceId ? "Dieses Gerät" : deviceTypeLabel(activeDevice.device_type)}
+                  {deviceTypeLabel(activeDevice.device_type)}
                   {activeDevice.party_code ? ` · Jam ${activeDevice.party_code}` : ""}
                 </p>
               </div>
@@ -541,7 +541,7 @@ function DeviceSelectorPopover({
                             {device.name}
                           </span>
                           <span className="block truncate text-[11px] text-muted">
-                            {isSelf ? "Dieses Gerät · Hier abspielen" : deviceTypeLabel(device.device_type)}
+                            {isSelf ? "Dieses Gerät" : deviceTypeLabel(device.device_type)}
                             {device.party_code ? ` · Jam ${device.party_code}` : ""}
                             {!device.capabilities.can_play_audio ? " · Nur Fernbedienung" : ""}
                           </span>
@@ -660,7 +660,7 @@ function DeviceSelectorPopover({
           )}
 
           <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="text-muted">Multi-Device Connect (WebSocket)</span>
+            <span className="text-muted">Multi-Device Connect</span>
             <button
               type="button"
               role="switch"

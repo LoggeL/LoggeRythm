@@ -85,9 +85,7 @@ export default function StatusPage() {
             Zur Startseite
           </Link>
         }
-      >
-        Der Systemstatus ist ausschließlich für Administratoren zugänglich.
-      </EmptyState>
+      />
     );
   }
 
@@ -105,9 +103,7 @@ export default function StatusPage() {
       </div>
       <header className="page-header">
         <div className="min-w-0">
-          <p className="page-eyebrow">Diagnose</p>
           <h1 className="page-title">Systemstatus</h1>
-          <p className="page-description">Betriebszustand, Kapazität und Konfiguration auf einen Blick.</p>
         </div>
         <div className="flex items-center gap-5 max-sm:w-full max-sm:justify-between">
           <p aria-live="polite" className="min-w-0 sm:text-right">

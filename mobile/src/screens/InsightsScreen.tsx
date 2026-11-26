@@ -199,7 +199,6 @@ export function InsightsScreenView({
       <ScreenHeader
         testID="insights-header"
         title={wave2Strings.insights.title}
-        subtitle={wave2Strings.insights.subtitle}
       />
 
       <View testID="insights-ranges" style={styles.chipRow}>

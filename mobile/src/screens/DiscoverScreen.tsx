@@ -182,7 +182,6 @@ export default function DiscoverScreen(props: DiscoverScreenProps) {
           <ScreenHeader
             titleTestID="discover-title"
             title={catalogStrings.discover.title}
-            subtitle={catalogStrings.discover.subtitle}
             style={tv.isTv ? { paddingHorizontal: tv.contentPaddingHorizontal } : styles.gutter}
           />
           <ScrollView

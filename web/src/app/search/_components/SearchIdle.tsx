@@ -64,9 +64,9 @@ export default function SearchIdle({
         </div>
         <nav aria-label="Musik entdecken" className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
           <BrowseTile href="/genre" title="Entdecken" hint="Genres und Charts" icon={<CompassIcon width={72} height={72} />} tone={3} />
-          <BrowseTile href="/radio" title="Radio" hint="Einfach laufen lassen" icon={<RadioIcon width={72} height={72} />} tone={4} />
+          <BrowseTile href="/radio" title="Radio" icon={<RadioIcon width={72} height={72} />} tone={4} />
           <BrowseTile href="/radar" title="Release Radar" hint="Neues von deinen Künstlern" icon={<BellIcon width={72} height={72} />} tone={1} />
-          <BrowseTile href="/library?tab=liked" title="Lieblingssongs" hint="Deine gelikten Titel" icon={<HeartIcon width={72} height={72} />} tone={0} />
+          <BrowseTile href="/library?tab=liked" title="Lieblingssongs" icon={<HeartIcon width={72} height={72} />} tone={0} />
           <BrowseTile onClick={onImport} title="Spotify-Import" hint="Playlist per Link übernehmen" icon={<ImportIcon width={72} height={72} />} tone={5} />
         </nav>
       </section>

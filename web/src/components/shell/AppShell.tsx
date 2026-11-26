@@ -75,7 +75,6 @@ function SessionError({
     <div className="h-full overflow-y-auto bg-background">
       <AuthShell compact>
         <section role="alert" aria-labelledby="session-error-title">
-          <p className="page-eyebrow">Sitzungsfehler</p>
           <h1 id="session-error-title" className="text-[clamp(2rem,5vw,2.75rem)] font-extrabold leading-none tracking-[-0.04em] [text-wrap:balance]">
             Sitzung konnte nicht geladen werden
           </h1>

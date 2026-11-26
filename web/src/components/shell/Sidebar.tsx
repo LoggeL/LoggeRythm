@@ -295,7 +295,6 @@ function LibrarySection() {
         {playlistQuery.isSuccess && playlists.length === 0 && (
           <div className="rounded-[var(--radius-control)] border border-dashed border-border p-4">
             <p className="text-sm font-semibold">Erstelle deine erste Playlist</p>
-            <p className="mt-1 text-xs leading-relaxed text-muted">Sammle Titel, die zusammengehören.</p>
             <button type="button" onClick={() => setCreating(true)} className="action-primary mt-3 min-h-9 px-4 text-xs">
               Playlist erstellen
             </button>

@@ -172,10 +172,7 @@ function AudioEffectsPopover({
         className="pop-in scroll-area fixed inset-x-0 bottom-0 z-[130] flex max-h-[84dvh] flex-col gap-4 overflow-y-auto rounded-t-[var(--radius-panel)] border border-hairline bg-panel p-4 shadow-[0_24px_60px_rgb(0_0_0/0.65)] sm:inset-auto sm:w-[23rem] sm:rounded-[var(--radius-panel)]"
       >
         <div className="flex items-center justify-between gap-2">
-          <div>
-            <h2 className="font-display text-base font-extrabold tracking-tight text-foreground">Klang & Tempo</h2>
-            <p className="label-mono mt-0.5 text-[10px]">5-Band-Equalizer · Web Audio</p>
-          </div>
+          <h2 className="font-display text-base font-extrabold tracking-tight text-foreground">Klang & Tempo</h2>
           <div className="flex items-center gap-1">
             {active && (
               <button type="button" onClick={reset} className="action-secondary min-h-8 px-2.5 text-xs">

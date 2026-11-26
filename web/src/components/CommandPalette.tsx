@@ -14,7 +14,7 @@ import { usePlayerStore } from "@/store/player";
 import { useConnectStore } from "@/store/connect";
 import { useUiModalsStore } from "@/store/uiModals";
 import { toast } from "@/store/toast";
-import { SearchIcon, PlayIcon, CloseIcon } from "@/components/icons";
+import { PlayIcon, CloseIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import SearchField from "@/components/SearchField";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -38,22 +38,22 @@ import {
 } from "./commandPaletteModel";
 
 const PALETTE_COMMANDS: readonly PaletteCommand[] = [
-  { id: "sleep-15", label: "Sleep-Timer: 15 Minuten", detail: "Wiedergabe nach 15 Min. sanft ausblenden", keywords: ["sleep", "timer", "schlaf", "15"] },
-  { id: "sleep-30", label: "Sleep-Timer: 30 Minuten", detail: "Wiedergabe nach 30 Min. sanft ausblenden", keywords: ["sleep", "timer", "schlaf", "30"] },
-  { id: "sleep-60", label: "Sleep-Timer: 60 Minuten", detail: "Wiedergabe nach 60 Min. sanft ausblenden", keywords: ["sleep", "timer", "schlaf", "60"] },
-  { id: "sleep-track", label: "Sleep-Timer: Ende des Titels", detail: "Nach dem aktuellen Song pausieren", keywords: ["sleep", "timer", "ende", "titel"] },
-  { id: "sleep-off", label: "Sleep-Timer ausschalten", detail: "Aktiven Sleep-Timer abbrechen", keywords: ["sleep", "timer", "aus", "stop"] },
+  { id: "sleep-15", label: "Sleep-Timer: 15 Minuten", keywords: ["sleep", "timer", "schlaf", "ausblenden", "15"] },
+  { id: "sleep-30", label: "Sleep-Timer: 30 Minuten", keywords: ["sleep", "timer", "schlaf", "ausblenden", "30"] },
+  { id: "sleep-60", label: "Sleep-Timer: 60 Minuten", keywords: ["sleep", "timer", "schlaf", "ausblenden", "60"] },
+  { id: "sleep-track", label: "Sleep-Timer: Ende des Titels", keywords: ["sleep", "timer", "ende", "titel", "pause", "pausieren"] },
+  { id: "sleep-off", label: "Sleep-Timer ausschalten", keywords: ["sleep", "timer", "aus", "stop", "abbrechen"] },
   { id: "open-devices", label: "Geräte & Connect öffnen", detail: "Wiedergabe auf anderes Gerät übertragen oder Jam starten", keywords: ["connect", "gerät", "device", "jam", "party"], shortcut: "D" },
   { id: "open-audio", label: "Equalizer & Geschwindigkeit", detail: "5-Band-EQ, Nachtmodus-Kompressor und Tempo", keywords: ["eq", "equalizer", "bass", "klang", "tempo", "speed", "kompressor"] },
   { id: "toggle-cinema", label: "Kino-Modus umschalten", detail: "Vollbild-Visualizer ohne störende Bedienelemente", keywords: ["kino", "cinema", "visualizer", "vollbild", "ambient"], shortcut: "C" },
   { id: "cycle-visualizer", label: "Visualizer-Szene wechseln", detail: "Nächste audio-reaktive Szene im Vollbildplayer", keywords: ["visualizer", "szene", "aura", "laser"], shortcut: "V" },
-  { id: "toggle-lyrics", label: "Songtext umschalten", detail: "Karaoke-Songtext-Dock öffnen oder schließen", keywords: ["lyrics", "songtext", "text"], shortcut: "T" },
-  { id: "toggle-queue", label: "Warteschlange umschalten", detail: "Warteschlange & Jam-Steuerung öffnen", keywords: ["queue", "warteschlange"], shortcut: "Q" },
-  { id: "nav-liked", label: "Gelikte Titel öffnen", detail: "Zu deinen Lieblingssongs springen", keywords: ["likes", "favoriten", "gelikte", "lieblingssongs"] },
+  { id: "toggle-lyrics", label: "Songtext umschalten", keywords: ["lyrics", "songtext", "text", "karaoke"], shortcut: "T" },
+  { id: "toggle-queue", label: "Warteschlange umschalten", keywords: ["queue", "warteschlange", "jam"], shortcut: "Q" },
+  { id: "nav-liked", label: "Gelikte Titel öffnen", keywords: ["likes", "favoriten", "gelikte", "lieblingssongs"] },
   { id: "nav-radar", label: "Release Radar öffnen", detail: "Neue Releases deiner Künstler", keywords: ["radar", "release", "neu"] },
   { id: "nav-radio", label: "Radio öffnen", detail: "Stimmungs-, Song- und Genre-Radios", keywords: ["radio", "mood", "stimmung", "chill", "fokus"] },
   { id: "nav-stats", label: "Hörprofil & Statistiken", detail: "Deine Top-Titel, Top-Künstler und Verlauf", keywords: ["stats", "statistik", "hörprofil", "konto", "account"] },
-  { id: "open-shortcuts", label: "Tastenkürzel anzeigen", detail: "Alle Tastaturbefehle im Überblick", keywords: ["shortcuts", "tastenkürzel", "hilfe", "keys"], shortcut: "?" },
+  { id: "open-shortcuts", label: "Tastenkürzel anzeigen", keywords: ["shortcuts", "tastenkürzel", "hilfe", "keys", "tastatur"], shortcut: "?" },
 ];
 
 /** Keyboard search + command palette sharing catalog requests and history with the search route. */
@@ -355,9 +355,8 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
         />
         <div className="scroll-area min-h-0 flex-1 overflow-y-auto pb-2">
           {term.length === 0 && history.recent.length === 0 && <div className="px-5 pb-8 pt-7 sm:px-6">
-            <p className="label-mono mb-3 flex items-center gap-2.5"><SearchIcon width={14} height={14} />Schnellsuche & Befehle</p>
             <p className="font-display text-xl font-extrabold tracking-[-0.03em]">Suche in Bibliothek, Katalog oder tippe &gt;</p>
-            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">Titel, Playlists und Künstler direkt abspielen – oder starte mit <kbd className={KBD}>&gt;</kbd> Befehle wie Sleep-Timer, Equalizer, Gerätewechsel und Kino-Modus.</p>
+            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">Befehle wie Sleep-Timer, Equalizer, Gerätewechsel und Kino-Modus.</p>
           </div>}
           {term.length === 0 && history.recent.length > 0 && <section aria-label="Zuletzt gesucht" className="px-2">
             <div className="flex items-center justify-between gap-3 pl-3 pr-1 pt-2"><span className="label-mono">Zuletzt gesucht</span><button type="button" onClick={history.clear} className="label-mono min-h-11 rounded-[var(--radius-control)] px-2 transition-colors hover:text-foreground">Verlauf löschen</button></div>
@@ -368,9 +367,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
           </section>}
           {!commandMode && term.length > 0 && term.length < SEARCH_MIN_LENGTH && <p role="status" className="label-mono px-5 py-9 text-center">Gib mindestens zwei Zeichen ein (oder &gt; für Befehle).</p>}
           {empty && <div role="status" className="px-5 pb-8 pt-7 sm:px-6">
-            <p className="label-mono mb-3">Keine Treffer</p>
             <p className="font-display text-xl font-extrabold tracking-[-0.03em] [overflow-wrap:anywhere]">Keine Treffer für „{term}“</p>
-            <p className="mt-2 text-sm leading-relaxed text-muted">Prüfe die Schreibweise oder versuche es mit weniger Wörtern.</p>
           </div>}
           {failures.map(({ label, result }) => <div key={label} role="alert" className="error-panel mx-3 mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="min-w-0 [overflow-wrap:anywhere]">{label} konnten nicht geladen werden: {result.error?.message}</p>
@@ -434,7 +431,7 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={image} alt="" className={`h-10 w-10 ${shape} shrink-0 object-cover`} />
                   ) : <CoverPlaceholder className={`h-10 w-10 ${shape} shrink-0`} />}
-                  <div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold tracking-tight">{title}</div><div className="truncate text-[13px] text-muted">{detail}</div></div>
+                  <div className="min-w-0 flex-1"><div className="truncate text-[15px] font-semibold tracking-tight">{title}</div>{detail && <div className="truncate text-[13px] text-muted">{detail}</div>}</div>
                   {isCmd && row.command.shortcut && !active && <kbd className={`${KBD} max-sm:hidden`}>{row.command.shortcut}</kbd>}
                   {active && <span className="label-mono flex shrink-0 items-center gap-2 text-foreground">
                     {plays ? <PlayIcon width={13} height={13} className="text-accent" /> : null}

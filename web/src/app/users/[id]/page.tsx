@@ -229,9 +229,7 @@ function ProfileView({ profile }: { profile: PublicProfile }) {
                   Musik entdecken
                 </Link>
               }
-            >
-              {name} hat noch keine Playlist veröffentlicht.
-            </EmptyState>
+            />
           ) : (
             <div className={CARD_GRID}>
               {playlists.map((playlist) => (
@@ -244,7 +242,7 @@ function ProfileView({ profile }: { profile: PublicProfile }) {
         <section aria-labelledby="profile-artists">
           <SectionHeader id="profile-artists" title="Gefolgte Künstler" action={artists.length > 0 ? <Count value={artists.length} /> : undefined} />
           {artists.length === 0 ? (
-            <EmptyState title="Keine gefolgten Künstler">{name} folgt noch niemandem.</EmptyState>
+            <EmptyState title="Keine gefolgten Künstler" />
           ) : (
             <Shelf label={`Künstler, denen ${name} folgt`}>
               {artists.map((artist) => (
