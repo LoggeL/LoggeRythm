@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ShelfScope } from "@/components/browse/Shelf";
 import { NAV_FORWARD, armMorph, isTraversal, morphName, morphSeedFor, morphTargetName, noteTraversal, settleMorph, subscribeMorph, type MorphPart, type MorphSeed } from "@/lib/morph";
 import { installTraversalMorph, noteCardClick, noteRenderedPath } from "@/lib/traversalMorph";
+import { installSameLocationGuard } from "@/lib/sameLocation";
 
 /**
  * Motion wiring on top of React's `<ViewTransition>` (the animations live in
@@ -137,8 +138,9 @@ export function useMorphSeed(): MorphSeed | null {
 }
 
 /**
- * Animates Back/Forward (`lib/traversalMorph.ts`); call once at the top of the
- * shell, where every route renders.
+ * Animates Back/Forward (`lib/traversalMorph.ts`) and keeps links to the
+ * current page from replaying the page transition (`lib/sameLocation.ts`);
+ * call once at the top of the shell, where every route renders.
  */
 export function useTraversalMorph(): void {
   const pathname = usePathname();
@@ -147,6 +149,8 @@ export function useTraversalMorph(): void {
   // is still loading from a mechanism that stopped working.
   noteRenderedPath(pathname);
   useEffect(() => installTraversalMorph(), []);
+  // A link to the page already shown would replay the page transition.
+  useEffect(() => installSameLocationGuard(document, window.location), []);
 }
 
 /** The parts of the Navigation API's `navigate` event used here (not yet in TypeScript's DOM types). */
