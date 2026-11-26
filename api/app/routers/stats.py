@@ -23,7 +23,7 @@ from ..schemas.stats import (
     UserStats,
     UserStatsInsights,
 )
-from ..schemas.track import Track, dump_artists, load_artists
+from ..schemas.track import Track, album_cover_url, dump_artists, load_artists
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
 
@@ -137,7 +137,7 @@ def record_play(
             artists_json=dump_artists(track),
             album=track.album,
             album_id=str(track.album_id or ""),
-            cover_url=track.cover or None,
+            cover_url=track.cover or album_cover_url(track.album_id),
             duration_sec=track.duration_sec,
         )
     )

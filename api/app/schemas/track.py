@@ -108,6 +108,20 @@ class RadarTrack(Track):
 # full performer credit list as a JSON string in an ``artists_json`` column.
 # These helpers are the single source of truth for that (de)serialization.
 
+def album_cover_url(album_id: str | int | None) -> str | None:
+    """Deezer's stable cover address for an album, or ``None`` without a Deezer album id.
+
+    A track's cover *is* its album art. Clients that report a play from a
+    persisted journal (the Android player keeps no URL in it) send an empty
+    ``cover``; the album id they do send identifies the same image, so play
+    history is not stored without artwork. The address redirects to the CDN file.
+    """
+    album = str(album_id if album_id is not None else "").strip()
+    if not (album.isascii() and album.isdigit()) or int(album) == 0:
+        return None
+    return f"https://api.deezer.com/album/{album}/image?size=big"
+
+
 def primary_artists(track: Track) -> list[ArtistRef]:
     """The performer list to persist: the explicit ``artists`` if present,
     otherwise the single primary artist, otherwise empty."""

@@ -54,9 +54,41 @@ def _ensure_columns() -> None:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
+def backfill_play_covers(db: Session) -> int:
+    """Give stored plays without artwork their album cover; return the rows changed.
+
+    Plays reported by the Android app were stored with no ``cover_url`` (its
+    play journal carries no URL), so recently-heard and top lists showed
+    placeholders. ``record_play`` now derives the cover from the album id;
+    this repairs the rows written before that. Idempotent: rows that have a
+    cover, or no Deezer album id to derive one from, are left alone.
+    """
+    from sqlalchemy import or_, select, update
+
+    from ..schemas.track import album_cover_url
+    from .models import Play
+
+    missing = or_(Play.cover_url.is_(None), Play.cover_url == "")
+    album_ids = db.scalars(
+        select(Play.album_id).where(missing, Play.album_id != "").distinct()
+    ).all()
+    changed = 0
+    for album_id in album_ids:
+        cover = album_cover_url(album_id)
+        if cover is None:
+            continue
+        result = db.execute(
+            update(Play).where(Play.album_id == album_id, missing).values(cover_url=cover)
+        )
+        changed += result.rowcount
+    return changed
+
+
 def init_db() -> None:
     """Create all tables (dev convenience; replace with Alembic later)."""
     from . import models  # noqa: F401 — register models on the metadata
 
     Base.metadata.create_all(engine)
     _ensure_columns()
+    with SessionLocal.begin() as db:
+        backfill_play_covers(db)

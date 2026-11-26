@@ -22,9 +22,9 @@ from sqlalchemy.schema import CreateColumn, CreateIndex
 from app import main
 from app.auth import get_current_user
 from app.db.models import Play, User
-from app.db.session import Base, get_db
+from app.db.session import Base, backfill_play_covers, get_db
 from app.routers import stats
-from app.schemas.track import Track
+from app.schemas.track import Track, album_cover_url
 
 
 def _track_payload(track_id: str = "31337", *, title: str = "First") -> dict:
@@ -152,6 +152,67 @@ class PlayIdempotencyApiTests(unittest.TestCase):
             user=user or self.first_user,
             db=self.db,
         )
+
+    def test_play_without_cover_is_stored_with_its_album_cover(self) -> None:
+        # The Android play journal carries no URL, so its plays arrive coverless.
+        self.assertEqual(self._record().status_code, 204)
+
+        self.assertEqual(
+            self._rows()[0].cover_url,
+            "https://api.deezer.com/album/7/image?size=big",
+        )
+
+    def test_play_keeps_the_cover_the_client_sent(self) -> None:
+        payload = {**_track_payload(), "cover": "https://cdn.example.test/cover.jpg"}
+
+        stats.record_play(
+            track=Track.model_validate(payload),
+            idempotency_key=None,
+            user=self.first_user,
+            db=self.db,
+        )
+
+        self.assertEqual(self._rows()[0].cover_url, "https://cdn.example.test/cover.jpg")
+
+    def test_album_cover_needs_a_deezer_album_id(self) -> None:
+        for album_id in ("", "0", "album-legacy", " ", "١٢٣", None):
+            with self.subTest(album_id=album_id):
+                self.assertIsNone(album_cover_url(album_id))
+        self.assertEqual(
+            album_cover_url(302127),
+            "https://api.deezer.com/album/302127/image?size=big",
+        )
+
+    def test_backfill_repairs_only_coverless_plays_with_a_deezer_album(self) -> None:
+        def add(album_id: str, cover_url: str | None) -> Play:
+            play = Play(
+                user_id=self.first_user.id,
+                deezer_id="1",
+                album_id=album_id,
+                cover_url=cover_url,
+            )
+            self.db.add(play)
+            return play
+
+        missing = add("302127", None)
+        blank = add("302127", "")
+        kept = add("302127", "https://cdn.example.test/kept.jpg")
+        legacy = add("album-legacy", None)
+        no_album = add("", None)
+        self.db.commit()
+
+        self.assertEqual(backfill_play_covers(self.db), 2)
+        self.db.commit()
+        self.assertEqual(backfill_play_covers(self.db), 0)
+
+        derived = "https://api.deezer.com/album/302127/image?size=big"
+        for play in (missing, blank, kept, legacy, no_album):
+            self.db.refresh(play)
+        self.assertEqual(missing.cover_url, derived)
+        self.assertEqual(blank.cover_url, derived)
+        self.assertEqual(kept.cover_url, "https://cdn.example.test/kept.jpg")
+        self.assertIsNone(legacy.cover_url)
+        self.assertIsNone(no_album.cover_url)
 
     def test_same_user_duplicate_key_returns_success_without_second_insert(self) -> None:
         event_id = str(uuid4())
