@@ -1,5 +1,8 @@
 export const TRANSIENT_ROOT_ROUTE_NAMES = [
   'Profile',
+  'PlaybackSettings',
+  'DevicesStorageSettings',
+  'AccountAppSettings',
   'Insights',
   'NowPlaying',
   'Queue',

@@ -4,5 +4,10 @@
  */
 export { ListeningStatsPanel, type ListeningStatsPanelProps } from './ListeningStatsPanel';
 export { ProfileEditForm, type ProfileEditFormProps } from './ProfileEditForm';
-export { ProfileIdentityCard, type ProfileIdentityCardProps } from './ProfileIdentityCard';
+export {
+  ProfileAccountDetailsCard,
+  ProfileIdentityCard,
+  type ProfileAccountDetailsCardProps,
+  type ProfileIdentityCardProps,
+} from './ProfileIdentityCard';
 export { SleepTimerPanel } from './SleepTimerPanel';

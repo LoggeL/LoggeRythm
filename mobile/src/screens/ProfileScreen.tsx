@@ -1,36 +1,41 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { MeUpdateRequest } from '../api/endpoints';
+import { useIsFocused } from '@react-navigation/native';
+import { useQuery } from '@tanstack/react-query';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
+import { showDevicePicker } from '../components/connect/devicePicker';
+import { AudioEffectsSheet } from '../components/player/AudioEffectsSheet';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
-import ConnectSettingsPanel from '../components/profile/ConnectSettingsPanel';
-import LanguageSelector from '../components/profile/LanguageSelector';
-import PlaybackSettingsPanel from '../components/profile/PlaybackSettingsPanel';
-import { ProfileGroup } from '../components/profile/ProfileGroup';
-import StorageCachePanel from '../components/profile/StorageCachePanel';
-import { useAndroidUpdatePlacement } from '../components/profile/useAndroidUpdatePlacement';
+import { ProfileBottomSafeSpacer } from '../components/profile/ProfileChrome';
+import {
+  ProfileQuickActions,
+  ProfileSettingsMenu,
+} from '../components/profile/ProfileOverviewNavigation';
 import {
   ListeningStatsPanel,
-  ProfileEditForm,
   ProfileIdentityCard,
   SleepTimerPanel,
 } from '../components/profile/ProfileSections';
-import { ActionButton, AppText, BottomSheet, ScreenHeader } from '../components/ui';
+import { useAndroidUpdatePlacement } from '../components/profile/useAndroidUpdatePlacement';
+import { BottomSheet } from '../components/ui';
 import { getCurrentApiBase } from '../config';
-import { musicCacheScope, musicQueries, musicRepository, queryKeys } from '../data';
+import { musicCacheScope, musicQueries } from '../data';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { wave2Strings } from '../localization/wave2Strings';
-import type { RootStackParams } from '../navigation';
 import { colors, layout, spacing } from '../theme';
 import { TvFocusScope, tvFocusRegistry, useTvEnvironment, useTvFocusReturn } from '../tv';
-import { profileDeleteFailureMessage } from './profileFeedback';
-import { persistProfileUpdate } from './profileUpdate';
+import { androidUpdateStore } from '../update/androidUpdateStore';
+
+export { ProfileBottomSafeSpacer };
+
+export interface ProfileScreenProps {
+  onOpenPlaybackSettings: () => void;
+  onOpenDevicesStorageSettings: () => void;
+  onOpenAccountAppSettings: () => void;
+  onOpenInsights: () => void;
+}
 
 function errorOf(value: unknown): Error | null {
   if (value === null || value === undefined) return null;
@@ -47,28 +52,9 @@ function safeAvatarUri(value: string | null, apiBase: string): string | null {
 }
 
 /**
- * Clips the non-tab Profile scroll viewport above Android's bottom system
- * gesture bar so mid-scroll rows (e.g. Top Tracks) never bleed beneath the
- * navigation pill. Isolated in a child component so `ProfileScreen` keeps its
- * exact `useState` sequence and `ScrollView` children order.
- */
-export function ProfileBottomSafeSpacer() {
-  const insets = useSafeAreaInsets();
-  if (insets.bottom <= 0) return null;
-  return (
-    <View
-      testID="profile-bottom-safe-spacer"
-      pointerEvents="none"
-      style={{ height: insets.bottom, backgroundColor: colors.background }}
-    />
-  );
-}
-
-/**
  * Restores TV scope focus on focus changes and pops the `'tv-profile'` focus
  * checkpoint pushed by `navigation.tsx` when leaving Profile on Android TV.
- * Isolated in a child component so `ProfileScreen` preserves its exact
- * `useState` sequence pinned by `ProfileScreen.test.tsx`.
+ * Isolated in a child component so `ProfileScreen` keeps its hook order simple.
  */
 export function ProfileTvFocusEffect() {
   const isFocused = useIsFocused();
@@ -83,86 +69,109 @@ export function ProfileTvFocusEffect() {
   return null;
 }
 
-/** Self-contained entry card to the Wrapped / Listening Insights screen. */
-function ProfileInsightsEntry() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParams>>();
-  return (
-    <ProfileGroup
-      testID="profile-insights-entry"
-      icon="chart-bar"
-      title={wave2Strings.insights.title}
-    >
-      <ActionButton
-        testID="profile-open-insights"
-        icon="chart-areaspline"
-        variant="primary"
-        label={wave2Strings.insights.openButton}
-        fullWidth
-        onPress={() => navigation.navigate('Insights')}
-      />
-    </ProfileGroup>
-  );
+/**
+ * Mounts the urgent Android update card at the top of Profile when an update
+ * or unacknowledged install failure waits for the user, while suppressing
+ * duplicate TalkBack announcements whenever a settings sub-screen covers Profile.
+ */
+export function ProfileUrgentUpdateCard() {
+  const isFocused = useIsFocused();
+  const focusedRef = useRef(isFocused);
+  useEffect(() => {
+    focusedRef.current = isFocused;
+  }, [isFocused]);
+
+  return <AndroidUpdateCard shouldAnnounce={() => focusedRef.current} />;
 }
 
-export default function ProfileScreen() {
-  const { user, refreshUser, deleteAccount } = useAuth();
+/**
+ * Keeps the profile-visit background update check running when the full card
+ * lives inside Account & App (placement === 'bottom'), without shifting layout.
+ */
+export function ProfileBackgroundUpdateCheck() {
+  useEffect(() => {
+    if (androidUpdateStore.getSnapshot().supported) {
+      void androidUpdateStore.check('profile');
+    }
+  }, []);
+  return null;
+}
+
+/**
+ * Concise Profile overview: account identity, conditional urgent update card,
+ * one-tap quick actions, grouped navigation into three thematic settings pages
+ * (Playback, Devices & Storage, Account & App), and personal listening stats.
+ */
+export default function ProfileScreen({
+  onOpenPlaybackSettings,
+  onOpenDevicesStorageSettings,
+  onOpenAccountAppSettings,
+  onOpenInsights,
+}: ProfileScreenProps) {
+  const { user } = useAuth();
   if (user === null) throw new Error('ProfileScreen requires an authenticated user');
 
-  const queryClient = useQueryClient();
   const apiBase = getCurrentApiBase();
   const scope = musicCacheScope(apiBase, user.id);
   const stats = useQuery(musicQueries.stats(scope));
-  // Hook order of these 3 useState cells is pinned by ProfileScreen.test.tsx.
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Latched for this visit: exactly one update card, and it never moves.
+  // Hook order of these 2 useState cells is pinned by ProfileScreen.test.tsx.
+  const [sleepSheetOpen, setSleepSheetOpen] = useState(false);
+  const [effectsSheetOpen, setEffectsSheetOpen] = useState(false);
+  // Latched for this visit: urgent updates stay at top, regular version info lives in Account & App.
   const updatePlacement = useAndroidUpdatePlacement();
   const bottom = useBottomInset({ hasTabBar: false });
   const tv = useTvEnvironment();
   const refreshing = stats.isFetching && !stats.isPending;
 
-  const saveProfile = async (patch: MeUpdateRequest) => {
-    await persistProfileUpdate(patch, user.id, {
-      updateMe: musicRepository.updateMe,
-      refreshUser,
-      invalidatePublicProfile: (userId) =>
-        queryClient.invalidateQueries({ queryKey: queryKeys.profile.public(userId) }),
-    });
+  const openSleepTimer = () => {
+    if (tv.isTv) tvFocusRegistry.pushCheckpoint('profile-sleep-timer');
+    setSleepSheetOpen(true);
   };
 
-  const confirmDelete = async () => {
-    if (deleting) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      await deleteAccount();
-    } catch (error) {
-      setDeleteError(profileDeleteFailureMessage(error, strings.profile));
-      setDeleting(false);
-    }
-  };
-
-  const openDelete = () => {
-    if (tv.isTv) tvFocusRegistry.pushCheckpoint('profile-delete');
-    setDeleteError(null);
-    setConfirmingDelete(true);
-  };
-
-  const closeDelete = () => {
-    if (deleting) return;
-    setDeleteError(null);
-    setConfirmingDelete(false);
+  const closeSleepTimer = () => {
+    setSleepSheetOpen(false);
     if (tv.isTv) tvFocusRegistry.popAndRestore();
+  };
+
+  const openAudioEffects = () => {
+    if (tv.isTv) tvFocusRegistry.pushCheckpoint('profile-audio-effects');
+    setEffectsSheetOpen(true);
+  };
+
+  const closeAudioEffects = () => {
+    setEffectsSheetOpen(false);
+    if (tv.isTv) tvFocusRegistry.popAndRestore();
+  };
+
+  const openDevices = () => {
+    showDevicePicker('devices');
   };
 
   const avatarUri = safeAvatarUri(user.avatar_url, apiBase);
 
+  const urgentUpdateCard = updatePlacement === 'top' ? <ProfileUrgentUpdateCard /> : null;
+  const backgroundUpdateCheck = updatePlacement === 'bottom' ? <ProfileBackgroundUpdateCheck /> : null;
   const identityCard = (
     <ProfileIdentityCard
       user={user}
       avatarUri={avatarUri}
       serverOrigin={apiBase}
+      compact
+    />
+  );
+  const quickActions = (
+    <ProfileQuickActions
+      onOpenInsights={onOpenInsights}
+      onOpenSleepTimer={openSleepTimer}
+      onOpenAudioEffects={openAudioEffects}
+      onOpenDevices={openDevices}
+    />
+  );
+  const settingsMenu = (
+    <ProfileSettingsMenu
+      onOpenPlaybackSettings={onOpenPlaybackSettings}
+      onOpenDevicesStorageSettings={onOpenDevicesStorageSettings}
+      onOpenAccountAppSettings={onOpenAccountAppSettings}
     />
   );
   const statsPanel = (
@@ -176,75 +185,26 @@ export default function ProfileScreen() {
       onRefresh={() => void stats.refetch()}
     />
   );
-  const sleepPanel = <SleepTimerPanel />;
-  const playbackPanel = <PlaybackSettingsPanel />;
-  const storagePanel = <StorageCachePanel />;
-  const connectPanel = <ConnectSettingsPanel />;
-  const languagePanel = <LanguageSelector />;
-  const editForm = (
-    <ProfileEditForm
-      key={`${user.display_name ?? ''}:${user.email}`}
-      user={user}
-      onSave={saveProfile}
-    />
-  );
-  const dangerGroup = (
-    <ProfileGroup
-      testID="profile-danger"
-      tone="danger"
-      icon="delete-outline"
-      title={strings.profile.dangerTitle}
-    >
-      <ActionButton
-        testID="profile-delete"
-        variant="danger"
-        label={strings.profile.deleteAccount}
-        fullWidth
-        onPress={openDelete}
-      />
-    </ProfileGroup>
-  );
 
-  const deleteSheet = (
-    <BottomSheet
-      testID="profile-delete-confirmation"
-      visible={confirmingDelete}
-      onClose={closeDelete}
-      closeLabel={strings.profile.deleteCancel}
-      title={strings.profile.deleteTitle}
-      contentStyle={styles.sheet}
-    >
-      <AppText color="secondary">{strings.profile.deleteWarning}</AppText>
-      {deleteError ? (
-        <AppText
-          testID="profile-delete-error"
-          variant="callout"
-          color="danger"
-          accessibilityRole="alert"
-          accessibilityLiveRegion="assertive"
-        >
-          {deleteError}
-        </AppText>
-      ) : null}
-      <ActionButton
-        testID="profile-delete-confirm"
-        variant="danger"
-        icon="delete-forever-outline"
-        label={deleting ? strings.profile.deleting : strings.profile.deleteConfirm}
-        disabled={deleting}
-        busy={deleting}
-        fullWidth
-        onPress={() => void confirmDelete()}
-      />
-      <ActionButton
-        testID="profile-delete-cancel"
-        variant="secondary"
-        label={strings.profile.deleteCancel}
-        disabled={deleting}
-        fullWidth
-        onPress={closeDelete}
-      />
-    </BottomSheet>
+  const quickSheets = (
+    <>
+      <BottomSheet
+        testID="profile-quick-sleep-sheet"
+        visible={sleepSheetOpen}
+        onClose={closeSleepTimer}
+        closeLabel={strings.player.sleepTimerSheetClose}
+      >
+        {sleepSheetOpen ? <SleepTimerPanel /> : null}
+      </BottomSheet>
+      <BottomSheet
+        testID="profile-quick-audio-effects-sheet"
+        visible={effectsSheetOpen}
+        onClose={closeAudioEffects}
+        closeLabel={wave2Strings.audioEffects.closeButton}
+      >
+        {effectsSheetOpen ? <AudioEffectsSheet onClose={closeAudioEffects} /> : null}
+      </BottomSheet>
+    </>
   );
 
   if (tv.isTv) {
@@ -252,6 +212,7 @@ export default function ProfileScreen() {
       <TvFocusScope scope="profile">
         <View testID="profile-screen" style={styles.container}>
           <ProfileTvFocusEffect />
+          {backgroundUpdateCheck}
           <ScrollView
             testID="profile-scroll"
             keyboardShouldPersistTaps="handled"
@@ -263,27 +224,19 @@ export default function ProfileScreen() {
               },
             ]}
           >
-            <ScreenHeader testID="profile-hero" title={strings.profile.title} />
-            {updatePlacement === 'top' ? <AndroidUpdateCard /> : null}
+            {urgentUpdateCard}
             <View testID="profile-tv-columns" style={[styles.tvColumns, { gap: tv.gridGap }]}>
               <View style={styles.tvColumn}>
                 {identityCard}
-                {sleepPanel}
-                {playbackPanel}
-                {storagePanel}
-                {connectPanel}
-                {languagePanel}
-                {dangerGroup}
+                {quickActions}
+                {settingsMenu}
               </View>
               <View style={styles.tvColumn}>
                 {statsPanel}
-                <ProfileInsightsEntry />
-                {editForm}
-                {updatePlacement === 'bottom' ? <AndroidUpdateCard /> : null}
               </View>
             </View>
           </ScrollView>
-          {deleteSheet}
+          {quickSheets}
         </View>
       </TvFocusScope>
     );
@@ -291,6 +244,7 @@ export default function ProfileScreen() {
 
   return (
     <View testID="profile-screen" style={styles.container}>
+      {backgroundUpdateCheck}
       <ScrollView
         testID="profile-scroll"
         style={styles.scroll}
@@ -307,24 +261,14 @@ export default function ProfileScreen() {
         }
         contentContainerStyle={[styles.content, { paddingBottom: bottom }]}
       >
-        <ScreenHeader testID="profile-hero" title={strings.profile.title} />
-        {updatePlacement === 'top' ? <AndroidUpdateCard /> : null}
-
+        {urgentUpdateCard}
         {identityCard}
+        {quickActions}
+        {settingsMenu}
         {statsPanel}
-        <ProfileInsightsEntry />
-        {sleepPanel}
-        {playbackPanel}
-        {storagePanel}
-        {connectPanel}
-        {languagePanel}
-        {editForm}
-        {updatePlacement === 'bottom' ? <AndroidUpdateCard /> : null}
-
-        {dangerGroup}
       </ScrollView>
       <ProfileBottomSafeSpacer />
-      {deleteSheet}
+      {quickSheets}
     </View>
   );
 }
@@ -334,7 +278,7 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   content: {
     gap: layout.stackGap,
-    paddingTop: spacing.md,
+    paddingTop: spacing.xs,
     paddingHorizontal: layout.pagePadding,
   },
   tvColumns: {
@@ -346,5 +290,4 @@ const styles = StyleSheet.create({
     minWidth: 0,
     gap: layout.stackGap,
   },
-  sheet: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.xxs },
 });

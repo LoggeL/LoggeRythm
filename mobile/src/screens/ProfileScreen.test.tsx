@@ -1,17 +1,24 @@
 import type React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import ProfileScreen, { ProfileBottomSafeSpacer, ProfileTvFocusEffect } from './ProfileScreen';
+import ProfileScreen, {
+  ProfileBackgroundUpdateCheck,
+  ProfileBottomSafeSpacer,
+  ProfileTvFocusEffect,
+  ProfileUrgentUpdateCard,
+} from './ProfileScreen';
 
 const mocks = vi.hoisted(() => ({
   useState: vi.fn(),
   useEffect: vi.fn(),
+  useRef: vi.fn((initial: unknown) => ({ current: initial })),
   isFocused: true,
   useAuth: vi.fn(),
   useQuery: vi.fn(),
-  useQueryClient: vi.fn(),
-  deleteAccount: vi.fn(),
   resolveServerUrl: vi.fn(),
   updatePlacement: vi.fn(),
+  showDevicePicker: vi.fn(),
+  updateStoreSupported: true,
+  updateStoreCheck: vi.fn(() => Promise.resolve()),
   safeInsets: { top: 0, right: 0, bottom: 24, left: 0 },
   tvEnv: {
     isTv: false,
@@ -26,7 +33,13 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>();
-  return { ...actual, default: actual, useState: mocks.useState, useEffect: mocks.useEffect };
+  return {
+    ...actual,
+    default: actual,
+    useState: mocks.useState,
+    useEffect: mocks.useEffect,
+    useRef: mocks.useRef,
+  };
 });
 
 vi.mock('@react-navigation/native', () => ({
@@ -46,12 +59,15 @@ vi.mock('react-native', () => ({
 
 vi.mock('@tanstack/react-query', () => ({
   useQuery: mocks.useQuery,
-  useQueryClient: mocks.useQueryClient,
 }));
 
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
-// The confirmation is a BottomSheet (Animated + safe-area hooks); a string
-// mock keeps its `visible` / `onClose` props and its children.
+vi.mock('../components/connect/devicePicker', () => ({
+  showDevicePicker: mocks.showDevicePicker,
+}));
+vi.mock('../components/player/AudioEffectsSheet', () => ({
+  AudioEffectsSheet: 'AudioEffectsSheet',
+}));
 vi.mock('../components/ui', async (original) => ({
   ...(await original<typeof import('../components/ui')>()),
   BottomSheet: 'BottomSheet',
@@ -71,18 +87,22 @@ vi.mock('../tv', () => ({
 }));
 vi.mock('../components/profile/ProfileSections', () => ({
   ListeningStatsPanel: 'ListeningStatsPanel',
-  ProfileEditForm: 'ProfileEditForm',
   ProfileIdentityCard: 'ProfileIdentityCard',
   SleepTimerPanel: 'SleepTimerPanel',
 }));
-vi.mock('../components/profile/ConnectSettingsPanel', () => ({ default: 'ConnectSettingsPanel' }));
-vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
-vi.mock('../components/profile/PlaybackSettingsPanel', () => ({ default: 'PlaybackSettingsPanel' }));
-vi.mock('../components/profile/StorageCachePanel', () => ({ default: 'StorageCachePanel' }));
+vi.mock('../components/profile/ProfileOverviewNavigation', () => ({
+  ProfileQuickActions: 'ProfileQuickActions',
+  ProfileSettingsMenu: 'ProfileSettingsMenu',
+}));
 vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
-// Owns the latched slot's useState; covered by useAndroidUpdatePlacement.test.ts.
 vi.mock('../components/profile/useAndroidUpdatePlacement', () => ({
   useAndroidUpdatePlacement: mocks.updatePlacement,
+}));
+vi.mock('../update/androidUpdateStore', () => ({
+  androidUpdateStore: {
+    getSnapshot: () => ({ supported: mocks.updateStoreSupported }),
+    check: mocks.updateStoreCheck,
+  },
 }));
 vi.mock('../api/url', () => ({ resolveServerUrl: mocks.resolveServerUrl }));
 vi.mock('../config', () => ({
@@ -91,26 +111,24 @@ vi.mock('../config', () => ({
 vi.mock('../data', () => ({
   musicCacheScope: () => 'https://music.example.test::user:7',
   musicQueries: { stats: () => ({ queryKey: ['stats'] }) },
-  musicRepository: { updateMe: vi.fn() },
-  queryKeys: { profile: { public: (id: number) => ['profile', id] } },
 }));
 vi.mock('../localization', () => ({
   strings: {
     profile: {
-      title: 'Profile',
-      dangerTitle: 'Danger zone',
-      deleteAccount: 'Delete account',
-      deleteTitle: 'Permanently delete account?',
-      deleteWarning: 'This cannot be undone.',
-      deleteFailed: 'Delete failed',
-      deleting: 'Deleting…',
-      deleteConfirm: 'Delete permanently',
-      deleteCancel: 'Cancel',
+      refreshStats: 'Reload listening stats',
+    },
+    player: {
+      sleepTimerSheetClose: 'Close sleep timer',
     },
   },
 }));
-vi.mock('./profileModel', () => ({ profileServerHost: () => 'music.example.test' }));
-vi.mock('./profileUpdate', () => ({ persistProfileUpdate: vi.fn() }));
+vi.mock('../localization/wave2Strings', () => ({
+  wave2Strings: {
+    audioEffects: {
+      closeButton: 'Close audio effects',
+    },
+  },
+}));
 
 type ElementProps = Record<string, unknown> & { children?: React.ReactNode };
 
@@ -127,39 +145,55 @@ function byTestId(node: React.ReactNode, testID: string): React.ReactElement<Ele
   return found;
 }
 
-function textContent(node: React.ReactNode): string {
-  if (typeof node === 'string' || typeof node === 'number') return String(node);
-  if (Array.isArray(node)) return node.map(textContent).join('');
-  if (node === null || typeof node !== 'object' || !('props' in node)) return '';
-  return textContent((node as React.ReactElement<ElementProps>).props.children);
+function byType(node: React.ReactNode, type: unknown): React.ReactElement<ElementProps> {
+  const found = elements(node).find((element) => element.type === type);
+  if (found === undefined) throw new Error(`No element has type ${String(type)}`);
+  return found;
 }
 
-function renderDeletionState(
-  confirming: boolean,
-  deleting: boolean,
-  error: string | null,
+function renderOverview(
+  sleepSheetOpen = false,
+  effectsSheetOpen = false,
 ) {
-  const setConfirming = vi.fn();
-  const setDeleting = vi.fn();
-  const setError = vi.fn();
+  const setSleepSheetOpen = vi.fn();
+  const setEffectsSheetOpen = vi.fn();
   mocks.useState
-    .mockReturnValueOnce([confirming, setConfirming])
-    .mockReturnValueOnce([deleting, setDeleting])
-    .mockReturnValueOnce([error, setError]);
+    .mockReturnValueOnce([sleepSheetOpen, setSleepSheetOpen])
+    .mockReturnValueOnce([effectsSheetOpen, setEffectsSheetOpen]);
+  const callbacks = {
+    onOpenPlaybackSettings: vi.fn(),
+    onOpenDevicesStorageSettings: vi.fn(),
+    onOpenAccountAppSettings: vi.fn(),
+    onOpenInsights: vi.fn(),
+  };
   return {
-    tree: ProfileScreen(),
-    setConfirming,
-    setDeleting,
-    setError,
+    tree: ProfileScreen(callbacks),
+    callbacks,
+    setSleepSheetOpen,
+    setEffectsSheetOpen,
   };
 }
 
-describe('ProfileScreen account deletion', () => {
+function scrollOrder(tree: React.ReactNode): string[] {
+  const scroll = elements(tree).find((element) => element.type === 'ScrollView');
+  if (scroll === undefined) throw new Error('Profile has no ScrollView');
+  const children = (Array.isArray(scroll.props.children)
+    ? scroll.props.children
+    : [scroll.props.children]) as (React.ReactElement<ElementProps> | null)[];
+  return children.filter((child) => child !== null).map((child) => {
+    if (child.type === ProfileUrgentUpdateCard) return 'ProfileUrgentUpdateCard';
+    if (typeof child.type === 'string') return child.type;
+    return String(child.props.testID);
+  });
+}
+
+describe('ProfileScreen overview', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isFocused = true;
     mocks.resolveServerUrl.mockImplementation((value: string) => value);
     mocks.updatePlacement.mockReturnValue('bottom');
+    mocks.updateStoreSupported = true;
     mocks.safeInsets = { top: 0, right: 0, bottom: 24, left: 0 };
     mocks.tvEnv = {
       isTv: false,
@@ -176,127 +210,105 @@ describe('ProfileScreen account deletion', () => {
         is_admin: false,
         is_approved: true,
       },
-      refreshUser: vi.fn(),
-      deleteAccount: mocks.deleteAccount,
     });
-    mocks.useQueryClient.mockReturnValue({ invalidateQueries: vi.fn() });
     mocks.useQuery.mockReturnValue({
       data: undefined,
       error: null,
       isPending: false,
       isFetching: false,
+      fetchStatus: 'idle',
       isStale: false,
       refetch: vi.fn(),
     });
   });
 
-  it('reports an invalid configured avatar URL', () => {
-    // The authenticated response already has an optional avatar field. A
-    // present but malformed URL must remain a visible configuration failure.
+  it('reports an invalid configured avatar URL loudly', () => {
     const auth = mocks.useAuth();
     mocks.useAuth.mockReturnValue({ ...auth, user: { ...auth.user, avatar_url: 'invalid-avatar' } });
-    const cause = new Error('Unsafe avatar origin');
-    mocks.resolveServerUrl.mockImplementation(() => { throw cause; });
-    expect(() => renderDeletionState(false, false, null)).toThrow(
+    mocks.resolveServerUrl.mockImplementation(() => {
+      throw new Error('Unsafe avatar origin');
+    });
+    expect(() => renderOverview()).toThrow(
       'Profile avatar URL is invalid for the selected server',
     );
   });
 
-  it('opens a separate confirmation and cancel closes it without deleting', () => {
-    const opening = renderDeletionState(false, false, null);
-    expect(elements(opening.tree).find((element) => element.type === 'BottomSheet')?.props.visible)
-      .toBe(false);
-    (byTestId(opening.tree, 'profile-delete').props.onPress as () => void)();
-    expect(opening.setError).toHaveBeenCalledExactlyOnceWith(null);
-    expect(opening.setConfirming).toHaveBeenCalledExactlyOnceWith(true);
-    expect(byTestId(opening.tree, 'profile-delete-confirmation').type).toBe('BottomSheet');
-    expect(mocks.deleteAccount).not.toHaveBeenCalled();
+  it('renders a concise overview without duplicating the native header or embedding detail settings panels', () => {
+    const { tree, callbacks } = renderOverview();
 
-    mocks.useState.mockReset();
-    const cancelling = renderDeletionState(true, false, 'old error');
-    (byTestId(cancelling.tree, 'profile-delete-cancel').props.onPress as () => void)();
-    expect(cancelling.setError).toHaveBeenCalledExactlyOnceWith(null);
-    expect(cancelling.setConfirming).toHaveBeenCalledExactlyOnceWith(false);
-    expect(mocks.deleteAccount).not.toHaveBeenCalled();
+    expect(scrollOrder(tree)).toEqual([
+      'ProfileIdentityCard',
+      'ProfileQuickActions',
+      'ProfileSettingsMenu',
+      'ListeningStatsPanel',
+    ]);
+    expect(elements(tree).some((el) => el.type === ProfileBackgroundUpdateCheck)).toBe(true);
+    expect(elements(tree).some((el) => el.type === ProfileUrgentUpdateCard)).toBe(false);
+    expect(byType(tree, 'ProfileIdentityCard').props.compact).toBe(true);
+
+    const menu = byType(tree, 'ProfileSettingsMenu');
+    expect(menu.props.onOpenPlaybackSettings).toBe(callbacks.onOpenPlaybackSettings);
+    expect(menu.props.onOpenDevicesStorageSettings).toBe(callbacks.onOpenDevicesStorageSettings);
+    expect(menu.props.onOpenAccountAppSettings).toBe(callbacks.onOpenAccountAppSettings);
+
+    const quick = byType(tree, 'ProfileQuickActions');
+    expect(quick.props.onOpenInsights).toBe(callbacks.onOpenInsights);
+    (quick.props.onOpenDevices as () => void)();
+    expect(mocks.showDevicePicker).toHaveBeenCalledExactlyOnceWith('devices');
   });
 
-  it('keeps confirmation open and restores controls when the server rejects deletion', async () => {
-    mocks.deleteAccount.mockRejectedValueOnce(new Error('last admin policy'));
-    const rendered = renderDeletionState(true, false, null);
-
-    (byTestId(rendered.tree, 'profile-delete-confirm').props.onPress as () => void)();
-
-    await vi.waitFor(() => {
-      expect(rendered.setError).toHaveBeenCalledWith(
-        'Delete failed',
-      );
-    });
-    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
-    expect(rendered.setDeleting.mock.calls).toEqual([[true], [false]]);
-    expect(rendered.setConfirming).not.toHaveBeenCalled();
-
-    mocks.useState.mockReset();
-    const failed = renderDeletionState(true, false, 'Delete failed');
-    const modal = elements(failed.tree).find((element) => element.type === 'BottomSheet');
-    expect(modal?.props.visible).toBe(true);
-    expect(byTestId(failed.tree, 'profile-delete-error').props.accessibilityRole).toBe('alert');
-    expect(byTestId(failed.tree, 'profile-delete-error').props.accessibilityLiveRegion)
-      .toBe('assertive');
-    expect(textContent(byTestId(failed.tree, 'profile-delete-error'))).toBe('Delete failed');
-    expect(textContent(byTestId(failed.tree, 'profile-delete-error')))
-      .not.toContain('last admin policy');
-    expect(byTestId(failed.tree, 'profile-delete-cancel').props.disabled).toBe(false);
-  });
-
-  it('submits exactly once and prevents dismissal while deletion is pending', async () => {
-    mocks.deleteAccount.mockResolvedValueOnce(undefined);
-    const ready = renderDeletionState(true, false, null);
-    (byTestId(ready.tree, 'profile-delete-confirm').props.onPress as () => void)();
-    await vi.waitFor(() => expect(mocks.deleteAccount).toHaveBeenCalledOnce());
-    expect(ready.setDeleting).toHaveBeenCalledExactlyOnceWith(true);
-    expect(ready.setConfirming).not.toHaveBeenCalled();
-
-    mocks.useState.mockReset();
-    const pending = renderDeletionState(true, true, null);
-    expect(byTestId(pending.tree, 'profile-delete-confirm').props.disabled).toBe(true);
-    expect(byTestId(pending.tree, 'profile-delete-cancel').props.disabled).toBe(true);
-    const modal = elements(pending.tree).find((element) => element.type === 'BottomSheet');
-    (modal?.props.onClose as () => void)();
-    expect(pending.setConfirming).not.toHaveBeenCalled();
-    expect(mocks.deleteAccount).toHaveBeenCalledOnce();
-  });
-
-  function scrollOrder(tree: React.ReactNode): string[] {
-    const scroll = elements(tree).find((element) => element.type === 'ScrollView');
-    if (scroll === undefined) throw new Error('Profile has no ScrollView');
-    const children = (Array.isArray(scroll.props.children)
-      ? scroll.props.children
-      : [scroll.props.children]) as (React.ReactElement<ElementProps> | null)[];
-    // An empty slot renders null.
-    return children.filter((child) => child !== null).map((child) => (
-      child.type === 'AndroidUpdateCard'
-        ? 'AndroidUpdateCard'
-        : typeof child.type === 'string'
-          ? child.type
-          : String(child.props.testID)
-    ));
-  }
-
-  it('mounts exactly one update card, directly below the header in the top slot', () => {
+  it('surfaces the urgent Android update card at the top slot when an update needs attention', () => {
     mocks.updatePlacement.mockReturnValue('top');
-    const order = scrollOrder(renderDeletionState(false, false, null).tree);
+    const { tree } = renderOverview();
+
     expect(mocks.updatePlacement).toHaveBeenCalledOnce();
-    expect(order.slice(0, 3)).toEqual(['profile-hero', 'AndroidUpdateCard', 'ProfileIdentityCard']);
-    expect(order.slice(-2)).toEqual(['ProfileEditForm', 'profile-danger']);
-    expect(order.filter((entry) => entry === 'AndroidUpdateCard')).toHaveLength(1);
+    expect(scrollOrder(tree)).toEqual([
+      'ProfileUrgentUpdateCard',
+      'ProfileIdentityCard',
+      'ProfileQuickActions',
+      'ProfileSettingsMenu',
+      'ListeningStatsPanel',
+    ]);
+    expect(elements(tree).some((el) => el.type === ProfileBackgroundUpdateCheck)).toBe(false);
   });
 
-  it('mounts exactly one update card above the danger zone in the bottom slot', () => {
-    mocks.updatePlacement.mockReturnValue('bottom');
-    const order = scrollOrder(renderDeletionState(false, false, null).tree);
-    expect(order.slice(0, 2)).toEqual(['profile-hero', 'ProfileIdentityCard']);
-    expect(order.slice(-3)).toEqual(['ProfileEditForm', 'AndroidUpdateCard', 'profile-danger']);
-    expect(order.filter((entry) => entry === 'AndroidUpdateCard')).toHaveLength(1);
+  it('opens and closes quick Sleep Timer and Audio Effects sheets and tracks TV checkpoints', () => {
+    mocks.tvEnv = {
+      isTv: true,
+      overscan: { top: 27, right: 48, bottom: 27, left: 48 },
+      contentPaddingHorizontal: 28,
+      gridGap: 16,
+    };
+
+    const closed = renderOverview(false, false);
+    const quick = byType(closed.tree, 'ProfileQuickActions');
+    (quick.props.onOpenSleepTimer as () => void)();
+    expect(mocks.pushCheckpoint).toHaveBeenCalledWith('profile-sleep-timer');
+    expect(closed.setSleepSheetOpen).toHaveBeenCalledWith(true);
+
+    (quick.props.onOpenAudioEffects as () => void)();
+    expect(mocks.pushCheckpoint).toHaveBeenCalledWith('profile-audio-effects');
+    expect(closed.setEffectsSheetOpen).toHaveBeenCalledWith(true);
+
+    expect(elements(byTestId(closed.tree, 'profile-quick-sleep-sheet')).some((el) => el.type === 'SleepTimerPanel'))
+      .toBe(false);
+    expect(elements(byTestId(closed.tree, 'profile-quick-audio-effects-sheet')).some((el) => el.type === 'AudioEffectsSheet'))
+      .toBe(false);
+
+    mocks.useState.mockReset();
+    const open = renderOverview(true, true);
+    const sleepSheet = byTestId(open.tree, 'profile-quick-sleep-sheet');
+    const effectsSheet = byTestId(open.tree, 'profile-quick-audio-effects-sheet');
+    expect(elements(sleepSheet).some((el) => el.type === 'SleepTimerPanel')).toBe(true);
+    expect(elements(effectsSheet).some((el) => el.type === 'AudioEffectsSheet')).toBe(true);
+
+    (sleepSheet.props.onClose as () => void)();
+    expect(open.setSleepSheetOpen).toHaveBeenCalledWith(false);
+    expect(mocks.popAndRestore).toHaveBeenCalledTimes(1);
+
+    (effectsSheet.props.onClose as () => void)();
+    expect(open.setEffectsSheetOpen).toHaveBeenCalledWith(false);
+    expect(mocks.popAndRestore).toHaveBeenCalledTimes(2);
   });
 
   it('guards the bottom Android gesture bar with ProfileBottomSafeSpacer and renders a 2-column TV layout without double overscan', () => {
@@ -315,7 +327,7 @@ describe('ProfileScreen account deletion', () => {
       contentPaddingHorizontal: 28,
       gridGap: 16,
     };
-    const tvTree = renderDeletionState(false, false, null).tree;
+    const tvTree = renderOverview().tree;
     expect(byTestId(tvTree, 'profile-tv-columns')).toBeDefined();
     expect(JSON.stringify(byTestId(tvTree, 'profile-screen').props.style)).not.toContain('"paddingTop":27');
     expect(byTestId(tvTree, 'profile-scroll').props.contentContainerStyle).toEqual([
@@ -347,5 +359,22 @@ describe('ProfileScreen account deletion', () => {
     expect(mocks.popAndRestore).not.toHaveBeenCalled();
     cleanup?.();
     expect(mocks.popAndRestore).toHaveBeenCalledOnce();
+  });
+
+  it('suppresses urgent update announcements while Profile is covered and keeps background check active otherwise', () => {
+    mocks.useEffect.mockImplementation((effect: () => (() => void) | void) => {
+      effect();
+    });
+    mocks.isFocused = false;
+    const urgentCard = ProfileUrgentUpdateCard();
+    expect(urgentCard.type).toBe('AndroidUpdateCard');
+    expect((urgentCard.props.shouldAnnounce as () => boolean)()).toBe(false);
+
+    mocks.isFocused = true;
+    const focusedCard = ProfileUrgentUpdateCard();
+    expect((focusedCard.props.shouldAnnounce as () => boolean)()).toBe(true);
+
+    expect(ProfileBackgroundUpdateCheck()).toBeNull();
+    expect(mocks.updateStoreCheck).toHaveBeenCalledExactlyOnceWith('profile');
   });
 });

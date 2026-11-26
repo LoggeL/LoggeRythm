@@ -12,6 +12,7 @@ import { strings } from '../localization';
 import { useLocaleRevision } from '../localization/LocaleProvider';
 import { navigateToSearch } from '../navigationActions';
 import { playlistIdFromRouteValue, safeRouteLabel } from '../navigationLinks';
+import AccountAppSettingsScreen from '../screens/AccountAppSettingsScreen';
 import AlbumScreen from '../screens/AlbumScreen';
 import ArtistScreen from '../screens/ArtistScreen';
 import type {
@@ -19,6 +20,7 @@ import type {
   ArtistRouteParams,
   GenreRouteParams,
 } from '../screens/catalogModel';
+import DevicesStorageSettingsScreen from '../screens/DevicesStorageSettingsScreen';
 import DiscoverScreen from '../screens/DiscoverScreen';
 import GenreScreen from '../screens/GenreScreen';
 import type { HomeMixRouteParams } from '../screens/homeModel';
@@ -29,6 +31,7 @@ import MixScreen from '../screens/MixScreen';
 import NowPlayingScreen from '../screens/NowPlayingScreen';
 import PartyScreen, { InvalidPartyLink } from '../screens/PartyScreen';
 import { normalizePartyCode } from '../party/partyCode';
+import PlaybackSettingsScreen from '../screens/PlaybackSettingsScreen';
 import PlaylistScreen from '../screens/PlaylistScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import InsightsScreen from '../screens/InsightsScreen';
@@ -353,11 +356,71 @@ export function UserProfileRoute({ route, navigation }: SectionProps<'UserProfil
   );
 }
 
-export function ProfileRoute() {
+export function ProfileRoute({
+  navigation,
+}: NativeStackScreenProps<RootStackParams, 'Profile'>) {
+  useLocaleRevision();
+  const onOpenPlaybackSettings = useCallback(
+    () => navigation.navigate('PlaybackSettings'),
+    [navigation],
+  );
+  const onOpenDevicesStorageSettings = useCallback(
+    () => navigation.navigate('DevicesStorageSettings'),
+    [navigation],
+  );
+  const onOpenAccountAppSettings = useCallback(
+    () => navigation.navigate('AccountAppSettings'),
+    [navigation],
+  );
+  const onOpenInsights = useCallback(
+    () => navigation.navigate('Insights'),
+    [navigation],
+  );
+
+  return (
+    <View style={styles.fill}>
+      <ProfileScreen
+        onOpenPlaybackSettings={onOpenPlaybackSettings}
+        onOpenDevicesStorageSettings={onOpenDevicesStorageSettings}
+        onOpenAccountAppSettings={onOpenAccountAppSettings}
+        onOpenInsights={onOpenInsights}
+      />
+      <PlayerErrorBanner hasTabBar={false} />
+      <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
+      <MiniPlayer hasTabBar={false} />
+    </View>
+  );
+}
+
+export function PlaybackSettingsRoute() {
   useLocaleRevision();
   return (
     <View style={styles.fill}>
-      <ProfileScreen />
+      <PlaybackSettingsScreen />
+      <PlayerErrorBanner hasTabBar={false} />
+      <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
+      <MiniPlayer hasTabBar={false} />
+    </View>
+  );
+}
+
+export function DevicesStorageSettingsRoute() {
+  useLocaleRevision();
+  return (
+    <View style={styles.fill}>
+      <DevicesStorageSettingsScreen />
+      <PlayerErrorBanner hasTabBar={false} />
+      <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
+      <MiniPlayer hasTabBar={false} />
+    </View>
+  );
+}
+
+export function AccountAppSettingsRoute() {
+  useLocaleRevision();
+  return (
+    <View style={styles.fill}>
+      <AccountAppSettingsScreen />
       <PlayerErrorBanner hasTabBar={false} />
       <PlayerNoticeWithoutMiniPlayer hasTabBar={false} />
       <MiniPlayer hasTabBar={false} />
