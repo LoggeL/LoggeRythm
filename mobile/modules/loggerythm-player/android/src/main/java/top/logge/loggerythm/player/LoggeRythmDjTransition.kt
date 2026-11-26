@@ -28,11 +28,15 @@ import okhttp3.Request
 import org.json.JSONException
 import org.json.JSONObject
 
-/** A queue item that streams from the LoggeRythm API (`/api/tracks/{id}/stream`). */
+/**
+ * A queue item that streams from the LoggeRythm API (`/api/tracks/{id}/stream`).
+ * [quality] is `null` when the URL has no `quality` parameter; the server then streams the
+ * account's preferred quality, and the DJ endpoint resolves it the same way.
+ */
 internal data class LoggeRythmDjStreamRef(
   val origin: String,
   val trackId: String,
-  val quality: String,
+  val quality: String?,
 ) {
   companion object {
     private val PATH = Regex("^/api/tracks/(\\d+)/stream$")
@@ -53,8 +57,8 @@ internal data class LoggeRythmDjStreamRef(
         val eq = part.indexOf('=')
         if (eq < 0) part to "" else part.substring(0, eq) to part.substring(eq + 1)
       }
-      val quality = params["quality"] ?: "high"
-      if (quality !in QUALITIES) return null
+      val quality = params["quality"]
+      if (quality != null && quality !in QUALITIES) return null
       val origin = if (parsed.port == -1) "https://$host" else "https://$host:${parsed.port}"
       return LoggeRythmDjStreamRef(origin, match.groupValues[1], quality)
     }
@@ -254,7 +258,10 @@ internal class LoggeRythmDjTransitionController(
   private val primaryPlayer: ExoPlayer,
   private val audioAttributes: AudioAttributes,
   private val isSleepFading: () -> Boolean,
-  private val loudnessScaleForMediaId: (String?) -> Float,
+  /** True while a "sleep after this track" timer targets the current item. */
+  private val sleepsAfterCurrentItem: () -> Boolean,
+  private val isCrossfadeActive: () -> Boolean,
+  private val loudnessPlanForMediaId: (String?) -> LoggeRythmLoudnessPlan,
   private val restorePrimaryLoudness: () -> Unit,
   private val httpClient: OkHttpClient = defaultHttpClient(),
 ) {
@@ -266,6 +273,8 @@ internal class LoggeRythmDjTransitionController(
     val to: LoggeRythmDjStreamRef,
     val aGainMilli: Int,
     val bGainMilli: Int,
+    val aBoostMillibels: Int,
+    val bBoostMillibels: Int,
   )
 
   private sealed class PlanState {
@@ -293,7 +302,10 @@ internal class LoggeRythmDjTransitionController(
   private var deck: ExoPlayer? = null
   private var deckPreparedFor: String? = null
   private var run: Run? = null
-  private var selfSeekUntilMs = 0L
+  /** Seeks this controller issued on the primary player, matched exactly in onPositionDiscontinuity. */
+  private val pendingSelfSeeks = ArrayDeque<Pair<Int, Long>>()
+  /** The primary's playback parameters as this controller last set them during a run. */
+  private var expectedPrimaryParameters = PlaybackParameters.DEFAULT
   private var monitorScheduled = false
 
   private val monitor = object : Runnable {
@@ -317,7 +329,7 @@ internal class LoggeRythmDjTransitionController(
       reason: Int,
     ) {
       val active = run ?: return
-      if (reason == Player.DISCONTINUITY_REASON_SEEK && SystemClock.elapsedRealtime() < selfSeekUntilMs) return
+      if (reason == Player.DISCONTINUITY_REASON_SEEK && consumeSelfSeek(newPosition)) return
       if (
         reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION &&
         active.phase == Phase.CLIP &&
@@ -325,7 +337,20 @@ internal class LoggeRythmDjTransitionController(
       ) {
         return // A ended naturally under the clip; the planned seek into B still follows
       }
-      abort("primary-discontinuity:$reason")
+      abort(
+        "primary-discontinuity:$reason (item ${newPosition.mediaItemIndex} at ${newPosition.positionMs} ms; " +
+          "not one of this controller's seeks)",
+      )
+    }
+
+    override fun onPlaybackParametersChanged(playbackParameters: PlaybackParameters) {
+      if (run != null && playbackParameters != expectedPrimaryParameters) {
+        abort("primary-speed-changed:${playbackParameters.speed}/${playbackParameters.pitch}")
+      }
+    }
+
+    override fun onAudioSessionIdChanged(audioSessionId: Int) {
+      if (run != null) abort("audio-session-changed:$audioSessionId")
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -374,6 +399,14 @@ internal class LoggeRythmDjTransitionController(
   /** True while the primary player's volume is driven by a DJ transition. */
   fun ownsPrimaryVolume(): Boolean = run?.phase.let { it != null && it != Phase.DECK_LOCK }
 
+  /**
+   * Called when a sleep fade starts, before the fade reads the primary's volume as its base:
+   * hand the audio back to the primary at its loudness gain so the fade starts from there.
+   */
+  fun abortForSleepFade() {
+    abort("sleep-fade")
+  }
+
   fun release() {
     if (released) return
     abort("released")
@@ -388,6 +421,9 @@ internal class LoggeRythmDjTransitionController(
 
   private fun currentPair(): DjPair? {
     if (!enabled || isSleepFading()) return null
+    // the DJ switch is a seek (MEDIA_ITEM_TRANSITION_REASON_SEEK), which a
+    // "sleep after this track" timer would not see as the end of the track
+    if (sleepsAfterCurrentItem()) return null
     if (primaryPlayer.repeatMode == Player.REPEAT_MODE_ONE) return null
     val params = primaryPlayer.playbackParameters
     if (params.speed != 1f || params.pitch != 1f) return null
@@ -398,16 +434,30 @@ internal class LoggeRythmDjTransitionController(
     val from = LoggeRythmDjStreamRef.parse(current.localConfiguration?.uri?.toString()) ?: return null
     val to = LoggeRythmDjStreamRef.parse(next.localConfiguration?.uri?.toString()) ?: return null
     if (from.origin != to.origin || from.trackId == to.trackId) return null
-    val aGain = (loudnessScaleForMediaId(current.mediaId) * 1000).toInt()
-    val bGain = (loudnessScaleForMediaId(next.mediaId) * 1000).toInt()
+    val aPlan = loudnessPlanForMediaId(current.mediaId)
+    val bPlan = loudnessPlanForMediaId(next.mediaId)
+    val aGain = (aPlan.volumeScale * 1000).toInt()
+    val bGain = (bPlan.volumeScale * 1000).toInt()
     if (aGain !in 1..1000 || bGain !in 1..1000) return null
-    return DjPair(current.mediaId, next.mediaId, nextIndex, from, to, aGain, bGain)
+    return DjPair(current.mediaId, next.mediaId, nextIndex, from, to, aGain, bGain, aPlan.boostMillibels, bPlan.boostMillibels)
   }
 
   private fun clearPlan() {
     generation += 1
     planPair = null
     planState = null
+    if (run == null && deckPreparedFor != null) {
+      deck?.let { d ->
+        d.stop()
+        d.clearMediaItems()
+      }
+      deckPreparedFor = null
+    }
+  }
+
+  private fun decline(pair: DjPair, reason: String) {
+    Log.i(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} declined: $reason; regular transition instead")
+    planState = PlanState.Declined(reason)
   }
 
   private fun fetchPlan(pair: DjPair) {
@@ -417,6 +467,13 @@ internal class LoggeRythmDjTransitionController(
       Log.e(TAG, "DJ transition skipped: no session cookie for ${pair.from.origin}")
       return
     }
+    if (pair.to.quality != pair.from.quality) {
+      return decline(pair, "quality-mismatch:${pair.from.quality}/${pair.to.quality}")
+    }
+    if (pair.aBoostMillibels != pair.bBoostMillibels) {
+      // the LoudnessEnhancer boost is per session and switches abruptly; mid-song that is audible
+      return decline(pair, "loudness-boost-differs:${pair.aBoostMillibels}/${pair.bBoostMillibels} mB")
+    }
     val (origin, cookie) = session
     val gen = generation
     planState = PlanState.Fetching
@@ -424,25 +481,20 @@ internal class LoggeRythmDjTransitionController(
       val outcome: Result<PlanState> = runCatching {
         val url = String.format(
           Locale.ROOT,
-          "%s/api/dj/transition?from_id=%s&to_id=%s&quality=%s&a_gain=%.3f&b_gain=%.3f",
-          origin, pair.from.trackId, pair.to.trackId, pair.from.quality,
-          pair.aGainMilli / 1000.0, pair.bGainMilli / 1000.0,
-        )
-        if (pair.to.quality != pair.from.quality) {
-          PlanState.Declined("quality-mismatch:${pair.from.quality}/${pair.to.quality}")
-        } else {
-          when (val response = LoggeRythmDjPlanResponse.parse(httpGetString(url, cookie))) {
-            is LoggeRythmDjPlanResponse.Pending ->
-              PlanState.RetryAt(SystemClock.elapsedRealtime() + response.retryAfterMs)
-            is LoggeRythmDjPlanResponse.Crossfade -> {
-              Log.i(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId}: crossfade (${response.reason}: ${response.detail})")
-              PlanState.Declined(response.reason)
-            }
-            is LoggeRythmDjPlanResponse.Beatmatch -> {
-              val file = downloadClip(origin, cookie, response.clip.id)
-              Log.i(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId}: beatmatch (${response.detail})")
-              PlanState.Ready(response.clip, file)
-            }
+          "%s/api/dj/transition?from_id=%s&to_id=%s&a_gain=%.3f&b_gain=%.3f",
+          origin, pair.from.trackId, pair.to.trackId, pair.aGainMilli / 1000.0, pair.bGainMilli / 1000.0,
+        ) + (pair.from.quality?.let { "&quality=$it" } ?: "")
+        when (val response = LoggeRythmDjPlanResponse.parse(httpGetString(url, cookie))) {
+          is LoggeRythmDjPlanResponse.Pending ->
+            PlanState.RetryAt(SystemClock.elapsedRealtime() + response.retryAfterMs)
+          is LoggeRythmDjPlanResponse.Crossfade -> {
+            Log.i(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId}: crossfade (${response.reason}: ${response.detail})")
+            PlanState.Declined(response.reason)
+          }
+          is LoggeRythmDjPlanResponse.Beatmatch -> {
+            val file = downloadClip(origin, cookie, response.clip.id)
+            Log.i(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId}: beatmatch (${response.detail})")
+            PlanState.Ready(response.clip, file)
           }
         }
       }
@@ -468,7 +520,7 @@ internal class LoggeRythmDjTransitionController(
 
   private fun downloadClip(origin: String, cookie: String, clipId: String): File {
     val dir = File(context.cacheDir, "dj-clips").apply { mkdirs() }
-    val target = File(dir, "$clipId.mp3")
+    val target = File(dir, "$clipId.flac")
     if (target.isFile && target.length() > 0) return target
     val request = Request.Builder().url("$origin/api/dj/clips/$clipId").header("Cookie", cookie).get().build()
     httpClient.newCall(request).execute().use { response ->
@@ -517,24 +569,57 @@ internal class LoggeRythmDjTransitionController(
     val positionMs = primaryPlayer.currentPosition
     val deckStartAMs = clip.aMediaMs((clip.deckStartS * 1000).toLong())
     if (positionMs > deckStartAMs + LATE_START_TOLERANCE_MS) {
-      Log.w(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: playback is past the clip start")
-      planState = PlanState.Declined("past-clip-start")
+      val deckError = deck?.playerError
+      if (deckPreparedFor == clip.id && deckError != null) {
+        Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: the clip deck failed to prepare", deckError)
+        planState = PlanState.Declined("deck-prepare-failed")
+      } else {
+        decline(pair, "past-clip-start (at ${positionMs} ms, deck starts at A ${deckStartAMs} ms)")
+      }
       return
     }
     if (positionMs < deckStartAMs - DECK_PREPARE_LEAD_MS) return
+    if (isCrossfadeActive()) {
+      // the crossfade started while the plan was still pending; it owns this transition now
+      return decline(pair, "crossfade-already-running")
+    }
+    val sessionId = primaryPlayer.audioSessionId
+    if (sessionId == C.AUDIO_SESSION_ID_UNSET) {
+      Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: primary player has no audio session id")
+      planState = PlanState.Declined("no-audio-session")
+      return
+    }
     val d = ensureDeck()
     if (deckPreparedFor != clip.id) {
       d.stop()
       d.clearMediaItems()
       d.volume = 0f
       d.playbackParameters = PlaybackParameters.DEFAULT
+      // same session as the primary: its EQ, bass boost and loudness enhancer apply to the
+      // clip too, so both joins compare identically processed audio
+      d.setAudioSessionId(sessionId)
       d.setMediaItem(MediaItem.fromUri(Uri.fromFile(ready.file)), (clip.deckStartS * 1000).toLong())
       d.prepare()
       deckPreparedFor = clip.id
     }
+    d.playerError?.let { error ->
+      Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: the clip deck failed to prepare", error)
+      planState = PlanState.Declined("deck-prepare-failed")
+      d.stop()
+      d.clearMediaItems()
+      deckPreparedFor = null
+      return
+    }
     if (positionMs >= deckStartAMs && d.playbackState == Player.STATE_READY) {
+      if (d.audioSessionId != sessionId) {
+        Log.e(TAG, "DJ transition ${pair.from.trackId}->${pair.to.trackId} skipped: deck session ${d.audioSessionId} != primary $sessionId")
+        planState = PlanState.Declined("audio-session-mismatch")
+        return
+      }
       d.seekTo(positionMs - (clip.aStartS * 1000).toLong() + DECK_INITIAL_LEAD_MS)
       d.play()
+      pendingSelfSeeks.clear()
+      expectedPrimaryParameters = PlaybackParameters.DEFAULT
       run = Run(pair, clip, d)
     }
   }
@@ -543,13 +628,22 @@ internal class LoggeRythmDjTransitionController(
     if (isSleepFading()) return abort("sleep-fade")
     val now = SystemClock.elapsedRealtime()
     val clipMs = r.deck.currentPosition
-    if (r.deck.playbackState == Player.STATE_ENDED || r.deck.playerError != null) {
-      abort("deck-ended-or-failed")
-      return
+    r.deck.playerError?.let { error ->
+      Log.e(TAG, "DJ transition clip deck failed", error)
+      return abort("deck-error:${error.errorCodeName}")
     }
+    if (r.deck.playbackState == Player.STATE_ENDED) return abort("deck-ended")
     when (r.phase) {
       Phase.DECK_LOCK -> {
         if (primaryPlayer.currentMediaItem?.mediaId != r.pair.fromMediaId) return abort("primary-left-a")
+        // the leader may rebuffer; its position then stands still, so the muted deck waits too
+        // instead of burning its corrective seeks on a moving target
+        if (!primaryPlayer.isPlaying) {
+          if (r.deck.playWhenReady) r.deck.pause()
+          r.lock.reset()
+          return
+        }
+        if (!r.deck.playWhenReady) r.deck.play()
         val expected = primaryPlayer.currentPosition - (r.clip.aStartS * 1000).toLong()
         val locked = applyLock(r, r.deck, (clipMs - expected).toDouble(), now) { correction ->
           r.deck.seekTo(clipMs + correction)
@@ -576,20 +670,18 @@ internal class LoggeRythmDjTransitionController(
       Phase.CLIP -> {
         if (clipMs >= (r.clip.primarySeekS * 1000).toLong()) {
           if (!targetStillAt(r.pair)) return abort("queue-changed")
-          selfSeekUntilMs = now + SELF_SEEK_WINDOW_MS
           primaryPlayer.volume = 0f
-          primaryPlayer.seekTo(r.pair.toIndex, r.clip.bMediaMs(clipMs) + PRIMARY_SEEK_LEAD_MS)
+          selfSeek(r.pair.toIndex, r.clip.bMediaMs(clipMs) + PRIMARY_SEEK_LEAD_MS)
           r.lock = LoggeRythmDjPhaseLock()
           r.phase = Phase.PRIMARY_LOCK
         }
       }
       Phase.PRIMARY_LOCK -> {
+        if (primaryPlayer.currentMediaItem?.mediaId != r.pair.toMediaId) return abort("primary-left-b")
         primaryPlayer.volume = 0f
-        val onB = primaryPlayer.currentMediaItem?.mediaId == r.pair.toMediaId
         val expected = r.clip.bMediaMs(clipMs)
-        val locked = onB && applyLock(r, primaryPlayer, (primaryPlayer.currentPosition - expected).toDouble(), now) { correction ->
-          selfSeekUntilMs = SystemClock.elapsedRealtime() + SELF_SEEK_WINDOW_MS
-          primaryPlayer.seekTo(primaryPlayer.currentPosition + correction)
+        val locked = applyLock(r, primaryPlayer, (primaryPlayer.currentPosition - expected).toDouble(), now) { correction ->
+          selfSeek(primaryPlayer.currentMediaItemIndex, primaryPlayer.currentPosition + correction)
         }
         val joinOutMs = (r.clip.joinOutS * 1000).toLong()
         val deadlineMs = ((r.clip.durationS - JOIN_OUT_LATEST_BEFORE_END_S) * 1000).toLong()
@@ -597,14 +689,13 @@ internal class LoggeRythmDjTransitionController(
           if (!locked) {
             Log.w(TAG, "DJ transition joins back to B unlocked (last error ${r.lock.lastErrorMs} ms)")
           }
-          if (primaryPlayer.playbackParameters != PlaybackParameters.DEFAULT) {
-            primaryPlayer.playbackParameters = PlaybackParameters.DEFAULT
-          }
+          setPrimaryParameters(PlaybackParameters.DEFAULT)
           r.phase = Phase.JOIN_OUT
           r.rampStartMs = now
         }
       }
       Phase.JOIN_OUT -> {
+        if (primaryPlayer.currentMediaItem?.mediaId != r.pair.toMediaId) return abort("primary-left-b")
         val p = ((now - r.rampStartMs).toDouble() / JOIN_MS).coerceIn(0.0, 1.0)
         r.deck.volume = (1 - p).toFloat()
         primaryPlayer.volume = (p * r.pair.bGainMilli / 1000.0).toFloat()
@@ -623,13 +714,37 @@ internal class LoggeRythmDjTransitionController(
         false
       }
       is LoggeRythmDjPhaseLock.Action.SetSpeed -> {
-        follower.playbackParameters = PlaybackParameters(action.speed)
+        if (follower === primaryPlayer) {
+          setPrimaryParameters(PlaybackParameters(action.speed))
+        } else {
+          follower.playbackParameters = PlaybackParameters(action.speed)
+        }
         false
       }
     }
 
+  /** Seeks the primary and records the seek so the discontinuity is not taken for the user's. */
+  private fun selfSeek(index: Int, positionMs: Long) {
+    pendingSelfSeeks.addLast(index to positionMs)
+    primaryPlayer.seekTo(index, positionMs)
+  }
+
+  private fun consumeSelfSeek(position: Player.PositionInfo): Boolean {
+    val match = pendingSelfSeeks.firstOrNull { (index, positionMs) ->
+      index == position.mediaItemIndex && abs(positionMs - position.positionMs) <= SELF_SEEK_MATCH_MS
+    } ?: return false
+    pendingSelfSeeks.remove(match)
+    return true
+  }
+
+  private fun setPrimaryParameters(parameters: PlaybackParameters) {
+    expectedPrimaryParameters = parameters
+    if (primaryPlayer.playbackParameters != parameters) primaryPlayer.playbackParameters = parameters
+  }
+
   private fun finish(r: Run) {
     run = null
+    pendingSelfSeeks.clear()
     r.deck.pause()
     r.deck.stop()
     r.deck.clearMediaItems()
@@ -642,6 +757,7 @@ internal class LoggeRythmDjTransitionController(
   private fun abort(reason: String) {
     val active = run ?: return
     run = null
+    pendingSelfSeeks.clear()
     active.deck.pause()
     active.deck.stop()
     active.deck.clearMediaItems()
@@ -691,7 +807,7 @@ internal class LoggeRythmDjTransitionController(
     private const val DECK_INITIAL_LEAD_MS = 80L
     private const val LATE_START_TOLERANCE_MS = 1_500L
     private const val PRIMARY_SEEK_LEAD_MS = 250L
-    private const val SELF_SEEK_WINDOW_MS = 1_500L
+    private const val SELF_SEEK_MATCH_MS = 1L
     private const val JOIN_IN_LATEST_BEFORE_CUE_S = 0.4
     private const val JOIN_OUT_LATEST_BEFORE_END_S = 0.6
     private const val MAX_CACHED_CLIPS = 6

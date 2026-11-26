@@ -2651,6 +2651,10 @@ internal class LoggeRythmPersistedPlayerCoordinator(
 
   internal fun isSleepFading(): Boolean = fadeBaseVolume != null
 
+  /** True while a "sleep after this track" timer stops playback when the current item ends. */
+  internal fun sleepsAfterCurrentItem(): Boolean =
+    (sleep as? LoggeRythmPersistedSleepState.MediaItem)?.targetIndex == player.currentMediaItemIndex
+
   internal fun refreshLoudnessGain() {
     applyCurrentLoudnessGain()
   }

@@ -2,10 +2,12 @@
 in the API process.
 
     python -m app.services.dj.worker analyze AUDIO OUT_JSON
-    python -m app.services.dj.worker render A_AUDIO B_AUDIO PLAN_JSON A_GAIN B_GAIN OUT_MP3 OUT_JSON
+    python -m app.services.dj.worker render A_AUDIO B_AUDIO PLAN_JSON A_GAIN B_GAIN OUT_FLAC OUT_JSON
 
 Exit code 0 means OUT_JSON was written. ``analyze`` also exits 0 for a track that
 cannot be beat-matched; its JSON then has ``status: "unsuitable"`` and the reason.
+``render`` likewise exits 0 without writing OUT_FLAC when the pair violates a clip
+constraint (``render.RenderUnsuitable``); OUT_JSON then has ``status: "unsuitable"``.
 Any other failure exits non-zero with the error on stderr.
 """
 from __future__ import annotations
@@ -44,15 +46,19 @@ def cmd_analyze(audio_path: str, out_json: str) -> None:
 
 
 def cmd_render(a_path: str, b_path: str, plan_json: str, a_gain: str, b_gain: str,
-               out_mp3: str, out_json: str) -> None:
+               out_flac: str, out_json: str) -> None:
     with open(plan_json, "r", encoding="utf-8") as fh:
         plan = json.load(fh)
-    clip, timeline = render.render_clip(
-        audio.decode(a_path), audio.decode(b_path), plan, float(a_gain), float(b_gain)
-    )
-    tmp = out_mp3 + ".part"
-    audio.write_mp3(tmp, clip)
-    os.replace(tmp, out_mp3)
+    try:
+        clip, timeline = render.render_clip(
+            audio.decode(a_path), audio.decode(b_path), plan, float(a_gain), float(b_gain)
+        )
+    except render.RenderUnsuitable as exc:
+        _write_json_atomic(out_json, {"status": "unsuitable", "detail": str(exc)})
+        return
+    tmp = out_flac + ".part"
+    audio.write_flac(tmp, clip)
+    os.replace(tmp, out_flac)
     _write_json_atomic(out_json, timeline)
 
 

@@ -3,6 +3,10 @@
 The API process only reads JSON and serves files. Downloads run through
 ``storage.materialize``; analysis and rendering run in a worker subprocess (see
 ``worker.py``) on one background thread, so at most one heavy job runs at a time.
+The queue serves the most recently requested job first: the client polls the pair it
+is about to play, so that pair must not wait behind pairs the listener skipped. Jobs
+nobody asked for within ``STALE_JOB_SEC`` are dropped (logged) and resubmitted if the
+client asks again.
 
 A request that needs work not done yet gets ``status: "pending"`` and the reason;
 the client asks again. A job that failed is remembered for ``FAILURE_TTL_SEC`` and
@@ -19,7 +23,6 @@ import subprocess
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -33,12 +36,15 @@ RENDER_TIMEOUT_SEC = 180
 FAILURE_TTL_SEC = 600
 CLIP_MAX_AGE_SEC = 3 * 24 * 3600
 RETRY_AFTER_SEC = 5
+STALE_JOB_SEC = 60  # the client polls every RETRY_AFTER_SEC while the pair is current
 
 _API_ROOT = Path(__file__).resolve().parents[3]  # .../api (contains the app package)
 
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dj-worker")
 _lock = threading.Lock()
-_inflight: set[str] = set()
+_wake = threading.Condition(_lock)
+_queued: dict[str, tuple[Callable[[], None], float]] = {}  # key -> (job, last requested)
+_running: str | None = None
+_worker_thread: threading.Thread | None = None
 _failures: dict[str, tuple[float, str]] = {}
 
 
@@ -67,7 +73,7 @@ def clip_paths(clip_id: str) -> tuple[str, str]:
     if len(clip_id) != 32 or any(c not in "0123456789abcdef" for c in clip_id):
         raise ValueError(f"invalid clip id {clip_id!r}")
     d = _dj_dir("clips")
-    return os.path.join(d, f"{clip_id}.mp3"), os.path.join(d, f"{clip_id}.json")
+    return os.path.join(d, f"{clip_id}.flac"), os.path.join(d, f"{clip_id}.json")
 
 
 def _binding(audio_path: str) -> dict[str, int]:
@@ -94,25 +100,53 @@ def _run_worker(args: list[str], timeout: int) -> None:
 
 
 def _submit(key: str, job: Callable[[], None]) -> None:
-    with _lock:
-        if key in _inflight:
+    """Queue ``job`` under ``key`` (or mark an already queued one as requested again)."""
+    global _worker_thread
+    with _wake:
+        if key == _running:
             return
-        _inflight.add(key)
+        _queued[key] = (job, time.monotonic())
+        if _worker_thread is None or not _worker_thread.is_alive():
+            _worker_thread = threading.Thread(target=_worker_loop, name="dj-worker", daemon=True)
+            _worker_thread.start()
+        _wake.notify()
 
-    def run() -> None:
-        try:
-            job()
-            with _lock:
-                _failures.pop(key, None)
-        except Exception as exc:  # recorded and surfaced to the next request
-            logger.exception("DJ job %s failed", key)
-            with _lock:
-                _failures[key] = (time.monotonic(), f"{type(exc).__name__}: {exc}")
-        finally:
-            with _lock:
-                _inflight.discard(key)
 
-    _executor.submit(run)
+def _next_job() -> tuple[str, Callable[[], None]]:
+    global _running
+    with _wake:
+        while True:
+            now = time.monotonic()
+            for key, (_job, requested) in list(_queued.items()):
+                if now - requested > STALE_JOB_SEC:
+                    del _queued[key]
+                    logger.info("DJ job %s dropped: not requested for %.0fs", key, now - requested)
+            if _queued:
+                key = max(_queued, key=lambda k: _queued[k][1])
+                job, _requested = _queued.pop(key)
+                _running = key
+                return key, job
+            _wake.wait()
+
+
+def _run_job(key: str, job: Callable[[], None]) -> None:
+    global _running
+    try:
+        job()
+        with _lock:
+            _failures.pop(key, None)
+    except Exception as exc:  # recorded and surfaced to the next request
+        logger.exception("DJ job %s failed", key)
+        with _lock:
+            _failures[key] = (time.monotonic(), f"{type(exc).__name__}: {exc}")
+    finally:
+        with _lock:
+            _running = None
+
+
+def _worker_loop() -> None:
+    while True:
+        _run_job(*_next_job())
 
 
 def _raise_if_failed(key: str, what: str) -> None:
@@ -170,13 +204,13 @@ def _render_job(a_path: str, b_path: str, plan: dict, a_gain: float, b_gain: flo
                 clip_id: str) -> Callable[[], None]:
     def job() -> None:
         _prune_clips()
-        mp3, meta = clip_paths(clip_id)
+        flac, meta = clip_paths(clip_id)
         plan_file = meta + ".plan"
         with open(plan_file, "w", encoding="utf-8") as fh:
             json.dump(plan, fh)
         try:
             _run_worker(
-                ["render", a_path, b_path, plan_file, repr(a_gain), repr(b_gain), mp3, meta],
+                ["render", a_path, b_path, plan_file, repr(a_gain), repr(b_gain), flac, meta],
                 RENDER_TIMEOUT_SEC,
             )
         finally:
@@ -186,10 +220,21 @@ def _render_job(a_path: str, b_path: str, plan: dict, a_gain: float, b_gain: flo
 
 
 def _prune_clips() -> None:
+    """Drop clips (audio + metadata together) not used for ``CLIP_MAX_AGE_SEC``.
+
+    Usage is the newest mtime of the pair; ``get_transition`` touches both on every hit.
+    """
     cutoff = time.time() - CLIP_MAX_AGE_SEC
+    groups: dict[str, list[str]] = {}
     for path in glob.glob(os.path.join(_dj_dir("clips"), "*")):
-        if os.path.getmtime(path) < cutoff:
-            os.remove(path)
+        if path.endswith(".plan") or path.endswith(".part"):
+            continue  # owned by a running render job
+        groups.setdefault(os.path.basename(path).split(".", 1)[0], []).append(path)
+    with _lock:  # get_transition reads and touches a clip under the same lock
+        for files in groups.values():
+            if max(os.path.getmtime(f) for f in files) < cutoff:
+                for f in files:
+                    os.remove(f)
 
 
 # --------------------------------------------------------------------------- entry
@@ -241,13 +286,24 @@ def get_transition(
     clip_id = hashlib.sha256(fingerprint.encode()).hexdigest()[:32]
     render_key = f"render:{clip_id}"
     _raise_if_failed(render_key, f"rendering transition {from_id} -> {to_id}")
-    mp3, meta = clip_paths(clip_id)
-    if not (os.path.exists(mp3) and os.path.exists(meta)):
+    flac, meta = clip_paths(clip_id)
+    with _lock:  # _prune_clips() cannot delete the pair between the read and the touch
+        if not os.path.exists(meta):
+            timeline = None
+        else:
+            with open(meta, "r", encoding="utf-8") as fh:
+                timeline = json.load(fh)
+            os.utime(meta)  # recently used decisions/clips survive pruning
+            if timeline.get("status") != "unsuitable":
+                if not os.path.exists(flac):
+                    raise DjTransitionError(f"DJ clip {clip_id} has metadata but no audio file {flac}")
+                os.utime(flac)
+    if timeline is None:
         _submit(render_key, _render_job(paths[0], paths[1], plan, a_gain, b_gain, clip_id))
         return _pending("RENDERING")
-    with open(meta, "r", encoding="utf-8") as fh:
-        timeline = json.load(fh)
-    os.utime(mp3)  # recently used clips survive pruning
+    if timeline.get("status") == "unsuitable":
+        return {"status": "ready", "kind": "crossfade", "reason": "RENDER_UNSUITABLE",
+                "detail": timeline["detail"]}
     return {
         "status": "ready", "kind": "beatmatch", "reason": plan["reason"], "detail": plan["detail"],
         "clip": {"id": clip_id, **timeline},

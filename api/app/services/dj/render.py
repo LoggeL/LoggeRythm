@@ -26,7 +26,7 @@ from scipy.signal import butter, sosfiltfilt
 from .audio import SR
 from .stretch import stretch_varying
 
-RENDER_VERSION = 1
+RENDER_VERSION = 2
 PRE_S = 8.0  # A before its cue: room for the deck to start muted and lock on
 POST_S = 3.0  # B after the join-out point
 DECK_START_S = 1.0
@@ -40,6 +40,12 @@ LIMIT = 0.97
 
 class RenderError(RuntimeError):
     """The plan cannot be rendered (reason in the message)."""
+
+
+class RenderUnsuitable(RenderError):
+    """The planned pair violates a clip constraint the planner cannot see (pre-roll,
+    track length, B's entry point). Deterministic for these inputs: the service records
+    it as a ``crossfade`` decision with reason ``RENDER_UNSUITABLE`` instead of retrying."""
 
 
 def _split(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -131,9 +137,9 @@ def render_clip(A: np.ndarray, B: np.ndarray, plan: dict, a_gain: float, b_gain:
     st_stop = int(round((ta_cue + (bars * 4 + 4) * pa + 1.0) * SR))
     A_pad = np.concatenate([A, np.zeros((int(20 * SR), A.shape[1]), np.float32)])
     if st_start - int(PRE_S * SR) < 0:
-        raise RenderError(f"A cue at {ta_cue:.2f}s leaves less than {PRE_S}s of pre-roll")
+        raise RenderUnsuitable(f"A cue at {ta_cue:.2f}s leaves less than {PRE_S}s of pre-roll")
     if st_stop > len(A_pad):
-        raise RenderError("A's tail range exceeds the padded track")
+        raise RenderUnsuitable("A's tail range exceeds the padded track")
     tail, in_pos, out_pos = stretch_varying(A_pad, st_start, st_stop, rate_at, SR)
 
     def a_media_to_tail(t_media: float) -> float:
@@ -161,7 +167,7 @@ def render_clip(A: np.ndarray, B: np.ndarray, plan: dict, a_gain: float, b_gain:
     join_out_s = _mid_beat_at_or_after(rb, T_end / SR + JOIN_OUT_AFTER_MIX_S + b_offset_s) - b_offset_s
     primary_seek_s = max(join_in_s + 0.3, 0.5 - b_offset_s)
     if primary_seek_s > T_end / SR - MIN_PRIMARY_ALIGN_S:
-        raise RenderError(
+        raise RenderUnsuitable(
             f"B enters too late in its own file for the player to lock on (seek at {primary_seek_s:.2f}s, "
             f"mix ends {T_end / SR:.2f}s)"
         )

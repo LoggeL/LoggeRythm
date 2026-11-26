@@ -53,18 +53,20 @@ def decode(path: str) -> np.ndarray:
     return pcm.reshape(-1, CHANNELS).copy()
 
 
-def write_mp3(path: str, audio: np.ndarray, bitrate: str = "256k") -> None:
-    """Encode with LAME. ffmpeg writes the Xing/LAME header carrying the encoder
-    delay and padding, which Media3 uses for sample-exact gapless trimming."""
+def write_flac(path: str, audio: np.ndarray) -> None:
+    """Encode as 16-bit FLAC. FLAC has no encoder delay and Media3 seeks it
+    sample-exactly, so the player's reported clip position is the clip sample
+    index even after seeks (MP3 is not: Media3 only trims the LAME encoder delay
+    on the first flush, so every later seek would shift the audio by ~25 ms)."""
     if audio.ndim != 2 or audio.shape[1] != CHANNELS:
-        raise AudioError(f"write_mp3 expects (n, {CHANNELS}) audio, got {audio.shape}")
+        raise AudioError(f"write_flac expects (n, {CHANNELS}) audio, got {audio.shape}")
     peak = float(np.max(np.abs(audio)))
     if peak > 1.0:
         raise AudioError(f"refusing to write clipped audio to {path} (peak {peak:.3f})")
     cmd = [
         _ffmpeg(), "-v", "error", "-nostdin", "-y",
         "-f", "f32le", "-ar", str(SR), "-ac", str(CHANNELS), "-i", "-",
-        "-codec:a", "libmp3lame", "-b:a", bitrate, "-f", "mp3", path,
+        "-codec:a", "flac", "-sample_fmt", "s16", "-compression_level", "5", "-f", "flac", path,
     ]
     try:
         proc = subprocess.run(

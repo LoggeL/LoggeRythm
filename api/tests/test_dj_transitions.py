@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -342,8 +344,8 @@ class DjApiTests(unittest.TestCase):
         self.assertEqual(r.json()["reason"], "RENDERING")
         self.assertEqual(len(jobs), 1)
         clip_id = jobs[0][0].split(":", 1)[1]
-        mp3, meta = service.clip_paths(clip_id)
-        Path(mp3).write_bytes(b"\xff\xfb" + b"\0" * 4096)
+        flac, meta = service.clip_paths(clip_id)
+        Path(flac).write_bytes(b"fLaC" + b"\0" * 4096)
         timeline = {"render_version": 1, "duration_s": 27.0, "a_start_s": 150.0, "b_offset_s": -4.0,
                     "cue_s": 8.0, "deck_start_s": 1.0, "join_in_s": 6.1, "primary_seek_s": 6.4,
                     "mix_start_s": 8.0, "bass_swap_s": 15.5, "mix_end_s": 23.0, "join_out_s": 24.2,
@@ -357,9 +359,52 @@ class DjApiTests(unittest.TestCase):
         self.assertEqual(body["clip"]["join_out_s"], 24.2)
         r = self.client.get(f"/api/dj/clips/{clip_id}", headers={**self.headers, "Range": "bytes=0-9"})
         self.assertEqual(r.status_code, 206)
-        self.assertEqual(r.headers["content-type"], "audio/mpeg")
+        self.assertEqual(r.headers["content-type"], "audio/flac")
         self.assertEqual(self.client.get("/api/dj/clips/" + "f" * 32, headers=self.headers).status_code, 404)
         self.assertEqual(self.client.get("/api/dj/clips/nothex", headers=self.headers).status_code, 422)
+
+    def _render_job_for_pair(self) -> str:
+        self._write_track("111", _synthetic_analysis(125.0, 400, 0.3, 0.0, 3.0))
+        self._write_track("222", _synthetic_analysis(128.0, 400, 0.2, 0.0, 3.0))
+        jobs = []
+        with patch.object(service, "_submit", side_effect=lambda key, job: jobs.append((key, job))):
+            r = self.client.get("/api/dj/transition", params=self._query(), headers=self.headers)
+        self.assertEqual(r.json()["reason"], "RENDERING")
+        return jobs[0][0].split(":", 1)[1]
+
+    def test_render_constraint_becomes_a_stored_crossfade_decision(self) -> None:
+        self._enable()
+        clip_id = self._render_job_for_pair()
+        _flac, meta = service.clip_paths(clip_id)
+        Path(meta).write_text(json.dumps({"status": "unsuitable", "detail": "B enters too late"}))
+        with patch.object(service, "_submit") as submit:
+            r = self.client.get("/api/dj/transition", params=self._query(), headers=self.headers)
+        submit.assert_not_called()
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()["kind"], r.json()["reason"]), ("crossfade", "RENDER_UNSUITABLE"))
+        self.assertEqual(r.json()["detail"], "B enters too late")
+
+    def test_clip_metadata_without_audio_is_an_error(self) -> None:
+        self._enable()
+        clip_id = self._render_job_for_pair()
+        _flac, meta = service.clip_paths(clip_id)
+        Path(meta).write_text(json.dumps({"render_version": 2}))
+        r = self.client.get("/api/dj/transition", params=self._query(), headers=self.headers)
+        self.assertEqual(r.status_code, 502)
+        self.assertIn("no audio file", r.json()["detail"])
+
+    def test_omitted_quality_resolves_like_the_stream_endpoint(self) -> None:
+        self._enable()
+        with self.SessionFactory() as db:
+            db.get(User, self.user_id).preferred_quality = "lossless"
+            db.commit()
+        query = self._query()
+        del query["quality"]
+        with patch.object(service, "_submit") as submit:
+            r = self.client.get("/api/dj/transition", params=query, headers=self.headers)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual([c.args[0] for c in submit.call_args_list],
+                         ["analysis:111:lossless", "analysis:222:lossless"])
 
     def test_gains_and_ids_are_validated(self) -> None:
         self._enable()
@@ -367,6 +412,57 @@ class DjApiTests(unittest.TestCase):
             with self.subTest(**over):
                 r = self.client.get("/api/dj/transition", params=self._query(**over), headers=self.headers)
                 self.assertEqual(r.status_code, 422, r.text)
+
+
+class DjJobQueueTest(unittest.TestCase):
+    """The single worker serves the most recently requested job first and drops stale ones."""
+
+    def setUp(self) -> None:
+        self.assertIsNone(service._running)
+        service._queued.clear()
+        service._failures.clear()
+        self.addCleanup(service._queued.clear)
+
+    def test_newest_request_first_and_stale_jobs_dropped(self) -> None:
+        ran: list[str] = []
+        clock = [1000.0]
+        with patch.object(service.time, "monotonic", side_effect=lambda: clock[0]), \
+                patch.object(service, "_worker_thread", threading.current_thread()):
+            for key in ("old", "a", "b"):
+                service._submit(key, lambda key=key: ran.append(key))
+                clock[0] += 1
+            clock[0] += service.STALE_JOB_SEC - 1.5  # "old" is now stale, "a"/"b" are not
+            service._submit("a", lambda: ran.append("a"))  # polled again: newest
+            for _ in range(2):
+                service._run_job(*service._next_job())
+        self.assertEqual(ran, ["a", "b"])
+        self.assertEqual(service._queued, {})
+
+    def test_failure_is_recorded_and_running_key_is_released(self) -> None:
+        def boom() -> None:
+            raise RuntimeError("worker exited 1")
+
+        with patch.object(service, "_worker_thread", threading.current_thread()):
+            service._submit("x", boom)
+            service._run_job(*service._next_job())
+        self.assertIsNone(service._running)
+        self.assertIn("worker exited 1", service._failures["x"][1])
+
+
+class DjClipPruneTest(unittest.TestCase):
+    def test_prunes_audio_and_metadata_together_by_newest_use(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.object(storage, "_storage_dir", return_value=tmp):
+            old_flac, old_meta = service.clip_paths("a" * 32)
+            used_flac, used_meta = service.clip_paths("b" * 32)
+            for f in (old_flac, old_meta, used_flac, used_meta):
+                Path(f).write_bytes(b"x")
+            stale = time.time() - service.CLIP_MAX_AGE_SEC - 60
+            for f in (old_flac, old_meta, used_flac):
+                os.utime(f, (stale, stale))
+            service._prune_clips()  # used_meta was touched recently -> its clip stays
+            self.assertEqual(sorted(os.path.basename(p) for p in Path(tmp, "dj", "clips").iterdir()),
+                             sorted(os.path.basename(p) for p in (used_flac, used_meta)))
 
 
 if __name__ == "__main__":

@@ -7509,7 +7509,7 @@
     },
     "/api/dj/clips/{clip_id}": {
       "get": {
-        "description": "Rendered transition clip (audio/mpeg), with Range support.",
+        "description": "Rendered transition clip (audio/flac), with Range support.",
         "operationId": "get_clip_api_dj_clips__clip_id__get",
         "parameters": [
           {
@@ -7525,7 +7525,7 @@
         "responses": {
           "200": {
             "content": {
-              "audio/mpeg": {
+              "audio/flac": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -7536,7 +7536,7 @@
           },
           "206": {
             "content": {
-              "audio/mpeg": {
+              "audio/flac": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -7619,17 +7619,26 @@
             }
           },
           {
+            "description": "Quality of both stream URLs; omit when they carry no `quality` parameter (then the account's preferred quality applies, as for /api/tracks/{id}/stream)",
             "in": "query",
             "name": "quality",
-            "required": true,
+            "required": false,
             "schema": {
-              "enum": [
-                "lossless",
-                "high",
-                "saver"
+              "anyOf": [
+                {
+                  "enum": [
+                    "lossless",
+                    "high",
+                    "saver"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
               ],
-              "title": "Quality",
-              "type": "string"
+              "description": "Quality of both stream URLs; omit when they carry no `quality` parameter (then the account's preferred quality applies, as for /api/tracks/{id}/stream)",
+              "title": "Quality"
             }
           },
           {

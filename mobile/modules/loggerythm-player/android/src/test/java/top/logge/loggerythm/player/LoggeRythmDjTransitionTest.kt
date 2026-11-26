@@ -11,7 +11,8 @@ class LoggeRythmDjTransitionTest {
   @Test
   fun streamRefParsesApiStreamsOnly() {
     assertEquals(
-      LoggeRythmDjStreamRef("https://music.example", "123", "high"),
+      // no quality parameter: the server streams the account's preferred quality
+      LoggeRythmDjStreamRef("https://music.example", "123", null),
       LoggeRythmDjStreamRef.parse("https://music.example/api/tracks/123/stream"),
     )
     assertEquals(

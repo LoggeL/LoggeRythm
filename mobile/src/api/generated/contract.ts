@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "6beb3576af8e02bf5add2c708f7a2d097c5ee201c8d4b3964254f32ac0e1cb4d" as const;
+export const GENERATED_OPENAPI_SHA256 = "21200852254eeddb4dcecb5e130d5a48768ba49d083684a584d1b369cd28de0d" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -1795,7 +1795,7 @@ export interface GeneratedApiOperations {
         a_gain: number;
         b_gain: number;
         from_id: string;
-        quality: "lossless" | "high" | "saver";
+        quality?: "lossless" | "high" | "saver" | null;
         to_id: string;
       };
     };

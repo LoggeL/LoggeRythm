@@ -320,6 +320,19 @@ async def track_audio_meta(
     return TrackAudioMeta(**result)
 
 
+def effective_stream_quality(quality: str | None, user: User) -> str:
+    """The quality a stream URL resolves to: explicit ``?quality=`` wins, otherwise the
+    account's preferred quality. Shared with the DJ endpoint, which must analyse exactly
+    the file the player streams."""
+    if quality is not None:
+        return quality
+    return (
+        user.preferred_quality
+        if getattr(user, "preferred_quality", None) in storage.VALID_QUALITIES
+        else "high"
+    )
+
+
 @router.get(
     "/tracks/{deezer_id}/stream",
     response_class=Response,
@@ -371,15 +384,7 @@ async def stream(
     quality: AudioQuality | None = Query(default=None),
     user: User = Depends(get_current_user),
 ) -> Response:
-    effective_quality: str = (
-        quality
-        if quality is not None
-        else (
-            user.preferred_quality
-            if getattr(user, "preferred_quality", None) in storage.VALID_QUALITIES
-            else "high"
-        )
-    )
+    effective_quality = effective_stream_quality(quality, user)
     path = await _materialize_track(
         deezer_id,
         requested_by_user_id=user.id,

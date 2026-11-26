@@ -645,22 +645,29 @@ class LoggeRythmMediaLibraryService :
         val extras = mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
         audioEffects.applyTrackLoudness(extras, isSleepFading)
       },
-      onSleepFadeStarted = audioEffects::resetLoudnessBoostForFade,
+      onSleepFadeStarted = {
+        // the DJ deck must hand the audio back before the fade reads the primary's volume
+        djController.abortForSleepFade()
+        audioEffects.resetLoudnessBoostForFade()
+      },
     )
-    val loudnessScaleForMediaId: (String?) -> Float = { mediaId ->
+    val loudnessPlanForMediaId: (String?) -> LoggeRythmLoudnessPlan = { mediaId ->
       val extras = mediaId?.let(LoggeRythmPlayerRuntime::extrasFor) ?: "{}"
       LoggeRythmLoudnessNormalization.computePlan(
         extrasJson = extras,
         enabled = audioEffects.getLoudnessState().enabled,
         preset = LoggeRythmLoudnessPreset.parse(audioEffects.getLoudnessState().preset),
-      ).volumeScale
+      )
     }
+    val loudnessScaleForMediaId: (String?) -> Float = { mediaId -> loudnessPlanForMediaId(mediaId).volumeScale }
     djController = LoggeRythmDjTransitionController(
       context = this,
       primaryPlayer = player,
       audioAttributes = audioAttributes,
       isSleepFading = persistedCoordinator::isSleepFading,
-      loudnessScaleForMediaId = loudnessScaleForMediaId,
+      sleepsAfterCurrentItem = persistedCoordinator::sleepsAfterCurrentItem,
+      isCrossfadeActive = { crossfadeController.isCrossfadeActive() },
+      loudnessPlanForMediaId = loudnessPlanForMediaId,
       restorePrimaryLoudness = persistedCoordinator::refreshLoudnessGain,
     )
     persistedCoordinator.primaryVolumeOwnedElsewhere = djController::ownsPrimaryVolume
