@@ -390,7 +390,9 @@ internal class LoggeRythmDjTransitionController(
             // sink, so the encoder delay is not trimmed again; before that the armed trim holds
             primaryTrimmed = false
           }
-        Player.DISCONTINUITY_REASON_AUTO_TRANSITION, Player.DISCONTINUITY_REASON_REMOVE -> armTrim()
+        // reported once the new item already plays: its trim (gapless reconfiguration) is spent
+        Player.DISCONTINUITY_REASON_AUTO_TRANSITION -> trimSpent()
+        Player.DISCONTINUITY_REASON_REMOVE -> armTrim()
         else -> Unit
       }
       val active = run
@@ -438,7 +440,10 @@ internal class LoggeRythmDjTransitionController(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-      armTrim()
+      when (reason) {
+        Player.MEDIA_ITEM_TRANSITION_REASON_AUTO, Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT -> trimSpent()
+        else -> armTrim() // seek to another item or playlist change: reconfigured, trim pending
+      }
     }
 
     override fun onPlaybackStateChanged(playbackState: Int) {
@@ -466,6 +471,10 @@ internal class LoggeRythmDjTransitionController(
     ) {
       primaryDecoderName = decoderName
       Log.i(TAG, "Primary audio decoder: $decoderName")
+    }
+
+    override fun onAudioPositionAdvancing(eventTime: AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
+      trimPending = false // audio reached the output, so an armed trim has been applied
     }
 
     override fun onAudioInputFormatChanged(
@@ -565,6 +574,11 @@ internal class LoggeRythmDjTransitionController(
   private fun armTrim() {
     primaryTrimmed = true
     trimPending = true
+  }
+
+  private fun trimSpent() {
+    primaryTrimmed = true
+    trimPending = false
   }
 
   private fun fetchPlan(pair: DjPair) {
