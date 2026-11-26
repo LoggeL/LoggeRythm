@@ -8,6 +8,7 @@ import { partyErrorDetail } from './partyErrors';
 import {
   canControlPartyPlayback,
   expectedHostPosition,
+  partyPrevRestartsTrack,
   isPartyTrackStored,
   isViewerKickedFromParty,
   MAX_PARTY_DRIFT_SEC,
@@ -372,7 +373,7 @@ export class PartySession {
     const position = party.is_host && !this.state.detached && !this.state.controlOnly
       ? Math.max(0, this.deps.player.getSnapshot().progress.position)
       : expectedHostPosition(party, this.deps.now());
-    if (position > 3 || party.current_index === 0) {
+    if (partyPrevRestartsTrack(party, position)) {
       if (party.is_host && !this.state.detached && !this.state.controlOnly) {
         this.deps.player.seekTo(0);
       }

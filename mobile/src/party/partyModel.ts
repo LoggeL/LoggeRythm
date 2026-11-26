@@ -41,6 +41,11 @@ export function partyQueueEntries(party: PartyState): PartyQueueEntry[] {
  * Where the host's current track is now: the last broadcast position plus the
  * time that has passed since, while playing.
  */
+/** Whether "previous" restarts the Jam's current song (true) or steps back (false). */
+export function partyPrevRestartsTrack(party: PartyState, positionSec: number): boolean {
+  return positionSec > 3 || party.current_index === 0;
+}
+
 export function expectedHostPosition(party: PartyState, nowMs: number): number {
   if (!party.is_playing || party.playback_updated_at === null) return party.position_sec;
   const updatedAt = Date.parse(party.playback_updated_at);

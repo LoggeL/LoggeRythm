@@ -8,13 +8,14 @@ import {
 } from './nativePlayerPort';
 import {
   useActiveMediaItem,
+  useActiveQueueSlot,
   useActiveTrackId,
   useHasActiveTrack,
   useIsPlaying,
   usePlaybackState,
   useProgress,
 } from './playerHooks';
-import { PlaybackState, type MediaItem, type PlayerPort } from './playerPort';
+import { PlaybackState, RepeatMode, type MediaItem, type PlayerPort } from './playerPort';
 
 const reactMocks = vi.hoisted(() => ({
   subscriptions: [] as ((listener: () => void) => () => void)[],
@@ -194,6 +195,46 @@ describe('first-party player hooks', () => {
     expect(atTwoSeconds).toBe(atOneSecond);
     expect(useActiveTrackId()).toBe('7');
     expect(useProgress(1).position).toBe(2);
+  });
+
+  it('reports the active queue slot, stable across progress ticks and fresh item copies', () => {
+    const item = (index: number) => ({
+      mediaId: `queue:1:${index}:${index}`,
+      url: `https://loggerythm.test/${index}`,
+      extras: { track: { id: String(index) } },
+    });
+    let snapshot: Record<string, unknown> = {
+      revision: 1,
+      queue: [item(0), item(1), item(2)],
+      activeIndex: 1,
+      repeatMode: RepeatMode.Off,
+      progress: { position: 1, duration: 180, buffered: 10, cached: 0 },
+    };
+    setPlayerPortForTests({
+      subscribe: vi.fn(() => () => undefined),
+      getSnapshot: () => snapshot,
+    } as unknown as PlayerPort);
+
+    const first = useActiveQueueSlot();
+    expect(first).toEqual({ mediaId: 'queue:1:1:1', trackId: '1', index: 1, length: 3, repeatAll: false });
+    snapshot = {
+      ...snapshot,
+      revision: 2,
+      queue: [item(0), item(1), item(2)],
+      progress: { position: 2, duration: 180, buffered: 10, cached: 0 },
+    };
+    expect(useActiveQueueSlot()).toBe(first);
+
+    snapshot = { ...snapshot, revision: 3, repeatMode: RepeatMode.All, queue: [item(0), item(1), item(2), item(3)] };
+    expect(useActiveQueueSlot()).toEqual({
+      mediaId: 'queue:1:1:1', trackId: '1', index: 1, length: 4, repeatAll: true,
+    });
+
+    snapshot = { ...snapshot, revision: 4, activeIndex: null };
+    expect(useActiveQueueSlot()).toBeNull();
+
+    snapshot = { ...snapshot, revision: 5, activeIndex: 9 };
+    expect(() => useActiveQueueSlot()).toThrow(/activeIndex 9 outside its 4-item queue/);
   });
 
   it('falls back to mediaId for bare MediaItems and fails loudly on malformed extras.track', () => {

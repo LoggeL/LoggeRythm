@@ -5,6 +5,7 @@ import {
   PlaybackState,
   RepeatMode,
   useActiveMediaItem,
+  useActiveQueueSlot,
   useHasActiveTrack,
   useIsPlaying,
   usePlaybackState,
@@ -69,6 +70,45 @@ export function useEffectivePlayback(): EffectivePlaybackState {
     remotePlayback: null,
     repeatMode: null,
     shuffle: null,
+  };
+}
+
+/**
+ * Queue position of the effective (local or controlled remote) track, used by
+ * the mini player to slide track changes in the direction of travel.
+ */
+export interface EffectiveQueueSlot {
+  /** Unique per queue entry; prefixed so local and remote entries never collide. */
+  readonly key: string;
+  readonly trackId: string;
+  readonly index: number;
+  readonly length: number;
+  readonly repeatAll: boolean;
+}
+
+export function useEffectiveQueueSlot(): EffectiveQueueSlot | null {
+  const local = useActiveQueueSlot();
+  const connect = useActiveConnectSnapshot();
+  if (connect.isControllingRemote && connect.state !== null) {
+    const playback = connect.state.playback;
+    const remoteTrack = activeRemoteTrack(playback);
+    if (remoteTrack !== null) {
+      return {
+        key: `remote:${playback.current_index}:${remoteTrack.id}`,
+        trackId: String(remoteTrack.id),
+        index: playback.current_index,
+        length: playback.queue.length,
+        repeatAll: playback.repeat === 'all',
+      };
+    }
+  }
+  if (local === null) return null;
+  return {
+    key: `local:${local.mediaId}`,
+    trackId: local.trackId,
+    index: local.index,
+    length: local.length,
+    repeatAll: local.repeatAll,
   };
 }
 

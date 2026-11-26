@@ -787,14 +787,24 @@ export function togglePlay(): void {
 }
 
 export const next = (): void => Player.skipToNext();
-export function prev(): void {
+/** Past this many seconds into a song, "previous" restarts it instead of stepping back. */
+export const PREVIOUS_RESTARTS_AFTER_SEC = 3;
+
+/** Whether `prev()` would restart the current song (true) or step back (false); null without a song. */
+export function prevRestartsTrack(): boolean | null {
   const { activeIndex } = getQueueSnapshot();
-  if (activeIndex === null) return;
+  if (activeIndex === null) return null;
   const { position } = Player.getProgress();
   if (!Number.isFinite(position) || position < 0) {
     throw new Error(`Native player reported invalid playback position ${String(position)}`);
   }
-  if (position > 3 || activeIndex === 0) Player.seekTo(0);
+  return position > PREVIOUS_RESTARTS_AFTER_SEC || activeIndex === 0;
+}
+
+export function prev(): void {
+  const restarts = prevRestartsTrack();
+  if (restarts === null) return;
+  if (restarts) Player.seekTo(0);
   else Player.skipToPrevious();
 }
 export const seekTo = (seconds: number): void => Player.seekTo(seconds);

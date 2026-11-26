@@ -1,11 +1,14 @@
 import { strings } from '../localization';
 import { activePartyRouter } from '../party/activeParty';
+import { expectedHostPosition, partyPrevRestartsTrack } from '../party/partyModel';
 import {
   clearUpcomingQueue,
   cycleRepeat,
   moveQueueItem,
   next,
+  PREVIOUS_RESTARTS_AFTER_SEC,
   prev,
+  prevRestartsTrack,
   removeQueueItem,
   seekTo,
   skipToQueueItem,
@@ -15,7 +18,7 @@ import {
 import { reportPlayerError } from '../player/errors';
 import { RepeatMode } from '../player/player';
 import { activeConnectRouter } from './activeConnect';
-import { repeatModeToConnect } from './connectModel';
+import { extrapolatedConnectPosition, repeatModeToConnect } from './connectModel';
 
 export {
   useEffectivePlayback,
@@ -55,11 +58,13 @@ export function effectiveTogglePlay(): void {
   togglePlay();
 }
 
-export function effectiveNext(): void {
+/** `onFailed` runs when a remote or Jam command fails after it was sent. */
+export function effectiveNext(onFailed?: () => void): void {
   const connect = activeConnectRouter();
   if (connect !== null && connect.isControllingRemote()) {
     void connect.sendCommand('next', {}).catch((error) => {
       reportConnectCommandFailure(strings.player.nextFailed, error);
+      onFailed?.();
     });
     return;
   }
@@ -69,6 +74,7 @@ export function effectiveNext(): void {
     if (partySnap.party.guests_can_control) {
       void party.controlNext().catch((error) => {
         reportConnectCommandFailure(strings.player.nextFailed, error);
+        onFailed?.();
       });
     } else {
       reportPlayerError(
@@ -81,11 +87,13 @@ export function effectiveNext(): void {
   next();
 }
 
-export function effectivePrev(): void {
+/** `onFailed` runs when a remote or Jam command fails after it was sent. */
+export function effectivePrev(onFailed?: () => void): void {
   const connect = activeConnectRouter();
   if (connect !== null && connect.isControllingRemote()) {
     void connect.sendCommand('prev', {}).catch((error) => {
       reportConnectCommandFailure(strings.player.previousFailed, error);
+      onFailed?.();
     });
     return;
   }
@@ -95,6 +103,7 @@ export function effectivePrev(): void {
     if (partySnap.party.guests_can_control) {
       void party.controlPrev().catch((error) => {
         reportConnectCommandFailure(strings.player.previousFailed, error);
+        onFailed?.();
       });
     } else {
       reportPlayerError(
@@ -105,6 +114,32 @@ export function effectivePrev(): void {
     return;
   }
   prev();
+}
+
+/**
+ * Whether "previous" will restart the current song rather than step back, so
+ * the mini player need not wait for a track change. Local playback answers
+ * exactly; a controlled remote is predicted from its playhead and queue
+ * position (web and Android hosts restart past the same threshold and on the
+ * first track); a Jam guest uses the very rule `controlPrev` applies.
+ */
+export function effectivePrevRestartsTrack(): boolean {
+  const connect = activeConnectRouter();
+  if (connect !== null && connect.isControllingRemote()) {
+    const playback = connect.remotePlayback();
+    if (playback === null) return false;
+    return playback.current_index === 0
+      || extrapolatedConnectPosition(playback, Date.now()) > PREVIOUS_RESTARTS_AFTER_SEC;
+  }
+  const party = activePartyRouter();
+  const partySnap = party?.getSnapshot() ?? null;
+  if (partySnap !== null && partySnap.party !== null && !partySnap.party.is_host && !partySnap.detached) {
+    const jam = partySnap.party;
+    // A guest without control is refused outright; nothing plays yet below index 0.
+    if (!jam.guests_can_control || jam.current_index < 0) return false;
+    return partyPrevRestartsTrack(jam, expectedHostPosition(jam, Date.now()));
+  }
+  return prevRestartsTrack() === true;
 }
 
 export function effectiveSeekTo(seconds: number): void {

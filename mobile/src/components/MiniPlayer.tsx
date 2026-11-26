@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   PanResponder,
   Pressable,
@@ -23,10 +22,12 @@ import {
 import {
   effectiveNext,
   effectivePrev,
+  effectivePrevRestartsTrack,
   effectiveTogglePlay,
   useEffectivePlayback,
   useEffectiveProgress,
 } from '../connect/effectivePlayback';
+import { useEffectiveQueueSlot } from '../connect/effectivePlaybackState';
 import { reportPlayerError } from '../player/errors';
 import {
   resolveMiniPlayerSwipe,
@@ -49,6 +50,19 @@ import PlayerNoticeBanner from './PlayerNoticeBanner';
 import AppIcon from './AppIcon';
 import { Artwork } from './ui/Artwork';
 import { createFocusRingController, FocusRingOverlay } from './ui/PressableScale';
+import { MiniPlayerPlayGlyph } from './player/MiniPlayerPlayGlyph';
+import {
+  MINI_PLAYER_MOTION,
+  presenceTween,
+  sampleTween,
+  type PresencePhase,
+  type Tween,
+} from './player/miniPlayerMotion';
+import {
+  useMiniPlayerTrackTransition,
+  type MiniPlayerLaneDisplay,
+} from './player/useMiniPlayerTrackTransition';
+import type { Track } from '../api/types';
 
 export const TAB_BAR_HEIGHT = metrics.tabBarHeight;
 /** Content reserves the surface and the gap above the tab bar or safe area. */
@@ -62,6 +76,10 @@ const HORIZONTAL_DRAG_DAMPING = 0.75;
 const VERTICAL_DRAG_DAMPING = 0.6;
 const PROGRESS_ANIMATION_MS = 220;
 const PROGRESS_JUMP_THRESHOLD = 0.15;
+/** Local skips land within a frame; a swipe that changed nothing springs back after this. */
+const LOCAL_SKIP_HOLD_MS = 450;
+/** Remote Connect and party-guest skips round-trip through the server. */
+const ASYNC_SKIP_HOLD_MS = 2500;
 
 /** Clamped [0..1] progress ratio for native-driver `scaleX` rendering. */
 export function miniPlayerProgressRatio(position: number, duration: number): number {
@@ -178,6 +196,46 @@ const MiniPlayerPaletteWash = React.memo(function MiniPlayerPaletteWash({
   );
 });
 
+/** Artwork plus title/artist: the current lane and the outgoing ghost draw the same thing. */
+function MiniPlayerLaneContent({
+  display,
+  artworkSize,
+  tv,
+  textStyle,
+}: {
+  display: MiniPlayerLaneDisplay;
+  artworkSize: number;
+  tv: ReturnType<typeof useTvEnvironment>;
+  /** Titles fade on their own schedule (see `lanePlan`). */
+  textStyle: Record<string, unknown>;
+}) {
+  return (
+    <>
+      <Artwork uri={display.cover} size={artworkSize} />
+      <Animated.View style={[styles.meta, textStyle]}>
+        <Text
+          style={[
+            styles.title,
+            tv.isTv ? { fontSize: tv.typography.label.fontSize, lineHeight: tv.typography.label.lineHeight } : null,
+          ]}
+          numberOfLines={1}
+        >
+          {display.title}
+        </Text>
+        <Text
+          style={[
+            styles.artist,
+            tv.isTv ? { fontSize: tv.typography.caption.fontSize, lineHeight: tv.typography.caption.lineHeight } : null,
+          ]}
+          numberOfLines={1}
+        >
+          {display.artist}
+        </Text>
+      </Animated.View>
+    </>
+  );
+}
+
 export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParams>>();
@@ -187,25 +245,132 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
   const effective = useEffectivePlayback();
   const connect = useActiveConnectSnapshot();
   const party = useActivePartySnapshot();
-  const track = effective.track;
+  const liveTrack = effective.track;
   const playing = effective.playing;
   const buffering = effective.buffering;
+  const slot = useEffectiveQueueSlot();
+  if ((slot === null) !== (liveTrack === null)) {
+    throw new Error(
+      `Mini player track and queue slot disagree: track ${liveTrack?.id ?? 'none'}, slot ${slot?.key ?? 'none'}`,
+    );
+  }
 
-  const [translateX] = useState(() => new Animated.Value(0));
+  // Presence: the card slides in when playback starts and out when the queue
+  // empties. A mount that already has a track (another route, app restore)
+  // shows it at rest. While exiting it keeps drawing the last track.
+  const hasTrack = liveTrack !== null;
+  const [presence, setPresence] = useState<PresencePhase>(hasTrack ? 'shown' : 'hidden');
+  if (hasTrack && presence !== 'shown') setPresence('shown');
+  if (!hasTrack && presence === 'shown') setPresence('exiting');
+  const [retainedTrack, setRetainedTrack] = useState<Track | null>(liveTrack);
+  if (liveTrack !== null && liveTrack !== retainedTrack && liveTrack.id !== retainedTrack?.id) {
+    setRetainedTrack(liveTrack);
+  }
+  const track = liveTrack ?? (presence === 'hidden' ? null : retainedTrack);
+  const exiting = liveTrack === null && track !== null;
+
   const [translateY] = useState(() => new Animated.Value(0));
+  const [presenceProgress] = useState(() => new Animated.Value(hasTrack ? 1 : 0));
+  const presenceRun = useRef<{
+    tween: Tween;
+    startedAt: number;
+    animation: Animated.CompositeAnimation;
+  } | null>(null);
+  const presenceHadTrack = useRef(hasTrack);
+  useLayoutEffect(() => {
+    if (presenceHadTrack.current === hasTrack) return;
+    presenceHadTrack.current = hasTrack;
+    const now = Date.now();
+    const running = presenceRun.current;
+    let from = hasTrack ? 0 : 1;
+    if (running !== null) {
+      running.animation.stop();
+      from = sampleTween(running.tween, now - running.startedAt);
+    }
+    const tween = presenceTween(hasTrack ? 'enter' : 'exit', from, reducedMotion);
+    presenceProgress.setValue(tween.from);
+    const animation = Animated.timing(presenceProgress, {
+      toValue: tween.to,
+      duration: tween.duration,
+      easing: tween.easing,
+      useNativeDriver: true,
+    });
+    presenceRun.current = { tween, startedAt: now, animation };
+    animation.start(({ finished }) => {
+      if (!finished || presenceRun.current?.animation !== animation) return;
+      presenceRun.current = null;
+      if (!hasTrack) setPresence((phase) => (phase === 'exiting' ? 'hidden' : phase));
+    });
+  }, [hasTrack, presenceProgress, reducedMotion]);
+  useEffect(() => () => presenceRun.current?.animation.stop(), []);
+  const presenceStyle = useMemo(() => ({
+    opacity: presenceProgress,
+    transform: [
+      {
+        translateY: Animated.add(
+          translateY,
+          presenceProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [reducedMotion ? 0 : MINI_PLAYER_MOTION.presenceDistance, 0],
+          }),
+        ),
+      },
+    ],
+  }), [presenceProgress, reducedMotion, translateY]);
+
+  const artistLabel = track === null ? '' : trackArtistLabel(track);
+  const laneDisplay: MiniPlayerLaneDisplay | null = liveTrack === null
+    ? null
+    : { cover: liveTrack.cover, title: liveTrack.title, artist: artistLabel };
+  const { ghost, controls: lane } = useMiniPlayerTrackTransition({
+    slot,
+    display: laneDisplay,
+    reducedMotion,
+  });
+  const activeParty = party.party !== null && !party.detached ? party.party : null;
+  const partyGuest = effective.mode === 'local' && activeParty !== null && !activeParty.is_host;
+  // Remote and party skips land asynchronously, so a swiped lane waits longer for them.
+  // These only change with the output or party rights, never with the track, so the
+  // swipe responder built from them is not rebuilt in the middle of a gesture.
+  const skipHoldMs = effective.mode === 'remote' || partyGuest ? ASYNC_SKIP_HOLD_MS : LOCAL_SKIP_HOLD_MS;
+  // `effectiveNext`/`effectivePrev` refuse these synchronously with an error notice.
+  const skipBlocked = partyGuest && activeParty !== null && !activeParty.guests_can_control;
 
   const openFocus = useMemo(() => createFocusRingController(), []);
   const devicesFocus = useMemo(() => createFocusRingController(), []);
   const playPauseFocus = useMemo(() => createFocusRingController(), []);
   const nextFocus = useMemo(() => createFocusRingController(), []);
 
-  const run = useCallback((label: string, action: () => void) => {
+  /** Runs a playback command; false when it threw (the error is reported). */
+  const run = useCallback((label: string, action: () => void): boolean => {
     try {
       action();
+      return true;
     } catch (error) {
       reportPlayerError(label, error);
+      return false;
     }
   }, []);
+
+  /** Skip with a direction-aware lane: the swipe holds until the change lands. */
+  const skip = useCallback((direction: 1 | -1, swiped: boolean) => {
+    const label = direction === 1 ? strings.player.nextFailed : strings.player.previousFailed;
+    const command = direction === 1 ? effectiveNext : effectivePrev;
+    // "Previous" past the first seconds restarts the song: no change will come to wait for.
+    let restarts = false;
+    if (direction === -1 && !run(label, () => { restarts = effectivePrevRestartsTrack(); })) {
+      if (swiped) lane.releaseDrag();
+      return;
+    }
+    if (skipBlocked || restarts) {
+      if (swiped) lane.releaseDrag();
+      run(label, () => command());
+      return;
+    }
+    const intent = swiped ? lane.holdForSkip(direction, skipHoldMs) : lane.noteSkip(direction, skipHoldMs);
+    const failed = () => lane.cancelSkip(intent);
+    if (!run(label, () => command(failed))) failed();
+  }, [lane, run, skipBlocked, skipHoldMs]);
 
   const openNowPlaying = useCallback(() => {
     haptics.trigger('tap');
@@ -215,31 +380,24 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
     navigation.navigate('NowPlaying');
   }, [haptics, navigation, tv.isTv]);
 
-  const resetDragPosition = useCallback(
+  const resetLift = useCallback(
     (immediate: boolean) => {
-      if (immediate || reducedMotion || typeof Animated.spring !== 'function') {
-        translateX.setValue(0);
+      if (immediate || reducedMotion) {
         translateY.setValue(0);
         return;
       }
-      Animated.parallel([
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 24,
-          bounciness: 6,
-        }),
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 24,
-          bounciness: 6,
-        }),
-      ]).start();
+      Animated.spring(translateY, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 24,
+        bounciness: 6,
+      }).start();
     },
-    [reducedMotion, translateX, translateY],
+    [reducedMotion, translateY],
   );
 
+  // Horizontal drags move only the track lane (the controls stay put);
+  // upward drags lift the whole card toward Now Playing.
   const swipeResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => false,
     onMoveShouldSetPanResponderCapture: (_event, gesture) =>
@@ -247,33 +405,32 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
     onPanResponderMove: (_event, gesture) => {
       if (reducedMotion) return;
       const offset = miniPlayerDragOffset(gesture.dx, gesture.dy);
-      translateX.setValue(offset.x);
+      lane.dragTo(offset.x);
       translateY.setValue(offset.y);
     },
     onPanResponderRelease: (_event, gesture) => {
       const action = resolveMiniPlayerSwipe(gesture);
-      if (action === 'next') {
+      if (action === 'next' || action === 'previous') {
         haptics.trigger('commit');
-        run(strings.player.nextFailed, effectiveNext);
-        resetDragPosition(false);
-      } else if (action === 'previous') {
-        haptics.trigger('commit');
-        run(strings.player.previousFailed, effectivePrev);
-        resetDragPosition(false);
+        resetLift(false);
+        skip(action === 'next' ? 1 : -1, true);
       } else if (action === 'expand') {
-        resetDragPosition(true);
+        lane.releaseDrag();
+        resetLift(true);
         openNowPlaying();
       } else {
-        resetDragPosition(false);
+        lane.releaseDrag();
+        resetLift(false);
       }
     },
-    onPanResponderTerminate: () => resetDragPosition(false),
+    onPanResponderTerminate: () => {
+      lane.releaseDrag();
+      resetLift(false);
+    },
     onPanResponderTerminationRequest: () => true,
-  }), [haptics, openNowPlaying, reducedMotion, resetDragPosition, run, translateX, translateY, tv.isTv]);
+  }), [haptics, lane, openNowPlaying, reducedMotion, resetLift, skip, translateY, tv.isTv]);
 
-  if (!track) return null;
-  const artistLabel = trackArtistLabel(track);
-  const activeParty = party.party !== null && !party.detached ? party.party : null;
+  if (track === null) return null;
   const showDeviceSelector = shouldShowDeviceSelectorInBar(connect, activeParty !== null);
   const showRemoteStrip = effective.mode === 'remote' && effective.activeDevice !== null;
   const showJamStrip = !showRemoteStrip && activeParty !== null;
@@ -294,9 +451,12 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
 
   return (
     <>
-      <PlayerNoticeBanner
-        bottom={barBottom + barHeight + spacing.xs}
-      />
+      {exiting ? null : (
+        // While the card leaves, `PlayerNoticeWithoutMiniPlayer` already hosts notices.
+        <PlayerNoticeBanner
+          bottom={barBottom + barHeight + spacing.xs}
+        />
+      )}
       {!tv.isTv ? (
         <View
           testID="mini-player-bottom-shield"
@@ -319,10 +479,12 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
             height: barHeight,
             left: tv.isTv ? tv.contentPaddingHorizontal : spacing.xs,
             right: tv.isTv ? tv.contentPaddingHorizontal : spacing.xs,
-            transform: [{ translateX }, { translateY }],
           },
+          presenceStyle,
         ]}
-        {...(tv.isTv ? null : swipeResponder.panHandlers)}
+        pointerEvents={exiting ? 'none' : 'auto'}
+        importantForAccessibility={exiting ? 'no-hide-descendants' : 'auto'}
+        {...(tv.isTv || exiting ? null : swipeResponder.panHandlers)}
       >
         <MiniPlayerPaletteWash coverUri={track.cover} />
         <View style={[styles.mainRow, { height: baseBarHeight }]}>
@@ -336,27 +498,35 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
             style={({ pressed }) => [styles.trackButton, pressed && styles.pressed]}
             onPress={openNowPlaying}
           >
-            <Artwork uri={track.cover} size={artworkSize} />
-            <View style={styles.meta}>
-              <Text
-                style={[
-                  styles.title,
-                  tv.isTv ? { fontSize: tv.typography.label.fontSize, lineHeight: tv.typography.label.lineHeight } : null,
-                ]}
-                numberOfLines={1}
+            {/* The outgoing copy sits under the incoming lane, which covers it as it arrives. */}
+            {ghost !== null ? (
+              <Animated.View
+                key={ghost.id}
+                testID="mini-player-lane-ghost"
+                accessible={false}
+                importantForAccessibility="no-hide-descendants"
+                pointerEvents="none"
+                style={[styles.laneContent, styles.laneGhost, lane.ghostStyle]}
               >
-                {track.title}
-              </Text>
-              <Text
-                style={[
-                  styles.artist,
-                  tv.isTv ? { fontSize: tv.typography.caption.fontSize, lineHeight: tv.typography.caption.lineHeight } : null,
-                ]}
-                numberOfLines={1}
-              >
-                {artistLabel}
-              </Text>
-            </View>
+                <MiniPlayerLaneContent
+                  display={ghost.display}
+                  artworkSize={artworkSize}
+                  tv={tv}
+                  textStyle={lane.ghostTextStyle}
+                />
+              </Animated.View>
+            ) : null}
+            <Animated.View
+              testID="mini-player-lane"
+              style={[styles.laneContent, lane.laneStyle]}
+            >
+              <MiniPlayerLaneContent
+                display={{ cover: track.cover, title: track.title, artist: artistLabel }}
+                artworkSize={artworkSize}
+                tv={tv}
+                textStyle={lane.laneTextStyle}
+              />
+            </Animated.View>
             <FocusRingOverlay controller={openFocus} borderRadius={radii.md} />
           </Pressable>
           <TrackLikeButton track={track} testID="mini-player-like" />
@@ -415,11 +585,11 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
             ]}
           >
             <View style={styles.playDisc}>
-              {buffering ? (
-                <ActivityIndicator color={colors.onLight} size="small" />
-              ) : (
-                <AppIcon name={playing ? 'pause' : 'play'} color={colors.onLight} size={24} />
-              )}
+              <MiniPlayerPlayGlyph
+                playing={playing}
+                buffering={buffering}
+                reducedMotion={reducedMotion}
+              />
             </View>
             <FocusRingOverlay controller={playPauseFocus} borderRadius={radii.pill} />
           </Pressable>
@@ -432,7 +602,7 @@ export default function MiniPlayer({ hasTabBar = true }: { hasTabBar?: boolean }
             onBlur={() => nextFocus.setFocused(false)}
             onPress={() => {
               haptics.trigger('commit');
-              run(strings.player.nextFailed, effectiveNext);
+              skip(1, false);
             }}
             style={({ pressed }) => [
               styles.btn,
@@ -546,10 +716,24 @@ const styles = StyleSheet.create({
     minHeight: metrics.minimumTouchTarget,
     flex: 1,
     flexDirection: 'row',
+    borderRadius: radii.md,
+    // Clips the sliding lane and ghost to the track area, clear of the controls.
+    overflow: 'hidden',
+  },
+  laneContent: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     paddingRight: spacing.xs,
-    borderRadius: radii.md,
+  },
+  laneGhost: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   meta: { minWidth: 0, flex: 1 },
   title: { ...typography.label, color: colors.textPrimary },

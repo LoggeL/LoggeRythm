@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { AUDIO_QUALITY_META } from "@/lib/audioIntelligence";
@@ -24,6 +25,8 @@ import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
 import { formatTime } from "@/lib/format";
 import { NAV_FORWARD } from "@/lib/morph";
 import { setNowPlayingOpen } from "@/components/player/usePlayerSideEffects";
+import TrackSwap from "@/components/player/TrackSwap";
+import { trackSwapNeighbour, trackSwapSlot, type TrackSwapSlot } from "@/lib/trackSwap";
 import {
   PlayIcon,
   PauseIcon,
@@ -46,10 +49,26 @@ const closeNowPlaying = () => setNowPlayingOpen(false);
 
 function Cover({ track, className }: { track: Track; className: string }) {
   return track.cover ? (
+    // Keyed by URL: a reused <img> keeps painting the previous cover until the
+    // new one loads, so a track change would slide in the old picture. A fresh
+    // one shows the brand gradient until the new cover arrives.
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={track.cover} alt="" className={`object-cover ${className}`} />
+    <img key={track.cover} src={track.cover} alt="" className={`gradient-brand object-cover ${className}`} />
   ) : (
     <CoverPlaceholder className={className} />
+  );
+}
+
+/** Queue position of the playing track, so track changes slide in their direction of travel. */
+function useTrackSwapSlot(): TrackSwapSlot | null {
+  const trackId = usePlayerStore((s) => currentTrack(s)?.id ?? null);
+  const index = usePlayerStore((s) => s.index);
+  const length = usePlayerStore((s) => s.queue.length);
+  const prevId = usePlayerStore((s) => trackSwapNeighbour(s.queue, s.index, s.repeat, -1));
+  const nextId = usePlayerStore((s) => trackSwapNeighbour(s.queue, s.index, s.repeat, 1));
+  return useMemo(
+    () => trackSwapSlot(trackId, index, length, prevId, nextId),
+    [trackId, index, length, prevId, nextId],
   );
 }
 
@@ -233,27 +252,38 @@ function QualityBadge({ offlineOnly }: { offlineOnly: boolean }) {
 
 function TrackSummary({ track, offlineOnly = false }: { track: Track; offlineOnly?: boolean }) {
   const playing = usePlayerStore((s) => s.isPlaying && !s.isBuffering);
+  const slot = useTrackSwapSlot();
   return (
     <TrackContext track={track} className="flex min-w-0 items-center gap-3.5">
       <button type="button" onClick={openNowPlaying} aria-label="Jetzt läuft öffnen" title="Jetzt läuft öffnen (F)" className="group/cover relative shrink-0 overflow-hidden rounded-[var(--radius-art)] shadow-[0_6px_18px_rgb(0_0_0/0.5)]">
-        <Cover track={track} className="h-[60px] w-[60px]" />
-        <span className="absolute inset-0 grid place-items-center bg-black/60 opacity-0 transition group-hover/cover:opacity-100 group-focus-visible/cover:opacity-100">
+        <TrackSwap slot={slot} item={track}>
+          {(shown) => (
+            <span data-swap-part="art" className="block">
+              <Cover track={shown} className="h-[60px] w-[60px]" />
+            </span>
+          )}
+        </TrackSwap>
+        <span className="absolute inset-0 z-[2] grid place-items-center bg-black/60 opacity-0 transition group-hover/cover:opacity-100 group-focus-visible/cover:opacity-100">
           <ExpandIcon width={18} height={18} />
         </span>
       </button>
-      <div className="min-w-0">
-        {track.album_id ? (
-          <Link href={`/album/${track.album_id}`} transitionTypes={NAV_FORWARD} className="font-display block truncate text-[15px] font-bold tracking-tight hover:underline">{track.title}</Link>
-        ) : (
-          <p className="font-display truncate text-[15px] font-bold tracking-tight">{track.title}</p>
+      <TrackSwap slot={slot} item={track}>
+        {(shown) => (
+          <div data-swap-part="text" className="min-w-0">
+            {shown.album_id ? (
+              <Link href={`/album/${shown.album_id}`} transitionTypes={NAV_FORWARD} className="font-display block truncate text-[15px] font-bold tracking-tight hover:underline">{shown.title}</Link>
+            ) : (
+              <p className="font-display truncate text-[15px] font-bold tracking-tight">{shown.title}</p>
+            )}
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+              <EqualizerBars height={12} isPlaying={playing} />
+              <CacheMarker trackId={shown.id} />
+              <QualityBadge offlineOnly={offlineOnly} />
+              <ArtistLinks track={shown} className="truncate text-[13px] text-muted" linkClassName="hover:underline hover:text-foreground" />
+            </div>
+          </div>
         )}
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
-          <EqualizerBars height={12} isPlaying={playing} />
-          <CacheMarker trackId={track.id} />
-          <QualityBadge offlineOnly={offlineOnly} />
-          <ArtistLinks track={track} className="truncate text-[13px] text-muted" linkClassName="hover:underline hover:text-foreground" />
-        </div>
-      </div>
+      </TrackSwap>
       <LikeButton key={track.id} track={track} />
     </TrackContext>
   );
@@ -298,28 +328,68 @@ function DesktopBar({ track, offlineOnly = false }: { track: Track | null; offli
 }
 
 /** Mobile mini player: a floating card that opens the fullscreen view. */
-function MiniPlayer({ track, offlineOnly = false }: { track: Track; offlineOnly?: boolean }) {
+function MiniPlayer({
+  track,
+  offlineOnly = false,
+  enter,
+  onEntered,
+}: {
+  track: Track;
+  offlineOnly?: boolean;
+  /** Rise in once (playback just started); `onEntered` reports when that is over. */
+  enter: boolean;
+  onEntered: () => void;
+}) {
   const next = usePlayerStore((s) => s.next);
   const lock = usePlaybackLock();
+  const slot = useTrackSwapSlot();
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Drop the entrance class once it ran, so showing the card again (a resize
+  // across the desktop breakpoint) never replays it. Inner track-swap and cover
+  // animations bubble up here and do not count.
+  useEffect(() => {
+    const card = cardRef.current;
+    if (card === null) throw new Error("MiniPlayer: card element is not mounted");
+    const finish = (event: Event) => {
+      if (event.target === card) onEntered();
+    };
+    card.addEventListener("animationend", finish);
+    card.addEventListener("animationcancel", finish);
+    return () => {
+      card.removeEventListener("animationend", finish);
+      card.removeEventListener("animationcancel", finish);
+    };
+  }, [onEntered]);
+  // A hidden card (desktop layout) or reduced motion runs no entrance at all.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (card === null) throw new Error("MiniPlayer: card element is not mounted");
+    if (enter && card.getAnimations().length === 0) onEntered();
+  }, [enter, onEntered]);
   return (
-    <div className="lg:hidden">
-      <ActiveOutputBanner compact />
-      <div className="relative mx-2 mb-2 flex items-center gap-2 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-panel p-1.5 pr-2 shadow-[0_10px_30px_rgb(0_0_0/0.55)]" style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.3), rgb(var(--ambient) / 0.06))" }}>
-        <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-          <Cover track={track} className="h-12 w-12 shrink-0 rounded-[var(--radius-art)]" />
-          <span className="min-w-0">
-            <span className="font-display block truncate text-sm font-bold tracking-tight">{track.title}</span>
-            <span className="block truncate text-xs text-muted">{track.artist}</span>
-          </span>
-        </button>
-        {!offlineOnly && <DeviceSelectorTrigger compact />}
-        <LikeButton key={track.id} track={track} />
-        <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
-        <button type="button" onClick={next} disabled={lock.locked} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground disabled:opacity-40">
-          <NextIcon width={22} height={22} />
-        </button>
-        <ProgressLine />
-      </div>
+    <div ref={cardRef} className={`relative mx-2 mb-2 flex items-center gap-2 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-panel p-1.5 pr-2 shadow-[0_10px_30px_rgb(0_0_0/0.55)] ${enter ? "animate-in" : ""}`} style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.3), rgb(var(--ambient) / 0.06))" }}>
+      <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center text-left">
+        <TrackSwap slot={slot} item={track} className="flex-1">
+          {(shown) => (
+            <span className="flex min-w-0 items-center gap-3">
+              <span data-swap-part="art" className="shrink-0">
+                <Cover track={shown} className="block h-12 w-12 rounded-[var(--radius-art)]" />
+              </span>
+              <span data-swap-part="text" className="min-w-0">
+                <span className="font-display block truncate text-sm font-bold tracking-tight">{shown.title}</span>
+                <span className="block truncate text-xs text-muted">{shown.artist}</span>
+              </span>
+            </span>
+          )}
+        </TrackSwap>
+      </button>
+      {!offlineOnly && <DeviceSelectorTrigger compact />}
+      <LikeButton key={track.id} track={track} />
+      <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
+      <button type="button" onClick={next} disabled={lock.locked} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground disabled:opacity-40">
+        <NextIcon width={22} height={22} />
+      </button>
+      <ProgressLine />
     </div>
   );
 }
@@ -331,19 +401,29 @@ function MiniPlayer({ track, offlineOnly = false }: { track: Track; offlineOnly?
 export default function PlayerBar({ offlineOnly = false }: { offlineOnly?: boolean }) {
   const track = usePlayerStore(currentTrack);
   const nowPlayingOpen = usePlayerStore((s) => s.nowPlayingOpen);
+  // The mini player rises in when playback starts, not when a page loads with a
+  // restored track: a restored session loads paused, while starting playback
+  // sets the track and `isPlaying` in the same update.
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const hasTrack = track !== null;
+  const [hadTrack, setHadTrack] = useState(hasTrack);
+  const [enterMini, setEnterMini] = useState(false);
+  if (hasTrack !== hadTrack) {
+    setHadTrack(hasTrack);
+    setEnterMini(hasTrack && isPlaying);
+  }
+  const miniEntered = useCallback(() => setEnterMini(false), []);
   return (
     <>
       {nowPlayingOpen && track && <NowPlaying onClose={closeNowPlaying} />}
       <footer aria-label="Musikplayer" className="like-celebration-surface relative z-20 shrink-0 bg-backdrop">
         <PlayerErrors />
         <DesktopBar track={track} offlineOnly={offlineOnly} />
-        {track ? (
-          <MiniPlayer track={track} offlineOnly={offlineOnly} />
-        ) : (
-          <div className="lg:hidden">
-            <ActiveOutputBanner compact />
-          </div>
-        )}
+        {/* The banner stays mounted while the mini player comes and goes. */}
+        <div className="lg:hidden">
+          <ActiveOutputBanner compact />
+          {track && <MiniPlayer track={track} offlineOnly={offlineOnly} enter={enterMini} onEntered={miniEntered} />}
+        </div>
       </footer>
     </>
   );

@@ -1,6 +1,12 @@
 import { useSyncExternalStore } from 'react';
 import { getDefaultPlayerPort } from './nativePlayerPort';
-import type { MediaItem, PlaybackState, PlayerPort, Progress } from './playerPort';
+import {
+  RepeatMode,
+  type MediaItem,
+  type PlaybackState,
+  type PlayerPort,
+  type Progress,
+} from './playerPort';
 
 type SubscribeFn = (listener: () => void) => () => void;
 
@@ -11,6 +17,18 @@ interface ActiveMediaItemCacheEntry {
 
 const subscribeByPlayer = new WeakMap<PlayerPort, SubscribeFn>();
 const activeMediaItemByPlayer = new WeakMap<PlayerPort, ActiveMediaItemCacheEntry>();
+const activeQueueSlotByPlayer = new WeakMap<PlayerPort, ActiveQueueSlot | null>();
+
+/** Position of the active entry in the local queue, for direction-aware track changes. */
+export interface ActiveQueueSlot {
+  /** Unique per queue entry. */
+  readonly mediaId: string;
+  /** Catalog track id (see `useActiveTrackId`). */
+  readonly trackId: string;
+  readonly index: number;
+  readonly length: number;
+  readonly repeatAll: boolean;
+}
 
 function getStableSubscribe(player: PlayerPort): SubscribeFn {
   let subscribe = subscribeByPlayer.get(player);
@@ -99,6 +117,48 @@ function extractActiveTrackId(item: MediaItem | null): string | null {
   return item.mediaId ?? null;
 }
 
+function getStableActiveQueueSlot(player: PlayerPort): ActiveQueueSlot | null {
+  const snapshot = player.getSnapshot();
+  let candidate: ActiveQueueSlot | null = null;
+  if (snapshot.activeIndex !== null) {
+    const item = snapshot.queue[snapshot.activeIndex];
+    if (item === undefined) {
+      throw new Error(
+        `Player snapshot ${snapshot.revision} has activeIndex ${snapshot.activeIndex} `
+        + `outside its ${snapshot.queue.length}-item queue`,
+      );
+    }
+    const trackId = extractActiveTrackId(item);
+    if (trackId === null) {
+      throw new Error(`Active media item ${item.mediaId} has no track id`);
+    }
+    candidate = {
+      mediaId: item.mediaId,
+      trackId,
+      index: snapshot.activeIndex,
+      length: snapshot.queue.length,
+      repeatAll: snapshot.repeatMode === RepeatMode.All,
+    };
+  }
+  const cached = activeQueueSlotByPlayer.get(player);
+  if (
+    cached !== undefined
+    && (cached === candidate || (
+      cached !== null
+      && candidate !== null
+      && cached.mediaId === candidate.mediaId
+      && cached.trackId === candidate.trackId
+      && cached.index === candidate.index
+      && cached.length === candidate.length
+      && cached.repeatAll === candidate.repeatAll
+    ))
+  ) {
+    return cached;
+  }
+  activeQueueSlotByPlayer.set(player, candidate);
+  return candidate;
+}
+
 function usePlayerSelector<T>(selector: (player: PlayerPort) => T): T {
   const player = getDefaultPlayerPort();
   const subscribe = getStableSubscribe(player);
@@ -128,6 +188,14 @@ export function useHasActiveTrack(): boolean {
  */
 export function useActiveTrackId(): string | null {
   return usePlayerSelector((player) => extractActiveTrackId(player.getActiveMediaItem()));
+}
+
+/**
+ * Queue position of the active entry, reference-stable until the entry, its
+ * index, the queue length or repeat-all changes (never on progress ticks).
+ */
+export function useActiveQueueSlot(): ActiveQueueSlot | null {
+  return usePlayerSelector(getStableActiveQueueSlot);
 }
 
 export function useIsPlaying(): boolean {

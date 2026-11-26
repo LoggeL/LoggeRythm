@@ -1,5 +1,5 @@
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectDevice, ConnectState, PartyState } from '../api/types';
 import { IDLE_CONNECT_SNAPSHOT, type ConnectSessionSnapshot } from '../connect/connectModel';
 import { IDLE_PARTY_SNAPSHOT } from '../party/activeParty';
@@ -15,6 +15,9 @@ const harness = vi.hoisted(() => ({
   navigate: vi.fn(),
   next: vi.fn(),
   prev: vi.fn(),
+  prevRestartsTrack: vi.fn((): boolean | null => false),
+  /** The Connect router reports remote control without the snapshot (and the UI) switching to remote. */
+  routerControlsRemote: false,
   togglePlay: vi.fn(),
   showDevicePicker: vi.fn(),
   transferPlayback: vi.fn(async () => undefined),
@@ -28,6 +31,7 @@ const harness = vi.hoisted(() => ({
   animatedSetValue: vi.fn(),
   animatedSpringStart: vi.fn(),
   animatedTimingStart: vi.fn(),
+  reportPlayerError: vi.fn(),
   tv: {
     isTv: false,
     isWidescreen: false,
@@ -60,6 +64,7 @@ vi.mock('react', async (importOriginal) => ({
   ...await importOriginal<typeof import('react')>(),
   useCallback: <T extends (...args: never[]) => unknown>(fn: T) => fn,
   useEffect: vi.fn(),
+  useLayoutEffect: vi.fn(),
   useMemo: (factory: () => unknown) => factory(),
   useRef: <T,>(initial: T) => ({ current: initial }),
   useState: (initial: unknown) => [typeof initial === 'function' ? initial() : initial, vi.fn()],
@@ -74,6 +79,8 @@ vi.mock('react-native', () => ({
       interpolate = () => 'interpolated-translateX';
     },
     View: 'Animated.View',
+    add: (left: unknown, right: unknown) => ({ add: [left, right] }),
+    multiply: (left: unknown, right: unknown) => ({ multiply: [left, right] }),
     spring: () => ({ start: harness.animatedSpringStart }),
     timing: () => ({ start: harness.animatedTimingStart }),
     parallel: () => ({ start: harness.animatedSpringStart }),
@@ -102,7 +109,9 @@ vi.mock('@react-navigation/native', () => ({
 }));
 vi.mock('../player/player', () => ({
   PlaybackState: { Buffering: 'buffering', Playing: 'playing', Paused: 'paused' },
+  RepeatMode: { Off: 'off', One: 'one', All: 'all' },
   useActiveMediaItem: () => ({ mediaId: 'm1' }),
+  useActiveQueueSlot: () => ({ mediaId: 'm1', trackId: 'track-1', index: 0, length: 1, repeatAll: false }),
   useIsPlaying: () => true,
   usePlaybackState: () => 'playing',
   useProgress: harness.useProgress,
@@ -111,9 +120,11 @@ vi.mock('../player/mediaItem', () => ({ mediaItemToTrack: () => harness.track })
 vi.mock('../player/controller', () => ({
   next: harness.next,
   prev: harness.prev,
+  prevRestartsTrack: harness.prevRestartsTrack,
+  PREVIOUS_RESTARTS_AFTER_SEC: 3,
   togglePlay: harness.togglePlay,
 }));
-vi.mock('../player/errors', () => ({ reportPlayerError: vi.fn() }));
+vi.mock('../player/errors', () => ({ reportPlayerError: harness.reportPlayerError }));
 vi.mock('../hooks/useHaptics', () => ({
   useHaptics: () => ({ trigger: harness.hapticTrigger }),
   triggerHaptic: harness.hapticTrigger,
@@ -135,7 +146,8 @@ vi.mock('../connect/activeConnect', () => ({
   useActiveConnectSnapshot: () => harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT,
   transferActiveConnectPlayback: harness.transferPlayback,
   activeConnectRouter: () => ({
-    isControllingRemote: () => (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).isControllingRemote,
+    isControllingRemote: () =>
+      harness.routerControlsRemote || (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).isControllingRemote,
     activeDevice: () => (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).activeDevice,
     remotePlayback: () => (harness.connectSnapshot ?? IDLE_CONNECT_SNAPSHOT).state?.playback ?? null,
     sendCommand: harness.sendConnectCommand,
@@ -169,13 +181,17 @@ describe('MiniPlayer', () => {
     };
     harness.navigate.mockClear();
     harness.next.mockClear();
-    harness.prev.mockClear();
+    harness.prev.mockReset();
+    harness.prevRestartsTrack.mockReset();
+    harness.prevRestartsTrack.mockReturnValue(false);
+    harness.routerControlsRemote = false;
     harness.togglePlay.mockClear();
     harness.useProgress.mockClear();
     harness.hapticTrigger.mockClear();
     harness.pushCheckpoint.mockClear();
     harness.animatedSetValue.mockClear();
     harness.animatedSpringStart.mockClear();
+    harness.reportPlayerError.mockClear();
   });
 
   it('computes clamped progress ratio and damped finger-tracking drag offsets', () => {
@@ -225,6 +241,138 @@ describe('MiniPlayer', () => {
     release({}, { dx: 0, dy: -64, vx: 0, vy: -0.7 });
     expect(harness.hapticTrigger).toHaveBeenCalledWith('tap');
     expect(harness.navigate).toHaveBeenCalledWith('NowPlaying');
+  });
+
+  it('animates only the track lane on skips and keeps controls and labels on the real track', () => {
+    const rendered = MiniPlayer({ hasTabBar: true });
+    const open = byTestId(rendered, 'mini-player-open');
+    const lane = byTestId(open.props.children as React.ReactNode, 'mini-player-lane');
+    expect(textContent(lane)).toEqual(['Midnight Signal', 'Neon Drift']);
+    expect(queryByTestId(rendered, 'mini-player-lane-ghost')).toBeNull();
+    const laneStyle = (lane.props.style as Record<string, unknown>[])[1];
+    expect(laneStyle).toEqual(expect.objectContaining({
+      opacity: expect.objectContaining({ multiply: expect.any(Array) }),
+      transform: expect.arrayContaining([
+        expect.objectContaining({ translateX: expect.objectContaining({ add: expect.any(Array) }) }),
+      ]),
+    }));
+
+    // The card itself only lifts vertically and fades in/out with presence.
+    const bar = byTestId(rendered, 'mini-player');
+    expect(bar.props.pointerEvents).toBe('auto');
+    const barStyles = bar.props.style as Record<string, unknown>[];
+    const presence = barStyles[barStyles.length - 1];
+    expect(presence).toEqual(expect.objectContaining({ opacity: expect.anything() }));
+    expect(JSON.stringify(barStyles)).not.toContain('"translateX"');
+
+    // Both play/pause glyphs stay mounted for the morph.
+    const playPause = byTestId(rendered, 'mini-player-play-pause');
+    expect(byTestId(playPause.props.children as React.ReactNode, 'mini-player-glyph-play')).toBeDefined();
+    expect(byTestId(playPause.props.children as React.ReactNode, 'mini-player-glyph-pause')).toBeDefined();
+    expect(playPause.props.accessibilityLabel).toBeDefined();
+
+    (byTestId(rendered, 'mini-player-next').props.onPress as () => void)();
+    expect(harness.next).toHaveBeenCalledOnce();
+  });
+
+  it('holds a committed swipe until the skip lands instead of springing back at once', () => {
+    vi.useFakeTimers();
+    try {
+      const rendered = MiniPlayer({ hasTabBar: true });
+      const bar = byTestId(rendered, 'mini-player');
+      const release = bar.props.onResponderRelease as (...args: unknown[]) => void;
+      harness.animatedSpringStart.mockClear();
+      release({}, { dx: 80, dy: 0, vx: 0.8, vy: 0 });
+      expect(harness.prev).toHaveBeenCalledOnce();
+      // Only the vertical lift springs now; the lane waits for the track change.
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(450);
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  describe('swipe skips that will not change the track', () => {
+    function swipe(direction: 'next' | 'previous') {
+      const bar = byTestId(MiniPlayer({ hasTabBar: true }), 'mini-player');
+      const release = bar.props.onResponderRelease as (...args: unknown[]) => void;
+      harness.animatedSpringStart.mockClear();
+      const dx = direction === 'next' ? -80 : 80;
+      release({}, { dx, dy: 0, vx: Math.sign(dx) * 0.8, vy: 0 });
+    }
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('springs straight back when "previous" only restarts the song', () => {
+      harness.prevRestartsTrack.mockReturnValue(true);
+      swipe('previous');
+      expect(harness.prev).toHaveBeenCalledOnce();
+      // The lift and the lane spring now; no hold timer is left behind.
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(3000);
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+    });
+
+    it('springs back at once when the skip throws, and reports it', () => {
+      harness.prev.mockImplementation(() => {
+        throw new Error('player gone');
+      });
+      swipe('previous');
+      expect(harness.reportPlayerError).toHaveBeenCalledWith(expect.any(String), expect.any(Error));
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(3000);
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+    });
+
+    it('springs back once a remote skip fails after it was sent', async () => {
+      harness.routerControlsRemote = true;
+      harness.sendConnectCommand.mockRejectedValueOnce(new Error('device offline'));
+      swipe('next');
+      expect(harness.sendConnectCommand).toHaveBeenCalledWith('next', {});
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.reportPlayerError).toHaveBeenCalled();
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(3000);
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+    });
+
+    it('lets a guest without control see the refusal and springs back instead of holding', () => {
+      harness.partySnapshot = {
+        ...IDLE_PARTY_SNAPSHOT,
+        code: 'JAM123',
+        phase: 'live',
+        party: {
+          code: 'JAM123',
+          name: 'Friday Jam',
+          host_name: 'Host',
+          is_host: false,
+          current_index: 0,
+          is_playing: true,
+          position_sec: 0,
+          playback_updated_at: null,
+          server_time: '2026-11-24T00:00:00Z',
+          guests_can_control: false,
+          playback_changed_by: 'u:1',
+          playback_revision: 1,
+          ended: false,
+          members: [],
+          tracks: [],
+          viewer_key: 'u:2',
+          viewer_name: 'Guest',
+          viewer_is_guest: false,
+        },
+      };
+      swipe('next');
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(3000);
+      expect(harness.animatedSpringStart).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('adapts to Android TV with D-Pad focusability, checkpoint push, and disabled touch swipe', () => {
