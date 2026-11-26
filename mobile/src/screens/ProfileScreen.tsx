@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { MeUpdateRequest } from '../api/endpoints';
 import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
+import AdminHubPanel from '../components/profile/AdminHubPanel';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
 import ConnectSettingsPanel from '../components/profile/ConnectSettingsPanel';
 import LanguageSelector from '../components/profile/LanguageSelector';
@@ -150,6 +151,9 @@ export default function ProfileScreen() {
       onRefresh={() => void stats.refetch()}
     />
   );
+  const adminPanel = user.is_admin ? (
+    <AdminHubPanel scope={scope} apiBase={apiBase} currentUserId={user.id} />
+  ) : null;
   const sleepPanel = <SleepTimerPanel />;
   const connectPanel = <ConnectSettingsPanel />;
   const languagePanel = <LanguageSelector />;
@@ -252,6 +256,7 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.tvColumn}>
                 {statsPanel}
+                {adminPanel}
                 {editForm}
                 {updatePlacement === 'bottom' ? <AndroidUpdateCard /> : null}
               </View>
@@ -290,6 +295,7 @@ export default function ProfileScreen() {
 
         {identityCard}
         {statsPanel}
+        {adminPanel}
         {sleepPanel}
         {connectPanel}
         {languagePanel}

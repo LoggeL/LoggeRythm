@@ -1,4 +1,4 @@
-import type { DeezerId, TrackPlayQuery } from '../api/types';
+import type { AdminUsageRange, DeezerId, TrackPlayQuery } from '../api/types';
 
 export type QueryScope = string | number;
 
@@ -150,5 +150,14 @@ export const queryKeys = {
     status: (scope: QueryScope) => [...queryKeys.admin.root(scope), 'status'] as const,
     storage: (scope: QueryScope) => [...queryKeys.admin.root(scope), 'storage'] as const,
     invites: (scope: QueryScope) => [...queryKeys.admin.root(scope), 'invites'] as const,
+    usage: (scope: QueryScope, range: AdminUsageRange) =>
+      [...queryKeys.admin.root(scope), 'usage', scalar(range, 'admin usage range')] as const,
+    userUsage: (scope: QueryScope, userId: number, range: AdminUsageRange) =>
+      [
+        ...queryKeys.admin.root(scope),
+        'usage-user',
+        scalar(userId, 'admin usage user id'),
+        scalar(range, 'admin usage range'),
+      ] as const,
   },
 };

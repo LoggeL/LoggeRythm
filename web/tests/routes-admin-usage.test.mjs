@@ -7,11 +7,20 @@ import { compileInto, compileSource, moduleUrl } from "./support/compile.mjs";
 const reactUrl = import.meta.resolve("react");
 
 const fixture = {
-  pathname: "/admin/usage",
+  pathname: "/account",
   searchParams: new URLSearchParams(),
-  me: { id: 1, email: "admin@test", display_name: "Admin", is_admin: true, is_approved: true },
+  me: {
+    id: 1,
+    email: "admin@test",
+    display_name: "Admin",
+    is_admin: true,
+    is_approved: true,
+    avatar_url: null,
+  },
+  meQuery: null,
   requests: [],
   queries: {},
+  redirects: [],
 };
 globalThis.__adminUsageRouteFixture = fixture;
 
@@ -48,6 +57,7 @@ const iconStub = moduleUrl(`
 
 const stubs = {
   react: reactUrl,
+  "react-dom": moduleUrl("export function createPortal(children) { return children; }"),
   "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"),
   "next/link": moduleUrl(
     `import { createElement } from ${JSON.stringify(reactUrl)}; export default function Link({ href, children, ...props }) { return createElement('a', { ...props, href }, children); }`,
@@ -56,6 +66,12 @@ const stubs = {
     export function useRouter() { return { replace() {}, push() {}, back() {}, forward() {} }; }
     export function useSearchParams() { return globalThis.__adminUsageRouteFixture.searchParams; }
     export function usePathname() { return globalThis.__adminUsageRouteFixture.pathname; }
+    export function redirect(target) {
+      globalThis.__adminUsageRouteFixture.redirects.push(target);
+      const err = new Error('NEXT_REDIRECT:' + target);
+      err.target = target;
+      throw err;
+    }
   `),
   "@tanstack/react-query": moduleUrl(`
     export function useQuery(options) {
@@ -75,54 +91,110 @@ const stubs = {
     export function useMutation() { return { mutate() {}, isPending: false }; }
     export function useQueryClient() { return { invalidateQueries() {} }; }
   `),
-  "@/lib/api": moduleUrl("export const api = { me: async () => null, adminUsage: async () => null, adminUsageUser: async () => null };"),
-  "@/lib/format": moduleUrl("export const formatTime = (sec) => `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;"),
+  "@/lib/api": moduleUrl(
+    "export const api = { me: async () => null, adminUsage: async () => null, adminUsageUser: async () => null, adminUsers: async () => [], adminStorage: async () => null, adminInvites: async () => [], adminStatus: async () => null };",
+  ),
+  "@/lib/format": moduleUrl(
+    "export const formatTime = (sec) => `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;",
+  ),
   "@/lib/morph": moduleUrl("export const NAV_LATERAL = ['nav-lateral'];"),
   "@/lib/slugs": moduleUrl("export const playlistPath = (p) => `/playlist/${p.id}`;"),
+  "@/lib/playlistPermissions": moduleUrl(
+    "export const isOwnedLibraryPlaylist = () => true; export const sidebarPlaylistMeta = () => '0 Titel';",
+  ),
   "@/hooks/useDialogFocus": moduleUrl("export function useDialogFocus() {}"),
-  "@/hooks/useAuth": moduleUrl("export const useMe = () => ({ data: globalThis.__adminUsageRouteFixture.me });"),
-  "@/hooks/useLibrary": moduleUrl("export const usePlaylists = () => ({ data: [], isSuccess: true, isPending: false, isError: false }); export const useDeletePlaylist = () => ({ mutate() {} });"),
-  "@/hooks/useSearchNavigation": moduleUrl("export const useSearchNavigation = () => ({ input: '', setInput() {}, submit() {}, clear() {}, setComposing() {} });"),
-  "@/store/player": moduleUrl("export const usePlayerStore = (sel) => sel({ isPlaying: false, queueContext: null });"),
+  "@/hooks/useAuth": moduleUrl(`
+    export const useMe = () => {
+      const f = globalThis.__adminUsageRouteFixture;
+      return f.meQuery ?? { data: f.me, isLoading: false, isFetching: false, error: null, refetch: async () => {} };
+    };
+  `),
+  "@/hooks/useLibrary": moduleUrl(
+    "export const usePlaylists = () => ({ data: [], isSuccess: true, isPending: false, isError: false }); export const useDeletePlaylist = () => ({ mutate() {} });",
+  ),
+  "@/hooks/useSearchNavigation": moduleUrl(
+    "export const useSearchNavigation = () => ({ input: '', setInput() {}, submit() {}, clear() {}, setComposing() {} });",
+  ),
+  "@/store/player": moduleUrl(
+    "export const usePlayerStore = (sel) => sel({ isPlaying: false, queueContext: null });",
+  ),
   "@/store/toast": moduleUrl("export const toast = { success() {}, error() {} };"),
   "@/components/icons": iconStub,
-  "@/components/feedbackIcons": moduleUrl(`import { createElement } from ${JSON.stringify(reactUrl)}; export function CopyIcon() { return createElement('svg'); }`),
-  "@/components/Logo": moduleUrl(`import { createElement } from ${JSON.stringify(reactUrl)}; export default function Logo() { return createElement('span'); } export function Wordmark() { return createElement('span', null, 'LoggeRythm'); }`),
-  "@/components/SearchField": moduleUrl(`import { createElement } from ${JSON.stringify(reactUrl)}; export default function SearchField() { return createElement('input'); }`),
+  "@/components/feedbackIcons": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export function CopyIcon() { return createElement('svg'); }`,
+  ),
+  "@/components/Logo": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function Logo() { return createElement('span'); } export function Wordmark() { return createElement('span', null, 'LoggeRythm'); }`,
+  ),
+  "@/components/SearchField": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function SearchField() { return createElement('input'); }`,
+  ),
   "@/components/ContextMenu": moduleUrl("export default function ContextMenu() { return null; }"),
   "@/components/CoverPlaceholder": moduleUrl("export default function CoverPlaceholder() { return null; }"),
   "@/components/ConfirmDialog": moduleUrl("export default function ConfirmDialog() { return null; }"),
-  "@/app/library/CreatePlaylistDialog": moduleUrl("export default function CreatePlaylistDialog() { return null; }"),
-  "@/app/playlist/_components/LeavePlaylistDialog": moduleUrl("export default function LeavePlaylistDialog() { return null; }"),
-  "@/components/EqualizerBars": moduleUrl(`import { createElement } from ${JSON.stringify(reactUrl)}; export default function EqualizerBars() { return createElement('span', { 'data-eq': 'true' }); }`),
+  "@/app/library/CreatePlaylistDialog": moduleUrl(
+    "export default function CreatePlaylistDialog() { return null; }",
+  ),
+  "@/app/playlist/_components/LeavePlaylistDialog": moduleUrl(
+    "export default function LeavePlaylistDialog() { return null; }",
+  ),
+  "@/components/EqualizerBars": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function EqualizerBars() { return createElement('span', { 'data-eq': 'true' }); }`,
+  ),
+  "@/components/profile/ListeningStats": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function ListeningStats() { return createElement('div', null, 'Hörprofil-Inhalt'); }`,
+  ),
+  "./ProfileHeader": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function ProfileHeader({ me }) { return createElement('header', null, me.display_name || me.email); }`,
+  ),
+  "./PlaybackTab": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function PlaybackTab() { return createElement('div', null, 'Wiedergabe-Inhalt'); }`,
+  ),
+  "./ProfileTab": moduleUrl(
+    `import { createElement } from ${JSON.stringify(reactUrl)}; export default function ProfileTab() { return createElement('div', null, 'Profil-Inhalt'); }`,
+  ),
 };
 
 await compileInto(stubs, [
   ["@/lib/adminUsage", "src/lib/adminUsage.ts"],
-  ["@/lib/playlistPermissions", "src/lib/playlistPermissions.ts"],
   ["@/components/Avatar", "src/components/Avatar.tsx"],
   ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
   ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
   ["@/components/shell/navigation", "src/components/shell/navigation.ts"],
   ["@/app/account/presentation", "src/app/account/presentation.tsx"],
-  ["./presentation", "src/app/account/presentation.tsx"],
-  ["./UsageOverviewKpis", "src/app/admin/usage/UsageOverviewKpis.tsx"],
-  ["./UserUsageTable", "src/app/admin/usage/UserUsageTable.tsx"],
-  ["./UserUsageDrawer", "src/app/admin/usage/UserUsageDrawer.tsx"],
+  ["./sections", "src/app/account/_admin/sections.ts"],
+  ["@/app/account/_admin/sections", "src/app/account/_admin/sections.ts"],
+  ["./_admin/sections", "src/app/account/_admin/sections.ts"],
+  ["./statusIcons", "src/app/account/_admin/statusIcons.tsx"],
+  ["./_admin/statusIcons", "src/app/account/_admin/statusIcons.tsx"],
+  ["./statusModel", "src/app/account/_admin/statusModel.ts"],
+  ["./statusParts", "src/app/account/_admin/statusParts.tsx"],
+  ["./StatusOverview", "src/app/account/_admin/StatusOverview.tsx"],
+  ["./UsageOverviewKpis", "src/app/account/_admin/UsageOverviewKpis.tsx"],
+  ["./UserUsageTable", "src/app/account/_admin/UserUsageTable.tsx"],
+  ["./UserUsageDrawer", "src/app/account/_admin/UserUsageDrawer.tsx"],
+  ["./_admin/UsageSection", "src/app/account/_admin/UsageSection.tsx"],
+  ["./_admin/UsersAndInvitesSection", "src/app/account/_admin/UsersAndInvitesSection.tsx"],
+  ["./_admin/StorageSection", "src/app/account/_admin/StorageSection.tsx"],
+  ["./_admin/StatusSection", "src/app/account/_admin/StatusSection.tsx"],
+  ["./AdministrationTab", "src/app/account/AdministrationTab.tsx"],
 ]);
 
 const { default: UserUsageTable } = await import(stubs["./UserUsageTable"]);
-const { default: AdminUsagePage } = await import(
+const { default: AccountPage } = await import(
+  await compileSource("src/app/account/page.tsx", stubs)
+);
+const { default: LegacyAdminUsagePage } = await import(
   await compileSource("src/app/admin/usage/page.tsx", stubs)
+);
+const { default: LegacyStatusPage } = await import(
+  await compileSource("src/app/status/page.tsx", stubs)
 );
 const { default: Sidebar } = await import(
   await compileSource("src/components/shell/Sidebar.tsx", stubs)
 );
 const { default: TopBar } = await import(
   await compileSource("src/components/shell/TopBar.tsx", stubs)
-);
-const { default: AdministrationTab } = await import(
-  await compileSource("src/app/account/AdministrationTab.tsx", stubs)
 );
 
 const sampleOverview = {
@@ -316,90 +388,75 @@ const sampleDetail = {
   ],
 };
 
-function renderUsagePage() {
+const sampleStatus = {
+  deezer: { arl_configured: true, arl_ok: true, quality: "mp3" },
+  storage: {
+    track_count: 110,
+    total_bytes: 900_000_000,
+    disk_total: 64_000_000_000,
+    disk_used: 20_000_000_000,
+    disk_free: 44_000_000_000,
+    retention_days: 30,
+    cleanup_stopped_at: null,
+    cleanup_error: null,
+  },
+  users: { total: 3, approved: 2, pending: 1, admins: 1 },
+  content: {
+    playlists: 4,
+    likes: 25,
+    follows: 7,
+    plays: 420,
+    stored_lyrics: 32,
+    parties: 1,
+    invites_total: 2,
+    invites_used: 1,
+  },
+  integrations: { spotify_configured: true, lastfm_configured: false, mail_configured: true },
+  system: { app_env: "production", database: "postgresql", jwt_secure: true, cookie_secure: true },
+};
+
+function renderAccount() {
   fixture.requests = [];
-  return renderToStaticMarkup(createElement(AdminUsagePage));
+  return renderToStaticMarkup(createElement(AccountPage));
 }
 
-test("non-admin sees explicit access-denied state and usage query stays disabled", () => {
-  fixture.searchParams = new URLSearchParams();
-  fixture.queries = {
-    "admin-usage-auth": {
-      data: { id: 2, email: "jule@test", display_name: "Jule", is_admin: false },
-      isLoading: false,
-      isFetching: false,
-      error: null,
-    },
-  };
-  const html = renderUsagePage();
+test("non-admin visiting /account?tab=admin sees explicit access-denied state without admin queries", () => {
+  fixture.meQuery = null;
+  fixture.me = { id: 2, email: "jule@test", display_name: "Jule", is_admin: false, is_approved: true };
+  fixture.searchParams = new URLSearchParams("tab=admin&section=usage");
+  fixture.queries = {};
+
+  const html = renderAccount();
   assert.match(html, /Nur für Administratoren/);
-  assert.match(html, /Zur Startseite/);
-  const usageReq = fixture.requests.find((r) => r.queryKey[0] === "admin-usage");
-  assert.ok(usageReq);
-  assert.equal(usageReq.enabled, false);
+  assert.match(html, /Zum Hörprofil/);
+  assert.doesNotMatch(html, /account-tab-admin/);
+  assert.doesNotMatch(html, /Hörprofil-Inhalt/);
+  assert.equal(fixture.requests.length, 0);
 });
 
-test("auth check error renders loud alert with retry button", () => {
-  fixture.searchParams = new URLSearchParams();
-  fixture.queries = {
-    "admin-usage-auth": {
-      data: undefined,
-      isLoading: false,
-      isFetching: false,
-      error: new Error("API /auth/me: HTTP 503"),
-    },
-  };
-  const html = renderUsagePage();
-  assert.match(html, /role="alert"/);
-  assert.match(html, /Berechtigung konnte nicht geprüft werden/);
-  assert.match(html, /API \/auth\/me: HTTP 503/);
-  assert.match(html, /Erneut prüfen/);
-});
-
-test("overview API error fails loudly and preserves stale snapshot with warning", () => {
-  fixture.searchParams = new URLSearchParams();
-  fixture.queries = {
-    "admin-usage-auth": {
-      data: { id: 1, email: "admin@test", display_name: "Admin", is_admin: true },
-      isLoading: false,
-      isFetching: false,
-      error: null,
-    },
-    "admin-usage": {
-      data: undefined,
-      isLoading: false,
-      isFetching: false,
-      error: new Error("API /admin/usage: HTTP 500"),
-    },
-  };
-  const initialErr = renderUsagePage();
-  assert.match(initialErr, /role="alert"/);
-  assert.match(initialErr, /Die Nutzungsdaten konnten nicht geladen werden\./);
-  assert.match(initialErr, /API \/admin\/usage: HTTP 500/);
-  assert.match(initialErr, /Erneut versuchen/);
-
-  fixture.queries["admin-usage"] = {
-    data: sampleOverview,
-    dataUpdatedAt: Date.parse("2026-11-24T10:00:00Z"),
+test("account auth error renders loud alert with retry button", () => {
+  fixture.meQuery = {
+    data: undefined,
     isLoading: false,
     isFetching: false,
-    error: new Error("API /admin/usage: Zeitüberschreitung"),
+    error: new Error("API /auth/me: HTTP 503"),
+    refetch: async () => {},
   };
-  const staleErr = renderUsagePage();
-  assert.match(staleErr, /Daten veraltet/);
-  assert.match(staleErr, /Zeitüberschreitung/);
-  assert.match(staleErr, /Speicherverteilung im Audio-Cache/);
+  fixture.searchParams = new URLSearchParams("tab=admin");
+  const html = renderAccount();
+  fixture.meQuery = null;
+
+  assert.match(html, /role="alert"/);
+  assert.match(html, /Konto konnte nicht geladen werden/);
+  assert.match(html, /API \/auth\/me: HTTP 503/);
+  assert.match(html, /Erneut versuchen/);
 });
 
-test("admin dashboard renders KPIs, storage attribution, users, and drill-down drawer", () => {
-  fixture.searchParams = new URLSearchParams("range=all&user=2");
+test("admin hub widens to max-w-6xl, renders 4 sub-sections, and defaults to Usage with KPIs & drawer", () => {
+  fixture.meQuery = null;
+  fixture.me = { id: 1, email: "admin@test", display_name: "Admin", is_admin: true, is_approved: true };
+  fixture.searchParams = new URLSearchParams("tab=admin&range=all&user=2");
   fixture.queries = {
-    "admin-usage-auth": {
-      data: { id: 1, email: "admin@test", display_name: "Admin", is_admin: true },
-      isLoading: false,
-      isFetching: false,
-      error: null,
-    },
     "admin-usage": {
       data: sampleOverview,
       dataUpdatedAt: Date.parse("2026-11-24T10:00:00Z"),
@@ -414,8 +471,14 @@ test("admin dashboard renders KPIs, storage attribution, users, and drill-down d
       error: null,
     },
   };
-  const html = renderUsagePage();
-  assert.match(html, /Nutzungs-Dashboard/);
+
+  const html = renderAccount();
+  assert.match(html, /max-w-6xl/);
+  assert.match(html, /admin-section-tab-usage/);
+  assert.match(html, /admin-section-tab-users/);
+  assert.match(html, /admin-section-tab-storage/);
+  assert.match(html, /admin-section-tab-status/);
+  assert.match(html, /Nutzungsübersicht/);
   assert.match(html, /7 Tage/);
   assert.match(html, /30 Tage/);
   assert.match(html, /Gesamt/);
@@ -423,7 +486,7 @@ test("admin dashboard renders KPIs, storage attribution, users, and drill-down d
   assert.match(html, /Direkt zugeordnet:/);
   assert.match(html, /Studio Mac/);
   assert.match(html, /Jam JAM99/);
-  // Drawer content
+  // Drill-down drawer
   assert.match(html, /role="dialog"/);
   assert.match(html, /Aktive Connect-Geräte/);
   assert.match(html, /Anfragen nach Quelle/);
@@ -435,21 +498,41 @@ test("admin dashboard renders KPIs, storage attribution, users, and drill-down d
   assert.match(html, /Laternen/);
 });
 
-test("drill-down drawer surfaces detail fetch error loudly without silent fallback", () => {
-  fixture.searchParams = new URLSearchParams("range=30d&user=2");
+test("non-admin account tabs stay compact at max-w-5xl", () => {
+  fixture.meQuery = null;
+  fixture.me = { id: 1, email: "admin@test", display_name: "Admin", is_admin: true, is_approved: true };
+  fixture.searchParams = new URLSearchParams("tab=stats");
+  const html = renderAccount();
+  assert.match(html, /max-w-5xl/);
+  assert.doesNotMatch(html, /max-w-6xl/);
+});
+
+test("overview and drawer API errors fail loudly and stale refresh keeps last snapshot with warning", () => {
+  fixture.meQuery = null;
+  fixture.me = { id: 1, email: "admin@test", display_name: "Admin", is_admin: true, is_approved: true };
+  fixture.searchParams = new URLSearchParams("tab=admin&section=usage");
   fixture.queries = {
-    "admin-usage-auth": {
-      data: { id: 1, email: "admin@test", display_name: "Admin", is_admin: true },
+    "admin-usage": {
+      data: undefined,
       isLoading: false,
       isFetching: false,
-      error: null,
+      error: new Error("API /admin/usage: HTTP 500"),
     },
+  };
+  const initialErr = renderAccount();
+  assert.match(initialErr, /role="alert"/);
+  assert.match(initialErr, /Die Nutzungsdaten konnten nicht geladen werden\./);
+  assert.match(initialErr, /API \/admin\/usage: HTTP 500/);
+  assert.match(initialErr, /Erneut versuchen/);
+
+  fixture.searchParams = new URLSearchParams("tab=admin&section=usage&range=30d&user=2");
+  fixture.queries = {
     "admin-usage": {
       data: sampleOverview,
       dataUpdatedAt: Date.parse("2026-11-24T10:00:00Z"),
       isLoading: false,
       isFetching: false,
-      error: null,
+      error: new Error("API /admin/usage: Zeitüberschreitung"),
     },
     "admin-usage-user": {
       data: undefined,
@@ -458,13 +541,62 @@ test("drill-down drawer surfaces detail fetch error loudly without silent fallba
       error: new Error("API /admin/usage/users/2: HTTP 404"),
     },
   };
-  const html = renderUsagePage();
-  assert.match(html, /role="dialog"/);
-  assert.match(html, /Benutzerdetails konnten nicht geladen werden: API \/admin\/usage\/users\/2: HTTP 404/);
-  assert.doesNotMatch(html, /Anfragen nach Quelle/);
+  const staleAndDrawerErr = renderAccount();
+  assert.match(staleAndDrawerErr, /Daten veraltet/);
+  assert.match(staleAndDrawerErr, /Zeitüberschreitung/);
+  assert.match(staleAndDrawerErr, /Speicherverteilung im Audio-Cache/);
+  assert.match(staleAndDrawerErr, /Benutzerdetails konnten nicht geladen werden: API \/admin\/usage\/users\/2: HTTP 404/);
+  assert.doesNotMatch(staleAndDrawerErr, /Anfragen nach Quelle/);
 });
 
-test("null display_name and created_at render cleanly in table & drawer and combined headers reflect aria-sort", () => {
+test("admin hub renders Users & Invites, Storage, and inline Systemstatus sections with in-hub links", () => {
+  fixture.meQuery = null;
+  fixture.me = { id: 1, email: "admin@test", display_name: "Admin", is_admin: true, is_approved: true };
+
+  fixture.searchParams = new URLSearchParams("tab=admin&section=users");
+  fixture.queries = {
+    "admin-users": {
+      data: [{ id: 2, email: "jule@test", display_name: "Jule", is_admin: false, is_approved: false, created_at: "2026-03-11T18:20:00Z" }],
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    },
+    "admin-invites": { data: [], isLoading: false, isFetching: false, error: null },
+  };
+  const usersHtml = renderAccount();
+  assert.match(usersHtml, /Einladungslinks/);
+  assert.match(usersHtml, /Freigeben/);
+
+  fixture.searchParams = new URLSearchParams("tab=admin&section=storage");
+  fixture.queries = {
+    "admin-storage": {
+      data: { track_count: 110, total_bytes: 900_000_000, disk_total: 64_000_000_000, disk_used: 20_000_000_000, disk_free: 44_000_000_000, retention_days: 30, tracks: [] },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    },
+  };
+  const storageHtml = renderAccount();
+  assert.match(storageHtml, /Jetzt aufräumen/);
+  assert.match(storageHtml, /Belegt durch Titel/);
+
+  fixture.searchParams = new URLSearchParams("tab=admin&section=status");
+  fixture.queries = {
+    "admin-status": {
+      data: sampleStatus,
+      dataUpdatedAt: Date.parse("2026-11-24T10:00:00Z"),
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    },
+  };
+  const statusHtml = renderAccount();
+  assert.match(statusHtml, /Alle Kernsysteme laufen/);
+  assert.match(statusHtml, /href="\/account\?tab=admin&amp;section=storage"/);
+  assert.match(statusHtml, /href="\/account\?tab=admin&amp;section=users"/);
+});
+
+test("null display_name and created_at render cleanly and combined headers reflect aria-sort", () => {
   const sparseUser = {
     ...sampleOverview.users[1],
     display_name: null,
@@ -480,14 +612,10 @@ test("null display_name and created_at render cleanly in table & drawer and comb
     top_artists: [{ key: "", label: "Legacy Artist", sublabel: "", cover: "", count: 7 }],
   };
 
-  fixture.searchParams = new URLSearchParams("range=all&user=2");
+  fixture.meQuery = null;
+  fixture.me = { id: 1, email: "admin@test", display_name: "Admin", is_admin: true, is_approved: true };
+  fixture.searchParams = new URLSearchParams("tab=admin&section=usage&range=all&user=2");
   fixture.queries = {
-    "admin-usage-auth": {
-      data: { id: 1, email: "admin@test", display_name: "Admin", is_admin: true },
-      isLoading: false,
-      isFetching: false,
-      error: null,
-    },
     "admin-usage": {
       data: sparseOverview,
       dataUpdatedAt: Date.parse("2026-11-24T10:00:00Z"),
@@ -502,7 +630,7 @@ test("null display_name and created_at render cleanly in table & drawer and comb
       error: null,
     },
   };
-  const html = renderUsagePage();
+  const html = renderAccount();
   assert.match(html, /Details für jule@test öffnen/);
   assert.match(html, /Legacy Artist/);
   assert.doesNotMatch(html, /Invalid Date/);
@@ -542,14 +670,35 @@ test("null display_name and created_at render cleanly in table & drawer and comb
   assert.match(tableHtmlAccessed, /<th scope="col" aria-sort="descending"[^>]*>.*Speicher exkl\..*Gesamt/);
 });
 
-test("Sidebar, TopBar and AdministrationTab expose /admin/usage exclusively to admins", () => {
-  fixture.me = { id: 1, display_name: "Admin", is_admin: true };
-  assert.match(renderToStaticMarkup(createElement(Sidebar)), /href="\/admin\/usage"/);
-  assert.match(renderToStaticMarkup(createElement(TopBar)), /href="\/admin\/usage"/);
-  assert.match(renderToStaticMarkup(createElement(AdministrationTab)), /href="\/admin\/usage"/);
-  assert.match(renderToStaticMarkup(createElement(AdministrationTab)), /href="\/status"/);
+test("Sidebar and TopBar keep primary navigation free of admin shortcuts even for admins", () => {
+  fixture.meQuery = null;
+  fixture.me = { id: 1, display_name: "Admin", is_admin: true, is_approved: true };
+  const sidebarHtml = renderToStaticMarkup(createElement(Sidebar));
+  const topBarHtml = renderToStaticMarkup(createElement(TopBar));
 
-  fixture.me = { id: 2, display_name: "Jule", is_admin: false };
-  assert.doesNotMatch(renderToStaticMarkup(createElement(Sidebar)), /href="\/admin\/usage"/);
-  assert.doesNotMatch(renderToStaticMarkup(createElement(TopBar)), /href="\/admin\/usage"/);
+  assert.doesNotMatch(sidebarHtml, /href="\/admin\/usage"/);
+  assert.doesNotMatch(sidebarHtml, /href="\/status"/);
+  assert.doesNotMatch(topBarHtml, /href="\/admin\/usage"/);
+  assert.doesNotMatch(topBarHtml, /href="\/status"/);
+  assert.match(topBarHtml, /href="\/account"/);
+});
+
+test("legacy /admin/usage and /status routes redirect cleanly into /account?tab=admin preserving query params", async () => {
+  fixture.redirects = [];
+  await assert.rejects(
+    () => LegacyAdminUsagePage({ searchParams: Promise.resolve({ range: "7d", user: "2" }) }),
+    /NEXT_REDIRECT:\/account\?tab=admin&section=usage&range=7d&user=2/,
+  );
+
+  fixture.redirects = [];
+  await assert.rejects(
+    () => LegacyAdminUsagePage({ searchParams: Promise.resolve({ range: "invalid", user: "  " }) }),
+    /NEXT_REDIRECT:\/account\?tab=admin&section=usage/,
+  );
+
+  fixture.redirects = [];
+  assert.throws(
+    () => LegacyStatusPage(),
+    /NEXT_REDIRECT:\/account\?tab=admin&section=status/,
+  );
 });

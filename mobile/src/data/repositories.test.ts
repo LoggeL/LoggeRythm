@@ -91,6 +91,8 @@ const endpoints = vi.hoisted(() => ({
   cleanupAdminStorage: vi.fn(),
   getAdminInvites: vi.fn(),
   createAdminInvite: vi.fn(),
+  getAdminUsage: vi.fn(),
+  getAdminUserUsage: vi.fn(),
 }));
 
 vi.mock('../api/endpoints', () => endpoints);

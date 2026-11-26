@@ -279,6 +279,18 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     option: (queries) => queries.adminInvites('  account-a  '),
     expectedKey: ['music', 'admin', 'account-a', 'invites'], expectedArguments: (signal) => [signal],
   },
+  {
+    factory: 'adminUsage', repositoryMethod: 'getAdminUsage',
+    option: (queries) => queries.adminUsage('  account-a  ', '7d'),
+    expectedKey: ['music', 'admin', 'account-a', 'usage', '7d'],
+    expectedArguments: (signal) => ['7d', signal],
+  },
+  {
+    factory: 'adminUserUsage', repositoryMethod: 'getAdminUserUsage',
+    option: (queries) => queries.adminUserUsage('  account-a  ', 42, '30d'),
+    expectedKey: ['music', 'admin', 'account-a', 'usage-user', '42', '30d'],
+    expectedArguments: (signal) => [42, '30d', signal],
+  },
 ];
 
 describe('music query options', () => {

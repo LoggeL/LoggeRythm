@@ -961,6 +961,199 @@ export interface StringCatalog {
     startedPlayback: (title: string) => string;
     searchContextLabel: (query: string) => string;
   };
+  admin: {
+    title: string;
+    subtitle: string;
+    tabsLabel: string;
+    tabs: {
+      usage: string;
+      users: string;
+      storage: string;
+      status: string;
+    };
+    refresh: string;
+    loading: string;
+    offline: string;
+    loadFailed: (detail: string) => string;
+    cachedOffline: string;
+    cachedRefreshFailed: string;
+    refreshing: string;
+    stale: string;
+    forbidden: string;
+    usage: {
+      rangeLabel: string;
+      ranges: {
+        '7d': string;
+        '30d': string;
+        all: string;
+      };
+      sortLabel: string;
+      sorts: {
+        plays: string;
+        exclusive_bytes: string;
+        tracks_requested: string;
+        last_active_at: string;
+      };
+      trackingSince: (date: string) => string;
+      noTrackingYet: string;
+      kpiUsers: string;
+      kpiUsersSub: (active: number, pending: number) => string;
+      kpiPlays: string;
+      kpiUniqueTracks: (count: number) => string;
+      kpiRequested: string;
+      kpiMaterialized: (count: number, bytes: string) => string;
+      kpiCache: string;
+      kpiDiskFree: (free: string, tracks: number) => string;
+      kpiLive: string;
+      kpiLiveSub: (users: number, parties: number) => string;
+      storageExclusive: string;
+      storageShared: string;
+      storageUnattributed: string;
+      usersTitle: (count: number) => string;
+      usersEmpty: string;
+      livePlaying: (device: string | null) => string;
+      liveOnline: (count: number) => string;
+      roleAdmin: string;
+      statusPending: string;
+      statusApproved: string;
+      playsShort: (plays: number, duration: string) => string;
+      requestsShort: (requested: number, materialized: number) => string;
+      storageShort: (exclusive: string, shared: string) => string;
+      lastActive: (relative: string) => string;
+      openUserDetail: (name: string) => string;
+    };
+    detail: {
+      closeLabel: string;
+      memberSince: (date: string) => string;
+      activeDevicesTitle: string;
+      activeDevicesEmpty: string;
+      deviceActive: string;
+      deviceParty: (code: string) => string;
+      storageTitle: string;
+      storageExclusiveRow: (bytes: string, tracks: number) => string;
+      storageSharedRow: (bytes: string, tracks: number) => string;
+      storagePinnedRow: (bytes: string, tracks: number) => string;
+      storageMaterializedRow: (bytes: string, tracks: number) => string;
+      storageUploadsRow: string;
+      storageTotalCache: (bytes: string) => string;
+      libraryTitle: string;
+      libLikes: string;
+      libPlaylists: string;
+      libFollows: string;
+      libParty: string;
+      libImports: string;
+      sourcesTitle: string;
+      sourcesEmpty: string;
+      sources: {
+        stream: string;
+        preload: string;
+        playlist_export: string;
+        party_preload: string;
+        radar_preload: string;
+        lyrics_ai: string;
+      };
+      sourceRow: (requests: number, materialized: number, bytes: string) => string;
+      topTracksTitle: string;
+      topArtistsTitle: string;
+      recentPlaysTitle: string;
+      recentRequestsTitle: string;
+      emptySection: string;
+      requestCached: string;
+      requestHit: string;
+      requestStored: string;
+      requestEvicted: string;
+    };
+    usersSection: {
+      usersTitle: string;
+      pendingBadge: (count: number) => string;
+      usersEmpty: string;
+      approve: string;
+      approving: string;
+      remove: string;
+      approvedFeedback: (name: string) => string;
+      removedFeedback: (name: string) => string;
+      approveFailed: (detail: string) => string;
+      removeFailed: (detail: string) => string;
+      deleteTitle: string;
+      deleteWarning: (name: string, email: string) => string;
+      deleteConfirm: string;
+      deleting: string;
+      invitesTitle: string;
+      invitesEmpty: string;
+      createInvite: string;
+      creatingInvite: string;
+      inviteCreated: string;
+      inviteCreateFailed: (detail: string) => string;
+      inviteFree: string;
+      inviteUsedBy: (name: string) => string;
+      shareInvite: string;
+      shareInviteFailed: (detail: string) => string;
+      shareInviteMessage: (url: string) => string;
+    };
+    storageSection: {
+      tracksLabel: string;
+      audioBytesLabel: string;
+      diskFreeLabel: string;
+      diskTotalLabel: string;
+      diskUsageSummary: (used: string, total: string, free: string) => string;
+      retentionAuto: (days: number) => string;
+      retentionManual: string;
+      cleanupAction: string;
+      cleanupTitle: string;
+      cleanupWarning: string;
+      cleanupConfirm: string;
+      cleaning: string;
+      cleanupDone: (removed: number, freed: string) => string;
+      cleanupNothing: string;
+      cleanupFailed: (detail: string) => string;
+    };
+    statusSection: {
+      deezerTitle: string;
+      deezerArl: string;
+      deezerQuality: string;
+      ok: string;
+      missing: string;
+      error: string;
+      storageTitle: string;
+      usersTitle: string;
+      usersSummary: (approved: number, pending: number, admins: number) => string;
+      contentTitle: string;
+      contentPlaylists: string;
+      contentLikes: string;
+      contentFollows: string;
+      contentPlays: string;
+      contentLyrics: string;
+      contentParties: string;
+      contentInvites: string;
+      integrationsTitle: string;
+      spotify: string;
+      lastfm: string;
+      configured: string;
+      systemTitle: string;
+      environment: string;
+      database: string;
+      jwtSecure: string;
+      cookieSecure: string;
+      secure: string;
+      insecure: string;
+    };
+    time: {
+      never: string;
+      justNow: string;
+      minutesAgo: (count: number) => string;
+      hoursAgo: (count: number) => string;
+      yesterday: string;
+      daysAgo: (count: number) => string;
+      weeksAgo: (count: number) => string;
+      durationZero: string;
+      durationLessMinute: string;
+      durationMinutes: (minutes: number) => string;
+      durationHours: (hours: number) => string;
+      durationHoursMinutes: (hours: number, minutes: number) => string;
+      durationDays: (days: number) => string;
+      durationDaysHours: (days: number, hours: number) => string;
+    };
+  };
 }
 
 export const de: StringCatalog = {
@@ -1971,6 +2164,207 @@ export const de: StringCatalog = {
     startedPlayback: (title) => `Wiedergabe von „${title}“ gestartet.`,
     searchContextLabel: (query) => `Sprachsuche: „${query}“`,
   },
+  admin: {
+    title: 'Verwaltung',
+    subtitle: 'Nutzung, Benutzer, Speicher und Systemstatus.',
+    tabsLabel: 'Verwaltungsbereiche',
+    tabs: {
+      usage: 'Nutzung',
+      users: 'Benutzer',
+      storage: 'Speicher',
+      status: 'Status',
+    },
+    refresh: 'Verwaltungsdaten aktualisieren',
+    loading: 'Verwaltungsdaten werden geladen…',
+    offline: 'Offline – Verwaltungsdaten können nicht geladen werden.',
+    loadFailed: (detail) => `Verwaltungsdaten konnten nicht geladen werden: ${detail}`,
+    cachedOffline: 'Offline – es werden zwischengespeicherte Verwaltungsdaten angezeigt.',
+    cachedRefreshFailed: 'Aktualisierung fehlgeschlagen – zwischengespeicherte Daten bleiben sichtbar.',
+    refreshing: 'Verwaltungsdaten werden aktualisiert…',
+    stale: 'Verwaltungsdaten könnten veraltet sein.',
+    forbidden: 'Zugriff verweigert: Nur für Administratoren.',
+    usage: {
+      rangeLabel: 'Zeitraum der Nutzungsdaten',
+      ranges: {
+        '7d': '7 Tage',
+        '30d': '30 Tage',
+        all: 'Gesamt',
+      },
+      sortLabel: 'Benutzer sortieren nach',
+      sorts: {
+        plays: 'Wiedergaben',
+        exclusive_bytes: 'Speicher',
+        tracks_requested: 'Angefordert',
+        last_active_at: 'Aktivität',
+      },
+      trackingSince: (date) => `Anfragen aufgezeichnet seit ${date}.`,
+      noTrackingYet: 'Noch keine Track-Anfragen aufgezeichnet.',
+      kpiUsers: 'Benutzer',
+      kpiUsersSub: (active, pending) =>
+        pending > 0 ? `${active} aktiv · ${pending} wartend` : `${active} aktiv`,
+      kpiPlays: 'Wiedergaben',
+      kpiUniqueTracks: (count) => `${count} verschiedene Titel`,
+      kpiRequested: 'Angefordert',
+      kpiMaterialized: (count, bytes) => `${count} neu geladen (${bytes})`,
+      kpiCache: 'Audio-Cache',
+      kpiDiskFree: (free, tracks) => `${tracks} Titel · ${free} frei`,
+      kpiLive: 'Live-Connect',
+      kpiLiveSub: (users, parties) =>
+        parties > 0 ? `${users} Nutzer · ${parties} Jams` : `${users} Nutzer verbunden`,
+      storageExclusive: 'Exklusiv',
+      storageShared: 'Geteilt',
+      storageUnattributed: 'Unzugeordnet',
+      usersTitle: (count) => `Benutzer (${count})`,
+      usersEmpty: 'Keine Benutzer gefunden.',
+      livePlaying: (device) => (device ? `Spielt · ${device}` : 'Spielt gerade'),
+      liveOnline: (count) => (count === 1 ? '1 Gerät online' : `${count} Geräte online`),
+      roleAdmin: 'Admin',
+      statusPending: 'Wartend',
+      statusApproved: 'Freigegeben',
+      playsShort: (plays, duration) => `${plays} Wiedergaben · ${duration}`,
+      requestsShort: (requested, materialized) =>
+        `${requested} angefordert · ${materialized} neu geladen`,
+      storageShort: (exclusive, shared) => `Exklusiv ${exclusive} · Geteilt ${shared}`,
+      lastActive: (relative) => `Aktiv: ${relative}`,
+      openUserDetail: (name) => `Nutzungsdetails für ${name} öffnen`,
+    },
+    detail: {
+      closeLabel: 'Nutzerdetails schließen',
+      memberSince: (date) => `Mitglied seit ${date}`,
+      activeDevicesTitle: 'Aktive Connect-Geräte',
+      activeDevicesEmpty: 'Derzeit keine Geräte online.',
+      deviceActive: 'Aktiv',
+      deviceParty: (code) => `Jam ${code}`,
+      storageTitle: 'Speicherzuordnung',
+      storageExclusiveRow: (bytes, tracks) => `${bytes} (${tracks} exklusive Titel)`,
+      storageSharedRow: (bytes, tracks) => `${bytes} (${tracks} geteilte Titel)`,
+      storagePinnedRow: (bytes, tracks) => `${bytes} (${tracks} geschützt durch Likes/Playlists)`,
+      storageMaterializedRow: (bytes, tracks) => `${bytes} (${tracks} direkt angefordert)`,
+      storageUploadsRow: 'Uploads (Avatar/Cover)',
+      storageTotalCache: (bytes) => `Gesamter Audio-Cache: ${bytes}`,
+      libraryTitle: 'Bibliothek & Aktivität',
+      libLikes: 'Likes',
+      libPlaylists: 'Playlists',
+      libFollows: 'Folgt',
+      libParty: 'Jam-Titel',
+      libImports: 'Importe',
+      sourcesTitle: 'Anfragen nach Quelle',
+      sourcesEmpty: 'Keine Track-Anfragen in diesem Zeitraum.',
+      sources: {
+        stream: 'Stream',
+        preload: 'Vorladen',
+        playlist_export: 'Playlist-Export',
+        party_preload: 'Jam-Preload',
+        radar_preload: 'Release-Radar',
+        lyrics_ai: 'KI-Songtext',
+      },
+      sourceRow: (requests, materialized, bytes) =>
+        `${requests} Anfragen · ${materialized} neu (${bytes})`,
+      topTracksTitle: 'Top-Titel',
+      topArtistsTitle: 'Top-Künstler',
+      recentPlaysTitle: 'Zuletzt gespielt',
+      recentRequestsTitle: 'Letzte Anfragen',
+      emptySection: 'Keine Einträge in diesem Zeitraum.',
+      requestCached: 'Neu geladen',
+      requestHit: 'Cache-Treffer',
+      requestStored: 'Im Cache',
+      requestEvicted: 'Nicht im Cache',
+    },
+    usersSection: {
+      usersTitle: 'Benutzerkonten',
+      pendingBadge: (count) => `${count} wartend`,
+      usersEmpty: 'Noch keine Benutzer vorhanden.',
+      approve: 'Freigeben',
+      approving: 'Wird freigegeben…',
+      remove: 'Entfernen',
+      approvedFeedback: (name) => `${name} wurde freigegeben.`,
+      removedFeedback: (name) => `${name} wurde entfernt.`,
+      approveFailed: (detail) => `Freigabe fehlgeschlagen: ${detail}`,
+      removeFailed: (detail) => `Entfernen fehlgeschlagen: ${detail}`,
+      deleteTitle: 'Benutzer entfernen?',
+      deleteWarning: (name, email) =>
+        `${name} (${email}) wird samt Playlists, Likes und Verlauf endgültig gelöscht. Das kann nicht rückgängig gemacht werden.`,
+      deleteConfirm: 'Endgültig entfernen',
+      deleting: 'Wird entfernt…',
+      invitesTitle: 'Einladungslinks',
+      invitesEmpty: 'Noch keine Einladungslinks erstellt.',
+      createInvite: 'Link erstellen',
+      creatingInvite: 'Wird erstellt…',
+      inviteCreated: 'Einladungslink erstellt.',
+      inviteCreateFailed: (detail) => `Einladungslink konnte nicht erstellt werden: ${detail}`,
+      inviteFree: 'Frei',
+      inviteUsedBy: (name) => `Genutzt von ${name}`,
+      shareInvite: 'Teilen',
+      shareInviteFailed: (detail) => `Teilen fehlgeschlagen: ${detail}`,
+      shareInviteMessage: (url) => `Einladung zu LoggeRythm: ${url}`,
+    },
+    storageSection: {
+      tracksLabel: 'Titel',
+      audioBytesLabel: 'Audio-Cache',
+      diskFreeLabel: 'Frei',
+      diskTotalLabel: 'Gesamt',
+      diskUsageSummary: (used, total, free) => `${used} von ${total} belegt · ${free} frei`,
+      retentionAuto: (days) =>
+        `Titel, die ${days} Tage nicht gespielt wurden, werden automatisch gelöscht. Likes und Playlists bleiben geschützt.`,
+      retentionManual: 'Es ist keine automatische Löschung eingerichtet.',
+      cleanupAction: 'Jetzt aufräumen',
+      cleanupTitle: 'Speicher jetzt aufräumen?',
+      cleanupWarning:
+        'Lange nicht gespielte Titel werden vom Server gelöscht und beim nächsten Abspielen erneut geladen.',
+      cleanupConfirm: 'Aufräumen',
+      cleaning: 'Wird aufgeräumt…',
+      cleanupDone: (removed, freed) => `${removed} Titel entfernt (${freed} freigegeben).`,
+      cleanupNothing: 'Keine abgelaufenen Titel zum Entfernen.',
+      cleanupFailed: (detail) => `Aufräumen fehlgeschlagen: ${detail}`,
+    },
+    statusSection: {
+      deezerTitle: 'Deezer',
+      deezerArl: 'ARL-Token',
+      deezerQuality: 'Qualität',
+      ok: 'OK',
+      missing: 'Fehlt',
+      error: 'Fehler',
+      storageTitle: 'Speicher',
+      usersTitle: 'Benutzer',
+      usersSummary: (approved, pending, admins) =>
+        `${approved} freigegeben · ${pending} wartend · ${admins} Admins`,
+      contentTitle: 'Inhalte',
+      contentPlaylists: 'Playlists',
+      contentLikes: 'Likes',
+      contentFollows: 'Folgt',
+      contentPlays: 'Wiedergaben',
+      contentLyrics: 'Songtexte',
+      contentParties: 'Jams',
+      contentInvites: 'Einladungen',
+      integrationsTitle: 'Integrationen',
+      spotify: 'Spotify',
+      lastfm: 'Last.fm',
+      configured: 'Aktiv',
+      systemTitle: 'System',
+      environment: 'Umgebung',
+      database: 'Datenbank',
+      jwtSecure: 'JWT-Schlüssel',
+      cookieSecure: 'Sichere Cookies',
+      secure: 'Sicher',
+      insecure: 'Unsicher',
+    },
+    time: {
+      never: 'Nie',
+      justNow: 'gerade eben',
+      minutesAgo: (count) => `vor ${count} Min.`,
+      hoursAgo: (count) => `vor ${count} Std.`,
+      yesterday: 'gestern',
+      daysAgo: (count) => `vor ${count} Tagen`,
+      weeksAgo: (count) => (count === 1 ? 'vor 1 Woche' : `vor ${count} Wochen`),
+      durationZero: '0 Min.',
+      durationLessMinute: '< 1 Min.',
+      durationMinutes: (minutes) => `${minutes} Min.`,
+      durationHours: (hours) => `${hours} Std.`,
+      durationHoursMinutes: (hours, minutes) => `${hours} Std. ${minutes} Min.`,
+      durationDays: (days) => `${days} T.`,
+      durationDaysHours: (days, hours) => `${days} T. ${hours} Std.`,
+    },
+  },
 };
 
 export const en: StringCatalog = {
@@ -2810,5 +3204,206 @@ export const en: StringCatalog = {
     resumedPlayback: 'Resuming playback.',
     startedPlayback: (title) => `Playing “${title}”.`,
     searchContextLabel: (query) => `Voice search: “${query}”`,
+  },
+  admin: {
+    title: 'Administration',
+    subtitle: 'Usage, users, storage, and system status.',
+    tabsLabel: 'Administration sections',
+    tabs: {
+      usage: 'Usage',
+      users: 'Users',
+      storage: 'Storage',
+      status: 'Status',
+    },
+    refresh: 'Refresh administration data',
+    loading: 'Loading administration data…',
+    offline: 'Offline — administration data cannot be loaded.',
+    loadFailed: (detail) => `Could not load administration data: ${detail}`,
+    cachedOffline: 'Offline — showing cached administration data.',
+    cachedRefreshFailed: 'Refresh failed — showing cached data.',
+    refreshing: 'Refreshing administration data…',
+    stale: 'Administration data may be outdated.',
+    forbidden: 'Access denied: administrators only.',
+    usage: {
+      rangeLabel: 'Usage timeframe',
+      ranges: {
+        '7d': '7 days',
+        '30d': '30 days',
+        all: 'All time',
+      },
+      sortLabel: 'Sort users by',
+      sorts: {
+        plays: 'Plays',
+        exclusive_bytes: 'Storage',
+        tracks_requested: 'Requested',
+        last_active_at: 'Active',
+      },
+      trackingSince: (date) => `Track requests recorded since ${date}.`,
+      noTrackingYet: 'No track requests recorded yet.',
+      kpiUsers: 'Users',
+      kpiUsersSub: (active, pending) =>
+        pending > 0 ? `${active} active · ${pending} pending` : `${active} active`,
+      kpiPlays: 'Plays',
+      kpiUniqueTracks: (count) => `${count} unique tracks`,
+      kpiRequested: 'Requested',
+      kpiMaterialized: (count, bytes) => `${count} fetched (${bytes})`,
+      kpiCache: 'Audio cache',
+      kpiDiskFree: (free, tracks) => `${tracks} tracks · ${free} free`,
+      kpiLive: 'Live Connect',
+      kpiLiveSub: (users, parties) =>
+        parties > 0 ? `${users} users · ${parties} Jams` : `${users} users online`,
+      storageExclusive: 'Exclusive',
+      storageShared: 'Shared',
+      storageUnattributed: 'Unattributed',
+      usersTitle: (count) => `Users (${count})`,
+      usersEmpty: 'No users found.',
+      livePlaying: (device) => (device ? `Playing · ${device}` : 'Playing now'),
+      liveOnline: (count) => (count === 1 ? '1 device online' : `${count} devices online`),
+      roleAdmin: 'Admin',
+      statusPending: 'Pending',
+      statusApproved: 'Approved',
+      playsShort: (plays, duration) => `${plays} plays · ${duration}`,
+      requestsShort: (requested, materialized) =>
+        `${requested} requested · ${materialized} fetched`,
+      storageShort: (exclusive, shared) => `Exclusive ${exclusive} · Shared ${shared}`,
+      lastActive: (relative) => `Active: ${relative}`,
+      openUserDetail: (name) => `Open usage details for ${name}`,
+    },
+    detail: {
+      closeLabel: 'Close user details',
+      memberSince: (date) => `Member since ${date}`,
+      activeDevicesTitle: 'Active Connect devices',
+      activeDevicesEmpty: 'No devices online right now.',
+      deviceActive: 'Active',
+      deviceParty: (code) => `Jam ${code}`,
+      storageTitle: 'Storage attribution',
+      storageExclusiveRow: (bytes, tracks) => `${bytes} (${tracks} exclusive tracks)`,
+      storageSharedRow: (bytes, tracks) => `${bytes} (${tracks} shared tracks)`,
+      storagePinnedRow: (bytes, tracks) => `${bytes} (${tracks} protected by likes/playlists)`,
+      storageMaterializedRow: (bytes, tracks) => `${bytes} (${tracks} directly requested)`,
+      storageUploadsRow: 'Uploads (avatar/covers)',
+      storageTotalCache: (bytes) => `Total audio cache: ${bytes}`,
+      libraryTitle: 'Library & activity',
+      libLikes: 'Likes',
+      libPlaylists: 'Playlists',
+      libFollows: 'Following',
+      libParty: 'Jam tracks',
+      libImports: 'Imports',
+      sourcesTitle: 'Requests by source',
+      sourcesEmpty: 'No track requests in this timeframe.',
+      sources: {
+        stream: 'Stream',
+        preload: 'Preload',
+        playlist_export: 'Playlist export',
+        party_preload: 'Jam preload',
+        radar_preload: 'Release Radar',
+        lyrics_ai: 'AI lyrics',
+      },
+      sourceRow: (requests, materialized, bytes) =>
+        `${requests} requests · ${materialized} fetched (${bytes})`,
+      topTracksTitle: 'Top tracks',
+      topArtistsTitle: 'Top artists',
+      recentPlaysTitle: 'Recent plays',
+      recentRequestsTitle: 'Recent requests',
+      emptySection: 'No entries in this timeframe.',
+      requestCached: 'Fetched',
+      requestHit: 'Cache hit',
+      requestStored: 'Cached',
+      requestEvicted: 'Not cached',
+    },
+    usersSection: {
+      usersTitle: 'User accounts',
+      pendingBadge: (count) => `${count} pending`,
+      usersEmpty: 'No users yet.',
+      approve: 'Approve',
+      approving: 'Approving…',
+      remove: 'Remove',
+      approvedFeedback: (name) => `${name} was approved.`,
+      removedFeedback: (name) => `${name} was removed.`,
+      approveFailed: (detail) => `Approval failed: ${detail}`,
+      removeFailed: (detail) => `Removal failed: ${detail}`,
+      deleteTitle: 'Remove user?',
+      deleteWarning: (name, email) =>
+        `${name} (${email}) will be permanently deleted along with playlists, likes, and history. This cannot be undone.`,
+      deleteConfirm: 'Remove permanently',
+      deleting: 'Removing…',
+      invitesTitle: 'Invite links',
+      invitesEmpty: 'No invite links created yet.',
+      createInvite: 'Create link',
+      creatingInvite: 'Creating…',
+      inviteCreated: 'Invite link created.',
+      inviteCreateFailed: (detail) => `Could not create invite link: ${detail}`,
+      inviteFree: 'Unused',
+      inviteUsedBy: (name) => `Used by ${name}`,
+      shareInvite: 'Share',
+      shareInviteFailed: (detail) => `Could not share link: ${detail}`,
+      shareInviteMessage: (url) => `Invitation to LoggeRythm: ${url}`,
+    },
+    storageSection: {
+      tracksLabel: 'Tracks',
+      audioBytesLabel: 'Audio cache',
+      diskFreeLabel: 'Free',
+      diskTotalLabel: 'Total',
+      diskUsageSummary: (used, total, free) => `${used} of ${total} used · ${free} free`,
+      retentionAuto: (days) =>
+        `Tracks not played for ${days} days are deleted automatically. Likes and playlists stay protected.`,
+      retentionManual: 'No automatic expiration is configured.',
+      cleanupAction: 'Clean up now',
+      cleanupTitle: 'Clean up storage now?',
+      cleanupWarning:
+        'Tracks not played recently will be removed from the server and re-fetched when played again.',
+      cleanupConfirm: 'Clean up',
+      cleaning: 'Cleaning up…',
+      cleanupDone: (removed, freed) => `${removed} tracks removed (${freed} freed).`,
+      cleanupNothing: 'No expired tracks to remove.',
+      cleanupFailed: (detail) => `Cleanup failed: ${detail}`,
+    },
+    statusSection: {
+      deezerTitle: 'Deezer',
+      deezerArl: 'ARL token',
+      deezerQuality: 'Quality',
+      ok: 'OK',
+      missing: 'Missing',
+      error: 'Error',
+      storageTitle: 'Storage',
+      usersTitle: 'Users',
+      usersSummary: (approved, pending, admins) =>
+        `${approved} approved · ${pending} pending · ${admins} admins`,
+      contentTitle: 'Content',
+      contentPlaylists: 'Playlists',
+      contentLikes: 'Likes',
+      contentFollows: 'Following',
+      contentPlays: 'Plays',
+      contentLyrics: 'Lyrics',
+      contentParties: 'Jams',
+      contentInvites: 'Invites',
+      integrationsTitle: 'Integrations',
+      spotify: 'Spotify',
+      lastfm: 'Last.fm',
+      configured: 'Active',
+      systemTitle: 'System',
+      environment: 'Environment',
+      database: 'Database',
+      jwtSecure: 'JWT secret',
+      cookieSecure: 'Secure cookies',
+      secure: 'Secure',
+      insecure: 'Insecure',
+    },
+    time: {
+      never: 'Never',
+      justNow: 'just now',
+      minutesAgo: (count) => `${count}m ago`,
+      hoursAgo: (count) => `${count}h ago`,
+      yesterday: 'yesterday',
+      daysAgo: (count) => `${count}d ago`,
+      weeksAgo: (count) => (count === 1 ? '1w ago' : `${count}w ago`),
+      durationZero: '0m',
+      durationLessMinute: '< 1m',
+      durationMinutes: (minutes) => `${minutes}m`,
+      durationHours: (hours) => `${hours}h`,
+      durationHoursMinutes: (hours, minutes) => `${hours}h ${minutes}m`,
+      durationDays: (days) => `${days}d`,
+      durationDaysHours: (days, hours) => `${days}d ${hours}h`,
+    },
   },
 };

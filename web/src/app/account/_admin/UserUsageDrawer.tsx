@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import Avatar from "@/components/Avatar";
 import Cover from "@/components/ui/Cover";
@@ -495,7 +496,7 @@ export default function UserUsageDrawer({
 
   const displayName = data ? userDisplayName(data.user) : (selectedUserName ?? "Benutzerdetails");
 
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-[120] flex items-end justify-end bg-backdrop/80 backdrop-blur-xs sm:items-stretch"
       onClick={onClose}
@@ -595,4 +596,7 @@ export default function UserUsageDrawer({
       </aside>
     </div>
   );
+
+  // Portal into document.body so ancestor transforms (`.animate-in`) never trap `fixed` layout.
+  return typeof document !== "undefined" ? createPortal(overlay, document.body) : overlay;
 }

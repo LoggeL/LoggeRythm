@@ -75,6 +75,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
   ProfileIdentityCard: 'ProfileIdentityCard',
   SleepTimerPanel: 'SleepTimerPanel',
 }));
+vi.mock('../components/profile/AdminHubPanel', () => ({ default: 'AdminHubPanel' }));
 vi.mock('../components/profile/ConnectSettingsPanel', () => ({ default: 'ConnectSettingsPanel' }));
 vi.mock('../components/profile/LanguageSelector', () => ({ default: 'LanguageSelector' }));
 vi.mock('../components/profile/AndroidUpdateCard', () => ({ default: 'AndroidUpdateCard' }));
@@ -297,6 +298,34 @@ describe('ProfileScreen account deletion', () => {
     expect(order.slice(0, 2)).toEqual(['profile-hero', 'ProfileIdentityCard']);
     expect(order.slice(-3)).toEqual(['ProfileEditForm', 'AndroidUpdateCard', 'profile-danger']);
     expect(order.filter((entry) => entry === 'AndroidUpdateCard')).toHaveLength(1);
+    expect(order).not.toContain('AdminHubPanel');
+  });
+
+  it('mounts the cohesive AdminHubPanel inside ProfileScreen only for admin accounts', () => {
+    const auth = mocks.useAuth();
+    mocks.useAuth.mockReturnValue({
+      ...auth,
+      user: { ...auth.user, is_admin: true },
+    });
+    const adminTree = renderDeletionState(false, false, null).tree;
+    const order = scrollOrder(adminTree);
+    expect(order.indexOf('AdminHubPanel')).toBe(order.indexOf('ListeningStatsPanel') + 1);
+    const hub = elements(adminTree).find((element) => element.type === 'AdminHubPanel');
+    expect(hub?.props).toEqual({
+      scope: 'https://music.example.test::user:7',
+      apiBase: 'https://music.example.test',
+      currentUserId: 7,
+    });
+
+    mocks.useState.mockReset();
+    mocks.tvEnv = {
+      isTv: true,
+      overscan: { top: 27, right: 48, bottom: 27, left: 48 },
+      contentPaddingHorizontal: 28,
+      gridGap: 16,
+    };
+    const tvAdminTree = renderDeletionState(false, false, null).tree;
+    expect(elements(tvAdminTree).some((element) => element.type === 'AdminHubPanel')).toBe(true);
   });
 
   it('guards the bottom Android gesture bar with ProfileBottomSafeSpacer and renders a 2-column TV layout without double overscan', () => {

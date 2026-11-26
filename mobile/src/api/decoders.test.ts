@@ -4,7 +4,9 @@ import {
   decodeAdminInvites,
   decodeAdminStatus,
   decodeAdminStorageInfo,
+  decodeAdminUsageOverview,
   decodeAdminUsers,
+  decodeAdminUserUsageDetail,
   decodeAlbum,
   decodeAlbumSummaries,
   decodeArtistDetail,
@@ -690,6 +692,201 @@ describe('API response decoders', () => {
       freed_bytes: 100,
     });
     expect(() => decodeStorageCleanupResult({ removed: 0.5, freed_bytes: 1 })).toThrow(/removed/);
+  });
+
+  it('decodes admin usage overview & detail strictly, handling null display_name/created_at and empty top_artists key', () => {
+    const userSummary = {
+      id: 2,
+      email: 'listener@example.test',
+      display_name: null,
+      avatar_url: null,
+      is_admin: false,
+      is_approved: true,
+      created_at: null,
+      last_active_at: '2026-11-24T12:00:00Z',
+      plays: 12,
+      listening_sec: 2400,
+      unique_tracks: 7,
+      tracks_requested: 5,
+      tracks_materialized: 3,
+      materialized_bytes: 9000,
+      storage: {
+        exclusive_bytes: 4000,
+        exclusive_tracks: 2,
+        shared_bytes: 2000,
+        shared_tracks: 1,
+        accessed_bytes: 6000,
+        accessed_tracks: 3,
+        materialized_bytes: 4000,
+        materialized_tracks: 2,
+        pinned_bytes: 2000,
+        pinned_tracks: 1,
+        upload_bytes: 512,
+      },
+      library: {
+        likes: 3,
+        playlists: 2,
+        public_playlists: 1,
+        playlist_tracks: 8,
+        follows: 2,
+        party_tracks_added: 1,
+        party_hosted: 0,
+        import_jobs: 1,
+        import_tracks_matched: 10,
+      },
+      online_devices: 1,
+      is_playing_now: true,
+      active_device_name: 'Pixel 9',
+      active_party_code: null,
+    };
+
+    const overviewPayload = {
+      range: '30d',
+      generated_at: '2026-11-24T12:05:00Z',
+      request_tracking_since: null,
+      overview: {
+        total_users: 1,
+        approved_users: 1,
+        pending_users: 0,
+        active_users: 1,
+        total_plays: 12,
+        total_listening_sec: 2400,
+        unique_tracks_played: 7,
+        tracks_requested: 5,
+        tracks_materialized: 3,
+        materialized_bytes: 9000,
+        online_connect_devices: 1,
+        online_connect_users: 1,
+        active_parties: 0,
+        storage: {
+          cached_tracks: 4,
+          total_audio_bytes: 7000,
+          exclusive_audio_bytes: 4000,
+          exclusive_audio_tracks: 2,
+          shared_audio_bytes: 2000,
+          shared_audio_tracks: 1,
+          unattributed_audio_bytes: 1000,
+          unattributed_audio_tracks: 1,
+          directly_attributed_tracks: 2,
+          directly_attributed_bytes: 4000,
+          upload_bytes: 512,
+          disk_total: 100000,
+          disk_used: 40000,
+          disk_free: 60000,
+          retention_days: 30,
+        },
+      },
+      users: [userSummary],
+    };
+
+    const decodedOverview = decodeAdminUsageOverview(overviewPayload);
+    expect(decodedOverview.users[0].display_name).toBeNull();
+    expect(decodedOverview.users[0].created_at).toBeNull();
+
+    // Conservation & invariant failures must throw loudly.
+    expect(() =>
+      decodeAdminUsageOverview({
+        ...overviewPayload,
+        overview: {
+          ...overviewPayload.overview,
+          storage: { ...overviewPayload.overview.storage, total_audio_bytes: 9999 },
+        },
+      }),
+    ).toThrow(/total_audio_bytes/);
+
+    expect(() =>
+      decodeAdminUsageOverview({
+        ...overviewPayload,
+        users: [{ ...userSummary, tracks_materialized: 6 }],
+      }),
+    ).toThrow(/tracks_materialized/);
+
+    expect(() =>
+      decodeAdminUsageOverview({
+        ...overviewPayload,
+        users: [
+          {
+            ...userSummary,
+            storage: { ...userSummary.storage, accessed_bytes: 5999 },
+          },
+        ],
+      }),
+    ).toThrow(/accessed_bytes/);
+
+    expect(() =>
+      decodeAdminUsageOverview({
+        ...overviewPayload,
+        range: '90d',
+      }),
+    ).toThrow(/range/);
+
+    const detailPayload = {
+      range: 'all',
+      generated_at: '2026-11-24T12:05:00Z',
+      request_tracking_since: '2026-11-01T00:00:00Z',
+      user: userSummary,
+      storage_breakdown: { ...userSummary.storage, total_cache_bytes: 7000 },
+      requests_by_source: [
+        { source: 'party_preload', requests: 2, materialized: 1, materialized_bytes: 3000 },
+      ],
+      active_devices: [
+        {
+          device_id: 'dev-1',
+          name: 'Pixel 9',
+          device_type: 'mobile',
+          is_active: true,
+          party_code: null,
+          connected_at: '2026-11-24T11:00:00Z',
+          last_seen_at: '2026-11-24T12:00:00Z',
+        },
+      ],
+      top_tracks: [{ key: 12345, label: 'Song', sublabel: 'Artist', cover: '', count: 3 }],
+      top_artists: [{ key: '', label: 'Artist Without ID', sublabel: '', cover: '', count: 3 }],
+      recent_plays: [
+        {
+          id: '12345',
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          cover: '',
+          duration_sec: 180,
+          played_at: '2026-11-24T11:50:00Z',
+        },
+      ],
+      recent_requests: [
+        {
+          deezer_id: '12345',
+          title: 'Song',
+          artist: 'Artist',
+          cover: '',
+          source: 'stream',
+          materialized: true,
+          size_bytes: 3000,
+          requested_at: '2026-11-24T11:49:00Z',
+          is_currently_stored: true,
+        },
+      ],
+    };
+
+    const decodedDetail = decodeAdminUserUsageDetail(detailPayload);
+    expect(decodedDetail.top_tracks[0].key).toBe('12345');
+    expect(decodedDetail.top_artists[0].key).toBe('');
+
+    expect(() =>
+      decodeAdminUserUsageDetail({
+        ...detailPayload,
+        top_tracks: [{ key: '', label: 'Bad Track', sublabel: '', cover: '', count: 1 }],
+      }),
+    ).toThrow(/top_tracks\[0\]\.key/);
+
+    expect(() =>
+      decodeAdminUserUsageDetail({
+        ...detailPayload,
+        requests_by_source: [
+          { source: 'unknown_source', requests: 1, materialized: 0, materialized_bytes: 0 },
+        ],
+      }),
+    ).toThrow(/source/);
   });
 });
 

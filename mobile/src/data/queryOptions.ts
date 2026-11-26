@@ -2,7 +2,7 @@ import { queryOptions } from '@tanstack/react-query';
 import { canonicalDeezerIds, normalizeSearchQuery, queryKeys, type QueryScope } from './queryKeys';
 import { releaseRadarTracks } from './releaseRadar';
 import { musicRepository, type MusicRepository } from './repositories';
-import type { DeezerId, ImportJobStatus, TrackPlayQuery } from '../api/types';
+import type { AdminUsageRange, DeezerId, ImportJobStatus, TrackPlayQuery } from '../api/types';
 
 /** How often the import list refreshes while an import is still working. */
 export const IMPORT_JOB_POLL_MS = 1500;
@@ -302,6 +302,18 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
       return queryOptions({
         queryKey: queryKeys.admin.invites(scope),
         queryFn: ({ signal }) => repository.getAdminInvites(signal),
+      });
+    },
+    adminUsage(scope: QueryScope, range: AdminUsageRange) {
+      return queryOptions({
+        queryKey: queryKeys.admin.usage(scope, range),
+        queryFn: ({ signal }) => repository.getAdminUsage(range, signal),
+      });
+    },
+    adminUserUsage(scope: QueryScope, userId: number, range: AdminUsageRange) {
+      return queryOptions({
+        queryKey: queryKeys.admin.userUsage(scope, userId, range),
+        queryFn: ({ signal }) => repository.getAdminUserUsage(userId, range, signal),
       });
     },
   };
