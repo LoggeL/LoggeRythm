@@ -231,8 +231,11 @@ input[type="range"]:disabled { cursor: default; opacity: .5; }
 .scrubber-rail { position: relative; height: 22px; touch-action: none; }
 .scrubber-track { position: absolute; left: 0; right: 0; top: 50%; height: 4px; transform: translateY(-50%); border-radius: 999px; background: rgb(244 240 230 / 0.16); overflow: hidden; pointer-events: none; transition: height .15s var(--ease-out); }
 .scrubber-fill { width: 100%; height: 100%; background: var(--accent-soft); transform-origin: left center; transform: scaleX(var(--scrub-ratio, 0)); will-change: transform; }
-.scrubber-knob-track { position: absolute; left: 5px; right: 5px; top: 50%; height: 0; pointer-events: none; }
-.scrubber-knob-travel { position: relative; width: 100%; height: 0; transform: translate3d(calc(var(--scrub-ratio, 0) * 100%), 0, 0); will-change: transform; }
+.scrubber-knob-track { position: absolute; left: 5px; right: 5px; top: 50%; height: 0; pointer-events: none; container-type: inline-size; }
+/* Zero-width carrier moved by the track's width (100cqi). A full-width carrier
+   translated by its own width would stick out past the viewport and give the
+   whole page a horizontal scrollbar while a song plays. */
+.scrubber-knob-travel { position: relative; width: 0; height: 0; transform: translate3d(calc(var(--scrub-ratio, 0) * 100cqi), 0, 0); will-change: transform; }
 .scrubber-knob { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 999px; background: var(--accent-soft); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent), 0 1px 4px rgb(0 0 0 / 0.65); transform: translate(-50%, -50%) scale(1); transition: transform .15s var(--ease-out), box-shadow .15s ease, opacity .15s ease; }
 .scrubber-rail[data-empty="true"] .scrubber-knob { opacity: 0; transform: translate(-50%, -50%) scale(0); }
 .scrubber-rail:not([data-disabled="true"]):hover .scrubber-track,
