@@ -92,7 +92,10 @@ const stubs = {
     "export const canControlPartyPlayback = () => true; export const usePartyStore = (sel) => sel({ active: false, detached: false, isHost: false, guestsCanControl: true, hostName: '' });",
   ),
   "@/store/uiModals": moduleUrl(
-    "export const useUiModalsStore = { getState: () => ({ audioEffectsOpen: false, setAudioEffectsOpen() {} }) };",
+    "const s = { audioEffectsOpen: false, setAudioEffectsOpen() {} }; export const useUiModalsStore = Object.assign((sel) => sel(s), { getState: () => s });",
+  ),
+  "@/store/audioEffects": moduleUrl(
+    "const s = { eqEnabled: false, preset: 'flat', bands: [0, 0, 0, 0, 0], compressorEnabled: false, playbackRate: 1 }; export const useAudioEffectsStore = (sel) => sel(s);",
   ),
   "@/components/LikeButton": noopComponent,
   "@/components/EqualizerBars": noopComponent,
@@ -121,8 +124,9 @@ const stubs = {
     "export default function Scrubber() { return null; } export function ProgressLine() { return null; } export const rangeFill = () => '';",
   ),
   "@/components/player/DeviceSelector": moduleUrl("export function DeviceSelectorTrigger() { return null; }"),
-  "@/components/player/SleepTimerControl": moduleUrl("export function SleepTimerTrigger() { return null; }"),
-  "@/components/player/AudioEffectsControl": moduleUrl("export function AudioEffectsTrigger() { return null; }"),
+  "@/components/player/SleepTimerControl": moduleUrl(
+    "export function useSleepTimerStatus() { return { sleepAt: null, sleepAfterTrack: false, armed: false, remaining: null, statusLabel: 'Aus', endsAt: null }; }",
+  ),
   "@/components/player/PictureInPictureButton": noopComponent,
   "@/components/player/ActiveOutputBanner": noopComponent,
   "@/components/player/usePlayerSideEffects": moduleUrl("export const setNowPlayingOpen = () => {};"),

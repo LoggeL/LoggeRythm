@@ -7,7 +7,7 @@ import { useUiModalsStore } from "@/store/uiModals";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { CloseIcon, MoonIcon } from "@/components/icons";
 
-const PRESETS = [15, 30, 45, 60] as const;
+export const SLEEP_TIMER_PRESETS = [15, 30, 45, 60] as const;
 
 let clockNow = 0;
 const clockListeners = new Set<() => void>();
@@ -26,9 +26,12 @@ function subscribeSecondClock(listener: () => void): () => void {
   }
   return () => {
     clockListeners.delete(listener);
-    if (clockListeners.size === 0 && clockTimer !== null) {
-      window.clearInterval(clockTimer);
-      clockTimer = null;
+    if (clockListeners.size === 0) {
+      if (clockTimer !== null) {
+        window.clearInterval(clockTimer);
+        clockTimer = null;
+      }
+      clockNow = 0;
     }
   };
 }
@@ -53,17 +56,43 @@ function useSecondClock(active: boolean): number {
   );
 }
 
-function formatRemaining(ms: number): string {
+export function formatSleepRemaining(ms: number): string {
   const totalSec = Math.max(0, Math.ceil(ms / 1000));
   const mins = Math.floor(totalSec / 60);
   const secs = totalSec % 60;
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+export interface SleepTimerStatus {
+  sleepAt: number | null;
+  sleepAfterTrack: boolean;
+  armed: boolean;
+  remaining: string | null;
+  statusLabel: string;
+  endsAt: string | null;
+}
+
+/** Shared live sleep-timer snapshot for triggers, popovers, and consolidated audio controls. */
+export function useSleepTimerStatus(): SleepTimerStatus {
+  const sleepAt = usePlayerStore((s) => s.sleepAt);
+  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
+  const now = useSecondClock(sleepAt != null);
+
+  const armed = sleepAt != null || sleepAfterTrack;
+  const countdown = sleepAt != null ? formatSleepRemaining(now > 0 ? sleepAt - now : 0) : null;
+  const remaining = countdown ?? (sleepAfterTrack ? "1×" : null);
+  const statusLabel = countdown ?? (sleepAfterTrack ? "Titelende" : "Aus");
+  const endsAt =
+    sleepAt == null
+      ? null
+      : new Date(sleepAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+
+  return { sleepAt, sleepAfterTrack, armed, remaining, statusLabel, endsAt };
+}
+
 /**
- * Compact Sleep-Timer trigger button for PlayerBar & NowPlaying. Shows a live
- * countdown badge when armed. The popover itself is mounted once via
- * `<SleepTimerHost />`.
+ * Compact Sleep-Timer trigger button for NowPlaying. Shows a live countdown
+ * badge when armed. The popover itself is mounted once via `<SleepTimerHost />`.
  */
 export function SleepTimerTrigger({
   compact = false,
@@ -72,15 +101,11 @@ export function SleepTimerTrigger({
   compact?: boolean;
   className?: string;
 }) {
-  const sleepAt = usePlayerStore((s) => s.sleepAt);
-  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
+  const { sleepAt, armed, remaining } = useSleepTimerStatus();
   const open = useUiModalsStore((s) => s.sleepTimerOpen);
   const setOpen = useUiModalsStore((s) => s.setSleepTimerOpen);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const now = useSecondClock(sleepAt != null);
 
-  const armed = sleepAt != null || sleepAfterTrack;
-  const remaining = sleepAt != null ? formatRemaining(now > 0 ? sleepAt - now : 0) : sleepAfterTrack ? "1×" : null;
   const label = armed
     ? sleepAt != null
       ? `Sleep-Timer aktiv (${remaining})`
@@ -115,6 +140,74 @@ export function SleepTimerTrigger({
   );
 }
 
+/** Inline Sleep-Timer section embedded inside the consolidated audio popover. */
+export function SleepTimerSection() {
+  const { sleepAt, sleepAfterTrack, armed, statusLabel, endsAt } = useSleepTimerStatus();
+  const setSleepTimer = usePlayerStore((s) => s.setSleepTimer);
+  const setSleepAfterTrack = usePlayerStore((s) => s.setSleepAfterTrack);
+
+  return (
+    <div className="space-y-2 border-t border-hairline pt-2.5" data-sleep-timer-section="">
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground">
+          <MoonIcon
+            width={14}
+            height={14}
+            className={armed ? "shrink-0 text-accent" : "shrink-0 text-muted"}
+            aria-hidden="true"
+          />
+          Sleep-Timer
+        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={`font-mono text-xs tabular-nums ${
+              armed ? "font-semibold text-accent" : "text-muted"
+            }`}
+          >
+            {statusLabel}
+          </span>
+          {armed && (
+            <button
+              type="button"
+              onClick={() => setSleepTimer(null)}
+              className="action-secondary min-h-7 px-2 text-[11px]"
+            >
+              Stoppen
+            </button>
+          )}
+        </div>
+      </div>
+
+      {armed && (
+        <p className="font-mono text-[10.5px] text-muted">
+          {sleepAt != null ? `Blendet um ${endsAt} Uhr sanft aus` : "Pause nach dem aktuellen Titel"}
+        </p>
+      )}
+
+      <div className="grid grid-cols-4 gap-1" role="group" aria-label="Sleep-Timer Dauer wählen">
+        {SLEEP_TIMER_PRESETS.map((minutes) => (
+          <button
+            key={minutes}
+            type="button"
+            onClick={() => setSleepTimer(minutes)}
+            className="filter-chip min-h-8 justify-center px-1 font-mono text-[11px] tabular-nums"
+          >
+            {minutes} min
+          </button>
+        ))}
+        <button
+          type="button"
+          aria-pressed={sleepAfterTrack}
+          onClick={() => setSleepAfterTrack(true)}
+          className="filter-chip col-span-4 min-h-8 justify-center px-2 text-xs"
+        >
+          Ende des aktuellen Titels
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Single workspace-level host for the Sleep-Timer popover. */
 export function SleepTimerHost() {
   const open = useUiModalsStore((s) => s.sleepTimerOpen);
@@ -131,12 +224,10 @@ function SleepTimerPopover({
   anchorElement: HTMLElement | null;
   onClose: () => void;
 }) {
-  const sleepAt = usePlayerStore((s) => s.sleepAt);
-  const sleepAfterTrack = usePlayerStore((s) => s.sleepAfterTrack);
+  const { sleepAt, sleepAfterTrack, armed, statusLabel, endsAt } = useSleepTimerStatus();
   const setSleepTimer = usePlayerStore((s) => s.setSleepTimer);
   const setSleepAfterTrack = usePlayerStore((s) => s.setSleepAfterTrack);
   const panelRef = useRef<HTMLDivElement>(null);
-  const now = useSecondClock(sleepAt != null);
 
   useDialogFocus(true, panelRef, onClose);
 
@@ -178,9 +269,6 @@ function SleepTimerPopover({
 
   if (typeof document === "undefined") return null;
 
-  const armed = sleepAt != null || sleepAfterTrack;
-  const endsAt = sleepAt == null ? null : new Date(sleepAt).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
-
   return createPortal(
     <>
       <div aria-hidden="true" onClick={onClose} className="fixed inset-0 z-[125] bg-black/50 sm:hidden" />
@@ -207,7 +295,7 @@ function SleepTimerPopover({
 
         <div className={`flex items-center justify-between rounded-[var(--radius-card)] border px-3.5 py-2.5 ${armed ? "border-accent/40 bg-accent/10" : "border-hairline bg-white/[0.03]"}`}>
           <span className={`font-display text-2xl font-extrabold tabular-nums tracking-tight ${armed ? "text-foreground" : "text-subtle"}`}>
-            {sleepAt != null ? formatRemaining(now > 0 ? sleepAt - now : 0) : sleepAfterTrack ? "Titelende" : "Aus"}
+            {statusLabel}
           </span>
           {armed && (
             <button
@@ -221,7 +309,7 @@ function SleepTimerPopover({
         </div>
 
         <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Dauer wählen">
-          {PRESETS.map((minutes) => (
+          {SLEEP_TIMER_PRESETS.map((minutes) => (
             <button
               key={minutes}
               type="button"

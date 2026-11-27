@@ -20,8 +20,7 @@ import ArtistLinks from "@/components/ArtistLinks";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import Scrubber, { ProgressLine, rangeFill } from "@/components/player/Scrubber";
 import { DeviceSelectorTrigger } from "@/components/player/DeviceSelector";
-import { SleepTimerTrigger } from "@/components/player/SleepTimerControl";
-import { AudioEffectsTrigger } from "@/components/player/AudioEffectsControl";
+import { useSleepTimerStatus } from "@/components/player/SleepTimerControl";
 import PictureInPictureButton from "@/components/player/PictureInPictureButton";
 import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
 import {
@@ -29,8 +28,10 @@ import {
   MobileTransitionSummary,
 } from "@/components/player/TrackTransitionDeck";
 import { useTrackTransition } from "@/components/player/useTrackTransition";
+import { EQ_PRESET_LABELS, isAudioEffectsActive } from "@/lib/audioEffects";
 import { formatTime } from "@/lib/format";
 import { NAV_FORWARD } from "@/lib/morph";
+import { useAudioEffectsStore } from "@/store/audioEffects";
 import { setNowPlayingOpen } from "@/components/player/usePlayerSideEffects";
 import TrackSwap from "@/components/player/TrackSwap";
 import { trackSwapNeighbour, trackSwapSlot, type TrackSwapSlot } from "@/lib/trackSwap";
@@ -49,6 +50,8 @@ import {
   SpinnerIcon,
   ExpandIcon,
   AudioQualityIcon,
+  QualityHighIcon,
+  MoonIcon,
 } from "@/components/icons";
 import type { PlaybackSettings, Track } from "@/types";
 
@@ -222,8 +225,6 @@ function PanelToggles({ offlineOnly = false }: { offlineOnly?: boolean }) {
         <QueueIcon width={18} height={18} />
         {queueOpen && <ActiveDot />}
       </button>
-      <AudioEffectsTrigger />
-      <SleepTimerTrigger />
       {!offlineOnly && <DeviceSelectorTrigger />}
       <VolumeControl />
       <PictureInPictureButton />
@@ -242,28 +243,89 @@ function QualityBadge({ offlineOnly }: { offlineOnly: boolean }) {
     enabled: Boolean(!offlineOnly && me?.is_approved),
     staleTime: 5 * 60_000,
   });
-  if (offlineOnly || !settings?.preferred_quality) return null;
-  const quality = settings.preferred_quality;
-  const meta = AUDIO_QUALITY_META[quality];
+  const eqEnabled = useAudioEffectsStore((s) => s.eqEnabled);
+  const preset = useAudioEffectsStore((s) => s.preset);
+  const bands = useAudioEffectsStore((s) => s.bands);
+  const compressorEnabled = useAudioEffectsStore((s) => s.compressorEnabled);
+  const playbackRate = useAudioEffectsStore((s) => s.playbackRate);
+  const audioEffectsOpen = useUiModalsStore((s) => s.audioEffectsOpen);
+  const sleep = useSleepTimerStatus();
+
+  const quality = offlineOnly ? null : settings?.preferred_quality ?? null;
+  if (!offlineOnly && !quality) return null;
+
+  const meta = quality ? AUDIO_QUALITY_META[quality] : null;
+  const effectsActive = isAudioEffectsActive({
+    eqEnabled,
+    preset,
+    bands,
+    compressorEnabled,
+    playbackRate,
+  });
+  const speedChanged = Math.abs(playbackRate - 1) > 0.001;
+  const anyActive = effectsActive || sleep.armed;
+
+  const activeParts: string[] = [];
+  if (eqEnabled) activeParts.push(`EQ: ${EQ_PRESET_LABELS[preset]}`);
+  if (compressorEnabled) activeParts.push("Kompressor");
+  if (speedChanged) activeParts.push(`${playbackRate}×`);
+  if (sleep.armed) {
+    activeParts.push(
+      sleep.sleepAt != null ? `Sleep-Timer ${sleep.remaining}` : "Sleep-Timer (Titelende)",
+    );
+  }
+
+  const label = meta ? `Audioqualität: ${meta.label}` : "Klang, Tempo & Sleep-Timer";
+  const detail =
+    activeParts.length > 0
+      ? `${activeParts.join(" · ")}${meta ? ` · ${meta.detail}` : ""}`
+      : meta
+        ? `${meta.detail} · Equalizer, Tempo & Sleep-Timer`
+        : "Equalizer, Kompressor, Tempo & Sleep-Timer";
+  const ariaLabel = activeParts.length > 0 ? `${label} (${activeParts.join(", ")})` : label;
+
   const tone =
-    quality === "lossless"
+    anyActive || audioEffectsOpen || quality === "lossless"
       ? "text-accent"
-      : quality === "high"
+      : quality === "high" || offlineOnly
         ? "text-muted"
         : "text-subtle";
+
   return (
-    <Tooltip label={`Audioqualität: ${meta.label}`} detail={meta.detail}>
+    <Tooltip label={label} detail={detail}>
       <button
         type="button"
+        data-audio-effects-trigger=""
         onClick={(event) => {
           const modals = useUiModalsStore.getState();
           modals.setAudioEffectsOpen(!modals.audioEffectsOpen, event.currentTarget);
         }}
-        aria-label={`Audioqualität: ${meta.label}`}
-        data-quality-tier={quality}
-        className={`inline-flex shrink-0 items-center justify-center rounded-sm transition-colors hover:text-foreground ${tone}`}
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+        aria-expanded={audioEffectsOpen}
+        aria-pressed={anyActive || audioEffectsOpen}
+        data-quality-tier={quality ?? "offline"}
+        className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-sm transition-colors hover:text-foreground ${tone}`}
       >
-        <AudioQualityIcon quality={quality} width={14} height={14} aria-hidden="true" />
+        {quality ? (
+          <AudioQualityIcon quality={quality} width={14} height={14} aria-hidden="true" />
+        ) : (
+          <QualityHighIcon width={14} height={14} aria-hidden="true" />
+        )}
+        {speedChanged && (
+          <span className="font-mono text-[10px] font-semibold leading-none tabular-nums">
+            {playbackRate}×
+          </span>
+        )}
+        {sleep.armed && (
+          <span
+            data-sleep-indicator=""
+            className="inline-flex items-center gap-0.5 font-mono text-[10px] font-semibold leading-none tabular-nums"
+          >
+            <MoonIcon width={10} height={10} aria-hidden="true" />
+            {sleep.remaining}
+          </span>
+        )}
       </button>
     </Tooltip>
   );

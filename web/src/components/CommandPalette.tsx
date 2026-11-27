@@ -44,7 +44,7 @@ const PALETTE_COMMANDS: readonly PaletteCommand[] = [
   { id: "sleep-track", label: "Sleep-Timer: Ende des Titels", keywords: ["sleep", "timer", "ende", "titel", "pause", "pausieren"] },
   { id: "sleep-off", label: "Sleep-Timer ausschalten", keywords: ["sleep", "timer", "aus", "stop", "abbrechen"] },
   { id: "open-devices", label: "Geräte & Connect öffnen", detail: "Wiedergabe auf anderes Gerät übertragen oder Jam starten", keywords: ["connect", "gerät", "device", "jam", "party"], shortcut: "D" },
-  { id: "open-audio", label: "Equalizer & Geschwindigkeit", detail: "5-Band-EQ, Nachtmodus-Kompressor und Tempo", keywords: ["eq", "equalizer", "bass", "klang", "tempo", "speed", "kompressor"] },
+  { id: "open-audio", label: "Equalizer & Geschwindigkeit", detail: "5-Band-EQ, Kompressor, Tempo, Qualität & Sleep-Timer", keywords: ["eq", "equalizer", "bass", "klang", "tempo", "speed", "kompressor", "qualität"] },
   { id: "toggle-cinema", label: "Kino-Modus umschalten", detail: "Vollbild-Visualizer ohne störende Bedienelemente", keywords: ["kino", "cinema", "visualizer", "vollbild", "ambient"], shortcut: "C" },
   { id: "cycle-visualizer", label: "Visualizer-Szene wechseln", detail: "Nächste audio-reaktive Szene im Vollbildplayer", keywords: ["visualizer", "szene", "aura", "laser"], shortcut: "V" },
   { id: "toggle-lyrics", label: "Songtext umschalten", keywords: ["lyrics", "songtext", "text", "karaoke"], shortcut: "T" },

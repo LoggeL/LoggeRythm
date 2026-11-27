@@ -19,11 +19,65 @@ import { useAudioEffectsStore } from "@/store/audioEffects";
 import { toast } from "@/store/toast";
 import { useUiModalsStore } from "@/store/uiModals";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
+import { SleepTimerSection, useSleepTimerStatus } from "@/components/player/SleepTimerControl";
 import Tooltip from "@/components/ui/Tooltip";
 import { AudioQualityIcon, CloseIcon, SlidersIcon } from "@/components/icons";
 import type { AudioQuality, PlaybackSettings } from "@/types";
 
 const PRESET_ORDER: Exclude<EqPresetKey, "custom">[] = ["flat", "bass", "vocal", "late_night"];
+
+export interface PopoverAnchorRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Compute desktop popover coordinates relative to an anchor trigger rect.
+ * Right-aligns when opened from right-side controls (e.g. NowPlaying) and
+ * left-aligns when opened from left-side PlayerBar badges.
+ */
+export function computeAudioPopoverPosition({
+  viewportWidth,
+  viewportHeight,
+  popoverWidth,
+  popoverHeight,
+  anchorRect,
+  pad = 12,
+}: {
+  viewportWidth: number;
+  viewportHeight: number;
+  popoverWidth: number;
+  popoverHeight: number;
+  anchorRect: PopoverAnchorRect | null;
+  pad?: number;
+}): { left: number; top: number } {
+  const hasAnchor = Boolean(anchorRect && (anchorRect.width > 0 || anchorRect.height > 0));
+  const maxLeft = Math.max(pad, viewportWidth - popoverWidth - pad);
+  const left =
+    hasAnchor && anchorRect
+      ? Math.max(
+          pad,
+          Math.min(
+            anchorRect.right - popoverWidth >= pad ? anchorRect.right - popoverWidth : anchorRect.left,
+            maxLeft,
+          ),
+        )
+      : maxLeft;
+
+  const maxTop = Math.max(pad, viewportHeight - popoverHeight - pad);
+  const preferredTop =
+    hasAnchor && anchorRect ? anchorRect.top - popoverHeight - 10 : viewportHeight - popoverHeight - 96;
+  const top =
+    preferredTop >= pad
+      ? Math.min(preferredTop, maxTop)
+      : Math.max(pad, Math.min((anchorRect?.bottom ?? pad) + 8, maxTop));
+
+  return { left, top };
+}
 
 export function AudioEffectsTrigger({
   compact = false,
@@ -51,6 +105,7 @@ export function AudioEffectsTrigger({
     <button
       ref={buttonRef}
       type="button"
+      data-audio-effects-trigger=""
       onClick={() => setOpen(!open, buttonRef.current)}
       aria-label={label}
       aria-haspopup="dialog"
@@ -119,6 +174,8 @@ function AudioEffectsPopover({
       toast.error(`Audioqualität konnte nicht geändert werden: ${cause instanceof Error ? cause.message : String(cause)}`),
   });
   const panelRef = useRef<HTMLDivElement>(null);
+  const sleep = useSleepTimerStatus();
+  const hasQualitySection = Boolean(me?.is_approved && settingsQuery.data);
 
   useDialogFocus(true, panelRef, onClose);
 
@@ -132,26 +189,27 @@ function AudioEffectsPopover({
         return;
       }
       const { width, height } = el.getBoundingClientRect();
-      const pad = 12;
       const rect = anchorElement && anchorElement.isConnected ? anchorElement.getBoundingClientRect() : null;
-      const hasAnchor = Boolean(rect && (rect.width > 0 || rect.height > 0));
-      const left = hasAnchor && rect
-        ? Math.max(pad, Math.min(rect.right - width, window.innerWidth - width - pad))
-        : Math.max(pad, window.innerWidth - width - pad);
-      const preferredTop = hasAnchor && rect ? rect.top - height - 10 : window.innerHeight - height - 96;
-      const top = preferredTop >= pad ? preferredTop : Math.max(pad, Math.min((rect?.bottom ?? pad) + 8, window.innerHeight - height - pad));
+      const { left, top } = computeAudioPopoverPosition({
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        popoverWidth: width,
+        popoverHeight: height,
+        anchorRect: rect,
+      });
       el.style.left = `${left}px`;
       el.style.top = `${top}px`;
     };
     position();
     window.addEventListener("resize", position);
     return () => window.removeEventListener("resize", position);
-  }, [anchorElement]);
+  }, [anchorElement, hasQualitySection, sleep.armed]);
 
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
       if (panelRef.current?.contains(target) || anchorElement?.contains(target)) return;
+      if (target instanceof Element && target.closest("[data-audio-effects-trigger]")) return;
       onClose();
     };
     document.addEventListener("mousedown", onPointerDown);
@@ -169,11 +227,11 @@ function AudioEffectsPopover({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Klang & Wiedergabegeschwindigkeit"
-        className="pop-in scroll-area fixed inset-x-0 bottom-0 z-[130] flex max-h-[84dvh] flex-col gap-4 overflow-y-auto rounded-t-[var(--radius-panel)] border border-hairline bg-panel p-4 shadow-[0_24px_60px_rgb(0_0_0/0.65)] sm:inset-auto sm:w-[23rem] sm:rounded-[var(--radius-panel)]"
+        aria-label="Klang, Tempo & Sleep-Timer"
+        className="pop-in scroll-area fixed inset-x-0 bottom-0 z-[130] flex max-h-[84dvh] flex-col gap-3 overflow-y-auto rounded-t-[var(--radius-panel)] border border-hairline bg-panel p-4 shadow-[0_24px_60px_rgb(0_0_0/0.65)] sm:inset-auto sm:w-[23rem] sm:rounded-[var(--radius-panel)]"
       >
         <div className="flex items-center justify-between gap-2">
-          <h2 className="font-display text-base font-extrabold tracking-tight text-foreground">Klang & Tempo</h2>
+          <h2 className="font-display text-base font-extrabold tracking-tight text-foreground">Klang & Wiedergabe</h2>
           <div className="flex items-center gap-1">
             {active && (
               <button type="button" onClick={reset} className="action-secondary min-h-8 px-2.5 text-xs">
@@ -187,7 +245,7 @@ function AudioEffectsPopover({
         </div>
 
         {/* EQ enable switch + presets */}
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <div className="flex items-center justify-between gap-3">
             <span className="text-sm font-semibold text-foreground">Equalizer</span>
             <button
@@ -228,7 +286,7 @@ function AudioEffectsPopover({
             )}
           </div>
 
-          <div className={`space-y-2.5 rounded-[var(--radius-card)] border border-hairline bg-white/[0.025] p-3 ${eqEnabled ? "" : "opacity-55"}`}>
+          <div className={`space-y-2 rounded-[var(--radius-card)] border border-hairline bg-white/[0.025] p-2.5 ${eqEnabled ? "" : "opacity-55"}`}>
             {EQ_BANDS.map((band, idx) => {
               const value = bands[idx];
               const pct = ((value - EQ_MIN_DB) / (EQ_MAX_DB - EQ_MIN_DB)) * 100;
@@ -258,7 +316,7 @@ function AudioEffectsPopover({
         </div>
 
         {/* Late-Night Compressor */}
-        <div className="flex items-center justify-between gap-3 border-t border-hairline pt-3">
+        <div className="flex items-center justify-between gap-3 border-t border-hairline pt-2.5">
           <div className="min-w-0">
             <p className="text-sm font-semibold text-foreground">Nachtmodus-Kompressor</p>
             <p className="text-xs text-muted">Gleicht laute Spitzen und leise Passagen sanft an.</p>
@@ -283,7 +341,7 @@ function AudioEffectsPopover({
         </div>
 
         {/* Playback Speed */}
-        <div className="space-y-2 border-t border-hairline pt-3">
+        <div className="space-y-2 border-t border-hairline pt-2.5">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-foreground">Geschwindigkeit</span>
             <span className="font-mono text-xs tabular-nums text-muted">{playbackRate}×</span>
@@ -305,7 +363,7 @@ function AudioEffectsPopover({
 
         {/* Streaming Audio Quality */}
         {me?.is_approved && settingsQuery.data && (
-          <div className="space-y-2 border-t border-hairline pt-3">
+          <div className="space-y-2 border-t border-hairline pt-2.5">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Audioqualität</span>
               <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted">
@@ -346,6 +404,8 @@ function AudioEffectsPopover({
             </div>
           </div>
         )}
+
+        <SleepTimerSection />
       </div>
     </>,
     document.body,
