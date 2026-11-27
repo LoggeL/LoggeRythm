@@ -13,6 +13,7 @@ const stubs = {
   "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"),
   "@/store/downloads": moduleUrl(`export const useTrackCacheState = () => globalThis.__cacheMarkerFixture.state; export const useTrackCacheError = () => globalThis.__cacheMarkerFixture.error; export const retryTrackCacheStatus = async () => {}; export const reportTrackCacheFailure = () => {};`),
   "@/components/icons": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export const DownloadedIcon = (props) => createElement("svg", props);`),
+  "@/components/ui/Tooltip": moduleUrl(`import {createElement} from ${JSON.stringify(reactUrl)}; export default function Tooltip({label, children}) { return createElement("span", {"data-tooltip": label}, children); }`),
 };
 const source = await readFile(new URL("../src/components/CacheMarker.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {

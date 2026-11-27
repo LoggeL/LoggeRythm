@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   MAX_CLOCK_EXTRAPOLATION_SEC,
@@ -123,4 +124,33 @@ test("playbackClock registry registers, reads, and safely unregisters without cl
 
   disposeSecond();
   assert.equal(readLivePlaybackClock(), null);
+});
+
+test("scrubber knob travel CSS does not create full-width horizontal overflow", () => {
+  const css = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+
+  const ruleBody = (selector) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = css.match(new RegExp(`${escaped}\\s*\\{([^}]*)\\}`));
+    assert.ok(match, `Missing CSS rule for ${selector}`);
+    return match[1];
+  };
+
+  for (const trackSelector of [".scrubber-knob-track", ".progress-line-knob-track"]) {
+    const body = ruleBody(trackSelector);
+    assert.match(body, /\bcontainer-type:\s*inline-size\b/, `${trackSelector} must set container-type: inline-size`);
+    assert.match(body, /\bwidth:\s*calc\(100%\s*-\s*\d+px\)/, `${trackSelector} must have a definite calc(100% - Npx) width`);
+  }
+
+  for (const travelSelector of [".scrubber-knob-travel", ".progress-line-knob-travel"]) {
+    const body = ruleBody(travelSelector);
+    assert.match(body, /\bwidth:\s*0\b/, `${travelSelector} must set width: 0`);
+    assert.match(body, /\* 100cqi\b/, `${travelSelector} must translate using 100cqi`);
+    assert.doesNotMatch(body, /\bwidth:\s*100%/, `${travelSelector} must not use width: 100%`);
+    assert.doesNotMatch(body, /\* 100%/, `${travelSelector} must not translate by percentage of its own box`);
+  }
+
+  const seekEdgeBody = ruleBody(".seek-edge");
+  assert.match(seekEdgeBody, /\boverflow-x:\s*clip\b/, ".seek-edge must clip horizontal overhang with overflow-x: clip");
+  assert.doesNotMatch(seekEdgeBody, /\boverflow(?:-x)?:\s*hidden\b/, ".seek-edge must not use overflow: hidden (clips hover pill)");
 });

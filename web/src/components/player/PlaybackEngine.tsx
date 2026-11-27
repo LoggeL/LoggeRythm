@@ -25,16 +25,24 @@ import {
   computeCrossfadeWallDuration,
   equalPowerWeights,
 } from "@/lib/audioEffects";
-import { computeCueAwareCrossfade } from "@/lib/audioIntelligence";
+import {
+  classifyCrossfadePlan,
+  computeCueAwareCrossfade,
+  computeRescheduledCrossfadeTiming,
+} from "@/lib/audioIntelligence";
 import { useTrackAudioMeta } from "@/hooks/useTrackAudioMeta";
 import { useAudioEffectsStore } from "@/store/audioEffects";
 import { useDownloadedTracks } from "@/store/downloads";
 import { calculateLoudnessGain, loudnessMetadataFromTrack } from "@/lib/loudness";
 import { playWithMediaRecovery } from "@/lib/mediaPlayback";
-import { registerLivePlaybackClock } from "@/lib/playbackClock";
+import {
+  registerLivePlaybackClock,
+  registerLiveTransitionClock,
+} from "@/lib/playbackClock";
 import { useMe } from "@/hooks/useAuth";
 import { toast } from "@/store/toast";
 import { usePlayerSideEffects } from "@/components/player/usePlayerSideEffects";
+import type { TrackTransitionKind } from "@/types";
 
 const MEDIA_ERROR_LABELS: Record<number, string> = {
   1: "Wiedergabe abgebrochen",
@@ -83,6 +91,8 @@ async function describeStreamFailure(
 
 type DeckIndex = 0 | 1;
 
+const TRANSITION_PROGRESS_TICK_MS = 100;
+
 interface CrossfadeRun {
   outgoing: HTMLAudioElement;
   incoming: HTMLAudioElement;
@@ -91,12 +101,19 @@ interface CrossfadeRun {
   outgoingId: string;
   incomingId: string;
   targetIndex: number;
+  kind: TrackTransitionKind;
+  fadeMediaSec: number;
+  playbackRate: number;
   outgoingLoudnessGain: number;
   incomingLoudnessGain: number;
   durationSec: number;
   startedAt: number;
+  /** Store transition ID once `incoming.play()` resolves and audible overlap begins; null while preparing. */
+  transitionId: number | null;
   timer: number | null;
+  progressTimer: number | null;
   finishTimer: number | null;
+  completeHandoff: () => void;
   cancelCueSeek: (() => void) | null;
   usesWebAudioCurve: boolean;
   cancelled: boolean;
@@ -107,6 +124,7 @@ function releaseMedia(el: HTMLAudioElement): void {
   el.removeAttribute("src");
   el.dataset.trackId = "";
   el.dataset.gapless = "";
+  el.dataset.prebuffer = "";
   el.load();
 }
 
@@ -125,6 +143,7 @@ export default function PlaybackEngine() {
   const deckB = useRef<HTMLAudioElement>(null);
   const [activeIdx, setActiveIdx] = useState<DeckIndex>(0);
   const activeIdxRef = useRef<DeckIndex>(0);
+  const crossfadeRun = useRef<CrossfadeRun | null>(null);
   useEffect(() => {
     activeIdxRef.current = activeIdx;
   }, [activeIdx]);
@@ -142,9 +161,32 @@ export default function PlaybackEngine() {
       }),
     [],
   );
+  useEffect(
+    () =>
+      registerLiveTransitionClock(() => {
+        const run = crossfadeRun.current;
+        if (
+          !run ||
+          run.cancelled ||
+          run.transitionId === null ||
+          !Number.isFinite(run.durationSec) ||
+          run.durationSec <= 0
+        ) {
+          return null;
+        }
+        const durationMs = run.durationSec * 1000;
+        const elapsedMs = Math.max(0, performance.now() - run.startedAt);
+        const progress = Math.max(0, Math.min(1, elapsedMs / durationMs));
+        return {
+          id: run.transitionId,
+          progress,
+          remainingMs: Math.max(0, durationMs - elapsedMs),
+        };
+      }),
+    [],
+  );
   const pendingSeekCancel = useRef<(() => void) | null>(null);
 
-  const crossfadeRun = useRef<CrossfadeRun | null>(null);
   const cancelCrossfade = useCallback(() => {
     const run = crossfadeRun.current;
     if (!run) return;
@@ -152,9 +194,16 @@ export default function PlaybackEngine() {
     run.cancelCueSeek?.();
     run.cancelCueSeek = null;
     if (run.timer !== null) window.clearInterval(run.timer);
+    if (run.progressTimer !== null) window.clearInterval(run.progressTimer);
     if (run.finishTimer !== null) window.clearTimeout(run.finishTimer);
+    const cancelledTransitionId = run.transitionId;
+    run.transitionId = null;
+    crossfadeRun.current = null;
     releaseMedia(run.incoming);
     const state = usePlayerStore.getState();
+    if (cancelledTransitionId !== null) {
+      state._cancelTransition(cancelledTransitionId);
+    }
     const activeTrack = currentTrack(state);
     const gain = calculateLoudnessGain(
       activeTrack ? loudnessMetadataFromTrack(activeTrack) : null,
@@ -163,7 +212,6 @@ export default function PlaybackEngine() {
       run.outgoing,
       state.muted ? 0 : perceptualVolume(state.volume) * gain,
     );
-    crossfadeRun.current = null;
   }, []);
   // Auto-skip a failed track after a short grace period so a single dead
   // source doesn't stall the whole queue.
@@ -251,6 +299,66 @@ export default function PlaybackEngine() {
   useEffect(() => {
     applyPlaybackRate(deckA.current, playbackRate);
     applyPlaybackRate(deckB.current, playbackRate);
+    const run = crossfadeRun.current;
+    if (!run || run.cancelled || run.transitionId === null || run.playbackRate === playbackRate) {
+      return;
+    }
+    const now = performance.now();
+    const remainingMedia =
+      Number.isFinite(run.outgoing.duration) && run.outgoing.duration > 0
+        ? Math.max(0.05, run.outgoing.duration - run.outgoing.currentTime)
+        : Math.max(0.05, run.fadeMediaSec);
+    const rescheduled = computeRescheduledCrossfadeTiming({
+      fadeMediaSec: run.fadeMediaSec,
+      remainingMediaSec: remainingMedia,
+      playbackRate,
+      startedAtMs: run.startedAt,
+      durationSec: run.durationSec,
+      nowMs: now,
+    });
+    run.playbackRate = playbackRate;
+    if (rescheduled.completed) {
+      run.completeHandoff();
+      return;
+    }
+    run.durationSec = rescheduled.durationSec;
+    run.startedAt = rescheduled.startedAtMs;
+    usePlayerStore
+      .getState()
+      ._rescheduleTransitionTiming(
+        run.transitionId,
+        rescheduled.startedAtMs,
+        rescheduled.durationSec * 1000,
+        rescheduled.progress,
+      );
+    if (run.usesWebAudioCurve) {
+      const state = usePlayerStore.getState();
+      const targetVolume = state.muted ? 0 : perceptualVolume(state.volume);
+      const outCurves = buildEqualPowerCrossfadeCurves(
+        48,
+        targetVolume * run.outgoingLoudnessGain,
+        targetVolume * run.incomingLoudnessGain,
+        rescheduled.progress,
+      );
+      const analysisCurves = buildEqualPowerCrossfadeCurves(48, 1, 1, rescheduled.progress);
+      scheduleDeckGainCurve(
+        run.outgoing,
+        outCurves.outgoing,
+        analysisCurves.outgoing,
+        rescheduled.remainingWallSec,
+      );
+      scheduleDeckGainCurve(
+        run.incoming,
+        outCurves.incoming,
+        analysisCurves.incoming,
+        rescheduled.remainingWallSec,
+      );
+      if (run.finishTimer !== null) window.clearTimeout(run.finishTimer);
+      run.finishTimer = window.setTimeout(
+        run.completeHandoff,
+        Math.max(50, Math.round(rescheduled.remainingWallSec * 1000)),
+      );
+    }
   }, [playbackRate, activeIdx, track?.id]);
 
   const next = usePlayerStore((s) => s.next);
@@ -435,6 +543,7 @@ export default function PlaybackEngine() {
         el.src = streamUrl(id, preferredQuality);
         el.dataset.trackId = id;
         el.dataset.gapless = "";
+        el.dataset.prebuffer = "";
         el.currentTime = 0;
         applyPlaybackRate(el, useAudioEffectsStore.getState().playbackRate);
         const state = usePlayerStore.getState();
@@ -447,15 +556,16 @@ export default function PlaybackEngine() {
       }
     }
     // Release an idle deck unless it is mid-crossfade or holding the current
-    // next track for gapless handoff.
-    const keepGaplessIdle =
-      idle?.dataset.gapless === "1" &&
+    // next track for gapless/crossfade handoff.
+    const keepPrebufferedIdle =
+      (idle?.dataset.gapless === "1" || idle?.dataset.prebuffer === "crossfade") &&
+      !idle.error &&
       nextTrackId !== null &&
       idle.dataset.trackId === nextTrackId;
     if (
       idle &&
       !crossfadeRun.current &&
-      !keepGaplessIdle &&
+      !keepPrebufferedIdle &&
       (idle.dataset.trackId || idle.hasAttribute("src"))
     ) {
       releaseMedia(idle);
@@ -569,29 +679,44 @@ export default function PlaybackEngine() {
     };
   }, [sleepAt, suppressLocalAudio, isPlaying, activeIdx, trackId]);
 
-  // True dual-deck gapless pre-buffering when crossfade is disabled: warm the
-  // idle <audio> element ~12 wall-seconds before the current track finishes so
-  // album/mix transitions start immediately without waiting for network + decode.
+  // True dual-deck pre-buffering: warm the idle <audio> element ~12 wall-seconds
+  // before the handoff point (track end for gapless, or cue trigger for crossfade)
+  // so transitions start immediately on cue without waiting for network + decode.
   useEffect(() => {
     const crossfadeSeconds = settings?.crossfade_enabled
       ? settings.crossfade_duration_sec
       : 0;
     const idle = (activeIdx === 0 ? deckB : deckA).current;
     if (!idle || crossfadeRun.current) return;
+    const prebufferPlan =
+      crossfadeSeconds > 0 && duration > crossfadeSeconds + 1
+        ? computeCueAwareCrossfade({
+            configuredCrossfadeSec: crossfadeSeconds,
+            outgoingDurationSec: duration,
+            outgoingOutroStartSec: currentAudioMeta.data?.outro_start_sec,
+            incomingIntroEndSec: nextAudioMeta.data?.intro_end_sec,
+          })
+        : null;
+    const handoffMediaSec = prebufferPlan ? prebufferPlan.triggerMediaSec : duration;
+    const prebufferMode = prebufferPlan
+      ? "crossfade"
+      : crossfadeSeconds === 0
+        ? "gapless"
+        : "";
     const prebufferWindowMediaSec = 12 * playbackRate;
     const shouldPrebuffer =
       !suppressLocalAudio &&
-      crossfadeSeconds === 0 &&
+      prebufferMode !== "" &&
       isPlaying &&
       !!nextTrackId &&
       nextTrackId !== currentTrackId &&
       readyTrackId === currentTrackId &&
       duration > 0 &&
-      currentTime >= Math.max(0, duration - prebufferWindowMediaSec);
+      currentTime >= Math.max(0, handoffMediaSec - prebufferWindowMediaSec);
 
     if (!shouldPrebuffer) {
       if (
-        idle.dataset.gapless === "1" &&
+        (idle.dataset.gapless === "1" || idle.dataset.prebuffer === "crossfade") &&
         idle.dataset.trackId !== nextTrackId
       ) {
         releaseMedia(idle);
@@ -599,11 +724,24 @@ export default function PlaybackEngine() {
       return;
     }
 
-    if (idle.dataset.trackId === nextTrackId && idle.dataset.gapless === "1") return;
+    if (
+      idle.dataset.trackId === nextTrackId &&
+      !idle.error &&
+      (idle.dataset.prebuffer === prebufferMode ||
+        (prebufferMode === "gapless" && idle.dataset.gapless === "1"))
+    ) {
+      return;
+    }
+    if (idle.dataset.trackId === nextTrackId && !idle.error && idle.dataset.prebuffer) {
+      idle.dataset.prebuffer = prebufferMode;
+      idle.dataset.gapless = prebufferMode === "gapless" ? "1" : "";
+      return;
+    }
     ensureAnalyser(idle);
     idle.src = streamUrl(nextTrackId, preferredQuality);
     idle.dataset.trackId = nextTrackId;
-    idle.dataset.gapless = "1";
+    idle.dataset.prebuffer = prebufferMode;
+    idle.dataset.gapless = prebufferMode === "gapless" ? "1" : "";
     idle.currentTime = 0;
     applyPlaybackRate(idle, useAudioEffectsStore.getState().playbackRate);
     applyVolume(idle, 0, 0);
@@ -612,6 +750,8 @@ export default function PlaybackEngine() {
     suppressLocalAudio,
     settings?.crossfade_enabled,
     settings?.crossfade_duration_sec,
+    currentAudioMeta.data?.outro_start_sec,
+    nextAudioMeta.data?.intro_end_sec,
     preferredQuality,
     isPlaying,
     activeIdx,
@@ -678,11 +818,17 @@ export default function PlaybackEngine() {
     const incomingLoudnessGain = calculateLoudnessGain(
       loudnessMetadataFromTrack(nextTrack),
     ).gainLinear;
+    const transitionKind = classifyCrossfadePlan({
+      configuredCrossfadeSec: seconds,
+      outgoingDurationSec: duration,
+      plan: cuePlan,
+    });
+    const initialRate = useAudioEffectsStore.getState().playbackRate;
     const initialRemainingMedia = Math.max(0.2, duration - currentTime);
     const initialWallSec = computeCrossfadeWallDuration(
       cuePlan.fadeMediaSec,
       initialRemainingMedia,
-      useAudioEffectsStore.getState().playbackRate,
+      initialRate,
     );
     const run: CrossfadeRun = {
       outgoing,
@@ -692,23 +838,30 @@ export default function PlaybackEngine() {
       outgoingId,
       incomingId,
       targetIndex: nextIndex,
+      kind: transitionKind,
+      fadeMediaSec: cuePlan.fadeMediaSec,
+      playbackRate: initialRate,
       outgoingLoudnessGain: trackLoudnessGain,
       incomingLoudnessGain,
       durationSec: initialWallSec,
       startedAt: performance.now(),
+      transitionId: null,
       timer: null,
+      progressTimer: null,
       finishTimer: null,
+      completeHandoff: () => {},
       cancelCueSeek: null,
       usesWebAudioCurve: false,
       cancelled: false,
     };
     crossfadeRun.current = run;
     ensureAnalyser(incoming);
-    if (incoming.dataset.trackId !== incomingId) {
+    if (incoming.dataset.trackId !== incomingId || incoming.error) {
       incoming.src = streamUrl(incomingId, preferredQuality);
       incoming.dataset.trackId = incomingId;
     }
     incoming.dataset.gapless = "";
+    incoming.dataset.prebuffer = "";
     const applyIncomingCueStart = () => {
       if (run.cancelled || crossfadeRun.current !== run || incoming.dataset.trackId !== incomingId) {
         return;
@@ -757,11 +910,17 @@ export default function PlaybackEngine() {
         window.clearInterval(run.timer);
         run.timer = null;
       }
+      if (run.progressTimer !== null) {
+        window.clearInterval(run.progressTimer);
+        run.progressTimer = null;
+      }
       if (run.finishTimer !== null) {
         window.clearTimeout(run.finishTimer);
         run.finishTimer = null;
       }
       const targetVolume = live.muted ? 0 : perceptualVolume(live.volume);
+      const prevTransitionId = run.transitionId;
+      run.transitionId = null;
       activeIdxRef.current = incomingIdx;
       const advanced = _crossfadeAdvance(
         outgoingId,
@@ -771,6 +930,7 @@ export default function PlaybackEngine() {
         run.targetIndex,
       );
       if (!advanced) {
+        run.transitionId = prevTransitionId;
         activeIdxRef.current = run.outgoingIdx;
         cancelCrossfade();
         return;
@@ -782,15 +942,21 @@ export default function PlaybackEngine() {
       setActiveIdx(incomingIdx);
       setReadyTrackId(incomingId);
     };
+    run.completeHandoff = completeHandoff;
 
     incoming
       .play()
       .then(() => {
         if (run.cancelled || crossfadeRun.current !== run) return;
         const state = usePlayerStore.getState();
+        const outgoingTrack = currentTrack(state);
+        const incomingTrack = state.queue[run.targetIndex];
         if (
           activeIdxRef.current !== run.outgoingIdx ||
-          String(currentTrack(state)?.id ?? "") !== outgoingId ||
+          !outgoingTrack ||
+          !incomingTrack ||
+          String(outgoingTrack.id) !== outgoingId ||
+          String(incomingTrack.id) !== incomingId ||
           !state.isPlaying
         ) {
           cancelCrossfade();
@@ -806,6 +972,7 @@ export default function PlaybackEngine() {
           0.1,
           computeCrossfadeWallDuration(cuePlan.fadeMediaSec, remainingMedia, liveRate),
         );
+        run.playbackRate = liveRate;
         run.durationSec = wallDurationSec;
         run.startedAt = performance.now();
         const targetVolume = state.muted ? 0 : perceptualVolume(state.volume);
@@ -827,6 +994,36 @@ export default function PlaybackEngine() {
           analysisCurves.incoming,
           wallDurationSec,
         );
+
+        run.transitionId = state._startTransition({
+          kind: run.kind,
+          outgoing: outgoingTrack,
+          incoming: incomingTrack,
+          outgoingIndex: state.index,
+          incomingIndex: run.targetIndex,
+          startedAtMs: run.startedAt,
+          durationMs: wallDurationSec * 1000,
+          progress: 0,
+        });
+
+        run.progressTimer = window.setInterval(() => {
+          if (run.cancelled || crossfadeRun.current !== run || run.transitionId === null) {
+            return;
+          }
+          const live = usePlayerStore.getState();
+          if (
+            activeIdxRef.current !== run.outgoingIdx ||
+            String(currentTrack(live)?.id ?? "") !== outgoingId ||
+            String(live.queue[run.targetIndex]?.id ?? "") !== incomingId ||
+            !live.isPlaying
+          ) {
+            cancelCrossfade();
+            return;
+          }
+          const elapsed = Math.max(0, (performance.now() - run.startedAt) / 1000);
+          const pct = Math.max(0, Math.min(1, elapsed / run.durationSec));
+          live._updateTransitionProgress(run.transitionId, pct);
+        }, TRANSITION_PROGRESS_TICK_MS);
 
         if (scheduledOut && scheduledIn) {
           run.usesWebAudioCurve = true;
@@ -852,7 +1049,7 @@ export default function PlaybackEngine() {
           }
 
           const elapsed = (performance.now() - run.startedAt) / 1000;
-          const pct = Math.min(1, elapsed / run.durationSec);
+          const pct = Math.max(0, Math.min(1, elapsed / run.durationSec));
           const weights = equalPowerWeights(pct);
           const liveVol = live.muted ? 0 : perceptualVolume(live.volume);
           applyVolume(outgoing, liveVol * trackLoudnessGain * weights.outgoing, weights.outgoing);
@@ -1036,6 +1233,7 @@ export default function PlaybackEngine() {
         ).gainLinear;
         const targetVolume = state.muted ? 0 : perceptualVolume(state.volume);
         incoming.dataset.gapless = "";
+        incoming.dataset.prebuffer = "";
         incoming.currentTime = 0;
         applyPlaybackRate(incoming, useAudioEffectsStore.getState().playbackRate);
         applyVolume(incoming, targetVolume * incomingLoudnessGain, 1);

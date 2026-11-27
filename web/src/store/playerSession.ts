@@ -149,5 +149,7 @@ export function restoredPlayerState(snapshot: PlayerSessionSnapshot) {
     duration: active ? snapshot.queue[snapshot.index].duration_sec : 0,
     seekTo: active ? snapshot.currentTime : null,
     partyQueueItemIds: [] as number[],
+    transition: null,
+    lastTransitionEnd: null,
   };
 }

@@ -231,7 +231,7 @@ input[type="range"]:disabled { cursor: default; opacity: .5; }
 .scrubber-rail { position: relative; height: 22px; touch-action: none; }
 .scrubber-track { position: absolute; left: 0; right: 0; top: 50%; height: 4px; transform: translateY(-50%); border-radius: 999px; background: rgb(244 240 230 / 0.16); overflow: hidden; pointer-events: none; transition: height .15s var(--ease-out); }
 .scrubber-fill { width: 100%; height: 100%; background: var(--accent-soft); transform-origin: left center; transform: scaleX(var(--scrub-ratio, 0)); will-change: transform; }
-.scrubber-knob-track { position: absolute; left: 5px; right: 5px; top: 50%; height: 0; pointer-events: none; container-type: inline-size; }
+.scrubber-knob-track { position: absolute; left: 5px; width: calc(100% - 10px); top: 50%; height: 0; pointer-events: none; container-type: inline-size; }
 /* Zero-width carrier moved by the track's width (100cqi). A full-width carrier
    translated by its own width would stick out past the viewport and give the
    whole page a horizontal scrollbar while a song plays. */
@@ -250,6 +250,7 @@ input[type="range"]:disabled { cursor: default; opacity: .5; }
 
 /* Edge seek bar: a hairline along the top of the player deck with a tall,
    invisible hit area, a subtle moving knob, and thicker track when engaged. */
+.seek-edge { overflow-x: clip; }
 .seek-edge .scrubber-rail { height: 18px; }
 .seek-edge .scrubber-track { height: 3px; border-radius: 0; }
 .seek-edge .scrubber-knob { width: 9px; height: 9px; }
@@ -262,10 +263,104 @@ input[type="range"]:disabled { cursor: default; opacity: .5; }
 
 /* Compact mobile mini-player progress line: smooth 60fps fill + small leading knob. */
 .progress-line-fill { transform: scaleX(var(--scrub-ratio, 0)); will-change: transform; }
-.progress-line-knob-track { position: absolute; left: 3px; right: 3px; top: 50%; height: 0; pointer-events: none; }
-.progress-line-knob-travel { position: relative; width: 100%; height: 0; transform: translate3d(calc(var(--scrub-ratio, 0) * 100%), 0, 0); will-change: transform; }
+.progress-line-knob-track { position: absolute; left: 3px; width: calc(100% - 6px); top: 50%; height: 0; pointer-events: none; container-type: inline-size; }
+.progress-line-knob-travel { position: relative; width: 0; height: 0; transform: translate3d(calc(var(--scrub-ratio, 0) * 100cqi), 0, 0); will-change: transform; }
 .progress-line-knob { position: absolute; left: 0; top: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--accent-soft); box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 65%, transparent); transform: translate(-50%, -50%); }
 .progress-line[data-empty="true"] .progress-line-knob { opacity: 0; }
+.scrubber-rail[data-transitioning="true"] .scrubber-fill,
+.progress-line[data-transitioning="true"] .progress-line-fill { box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 75%, transparent); }
+
+/* ---- Live song transitions: dual-track presence + post-finish exit ---- */
+@keyframes transitionPulse { 0%, 100% { opacity: .55; transform: scale(.88); } 50% { opacity: 1; transform: scale(1.12); } }
+@keyframes transitionOutgoingCoverOut {
+  from { max-width: 56px; opacity: .64; transform: translate3d(0, 0, 0) scale(.92); }
+  to { max-width: 0; opacity: 0; transform: translate3d(-12px, 0, 0) scale(.82); }
+}
+@keyframes transitionMiniCoverOut {
+  from { max-width: 44px; opacity: .64; transform: translate3d(0, 0, 0) scale(.92); }
+  to { max-width: 0; opacity: 0; transform: translate3d(-10px, 0, 0) scale(.82); }
+}
+@keyframes transitionBridgeOut {
+  from { max-width: 36px; opacity: 1; margin-inline: 6px; }
+  to { max-width: 0; opacity: 0; margin-inline: 0; }
+}
+@keyframes transitionOutgoingMetaOut {
+  from { max-height: 28px; opacity: .58; transform: translate3d(0, 0, 0); }
+  to { max-height: 0; opacity: 0; transform: translate3d(-8px, -2px, 0); }
+}
+@keyframes transitionStatusOut {
+  from { max-height: 22px; opacity: 1; margin-bottom: 2px; }
+  to { max-height: 0; opacity: 0; margin-bottom: 0; }
+}
+@keyframes stageOutgoingOut {
+  from { max-width: 45%; flex-grow: 1; opacity: .6; transform: translate3d(-6px, 0, 0) scale(.91); }
+  to { max-width: 0; flex-grow: 0; opacity: 0; transform: translate3d(-24px, 0, 0) scale(.82); }
+}
+.track-transition-dot { animation: transitionPulse 1.8s ease-in-out infinite; }
+.track-transition-meter-fill { transform-origin: left center; transform: scaleX(var(--transition-p, 0)); will-change: transform; }
+.track-transition-outgoing-cover {
+  opacity: calc(1 - var(--transition-p, 0) * 0.36);
+  transform: scale(calc(1 - var(--transition-p, 0) * 0.08));
+  will-change: transform, opacity;
+}
+.track-transition-incoming-cover {
+  opacity: calc(0.68 + var(--transition-p, 0) * 0.32);
+  transform: scale(calc(0.92 + var(--transition-p, 0) * 0.08));
+  will-change: transform, opacity;
+}
+.track-transition-outgoing-meta {
+  opacity: calc(1 - var(--transition-p, 0) * 0.42);
+  will-change: opacity;
+}
+.track-transition-incoming-meta {
+  opacity: calc(0.72 + var(--transition-p, 0) * 0.28);
+  will-change: opacity;
+}
+[data-track-transition="exiting"] .track-transition-outgoing-cover-slot {
+  animation: transitionOutgoingCoverOut 320ms var(--ease-out) forwards;
+}
+[data-track-transition="exiting"] .track-transition-mini-outgoing {
+  animation: transitionMiniCoverOut 320ms var(--ease-out) forwards;
+}
+[data-track-transition="exiting"] .track-transition-bridge {
+  overflow: hidden;
+  animation: transitionBridgeOut 240ms var(--ease-out) forwards;
+}
+[data-track-transition="exiting"] .track-transition-outgoing-meta {
+  animation: transitionOutgoingMetaOut 300ms var(--ease-out) forwards;
+}
+[data-track-transition="exiting"] .track-transition-status {
+  overflow: hidden;
+  animation: transitionStatusOut 240ms var(--ease-out) forwards;
+}
+[data-track-transition="exiting"] .track-transition-incoming-cover,
+[data-track-transition="exiting"] .track-transition-incoming-meta {
+  opacity: 1;
+  transform: none;
+  transition: opacity 260ms var(--ease-out), transform 260ms var(--ease-out);
+}
+.stage-transition-outgoing-slot { max-width: 45%; }
+.stage-transition-outgoing {
+  opacity: calc(1 - var(--transition-p, 0) * 0.4);
+  transform: translate3d(calc(var(--transition-p, 0) * -6px), 0, 0) scale(calc(1 - var(--transition-p, 0) * 0.09));
+  will-change: transform, opacity;
+}
+.stage-transition-incoming {
+  opacity: calc(0.66 + var(--transition-p, 0) * 0.34);
+  transform: translate3d(calc((1 - var(--transition-p, 0)) * 6px), 0, 0) scale(calc(0.91 + var(--transition-p, 0) * 0.09));
+  will-change: transform, opacity;
+}
+[data-track-transition="exiting"] .stage-transition-outgoing-slot {
+  overflow: hidden;
+  animation: stageOutgoingOut 320ms var(--ease-out) forwards;
+}
+[data-track-transition="exiting"] .stage-transition-incoming {
+  opacity: 1;
+  transform: none;
+  transition: opacity 300ms var(--ease-out), transform 300ms var(--ease-out), width 320ms var(--ease-out);
+}
+.np-backdrop-outgoing { opacity: calc(0.5 * (1 - var(--transition-p, 0))); will-change: opacity; }
+.np-backdrop-incoming { opacity: calc(0.5 * var(--transition-p, 0)); will-change: opacity; }
 
 .scroll-area { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 .scroll-area:hover { scrollbar-color: rgb(255 255 255 / 0.18) transparent; }
@@ -482,6 +577,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .animate-in, .pop-in, .sheet-up, .skeleton, .eq-bar, .page-enter { animation: none; }
   .equalizer-bars [data-equalizer-bar] { transition: none; }
   .scrubber-track, .scrubber-knob { transition: none; }
+  .track-transition-dot,
+  [data-track-transition="exiting"] .track-transition-outgoing-cover-slot,
+  [data-track-transition="exiting"] .track-transition-mini-outgoing,
+  [data-track-transition="exiting"] .track-transition-bridge,
+  [data-track-transition="exiting"] .track-transition-outgoing-meta,
+  [data-track-transition="exiting"] .track-transition-status,
+  [data-track-transition="exiting"] .stage-transition-outgoing-slot { animation: none; }
+  .track-transition-outgoing-cover,
+  .track-transition-incoming-cover,
+  .stage-transition-outgoing,
+  .stage-transition-incoming { transform: none; transition: none; }
   .press:active, .play-fab:hover, .action-primary:hover, .hover-lift:hover { transform: none; }
 }
 @media (hover: none), (pointer: coarse) {

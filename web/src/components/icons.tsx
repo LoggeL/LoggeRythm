@@ -1,4 +1,5 @@
 import type { SVGProps } from "react";
+import type { AudioQuality } from "@/types";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
@@ -883,4 +884,76 @@ export function CrownIcon(props: IconProps) {
       <path d="M3.5 18h17l-1.5-10-4.5 4-2.5-6-2.5 6-4.5-4L3.5 18z" />
     </svg>
   );
+}
+
+export function QualityLosslessIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.1}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M2 12c2.2-5 4.8-5 7 0s4.8 5 7 0 3.8-5 6 0" />
+      <path d="M2 12c2.2 5 4.8 5 7 0s4.8-5 7 0 3.8 5 6 0" opacity={0.55} />
+    </svg>
+  );
+}
+
+export function QualityHighIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.1}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M4 13v-1a8 8 0 0116 0v1" />
+      <rect x="3" y="13" width="4" height="6.5" rx="1.5" />
+      <rect x="17" y="13" width="4" height="6.5" rx="1.5" />
+    </svg>
+  );
+}
+
+export function QualitySaverIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.1}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M19 5c-6.5 0-12 3.5-13 10.5-.2 1.4.8 2.5 2.2 2.5C15 18 19 13 19 5z" />
+      <path d="M5 19l6-6" />
+    </svg>
+  );
+}
+
+export function AudioQualityIcon({
+  quality,
+  ...props
+}: IconProps & { quality: AudioQuality }) {
+  switch (quality) {
+    case "lossless":
+      return <QualityLosslessIcon {...props} />;
+    case "high":
+      return <QualityHighIcon {...props} />;
+    case "saver":
+      return <QualitySaverIcon {...props} />;
+  }
 }

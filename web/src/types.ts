@@ -129,6 +129,43 @@ export interface PlaybackSettings {
   dj_transitions_enabled?: boolean;
 }
 
+export type TrackTransitionKind = "crossfade" | "smart-crossfade";
+export type TrackTransitionOutcome = "completed" | "cancelled";
+
+export interface TrackTransition {
+  /** Monotonic sequence ID unique to each live transition run. */
+  id: number;
+  /** "smart-crossfade" when server-analyzed outro/intro cues adjusted the blend; otherwise "crossfade". */
+  kind: TrackTransitionKind;
+  /** Track currently fading out (matches `currentTrack(state)` throughout the overlap). */
+  outgoing: Track;
+  /** Track currently fading in. */
+  incoming: Track;
+  /** Queue index of `outgoing`. */
+  outgoingIndex: number;
+  /** Queue index of `incoming`. */
+  incomingIndex: number;
+  /** Monotonic `performance.now()` timestamp (ms) when audible overlap began. */
+  startedAtMs: number;
+  /** Total wall-clock duration (ms) of the audible overlap (> 0). */
+  durationMs: number;
+  /**
+   * Normalized 0..1 progress snapshot (updated at ~10 Hz by PlaybackEngine
+   * during active transitions, and directly usable in unit tests / frozen snapshots).
+   */
+  progress: number;
+}
+
+export interface TrackTransitionEnd {
+  id: number;
+  kind: TrackTransitionKind;
+  outcome: TrackTransitionOutcome;
+  outgoing: Track;
+  incoming: Track;
+  /** Monotonic `performance.now()` timestamp (ms) when the transition ended. */
+  endedAtMs: number;
+}
+
 export interface LyricsWord {
   t: number;
   end: number;

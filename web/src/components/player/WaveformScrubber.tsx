@@ -7,6 +7,7 @@ import { useTrackAudioMeta } from "@/hooks/useTrackAudioMeta";
 import { formatTime } from "@/lib/format";
 import Scrubber from "@/components/player/Scrubber";
 import { heldPosition, progressRatio, scrubTrackKey, type ScrubDrag } from "./scrubState";
+import { formatTransitionRemaining, transitionKindLabel } from "./transitionDisplay";
 
 /**
  * "Ink, Paper, Signal" Waveform Scrubbar for NowPlaying:
@@ -27,6 +28,7 @@ export default function WaveformScrubber({
   const track = usePlayerStore(currentTrack);
   const trackKey = usePlayerStore(scrubTrackKey);
   const duration = usePlayerStore((s) => s.duration || 0);
+  const transition = usePlayerStore((s) => s.transition);
   const seek = usePlayerStore((s) => s.seek);
   const liveTime = useLivePlaybackTime(true);
   const metaQuery = useTrackAudioMeta(track?.id, Boolean(track));
@@ -135,6 +137,7 @@ export default function WaveformScrubber({
         aria-valuenow={Math.round(displayTime)}
         aria-valuetext={`${formatTime(displayTime)} von ${formatTime(duration)}`}
         aria-disabled={disabled}
+        data-transitioning={transition !== null ? "true" : undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={(e) => finishDrag(e, true)}
@@ -143,7 +146,9 @@ export default function WaveformScrubber({
           if (!drag) setHover(null);
         }}
         onKeyDown={handleKeyDown}
-        className={`group relative flex h-12 w-full items-center gap-[2px] rounded-lg bg-[#0f0e11]/45 px-1.5 ring-1 ring-white/[0.08] outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        className={`group relative flex h-12 w-full items-center gap-[2px] rounded-lg bg-[#0f0e11]/45 px-1.5 ring-1 outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+          transition !== null ? "ring-accent/45" : "ring-white/[0.08]"
+        } ${
           disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
         }`}
       >
@@ -197,13 +202,23 @@ export default function WaveformScrubber({
         })}
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between font-mono text-[11px] tabular-nums text-foreground/82 [text-shadow:0_1px_6px_rgb(0_0_0/0.8)]">
+      <div className="mt-1.5 flex items-center justify-between gap-2 font-mono text-[11px] tabular-nums text-foreground/82 [text-shadow:0_1px_6px_rgb(0_0_0/0.8)]">
         <span>{formatTime(displayTime)}</span>
-        {meta?.bpm != null && meta.bpm > 0 && (
-          <span className="rounded-full border border-white/12 bg-[#0f0e11]/76 px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-foreground/88">
-            {Math.round(meta.bpm)} BPM
-          </span>
-        )}
+        <div className="flex min-w-0 items-center gap-1.5">
+          {transition !== null && (
+            <span className="truncate rounded-full border border-accent/35 bg-[#0f0e11]/82 px-2 py-0.5 text-[10px] font-semibold tracking-[0.06em] text-accent">
+              {transitionKindLabel(transition.kind)} ·{" "}
+              {formatTransitionRemaining(
+                Math.max(0, (1 - transition.progress) * transition.durationMs) / 1000,
+              )}
+            </span>
+          )}
+          {meta?.bpm != null && meta.bpm > 0 && (
+            <span className="shrink-0 rounded-full border border-white/12 bg-[#0f0e11]/76 px-2 py-0.5 text-[10px] font-medium tracking-[0.08em] text-foreground/88">
+              {Math.round(meta.bpm)} BPM
+            </span>
+          )}
+        </div>
         <span>{formatTime(duration)}</span>
       </div>
     </div>

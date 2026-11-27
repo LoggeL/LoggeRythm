@@ -19,7 +19,8 @@ import { useAudioEffectsStore } from "@/store/audioEffects";
 import { toast } from "@/store/toast";
 import { useUiModalsStore } from "@/store/uiModals";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
-import { CloseIcon, SlidersIcon } from "@/components/icons";
+import Tooltip from "@/components/ui/Tooltip";
+import { AudioQualityIcon, CloseIcon, SlidersIcon } from "@/components/icons";
 import type { AudioQuality, PlaybackSettings } from "@/types";
 
 const PRESET_ORDER: Exclude<EqPresetKey, "custom">[] = ["flat", "bass", "vocal", "late_night"];
@@ -307,7 +308,13 @@ function AudioEffectsPopover({
           <div className="space-y-2 border-t border-hairline pt-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Audioqualität</span>
-              <span className="font-mono text-[11px] text-muted">
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-muted">
+                <AudioQualityIcon
+                  quality={settingsQuery.data.preferred_quality ?? "high"}
+                  width={13}
+                  height={13}
+                  aria-hidden="true"
+                />
                 {AUDIO_QUALITY_META[settingsQuery.data.preferred_quality ?? "high"].badge}
               </span>
             </div>
@@ -315,18 +322,25 @@ function AudioEffectsPopover({
               {AUDIO_QUALITY_ORDER.map((tier) => {
                 const selected = (settingsQuery.data?.preferred_quality ?? "high") === tier;
                 return (
-                  <button
+                  <Tooltip
                     key={tier}
-                    type="button"
-                    disabled={updateQuality.isPending}
-                    aria-pressed={selected}
-                    onClick={() => {
-                      if (!selected) updateQuality.mutate(tier);
-                    }}
-                    className="filter-chip min-h-8 justify-center px-2 font-mono text-[11px]"
+                    label={AUDIO_QUALITY_META[tier].label}
+                    detail={AUDIO_QUALITY_META[tier].detail}
+                    className="w-full"
                   >
-                    {AUDIO_QUALITY_META[tier].badge}
-                  </button>
+                    <button
+                      type="button"
+                      disabled={updateQuality.isPending}
+                      aria-pressed={selected}
+                      onClick={() => {
+                        if (!selected) updateQuality.mutate(tier);
+                      }}
+                      className="filter-chip min-h-8 w-full justify-center gap-1.5 px-2 font-mono text-[11px]"
+                    >
+                      <AudioQualityIcon quality={tier} width={13} height={13} aria-hidden="true" />
+                      {AUDIO_QUALITY_META[tier].badge}
+                    </button>
+                  </Tooltip>
                 );
               })}
             </div>

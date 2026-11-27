@@ -7,7 +7,7 @@ import { useConnectStore } from "@/store/connect";
 import { api } from "@/lib/api";
 import { AUDIO_QUALITY_META, AUDIO_QUALITY_ORDER } from "@/lib/audioIntelligence";
 import { toast } from "@/store/toast";
-import { ClockIcon, DevicesIcon, RefreshIcon, SlidersIcon, VisualizerIcon } from "@/components/icons";
+import { AudioQualityIcon, ClockIcon, DevicesIcon, RefreshIcon, SlidersIcon, VisualizerIcon } from "@/components/icons";
 import type { AudioQuality, PlaybackSettings } from "@/types";
 import { errorMessage, SectionError, SettingsCard, SettingsRow, Switch } from "./presentation";
 
@@ -342,12 +342,13 @@ function AudioQualitySettings() {
                   <p className="text-xs text-muted">{meta.detail}</p>
                 </div>
                 <span
-                  className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold tracking-[0.08em] ${
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold tracking-[0.08em] ${
                     selected
                       ? "border-accent bg-accent text-on-accent"
                       : "border-hairline text-subtle"
                   }`}
                 >
+                  <AudioQualityIcon quality={tier} width={12} height={12} aria-hidden="true" />
                   {meta.badge}
                 </span>
               </button>

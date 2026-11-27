@@ -1,6 +1,7 @@
 "use client";
 
 import { DownloadedIcon } from "@/components/icons";
+import Tooltip from "@/components/ui/Tooltip";
 import { reportTrackCacheFailure, retryTrackCacheStatus, useTrackCacheError, useTrackCacheState } from "@/store/downloads";
 
 /**
@@ -42,12 +43,11 @@ export default function CacheMarker({
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 ${className}`}>
       {state && (
-        <span
-          title={local ? "Offline auf diesem Gerät verfügbar" : "Auf dem Server gespeichert"}
-          className={`inline-flex ${local ? "text-success" : "text-subtle"}`}
-        >
-          <DownloadedIcon aria-label={local ? "Offline verfügbar" : "Auf dem Server gespeichert"} />
-        </span>
+        <Tooltip label={local ? "Offline auf diesem Gerät verfügbar" : "Auf dem Server gespeichert"}>
+          <span className={`inline-flex ${local ? "text-success" : "text-subtle"}`}>
+            <DownloadedIcon aria-label={local ? "Offline verfügbar" : "Auf dem Server gespeichert"} />
+          </span>
+        </Tooltip>
       )}
       {error && (
         <button

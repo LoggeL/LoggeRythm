@@ -9,6 +9,8 @@ import { useMe } from "@/hooks/useAuth";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { canControlActiveVolume, useConnectStore } from "@/store/connect";
 import { canControlPartyPlayback, usePartyStore } from "@/store/party";
+import { useUiModalsStore } from "@/store/uiModals";
+import Tooltip from "@/components/ui/Tooltip";
 import LikeButton from "@/components/LikeButton";
 import EqualizerBars from "@/components/EqualizerBars";
 import NowPlaying from "@/components/now-playing/NowPlaying";
@@ -22,6 +24,11 @@ import { SleepTimerTrigger } from "@/components/player/SleepTimerControl";
 import { AudioEffectsTrigger } from "@/components/player/AudioEffectsControl";
 import PictureInPictureButton from "@/components/player/PictureInPictureButton";
 import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
+import {
+  DesktopTransitionDeck,
+  MobileTransitionSummary,
+} from "@/components/player/TrackTransitionDeck";
+import { useTrackTransition } from "@/components/player/useTrackTransition";
 import { formatTime } from "@/lib/format";
 import { NAV_FORWARD } from "@/lib/morph";
 import { setNowPlayingOpen } from "@/components/player/usePlayerSideEffects";
@@ -41,6 +48,7 @@ import {
   LyricsIcon,
   SpinnerIcon,
   ExpandIcon,
+  AudioQualityIcon,
 } from "@/components/icons";
 import type { PlaybackSettings, Track } from "@/types";
 
@@ -235,24 +243,48 @@ function QualityBadge({ offlineOnly }: { offlineOnly: boolean }) {
     staleTime: 5 * 60_000,
   });
   if (offlineOnly || !settings?.preferred_quality) return null;
-  const meta = AUDIO_QUALITY_META[settings.preferred_quality];
+  const quality = settings.preferred_quality;
+  const meta = AUDIO_QUALITY_META[quality];
+  const tone =
+    quality === "lossless"
+      ? "text-accent"
+      : quality === "high"
+        ? "text-muted"
+        : "text-subtle";
   return (
-    <span
-      title={`Audioqualität: ${meta.label}`}
-      className={`shrink-0 rounded border px-1.5 py-0.5 font-mono text-[9.5px] font-semibold leading-none tracking-[0.08em] ${
-        settings.preferred_quality === "lossless"
-          ? "border-accent/45 bg-accent/12 text-accent"
-          : "border-hairline bg-white/[0.04] text-subtle"
-      }`}
-    >
-      {meta.badge}
-    </span>
+    <Tooltip label={`Audioqualität: ${meta.label}`} detail={meta.detail}>
+      <button
+        type="button"
+        onClick={(event) => {
+          const modals = useUiModalsStore.getState();
+          modals.setAudioEffectsOpen(!modals.audioEffectsOpen, event.currentTarget);
+        }}
+        aria-label={`Audioqualität: ${meta.label}`}
+        data-quality-tier={quality}
+        className={`inline-flex shrink-0 items-center justify-center rounded-sm transition-colors hover:text-foreground ${tone}`}
+      >
+        <AudioQualityIcon quality={quality} width={14} height={14} aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }
 
 function TrackSummary({ track, offlineOnly = false }: { track: Track; offlineOnly?: boolean }) {
   const playing = usePlayerStore((s) => s.isPlaying && !s.isBuffering);
   const slot = useTrackSwapSlot();
+  const transitionDisplay = useTrackTransition();
+
+  if (transitionDisplay.phase !== "idle") {
+    return (
+      <DesktopTransitionDeck
+        display={transitionDisplay}
+        playing={playing}
+        onOpenNowPlaying={openNowPlaying}
+        qualityBadge={<QualityBadge offlineOnly={offlineOnly} />}
+      />
+    );
+  }
+
   return (
     <TrackContext track={track} className="flex min-w-0 items-center gap-3.5">
       <button type="button" onClick={openNowPlaying} aria-label="Jetzt läuft öffnen" title="Jetzt läuft öffnen (F)" className="group/cover relative shrink-0 overflow-hidden rounded-[var(--radius-art)] shadow-[0_6px_18px_rgb(0_0_0/0.5)]">
@@ -343,6 +375,9 @@ function MiniPlayer({
   const next = usePlayerStore((s) => s.next);
   const lock = usePlaybackLock();
   const slot = useTrackSwapSlot();
+  const transitionDisplay = useTrackTransition();
+  const likeTrack =
+    transitionDisplay.phase !== "idle" ? transitionDisplay.incoming : track;
   const cardRef = useRef<HTMLDivElement>(null);
   // Drop the entrance class once it ran, so showing the card again (a resize
   // across the desktop breakpoint) never replays it. Inner track-swap and cover
@@ -368,23 +403,27 @@ function MiniPlayer({
   }, [enter, onEntered]);
   return (
     <div ref={cardRef} className={`relative mx-2 mb-2 flex items-center gap-2 overflow-hidden rounded-[var(--radius-control)] border border-hairline bg-panel p-1.5 pr-2 shadow-[0_10px_30px_rgb(0_0_0/0.55)] ${enter ? "animate-in" : ""}`} style={{ backgroundImage: "linear-gradient(90deg, rgb(var(--ambient) / 0.3), rgb(var(--ambient) / 0.06))" }}>
-      <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center text-left">
-        <TrackSwap slot={slot} item={track} className="flex-1">
-          {(shown) => (
-            <span className="flex min-w-0 items-center gap-3">
-              <span data-swap-part="art" className="shrink-0">
-                <Cover track={shown} className="block h-12 w-12 rounded-[var(--radius-art)]" />
+      {transitionDisplay.phase !== "idle" ? (
+        <MobileTransitionSummary display={transitionDisplay} onOpenNowPlaying={openNowPlaying} />
+      ) : (
+        <button type="button" onClick={openNowPlaying} aria-label={`${track.title}: Jetzt läuft öffnen`} className="flex min-w-0 flex-1 items-center text-left">
+          <TrackSwap slot={slot} item={track} className="flex-1">
+            {(shown) => (
+              <span className="flex min-w-0 items-center gap-3">
+                <span data-swap-part="art" className="shrink-0">
+                  <Cover track={shown} className="block h-12 w-12 rounded-[var(--radius-art)]" />
+                </span>
+                <span data-swap-part="text" className="min-w-0">
+                  <span className="font-display block truncate text-sm font-bold tracking-tight">{shown.title}</span>
+                  <span className="block truncate text-xs text-muted">{shown.artist}</span>
+                </span>
               </span>
-              <span data-swap-part="text" className="min-w-0">
-                <span className="font-display block truncate text-sm font-bold tracking-tight">{shown.title}</span>
-                <span className="block truncate text-xs text-muted">{shown.artist}</span>
-              </span>
-            </span>
-          )}
-        </TrackSwap>
-      </button>
+            )}
+          </TrackSwap>
+        </button>
+      )}
       {!offlineOnly && <DeviceSelectorTrigger compact />}
-      <LikeButton key={track.id} track={track} />
+      <LikeButton key={likeTrack.id} track={likeTrack} />
       <PlayPauseButton iconSize={22} className="play-fab h-10 w-10 shadow-none" />
       <button type="button" onClick={next} disabled={lock.locked} aria-label="Nächster Titel" className="grid h-11 w-9 shrink-0 place-items-center text-foreground disabled:opacity-40">
         <NextIcon width={22} height={22} />

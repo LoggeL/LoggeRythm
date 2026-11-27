@@ -170,6 +170,7 @@ export default function Scrubber({
   const currentSec = usePlayerStore((s) => Math.floor(s.currentTime));
   const duration = usePlayerStore((s) => s.duration);
   const trackKey = usePlayerStore(scrubTrackKey);
+  const isTransitioning = usePlayerStore((s) => s.transition !== null);
   const seek = usePlayerStore((s) => s.seek);
   const [drag, setDrag] = useState<ScrubDrag | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -244,6 +245,7 @@ export default function Scrubber({
         data-empty={hasTrack ? undefined : "true"}
         data-disabled={isDisabled ? "true" : undefined}
         data-dragging={dragging ? "true" : undefined}
+        data-transitioning={isTransitioning ? "true" : undefined}
         onPointerMove={(e) => {
           if (e.pointerType === "mouse" || dragging) updateHover(e.clientX);
         }}
@@ -307,6 +309,7 @@ export default function Scrubber({
 export function ProgressLine() {
   const rail = useRef<HTMLDivElement>(null);
   const hasTrack = usePlayerStore((s) => scrubTrackKey(s) !== null && (s.duration || 0) > 0);
+  const isTransitioning = usePlayerStore((s) => s.transition !== null);
   useSmoothScrubRail(rail);
 
   return (
@@ -314,6 +317,7 @@ export function ProgressLine() {
       ref={rail}
       aria-hidden="true"
       data-empty={hasTrack ? undefined : "true"}
+      data-transitioning={isTransitioning ? "true" : undefined}
       className="progress-line absolute inset-x-0 bottom-0 h-[3px] bg-white/10"
     >
       <div className="progress-line-fill h-full w-full origin-left bg-accent-soft" />

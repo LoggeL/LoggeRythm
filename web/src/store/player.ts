@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { ConnectPlaybackState, PartyStart, Track } from "@/types";
+import type {
+  ConnectPlaybackState,
+  PartyStart,
+  Track,
+  TrackTransition,
+  TrackTransitionEnd,
+  TrackTransitionKind,
+} from "@/types";
 import { readLocalJsonSnapshot, writeLocalJsonValue } from "@/hooks/useLocalJson";
 import {
   clearUpcomingItems,
@@ -13,6 +20,23 @@ import {
 } from "./queuePolicy";
 
 export type { QueueOrigin } from "./queuePolicy";
+export type {
+  TrackTransition,
+  TrackTransitionEnd,
+  TrackTransitionKind,
+  TrackTransitionOutcome,
+} from "@/types";
+
+export interface StartTransitionInput {
+  kind: TrackTransitionKind;
+  outgoing: Track;
+  incoming: Track;
+  outgoingIndex: number;
+  incomingIndex: number;
+  startedAtMs: number;
+  durationMs: number;
+  progress?: number;
+}
 
 export type RepeatMode = "off" | "all" | "one";
 
@@ -106,6 +130,109 @@ function fillOrigins(n: number, origin: QueueOrigin): QueueOrigin[] {
   return new Array(Math.max(0, n)).fill(origin);
 }
 
+let nextTransitionId = 1;
+
+function nowMonotonicMs(): number {
+  if (typeof performance === "undefined" || typeof performance.now !== "function") {
+    throw new Error("performance.now() ist in dieser Umgebung nicht verfügbar.");
+  }
+  const now = performance.now();
+  if (!Number.isFinite(now)) {
+    throw new Error(`Ungültiger monotoner Zeitstempel: ${String(now)}.`);
+  }
+  return now;
+}
+
+function assertValidTransitionKind(kind: unknown): asserts kind is TrackTransitionKind {
+  if (kind !== "crossfade" && kind !== "smart-crossfade") {
+    throw new RangeError(`Unsupported track transition kind: ${String(kind)}.`);
+  }
+}
+
+function assertValidTransitionId(id: number): void {
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new RangeError(`Transition id must be a positive integer; received ${id}.`);
+  }
+}
+
+function assertValidTransitionProgress(progress: number, label = "Transition progress"): void {
+  if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
+    throw new RangeError(`${label} must be in [0, 1]; received ${progress}.`);
+  }
+}
+
+function assertValidTransitionTiming(startedAtMs: number, durationMs: number): void {
+  if (!Number.isFinite(startedAtMs)) {
+    throw new RangeError(`Transition startedAtMs must be finite; received ${startedAtMs}.`);
+  }
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    throw new RangeError(`Transition durationMs must be positive; received ${durationMs}.`);
+  }
+}
+
+function cancelledTransitionPatch(
+  transition: TrackTransition | null,
+  endedAtMs?: number,
+): { transition: null; lastTransitionEnd: TrackTransitionEnd | null } {
+  if (!transition) {
+    return { transition: null, lastTransitionEnd: null };
+  }
+  return {
+    transition: null,
+    lastTransitionEnd: {
+      id: transition.id,
+      kind: transition.kind,
+      outcome: "cancelled",
+      outgoing: transition.outgoing,
+      incoming: transition.incoming,
+      endedAtMs: endedAtMs ?? nowMonotonicMs(),
+    },
+  };
+}
+
+function transitionMatchesQueueState(
+  transition: TrackTransition,
+  queue: readonly Track[],
+  index: number,
+  isPlaying: boolean,
+  repeat: RepeatMode,
+  sleepAfterTrack: boolean,
+): boolean {
+  if (!isPlaying || repeat === "one" || sleepAfterTrack) return false;
+  if (index !== transition.outgoingIndex) return false;
+  if (transition.incomingIndex < 0 || transition.incomingIndex >= queue.length) return false;
+  if (String(queue[index]?.id ?? "") !== String(transition.outgoing.id)) return false;
+  if (String(queue[transition.incomingIndex]?.id ?? "") !== String(transition.incoming.id)) {
+    return false;
+  }
+  return true;
+}
+
+function reconcileTransitionPatch(
+  prev: Pick<
+    PlayerState,
+    "transition" | "queue" | "index" | "isPlaying" | "repeat" | "sleepAfterTrack"
+  >,
+  next: {
+    queue?: readonly Track[];
+    index?: number;
+    isPlaying?: boolean;
+    repeat?: RepeatMode;
+    sleepAfterTrack?: boolean;
+  },
+): Partial<Pick<PlayerState, "transition" | "lastTransitionEnd">> {
+  if (!prev.transition) return {};
+  const valid = transitionMatchesQueueState(
+    prev.transition,
+    next.queue ?? prev.queue,
+    next.index ?? prev.index,
+    next.isPlaying ?? prev.isPlaying,
+    next.repeat ?? prev.repeat,
+    next.sleepAfterTrack ?? prev.sleepAfterTrack,
+  );
+  return valid ? {} : cancelledTransitionPatch(prev.transition);
+}
+
 function startTrack(queue: Track[], index: number, isPlaying = true) {
   return {
     index,
@@ -143,6 +270,10 @@ interface PlayerState {
   nowPlayingOpen: boolean;
   /** Next-track preload failure for the current queue pair, if any. */
   preloadError: string | null;
+  /** Active audible track transition (non-null strictly while two decks overlap). */
+  transition: TrackTransition | null;
+  /** Most recent transition end event so UI distinguishes natural finish vs cancellation. */
+  lastTransitionEnd: TrackTransitionEnd | null;
   radioActive: boolean; // endless "song radio" — auto-extends the queue
   // Changes on every explicit radio-mode transition, even when the boolean
   // value is unchanged, so async station work can identify its owning session.
@@ -226,6 +357,19 @@ interface PlayerState {
     duration: number,
     targetIndex?: number,
   ) => boolean;
+  /** Begin a live audible track transition; returns its unique sequence ID. */
+  _startTransition: (input: StartTransitionInput) => number;
+  /** Update the normalized 0..1 progress snapshot for an active transition. */
+  _updateTransitionProgress: (id: number, progress: number) => void;
+  /** Reschedule wall-clock timing after a mid-transition playbackRate change. */
+  _rescheduleTransitionTiming: (
+    id: number,
+    startedAtMs: number,
+    durationMs: number,
+    progress: number,
+  ) => void;
+  /** Cancel an active transition (optionally scoped to a specific ID). */
+  _cancelTransition: (id?: number) => void;
   _setBuffering: (b: boolean) => void;
   _setError: (msg: string | null) => void;
 
@@ -257,6 +401,8 @@ export const usePlayerStore = create<PlayerState>()(
       lyricsOpen: false,
       nowPlayingOpen: false,
       preloadError: null,
+      transition: null,
+      lastTransitionEnd: null,
       seekTo: null,
       partyBridge: null,
       partyQueueItemIds: [],
@@ -273,7 +419,12 @@ export const usePlayerStore = create<PlayerState>()(
           sleepAt: minutes == null ? null : Date.now() + minutes * 60_000,
           sleepAfterTrack: false,
         }),
-      setSleepAfterTrack: (v) => set({ sleepAfterTrack: v, sleepAt: null }),
+      setSleepAfterTrack: (v) =>
+        set((s) => ({
+          sleepAfterTrack: v,
+          sleepAt: null,
+          ...reconcileTransitionPatch(s, { sleepAfterTrack: v }),
+        })),
 
       setPartyBridge: (b) =>
         set((s) => ({
@@ -285,7 +436,11 @@ export const usePlayerStore = create<PlayerState>()(
           remoteBridge: b,
           ...(b ? { radioActive: false, radioSession: s.radioSession + 1 } : {}),
         })),
-      setSuppressLocalAudio: (v) => set({ suppressLocalAudio: v }),
+      setSuppressLocalAudio: (v) =>
+        set((s) => ({
+          suppressLocalAudio: v,
+          ...(v ? cancelledTransitionPatch(s.transition) : {}),
+        })),
       applyRemotePlaybackState: (playback, positionSec) => {
         const queue = playback.queue.map((track) => ({ ...track }));
         const origins = [...playback.origins];
@@ -300,7 +455,7 @@ export const usePlayerStore = create<PlayerState>()(
             : index >= 0
               ? queue[index].duration_sec || 0
               : 0;
-        set({
+        set((s) => ({
           queue,
           origins,
           originalQueue: [...queue],
@@ -318,7 +473,8 @@ export const usePlayerStore = create<PlayerState>()(
           isBuffering: false,
           error: null,
           partyQueueItemIds: [],
-        });
+          ...cancelledTransitionPatch(s.transition),
+        }));
       },
       activateConnectPlayback: (playback) => {
         const queue = playback.queue.map((track) => ({ ...track }));
@@ -356,6 +512,7 @@ export const usePlayerStore = create<PlayerState>()(
           radioActive: false,
           radioSession: s.radioSession + 1,
           partyQueueItemIds: [],
+          ...cancelledTransitionPatch(s.transition),
         }));
       },
       setPartyQueue: (tracks, index, itemIds) => {
@@ -389,12 +546,15 @@ export const usePlayerStore = create<PlayerState>()(
             partyQueueItemIds: [...itemIds],
             index,
             ...(sameTrack
-              ? {}
-              : startTrack(
-                  queue,
-                  index,
-                  index >= 0 && index < queue.length && s.isPlaying,
-                )),
+              ? reconcileTransitionPatch(s, { queue, index })
+              : {
+                  ...startTrack(
+                    queue,
+                    index,
+                    index >= 0 && index < queue.length && s.isPlaying,
+                  ),
+                  ...cancelledTransitionPatch(s.transition),
+                }),
           };
         });
       },
@@ -431,6 +591,9 @@ export const usePlayerStore = create<PlayerState>()(
             patch.seekTo = seekTo;
             patch.currentTime = seekTo;
           }
+          if (!isPlaying || seekTo != null) {
+            Object.assign(patch, cancelledTransitionPatch(s.transition));
+          }
           return patch;
         }),
       setRadioActive: (v) =>
@@ -440,14 +603,17 @@ export const usePlayerStore = create<PlayerState>()(
         })),
       appendToQueue: (tracks) => {
         if (!tracks.length) return;
-        const { queue, origins, originalQueue, originalOrigins } = get();
-        const appended = tracks.map((track) => ({ ...track }));
-        const ctx = fillOrigins(appended.length, "context");
-        set({
-          queue: [...queue, ...appended],
-          origins: [...origins, ...ctx],
-          originalQueue: [...originalQueue, ...appended],
-          originalOrigins: [...originalOrigins, ...ctx],
+        set((s) => {
+          const appended = tracks.map((track) => ({ ...track }));
+          const ctx = fillOrigins(appended.length, "context");
+          const nextQueue = [...s.queue, ...appended];
+          return {
+            queue: nextQueue,
+            origins: [...s.origins, ...ctx],
+            originalQueue: [...s.originalQueue, ...appended],
+            originalOrigins: [...s.originalOrigins, ...ctx],
+            ...reconcileTransitionPatch(s, { queue: nextQueue }),
+          };
         });
       },
 
@@ -468,7 +634,7 @@ export const usePlayerStore = create<PlayerState>()(
         }
         const queueTrack = { ...track };
         pushRecent(queueTrack);
-        set({
+        set((s) => ({
           queue: [queueTrack],
           origins: ["context"],
           originalQueue: [queueTrack],
@@ -476,9 +642,10 @@ export const usePlayerStore = create<PlayerState>()(
           queueContext: null,
           ...startTrack([queueTrack], 0),
           radioActive: false,
-          radioSession: get().radioSession + 1,
+          radioSession: s.radioSession + 1,
           partyQueueItemIds: [],
-        });
+          ...cancelledTransitionPatch(s.transition),
+        }));
       },
 
       playQueue: (tracks, startIndex = 0, context) => {
@@ -503,14 +670,15 @@ export const usePlayerStore = create<PlayerState>()(
           ? toggleQueueShuffle(baseQueue)
           : baseQueue;
         pushRecent(productQueue.queue[productQueue.index]);
-        set({
+        set((s) => ({
           ...productQueue,
           queueContext: context ?? null,
           ...startTrack(productQueue.queue, productQueue.index),
           radioActive: false,
-          radioSession: get().radioSession + 1,
+          radioSession: s.radioSession + 1,
           partyQueueItemIds: [],
-        });
+          ...cancelledTransitionPatch(s.transition),
+        }));
       },
 
       addToQueue: (track) => {
@@ -528,7 +696,13 @@ export const usePlayerStore = create<PlayerState>()(
           get().playTrack(track);
           return;
         }
-        set(insertManualItem(get(), { ...track }, "tail"));
+        set((s) => {
+          const next = insertManualItem(s, { ...track }, "tail");
+          return {
+            ...next,
+            ...reconcileTransitionPatch(s, next),
+          };
+        });
       },
 
       addManyToQueue: (tracks, context) => {
@@ -547,18 +721,23 @@ export const usePlayerStore = create<PlayerState>()(
           get().playQueue(tracks, 0, context);
           return;
         }
-        let nextState = {
-          queue: get().queue,
-          origins: get().origins,
-          originalQueue: get().originalQueue,
-          originalOrigins: get().originalOrigins,
-          index: get().index,
-          shuffle: get().shuffle,
-        };
-        for (const track of tracks) {
-          nextState = insertManualItem(nextState, { ...track }, "tail");
-        }
-        set(nextState);
+        set((s) => {
+          let nextState = {
+            queue: s.queue,
+            origins: s.origins,
+            originalQueue: s.originalQueue,
+            originalOrigins: s.originalOrigins,
+            index: s.index,
+            shuffle: s.shuffle,
+          };
+          for (const track of tracks) {
+            nextState = insertManualItem(nextState, { ...track }, "tail");
+          }
+          return {
+            ...nextState,
+            ...reconcileTransitionPatch(s, nextState),
+          };
+        });
       },
 
       playNext: (track) => {
@@ -577,7 +756,13 @@ export const usePlayerStore = create<PlayerState>()(
           get().playTrack(track);
           return;
         }
-        set(insertManualItem(get(), { ...track }, "next"));
+        set((s) => {
+          const next = insertManualItem(s, { ...track }, "next");
+          return {
+            ...next,
+            ...reconcileTransitionPatch(s, next),
+          };
+        });
       },
 
       removeFromQueue: (i) => {
@@ -592,7 +777,13 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
         if (i < 0 || i >= get().queue.length) return;
-        set(removeQueueItem(get(), i));
+        set((s) => {
+          const next = removeQueueItem(s, i);
+          return {
+            ...next,
+            ...reconcileTransitionPatch(s, next),
+          };
+        });
       },
       clearQueue: () => {
         // Party queues are shared/host-managed — don't clear from a member view.
@@ -604,13 +795,17 @@ export const usePlayerStore = create<PlayerState>()(
         }
         const { queue, index } = get();
         if (index >= 0 && index < queue.length) {
-          set({
-            ...clearUpcomingItems(get()),
-            radioActive: false,
-            radioSession: get().radioSession + 1,
+          set((s) => {
+            const next = clearUpcomingItems(s);
+            return {
+              ...next,
+              ...reconcileTransitionPatch(s, next),
+              radioActive: false,
+              radioSession: s.radioSession + 1,
+            };
           });
         } else {
-          set({
+          set((s) => ({
             queue: [],
             origins: [],
             originalQueue: [],
@@ -618,9 +813,10 @@ export const usePlayerStore = create<PlayerState>()(
             queueContext: null,
             ...startTrack([], -1, false),
             radioActive: false,
-            radioSession: get().radioSession + 1,
+            radioSession: s.radioSession + 1,
             partyQueueItemIds: [],
-          });
+            ...cancelledTransitionPatch(s.transition),
+          }));
         }
       },
 
@@ -637,7 +833,13 @@ export const usePlayerStore = create<PlayerState>()(
         }
         const { queue } = get();
         if (from < 0 || from >= queue.length || to < 0 || to >= queue.length) return;
-        set(moveQueueItem(get(), from, to));
+        set((s) => {
+          const next = moveQueueItem(s, from, to);
+          return {
+            ...next,
+            ...reconcileTransitionPatch(s, next),
+          };
+        });
       },
 
       jumpTo: (i) => {
@@ -665,6 +867,7 @@ export const usePlayerStore = create<PlayerState>()(
           // A pending radio start has disabled radioActive. Choosing another
           // existing entry must supersede it just like choosing a new queue.
           ...(!state.radioActive ? { radioSession: state.radioSession + 1 } : {}),
+          ...cancelledTransitionPatch(state.transition),
         });
       },
 
@@ -681,7 +884,11 @@ export const usePlayerStore = create<PlayerState>()(
         }
         const { index, isPlaying } = get();
         if (index < 0) return;
-        set({ isPlaying: !isPlaying });
+        const nextPlaying = !isPlaying;
+        set((s) => ({
+          isPlaying: nextPlaying,
+          ...(!nextPlaying ? cancelledTransitionPatch(s.transition) : {}),
+        }));
       },
 
       play: () => {
@@ -710,7 +917,10 @@ export const usePlayerStore = create<PlayerState>()(
           remote.pause();
           return;
         }
-        set({ isPlaying: false });
+        set((s) => ({
+          isPlaying: false,
+          ...cancelledTransitionPatch(s.transition),
+        }));
       },
 
       next: () => {
@@ -732,13 +942,14 @@ export const usePlayerStore = create<PlayerState>()(
         } else if (repeat === "all" && queue.length) {
           get().jumpTo(0);
         } else {
-          set({
+          set((s) => ({
             isPlaying: false,
             currentTime: 0,
             seekTo: 0,
             isBuffering: false,
             ...(!radioActive ? { radioSession: radioSession + 1 } : {}),
-          });
+            ...cancelledTransitionPatch(s.transition),
+          }));
         }
       },
 
@@ -757,13 +968,21 @@ export const usePlayerStore = create<PlayerState>()(
         if (index < 0) return;
         // If more than 3s in, restart current track
         if (currentTime > 3) {
-          set({ seekTo: 0, currentTime: 0 });
+          set((s) => ({
+            seekTo: 0,
+            currentTime: 0,
+            ...cancelledTransitionPatch(s.transition),
+          }));
           return;
         }
         if (index > 0) {
           get().jumpTo(index - 1);
         } else {
-          set({ seekTo: 0, currentTime: 0 });
+          set((s) => ({
+            seekTo: 0,
+            currentTime: 0,
+            ...cancelledTransitionPatch(s.transition),
+          }));
         }
       },
 
@@ -784,7 +1003,11 @@ export const usePlayerStore = create<PlayerState>()(
         const { index, duration } = get();
         if (index < 0) return;
         const target = Math.max(0, duration > 0 ? Math.min(t, duration) : t);
-        set({ seekTo: target, currentTime: target });
+        set((s) => ({
+          seekTo: target,
+          currentTime: target,
+          ...cancelledTransitionPatch(s.transition),
+        }));
       },
 
       setVolume: (v) => {
@@ -818,7 +1041,13 @@ export const usePlayerStore = create<PlayerState>()(
           remote.toggleShuffle();
           return;
         }
-        set(toggleQueueShuffle(get()));
+        set((s) => {
+          const next = toggleQueueShuffle(s);
+          return {
+            ...next,
+            ...reconcileTransitionPatch(s, next),
+          };
+        });
       },
 
       cycleRepeat: () => {
@@ -828,12 +1057,105 @@ export const usePlayerStore = create<PlayerState>()(
           return;
         }
         const order: RepeatMode[] = ["off", "all", "one"];
-        const cur = get().repeat;
-        set({ repeat: order[(order.indexOf(cur) + 1) % order.length] });
+        set((s) => {
+          const nextRepeat = order[(order.indexOf(s.repeat) + 1) % order.length];
+          return {
+            repeat: nextRepeat,
+            ...reconcileTransitionPatch(s, { repeat: nextRepeat }),
+          };
+        });
       },
 
       _setCurrentTime: (t) => set({ currentTime: t }),
       _setDuration: (d) => set({ duration: d }),
+      _startTransition: (input) => {
+        assertValidTransitionKind(input.kind);
+        assertValidTransitionTiming(input.startedAtMs, input.durationMs);
+        const progress = input.progress ?? 0;
+        assertValidTransitionProgress(progress);
+        const state = get();
+        if (
+          !Number.isInteger(input.outgoingIndex) ||
+          input.outgoingIndex < 0 ||
+          input.outgoingIndex >= state.queue.length
+        ) {
+          throw new RangeError(
+            `Transition outgoingIndex ${input.outgoingIndex} is outside a ${state.queue.length}-item queue.`,
+          );
+        }
+        if (
+          !Number.isInteger(input.incomingIndex) ||
+          input.incomingIndex < 0 ||
+          input.incomingIndex >= state.queue.length
+        ) {
+          throw new RangeError(
+            `Transition incomingIndex ${input.incomingIndex} is outside a ${state.queue.length}-item queue.`,
+          );
+        }
+        if (
+          input.outgoingIndex !== state.index ||
+          String(state.queue[input.outgoingIndex]?.id ?? "") !== String(input.outgoing.id)
+        ) {
+          throw new Error(
+            `Transition outgoing track ${String(input.outgoing.id)} does not match active queue entry at index ${state.index}.`,
+          );
+        }
+        if (String(state.queue[input.incomingIndex]?.id ?? "") !== String(input.incoming.id)) {
+          throw new Error(
+            `Transition incoming track ${String(input.incoming.id)} does not match queue entry at index ${input.incomingIndex}.`,
+          );
+        }
+        const id = nextTransitionId++;
+        set({
+          transition: {
+            id,
+            kind: input.kind,
+            outgoing: { ...input.outgoing },
+            incoming: { ...input.incoming },
+            outgoingIndex: input.outgoingIndex,
+            incomingIndex: input.incomingIndex,
+            startedAtMs: input.startedAtMs,
+            durationMs: input.durationMs,
+            progress,
+          },
+          lastTransitionEnd: null,
+        });
+        return id;
+      },
+      _updateTransitionProgress: (id, progress) => {
+        assertValidTransitionId(id);
+        assertValidTransitionProgress(progress);
+        const active = get().transition;
+        if (!active || active.id !== id || active.progress === progress) return;
+        set({
+          transition: {
+            ...active,
+            progress,
+          },
+        });
+      },
+      _rescheduleTransitionTiming: (id, startedAtMs, durationMs, progress) => {
+        assertValidTransitionId(id);
+        assertValidTransitionTiming(startedAtMs, durationMs);
+        assertValidTransitionProgress(progress);
+        const active = get().transition;
+        if (!active || active.id !== id) return;
+        set({
+          transition: {
+            ...active,
+            startedAtMs,
+            durationMs,
+            progress,
+          },
+        });
+      },
+      _cancelTransition: (id) => {
+        if (id !== undefined) assertValidTransitionId(id);
+        const active = get().transition;
+        if (!active) return;
+        if (id !== undefined && active.id !== id) return;
+        set(cancelledTransitionPatch(active));
+      },
       _crossfadeAdvance: (outgoingId, incomingId, currentTime, duration, targetIndex) => {
         const state = get();
         const { index, queue, repeat } = state;
@@ -856,6 +1178,23 @@ export const usePlayerStore = create<PlayerState>()(
         pushRecent(queue[resolvedTarget]);
         const origins =
           resolvedTarget < index ? demoteOvertakenManualItems(state, resolvedTarget) : {};
+        const active = state.transition;
+        const matchedTransition =
+          active !== null &&
+          active.outgoingIndex === index &&
+          active.incomingIndex === resolvedTarget &&
+          String(active.outgoing.id) === outgoingId &&
+          String(active.incoming.id) === incomingId;
+        const lastTransitionEnd: TrackTransitionEnd | null = matchedTransition
+          ? {
+              id: active.id,
+              kind: active.kind,
+              outcome: "completed",
+              outgoing: active.outgoing,
+              incoming: active.incoming,
+              endedAtMs: nowMonotonicMs(),
+            }
+          : null;
         set({
           ...origins,
           index: resolvedTarget,
@@ -867,33 +1206,42 @@ export const usePlayerStore = create<PlayerState>()(
           seekTo: null,
           error: null,
           isBuffering: false,
+          transition: null,
+          lastTransitionEnd,
         });
         return true;
       },
       _onEnded: () => {
         if (get().sleepAfterTrack) {
-          set({
+          set((s) => ({
             sleepAfterTrack: false,
             isPlaying: false,
             currentTime: 0,
             seekTo: null,
             isBuffering: false,
-          });
+            ...cancelledTransitionPatch(s.transition),
+          }));
           return;
         }
         if (get().repeat === "one") {
-          set({
+          set((s) => ({
             seekTo: 0,
             currentTime: 0,
             isPlaying: true,
             isBuffering: false,
-          });
+            ...cancelledTransitionPatch(s.transition),
+          }));
           return;
         }
         get().next();
       },
       _setBuffering: (b) => set({ isBuffering: b }),
-      _setError: (msg) => set({ error: msg, isBuffering: false }),
+      _setError: (msg) =>
+        set((s) => ({
+          error: msg,
+          isBuffering: false,
+          ...(msg !== null ? cancelledTransitionPatch(s.transition) : {}),
+        })),
       _clearSeek: () => set({ seekTo: null }),
     }),
     {

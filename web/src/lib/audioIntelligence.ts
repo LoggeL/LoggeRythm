@@ -6,7 +6,12 @@
  * - Audio quality tier labels & badges
  */
 
-import type { AudioQuality, LyricsWord, TrackAudioMeta } from "@/types";
+import type {
+  AudioQuality,
+  LyricsWord,
+  TrackAudioMeta,
+  TrackTransitionKind,
+} from "@/types";
 
 export const AUDIO_PEAK_COUNT = 96;
 
@@ -150,6 +155,106 @@ export function computeCueAwareCrossfade(params: {
   }
 
   return { triggerMediaSec, fadeMediaSec, incomingStartSec };
+}
+
+/**
+ * Classifies a computed crossfade plan as `"smart-crossfade"` when server-
+ * analyzed `outro_start_sec` or `intro_end_sec` cues adjusted the transition
+ * trigger or incoming cue offset, or `"crossfade"` for a fixed-window fade.
+ */
+export function classifyCrossfadePlan(params: {
+  configuredCrossfadeSec: number;
+  outgoingDurationSec: number;
+  plan: CueAwareCrossfadePlan;
+}): TrackTransitionKind {
+  const { configuredCrossfadeSec, outgoingDurationSec, plan } = params;
+  if (!Number.isFinite(configuredCrossfadeSec) || configuredCrossfadeSec <= 0) {
+    throw new RangeError(
+      `Crossfade duration must be positive; received ${configuredCrossfadeSec}.`,
+    );
+  }
+  if (!Number.isFinite(outgoingDurationSec) || outgoingDurationSec <= 0) {
+    throw new RangeError(
+      `Outgoing track duration must be positive; received ${outgoingDurationSec}.`,
+    );
+  }
+  const defaultTrigger = Math.max(0, outgoingDurationSec - configuredCrossfadeSec);
+  const usedOutroCue = plan.triggerMediaSec < defaultTrigger - 1e-6;
+  const usedIntroCue = plan.incomingStartSec > 0;
+  return usedOutroCue || usedIntroCue ? "smart-crossfade" : "crossfade";
+}
+
+export interface RescheduledCrossfadeTiming {
+  progress: number;
+  remainingWallSec: number;
+  durationSec: number;
+  startedAtMs: number;
+  completed: boolean;
+}
+
+/**
+ * Recompute wall-clock crossfade timing when `playbackRate` changes mid-blend,
+ * keeping normalized progress continuous at `nowMs` while finishing after the
+ * rate-adjusted remaining wall duration.
+ */
+export function computeRescheduledCrossfadeTiming(params: {
+  fadeMediaSec: number;
+  remainingMediaSec: number;
+  playbackRate: number;
+  startedAtMs: number;
+  durationSec: number;
+  nowMs: number;
+}): RescheduledCrossfadeTiming {
+  const {
+    fadeMediaSec,
+    remainingMediaSec,
+    playbackRate,
+    startedAtMs,
+    durationSec,
+    nowMs,
+  } = params;
+  if (!Number.isFinite(fadeMediaSec) || fadeMediaSec <= 0) {
+    throw new RangeError(`Crossfade fadeMediaSec must be positive; received ${fadeMediaSec}.`);
+  }
+  if (!Number.isFinite(remainingMediaSec) || remainingMediaSec <= 0) {
+    throw new RangeError(
+      `Crossfade remainingMediaSec must be positive; received ${remainingMediaSec}.`,
+    );
+  }
+  if (!Number.isFinite(playbackRate) || playbackRate <= 0) {
+    throw new RangeError(`Playback rate must be positive; received ${playbackRate}.`);
+  }
+  if (!Number.isFinite(startedAtMs) || !Number.isFinite(nowMs)) {
+    throw new RangeError("Crossfade timestamps must be finite.");
+  }
+  if (!Number.isFinite(durationSec) || durationSec <= 0) {
+    throw new RangeError(`Crossfade durationSec must be positive; received ${durationSec}.`);
+  }
+  const elapsedSec = Math.max(0, (nowMs - startedAtMs) / 1000);
+  const progress = Math.max(0, Math.min(1, elapsedSec / durationSec));
+  if (progress >= 0.999) {
+    return {
+      progress: 1,
+      remainingWallSec: 0,
+      durationSec,
+      startedAtMs,
+      completed: true,
+    };
+  }
+  const remainingFadeMedia = Math.max(0.05, fadeMediaSec * (1 - progress));
+  const remainingWallSec = Math.max(
+    0.05,
+    Math.min(remainingFadeMedia, remainingMediaSec) / playbackRate,
+  );
+  const newDurationSec = remainingWallSec / (1 - progress);
+  const newStartedAtMs = nowMs - progress * newDurationSec * 1000;
+  return {
+    progress,
+    remainingWallSec,
+    durationSec: newDurationSec,
+    startedAtMs: newStartedAtMs,
+    completed: false,
+  };
 }
 
 /**

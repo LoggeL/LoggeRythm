@@ -6,6 +6,7 @@ import { SCENE_KEYS, SCENE_LABELS, type ScenePreference, type VisualizerPreferen
 import type { VisualizerSceneChoice } from "@/hooks/useVisualizerScene";
 import type { Track } from "@/types";
 import type { VisualizerStatus } from "@/components/FullscreenVisualizer";
+import type { TransitionDisplayState } from "@/components/player/transitionDisplay";
 import BassReactiveArtwork from "@/components/BassReactiveArtwork";
 import Cover from "@/components/ui/Cover";
 import { VisualizerIcon } from "@/components/icons";
@@ -19,14 +20,18 @@ export default function Stage({
   track,
   albumRef,
   preferences,
+  transitionDisplay,
   footer,
 }: {
   track: Track;
   albumRef: RefObject<HTMLDivElement | null>;
   preferences: VisualizerPreferences;
+  transitionDisplay?: TransitionDisplayState;
   /** Controls shown centred under the artwork (narrow layouts). */
   footer?: ReactNode;
 }) {
+  const showDual = transitionDisplay !== undefined && transitionDisplay.phase !== "idle";
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div data-np-swipe-track className="relative z-10 grid min-h-40 flex-1 place-items-center [container-type:size]">
@@ -36,9 +41,67 @@ export default function Stage({
             preferences.enabled ? "w-[min(78cqw,78cqh)] lg:w-[min(66cqw,66cqh)]" : "w-[min(100cqw,100cqh)]"
           }`}
         >
-          <BassReactiveArtwork className="cover-shadow">
-            <Cover src={track.cover ? hiResCover(track.cover) : null} alt={track.album} className="relative h-full w-full" eager />
-          </BassReactiveArtwork>
+          {showDual ? (
+            <div
+              data-stage-transition={transitionDisplay.phase}
+              className="flex h-full w-full items-center justify-center"
+            >
+              <div
+                data-transition-cover="outgoing"
+                className="stage-transition-outgoing-slot min-w-0 flex-1"
+              >
+                <div className="stage-transition-outgoing cover-shadow aspect-square w-full overflow-hidden rounded-[var(--radius-card)] ring-1 ring-white/14">
+                  <Cover
+                    src={
+                      transitionDisplay.outgoing.cover
+                        ? hiResCover(transitionDisplay.outgoing.cover)
+                        : null
+                    }
+                    alt={transitionDisplay.outgoing.album}
+                    className="relative h-full w-full"
+                    eager
+                  />
+                </div>
+              </div>
+
+              <div
+                aria-hidden="true"
+                data-transition-bridge=""
+                className="track-transition-bridge mx-1.5 flex shrink-0 flex-col items-center gap-1 lg:mx-3"
+              >
+                <span className="font-mono text-xs font-bold leading-none text-accent">→</span>
+                <span className="h-[3px] w-5 overflow-hidden rounded-full bg-white/18 lg:w-8">
+                  <span className="track-transition-meter-fill block h-full w-full rounded-full bg-accent-soft" />
+                </span>
+              </div>
+
+              <div
+                data-transition-cover="incoming"
+                className={`stage-transition-incoming aspect-square min-w-0 rounded-[var(--radius-card)] ${
+                  transitionDisplay.phase === "exiting"
+                    ? "w-full flex-1"
+                    : "flex-[1.08] ring-1 ring-accent/55"
+                }`}
+              >
+                <BassReactiveArtwork className="cover-shadow">
+                  <Cover
+                    src={
+                      transitionDisplay.incoming.cover
+                        ? hiResCover(transitionDisplay.incoming.cover)
+                        : null
+                    }
+                    alt={transitionDisplay.incoming.album}
+                    className="relative h-full w-full"
+                    eager
+                  />
+                </BassReactiveArtwork>
+              </div>
+            </div>
+          ) : (
+            <BassReactiveArtwork className="cover-shadow">
+              <Cover src={track.cover ? hiResCover(track.cover) : null} alt={track.album} className="relative h-full w-full" eager />
+            </BassReactiveArtwork>
+          )}
         </div>
       </div>
       {footer && <div className="relative z-10 flex flex-shrink-0 justify-center pt-2">{footer}</div>}

@@ -25,6 +25,10 @@ import { SleepTimerTrigger } from "@/components/player/SleepTimerControl";
 import { AudioEffectsTrigger } from "@/components/player/AudioEffectsControl";
 import PictureInPictureButton from "@/components/player/PictureInPictureButton";
 import ActiveOutputBanner from "@/components/player/ActiveOutputBanner";
+import {
+  useLiveTransitionProgress,
+  useTrackTransition,
+} from "@/components/player/useTrackTransition";
 import FullscreenVisualizer, { type VisualizerStatus } from "@/components/FullscreenVisualizer";
 import SceneVisualizer from "@/components/SceneVisualizer";
 import Stage, { VisualizerControls } from "./Stage";
@@ -143,6 +147,8 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
 
   const rootRef = useRef<HTMLDivElement>(null);
   const albumRef = useRef<HTMLDivElement>(null);
+  const transitionDisplay = useTrackTransition();
+  useLiveTransitionProgress(rootRef, transitionDisplay);
   const swipeHandlers = useSwipeToClose(rootRef, onClose, {
     artworkRef: albumRef,
     onSwipeNext: canControl ? next : undefined,
@@ -227,9 +233,27 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
   const visualizerControls = (
     <VisualizerControls preferences={preferences} choice={sceneChoice} signalStatus={signalStatus} onChange={setStoredPreferences} />
   );
-  const stage = <Stage track={track} albumRef={albumRef} preferences={preferences} footer={split ? undefined : visualizerControls} />;
+  const stage = (
+    <Stage
+      track={track}
+      albumRef={albumRef}
+      preferences={preferences}
+      transitionDisplay={transitionDisplay}
+      footer={split ? undefined : visualizerControls}
+    />
+  );
   const showVisualizer = preferences.enabled && (split || view === "stage" || cinemaMode);
   const chromeFadeClass = cinemaMode && cinemaIdle ? "opacity-0 pointer-events-none" : "opacity-100";
+  const rootStyle: CSSProperties = {
+    ...(fullscreenTheme(palette) as CSSProperties),
+    ...(transitionDisplay.phase !== "idle"
+      ? ({
+          "--transition-p": (
+            transitionDisplay.phase === "active" ? transitionDisplay.progress : 1
+          ).toFixed(4),
+        } as CSSProperties)
+      : {}),
+  };
 
   return (
     <div
@@ -238,15 +262,40 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
       aria-modal="true"
       aria-label="Vollbildplayer"
       data-cinema={cinemaMode ? "true" : undefined}
+      data-track-transition={transitionDisplay.phase !== "idle" ? transitionDisplay.phase : undefined}
+      data-transition-kind={transitionDisplay.phase !== "idle" ? transitionDisplay.kind : undefined}
       {...swipeHandlers}
-      style={fullscreenTheme(palette) as CSSProperties}
+      style={rootStyle}
       className={`${styles.scope} fixed inset-0 z-[80] flex h-dvh animate-[sheetUp_.34s_var(--ease-out)] flex-col overflow-hidden bg-backdrop pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] motion-reduce:animate-none lg:animate-[fadeIn_.28s_var(--ease-out)] ${
         cinemaMode && cinemaIdle ? "cursor-none" : ""
       }`}
     >
-      {track.cover && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={hiResCover(track.cover)} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-3xl saturate-150" />
+      {transitionDisplay.phase === "active" ? (
+        <>
+          {transitionDisplay.outgoing.cover && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={hiResCover(transitionDisplay.outgoing.cover)}
+              alt=""
+              aria-hidden
+              className="np-backdrop-outgoing pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover blur-3xl saturate-150"
+            />
+          )}
+          {transitionDisplay.incoming.cover && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={hiResCover(transitionDisplay.incoming.cover)}
+              alt=""
+              aria-hidden
+              className="np-backdrop-incoming pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover blur-3xl saturate-150"
+            />
+          )}
+        </>
+      ) : (
+        track.cover && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={hiResCover(track.cover)} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full scale-125 object-cover opacity-50 blur-3xl saturate-150" />
+        )
       )}
       <div aria-hidden className={`${styles.backdrop} pointer-events-none absolute inset-0`} />
       {showVisualizer && (sceneChoice.scene === "aura" ? (
@@ -317,7 +366,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             <div className="flex min-h-0 w-full max-w-3xl flex-1 flex-col gap-5">
               {stage}
               <div className={`flex-shrink-0 transition-opacity duration-500 ${cinemaIdle ? "opacity-85" : "opacity-100"}`}>
-                <TrackHeading track={track} onNavigate={onClose} variant="display" />
+                <TrackHeading track={track} onNavigate={onClose} variant="display" transitionDisplay={transitionDisplay} />
               </div>
             </div>
           </div>
@@ -326,7 +375,7 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
             <div className="flex min-h-0 flex-col gap-5">
               {stage}
               <div className="flex-shrink-0">
-                <TrackHeading track={track} onNavigate={onClose} variant="display" />
+                <TrackHeading track={track} onNavigate={onClose} variant="display" transitionDisplay={transitionDisplay} />
               </div>
             </div>
             <div className={`${styles.panelSurface} flex min-h-0 flex-col rounded-[var(--radius-panel)] px-6 pt-3.5 pb-2 xl:px-7`}>
@@ -361,7 +410,13 @@ export default function NowPlaying({ onClose }: { onClose: () => void }) {
         <div className={`${styles.console} like-celebration-surface relative flex-shrink-0 px-5 pb-4 pt-3 lg:px-10 lg:pb-6 lg:pt-4 xl:px-14`}>
           {!split && (
             <div className="mb-3">
-              <TrackHeading track={track} onNavigate={onClose} variant="row" thumbnail={view !== "stage" && !cinemaMode} />
+              <TrackHeading
+                track={track}
+                onNavigate={onClose}
+                variant="row"
+                thumbnail={view !== "stage" && !cinemaMode}
+                transitionDisplay={transitionDisplay}
+              />
             </div>
           )}
           <WaveformScrubber />
