@@ -159,6 +159,7 @@ _PORTABLE_COLUMN_MIGRATIONS = (
     User.__table__.c.share_listening_activity,
     User.__table__.c.preferred_quality,
     User.__table__.c.dj_transitions_enabled,
+    User.__table__.c.google_sub,
     StoredLyrics.__table__.c.instrumental,
     ImportJob.__table__.c.target_playlist_id,
     ImportJob.__table__.c.create_playlist_name,
@@ -197,6 +198,11 @@ _PORTABLE_INDEX_MIGRATIONS = (
         index
         for index in Like.__table__.indexes
         if index.name in {"ix_likes_user_isrc", "uq_like_user_isrc"}
+    ),
+    *(
+        index
+        for index in User.__table__.indexes
+        if index.name == "uq_users_google_sub"
     ),
 )
 

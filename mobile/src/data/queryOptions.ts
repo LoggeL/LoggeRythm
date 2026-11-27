@@ -401,6 +401,17 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
         },
       });
     },
+    statsWrapped(scope: QueryScope, range: StatsInsightsRange) {
+      return queryOptions({
+        queryKey: queryKeys.profile.wrapped(scope, range),
+        queryFn: ({ signal }) => {
+          if (!repository.getStatsWrapped) {
+            throw new Error('ProfileRepository.getStatsWrapped is not configured');
+          }
+          return repository.getStatsWrapped(range, signal);
+        },
+      });
+    },
     socialActivity(scope: QueryScope) {
       return queryOptions({
         queryKey: queryKeys.social.activity(scope),

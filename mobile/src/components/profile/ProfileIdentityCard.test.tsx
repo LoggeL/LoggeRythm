@@ -110,6 +110,14 @@ describe('ProfileIdentityCard', () => {
         .toBe(strings.profile.serverOrigin(origin));
       expect(byTestId(tree, 'profile-avatar-deferred').props.children)
         .toBe(strings.profile.avatarDeferred);
+      expect(queryByTestId(tree, 'profile-google-linked')).toBeNull();
+
+      const linkedTree = ProfileAccountDetailsCard({
+        user: { ...user, google_linked: true },
+        serverOrigin: origin,
+      });
+      expect(byType(byTestId(linkedTree, 'profile-google-linked'), 'Text')[0].props.children)
+        .toBe(strings.profile.googleLinked);
     },
   );
 });

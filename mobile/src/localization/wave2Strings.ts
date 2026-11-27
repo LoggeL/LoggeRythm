@@ -1,6 +1,11 @@
 import * as localization from './index';
 import type { AppLocale } from './index';
-import type { AudioQualityTier, StatsInsightsRange } from '../api/types';
+import type {
+  AudioQualityTier,
+  StatsInsightsRange,
+  WrappedCardTemplateId,
+  WrappedThemeId,
+} from '../api/types';
 import type { EqualizerPresetName, LoudnessPresetName } from '../../modules/loggerythm-player/src';
 
 export interface Wave2Strings {
@@ -126,6 +131,140 @@ export interface Wave2Strings {
     emptyTitle: string;
     emptyBody: string;
     loadFailed: string;
+  };
+  wrapped: {
+    launchEyebrow: string;
+    launchTitle: string;
+    launchSubtitle: (rangeLabel: string, plays: number, duration: string) => string;
+    launchButton: string;
+    launchPending: string;
+    launchError: string;
+    studioTitle: string;
+    closeButton: string;
+    modes: {
+      story: string;
+      studio: string;
+    };
+    storyControls: {
+      previous: string;
+      next: string;
+      pause: string;
+      play: string;
+      openCard: string;
+      chapterCounter: (current: number, total: number) => string;
+    };
+    chapters: {
+      intro: {
+        eyebrow: string;
+        title: string;
+        subtitle: string;
+        hoursLabel: string;
+        playsLabel: string;
+        avgDailyLabel: string;
+      };
+      obsession: {
+        eyebrow: string;
+        title: string;
+        replayBadge: (count: number) => string;
+        shareLabel: string;
+        peakDayLabel: (date: string, plays: number) => string;
+        emptyNote: string;
+      };
+      festival: {
+        eyebrow: string;
+        title: string;
+        headlinerLabel: string;
+        coHeadlinersLabel: string;
+        undercardLabel: string;
+        emptyNote: string;
+      };
+      aura: {
+        eyebrow: string;
+        title: string;
+        peakHourLabel: (hour: number) => string;
+        weekendLabel: string;
+        discoveryLabel: string;
+        bpmLabel: (bpm: number, vibe: string) => string;
+      };
+      peak: {
+        eyebrow: string;
+        title: string;
+        currentStreakLabel: string;
+        longestStreakLabel: string;
+        activeDaysLabel: (active: number, total: number) => string;
+        peakDayLabel: string;
+      };
+      persona: {
+        eyebrow: string;
+        title: string;
+        emptyNote: string;
+      };
+      finale: {
+        eyebrow: string;
+        title: string;
+        body: string;
+        cta: string;
+      };
+    };
+    templates: Record<WrappedCardTemplateId, { label: string; badge: string }>;
+    themes: Record<WrappedThemeId, string>;
+    toggles: {
+      showUser: string;
+      showCounts: string;
+    };
+    actions: {
+      share: string;
+      sharing: string;
+      openSvg: string;
+      openingSvg: string;
+    };
+    errors: {
+      shareFailed: string;
+      openSvgFailed: string;
+      emptyReport: string;
+    };
+    card: {
+      brandMark: string;
+      listeningHours: string;
+      plays: string;
+      topArtists: string;
+      topTracks: string;
+      dnaWave: string;
+      receiptHeader: string;
+      receiptOrder: (rangeLabel: string, listener: string) => string;
+      receiptSubtotal: string;
+      receiptTotal: string;
+      receiptQty: string;
+      receiptItem: string;
+      receiptTime: string;
+      festivalTitle: string;
+      headliner: string;
+      coHeadliners: string;
+      undercard: string;
+      obsessionLoops: (count: number) => string;
+      obsessionShare: (pct: number) => string;
+      obsessionPeak: (date: string, plays: number) => string;
+      auraClockTitle: string;
+      auraPeakHour: (hour: number) => string;
+      auraDiscovery: (pct: number) => string;
+      auraRepeat: (pct: number) => string;
+      peakTitle: string;
+      longestStreak: string;
+      currentStreak: string;
+      activeDays: (active: number, total: number) => string;
+      peakDayPlays: (plays: number, duration: string) => string;
+      userBadge: (name: string) => string;
+      anonymousListener: string;
+      shareMessage: (
+        templateLabel: string,
+        rangeLabel: string,
+        duration: string,
+        plays: number,
+        topArtist: string,
+        topTrack: string,
+        cardUrl: string,
+      ) => string;
+    };
   };
   friends: {
     title: string;
@@ -350,6 +489,148 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       emptyBody: 'Spiele ein paar Titel ab, um deinen persönlichen Rückblick zu füllen.',
       loadFailed: 'Hör-Insights konnten nicht geladen werden.',
     },
+    wrapped: {
+      launchEyebrow: 'DEIN LOGGERYTHM WRAPPED',
+      launchTitle: 'Dein Wrapped · Share-Cards',
+      launchSubtitle: (rangeLabel, plays, duration) =>
+        `${rangeLabel}: ${plays} Wiedergaben · ${duration} · 7 Share-Cards & Story-Modus`,
+      launchButton: 'Story & Share-Cards öffnen',
+      launchPending: 'Wrapped-Report wird geladen …',
+      launchError: 'Wrapped-Report konnte nicht geladen werden.',
+      studioTitle: 'Wrapped Studio',
+      closeButton: 'Wrapped schließen',
+      modes: {
+        story: 'Story',
+        studio: 'Share-Cards',
+      },
+      storyControls: {
+        previous: 'Zurück',
+        next: 'Weiter',
+        pause: 'Pause',
+        play: 'Abspielen',
+        openCard: 'Card öffnen',
+        chapterCounter: (current, total) => `${current} / ${total}`,
+      },
+      chapters: {
+        intro: {
+          eyebrow: 'KAPITEL 01 · DEIN SOUND',
+          title: 'So klang deine Zeit',
+          subtitle: 'Jede Session hinterlässt Spuren in deinem persönlichen Klangprofil.',
+          hoursLabel: 'Hörzeit',
+          playsLabel: 'Wiedergaben',
+          avgDailyLabel: 'Pro Tag',
+        },
+        obsession: {
+          eyebrow: 'KAPITEL 02 · DEIN #1 OHRWURM',
+          title: 'Dieser Track ließ dich nicht los',
+          replayBadge: (count) => `${count}× gespielt`,
+          shareLabel: 'Anteil an deiner Hörzeit',
+          peakDayLabel: (date, plays) => `Rekordtag ${date}: ${plays}× in Schleife`,
+          emptyNote: 'Noch kein dominanter Ohrwurm in diesem Zeitraum.',
+        },
+        festival: {
+          eyebrow: 'KAPITEL 03 · DEIN LINE-UP',
+          title: 'Dein persönliches Festival',
+          headlinerLabel: 'Headliner',
+          coHeadlinersLabel: 'Co-Headliner',
+          undercardLabel: 'Weitere Acts',
+          emptyNote: 'Spiele mehr Artists, um dein Line-up zu füllen.',
+        },
+        aura: {
+          eyebrow: 'KAPITEL 04 · KLANG-AURA & RADAR',
+          title: 'Wann dein Sound pulsiert',
+          peakHourLabel: (hour) => `Peak um ${String(hour).padStart(2, '0')}:00 Uhr`,
+          weekendLabel: 'Wochenend-Anteil',
+          discoveryLabel: 'Entdecker-Score',
+          bpmLabel: (bpm, vibe) => `${bpm} BPM · ${vibe}`,
+        },
+        peak: {
+          eyebrow: 'KAPITEL 05 · REKORD-TAG & SERIE',
+          title: 'Dein stärkster Lauf',
+          currentStreakLabel: 'Aktuelle Serie',
+          longestStreakLabel: 'Längste Serie',
+          activeDaysLabel: (active, total) => `${active} von ${total} Tagen aktiv`,
+          peakDayLabel: 'Dein intensiver Hörmoment',
+        },
+        persona: {
+          eyebrow: 'KAPITEL 06 · KLANG-PERSÖNLICHKEIT',
+          title: 'Dein Hör-Typ',
+          emptyNote: 'Für eine Klang-Persönlichkeit braucht es noch ein paar Wiedergaben.',
+        },
+        finale: {
+          eyebrow: 'KAPITEL 07 · DEINE CARDS',
+          title: 'Bereit zum Teilen',
+          body: 'Wähle aus 7 kuratierten Designs und 5 Farbpaletten deinen Favoriten.',
+          cta: 'Card-Studio öffnen',
+        },
+      },
+      templates: {
+        summary: { label: 'Übersicht', badge: '01' },
+        persona: { label: 'Persona', badge: '02' },
+        receipt: { label: 'Sound-Beleg', badge: '03' },
+        festival: { label: 'Festival', badge: '04' },
+        obsession: { label: 'Vinyl #1', badge: '05' },
+        aura: { label: 'Aura 24h', badge: '06' },
+        peak: { label: 'Rekord-Tag', badge: '07' },
+      },
+      themes: {
+        signal: 'Signal Ink',
+        cover: 'Cover-Aura',
+        vinyl: 'Analog Sunset',
+        neon: 'Mitternacht',
+        paper: 'Studio Paper',
+      },
+      toggles: {
+        showUser: 'Name anzeigen',
+        showCounts: 'Zahlen anzeigen',
+      },
+      actions: {
+        share: 'Card teilen',
+        sharing: 'Wird geteilt …',
+        openSvg: 'SVG-Card öffnen',
+        openingSvg: 'Wird geöffnet …',
+      },
+      errors: {
+        shareFailed: 'Wrapped-Card konnte nicht geteilt werden.',
+        openSvgFailed: 'SVG-Card konnte nicht geöffnet werden.',
+        emptyReport: 'Für diesen Zeitraum liegen noch keine Wiedergaben vor.',
+      },
+      card: {
+        brandMark: 'LOGGERYTHM WRAPPED',
+        listeningHours: 'HÖRZEIT',
+        plays: 'WIEDERGABEN',
+        topArtists: 'TOP-KÜNSTLER:INNEN',
+        topTracks: 'TOP-TITEL',
+        dnaWave: 'KLANG-DNA',
+        receiptHeader: 'SOUND-BELEG',
+        receiptOrder: (rangeLabel, listener) => `${rangeLabel.toUpperCase()} · ${listener}`,
+        receiptSubtotal: 'ZWISCHENSUMME',
+        receiptTotal: 'GESAMT',
+        receiptQty: 'ANZ',
+        receiptItem: 'TITEL',
+        receiptTime: 'ZEIT',
+        festivalTitle: 'LOGGERYTHM FEST',
+        headliner: 'HEADLINER',
+        coHeadliners: 'CO-HEADLINER',
+        undercard: 'LINE-UP',
+        obsessionLoops: (count) => `${count}× IN SCHLEIFE`,
+        obsessionShare: (pct) => `${pct}% DEINER HÖRZEIT`,
+        obsessionPeak: (date, plays) => `Rekordtag ${date} · ${plays}×`,
+        auraClockTitle: '24H-HÖRUHR',
+        auraPeakHour: (hour) => `Peak ${String(hour).padStart(2, '0')}:00`,
+        auraDiscovery: (pct) => `${pct}% Entdecker`,
+        auraRepeat: (pct) => `${pct}% Repeat`,
+        peakTitle: 'REKORD-TAG & SERIE',
+        longestStreak: 'LÄNGSTE SERIE',
+        currentStreak: 'AKTUELL',
+        activeDays: (active, total) => `${active}/${total} Tage aktiv`,
+        peakDayPlays: (plays, duration) => `${plays} Plays · ${duration}`,
+        userBadge: (name) => `FÜR ${name.toUpperCase()}`,
+        anonymousListener: 'DEIN SOUND',
+        shareMessage: (templateLabel, rangeLabel, duration, plays, topArtist, topTrack, cardUrl) =>
+          `Mein LoggeRythm Wrapped · ${templateLabel} (${rangeLabel}): ${duration}, ${plays} Wiedergaben${topArtist ? `, #1 Artist: ${topArtist}` : ''}${topTrack ? `, #1 Track: ${topTrack}` : ''}.\n${cardUrl}`,
+      },
+    },
     friends: {
       title: 'Freunde hören gerade',
       empty: 'Gerade teilt niemand seine Wiedergabe.',
@@ -573,6 +854,148 @@ const catalogs: Readonly<Record<AppLocale, Wave2Strings>> = {
       emptyTitle: 'No listening activity in this range',
       emptyBody: 'Play a few tracks to build your personal recap.',
       loadFailed: 'Could not load listening insights.',
+    },
+    wrapped: {
+      launchEyebrow: 'YOUR LOGGERYTHM WRAPPED',
+      launchTitle: 'Your Wrapped · Share Cards',
+      launchSubtitle: (rangeLabel, plays, duration) =>
+        `${rangeLabel}: ${plays} plays · ${duration} · 7 Share Cards & Story Mode`,
+      launchButton: 'Open Story & Share Cards',
+      launchPending: 'Loading Wrapped report…',
+      launchError: 'Could not load Wrapped report.',
+      studioTitle: 'Wrapped Studio',
+      closeButton: 'Close Wrapped',
+      modes: {
+        story: 'Story',
+        studio: 'Share Cards',
+      },
+      storyControls: {
+        previous: 'Back',
+        next: 'Next',
+        pause: 'Pause',
+        play: 'Resume',
+        openCard: 'Open Card',
+        chapterCounter: (current, total) => `${current} / ${total}`,
+      },
+      chapters: {
+        intro: {
+          eyebrow: 'CHAPTER 01 · YOUR SOUND',
+          title: 'How your time sounded',
+          subtitle: 'Every listening session shapes your personal audio signature.',
+          hoursLabel: 'Listening Time',
+          playsLabel: 'Plays',
+          avgDailyLabel: 'Daily Avg',
+        },
+        obsession: {
+          eyebrow: 'CHAPTER 02 · #1 OBSESSION',
+          title: 'The track you kept on repeat',
+          replayBadge: (count) => `${count}× played`,
+          shareLabel: 'Share of your listening',
+          peakDayLabel: (date, plays) => `Peak day ${date}: ${plays}× plays`,
+          emptyNote: 'No dominant obsession track in this range yet.',
+        },
+        festival: {
+          eyebrow: 'CHAPTER 03 · YOUR LINEUP',
+          title: 'Your personal festival',
+          headlinerLabel: 'Headliner',
+          coHeadlinersLabel: 'Co-Headliners',
+          undercardLabel: 'Supporting Acts',
+          emptyNote: 'Play more artists to build your festival lineup.',
+        },
+        aura: {
+          eyebrow: 'CHAPTER 04 · SOUND AURA & RADAR',
+          title: 'When your rhythm peaks',
+          peakHourLabel: (hour) => `Peak at ${String(hour).padStart(2, '0')}:00`,
+          weekendLabel: 'Weekend share',
+          discoveryLabel: 'Discovery score',
+          bpmLabel: (bpm, vibe) => `${bpm} BPM · ${vibe}`,
+        },
+        peak: {
+          eyebrow: 'CHAPTER 05 · PEAK DAY & STREAK',
+          title: 'Your strongest run',
+          currentStreakLabel: 'Current Streak',
+          longestStreakLabel: 'Longest Streak',
+          activeDaysLabel: (active, total) => `${active} of ${total} active days`,
+          peakDayLabel: 'Your heaviest listening day',
+        },
+        persona: {
+          eyebrow: 'CHAPTER 06 · SOUND PERSONA',
+          title: 'Your listener archetype',
+          emptyNote: 'Keep listening to unlock your personal sound archetype.',
+        },
+        finale: {
+          eyebrow: 'CHAPTER 07 · YOUR CARDS',
+          title: 'Ready to share',
+          body: 'Pick from 7 curated card templates and 5 custom palettes.',
+          cta: 'Open Card Studio',
+        },
+      },
+      templates: {
+        summary: { label: 'Summary', badge: '01' },
+        persona: { label: 'Persona', badge: '02' },
+        receipt: { label: 'Receipt', badge: '03' },
+        festival: { label: 'Festival', badge: '04' },
+        obsession: { label: 'Vinyl #1', badge: '05' },
+        aura: { label: 'Aura 24h', badge: '06' },
+        peak: { label: 'Peak Day', badge: '07' },
+      },
+      themes: {
+        signal: 'Signal Ink',
+        cover: 'Cover Aura',
+        vinyl: 'Analog Sunset',
+        neon: 'Midnight Club',
+        paper: 'Studio Paper',
+      },
+      toggles: {
+        showUser: 'Show name',
+        showCounts: 'Show counts',
+      },
+      actions: {
+        share: 'Share Card',
+        sharing: 'Sharing…',
+        openSvg: 'Open SVG Card',
+        openingSvg: 'Opening…',
+      },
+      errors: {
+        shareFailed: 'Could not share Wrapped card.',
+        openSvgFailed: 'Could not open SVG card.',
+        emptyReport: 'No listening plays recorded in this range yet.',
+      },
+      card: {
+        brandMark: 'LOGGERYTHM WRAPPED',
+        listeningHours: 'LISTENING',
+        plays: 'PLAYS',
+        topArtists: 'TOP ARTISTS',
+        topTracks: 'TOP TRACKS',
+        dnaWave: 'SOUND DNA',
+        receiptHeader: 'SOUND RECEIPT',
+        receiptOrder: (rangeLabel, listener) => `${rangeLabel.toUpperCase()} · ${listener}`,
+        receiptSubtotal: 'SUBTOTAL',
+        receiptTotal: 'TOTAL',
+        receiptQty: 'QTY',
+        receiptItem: 'TRACK',
+        receiptTime: 'TIME',
+        festivalTitle: 'LOGGERYTHM FEST',
+        headliner: 'HEADLINER',
+        coHeadliners: 'CO-HEADLINERS',
+        undercard: 'LINEUP',
+        obsessionLoops: (count) => `${count}× ON REPEAT`,
+        obsessionShare: (pct) => `${pct}% OF LISTENING`,
+        obsessionPeak: (date, plays) => `Peak ${date} · ${plays}×`,
+        auraClockTitle: '24H RADAR',
+        auraPeakHour: (hour) => `Peak ${String(hour).padStart(2, '0')}:00`,
+        auraDiscovery: (pct) => `${pct}% Discovery`,
+        auraRepeat: (pct) => `${pct}% Repeat`,
+        peakTitle: 'PEAK DAY & STREAK',
+        longestStreak: 'LONGEST STREAK',
+        currentStreak: 'CURRENT',
+        activeDays: (active, total) => `${active}/${total} active days`,
+        peakDayPlays: (plays, duration) => `${plays} plays · ${duration}`,
+        userBadge: (name) => `FOR ${name.toUpperCase()}`,
+        anonymousListener: 'YOUR SOUND',
+        shareMessage: (templateLabel, rangeLabel, duration, plays, topArtist, topTrack, cardUrl) =>
+          `My LoggeRythm Wrapped · ${templateLabel} (${rangeLabel}): ${duration}, ${plays} plays${topArtist ? `, #1 Artist: ${topArtist}` : ''}${topTrack ? `, #1 Track: ${topTrack}` : ''}.\n${cardUrl}`,
+      },
     },
     friends: {
       title: 'Friends Listening Now',

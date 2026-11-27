@@ -27,10 +27,21 @@ def _utcnow() -> datetime:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "uq_users_google_sub",
+            "google_sub",
+            unique=True,
+            sqlite_where=text("google_sub IS NOT NULL"),
+            postgresql_where=text("google_sub IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
+    # Empty string "" serves as the explicit no-password sentinel for OAuth-only accounts.
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    google_sub: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -466,6 +477,41 @@ class PasswordResetToken(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OAuthState(Base):
+    """Single-use OAuth 2.0 / OIDC login state with PKCE verifier and client binding."""
+
+    __tablename__ = "oauth_states"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    state_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    flow: Mapped[str] = mapped_column(String(16), nullable=False)
+    code_verifier: Mapped[str] = mapped_column(String(128), nullable=False)
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    binding_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    next_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    origin_path: Mapped[str] = mapped_column(String(32), nullable=False, default="/login")
+    invite_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class OAuthExchangeCode(Base):
+    """Short-lived, single-use code handed back to the mobile app after Google OAuth."""
+
+    __tablename__ = "oauth_exchange_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    verifier_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

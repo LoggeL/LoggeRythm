@@ -8,6 +8,7 @@ import {
   decodeAlbum,
   decodeAlbumSummaries,
   decodeArtistDetail,
+  decodeAuthProviders,
   decodeCachedTrackIds,
   decodeConnectDevice,
   decodeConnectServerFrame,
@@ -15,6 +16,7 @@ import {
   decodeConnectTicket,
   decodeDeezerPlaylistDetail,
   decodeGenreDetail,
+  decodeGoogleMobileStart,
   decodeHomeShelves,
   decodeLyricsResponse,
   decodeNullablePartyState,
@@ -181,6 +183,51 @@ describe('API response decoders', () => {
         avatar_url: null,
       }).display_name,
     ).toBeNull();
+    expect(
+      decodeUser({
+        id: 2,
+        email: 'oauth@example.test',
+        display_name: 'OAuth User',
+        is_admin: false,
+        is_approved: true,
+        avatar_url: null,
+        has_password: false,
+        google_linked: true,
+      }),
+    ).toMatchObject({ has_password: false, google_linked: true });
+    expect(() =>
+      decodeUser({
+        id: 2,
+        email: 'oauth@example.test',
+        display_name: 'OAuth User',
+        is_admin: false,
+        is_approved: true,
+        avatar_url: null,
+        has_password: 'no',
+      }),
+    ).toThrow(/User.has_password/);
+
+    expect(decodeAuthProviders({ google: true })).toEqual({ google: true });
+    expect(() => decodeAuthProviders({ google: 'yes' })).toThrow(/AuthProviders.google/);
+
+    expect(
+      decodeGoogleMobileStart({
+        auth_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=s',
+        handoff_secret: 'secret',
+        expires_in_sec: 600,
+      }),
+    ).toEqual({
+      auth_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=s',
+      handoff_secret: 'secret',
+      expires_in_sec: 600,
+    });
+    expect(() =>
+      decodeGoogleMobileStart({
+        auth_url: '',
+        handoff_secret: 'secret',
+        expires_in_sec: 600,
+      }),
+    ).toThrow(/auth_url/);
   });
 
   it('validates the PlaylistDetail shape separately from PlaylistSummary', () => {

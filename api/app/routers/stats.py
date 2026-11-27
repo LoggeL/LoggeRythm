@@ -24,6 +24,20 @@ from ..schemas.stats import (
     UserStatsInsights,
 )
 from ..schemas.track import Track, album_cover_url, dump_artists, load_artists
+from ..schemas.wrapped import (
+    WrappedCardFormat,
+    WrappedCardTemplate,
+    WrappedCardTheme,
+    WrappedReport,
+)
+from ..services.wrapped import (
+    INSIGHTS_RANGE_DAYS as _INSIGHTS_RANGE_DAYS,
+    as_utc as _as_utc,
+    build_wrapped_report,
+    compute_streaks as _compute_streaks,
+    load_wrapped_artwork,
+    render_wrapped_card_svg,
+)
 
 router = APIRouter(prefix="/api/me", tags=["stats"])
 
@@ -224,42 +238,6 @@ def get_stats(
     )
 
 
-_INSIGHTS_RANGE_DAYS: dict[InsightsRange, int | None] = {
-    "7d": 7,
-    "30d": 30,
-    "90d": 90,
-    "year": 365,
-    "all": None,
-}
-
-
-def _as_utc(dt: datetime) -> datetime:
-    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
-
-
-def _compute_streaks(play_dates: set[date], today: date) -> tuple[int, int]:
-    """Return ``(current_streak_days, longest_streak_days)`` over UTC calendar days."""
-    if not play_dates:
-        return 0, 0
-    ordered = sorted(play_dates)
-    longest = 1
-    run = 1
-    for prev, curr in zip(ordered, ordered[1:]):
-        if (curr - prev).days == 1:
-            run += 1
-            if run > longest:
-                longest = run
-        else:
-            run = 1
-
-    current = 0
-    cursor = today if today in play_dates else (today - timedelta(days=1))
-    while cursor in play_dates:
-        current += 1
-        cursor -= timedelta(days=1)
-    return current, longest
-
-
 @router.get("/stats/insights", response_model=UserStatsInsights)
 def get_stats_insights(
     range: InsightsRange = Query(default="30d"),
@@ -425,4 +403,145 @@ def get_stats_insights(
         weekday_distribution=weekday,
         new_artists_count=new_artists_count,
         recent_plays=recent_plays,
+    )
+
+
+@router.get("/stats/wrapped", response_model=WrappedReport)
+def get_stats_wrapped(
+    range: InsightsRange = Query(default="30d"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> WrappedReport:
+    """Rich LoggeRythm Wrapped report for interactive stories and share cards."""
+    return build_wrapped_report(db, user, range)
+
+
+@router.get(
+    "/stats/wrapped/artwork",
+    response_class=Response,
+    description=(
+        "Same-origin allowlisted image proxy for Canvas share-card rendering. "
+        "Only serves URLs present in the authenticated user's play covers or avatar."
+    ),
+    responses={
+        200: {
+            "description": "Allowlisted cover or avatar image bytes.",
+            "content": {
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/webp": {"schema": {"type": "string", "format": "binary"}},
+                "image/gif": {"schema": {"type": "string", "format": "binary"}},
+            },
+            "headers": {
+                "Cache-Control": {"schema": {"type": "string"}},
+            },
+        },
+        403: {
+            "description": (
+                "The authenticated account is pending approval or the requested artwork "
+                "URL is not allowlisted for this user."
+            ),
+            "content": {
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/AuthError"},
+                }
+            },
+        },
+        404: {
+            "description": "Allowlisted local artwork file does not exist on disk.",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"detail": {"type": "string"}},
+                        "required": ["detail"],
+                    }
+                }
+            },
+        },
+        502: {
+            "description": "Upstream artwork fetch failed, returned non-image content, or exceeded 5 MB.",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"detail": {"type": "string"}},
+                        "required": ["detail"],
+                    }
+                }
+            },
+        },
+    },
+)
+def get_wrapped_artwork(
+    url: str = Query(..., min_length=1, max_length=1000),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Proxy allowlisted cover or avatar artwork with private caching."""
+    data, media_type = load_wrapped_artwork(db, user, url)
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
+
+
+@router.get(
+    "/stats/wrapped/card.svg",
+    response_class=Response,
+    description="Server-rendered pure-Python SVG Wrapped share card (1080x1920 or 1080x1080).",
+    responses={
+        200: {
+            "description": "Rendered SVG share card.",
+            "content": {
+                "image/svg+xml": {"schema": {"type": "string"}},
+            },
+            "headers": {
+                "Cache-Control": {"schema": {"type": "string"}},
+                "Content-Disposition": {"schema": {"type": "string"}},
+            },
+        },
+        409: {
+            "description": "No plays available in the selected range.",
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"detail": {"type": "string"}},
+                        "required": ["detail"],
+                    }
+                }
+            },
+        },
+    },
+)
+def get_wrapped_card_svg(
+    range: InsightsRange = Query(default="30d"),
+    template: WrappedCardTemplate = Query(default="summary"),
+    theme: WrappedCardTheme = Query(default="signal"),
+    format: WrappedCardFormat = Query(default="story"),
+    show_user: bool = Query(default=True),
+    show_counts: bool = Query(default=True),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Render and return a pure-Python SVG Wrapped share card."""
+    report = build_wrapped_report(db, user, range)
+    svg = render_wrapped_card_svg(
+        report,
+        template,
+        theme,
+        format,
+        show_user=show_user,
+        show_counts=show_counts,
+    )
+    filename = f"loggerythm-wrapped-{range}-{template}-{format}.svg"
+    return Response(
+        content=svg.encode("utf-8"),
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{filename}"',
+        },
     )

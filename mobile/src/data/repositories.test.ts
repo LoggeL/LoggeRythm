@@ -63,6 +63,7 @@ const endpoints = vi.hoisted(() => ({
   getPublicProfile: vi.fn(),
   getStats: vi.fn(),
   getStatsInsights: vi.fn(),
+  getStatsWrapped: vi.fn(),
   getSocialActivity: vi.fn(),
   updateMe: vi.fn(),
   deleteMe: vi.fn(),

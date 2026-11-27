@@ -7,7 +7,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import AuthCard from "@/components/AuthCard";
 import { PasswordField, SubmitButton, TextField, emailError } from "@/components/AuthFields";
+import GoogleAuthButton from "@/components/GoogleAuthButton";
 import { buildAuthHref, sanitizeNextPath } from "@/lib/authRedirect";
+import { googleOAuthErrorMessage } from "@/lib/googleAuth";
 import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 
 type FieldErrors = { email: string | null; password: string | null };
@@ -17,6 +19,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextPath = sanitizeNextPath(searchParams.get("next"));
+  const oauthError = googleOAuthErrorMessage(searchParams.get("oauth_error"));
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -98,15 +101,16 @@ function LoginForm() {
             setFieldErrors((current) => ({ ...current, password: null }));
           }}
         />
-        {error && (
+        {(error ?? oauthError) && (
           <p role="alert" className="error-panel">
-            Anmeldung fehlgeschlagen: {error}
+            Anmeldung fehlgeschlagen: {error ?? oauthError}
           </p>
         )}
         <SubmitButton loading={loading} loadingLabel="Wird angemeldet…">
           Anmelden
         </SubmitButton>
       </form>
+      <GoogleAuthButton mode="login" origin="/login" nextPath={nextPath} disabled={loading} />
     </AuthCard>
   );
 }

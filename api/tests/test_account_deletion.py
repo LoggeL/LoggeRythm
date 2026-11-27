@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ from app.db.models import (
     FollowedArtist,
     InviteCode,
     Like,
+    OAuthExchangeCode,
     PartyMember,
     PartySession,
     PartyTrack,
@@ -134,10 +136,18 @@ class AccountDeletionTests(unittest.TestCase):
             created_by=admin.id,
             used_by=deleted.id,
         )
-        self.db.add_all([created_invite, used_invite])
+        exchange_code = OAuthExchangeCode(
+            code_hash="0" * 64,
+            user_id=deleted.id,
+            verifier_hash="1" * 64,
+            created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+            expires_at=(datetime.now(timezone.utc) + timedelta(minutes=1)).replace(tzinfo=None),
+        )
+        self.db.add_all([created_invite, used_invite, exchange_code])
         self.db.commit()
 
         deleted_id = deleted.id
+        exchange_code_id = exchange_code.id
         playlist_id = playlist.id
         playlist_track_id = playlist_track.id
         hosted_track_id = hosted_track.id
@@ -174,6 +184,7 @@ class AccountDeletionTests(unittest.TestCase):
         self.assertIsNone(self.db.get(PartyMember, deleted_membership_id))
 
         self.assertIsNone(self.db.get(InviteCode, created_invite_code))
+        self.assertIsNone(self.db.get(OAuthExchangeCode, exchange_code_id))
         surviving_invite = self.db.get(InviteCode, used_invite_code)
         self.assertIsNotNone(surviving_invite)
         self.assertIsNone(surviving_invite.used_by)

@@ -79,6 +79,12 @@ export interface User {
   is_admin?: boolean;
   is_approved?: boolean;
   avatar_url?: string | null;
+  has_password?: boolean;
+  google_linked?: boolean;
+}
+
+export interface AuthProviders {
+  google: boolean;
 }
 
 export interface PublicProfile {
@@ -733,6 +739,7 @@ export interface SystemStatus {
     spotify_configured: boolean;
     lastfm_configured: boolean;
     mail_configured: boolean;
+    google_oauth_configured: boolean;
   };
   system: {
     app_env: string;

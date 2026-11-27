@@ -42,7 +42,13 @@ def hash_password(password: str) -> str:
     return _pwd.hash(password)
 
 
+def has_password(password_hash: str) -> bool:
+    return bool(password_hash)
+
+
 def verify_password(password: str, password_hash: str) -> bool:
+    if not password_hash:
+        return False
     return _pwd.verify(password, password_hash)
 
 

@@ -26,7 +26,10 @@ export function StatusBody({ status }: { status: SystemStatus }) {
   const deezerLabel = status.deezer.arl_ok ? "Angemeldet" : status.deezer.arl_configured ? "ARL ungültig" : "Kein ARL";
   const diskUsage = `${formatBytes(status.storage.disk_used)} von ${formatBytes(status.storage.disk_total)} belegt`;
   const integrationsConfigured =
-    Number(status.integrations.spotify_configured) + Number(status.integrations.lastfm_configured) + Number(status.integrations.mail_configured);
+    Number(status.integrations.spotify_configured) +
+    Number(status.integrations.lastfm_configured) +
+    Number(status.integrations.mail_configured) +
+    Number(status.integrations.google_oauth_configured);
 
   const faults: Fault[] = [];
   if (!status.deezer.arl_ok) {
@@ -204,7 +207,7 @@ export function StatusBody({ status }: { status: SystemStatus }) {
           )}
         </Panel>
 
-        <Panel id="status-integrations" index="05" title="Integrationen" Icon={PlugIcon} summary={<Pill tone="neutral">{integrationsConfigured} / 3 konfiguriert</Pill>}>
+        <Panel id="status-integrations" index="05" title="Integrationen" Icon={PlugIcon} summary={<Pill tone="neutral">{integrationsConfigured} / 4 konfiguriert</Pill>}>
           <Row label="Spotify · Link-Import">
             <Pill tone={status.integrations.spotify_configured ? "ok" : "neutral"}>{status.integrations.spotify_configured ? "Konfiguriert" : "Nicht konfiguriert"}</Pill>
           </Row>
@@ -213,6 +216,9 @@ export function StatusBody({ status }: { status: SystemStatus }) {
           </Row>
           <Row label="Resend · Mail">
             <Pill tone={status.integrations.mail_configured ? "ok" : "neutral"}>{status.integrations.mail_configured ? "Konfiguriert" : "Nicht konfiguriert"}</Pill>
+          </Row>
+          <Row label="Google · OAuth-Login">
+            <Pill tone={status.integrations.google_oauth_configured ? "ok" : "neutral"}>{status.integrations.google_oauth_configured ? "Konfiguriert" : "Nicht konfiguriert"}</Pill>
           </Row>
         </Panel>
 

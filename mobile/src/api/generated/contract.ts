@@ -5,7 +5,7 @@
 export const GENERATED_API_VERSION = "1.1.0" as const;
 export const GENERATED_OPENAPI_CONTRACT_VERSION = "v2" as const;
 export const GENERATED_COMPATIBLE_CONTRACT_VERSIONS = ["v1", "v2"] as const;
-export const GENERATED_OPENAPI_SHA256 = "1f7477350eb5ab5e05d3fcb12115bc05d11482ed7c7ceaaa59e82b8efbc3ec1b" as const;
+export const GENERATED_OPENAPI_SHA256 = "ac7dc6b5a410ea26c3ffde6f615e14c2a01a5c0068b5e604b3850b2bf3928545" as const;
 
 export interface AdminConnectDeviceWire {
   connected_at: string;
@@ -254,6 +254,9 @@ export interface ArtistSummaryWire {
 export interface AuthErrorWire {
   detail: string;
 }
+export interface AuthProvidersOutWire {
+  google: boolean;
+}
 export interface BatchPreloadRequestWire {
   track_ids: string[];
 }
@@ -386,6 +389,18 @@ export interface GenreDetailWire {
   picture?: string;
   tracks?: TrackWire[];
 }
+export interface GoogleMobileExchangeRequestWire {
+  code: string;
+  handoff_secret: string;
+}
+export interface GoogleMobileStartOutWire {
+  auth_url: string;
+  expires_in_sec: number;
+  handoff_secret: string;
+}
+export interface GoogleMobileStartRequestWire {
+  invite?: string | null;
+}
 export interface HTTPValidationErrorWire {
   detail?: ValidationErrorWire[];
 }
@@ -438,6 +453,7 @@ export interface ImportJobStatusWire {
   url: string;
 }
 export interface IntegrationsStatusWire {
+  google_oauth_configured: boolean;
   lastfm_configured: boolean;
   mail_configured: boolean;
   spotify_configured: boolean;
@@ -978,6 +994,8 @@ export interface UserOutWire {
   avatar_url?: string | null;
   display_name?: string | null;
   email: string;
+  google_linked?: boolean;
+  has_password?: boolean;
   id: number;
   is_admin?: boolean;
   is_approved?: boolean;
@@ -1018,6 +1036,110 @@ export interface ValidationErrorWire {
   msg: string;
   type: string;
 }
+export interface WrappedAuraWire {
+  colors: string[];
+  description: string;
+  id: string;
+  mood_tags: string[];
+  title: string;
+}
+export interface WrappedEquivalentWire {
+  icon: "vinyl" | "movie" | "flight" | "marathon" | "concert";
+  label: string;
+  value: string;
+}
+export interface WrappedObsessionWire {
+  album: string;
+  artist: string;
+  cover: string;
+  listening_sec: number;
+  peak_day_date: string | null;
+  peak_day_plays: number;
+  play_count: number;
+  share_pct: number;
+  title: string;
+  track_key: string;
+}
+export interface WrappedPeakDayWire {
+  date: string;
+  listening_sec: number;
+  play_count: number;
+  top_track_artist: string;
+  top_track_cover: string;
+  top_track_title: string;
+  weekday: number;
+}
+export interface WrappedPersonaWire {
+  emblem: "moon_wave" | "infinite_vinyl" | "compass_radar" | "tonearm_disc" | "strobe_bars" | "sunrise_pulse" | "flame_metro" | "prism_beat";
+  id: string;
+  subtitle: string;
+  tagline: string;
+  title: string;
+  traits: string[];
+}
+export interface WrappedRankedItemWire {
+  count: number;
+  cover: string;
+  key: string;
+  label: string;
+  listening_sec: number;
+  rank: number;
+  share_pct: number;
+  sublabel: string;
+}
+export interface WrappedReportWire {
+  aura: WrappedAuraWire | null;
+  equivalents: WrappedEquivalentWire[];
+  generated_at: string;
+  obsession: WrappedObsessionWire | null;
+  peak_day: WrappedPeakDayWire | null;
+  period_end: string;
+  period_start: string | null;
+  persona: WrappedPersonaWire | null;
+  range: "7d" | "30d" | "90d" | "year" | "all";
+  rhythm: WrappedRhythmWire;
+  tempo: WrappedTempoWire | null;
+  top_albums: WrappedRankedItemWire[];
+  top_artists: WrappedRankedItemWire[];
+  top_tracks: WrappedRankedItemWire[];
+  totals: WrappedTotalsWire;
+  user: WrappedUserWire;
+}
+export interface WrappedRhythmWire {
+  chronotype: "night_owl" | "early_bird" | "day_cruiser" | "evening_viber";
+  chronotype_label: string;
+  discovery_score_pct: number;
+  hourly_distribution: number[];
+  peak_hour: number;
+  peak_weekday: number;
+  repeat_score_pct: number;
+  weekday_distribution: number[];
+  weekend_share_pct: number;
+}
+export interface WrappedTempoWire {
+  analyzed_plays: number;
+  avg_bpm: number;
+  max_bpm: number;
+  min_bpm: number;
+  vibe_label: string;
+}
+export interface WrappedTotalsWire {
+  active_days: number;
+  avg_daily_sec: number;
+  current_streak_days: number;
+  listening_sec: number;
+  longest_streak_days: number;
+  new_artists_count: number;
+  play_count: number;
+  total_days: number;
+  unique_albums: number;
+  unique_artists: number;
+  unique_tracks: number;
+}
+export interface WrappedUserWire {
+  avatar_url: string;
+  display_name: string;
+}
 export interface _VisibilityUpdateWire {
   is_public: boolean;
 }
@@ -1049,6 +1171,7 @@ export interface GeneratedApiSchemas {
   "ArtistRef": ArtistRefWire;
   "ArtistSummary": ArtistSummaryWire;
   "AuthError": AuthErrorWire;
+  "AuthProvidersOut": AuthProvidersOutWire;
   "BatchPreloadRequest": BatchPreloadRequestWire;
   "BatchPreloadResponse": BatchPreloadResponseWire;
   "Body_set_avatar_api_me_avatar_put": Body_set_avatar_api_me_avatar_putWire;
@@ -1068,6 +1191,9 @@ export interface GeneratedApiSchemas {
   "FriendActivityItem": FriendActivityItemWire;
   "Genre": GenreWire;
   "GenreDetail": GenreDetailWire;
+  "GoogleMobileExchangeRequest": GoogleMobileExchangeRequestWire;
+  "GoogleMobileStartOut": GoogleMobileStartOutWire;
+  "GoogleMobileStartRequest": GoogleMobileStartRequestWire;
   "HTTPValidationError": HTTPValidationErrorWire;
   "ImportJobCreate": ImportJobCreateWire;
   "ImportJobDetail": ImportJobDetailWire;
@@ -1149,6 +1275,17 @@ export interface GeneratedApiSchemas {
   "UserStatsInsights": UserStatsInsightsWire;
   "UsersStatus": UsersStatusWire;
   "ValidationError": ValidationErrorWire;
+  "WrappedAura": WrappedAuraWire;
+  "WrappedEquivalent": WrappedEquivalentWire;
+  "WrappedObsession": WrappedObsessionWire;
+  "WrappedPeakDay": WrappedPeakDayWire;
+  "WrappedPersona": WrappedPersonaWire;
+  "WrappedRankedItem": WrappedRankedItemWire;
+  "WrappedReport": WrappedReportWire;
+  "WrappedRhythm": WrappedRhythmWire;
+  "WrappedTempo": WrappedTempoWire;
+  "WrappedTotals": WrappedTotalsWire;
+  "WrappedUser": WrappedUserWire;
   "_VisibilityUpdate": _VisibilityUpdateWire;
 }
 
@@ -1310,6 +1447,13 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: ArtistDetailWire;
+  };
+  "auth_providers_api_auth_providers_get": {
+    request: Record<never, never>;
+    responses: {
+      "200": AuthProvidersOutWire;
+    };
+    response: AuthProvidersOutWire;
   };
   "because_you_listened_api_home_because_you_listened_get": {
     request: {
@@ -1793,6 +1937,20 @@ export interface GeneratedApiOperations {
     };
     response: UserStatsInsightsWire;
   };
+  "get_stats_wrapped_api_me_stats_wrapped_get": {
+    request: {
+      query?: {
+        range?: "7d" | "30d" | "90d" | "year" | "all";
+      };
+    };
+    responses: {
+      "200": WrappedReportWire;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: WrappedReportWire;
+  };
   "get_transition_api_dj_transition_get": {
     request: {
       query: {
@@ -1810,6 +1968,63 @@ export interface GeneratedApiOperations {
       "422": HTTPValidationErrorWire;
     };
     response: DjTransitionWire;
+  };
+  "get_wrapped_artwork_api_me_stats_wrapped_artwork_get": {
+    request: {
+      query: {
+        url: string;
+      };
+    };
+    responses: {
+      "200": Blob;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "404": { detail: string; };
+      "422": HTTPValidationErrorWire;
+      "502": { detail: string; };
+    };
+    response: Blob;
+  };
+  "get_wrapped_card_svg_api_me_stats_wrapped_card_svg_get": {
+    request: {
+      query?: {
+        format?: "story" | "square";
+        range?: "7d" | "30d" | "90d" | "year" | "all";
+        show_counts?: boolean;
+        show_user?: boolean;
+        template?: "summary" | "persona" | "receipt" | "festival" | "obsession" | "aura" | "peak";
+        theme?: "signal" | "cover" | "vinyl" | "neon" | "paper";
+      };
+    };
+    responses: {
+      "200": string;
+      "401": AuthErrorWire;
+      "403": AuthErrorWire;
+      "409": { detail: string; };
+      "422": HTTPValidationErrorWire;
+    };
+    response: string;
+  };
+  "google_mobile_exchange_api_auth_google_mobile_exchange_post": {
+    request: {
+      body: GoogleMobileExchangeRequestWire;
+    };
+    responses: {
+      "200": UserOutWire;
+      "422": HTTPValidationErrorWire;
+    };
+    response: UserOutWire;
+  };
+  "google_mobile_start_api_auth_google_mobile_start_post": {
+    request: {
+      body: GoogleMobileStartRequestWire;
+    };
+    responses: {
+      "200": GoogleMobileStartOutWire;
+      "422": HTTPValidationErrorWire;
+      "503": undefined;
+    };
+    response: GoogleMobileStartOutWire;
   };
   "health_deezer_api_health_deezer_get": {
     request: Record<never, never>;
@@ -2931,6 +3146,13 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "auth_providers_api_auth_providers_get": {
+    method: "GET",
+    path: "/api/auth/providers",
+    auth: "none",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "because_you_listened_api_home_because_you_listened_get": {
     method: "GET",
     path: "/api/home/because-you-listened",
@@ -3218,11 +3440,46 @@ export const GENERATED_API_OPERATIONS = {
     requestMediaTypes: [],
     successStatuses: [200],
   },
+  "get_stats_wrapped_api_me_stats_wrapped_get": {
+    method: "GET",
+    path: "/api/me/stats/wrapped",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
   "get_transition_api_dj_transition_get": {
     method: "GET",
     path: "/api/dj/transition",
     auth: "required",
     requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "get_wrapped_artwork_api_me_stats_wrapped_artwork_get": {
+    method: "GET",
+    path: "/api/me/stats/wrapped/artwork",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "get_wrapped_card_svg_api_me_stats_wrapped_card_svg_get": {
+    method: "GET",
+    path: "/api/me/stats/wrapped/card.svg",
+    auth: "required",
+    requestMediaTypes: [],
+    successStatuses: [200],
+  },
+  "google_mobile_exchange_api_auth_google_mobile_exchange_post": {
+    method: "POST",
+    path: "/api/auth/google/mobile/exchange",
+    auth: "none",
+    requestMediaTypes: ["application/json"],
+    successStatuses: [200],
+  },
+  "google_mobile_start_api_auth_google_mobile_start_post": {
+    method: "POST",
+    path: "/api/auth/google/mobile/start",
+    auth: "none",
+    requestMediaTypes: ["application/json"],
     successStatuses: [200],
   },
   "health_deezer_api_health_deezer_get": {

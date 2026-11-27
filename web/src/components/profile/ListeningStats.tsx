@@ -5,17 +5,23 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Cover from "@/components/ui/Cover";
 import EmptyState from "@/components/ui/EmptyState";
-import { CopyIcon, CheckCircleIcon } from "@/components/feedbackIcons";
-import { MusicNoteIcon, PlayIcon, SavePlaylistIcon, SpinnerIcon } from "@/components/icons";
-import { useMe } from "@/hooks/useAuth";
+import { MusicNoteIcon, PlayIcon, SavePlaylistIcon, SparklesIcon, SpinnerIcon } from "@/components/icons";
+import WrappedStoryModal from "@/components/wrapped/WrappedStoryModal";
+import WrappedStudioModal from "@/components/wrapped/WrappedStudioModal";
+import {
+  CardsStackIcon,
+  DEFAULT_WRAPPED_CARD_OPTIONS,
+  ExternalPageIcon,
+  useWrappedReport,
+} from "@/components/wrapped/WrappedExperience";
 import { api } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import {
   INSIGHTS_RANGES,
   decodeUserStatsInsights,
-  formatInsightsSummaryText,
   formatListeningHours,
 } from "@/lib/statsInsights";
+import type { WrappedCardOptions, WrappedCardTemplateId } from "@/lib/wrapped";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { usePlayerStore } from "@/store/player";
 import { openSaveAsPlaylist } from "@/store/saveAsPlaylist";
@@ -469,9 +475,12 @@ function StatsSkeleton() {
  * Rich Listening Insights / Personal Wrapped view (`GET /api/me/stats/insights`).
  */
 export default function ListeningStats() {
-  const { data: me } = useMe();
   const [range, setRange] = useState<StatsInsightsRange>("30d");
-  const [copiedSummary, setCopiedSummary] = useState(false);
+  const [storyOpen, setStoryOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [cardOptions, setCardOptions] = useState<WrappedCardOptions>(
+    DEFAULT_WRAPPED_CARD_OPTIONS,
+  );
 
   const { data, isLoading, isFetching, error, refetch } = useQuery<UserStatsInsights>({
     queryKey: ["stats-insights", range],
@@ -479,20 +488,21 @@ export default function ListeningStats() {
     staleTime: 60_000,
   });
 
+  const hasPlays = Boolean(data && data.play_count > 0);
+  const wrappedQuery = useWrappedReport(range, hasPlays || storyOpen || studioOpen);
+
   const periodLabel = INSIGHTS_RANGES.find((r) => r.key === range)?.label ?? range;
 
-  async function copySummary() {
-    if (!data) return;
-    const text = formatInsightsSummaryText(data, me?.display_name);
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopiedSummary(true);
-      toast.success("Rückblick in die Zwischenablage kopiert.");
-      window.setTimeout(() => setCopiedSummary(false), 2500);
-    } catch (cause) {
-      toast.error(`Kopieren fehlgeschlagen: ${cause instanceof Error ? cause.message : String(cause)}`);
-    }
+  function openStudio(template: WrappedCardTemplateId = "summary") {
+    setStoryOpen(false);
+    setCardOptions((prev) => ({ ...prev, template }));
+    setStudioOpen(true);
   }
+
+  const heroCovers = (data?.top_tracks ?? [])
+    .map((entry) => entry.cover)
+    .filter((cover) => cover.length > 0)
+    .slice(0, 3);
 
   return (
     <div className="flex min-w-0 flex-col gap-8">
@@ -510,15 +520,24 @@ export default function ListeningStats() {
             </button>
           ))}
         </div>
-        {data && data.play_count > 0 && (
-          <button
-            type="button"
-            onClick={() => void copySummary()}
-            className="action-secondary min-h-9 gap-2 px-3.5 text-xs"
-          >
-            {copiedSummary ? <CheckCircleIcon width={15} height={15} className="text-success" /> : <CopyIcon width={15} height={15} />}
-            {copiedSummary ? "Kopiert" : "Rückblick teilen"}
-          </button>
+        {hasPlays && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openStudio("summary")}
+              className="action-secondary min-h-9 gap-2 px-3.5 text-xs"
+            >
+              <CardsStackIcon width={15} height={15} />
+              Share-Cards
+            </button>
+            <Link
+              href={`/wrapped?range=${encodeURIComponent(range)}`}
+              className="action-secondary min-h-9 gap-1.5 px-3 text-xs"
+            >
+              <ExternalPageIcon width={14} height={14} />
+              <span className="hidden sm:inline">/wrapped</span>
+            </Link>
+          </div>
         )}
       </div>
 
@@ -554,6 +573,107 @@ export default function ListeningStats() {
               </button>
             </div>
           )}
+
+          <section
+            aria-label="LoggeRythm Wrapped"
+            className="relative overflow-hidden rounded-[var(--radius-panel)] border border-accent/30 bg-panel/90 p-5 shadow-[0_20px_60px_rgb(0_0_0/0.4)] sm:p-6"
+          >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0"
+              style={{
+                backgroundImage:
+                  "radial-gradient(36rem 18rem at 0% 0%, rgba(214, 255, 75, 0.2), transparent 70%), radial-gradient(28rem 18rem at 100% 100%, rgba(124, 92, 255, 0.16), transparent 70%)",
+              }}
+            />
+
+            <div className="relative z-10 flex flex-col justify-between gap-6 md:flex-row md:items-center">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="page-eyebrow mb-0 text-accent">
+                    LoggeRythm Wrapped · {periodLabel}
+                  </span>
+                  {wrappedQuery.data?.persona && (
+                    <span className="rounded-full border border-accent/35 bg-accent/12 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-accent">
+                      {wrappedQuery.data.persona.title}
+                    </span>
+                  )}
+                </div>
+
+                <h2 className="font-display mt-2.5 text-2xl font-extrabold leading-tight tracking-[-0.035em] sm:text-3xl">
+                  Dein {periodLabel}-Rückblick als Story &amp; Share-Cards
+                </h2>
+
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
+                  {wrappedQuery.data?.persona?.tagline
+                    ? `${wrappedQuery.data.persona.tagline} · `
+                    : ""}
+                  {formatListeningHours(data.listening_sec)} gehört in{" "}
+                  {numberFormatter.format(data.play_count)} {playLabel(data.play_count)}
+                  {data.top_artists[0] ? ` · #1 ${data.top_artists[0].label}` : ""}.
+                </p>
+
+                {wrappedQuery.isError && (
+                  <div role="alert" className="error-panel mt-3 flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
+                    <span className="min-w-0 [overflow-wrap:anywhere]">
+                      Wrapped-Daten konnten nicht geladen werden: {wrappedQuery.error.message}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void wrappedQuery.refetch()}
+                      disabled={wrappedQuery.isFetching}
+                      className="action-secondary min-h-8 px-3 text-xs"
+                    >
+                      Erneut versuchen
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-4 flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setStoryOpen(true)}
+                    className="action-primary min-h-10 gap-2 bg-accent px-4 text-sm text-on-accent hover:bg-accent-hover"
+                  >
+                    <SparklesIcon width={16} height={16} />
+                    Wrapped Story starten
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openStudio("summary")}
+                    className="action-secondary min-h-10 gap-2 px-4 text-sm"
+                  >
+                    <CardsStackIcon width={16} height={16} />
+                    Share-Cards gestalten
+                  </button>
+                  <Link
+                    href={`/wrapped?range=${encodeURIComponent(range)}`}
+                    className="section-link ml-1 py-2"
+                  >
+                    Studio öffnen
+                  </Link>
+                </div>
+              </div>
+
+              {heroCovers.length > 0 && (
+                <div aria-hidden="true" className="hidden shrink-0 items-center pr-2 sm:flex">
+                  {heroCovers.map((cover, idx) => (
+                    <Cover
+                      key={`${cover}-${idx}`}
+                      src={cover}
+                      className={`h-20 w-20 rounded-[var(--radius-card)] shadow-[0_14px_30px_rgb(0_0_0/0.6)] ring-1 ring-white/15 ${
+                        idx === 0
+                          ? "z-30 -rotate-6"
+                          : idx === 1
+                            ? "z-20 -ml-7 translate-y-1 rotate-3"
+                            : "z-10 -ml-7 -translate-y-1 rotate-12 opacity-85"
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
 
           <dl aria-label="Hörprofil-Kennzahlen" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Kpi label="Hörzeit" value={formatListeningHours(data.listening_sec)} hint={`${numberFormatter.format(data.play_count)} ${playLabel(data.play_count)}`} />
@@ -612,6 +732,34 @@ export default function ListeningStats() {
           <RecentList tracks={data.recent_plays} />
         </>
       )}
+
+      <WrappedStoryModal
+        open={storyOpen}
+        onClose={() => setStoryOpen(false)}
+        report={wrappedQuery.data}
+        isLoading={wrappedQuery.isLoading}
+        error={wrappedQuery.error}
+        onRetry={() => void wrappedQuery.refetch()}
+        onShareTemplate={(tpl) => openStudio(tpl)}
+      />
+
+      <WrappedStudioModal
+        open={studioOpen}
+        onClose={() => setStudioOpen(false)}
+        report={wrappedQuery.data}
+        isLoading={wrappedQuery.isLoading}
+        isFetching={wrappedQuery.isFetching}
+        error={wrappedQuery.error}
+        onRetry={() => void wrappedQuery.refetch()}
+        range={range}
+        onRangeChange={setRange}
+        options={cardOptions}
+        onOptionsChange={setCardOptions}
+        onOpenStory={() => {
+          setStudioOpen(false);
+          setStoryOpen(true);
+        }}
+      />
     </div>
   );
 }

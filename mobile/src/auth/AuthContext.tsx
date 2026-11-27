@@ -21,7 +21,7 @@ import {
   ServerCompatibilityCheckError,
   UnsupportedServerError,
 } from '../api/compatibility';
-import type { User } from '../api/types';
+import type { GoogleMobileStartResponse, User } from '../api/types';
 import { getApiBase, getCurrentApiBase } from '../config';
 import {
   clearAccountQueryState,
@@ -52,6 +52,7 @@ import {
   persistOfflineIdentity,
   readOfflineIdentity,
 } from './offlineIdentity';
+import { clearPendingGoogleOAuth } from './googleOAuth';
 import {
   defaultAuthRepository,
   type AuthRepository,
@@ -67,6 +68,8 @@ interface AuthState {
   bootstrapError: UserFacingError | null;
   login: (email: string, password: string, apiBase: string) => Promise<void>;
   register: (request: RegisterRequest, apiBase: string) => Promise<void>;
+  startGoogleLogin: (invite: string | null, apiBase: string) => Promise<GoogleMobileStartResponse>;
+  completeGoogleLogin: (code: string, handoffSecret: string, apiBase: string) => Promise<void>;
   logout: () => Promise<void>;
   forgetSession: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -113,6 +116,12 @@ export function AuthProvider({
         failedBoundaries.push('offline-identity');
         failures.push(`offline identity: ${(error as Error).message}`);
       }
+    }
+    try {
+      await clearPendingGoogleOAuth();
+    } catch (error) {
+      failedBoundaries.push('pending-google-oauth');
+      failures.push(`pending Google OAuth: ${(error as Error).message}`);
     }
     try {
       await clearAccountScopedStorage(AsyncStorage, scope);
@@ -406,6 +415,38 @@ export function AuthProvider({
     }
   }, [authCommitBarrier, authenticateReplacingAccount, enterAuthenticatedState, persistValidatedIdentity, repository]);
 
+  const startGoogleLogin = useCallback(
+    (invite: string | null, apiBase: string) =>
+      repository.startGoogleMobileAuth(invite, apiBase),
+    [repository],
+  );
+
+  const completeGoogleLogin = useCallback(
+    async (code: string, handoffSecret: string, apiBase: string) => {
+      let identityRevision = authCommitBarrier.capture();
+      try {
+        const authenticated = await authenticateReplacingAccount(() => {
+          identityRevision = authCommitBarrier.capture();
+          return repository.exchangeGoogleMobileAuth(code, handoffSecret, apiBase);
+        });
+        setBootstrapError(null);
+        await enterAuthenticatedState(
+          await persistValidatedIdentity(authenticated, identityRevision),
+          identityRevision,
+        );
+      } finally {
+        setBootstrapping(false);
+      }
+    },
+    [
+      authCommitBarrier,
+      authenticateReplacingAccount,
+      enterAuthenticatedState,
+      persistValidatedIdentity,
+      repository,
+    ],
+  );
+
   const leaveSession = useCallback(async (revokeServerSession: boolean) => {
     authCommitBarrier.invalidate();
     const departingScope = cacheScope.current ?? cleanupBarrier.accountScope;
@@ -510,13 +551,29 @@ export function AuthProvider({
       bootstrapError,
       login,
       register,
+      startGoogleLogin,
+      completeGoogleLogin,
       logout,
       forgetSession,
       deleteAccount,
       refreshUser,
       retryBootstrap: bootstrap,
     }),
-    [user, offlineMode, bootstrapping, bootstrapError, login, register, logout, forgetSession, deleteAccount, refreshUser, bootstrap],
+    [
+      user,
+      offlineMode,
+      bootstrapping,
+      bootstrapError,
+      login,
+      register,
+      startGoogleLogin,
+      completeGoogleLogin,
+      logout,
+      forgetSession,
+      deleteAccount,
+      refreshUser,
+      bootstrap,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

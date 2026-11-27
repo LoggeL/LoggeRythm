@@ -155,6 +155,8 @@ export const queryKeys = {
     stats: (scope: QueryScope) => [...queryKeys.profile.private(scope), 'stats'] as const,
     insights: (scope: QueryScope, range: StatsInsightsRange) =>
       [...queryKeys.profile.private(scope), 'insights', range] as const,
+    wrapped: (scope: QueryScope, range: StatsInsightsRange) =>
+      [...queryKeys.profile.private(scope), 'wrapped', range] as const,
     settings: (scope: QueryScope) => [...queryKeys.profile.private(scope), 'settings'] as const,
   },
   social: {

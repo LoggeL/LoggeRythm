@@ -387,4 +387,36 @@ describe('authenticated client lifecycle', () => {
     })).rejects.toBeInstanceOf(client.AuthenticatedRequestAuthorityError);
     expect(mocks.fetch).toHaveBeenCalledOnce();
   });
+
+  it('allows signed-out explicit apiBase requests for auth providers and Google mobile start', async () => {
+    mocks.secureStore.getItemAsync.mockResolvedValueOnce(null);
+    mocks.fetch
+      .mockResolvedValueOnce(ok({ google: true }))
+      .mockResolvedValueOnce(ok({
+        auth_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+        handoff_secret: 'secret',
+        expires_in_sec: 600,
+      }));
+    const client = await import('./client');
+
+    await expect(client.apiRequest('/api/auth/providers', {
+      noAuth: true,
+      apiBase: 'https://music.example.test',
+    })).resolves.toEqual({ google: true });
+    expect(mocks.resetApiCompatibilityCheck).not.toHaveBeenCalled();
+
+    await expect(client.apiRequest('/api/auth/google/mobile/start', {
+      method: 'POST',
+      body: { invite: null },
+      noAuth: true,
+      apiBase: 'https://music.example.test',
+    })).resolves.toMatchObject({ handoff_secret: 'secret' });
+    expect(mocks.resetApiCompatibilityCheck)
+      .toHaveBeenCalledExactlyOnceWith('https://music.example.test');
+
+    await expect(client.apiRequest('/api/charts', {
+      noAuth: true,
+      apiBase: 'https://music.example.test',
+    })).rejects.toThrow('explicit API base is allowed only');
+  });
 });

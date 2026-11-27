@@ -6,6 +6,9 @@ const endpoints = vi.hoisted(() => ({
   me: vi.fn(),
   login: vi.fn(),
   register: vi.fn(),
+  getAuthProviders: vi.fn(),
+  startGoogleMobileAuth: vi.fn(),
+  exchangeGoogleMobileAuth: vi.fn(),
   logout: vi.fn(),
   deleteMe: vi.fn(),
 }));
@@ -34,6 +37,13 @@ describe('default auth repository', () => {
     endpoints.me.mockResolvedValue(user);
     endpoints.login.mockResolvedValue(user);
     endpoints.register.mockResolvedValue(user);
+    endpoints.getAuthProviders.mockResolvedValue({ google: true });
+    endpoints.startGoogleMobileAuth.mockResolvedValue({
+      auth_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+      handoff_secret: 'secret',
+      expires_in_sec: 600,
+    });
+    endpoints.exchangeGoogleMobileAuth.mockResolvedValue(user);
     endpoints.logout.mockResolvedValue({ ok: true });
     endpoints.deleteMe.mockResolvedValue(undefined);
   });
@@ -45,6 +55,13 @@ describe('default auth repository', () => {
     await expect(defaultAuthRepository.login('person@example.test', 'password123'))
       .resolves.toBe(user);
     await expect(defaultAuthRepository.register(registration)).resolves.toBe(user);
+    await expect(defaultAuthRepository.getAuthProviders('https://music.example.test'))
+      .resolves.toEqual({ google: true });
+    await expect(defaultAuthRepository.startGoogleMobileAuth('INV1', 'https://music.example.test'))
+      .resolves.toMatchObject({ handoff_secret: 'secret' });
+    await expect(
+      defaultAuthRepository.exchangeGoogleMobileAuth('code1', 'secret', 'https://music.example.test'),
+    ).resolves.toBe(user);
     await expect(defaultAuthRepository.logout()).resolves.toEqual({ ok: true });
     await expect(defaultAuthRepository.deleteMe()).resolves.toBeUndefined();
 
@@ -54,6 +71,19 @@ describe('default auth repository', () => {
       'password123',
     );
     expect(endpoints.register).toHaveBeenCalledExactlyOnceWith(registration);
+    expect(endpoints.getAuthProviders).toHaveBeenCalledExactlyOnceWith(
+      'https://music.example.test',
+      undefined,
+    );
+    expect(endpoints.startGoogleMobileAuth).toHaveBeenCalledExactlyOnceWith(
+      'INV1',
+      'https://music.example.test',
+    );
+    expect(endpoints.exchangeGoogleMobileAuth).toHaveBeenCalledExactlyOnceWith(
+      'code1',
+      'secret',
+      'https://music.example.test',
+    );
     expect(endpoints.logout).toHaveBeenCalledOnce();
     expect(endpoints.deleteMe).toHaveBeenCalledOnce();
   });

@@ -187,6 +187,13 @@ export function ProfileAccountDetailsCard({
           tone={user.is_approved ? 'success' : 'warning'}
           label={user.is_approved ? strings.profile.approved : strings.profile.pendingApproval}
         />
+        {user.google_linked === true ? (
+          <Badge
+            testID="profile-google-linked"
+            tone="neutral"
+            label={strings.profile.googleLinked}
+          />
+        ) : null}
       </View>
       <AppText testID="profile-server-origin" variant="caption" color="secondary">
         {strings.profile.serverOrigin(serverOrigin)}

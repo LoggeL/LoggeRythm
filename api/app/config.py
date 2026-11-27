@@ -66,8 +66,14 @@ RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "").strip()
 # Sender on a domain verified in Resend, e.g. "LoggeRythm <loggerythm@example.com>"
 # (Resend advises against "no-reply" addresses).
 MAIL_FROM: str = os.getenv("MAIL_FROM", "").strip()
-# Public web origin used for links inside mails, e.g. "https://music.example.com".
+# Public web origin used for links inside mails and OAuth callbacks, e.g. "https://music.example.com".
 PUBLIC_APP_URL: str = os.getenv("PUBLIC_APP_URL", "").strip().rstrip("/")
+
+# --- Google OAuth 2.0 (optional) ---
+# When both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (plus PUBLIC_APP_URL) are
+# set, web and mobile users can sign in with Google.
+GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 
 def validate_runtime_config() -> None:
@@ -86,7 +92,23 @@ def validate_runtime_config() -> None:
                 f"RESEND_API_KEY is set but {', '.join(missing)} is missing; "
                 "mail needs a verified sender and the public web URL for links."
             )
-        if not PUBLIC_APP_URL.startswith(("https://", "http://")):
-            raise RuntimeError(
-                f"PUBLIC_APP_URL must be an absolute http(s) URL, got {PUBLIC_APP_URL!r}."
+    if GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET:
+        missing = [
+            name
+            for name, value in (
+                ("GOOGLE_CLIENT_ID", GOOGLE_CLIENT_ID),
+                ("GOOGLE_CLIENT_SECRET", GOOGLE_CLIENT_SECRET),
+                ("PUBLIC_APP_URL", PUBLIC_APP_URL),
             )
+            if not value
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Google OAuth is partially configured; missing {', '.join(missing)}."
+            )
+    if (RESEND_API_KEY or GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET) and not PUBLIC_APP_URL.startswith(
+        ("https://", "http://")
+    ):
+        raise RuntimeError(
+            f"PUBLIC_APP_URL must be an absolute http(s) URL, got {PUBLIC_APP_URL!r}."
+        )

@@ -9,12 +9,13 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from ..auth import clear_session_cookie, get_current_user, hash_password
+from ..auth import clear_session_cookie, get_current_user, has_password, hash_password
 from ..config import STORAGE_DIR
 from ..db.models import (
     FollowedArtist,
     ImportJob,
     InviteCode,
+    OAuthExchangeCode,
     PartyMember,
     PartySession,
     PasswordResetToken,
@@ -80,6 +81,8 @@ def _user_out(u: User) -> UserOut:
         avatar_url=u.avatar_url,
         is_admin=u.is_admin,
         is_approved=u.is_approved,
+        has_password=has_password(u.password_hash),
+        google_linked=bool(u.google_sub),
     )
 
 
@@ -122,14 +125,7 @@ def set_avatar(
     user.avatar_url = f"/api/users/{user.id}/avatar?v={int(os.path.getmtime(path))}"
     db.commit()
     db.refresh(user)
-    return UserOut(
-        id=user.id,
-        email=user.email,
-        display_name=user.display_name,
-        is_admin=user.is_admin,
-        is_approved=user.is_approved,
-        avatar_url=user.avatar_url,
-    )
+    return _user_out(user)
 
 
 @router.patch("/me", response_model=UserOut)
@@ -214,6 +210,7 @@ def purge_user_account(db: Session, user: User) -> None:
         .values(requested_by_user_id=None)
     )
     db.execute(delete(PasswordResetToken).where(PasswordResetToken.user_id == user_id))
+    db.execute(delete(OAuthExchangeCode).where(OAuthExchangeCode.user_id == user_id))
     db.execute(delete(ImportJob).where(ImportJob.user_id == user_id))
     db.execute(delete(UserPlaybackState).where(UserPlaybackState.user_id == user_id))
     db.execute(delete(PartyMember).where(PartyMember.user_id == user_id))

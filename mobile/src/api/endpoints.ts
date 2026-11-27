@@ -13,6 +13,7 @@ import {
   decodeArtistAbout,
   decodeArtistDetail,
   decodeArtistSummaries,
+  decodeAuthProviders,
   decodeBatchPreloadResponse,
   decodeBooleanMap,
   decodeCachedTrackIds,
@@ -44,6 +45,7 @@ import {
   decodePlaylistSyncManifest,
   decodePublicProfile,
   decodeReleaseRadar,
+  decodeGoogleMobileStart,
   decodeImportJobDetail,
   decodeImportJobStatus,
   decodeImportJobStatuses,
@@ -57,6 +59,7 @@ import {
   decodeUserStatsInsights,
 } from './decoders';
 import { decodeListeningStatsWire } from '../data/mappers/listeningStats';
+import { decodeWrappedReport } from '../data/mappers/wrapped';
 import type {
   AddedTracksResult,
   AdminInvite,
@@ -69,6 +72,7 @@ import type {
   ArtistDetail,
   ArtistSummary,
   AudioQualityTier,
+  AuthProviders,
   BatchPreloadResponse,
   CachedTrackIds,
   ConnectState,
@@ -77,6 +81,7 @@ import type {
   DeezerId,
   Genre,
   GenreDetail,
+  GoogleMobileStartResponse,
   HomeShelf,
   LyricsResponse,
   PartyReaction,
@@ -112,6 +117,7 @@ import type {
   TrackPlayQuery,
   User,
   UserStatsInsights,
+  WrappedReport,
 } from './types';
 
 // Cold personalized discovery can exceed the usual 20s request deadline while resolving provider
@@ -204,6 +210,43 @@ export function register(request: RegisterRequest, apiBase?: string): Promise<Us
   return apiRequest<User>('/api/auth/register', {
     method: 'POST',
     body: request,
+    captureSession: true,
+    noAuth: true,
+    ...(apiBase === undefined ? {} : { apiBase }),
+    decode: decodeUser,
+  });
+}
+
+export function getAuthProviders(apiBase?: string, signal?: AbortSignal): Promise<AuthProviders> {
+  return apiRequest<AuthProviders>('/api/auth/providers', {
+    noAuth: true,
+    signal,
+    ...(apiBase === undefined ? {} : { apiBase }),
+    decode: decodeAuthProviders,
+  });
+}
+
+export function startGoogleMobileAuth(
+  invite: string | null,
+  apiBase?: string,
+): Promise<GoogleMobileStartResponse> {
+  return apiRequest<GoogleMobileStartResponse>('/api/auth/google/mobile/start', {
+    method: 'POST',
+    body: { invite },
+    noAuth: true,
+    ...(apiBase === undefined ? {} : { apiBase }),
+    decode: decodeGoogleMobileStart,
+  });
+}
+
+export function exchangeGoogleMobileAuth(
+  code: string,
+  handoffSecret: string,
+  apiBase?: string,
+): Promise<User> {
+  return apiRequest<User>('/api/auth/google/mobile/exchange', {
+    method: 'POST',
+    body: { code, handoff_secret: handoffSecret },
     captureSession: true,
     noAuth: true,
     ...(apiBase === undefined ? {} : { apiBase }),
@@ -930,6 +973,19 @@ export function getStatsInsights(
     {
       signal,
       decode: decodeUserStatsInsights,
+    },
+  );
+}
+
+export function getStatsWrapped(
+  range: StatsInsightsRange = '30d',
+  signal?: AbortSignal,
+): Promise<WrappedReport> {
+  return apiRequest<WrappedReport>(
+    `/api/me/stats/wrapped?range=${encodeURIComponent(range)}`,
+    {
+      signal,
+      decode: decodeWrappedReport,
     },
   );
 }

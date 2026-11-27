@@ -1,12 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { strings } from '../localization';
-import { byTestId, queryByTestId } from '../test/render';
+import { byTestId, byType, queryByTestId } from '../test/render';
 import LoginScreen from './LoginScreen';
 
 const mocks = vi.hoisted(() => ({
   announce: vi.fn(),
   linkingAddEventListener: vi.fn(),
   linkingGetInitialURL: vi.fn(),
+  linkingOpenURL: vi.fn(),
+  consumePendingGoogleOAuth: vi.fn(),
+  savePendingGoogleOAuth: vi.fn(),
+  clearPendingGoogleOAuth: vi.fn(),
   useAuth: vi.fn(),
   useEffect: vi.fn(),
   useRef: vi.fn(),
@@ -30,6 +34,7 @@ vi.mock('react-native', () => ({
   Linking: {
     addEventListener: mocks.linkingAddEventListener,
     getInitialURL: mocks.linkingGetInitialURL,
+    openURL: mocks.linkingOpenURL,
   },
   Platform: { OS: 'android' },
   Pressable: 'Pressable',
@@ -42,12 +47,29 @@ vi.mock('react-native', () => ({
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ top: 11, right: 13, bottom: 17, left: 19 }),
 }));
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+}));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
+vi.mock('../auth/googleOAuth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../auth/googleOAuth')>();
+  return {
+    ...actual,
+    consumePendingGoogleOAuth: mocks.consumePendingGoogleOAuth,
+    savePendingGoogleOAuth: mocks.savePendingGoogleOAuth,
+    clearPendingGoogleOAuth: mocks.clearPendingGoogleOAuth,
+  };
+});
 vi.mock('../components/BrandLockup', () => ({ default: 'BrandLockup' }));
 // PasswordField owns the visibility state; string mocks keep every input prop.
 vi.mock('../components/FormField', () => ({
   FormField: 'FormField',
   PasswordField: 'PasswordField',
+}));
+vi.mock('../components/GoogleAuthButton', () => ({
+  GoogleAuthButton: 'GoogleAuthButton',
 }));
 vi.mock('../components/party/GuestJamEntry', () => ({
   GuestJamEntry: 'GuestJamEntry',
@@ -116,6 +138,10 @@ describe('LoginScreen action feedback', () => {
     vi.clearAllMocks();
     mocks.linkingGetInitialURL.mockResolvedValue(null);
     mocks.linkingAddEventListener.mockReturnValue({ remove: vi.fn() });
+    mocks.linkingOpenURL.mockResolvedValue(undefined);
+    mocks.consumePendingGoogleOAuth.mockResolvedValue(null);
+    mocks.savePendingGoogleOAuth.mockResolvedValue(undefined);
+    mocks.clearPendingGoogleOAuth.mockResolvedValue(undefined);
   });
 
   it('announces a successful sign-in and exposes its lifecycle state', async () => {
@@ -467,5 +493,94 @@ describe('LoginScreen action feedback', () => {
     expect(byTestId(tree, 'login-password').type).toBe('PasswordField');
     expect(byTestId(tree, 'register-confirm-password').type).toBe('PasswordField');
     expect(byTestId(tree, 'login-password').props.autoComplete).toBe('new-password');
+  });
+
+  it('starts Google sign-in, persists handoff state, and opens the validated auth URL', async () => {
+    const startGoogleLogin = vi.fn(async () => ({
+      auth_url: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=123',
+      handoff_secret: 'handoff-secret-1234567890',
+      expires_in_sec: 600,
+    }));
+    mocks.useAuth.mockReturnValue({
+      login: vi.fn(),
+      register: vi.fn(),
+      startGoogleLogin,
+      completeGoogleLogin: vi.fn(),
+    });
+    const rendered = render({ mode: 'create-account' });
+    const [googleButton] = byType(rendered.tree, 'GoogleAuthButton');
+    expect(googleButton).toBeDefined();
+
+    (googleButton.props.onPress as () => void)();
+
+    await vi.waitFor(() =>
+      expect(mocks.linkingOpenURL).toHaveBeenCalledExactlyOnceWith(
+        'https://accounts.google.com/o/oauth2/v2/auth?client_id=123',
+      ),
+    );
+    expect(startGoogleLogin).toHaveBeenCalledExactlyOnceWith(
+      'invite',
+      'https://loggerythm.logge.top',
+    );
+    expect(mocks.savePendingGoogleOAuth).toHaveBeenCalledWith({
+      version: 1,
+      serverUrl: 'https://loggerythm.logge.top',
+      handoffSecret: 'handoff-secret-1234567890',
+      expiresAt: expect.any(Number),
+    });
+    expect(rendered.authRequestInFlightRef.current).toBe(false);
+    expect(rendered.setBusy.mock.calls).toEqual([[true], [false]]);
+  });
+
+  it('handles Google OAuth callbacks for success, cancellation, and expired state', async () => {
+    const completeGoogleLogin = vi.fn(async () => undefined);
+    mocks.useAuth.mockReturnValue({
+      login: vi.fn(),
+      register: vi.fn(),
+      startGoogleLogin: vi.fn(),
+      completeGoogleLogin,
+    });
+    const rendered = render();
+    const effect = mocks.useEffect.mock.calls[0]?.[0] as (() => (() => void) | void);
+    const cleanup = effect();
+    const listener = mocks.linkingAddEventListener.mock.calls[0]?.[1] as
+      ((event: { url: string }) => void);
+
+    mocks.consumePendingGoogleOAuth.mockResolvedValueOnce({
+      version: 1,
+      serverUrl: 'https://loggerythm.logge.top',
+      handoffSecret: 'handoff-secret-1234567890',
+      expiresAt: Date.now() + 60_000,
+    });
+    listener({ url: 'loggerythm://auth/google/callback?code=exchange-code-1234567890' });
+    await vi.waitFor(() => expect(completeGoogleLogin).toHaveBeenCalledOnce());
+    expect(completeGoogleLogin).toHaveBeenCalledWith(
+      'exchange-code-1234567890',
+      'handoff-secret-1234567890',
+      'https://loggerythm.logge.top',
+    );
+    expect(mocks.announce).toHaveBeenCalledExactlyOnceWith(strings.auth.signedIn);
+
+    rendered.authRequestInFlightRef.current = false;
+    rendered.setError.mockClear();
+    mocks.consumePendingGoogleOAuth.mockResolvedValueOnce({
+      version: 1,
+      serverUrl: 'https://loggerythm.logge.top',
+      handoffSecret: 'handoff-secret-1234567890',
+      expiresAt: Date.now() + 60_000,
+    });
+    listener({ url: 'loggerythm://auth/google/callback?error=access_denied' });
+    await vi.waitFor(() =>
+      expect(rendered.setError).toHaveBeenCalledWith(strings.auth.googleSignInCancelled),
+    );
+
+    rendered.setError.mockClear();
+    mocks.consumePendingGoogleOAuth.mockResolvedValueOnce(null);
+    listener({ url: 'loggerythm://auth/google/callback?code=stale' });
+    await vi.waitFor(() =>
+      expect(rendered.setError).toHaveBeenCalledWith(strings.auth.googleSessionExpired),
+    );
+
+    if (typeof cleanup === 'function') cleanup();
   });
 });

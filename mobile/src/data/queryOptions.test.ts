@@ -123,6 +123,12 @@ const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
     expectedArguments: (signal) => ['30d', signal],
   },
   {
+    factory: 'statsWrapped', repositoryMethod: 'getStatsWrapped',
+    option: (queries) => queries.statsWrapped('account-a', '90d'),
+    expectedKey: ['music', 'profile', 'private', 'account-a', 'wrapped', '90d'],
+    expectedArguments: (signal) => ['90d', signal],
+  },
+  {
     factory: 'socialActivity', repositoryMethod: 'getSocialActivity',
     option: (queries) => queries.socialActivity('account-a'),
     expectedKey: ['music', 'social', 'account-a', 'activity'],

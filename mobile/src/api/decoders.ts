@@ -12,6 +12,7 @@ import type {
   ArtistRef,
   ArtistSummary,
   AudioQualityTier,
+  AuthProviders,
   BatchPreloadResponse,
   CachedTrackIds,
   ConnectCommandAction,
@@ -29,6 +30,7 @@ import type {
   FriendActivityItem,
   Genre,
   GenreDetail,
+  GoogleMobileStartResponse,
   HomeShelf,
   ImportJobDetail,
   ImportJobState,
@@ -281,13 +283,44 @@ export function decodeReleaseRadar(value: unknown): ReleaseRadarEntry[] {
 
 export function decodeUser(value: unknown): User {
   const source = object(value, 'User');
-  return {
+  const user: User = {
     id: nonNegativeInteger(source.id, 'User.id'),
     email: string(source.email, 'User.email'),
     display_name: nullableString(source.display_name, 'User.display_name'),
     is_admin: boolean(source.is_admin, 'User.is_admin'),
     is_approved: boolean(source.is_approved, 'User.is_approved'),
     avatar_url: nullableString(source.avatar_url, 'User.avatar_url'),
+  };
+  if ('has_password' in source) {
+    user.has_password = boolean(source.has_password, 'User.has_password');
+  }
+  if ('google_linked' in source) {
+    user.google_linked = boolean(source.google_linked, 'User.google_linked');
+  }
+  return user;
+}
+
+export function decodeAuthProviders(value: unknown): AuthProviders {
+  const source = object(value, 'AuthProviders');
+  return {
+    google: boolean(source.google, 'AuthProviders.google'),
+  };
+}
+
+export function decodeGoogleMobileStart(value: unknown): GoogleMobileStartResponse {
+  const source = object(value, 'GoogleMobileStart');
+  const authUrl = string(source.auth_url, 'GoogleMobileStart.auth_url');
+  if (authUrl.trim().length === 0) {
+    throw new Error('GoogleMobileStart.auth_url must not be empty');
+  }
+  const handoffSecret = string(source.handoff_secret, 'GoogleMobileStart.handoff_secret');
+  if (handoffSecret.trim().length === 0) {
+    throw new Error('GoogleMobileStart.handoff_secret must not be empty');
+  }
+  return {
+    auth_url: authUrl,
+    handoff_secret: handoffSecret,
+    expires_in_sec: positiveInteger(source.expires_in_sec, 'GoogleMobileStart.expires_in_sec'),
   };
 }
 

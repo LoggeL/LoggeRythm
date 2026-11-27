@@ -183,7 +183,10 @@ function EditProfileDialog({ me, onClose }: { me: User; onClose: () => void }) {
             </button>
           </div>
           <span id="edit-profile-password-hint" className={`text-xs font-normal ${passwordError ? "text-danger" : "text-muted"}`}>
-            {passwordError ?? "Leer lassen, um dein Passwort zu behalten."}
+            {passwordError ??
+              (me.has_password === false
+                ? "Optional – legt zusätzlich ein Passwort für die E-Mail-Anmeldung fest."
+                : "Leer lassen, um dein Passwort zu behalten.")}
           </span>
         </div>
         {save.error && (
@@ -300,11 +303,27 @@ export default function ProfileTab({ me }: { me: User }) {
         <SettingsRow label="E-Mail">
           <span className="text-sm text-muted [overflow-wrap:anywhere]">{me.email}</span>
         </SettingsRow>
-        <SettingsRow label="Passwort" description="Mindestens 8 Zeichen.">
-          <span aria-label="Passwort verborgen" className="text-sm tracking-widest text-muted">
-            ••••••••
-          </span>
+        <SettingsRow
+          label="Passwort"
+          description={
+            me.has_password === false
+              ? "Anmeldung über Google – du kannst jederzeit ein Passwort festlegen."
+              : "Mindestens 8 Zeichen."
+          }
+        >
+          {me.has_password === false ? (
+            <span className="text-sm text-muted">Kein Passwort gesetzt</span>
+          ) : (
+            <span aria-label="Passwort verborgen" className="text-sm tracking-widest text-muted">
+              ••••••••
+            </span>
+          )}
         </SettingsRow>
+        {typeof me.google_linked === "boolean" && (
+          <SettingsRow label="Google-Konto">
+            <span className="text-sm text-muted">{me.google_linked ? "Verknüpft" : "Nicht verknüpft"}</span>
+          </SettingsRow>
+        )}
       </SettingsCard>
 
       <SocialPrivacyCard />

@@ -94,6 +94,19 @@ export interface StringCatalog {
     logoutFailedMessage: string;
     accountChangeFailed: string;
     accountCleanupFailed: string;
+    continueWithGoogle: string;
+    registerWithGoogle: string;
+    orDivider: string;
+    startingGoogleSignIn: string;
+    completingGoogleSignIn: string;
+    googleSignInFailed: string;
+    googleSignInCancelled: string;
+    googleSessionExpired: string;
+    googleAccountConflict: string;
+    googleEmailUnverified: string;
+    googleInvalidInvite: string;
+    googleNotConfigured: string;
+    googleProvidersUnavailable: string;
   };
   navigation: {
     home: string;
@@ -235,6 +248,7 @@ export interface StringCatalog {
     administrator: string;
     approved: string;
     pendingApproval: string;
+    googleLinked: string;
     serverOrigin: (origin: string) => string;
     avatarDeferred: string;
     languageTitle: string;
@@ -1129,6 +1143,24 @@ export const de: StringCatalog = {
       'Dieses Gerät konnte nicht sicher für ein anderes Konto vorbereitet werden. Versuche es erneut.',
     accountCleanupFailed:
       'Die vorherige Sitzung konnte auf diesem Gerät nicht vollständig bereinigt werden. Versuche es erneut.',
+    continueWithGoogle: 'Mit Google fortfahren',
+    registerWithGoogle: 'Mit Google registrieren',
+    orDivider: 'oder',
+    startingGoogleSignIn: 'Google-Anmeldung wird gestartet…',
+    completingGoogleSignIn: 'Google-Anmeldung wird abgeschlossen…',
+    googleSignInFailed: 'Die Google-Anmeldung ist fehlgeschlagen. Bitte versuche es erneut.',
+    googleSignInCancelled: 'Die Google-Anmeldung wurde abgebrochen.',
+    googleSessionExpired:
+      'Die Google-Anmeldesitzung ist abgelaufen oder ungültig. Bitte versuche es erneut.',
+    googleAccountConflict:
+      'Diese E-Mail-Adresse ist bereits mit einem anderen Google-Konto verknüpft.',
+    googleEmailUnverified:
+      'Die E-Mail-Adresse deines Google-Kontos ist nicht verifiziert.',
+    googleInvalidInvite:
+      'Der Einladungscode ist ungültig oder wurde bereits verwendet.',
+    googleNotConfigured:
+      'Die Google-Anmeldung ist auf diesem Server nicht eingerichtet.',
+    googleProvidersUnavailable: 'Anmeldeoptionen konnten nicht geladen werden.',
   },
   navigation: {
     home: 'Start',
@@ -1262,6 +1294,7 @@ export const de: StringCatalog = {
     administrator: 'Administrator',
     approved: 'Freigegeben',
     pendingApproval: 'Freigabe ausstehend',
+    googleLinked: 'Mit Google verknüpft',
     serverOrigin: (origin) => `Server: ${origin}`,
     avatarDeferred: 'Das Profilbild kann derzeit nur im Web geändert werden.',
     languageTitle: 'Sprache',
@@ -2162,6 +2195,19 @@ export const en: StringCatalog = {
     logoutFailedMessage: 'Sign-out could not be safely completed on this device. Please retry.',
     accountChangeFailed: 'This device could not be safely prepared for another account. Please retry.',
     accountCleanupFailed: 'The previous session could not be fully cleared from this device. Please retry.',
+    continueWithGoogle: 'Continue with Google',
+    registerWithGoogle: 'Register with Google',
+    orDivider: 'or',
+    startingGoogleSignIn: 'Starting Google sign-in…',
+    completingGoogleSignIn: 'Completing Google sign-in…',
+    googleSignInFailed: 'Google sign-in failed. Please try again.',
+    googleSignInCancelled: 'Google sign-in was cancelled.',
+    googleSessionExpired: 'The Google sign-in session expired or is invalid. Please try again.',
+    googleAccountConflict: 'This email address is already linked to a different Google account.',
+    googleEmailUnverified: 'Your Google account email address is not verified.',
+    googleInvalidInvite: 'The invite code is invalid or has already been used.',
+    googleNotConfigured: 'Google sign-in is not configured on this server.',
+    googleProvidersUnavailable: 'Could not check sign-in options.',
   },
   navigation: {
     home: 'Home', search: 'Search', discover: 'Discover', radio: 'Radio', library: 'Library',
@@ -2260,6 +2306,7 @@ export const en: StringCatalog = {
     title: 'Profile',
     member: 'Member', administrator: 'Administrator',
     approved: 'Approved', pendingApproval: 'Approval pending',
+    googleLinked: 'Linked with Google',
     serverOrigin: (origin) => `Server: ${origin}`,
     avatarDeferred: 'Your profile picture can currently be changed on the web only.',
     languageTitle: 'Language',

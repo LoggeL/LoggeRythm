@@ -12,6 +12,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext';
 import { isValidEmail, normalizeEmail } from '../auth/email';
+import {
+  clearPendingGoogleOAuth,
+  consumePendingGoogleOAuth,
+  googleOAuthErrorMessage,
+  parseGoogleCallbackUrl,
+  savePendingGoogleOAuth,
+  validateGoogleAuthUrl,
+} from '../auth/googleOAuth';
 import { presentError } from '../auth/presentationError';
 import { buildRegisterRequest, RegistrationValidationError } from '../auth/registration';
 import { registrationLinkFromUrl } from '../auth/inviteLink';
@@ -19,6 +27,7 @@ import AppIcon from '../components/AppIcon';
 import AuthBackdrop from '../components/AuthBackdrop';
 import BrandLockup from '../components/BrandLockup';
 import { FormField, PasswordField } from '../components/FormField';
+import { GoogleAuthButton } from '../components/GoogleAuthButton';
 import { GuestJamEntry } from '../components/party/GuestJamEntry';
 import { ActionButton, AppText } from '../components/ui';
 import {
@@ -38,7 +47,7 @@ const formGutter = spacing.xl;
 const FORM_MAX_WIDTH = layout.artwork.hero * 2;
 
 export default function LoginScreen() {
-  const { login, register } = useAuth();
+  const { login, register, startGoogleLogin, completeGoogleLogin } = useAuth();
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<AuthMode>('sign-in');
   const [serverUrl, setServerUrl] = useState(getCurrentApiBase());
@@ -55,8 +64,50 @@ export default function LoginScreen() {
 
   useEffect(() => {
     let active = true;
+    const applyGoogleCallback = async (
+      callback: NonNullable<ReturnType<typeof parseGoogleCallbackUrl>>,
+    ) => {
+      if (authRequestInFlightRef.current) return;
+      let pending: Awaited<ReturnType<typeof consumePendingGoogleOAuth>>;
+      try {
+        pending = await consumePendingGoogleOAuth();
+      } catch (cause) {
+        if (active) setError(presentError(cause, strings.auth.googleSignInFailed).message);
+        return;
+      }
+      if (!active) return;
+      if (pending === null) {
+        setError(strings.auth.googleSessionExpired);
+        return;
+      }
+      if (callback.kind === 'error') {
+        setError(googleOAuthErrorMessage(callback.error));
+        return;
+      }
+      let authenticationCommitted = false;
+      authRequestInFlightRef.current = true;
+      setBusy(true);
+      setError(null);
+      try {
+        await completeGoogleLogin(callback.code, pending.handoffSecret, pending.serverUrl);
+        authenticationCommitted = true;
+        AccessibilityInfo.announceForAccessibility(strings.auth.signedIn);
+      } catch (cause) {
+        if (active) {
+          setError(presentError(cause, strings.auth.googleSignInFailed).message);
+        }
+      } finally {
+        if (!authenticationCommitted) authRequestInFlightRef.current = false;
+        if (active) setBusy(false);
+      }
+    };
     const applyUrl = (url: string | null) => {
       if (!active || url === null) return;
+      const googleCallback = parseGoogleCallbackUrl(url);
+      if (googleCallback !== null) {
+        void applyGoogleCallback(googleCallback);
+        return;
+      }
       const registrationLink = registrationLinkFromUrl(url);
       if (registrationLink === null) return;
       // Never repaint or clear the form for a link while an authentication
@@ -105,7 +156,7 @@ export default function LoginScreen() {
       active = false;
       subscription.remove();
     };
-  }, []);
+  }, [completeGoogleLogin]);
 
   const onSubmit = async () => {
     if (authRequestInFlightRef.current) return;
@@ -183,6 +234,42 @@ export default function LoginScreen() {
     serverUrlRef.current = value;
     setServerUrl(value);
     setServerSwitchNotice(null);
+  };
+
+  const onStartGoogle = async () => {
+    if (authRequestInFlightRef.current) return;
+    setError(null);
+    let normalizedServer: string;
+    try {
+      normalizedServer = normalizeSignInApiBase(serverUrlRef.current);
+    } catch {
+      setError(strings.auth.serverInvalid);
+      return;
+    }
+    serverUrlRef.current = normalizedServer;
+    setServerUrl(normalizedServer);
+    authRequestInFlightRef.current = true;
+    setBusy(true);
+    try {
+      const started = await startGoogleLogin(
+        creatingAccount ? (invite.trim() || null) : null,
+        normalizedServer,
+      );
+      const validatedAuthUrl = validateGoogleAuthUrl(started.auth_url);
+      await savePendingGoogleOAuth({
+        version: 1,
+        serverUrl: normalizedServer,
+        handoffSecret: started.handoff_secret,
+        expiresAt: Date.now() + started.expires_in_sec * 1000,
+      });
+      await Linking.openURL(validatedAuthUrl);
+    } catch (cause) {
+      await clearPendingGoogleOAuth().catch(() => undefined);
+      setError(presentError(cause, strings.auth.googleSignInFailed).message);
+    } finally {
+      authRequestInFlightRef.current = false;
+      setBusy(false);
+    }
   };
 
   const requiredMissing =
@@ -351,6 +438,13 @@ export default function LoginScreen() {
               disabled={requiredMissing}
               fullWidth
               onPress={onSubmit}
+            />
+            <GoogleAuthButton
+              serverUrl={serverUrl}
+              creatingAccount={creatingAccount}
+              disabled={busy}
+              busy={false}
+              onPress={() => void onStartGoogle()}
             />
             <Pressable
               testID="auth-mode-toggle"

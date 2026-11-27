@@ -22,6 +22,27 @@ class UserOut(BaseModel):
     is_admin: bool = False
     is_approved: bool = False
     avatar_url: str | None = None
+    has_password: bool = True
+    google_linked: bool = False
+
+
+class AuthProvidersOut(BaseModel):
+    google: bool
+
+
+class GoogleMobileStartRequest(BaseModel):
+    invite: str | None = Field(default=None, max_length=64)
+
+
+class GoogleMobileStartOut(BaseModel):
+    auth_url: str
+    handoff_secret: str
+    expires_in_sec: int
+
+
+class GoogleMobileExchangeRequest(BaseModel):
+    code: str = Field(min_length=20, max_length=200)
+    handoff_secret: str = Field(min_length=20, max_length=200)
 
 
 class PasswordForgotRequest(BaseModel):

@@ -1372,6 +1372,19 @@
         ],
         "type": "object"
       },
+      "AuthProvidersOut": {
+        "properties": {
+          "google": {
+            "title": "Google",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "google"
+        ],
+        "title": "AuthProvidersOut",
+        "type": "object"
+      },
       "BatchPreloadRequest": {
         "properties": {
           "track_ids": {
@@ -2156,6 +2169,69 @@
         "title": "GenreDetail",
         "type": "object"
       },
+      "GoogleMobileExchangeRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 200,
+            "minLength": 20,
+            "title": "Code",
+            "type": "string"
+          },
+          "handoff_secret": {
+            "maxLength": 200,
+            "minLength": 20,
+            "title": "Handoff Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "handoff_secret"
+        ],
+        "title": "GoogleMobileExchangeRequest",
+        "type": "object"
+      },
+      "GoogleMobileStartOut": {
+        "properties": {
+          "auth_url": {
+            "title": "Auth Url",
+            "type": "string"
+          },
+          "expires_in_sec": {
+            "title": "Expires In Sec",
+            "type": "integer"
+          },
+          "handoff_secret": {
+            "title": "Handoff Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "auth_url",
+          "handoff_secret",
+          "expires_in_sec"
+        ],
+        "title": "GoogleMobileStartOut",
+        "type": "object"
+      },
+      "GoogleMobileStartRequest": {
+        "properties": {
+          "invite": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite"
+          }
+        },
+        "title": "GoogleMobileStartRequest",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2519,6 +2595,10 @@
       },
       "IntegrationsStatus": {
         "properties": {
+          "google_oauth_configured": {
+            "title": "Google Oauth Configured",
+            "type": "boolean"
+          },
           "lastfm_configured": {
             "title": "Lastfm Configured",
             "type": "boolean"
@@ -2535,7 +2615,8 @@
         "required": [
           "spotify_configured",
           "lastfm_configured",
-          "mail_configured"
+          "mail_configured",
+          "google_oauth_configured"
         ],
         "title": "IntegrationsStatus",
         "type": "object"
@@ -5872,6 +5953,16 @@
             "title": "Email",
             "type": "string"
           },
+          "google_linked": {
+            "default": false,
+            "title": "Google Linked",
+            "type": "boolean"
+          },
+          "has_password": {
+            "default": true,
+            "title": "Has Password",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -6146,6 +6237,684 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "WrappedAura": {
+        "properties": {
+          "colors": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Colors",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "mood_tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Mood Tags",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "colors",
+          "mood_tags"
+        ],
+        "title": "WrappedAura",
+        "type": "object"
+      },
+      "WrappedEquivalent": {
+        "properties": {
+          "icon": {
+            "enum": [
+              "vinyl",
+              "movie",
+              "flight",
+              "marathon",
+              "concert"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "icon",
+          "value",
+          "label"
+        ],
+        "title": "WrappedEquivalent",
+        "type": "object"
+      },
+      "WrappedObsession": {
+        "properties": {
+          "album": {
+            "title": "Album",
+            "type": "string"
+          },
+          "artist": {
+            "title": "Artist",
+            "type": "string"
+          },
+          "cover": {
+            "title": "Cover",
+            "type": "string"
+          },
+          "listening_sec": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Listening Sec",
+            "type": "integer"
+          },
+          "peak_day_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Day Date"
+          },
+          "peak_day_plays": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Peak Day Plays",
+            "type": "integer"
+          },
+          "play_count": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "share_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Share Pct",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "track_key": {
+            "title": "Track Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_key",
+          "title",
+          "artist",
+          "album",
+          "cover",
+          "play_count",
+          "listening_sec",
+          "share_pct",
+          "peak_day_date",
+          "peak_day_plays"
+        ],
+        "title": "WrappedObsession",
+        "type": "object"
+      },
+      "WrappedPeakDay": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "listening_sec": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Listening Sec",
+            "type": "integer"
+          },
+          "play_count": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "top_track_artist": {
+            "title": "Top Track Artist",
+            "type": "string"
+          },
+          "top_track_cover": {
+            "title": "Top Track Cover",
+            "type": "string"
+          },
+          "top_track_title": {
+            "title": "Top Track Title",
+            "type": "string"
+          },
+          "weekday": {
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Weekday",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "weekday",
+          "play_count",
+          "listening_sec",
+          "top_track_title",
+          "top_track_artist",
+          "top_track_cover"
+        ],
+        "title": "WrappedPeakDay",
+        "type": "object"
+      },
+      "WrappedPersona": {
+        "properties": {
+          "emblem": {
+            "enum": [
+              "moon_wave",
+              "infinite_vinyl",
+              "compass_radar",
+              "tonearm_disc",
+              "strobe_bars",
+              "sunrise_pulse",
+              "flame_metro",
+              "prism_beat"
+            ],
+            "title": "Emblem",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "subtitle": {
+            "title": "Subtitle",
+            "type": "string"
+          },
+          "tagline": {
+            "title": "Tagline",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "traits": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Traits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "subtitle",
+          "tagline",
+          "emblem",
+          "traits"
+        ],
+        "title": "WrappedPersona",
+        "type": "object"
+      },
+      "WrappedRankedItem": {
+        "properties": {
+          "count": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "cover": {
+            "title": "Cover",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "listening_sec": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Listening Sec",
+            "type": "integer"
+          },
+          "rank": {
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Rank",
+            "type": "integer"
+          },
+          "share_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Share Pct",
+            "type": "integer"
+          },
+          "sublabel": {
+            "title": "Sublabel",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rank",
+          "key",
+          "label",
+          "sublabel",
+          "cover",
+          "count",
+          "listening_sec",
+          "share_pct"
+        ],
+        "title": "WrappedRankedItem",
+        "type": "object"
+      },
+      "WrappedReport": {
+        "properties": {
+          "aura": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WrappedAura"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "equivalents": {
+            "items": {
+              "$ref": "#/components/schemas/WrappedEquivalent"
+            },
+            "title": "Equivalents",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "obsession": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WrappedObsession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "peak_day": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WrappedPeakDay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "period_end": {
+            "format": "date-time",
+            "title": "Period End",
+            "type": "string"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
+          },
+          "persona": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WrappedPersona"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "range": {
+            "enum": [
+              "7d",
+              "30d",
+              "90d",
+              "year",
+              "all"
+            ],
+            "title": "Range",
+            "type": "string"
+          },
+          "rhythm": {
+            "$ref": "#/components/schemas/WrappedRhythm"
+          },
+          "tempo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WrappedTempo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "top_albums": {
+            "items": {
+              "$ref": "#/components/schemas/WrappedRankedItem"
+            },
+            "maxItems": 10,
+            "title": "Top Albums",
+            "type": "array"
+          },
+          "top_artists": {
+            "items": {
+              "$ref": "#/components/schemas/WrappedRankedItem"
+            },
+            "maxItems": 10,
+            "title": "Top Artists",
+            "type": "array"
+          },
+          "top_tracks": {
+            "items": {
+              "$ref": "#/components/schemas/WrappedRankedItem"
+            },
+            "maxItems": 10,
+            "title": "Top Tracks",
+            "type": "array"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/WrappedTotals"
+          },
+          "user": {
+            "$ref": "#/components/schemas/WrappedUser"
+          }
+        },
+        "required": [
+          "range",
+          "generated_at",
+          "period_start",
+          "period_end",
+          "user",
+          "totals",
+          "persona",
+          "aura",
+          "rhythm",
+          "obsession",
+          "peak_day",
+          "tempo",
+          "equivalents",
+          "top_tracks",
+          "top_artists",
+          "top_albums"
+        ],
+        "title": "WrappedReport",
+        "type": "object"
+      },
+      "WrappedRhythm": {
+        "properties": {
+          "chronotype": {
+            "enum": [
+              "night_owl",
+              "early_bird",
+              "day_cruiser",
+              "evening_viber"
+            ],
+            "title": "Chronotype",
+            "type": "string"
+          },
+          "chronotype_label": {
+            "title": "Chronotype Label",
+            "type": "string"
+          },
+          "discovery_score_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Discovery Score Pct",
+            "type": "integer"
+          },
+          "hourly_distribution": {
+            "items": {
+              "maximum": 9007199254740991.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 24,
+            "minItems": 24,
+            "title": "Hourly Distribution",
+            "type": "array"
+          },
+          "peak_hour": {
+            "maximum": 23.0,
+            "minimum": 0.0,
+            "title": "Peak Hour",
+            "type": "integer"
+          },
+          "peak_weekday": {
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Peak Weekday",
+            "type": "integer"
+          },
+          "repeat_score_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Repeat Score Pct",
+            "type": "integer"
+          },
+          "weekday_distribution": {
+            "items": {
+              "maximum": 9007199254740991.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 7,
+            "minItems": 7,
+            "title": "Weekday Distribution",
+            "type": "array"
+          },
+          "weekend_share_pct": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Weekend Share Pct",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "chronotype",
+          "chronotype_label",
+          "peak_hour",
+          "peak_weekday",
+          "weekend_share_pct",
+          "discovery_score_pct",
+          "repeat_score_pct",
+          "hourly_distribution",
+          "weekday_distribution"
+        ],
+        "title": "WrappedRhythm",
+        "type": "object"
+      },
+      "WrappedTempo": {
+        "properties": {
+          "analyzed_plays": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Analyzed Plays",
+            "type": "integer"
+          },
+          "avg_bpm": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Avg Bpm",
+            "type": "integer"
+          },
+          "max_bpm": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Max Bpm",
+            "type": "integer"
+          },
+          "min_bpm": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 9007199254740991.0,
+            "title": "Min Bpm",
+            "type": "integer"
+          },
+          "vibe_label": {
+            "title": "Vibe Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "avg_bpm",
+          "min_bpm",
+          "max_bpm",
+          "analyzed_plays",
+          "vibe_label"
+        ],
+        "title": "WrappedTempo",
+        "type": "object"
+      },
+      "WrappedTotals": {
+        "properties": {
+          "active_days": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Active Days",
+            "type": "integer"
+          },
+          "avg_daily_sec": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Avg Daily Sec",
+            "type": "integer"
+          },
+          "current_streak_days": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Current Streak Days",
+            "type": "integer"
+          },
+          "listening_sec": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Listening Sec",
+            "type": "integer"
+          },
+          "longest_streak_days": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Longest Streak Days",
+            "type": "integer"
+          },
+          "new_artists_count": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "New Artists Count",
+            "type": "integer"
+          },
+          "play_count": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Play Count",
+            "type": "integer"
+          },
+          "total_days": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Total Days",
+            "type": "integer"
+          },
+          "unique_albums": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Unique Albums",
+            "type": "integer"
+          },
+          "unique_artists": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Unique Artists",
+            "type": "integer"
+          },
+          "unique_tracks": {
+            "maximum": 9007199254740991.0,
+            "minimum": 0.0,
+            "title": "Unique Tracks",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "play_count",
+          "listening_sec",
+          "unique_tracks",
+          "unique_artists",
+          "unique_albums",
+          "new_artists_count",
+          "active_days",
+          "total_days",
+          "avg_daily_sec",
+          "current_streak_days",
+          "longest_streak_days"
+        ],
+        "title": "WrappedTotals",
+        "type": "object"
+      },
+      "WrappedUser": {
+        "properties": {
+          "avatar_url": {
+            "title": "Avatar Url",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "avatar_url"
+        ],
+        "title": "WrappedUser",
         "type": "object"
       },
       "_VisibilityUpdate": {
@@ -6964,6 +7733,93 @@
         ]
       }
     },
+    "/api/auth/google/mobile/exchange": {
+      "post": {
+        "description": "Exchange a single-use mobile OAuth callback code + handoff secret for a session cookie.",
+        "operationId": "google_mobile_exchange_api_auth_google_mobile_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleMobileExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Google Mobile Exchange",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/google/mobile/start": {
+      "post": {
+        "description": "Create a mobile Google OAuth flow and return the Google auth URL + handoff secret.",
+        "operationId": "google_mobile_start_api_auth_google_mobile_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleMobileStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleMobileStartOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "Google OAuth is not configured on this server."
+          }
+        },
+        "summary": "Google Mobile Start",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "login_api_auth_login_post",
@@ -7142,6 +7998,28 @@
           }
         },
         "summary": "Reset Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/providers": {
+      "get": {
+        "description": "Report which optional authentication providers are configured on this server.",
+        "operationId": "auth_providers_api_auth_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProvidersOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Providers",
         "tags": [
           "auth"
         ]
@@ -9249,6 +10127,390 @@
           }
         ],
         "summary": "Get Stats Insights",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/api/me/stats/wrapped": {
+      "get": {
+        "description": "Rich LoggeRythm Wrapped report for interactive stories and share cards.",
+        "operationId": "get_stats_wrapped_api_me_stats_wrapped_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "year",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WrappedReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Stats Wrapped",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/api/me/stats/wrapped/artwork": {
+      "get": {
+        "description": "Same-origin allowlisted image proxy for Canvas share-card rendering. Only serves URLs present in the authenticated user's play covers or avatar.",
+        "operationId": "get_wrapped_artwork_api_me_stats_wrapped_artwork_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "maxLength": 1000,
+              "minLength": 1,
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/gif": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Allowlisted cover or avatar image bytes.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or the requested artwork URL is not allowlisted for this user."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Allowlisted local artwork file does not exist on disk."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Upstream artwork fetch failed, returned non-image content, or exceeded 5 MB."
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Wrapped Artwork",
+        "tags": [
+          "stats"
+        ]
+      }
+    },
+    "/api/me/stats/wrapped/card.svg": {
+      "get": {
+        "description": "Server-rendered pure-Python SVG Wrapped share card (1080x1920 or 1080x1080).",
+        "operationId": "get_wrapped_card_svg_api_me_stats_wrapped_card_svg_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "required": false,
+            "schema": {
+              "default": "30d",
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "year",
+                "all"
+              ],
+              "title": "Range",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "template",
+            "required": false,
+            "schema": {
+              "default": "summary",
+              "enum": [
+                "summary",
+                "persona",
+                "receipt",
+                "festival",
+                "obsession",
+                "aura",
+                "peak"
+              ],
+              "title": "Template",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "theme",
+            "required": false,
+            "schema": {
+              "default": "signal",
+              "enum": [
+                "signal",
+                "cover",
+                "vinyl",
+                "neon",
+                "paper"
+              ],
+              "title": "Theme",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "story",
+              "enum": [
+                "story",
+                "square"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "show_user",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Show User",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "show_counts",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Show Counts",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Rendered SVG share card.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The session cookie is missing, invalid, expired, or no longer identifies a user."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthError"
+                }
+              }
+            },
+            "description": "The authenticated account is pending approval or lacks permission for this operation."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "detail"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "No plays available in the selected range."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "sf_session": []
+          }
+        ],
+        "summary": "Get Wrapped Card Svg",
         "tags": [
           "stats"
         ]

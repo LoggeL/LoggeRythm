@@ -237,9 +237,9 @@ class OpenApiContractTests(unittest.TestCase):
             for method, operation in path_item.items()
             if method in {"delete", "get", "head", "options", "patch", "post", "put", "trace"}
         }
-        self.assertEqual(len(schemas), 127)
-        self.assertEqual(len(schema["paths"]), 119)
-        self.assertEqual(len(operation_ids), 132)
+        self.assertEqual(len(schemas), 142)
+        self.assertEqual(len(schema["paths"]), 125)
+        self.assertEqual(len(operation_ids), 138)
         self.assertIn("/api/admin/likes/deduplicate", schema["paths"])
         self.assertIn("/api/admin/usage", schema["paths"])
         self.assertIn("/api/admin/usage/users/{user_id}", schema["paths"])
@@ -277,8 +277,14 @@ class OpenApiContractTests(unittest.TestCase):
             "/api/party/{code}/react",
             "/api/party/{code}/vote-skip",
             "/api/me/stats/insights",
+            "/api/me/stats/wrapped",
+            "/api/me/stats/wrapped/artwork",
+            "/api/me/stats/wrapped/card.svg",
             "/api/social/activity",
             "/api/social/activity/events",
+            "/api/auth/providers",
+            "/api/auth/google/mobile/start",
+            "/api/auth/google/mobile/exchange",
         ):
             self.assertIn(new_path, schema["paths"])
         for schema_name in schemas:

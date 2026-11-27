@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   clearPlayerSession: vi.fn(async () => undefined),
   clearOfflineDownloads: vi.fn(async () => undefined),
   clearOfflineIdentity: vi.fn(async () => undefined),
+  clearPendingGoogleOAuth: vi.fn(async () => undefined),
   persistOfflineIdentity: vi.fn(async () => undefined),
   readOfflineIdentity: vi.fn(async (): Promise<User | null> => null),
   getApiBase: vi.fn(async () => 'https://loggerythm.logge.top'),
@@ -80,6 +81,9 @@ vi.mock('./offlineIdentity', () => ({
   persistOfflineIdentity: mocks.persistOfflineIdentity,
   readOfflineIdentity: mocks.readOfflineIdentity,
 }));
+vi.mock('./googleOAuth', () => ({
+  clearPendingGoogleOAuth: mocks.clearPendingGoogleOAuth,
+}));
 
 const user: User = {
   id: 17,
@@ -100,6 +104,8 @@ const registration: RegisterRequest = {
 interface AuthValue {
   login(email: string, password: string, apiBase: string): Promise<void>;
   register(request: RegisterRequest, apiBase: string): Promise<void>;
+  startGoogleLogin(invite: string | null, apiBase: string): Promise<unknown>;
+  completeGoogleLogin(code: string, handoffSecret: string, apiBase: string): Promise<void>;
   logout(): Promise<void>;
   forgetSession(): Promise<void>;
   deleteAccount(): Promise<void>;
@@ -111,6 +117,9 @@ function injectedRepository(): AuthRepository & {
   me: ReturnType<typeof vi.fn>;
   login: ReturnType<typeof vi.fn>;
   register: ReturnType<typeof vi.fn>;
+  getAuthProviders: ReturnType<typeof vi.fn>;
+  startGoogleMobileAuth: ReturnType<typeof vi.fn>;
+  exchangeGoogleMobileAuth: ReturnType<typeof vi.fn>;
   logout: ReturnType<typeof vi.fn>;
   deleteMe: ReturnType<typeof vi.fn>;
 } {
@@ -118,6 +127,13 @@ function injectedRepository(): AuthRepository & {
     me: vi.fn(async () => user),
     login: vi.fn(async () => user),
     register: vi.fn(async () => user),
+    getAuthProviders: vi.fn(async () => ({ google: true })),
+    startGoogleMobileAuth: vi.fn(async () => ({
+      auth_url: 'https://accounts.google.com/o/oauth2/v2/auth',
+      handoff_secret: 'secret',
+      expires_in_sec: 600,
+    })),
+    exchangeGoogleMobileAuth: vi.fn(async () => user),
     logout: vi.fn(async () => ({ ok: true })),
     deleteMe: vi.fn(async () => undefined),
   };
@@ -164,6 +180,21 @@ describe('AuthProvider repository injection', () => {
     );
     expect(registerRepository.register).toHaveBeenCalledExactlyOnceWith(
       registration,
+      'https://music.example.test',
+    );
+
+    const googleRepository = injectedRepository();
+    const googleAuth = renderProvider(googleRepository);
+    await expect(googleAuth.startGoogleLogin('INV1', 'https://music.example.test'))
+      .resolves.toMatchObject({ handoff_secret: 'secret' });
+    expect(googleRepository.startGoogleMobileAuth).toHaveBeenCalledExactlyOnceWith(
+      'INV1',
+      'https://music.example.test',
+    );
+    await googleAuth.completeGoogleLogin('code-1', 'secret', 'https://music.example.test');
+    expect(googleRepository.exchangeGoogleMobileAuth).toHaveBeenCalledExactlyOnceWith(
+      'code-1',
+      'secret',
       'https://music.example.test',
     );
   });
@@ -223,6 +254,7 @@ describe('AuthProvider repository injection', () => {
     );
     expect(logoutRepository.deleteMe).not.toHaveBeenCalled();
     expect(mocks.clearOfflineIdentity).toHaveBeenCalledOnce();
+    expect(mocks.clearPendingGoogleOAuth).toHaveBeenCalledOnce();
     expect(mocks.clearOfflineDownloads).toHaveBeenCalledOnce();
 
     const forgottenRepository = injectedRepository();

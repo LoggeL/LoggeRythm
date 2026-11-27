@@ -7,8 +7,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import AuthCard from "@/components/AuthCard";
 import { PasswordField, SubmitButton, TextField, emailError } from "@/components/AuthFields";
+import GoogleAuthButton from "@/components/GoogleAuthButton";
 import { CheckCircleIcon } from "@/components/feedbackIcons";
 import { buildAuthHref, sanitizeNextPath } from "@/lib/authRedirect";
+import { googleOAuthErrorMessage } from "@/lib/googleAuth";
 import { shouldRemoveQueryForUserChange } from "@/lib/queryPersistence";
 
 const PASSWORD_MIN = 8;
@@ -21,6 +23,7 @@ function RegisterForm() {
   const searchParams = useSearchParams();
   const invite = searchParams.get("invite");
   const nextPath = sanitizeNextPath(searchParams.get("next"));
+  const oauthError = googleOAuthErrorMessage(searchParams.get("oauth_error"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -128,15 +131,22 @@ function RegisterForm() {
             clearError("password");
           }}
         />
-        {error && (
+        {(error ?? oauthError) && (
           <p role="alert" className="error-panel">
-            Registrierung fehlgeschlagen: {error}
+            Registrierung fehlgeschlagen: {error ?? oauthError}
           </p>
         )}
         <SubmitButton loading={loading} loadingLabel="Konto wird erstellt…">
           Registrieren
         </SubmitButton>
       </form>
+      <GoogleAuthButton
+        mode="register"
+        origin="/register"
+        nextPath={nextPath}
+        invite={invite}
+        disabled={loading}
+      />
     </AuthCard>
   );
 }

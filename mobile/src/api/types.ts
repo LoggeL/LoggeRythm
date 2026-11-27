@@ -106,6 +106,18 @@ export interface User {
   is_admin: boolean;
   is_approved: boolean;
   avatar_url: string | null;
+  has_password?: boolean;
+  google_linked?: boolean;
+}
+
+export interface AuthProviders {
+  google: boolean;
+}
+
+export interface GoogleMobileStartResponse {
+  auth_url: string;
+  handoff_secret: string;
+  expires_in_sec: number;
 }
 
 export type PlaylistRole = 'owner' | 'editor';
@@ -421,6 +433,157 @@ export interface UserStatsInsights {
   weekday_distribution: number[];
   new_artists_count: number;
   recent_plays: TimestampedPlay[];
+}
+
+export type WrappedChronotype =
+  | 'night_owl'
+  | 'early_bird'
+  | 'day_cruiser'
+  | 'evening_viber';
+
+export type WrappedEmblemId =
+  | 'moon_wave'
+  | 'infinite_vinyl'
+  | 'compass_radar'
+  | 'tonearm_disc'
+  | 'strobe_bars'
+  | 'sunrise_pulse'
+  | 'flame_metro'
+  | 'prism_beat';
+
+export type WrappedEquivalentIcon =
+  | 'vinyl'
+  | 'movie'
+  | 'flight'
+  | 'marathon'
+  | 'concert';
+
+export type WrappedCardTemplateId =
+  | 'summary'
+  | 'persona'
+  | 'receipt'
+  | 'festival'
+  | 'obsession'
+  | 'aura'
+  | 'peak';
+
+export type WrappedThemeId = 'signal' | 'cover' | 'vinyl' | 'neon' | 'paper';
+
+export type WrappedFormat = 'story' | 'square';
+
+export interface WrappedUser {
+  display_name: string;
+  avatar_url: string;
+}
+
+export interface WrappedTotals {
+  play_count: number;
+  listening_sec: number;
+  unique_tracks: number;
+  unique_artists: number;
+  unique_albums: number;
+  new_artists_count: number;
+  active_days: number;
+  total_days: number;
+  avg_daily_sec: number;
+  current_streak_days: number;
+  longest_streak_days: number;
+}
+
+export interface WrappedPersona {
+  id: string;
+  title: string;
+  subtitle: string;
+  tagline: string;
+  emblem: WrappedEmblemId;
+  traits: string[];
+}
+
+export interface WrappedAura {
+  id: string;
+  title: string;
+  description: string;
+  colors: [string, string, string];
+  mood_tags: string[];
+}
+
+export interface WrappedRhythm {
+  chronotype: WrappedChronotype;
+  chronotype_label: string;
+  peak_hour: number;
+  peak_weekday: number;
+  weekend_share_pct: number;
+  discovery_score_pct: number;
+  repeat_score_pct: number;
+  hourly_distribution: number[];
+  weekday_distribution: number[];
+}
+
+export interface WrappedObsession {
+  track_key: string;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  play_count: number;
+  listening_sec: number;
+  share_pct: number;
+  peak_day_date: string | null;
+  peak_day_plays: number;
+}
+
+export interface WrappedPeakDay {
+  date: string;
+  weekday: number;
+  play_count: number;
+  listening_sec: number;
+  top_track_title: string;
+  top_track_artist: string;
+  top_track_cover: string;
+}
+
+export interface WrappedTempo {
+  avg_bpm: number;
+  min_bpm: number;
+  max_bpm: number;
+  analyzed_plays: number;
+  vibe_label: string;
+}
+
+export interface WrappedEquivalent {
+  icon: WrappedEquivalentIcon;
+  value: string;
+  label: string;
+}
+
+export interface WrappedRankedItem {
+  rank: number;
+  key: string;
+  label: string;
+  sublabel: string;
+  cover: string;
+  count: number;
+  listening_sec: number;
+  share_pct: number;
+}
+
+export interface WrappedReport {
+  range: StatsInsightsRange;
+  generated_at: string;
+  period_start: string | null;
+  period_end: string;
+  user: WrappedUser;
+  totals: WrappedTotals;
+  persona: WrappedPersona | null;
+  aura: WrappedAura | null;
+  rhythm: WrappedRhythm;
+  obsession: WrappedObsession | null;
+  peak_day: WrappedPeakDay | null;
+  tempo: WrappedTempo | null;
+  equivalents: WrappedEquivalent[];
+  top_tracks: WrappedRankedItem[];
+  top_artists: WrappedRankedItem[];
+  top_albums: WrappedRankedItem[];
 }
 
 export interface FriendActivityItem {

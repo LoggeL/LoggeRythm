@@ -37,6 +37,7 @@ import {
   getPublicPlaylists,
   getRadio,
   getReleaseRadar,
+  getStatsWrapped,
   searchAlbums,
   getTrack,
   getTrackPlayCounts,
@@ -632,5 +633,18 @@ describe('web-parity endpoint contracts', () => {
         expect.objectContaining({ decode: expect.any(Function) }),
       );
     }
+  });
+
+  it('requests Wrapped analytics with encoded range, signal, and strict decoder', () => {
+    const controller = new AbortController();
+    getStatsWrapped('year', controller.signal);
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith(
+      '/api/me/stats/wrapped?range=year',
+      expect.objectContaining({
+        signal: controller.signal,
+        decode: expect.any(Function),
+      }),
+    );
   });
 });

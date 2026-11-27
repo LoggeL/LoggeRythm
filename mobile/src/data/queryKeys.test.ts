@@ -25,6 +25,17 @@ describe('music query keys', () => {
     expect(queryKeys.follows.artists(7)).not.toEqual(queryKeys.follows.artists(8));
     expect(queryKeys.library.likes(7)).not.toEqual(queryKeys.library.likes(8));
     expect(queryKeys.profile.stats(7)).not.toEqual(queryKeys.profile.stats(8));
+    expect(queryKeys.profile.wrapped(7, '30d')).toEqual([
+      'music',
+      'profile',
+      'private',
+      '7',
+      'wrapped',
+      '30d',
+    ]);
+    expect(queryKeys.profile.wrapped(7, '30d')).not.toEqual(
+      queryKeys.profile.wrapped(8, '30d'),
+    );
     expect(queryKeys.profile.settings(7)).not.toEqual(queryKeys.profile.settings(8));
   });
 

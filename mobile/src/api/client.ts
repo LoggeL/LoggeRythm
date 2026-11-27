@@ -412,13 +412,19 @@ function errorDetail(text: string, statusText: string): string {
   return text.length > 300 ? `${text.slice(0, 300)}…` : text;
 }
 
+const EXPLICIT_API_BASE_PUBLIC_PATHS = new Set([
+  '/api/auth/logout',
+  '/api/auth/providers',
+  '/api/auth/google/mobile/start',
+]);
+
 export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}): Promise<T> {
   await ensureLoaded();
   if (
     opts.apiBase !== undefined
     && (
       !opts.noAuth
-      || (!opts.captureSession && path !== '/api/auth/logout')
+      || (!opts.captureSession && !EXPLICIT_API_BASE_PUBLIC_PATHS.has(path))
     )
   ) {
     throw new Error('An explicit API base is allowed only for authentication lifecycle requests');
@@ -426,7 +432,10 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
   const base = opts.apiBase === undefined
     ? await getApiBase()
     : normalizeSignInApiBase(opts.apiBase);
-  if (opts.apiBase !== undefined && opts.captureSession) {
+  if (
+    opts.apiBase !== undefined
+    && (opts.captureSession || path === '/api/auth/google/mobile/start')
+  ) {
     resetApiCompatibilityCheck(base);
   }
   await ensureApiCompatibility(base);

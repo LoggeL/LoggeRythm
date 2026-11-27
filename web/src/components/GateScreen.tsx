@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useMe, useLogout } from "@/hooks/useAuth";
 import { AuthShell } from "@/components/AuthCard";
+import GoogleAuthButton from "@/components/GoogleAuthButton";
 import { ClockIcon, SpinnerIcon } from "@/components/icons";
 import { CheckCircleIcon } from "@/components/feedbackIcons";
 import { buildAuthHref } from "@/lib/authRedirect";
@@ -28,6 +29,7 @@ export function LandingScreen({ nextPath }: { nextPath?: string | null }) {
             <Link href={registerHref} className="action-secondary min-h-12 w-full text-[15px]">
               Konto erstellen
             </Link>
+            <GoogleAuthButton mode="continue" origin="/login" nextPath={nextPath} showDivider={false} />
           </div>
         </section>
       </AuthShell>

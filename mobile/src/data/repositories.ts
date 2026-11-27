@@ -54,6 +54,7 @@ import type {
   TrackPlayQuery,
   User,
   UserStatsInsights,
+  WrappedReport,
 } from '../api/types';
 import type { AlbumCard } from '../domain/catalog';
 import type { UserStats } from '../domain/listeningStats';
@@ -196,6 +197,7 @@ export interface ProfileRepository {
   getPublicProfile(userId: number, signal?: AbortSignal): Promise<PublicProfile>;
   getStats(signal?: AbortSignal): Promise<UserStats>;
   getStatsInsights?(range?: StatsInsightsRange, signal?: AbortSignal): Promise<UserStatsInsights>;
+  getStatsWrapped?(range?: StatsInsightsRange, signal?: AbortSignal): Promise<WrappedReport>;
   getSocialActivity?(signal?: AbortSignal): Promise<SocialActivityResponse>;
   updateMe(patch: MeUpdateRequest): Promise<User>;
   deleteMe(): Promise<void>;
@@ -345,6 +347,7 @@ export const musicRepository: MusicRepository = {
   getPublicProfile: api.getPublicProfile,
   getStats: async (signal) => mapListeningStatsWire(await api.getStats(signal)),
   getStatsInsights: api.getStatsInsights,
+  getStatsWrapped: api.getStatsWrapped,
   getSocialActivity: api.getSocialActivity,
   updateMe: api.updateMe,
   deleteMe: api.deleteMe,

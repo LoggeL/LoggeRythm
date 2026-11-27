@@ -30,7 +30,7 @@ from ..schemas.admin_usage import (
     UsageRange,
 )
 from ..services import admin_usage as admin_usage_service
-from ..services import deezer_client, likes_dedup, mail, storage
+from ..services import deezer_client, google_oauth, likes_dedup, mail, storage
 from .profile import purge_user_account
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -112,6 +112,7 @@ class IntegrationsStatus(BaseModel):
     spotify_configured: bool
     lastfm_configured: bool
     mail_configured: bool
+    google_oauth_configured: bool
 
 
 class SystemStatus(BaseModel):
@@ -334,6 +335,7 @@ def system_status(
             ),
             lastfm_configured=bool(cfg.LASTFM_API_KEY),
             mail_configured=mail.configured(),
+            google_oauth_configured=google_oauth.configured(),
         ),
         system=SystemStatus(
             app_env=cfg.APP_ENV,

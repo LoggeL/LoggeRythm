@@ -1,6 +1,7 @@
 import type {
   Track,
   User,
+  AuthProviders,
   AdminUser,
   Album,
   AlbumSummary,
@@ -195,6 +196,7 @@ export const api = {
     req<ArtistAbout>(`/artist-about?name=${encodeURIComponent(name)}`),
 
   // Auth
+  authProviders: () => req<AuthProviders>(`/auth/providers`),
   me: () => req<User>(`/auth/me`),
   login: (email: string, password: string) =>
     req<User>(`/auth/login`, {
@@ -513,6 +515,8 @@ export const api = {
   stats: () => req<unknown>(`/me/stats`),
   statsInsights: (range: StatsInsightsRange = "30d") =>
     req<unknown>(`/me/stats/insights?range=${encodeURIComponent(range)}`),
+  statsWrapped: (range: StatsInsightsRange = "30d") =>
+    req<unknown>(`/me/stats/wrapped?range=${encodeURIComponent(range)}`),
 
   // Track ids cached on the server (no Deezer re-fetch needed)
   cachedTracks: () => req<{ ids: string[] }>(`/cached-tracks`),

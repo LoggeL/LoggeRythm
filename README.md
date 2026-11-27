@@ -97,6 +97,11 @@ Configured in `api/.env` (copied from `api/.env.example`). Defaults come from `a
 | `SPOTIFY_RESOLVE_LIMIT` | No | `200` | Max tracks resolved by the synchronous `GET /api/resolve` (used by the Android app). |
 | `SPOTIFY_IMPORT_JOB_LIMIT` | No | `10000` | Max tracks resolved by a background import job (`/api/resolve/jobs`, used by the web app). |
 | `LASTFM_API_KEY` | No | — | Last.fm API key for song-radio similarity; without it the radio uses Deezer's mix. |
+| `PUBLIC_APP_URL` | Conditional | — | Public web origin (e.g. `https://music.example.com`); required when mail or Google OAuth is enabled. |
+| `GOOGLE_CLIENT_ID` | No | — | Google OAuth 2.0 client ID; enables Google sign-in across web and Android. |
+| `GOOGLE_CLIENT_SECRET` | No | — | Google OAuth 2.0 client secret (paired with `GOOGLE_CLIENT_ID` and `PUBLIC_APP_URL`). |
+
+Spotify import is disabled unless both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set. Last.fm radio similarity is optional. Google OAuth is disabled when both `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are empty; when enabled, register `{PUBLIC_APP_URL}/api/auth/google/callback` as an Authorized Redirect URI in Google Cloud Console.
 
 Spotify import is disabled unless both `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set. Last.fm radio similarity is optional.
 

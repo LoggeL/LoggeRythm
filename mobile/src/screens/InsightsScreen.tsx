@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   View,
 } from 'react-native';
@@ -13,12 +13,15 @@ import type {
   StatsInsightsRange,
   Track,
   UserStatsInsights,
+  WrappedReport,
 } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
+import AppIcon from '../components/AppIcon';
+import { WrappedStudioModal } from '../components/insights/WrappedStudioModal';
 import {
-  ActionButton,
   AppText,
   Artwork,
+  Card,
   EmptyState,
   ErrorState,
   FilterChip,
@@ -61,14 +64,17 @@ export interface InsightsScreenProps {
 export interface InsightsScreenViewProps {
   range: StatsInsightsRange;
   insights: UserStatsInsights | undefined;
+  wrapped: WrappedReport | undefined;
+  wrappedPending: boolean;
+  wrappedError: boolean;
   isPending: boolean;
   isError: boolean;
   refreshing: boolean;
   bottomInset: number;
-  shareError: string | null;
   onSelectRange: (range: StatsInsightsRange) => void;
   onRefresh: () => void;
-  onShare: () => void;
+  onOpenWrapped: () => void;
+  onRetryWrapped: () => void;
   onPlayTrack: (entry: InsightsStatEntry) => void;
   onOpenArtist: (entry: InsightsStatEntry) => void;
   onOpenAlbum: (entry: InsightsStatEntry) => void;
@@ -167,19 +173,27 @@ function StatRankList({
 export function InsightsScreenView({
   range,
   insights,
+  wrapped,
+  wrappedPending,
+  wrappedError,
   isPending,
   isError,
   refreshing,
   bottomInset,
-  shareError,
   onSelectRange,
   onRefresh,
-  onShare,
+  onOpenWrapped,
+  onRetryWrapped,
   onPlayTrack,
   onOpenArtist,
   onOpenAlbum,
 }: InsightsScreenViewProps) {
   const hourLabels = Array.from({ length: 24 }, (_, h) => (h % 6 === 0 ? `${h}h` : ''));
+  const wrappedCopy = wave2Strings.wrapped;
+  const wrappedDuration = formatInsightsDuration(
+    wrapped?.totals.listening_sec ?? insights?.listening_sec ?? 0,
+  );
+  const wrappedPlays = wrapped?.totals.play_count ?? insights?.play_count ?? 0;
 
   return (
     <ScrollView
@@ -235,6 +249,72 @@ export function InsightsScreenView({
         />
       ) : (
         <>
+          {wrappedError && wrapped === undefined ? (
+            <ErrorState
+              testID="insights-wrapped-error"
+              retryTestID="insights-wrapped-retry"
+              message={wrappedCopy.launchError}
+              onRetry={onRetryWrapped}
+            />
+          ) : (
+            <Card
+              testID="insights-wrapped-launch"
+              level="raised"
+              accessibilityLabel={wrappedCopy.launchTitle}
+              disabled={wrapped === undefined}
+              onPress={onOpenWrapped}
+              style={styles.wrappedHeroCard}
+            >
+              <View style={styles.wrappedHeroTop}>
+                <View style={styles.wrappedHeroCopy}>
+                  <AppText variant="overline" color="accent">
+                    {wrappedCopy.launchEyebrow}
+                  </AppText>
+                  <AppText variant="title">{wrappedCopy.launchTitle}</AppText>
+                </View>
+                <View style={styles.wrappedAuraRow}>
+                  {(wrapped?.aura?.colors ?? [colors.accent, colors.success, colors.textPrimary]).map(
+                    (swatch, index) => (
+                      <View
+                        key={`${swatch}-${index}`}
+                        style={[styles.wrappedAuraDot, { backgroundColor: swatch }]}
+                      />
+                    ),
+                  )}
+                </View>
+              </View>
+              <AppText variant="callout" color="secondary">
+                {wrappedPending && wrapped === undefined
+                  ? wrappedCopy.launchPending
+                  : wrappedCopy.launchSubtitle(
+                      wave2Strings.insights.ranges[range],
+                      wrappedPlays,
+                      wrappedDuration,
+                    )}
+              </AppText>
+              <View style={styles.wrappedHeroFooter}>
+                {wrapped?.persona ? (
+                  <View style={styles.wrappedPersonaChip}>
+                    <AppIcon name="star-four-points" size={14} color={colors.accent} />
+                    <AppText variant="micro" color="accent">
+                      {wrapped.persona.title}
+                    </AppText>
+                  </View>
+                ) : null}
+                <View testID="insights-wrapped-launch-cta" style={styles.wrappedLaunchCta}>
+                  {wrappedPending && wrapped === undefined ? (
+                    <ActivityIndicator accessible={false} color={colors.onAccent} size="small" />
+                  ) : (
+                    <AppIcon name="creation" size={18} color={colors.onAccent} />
+                  )}
+                  <AppText variant="label" color="onAccent">
+                    {wrappedCopy.launchButton}
+                  </AppText>
+                </View>
+              </View>
+            </Card>
+          )}
+
           <View testID="insights-kpis" style={styles.kpiGrid}>
             <Surface padded style={styles.kpiCard}>
               <AppText variant="overline" color="muted">
@@ -274,19 +354,6 @@ export function InsightsScreenView({
               </AppText>
             </Surface>
           </View>
-
-          <ActionButton
-            testID="insights-share"
-            icon="share-variant"
-            label={wave2Strings.insights.shareButton}
-            variant="primary"
-            onPress={onShare}
-          />
-          {shareError !== null ? (
-            <AppText testID="insights-share-error" accessibilityRole="alert" variant="caption" color="danger">
-              {shareError}
-            </AppText>
-          ) : null}
 
           <View style={styles.section}>
             <SectionHeader title={wave2Strings.insights.hourlyTitle} padded={false} />
@@ -365,25 +432,15 @@ export default function InsightsScreen({ onOpenArtist, onOpenAlbum }: InsightsSc
   const bottomInset = useBottomInset({ hasTabBar: false });
   const scope = musicCacheScope(getCurrentApiBase(), user.id);
   const [range, setRange] = useState<StatsInsightsRange>('30d');
-  const [shareError, setShareError] = useState<string | null>(null);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
 
   const query = useQuery(musicQueries.statsInsights(scope, range));
+  const wrappedQuery = useQuery(musicQueries.statsWrapped(scope, range));
 
-  const handleShare = () => {
-    const data = query.data;
-    if (data === undefined) return;
-    setShareError(null);
+  const handleOpenWrapped = () => {
+    if (wrappedQuery.data === undefined) return;
     haptics.trigger('tap');
-    const message = wave2Strings.insights.shareMessage(
-      wave2Strings.insights.ranges[range],
-      formatInsightsDuration(data.listening_sec),
-      data.play_count,
-      data.top_artists[0]?.label ?? '',
-    );
-    void Share.share({ message }).catch((cause: unknown) => {
-      console.error('[LoggeRythm] Failed to share listening insights:', cause);
-      setShareError(wave2Strings.insights.shareFailed);
-    });
+    setWrappedOpen(true);
   };
 
   const handlePlayTrack = (entry: InsightsStatEntry) => {
@@ -405,17 +462,23 @@ export default function InsightsScreen({ onOpenArtist, onOpenAlbum }: InsightsSc
       <InsightsScreenView
         range={range}
         insights={query.data}
+        wrapped={wrappedQuery.data}
+        wrappedPending={wrappedQuery.isPending}
+        wrappedError={wrappedQuery.isError}
         isPending={query.isPending}
         isError={query.isError}
-        refreshing={query.isFetching && !query.isPending}
+        refreshing={(query.isFetching && !query.isPending) || (wrappedQuery.isFetching && !wrappedQuery.isPending)}
         bottomInset={bottomInset}
-        shareError={shareError}
         onSelectRange={(next) => {
           haptics.trigger('tap');
           setRange(next);
         }}
-        onRefresh={() => void query.refetch()}
-        onShare={handleShare}
+        onRefresh={() => {
+          void query.refetch();
+          void wrappedQuery.refetch();
+        }}
+        onOpenWrapped={handleOpenWrapped}
+        onRetryWrapped={() => void wrappedQuery.refetch()}
         onPlayTrack={handlePlayTrack}
         onOpenArtist={(entry) =>
           onOpenArtist({ artistId: String(entry.key), name: entry.label })
@@ -424,6 +487,13 @@ export default function InsightsScreen({ onOpenArtist, onOpenAlbum }: InsightsSc
           onOpenAlbum({ albumId: String(entry.key), title: entry.label })
         }
       />
+      {wrappedQuery.data !== undefined ? (
+        <WrappedStudioModal
+          visible={wrappedOpen}
+          report={wrappedQuery.data}
+          onClose={() => setWrappedOpen(false)}
+        />
+      ) : null}
     </TvFocusScope>
   );
 }
@@ -445,6 +515,55 @@ const styles = StyleSheet.create({
   },
   skeletons: {
     gap: spacing.md,
+  },
+  wrappedHeroCard: {
+    gap: spacing.sm,
+    borderColor: colors.accent,
+  },
+  wrappedHeroTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  wrappedHeroCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  wrappedAuraRow: {
+    flexDirection: 'row',
+    gap: spacing.xxs,
+  },
+  wrappedAuraDot: {
+    width: 12,
+    height: 12,
+    borderRadius: radii.pill,
+  },
+  wrappedHeroFooter: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    marginTop: spacing.xxs,
+  },
+  wrappedPersonaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs,
+    backgroundColor: colors.fill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    borderRadius: radii.pill,
+  },
+  wrappedLaunchCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.accent,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
   },
   kpiGrid: {
     flexDirection: 'row',
