@@ -78,8 +78,13 @@ class DiscoveryOfflineSocialTests(unittest.TestCase):
         self.client = TestClient(app)
         self.alice_headers = {"Cookie": f"sf_session={create_token(self.alice.id)}"}
         self.bob_headers = {"Cookie": f"sf_session={create_token(self.bob.id)}"}
+        from app.services import deezer_client as dc
+
+        self._credits_patch = patch.object(dc, "_full_public_artist_refs", return_value=[])
+        self._credits_patch.start()
 
     def tearDown(self) -> None:
+        self._credits_patch.stop()
         self.client.close()
         app.dependency_overrides.pop(get_db, None)
         connect_hub.hub.reset_for_tests()

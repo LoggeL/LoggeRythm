@@ -11,6 +11,7 @@ export interface ArtistSongSearchHeaderProps {
   artistName: string;
   input: string;
   onChangeInput: (value: string) => void;
+  onSubmit?: () => void;
   /** The debounced query the results belong to. */
   query: string;
   search: CatalogQueryFlags & { data: unknown; refetch: () => unknown };
@@ -26,6 +27,7 @@ export function ArtistSongSearchHeader({
   artistName,
   input,
   onChangeInput,
+  onSubmit,
   query,
   search,
   resultCount,
@@ -40,6 +42,7 @@ export function ArtistSongSearchHeader({
           accessibilityLabel={catalogStrings.artist.searchSongsLabel(artistName)}
           value={input}
           onChangeText={onChangeInput}
+          onSubmitEditing={onSubmit}
           placeholder={catalogStrings.artist.searchSongsPlaceholder(artistName)}
           placeholderTextColor={colors.textMuted}
           selectionColor={colors.accent}

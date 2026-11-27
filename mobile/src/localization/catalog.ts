@@ -605,8 +605,14 @@ export interface StringCatalog {
     libraryLikesLoadFailed: string;
     remoteOffline: (section: string) => string;
     remoteLoadFailed: (section: string) => string;
+    remoteRateLimited: (section: string) => string;
+    remoteRateLimitedWait: (section: string, seconds: number) => string;
     remoteCachedOffline: (section: string) => string;
     remoteCachedRefreshFailed: (section: string) => string;
+    remoteCachedRateLimited: (section: string) => string;
+    remoteCachedRateLimitedWait: (section: string, seconds: number) => string;
+    rateLimited: string;
+    rateLimitedWait: (seconds: number) => string;
     remoteLoading: (section: string) => string;
     remoteRefreshing: (section: string) => string;
     remoteStale: (section: string) => string;
@@ -1654,8 +1660,18 @@ export const de: StringCatalog = {
       'Lieblingstitel konnten nicht geladen werden und fehlen in diesen Treffern.',
     remoteOffline: (section) => `${section} ist offline nicht verfügbar. Stelle eine Verbindung her und versuche es erneut.`,
     remoteLoadFailed: (section) => `${section} konnte nicht geladen werden.`,
+    remoteRateLimited: (section) =>
+      `${section}: Zu viele Anfragen. Bitte warte kurz und versuche es erneut.`,
+    remoteRateLimitedWait: (section, seconds) =>
+      `${section}: Zu viele Anfragen. Versuche es in ${seconds} Sek. erneut.`,
     remoteCachedOffline: (section) => `${section}: Du bist offline. Gespeicherte Daten bleiben sichtbar.`,
     remoteCachedRefreshFailed: (section) => `${section}: Aktualisierung fehlgeschlagen. Gespeicherte Daten bleiben sichtbar.`,
+    remoteCachedRateLimited: (section) =>
+      `${section}: Zu viele Anfragen. Gespeicherte Daten bleiben sichtbar.`,
+    remoteCachedRateLimitedWait: (section, seconds) =>
+      `${section}: Zu viele Anfragen. Versuche es in ${seconds} Sek. erneut. Gespeicherte Daten bleiben sichtbar.`,
+    rateLimited: 'Zu viele Suchanfragen. Bitte warte kurz und versuche es erneut.',
+    rateLimitedWait: (seconds) => `Zu viele Suchanfragen. Versuche es in ${seconds} Sek. erneut.`,
     remoteLoading: (section) => `${section} wird geladen…`,
     remoteRefreshing: (section) => `${section} wird aktualisiert…`,
     remoteStale: (section) => `${section}: Gespeicherte Daten werden angezeigt.`,
@@ -2605,8 +2621,18 @@ export const en: StringCatalog = {
     libraryLikesLoadFailed: 'Liked Songs could not be loaded and are missing from these matches.',
     remoteOffline: (section) => `${section} is unavailable offline. Connect and try again.`,
     remoteLoadFailed: (section) => `${section} could not be loaded.`,
+    remoteRateLimited: (section) =>
+      `${section}: Too many requests. Wait a moment and try again.`,
+    remoteRateLimitedWait: (section, seconds) =>
+      `${section}: Too many requests. Try again in ${seconds} s.`,
     remoteCachedOffline: (section) => `${section}: You are offline. Saved data remains visible.`,
     remoteCachedRefreshFailed: (section) => `${section}: Refresh failed. Saved data remains visible.`,
+    remoteCachedRateLimited: (section) =>
+      `${section}: Too many requests. Saved data remains visible.`,
+    remoteCachedRateLimitedWait: (section, seconds) =>
+      `${section}: Too many requests. Try again in ${seconds} s. Saved data remains visible.`,
+    rateLimited: 'Too many search requests. Wait a moment and try again.',
+    rateLimitedWait: (seconds) => `Too many search requests. Try again in ${seconds} s.`,
     remoteLoading: (section) => `Loading ${section}…`,
     remoteRefreshing: (section) => `Refreshing ${section}…`,
     remoteStale: (section) => `${section}: Showing saved data.`,

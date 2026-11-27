@@ -71,8 +71,10 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       sort: control.query ? location.sort : "relevance" as const,
     };
     const href = searchHref(next);
-    if (searching) window.history.replaceState(null, "", href);
-    else if (control.query && pendingHref.current !== href) {
+    if (searching) {
+      const browserHref = `${window.location.pathname}${window.location.search}`;
+      if (href !== browserHref) window.history.replaceState(null, "", href);
+    } else if (control.query && pendingHref.current !== href) {
       pendingHref.current = href;
       router.push(href, { scroll: false });
     }

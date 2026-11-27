@@ -5,6 +5,7 @@ import { usePlayerStore, currentTrack } from "@/store/player";
 import { canControlPartyPlayback, usePartyStore } from "@/store/party";
 import { useUiModalsStore } from "@/store/uiModals";
 import { useCoverColors } from "@/hooks/useCoverColors";
+import { useHydratedTrack } from "@/hooks/useHydratedTrack";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useLocalJson } from "@/hooks/useLocalJson";
 import { hiResCover } from "@/lib/cover";
@@ -71,8 +72,9 @@ function validatePanel(value: unknown): PanelKey {
  * Fullscreen now-playing view with optional full-bleed Cinema/Ambient
  * Visualizer mode (collapses right panel + auto-hides chrome after 3s idle).
  */
-export default function NowPlaying({ onClose }: { onClose: () => void }) {
-  const track = usePlayerStore(currentTrack);
+export default function NowPlaying({ onClose, offlineOnly = false }: { onClose: () => void; offlineOnly?: boolean }) {
+  const rawTrack = usePlayerStore(currentTrack);
+  const track = useHydratedTrack(rawTrack, !offlineOnly);
   const error = usePlayerStore((s) => s.error);
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const queueContext = usePlayerStore((s) => s.queueContext);

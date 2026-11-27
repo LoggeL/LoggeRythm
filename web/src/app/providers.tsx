@@ -11,6 +11,7 @@ import {
   QUERY_CACHE_BUSTER,
   QUERY_CACHE_MAX_AGE,
 } from "@/lib/queryPersistence";
+import { shouldRetryQuery } from "@/lib/rateLimit";
 
 const STALE_TIME_BY_ROOT: Record<string, number> = {
   "home-mixes": 60 * 60 * 1000,
@@ -34,7 +35,7 @@ function createQueryClient() {
         staleTime: 30_000,
         gcTime: 30 * 60 * 1000,
         refetchOnWindowFocus: false,
-        retry: 1,
+        retry: shouldRetryQuery,
       },
     },
   });

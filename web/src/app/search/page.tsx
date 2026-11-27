@@ -16,8 +16,10 @@ import { useSearchNavigation } from "@/hooks/useSearchNavigation";
 import { useRecentSearches } from "@/hooks/useRecentSearches";
 import { useLibraryTracks } from "@/hooks/useLibraryTracks";
 import { matchLibraryTracks, withoutTracks } from "@/lib/libraryMatch";
+import { partitionRateLimitFailures } from "@/lib/rateLimit";
 import { CardGridSkeleton, RowListSkeleton } from "@/components/Skeleton";
 import ImportPanel from "@/components/ImportPanel";
+import SearchRateLimitAlert from "@/components/SearchRateLimitAlert";
 import EmptyState from "@/components/ui/EmptyState";
 import QueryError from "@/components/ui/QueryError";
 import { SearchIcon, ImportIcon } from "@/components/icons";
@@ -73,10 +75,13 @@ export default function SearchPage() {
   const wantAlbums = combined || tab === "album";
   const wantArtists = combined || tab === "artist";
   const wantPlaylists = combined || tab === "playlist";
-  const tracksQ = useQuery({ ...searchTracksOptions(query), enabled: enabled && wantTracks });
-  const albumsQ = useQuery({ ...searchAlbumsOptions(query), enabled: enabled && wantAlbums });
-  const artistsQ = useQuery({ ...searchArtistsOptions(query), enabled: enabled && wantArtists });
-  const playlistsQ = useQuery({ ...searchPlaylistsOptions(query), enabled: enabled && wantPlaylists });
+  // Pass `""` when disabled so TanStack Query detaches the observer from the
+  // previous query key immediately (aborting superseded in-flight fetches on
+  // resumed typing, tab switches, or Spotify-Import without cancelling shared observers).
+  const tracksQ = useQuery({ ...searchTracksOptions(enabled && wantTracks ? query : ""), enabled: enabled && wantTracks });
+  const albumsQ = useQuery({ ...searchAlbumsOptions(enabled && wantAlbums ? query : ""), enabled: enabled && wantAlbums });
+  const artistsQ = useQuery({ ...searchArtistsOptions(enabled && wantArtists ? query : ""), enabled: enabled && wantArtists });
+  const playlistsQ = useQuery({ ...searchPlaylistsOptions(enabled && wantPlaylists ? query : ""), enabled: enabled && wantPlaylists });
 
   /**
    * Saved songs matching the typed text. They follow `input`, not the debounced
@@ -101,6 +106,8 @@ export default function SearchPage() {
     ...(wantArtists ? [{ label: "Künstler", result: artistsQ }] : []),
     ...(wantPlaylists ? [{ label: "Playlists", result: playlistsQ }] : []),
   ];
+  const activeErrors = activeQueries.filter(({ result }) => result.isError);
+  const { rateLimit: rateLimitFailure, other: otherFailures } = partitionRateLimitFailures(activeErrors);
   const nothing = enabled && libraryShown.length === 0 && activeQueries.every(({ result }) => result.isSuccess && result.data.length === 0);
   const fetching = activeQueries.some(({ result }) => result.isFetching);
   const loadedCount = activeQueries.reduce((count, { result }) => (result.isSuccess ? count + result.data.length : count), 0);
@@ -204,9 +211,19 @@ export default function SearchPage() {
                 ? `${loadedCount} ${loadedCount === 1 ? "Ergebnis" : "Ergebnisse"} geladen.`
                 : ""}
           </p>
-          {activeQueries.some(({ result }) => result.isError) && (
+          {activeErrors.length > 0 && (
             <div className="flex flex-col gap-3">
-              {activeQueries.map(({ label, result }) => (
+              {rateLimitFailure && (
+                <SearchRateLimitAlert
+                  labels={rateLimitFailure.labels}
+                  error={rateLimitFailure.error}
+                  retryAfterSec={rateLimitFailure.retryAfterSec}
+                  retryAfterAt={rateLimitFailure.retryAfterAt}
+                  isFetching={rateLimitFailure.isFetching}
+                  onRetry={rateLimitFailure.refetch}
+                />
+              )}
+              {otherFailures.map(({ label, result }) => (
                 <QueryError key={label} label={label} query={result} />
               ))}
             </div>

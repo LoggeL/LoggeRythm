@@ -89,6 +89,7 @@ import {
   shouldCaptureFullscreenTabSwipe,
   shouldMinimizeFullscreenPlayer,
 } from '../player/playerGestures';
+import { useHydratedTrackCredits } from './useHydratedTrackCredits';
 
 type Props = NativeStackScreenProps<RootStackParams, 'NowPlaying'>;
 
@@ -115,6 +116,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
   const playing = effective.playing;
   const buffering = effective.buffering;
   const track = effective.track;
+  const displayTrack = useHydratedTrackCredits(track);
   const body = resolveNowPlayingBody(isPlayerReady(), track !== null);
   const playerError = usePlayerError();
 
@@ -674,13 +676,13 @@ export default function NowPlayingScreen({ navigation }: Props) {
               </View>
               <View style={styles.tvTitleRow}>
                 <MemoNowPlayingMetadata
-                  track={track}
+                  track={displayTrack ?? track}
                   isTv
                   onOpenAlbum={openAlbum}
                   onOpenArtist={openArtist}
                 />
                 <TrackLikeButton
-                  track={track}
+                  track={displayTrack ?? track}
                   testID="now-playing-like"
                   style={styles.likeButton}
                 />
@@ -736,7 +738,7 @@ export default function NowPlayingScreen({ navigation }: Props) {
         ) : tab === 'lyrics' ? (
           <LiveNowPlayingLyricsSurface
             key={track.id}
-            track={track}
+            track={displayTrack ?? track}
             playing={playing}
             buffering={buffering}
             onOpenAlbum={openAlbum}
@@ -781,11 +783,11 @@ export default function NowPlayingScreen({ navigation }: Props) {
 
             <View style={styles.titleRow}>
               <MemoNowPlayingMetadata
-                track={track}
+                track={displayTrack ?? track}
                 onOpenAlbum={openAlbum}
                 onOpenArtist={openArtist}
               />
-              <TrackLikeButton track={track} testID="now-playing-like" style={styles.likeButton} />
+              <TrackLikeButton track={displayTrack ?? track} testID="now-playing-like" style={styles.likeButton} />
             </View>
 
             <LiveNowPlayingTransport

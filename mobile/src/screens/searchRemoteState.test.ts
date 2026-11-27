@@ -134,6 +134,47 @@ describe('search remote-state composition', () => {
       .toBe('cached-offline');
   });
 
+  it('classifies HTTP 429 as rate-limited (blocking and cached) rather than generic load failure', () => {
+    const rateLimitError = { status: 429, retryAfterSeconds: 18, message: 'Rate limited' };
+    const blocked = searchRemoteEntry(
+      'track',
+      query({ error: rateLimitError, isPending: false, isFetching: false, fetchStatus: 'idle' }),
+      0,
+    );
+    const cached = searchRemoteEntry(
+      'album',
+      query({
+        data: [{ id: 'album-1' }],
+        error: rateLimitError,
+        isPending: false,
+        isFetching: false,
+        fetchStatus: 'idle',
+      }),
+      1,
+    );
+
+    expect(resolveSearchAggregateRemoteState([blocked])).toMatchObject({
+      body: 'blocked',
+      issues: [{ key: 'track', kind: 'rate-limited', error: rateLimitError }],
+    });
+    expect(resolveSearchAggregateRemoteState([cached])).toMatchObject({
+      body: 'content',
+      issues: [{ key: 'album', kind: 'cached-rate-limited', error: rateLimitError }],
+    });
+    expect(searchRemoteIssueKind(
+      query({ error: rateLimitError, isPending: false, isFetching: false, fetchStatus: 'idle' }),
+    )).toBe('rate-limited');
+    expect(searchRemoteIssueKind(
+      query({
+        data: [{ id: '1' }],
+        error: rateLimitError,
+        isPending: false,
+        isFetching: false,
+        fetchStatus: 'idle',
+      }),
+    )).toBe('cached-rate-limited');
+  });
+
   it('rejects impossible counts and an empty aggregate', () => {
     expect(() => searchRemoteEntry('track', query(), -1)).toThrow('non-negative integer');
     expect(() => resolveSearchAggregateRemoteState([])).toThrow('at least one active query');

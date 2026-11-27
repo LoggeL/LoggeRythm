@@ -19,6 +19,9 @@ const resolver = registerHooks({
 });
 const {
   catalogSearchKey,
+  normalizeCatalogQuery,
+  SEARCH_DEBOUNCE_MS,
+  SEARCH_STALE_TIME,
   searchTracksOptions,
   searchAlbumsOptions,
   searchArtistsOptions,
@@ -117,4 +120,51 @@ test("search errors are exposed after one attempt and an explicit retry can reco
   });
   assert.deepEqual(await client.fetchQuery(searchArtistsOptions("Tricky")), [{ id: 1, name: "Tricky" }]);
   assert.equal(count, 2);
+});
+
+test("catalog normalization trims outer whitespace only and preserves case and internal spaces", () => {
+  assert.equal(SEARCH_DEBOUNCE_MS, 250);
+  assert.equal(SEARCH_STALE_TIME, 5 * 60_000);
+  assert.equal(normalizeCatalogQuery("  Daft   Punk  "), "Daft   Punk");
+  assert.deepEqual(catalogSearchKey("track", "  Daft Punk "), catalogSearchKey("track", "Daft Punk"));
+  assert.notDeepEqual(catalogSearchKey("track", "Duet"), catalogSearchKey("track", "duet"));
+  assert.notDeepEqual(catalogSearchKey("track", "Daft  Punk"), catalogSearchKey("track", "Daft Punk"));
+});
+
+test("switching an observer to empty key on preparing/tab-switch aborts unshared in-flight search immediately", async (t) => {
+  const client = new QueryClient();
+  t.after(() => client.clear());
+  let signal;
+  t.mock.method(globalThis, "fetch", (_url, options) => {
+    signal = options.signal;
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  });
+  const observer = new QueryObserver(client, { ...searchTracksOptions("Queen"), enabled: true });
+  const unsub = observer.subscribe(() => {});
+  assert.equal(signal.aborted, false);
+  // Mirrors SearchPage / CommandPalette / PlaylistQuickAdd / PartySearch detaching on preparing or tab switch.
+  observer.setOptions({ ...searchTracksOptions(""), enabled: false });
+  assert.equal(signal.aborted, true);
+  unsub();
+});
+
+test("HTTP 429 search errors are never auto-retried and preserve Retry-After metadata", async (t) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: 3, retryDelay: 0 } } });
+  t.after(() => client.clear());
+  let count = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    count += 1;
+    return Response.json(
+      { detail: "Deezer rate limit reached. Retry after 6s." },
+      { status: 429, headers: { "Retry-After": "6" } },
+    );
+  });
+  await assert.rejects(client.fetchQuery(searchTracksOptions("Queen")), (error) => {
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterSec, 6);
+    return true;
+  });
+  assert.equal(count, 1);
 });

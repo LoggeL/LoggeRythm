@@ -13,7 +13,7 @@ const resolver = registerHooks({
     return nextResolve(specifier, context);
   },
 });
-const { api, ApiError } = await import("../src/lib/api.ts");
+const { api, ApiError, parseRetryAfterHeader, parseRetryAfterBody } = await import("../src/lib/api.ts");
 resolver.deregister();
 
 test("JSON endpoints reject HTML and malformed success responses", async (t) => {
@@ -128,4 +128,62 @@ test("cold discovery survives the ordinary deadline and still aborts stalled req
   t.mock.timers.tick(55_000);
   await Promise.all(pending);
   assert.equal(signals.every((signal) => signal.aborted), true);
+});
+
+test("HTTP 429 parses Retry-After headers (delta-seconds and HTTP-date) and JSON fallback onto ApiError", async (t) => {
+  const fixedNow = Date.UTC(2026, 10, 27, 12, 0, 0);
+  assert.equal(parseRetryAfterHeader("7", fixedNow), 7);
+  assert.equal(parseRetryAfterHeader("180", fixedNow), 180);
+  assert.equal(parseRetryAfterHeader("2.2", fixedNow), 3);
+  assert.equal(parseRetryAfterHeader("0", fixedNow), 0);
+  assert.equal(parseRetryAfterHeader("Fri, 27 Nov 2026 12:00:12 GMT", fixedNow), 12);
+  assert.equal(parseRetryAfterHeader("Fri, 27 Nov 2026 12:02:00 GMT", fixedNow), 120);
+  assert.equal(parseRetryAfterHeader("Fri, 27 Nov 2026 11:59:50 GMT", fixedNow), 0);
+  assert.equal(parseRetryAfterHeader("not-a-date", fixedNow), null);
+  assert.equal(parseRetryAfterHeader(null, fixedNow), null);
+  assert.equal(parseRetryAfterBody({ retry_after: 9 }), 9);
+  assert.equal(parseRetryAfterBody({ retry_after_sec: 4.1 }), 5);
+  assert.equal(parseRetryAfterBody({ detail: "limit" }), null);
+
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { detail: "Deezer rate limit reached. Retry after 8s." },
+      { status: 429, headers: { "Retry-After": "8" } },
+    ),
+  );
+  await assert.rejects(api.search("Queen", "track"), (error) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterSec, 8);
+    assert.equal(typeof error.retryAfterAt, "number");
+    assert.ok(error.retryAfterAt > Date.now());
+    assert.match(error.message, /Retry after 8s/);
+    return true;
+  });
+
+  globalThis.fetch.mock.mockImplementation(async () =>
+    Response.json({ detail: "Quota exceeded", retry_after: 5 }, { status: 429 }),
+  );
+  await assert.rejects(api.searchArtists("Queen"), (error) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.status, 429);
+    assert.equal(error.retryAfterSec, 5);
+    return true;
+  });
+});
+
+test("track detail and play-count requests forward AbortSignal", async (t) => {
+  const trackAbort = new AbortController();
+  const playsAbort = new AbortController();
+  t.mock.method(globalThis, "fetch", async (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  }));
+  const trackRejection = assert.rejects(api.track("42", trackAbort.signal), { name: "AbortError" });
+  const playsRejection = assert.rejects(
+    api.trackPlays([{ id: "42", artist: "Queen", title: "Bohemian" }], playsAbort.signal),
+    { name: "AbortError" },
+  );
+  trackAbort.abort();
+  playsAbort.abort();
+  await Promise.all([trackRejection, playsRejection]);
 });

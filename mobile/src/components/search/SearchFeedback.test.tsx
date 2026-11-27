@@ -88,6 +88,49 @@ describe('search feedback', () => {
       .toBe(strings.search.remoteCachedOffline('Tracks'));
     expect(searchIssueMessage('cached-refresh-error', 'Tracks'))
       .toBe(strings.search.remoteCachedRefreshFailed('Tracks'));
+    expect(searchIssueMessage('rate-limited', 'Tracks', 75))
+      .toBe(strings.search.remoteRateLimitedWait('Tracks', 75));
+    expect(searchIssueMessage('rate-limited', 'Tracks'))
+      .toBe(strings.search.remoteRateLimited('Tracks'));
+    expect(searchIssueMessage('cached-rate-limited', 'Tracks', 12))
+      .toBe(strings.search.remoteCachedRateLimitedWait('Tracks', 12));
+  });
+
+  it('collapses simultaneous 429 rate-limited sections into one alert honoring full Retry-After', () => {
+    const retryTracks = vi.fn();
+    const retryAlbums = vi.fn();
+    const retryArtists = vi.fn();
+    const rendered = SearchResultsFeedback({
+      state: state({
+        body: 'blocked',
+        resultCount: 0,
+        issues: [
+          { key: 'track', kind: 'rate-limited', error: { status: 429, retryAfterSeconds: 15 } },
+          { key: 'album', kind: 'rate-limited', error: { status: 429, retryAfterSeconds: 90 } },
+          { key: 'artist', kind: 'hard-error', error: new Error('502') },
+        ],
+      }),
+      owners: [
+        { key: 'track', fetching: false, retry: retryTracks },
+        { key: 'album', fetching: false, retry: retryAlbums },
+        { key: 'artist', fetching: false, retry: retryArtists },
+      ],
+      renderLoading,
+    });
+
+    // Multi-section 429 collapses into ONE alert showing the full max Retry-After (90s), not 2 stacked alerts.
+    const rateLimited = byTestId(rendered, 'search-results-rate-limited');
+    expect(rateLimited.props.accessibilityLiveRegion).toBe('assertive');
+    expect(textContent(rateLimited)).toContain(strings.search.rateLimitedWait(90));
+    expect(queryByTestId(rendered, 'search-results-track-rate-limited')).toBeNull();
+    expect(queryByTestId(rendered, 'search-results-album-rate-limited')).toBeNull();
+    // Non-429 failures still render individually.
+    expect(byTestId(rendered, 'search-results-artist-hard-error')).toBeDefined();
+
+    (byTestId(rendered, 'search-results-rate-limited-action').props.onPress as () => void)();
+    expect(retryTracks).toHaveBeenCalledOnce();
+    expect(retryAlbums).toHaveBeenCalledOnce();
+    expect(retryArtists).not.toHaveBeenCalled();
   });
 
   it('gives each failed result type its own retry and live-region urgency', () => {

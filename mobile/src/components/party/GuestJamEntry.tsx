@@ -16,6 +16,7 @@ import {
   joinPartyAsGuest,
   type GuestPartySession,
 } from '../../api/guestParty';
+import { guestSearchCache } from '../../api/guestSearchCache';
 import { trackArtistLabel } from '../../api/trackArtists';
 import type { PartyState, Track } from '../../api/types';
 import { normalizeSignInApiBase } from '../../config';
@@ -55,6 +56,7 @@ export function GuestJamEntry({ serverUrl, disabled = false }: GuestJamEntryProp
 
   if (boundServerUrl !== serverUrl) {
     setBoundServerUrl(serverUrl);
+    guestSearchCache.clear();
     if (session !== null || party !== null) {
       setSession(null);
       setParty(null);
@@ -66,6 +68,7 @@ export function GuestJamEntry({ serverUrl, disabled = false }: GuestJamEntryProp
 
   const applyPartyState = (latest: PartyState, activeSession: GuestPartySession) => {
     if (latest.ended) {
+      guestSearchCache.clear(activeSession.origin);
       setSession(null);
       setParty(null);
       setSearchQuery('');
@@ -77,22 +80,26 @@ export function GuestJamEntry({ serverUrl, disabled = false }: GuestJamEntryProp
     setParty(latest);
   };
 
+  const trimmedSearchQuery = searchQuery.trim();
+  const searchableQuery = Array.from(trimmedSearchQuery).length >= 2;
+
   const handleSearchQueryChange = (value: string) => {
     setSearchQuery(value);
-    if (value.trim().length < 2) {
+    setError(null);
+    if (Array.from(value.trim()).length < 2) {
       setResults([]);
       setSearching(false);
     }
   };
 
   useEffect(() => {
-    if (!open || session === null) return undefined;
-    const trimmed = searchQuery.trim();
-    if (trimmed.length < 2) return undefined;
+    if (!open || session === null || !searchableQuery) return undefined;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       setSearching(true);
-      void guestSearchTracks(session.origin, trimmed, controller.signal)
+      setError(null);
+      void guestSearchCache
+        .search(session.origin, trimmedSearchQuery, guestSearchTracks, controller.signal)
         .then((tracks) => {
           if (!controller.signal.aborted) setResults(tracks.slice(0, 12));
         })
@@ -108,7 +115,7 @@ export function GuestJamEntry({ serverUrl, disabled = false }: GuestJamEntryProp
       clearTimeout(timer);
       controller.abort();
     };
-  }, [open, searchQuery, session]);
+  }, [open, searchableQuery, session, trimmedSearchQuery]);
 
   const handleJoin = async () => {
     if (joining) return;
@@ -183,6 +190,7 @@ export function GuestJamEntry({ serverUrl, disabled = false }: GuestJamEntryProp
     setError(null);
     try {
       await guestLeaveParty(session);
+      guestSearchCache.clear(session.origin);
       setSession(null);
       setParty(null);
       setSearchQuery('');

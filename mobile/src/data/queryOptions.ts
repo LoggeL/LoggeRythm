@@ -29,34 +29,34 @@ export const SIMILAR_TRACKS_STALE_TIME_MS = 15 * 60_000;
  */
 export function createMusicQueryOptions(repository: MusicRepository = musicRepository) {
   return {
-    searchTracks(query: string) {
+    searchTracks(scope: QueryScope, query: string) {
       const normalized = normalizeSearchQuery(query);
       return queryOptions({
-        queryKey: queryKeys.search.tracks(normalized),
+        queryKey: queryKeys.search.tracks(scope, normalized),
         queryFn: ({ signal }) => repository.searchTracks(normalized, signal),
         enabled: normalized.length > 0,
       });
     },
-    searchAlbums(query: string) {
+    searchAlbums(scope: QueryScope, query: string) {
       const normalized = normalizeSearchQuery(query);
       return queryOptions({
-        queryKey: queryKeys.search.albums(normalized),
+        queryKey: queryKeys.search.albums(scope, normalized),
         queryFn: ({ signal }) => repository.searchAlbums(normalized, signal),
         enabled: normalized.length > 0,
       });
     },
-    searchArtists(query: string) {
+    searchArtists(scope: QueryScope, query: string) {
       const normalized = normalizeSearchQuery(query);
       return queryOptions({
-        queryKey: queryKeys.search.artists(normalized),
+        queryKey: queryKeys.search.artists(scope, normalized),
         queryFn: ({ signal }) => repository.searchArtists(normalized, signal),
         enabled: normalized.length > 0,
       });
     },
-    searchPlaylists(query: string) {
+    searchPlaylists(scope: QueryScope, query: string) {
       const normalized = normalizeSearchQuery(query);
       return queryOptions({
-        queryKey: queryKeys.search.playlists(normalized),
+        queryKey: queryKeys.search.playlists(scope, normalized),
         queryFn: ({ signal }) => repository.searchPlaylists(normalized, signal),
         enabled: normalized.length > 0,
       });

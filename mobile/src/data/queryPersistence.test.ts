@@ -65,6 +65,6 @@ describe('account-scoped query cache persistence', () => {
     expect(isPersistableQueryKey(queryKeys.playlists.incomingInvitations(scopeA), scopeA))
       .toBe(false);
     expect(isPersistableQueryKey(queryKeys.library.likes(scopeB), scopeA)).toBe(false);
-    expect(isPersistableQueryKey(queryKeys.search.tracks('daft'), scopeA)).toBe(false);
+    expect(isPersistableQueryKey(queryKeys.search.tracks(scopeA, 'daft'), scopeA)).toBe(false);
   });
 });

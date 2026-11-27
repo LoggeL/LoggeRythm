@@ -169,9 +169,9 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
 
   useEffect(
     () => () => {
-      void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+      void queryClient.cancelQueries({ queryKey: queryKeys.search.scoped(accountScope) });
     },
-    [queryClient],
+    [accountScope, queryClient],
   );
 
   // Saved tracks match the text in the field on every keystroke, without a request.
@@ -183,6 +183,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
     ? debouncedQuery
     : (inputIsSearchable ? (previousContentQuery ?? '') : '');
   const results = useSearchResults({
+    accountScope,
     query: activeResultQuery,
     ready,
     tab,
@@ -279,21 +280,24 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         setPreviousContentQuery(latestContentQueryRef.current);
       }
       if (nextNormalized !== normalizedInput) {
-        void queryClient.cancelQueries({ queryKey: queryKeys.search.root() });
+        void queryClient.cancelQueries({ queryKey: queryKeys.search.scoped(accountScope) });
       }
     },
-    [normalizedInput, queryClient],
+    [accountScope, normalizedInput, queryClient],
   );
 
   const selectRecentSearch = useCallback(
     (query: string) => {
       setActionError(null);
       setPreviousContentQuery(null);
+      if (normalizeSearchInput(query) !== normalizedInput) {
+        void queryClient.cancelQueries({ queryKey: queryKeys.search.scoped(accountScope) });
+      }
       dispatchSearchInput({ type: 'select', query });
       recentSearches.remember(query);
       Keyboard.dismiss();
     },
-    [recentSearches],
+    [accountScope, normalizedInput, queryClient, recentSearches],
   );
 
   const toggleImport = useCallback(() => {
@@ -452,6 +456,9 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
             recordSearchFocus('search-input');
           }}
           onSubmit={() => {
+            if (!ready) {
+              void queryClient.cancelQueries({ queryKey: queryKeys.search.scoped(accountScope) });
+            }
             dispatchSearchInput({ type: 'submit' });
             rememberCurrentQuery();
             Keyboard.dismiss();
@@ -687,6 +694,7 @@ export default function SearchScreen(props: Partial<SearchScreenProps>) {
         return (
           <SearchLibraryLikesNotice
             kind={library.likesIssue.kind}
+            retryAfterSeconds={library.likesIssue.retryAfterSeconds}
             retryBusy={library.likesIssue.retryBusy}
             onRetry={library.likesIssue.retry}
           />

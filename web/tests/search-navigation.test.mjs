@@ -315,3 +315,46 @@ test("an external search navigation replaces the draft without rewriting its des
   assert.equal(fixture.writes.length, 0);
   assert.equal(window.location.search, "?q=Portishead&type=artist&sort=title");
 });
+
+test("async stale URL ack for 71 after rapid switch 63 -> 71 -> 72 preserves draft 72 and converges URL + query", () => {
+  setup("/search?q=Search+fixture+63");
+  // Simulate Next.js asynchronous useSearchParams updates (replaceState updates
+  // window.location immediately, while React router props lag behind).
+  const queuedRouterUrls = [];
+  window.history.replaceState = (_data, _unused, url) => {
+    fixture.writes.push({ method: "replace", url });
+    window.location = new URL(url, "https://example.test");
+    queuedRouterUrls.push(url);
+  };
+
+  act("setInput", "Search fixture 71");
+  const committed71 = deliverTimers();
+  assert.equal(committed71.query, "Search fixture 71");
+  assert.equal(queuedRouterUrls.at(-1), "/search?q=Search+fixture+71");
+
+  // User immediately types 72 while Next.js has NOT delivered router ack for 71 yet.
+  const typing72 = act("setInput", "Search fixture 72");
+  assert.equal(typing72.input, "Search fixture 72");
+  assert.equal(typing72.query, "Search fixture 71");
+
+  // Delayed Next.js router ack for 71 arrives while 72 is drafted.
+  setRoute(queuedRouterUrls.shift());
+  const afterStaleAck = render();
+  assert.equal(afterStaleAck.input, "Search fixture 72");
+  assert.equal(afterStaleAck.query, "Search fixture 71");
+  assert.equal(afterStaleAck.preparing, true);
+
+  // Debounce completes for 72 -> query + URL converge on 72.
+  const settled72 = deliverTimers();
+  assert.equal(settled72.input, "Search fixture 72");
+  assert.equal(settled72.query, "Search fixture 72");
+  assert.equal(queuedRouterUrls.at(-1), "/search?q=Search+fixture+72");
+
+  // Even if an out-of-order stale ack for 71 arrives AFTER 72 submitted, 72 stays intact.
+  act("setInput", "Search fixture 73");
+  act("submit");
+  setRoute("/search?q=Search+fixture+72");
+  const still73 = render();
+  assert.equal(still73.input, "Search fixture 73");
+  assert.equal(still73.query, "Search fixture 73");
+});

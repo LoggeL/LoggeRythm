@@ -28,17 +28,31 @@ class DeezerSingleFlightTests(unittest.TestCase):
         with dc._track_artists_lock:
             dc._track_artists_cache.clear()
             self.assertFalse(dc._track_artists_flights.inflight)
-        with dc._search_tracks_flights.lock:
-            dc._search_tracks_flights.cache.clear()
-            self.assertFalse(dc._search_tracks_flights.inflight)
+        for flights in (
+            dc._search_tracks_flights,
+            dc._search_albums_flights,
+            dc._search_artists_flights,
+            dc._search_playlists_flights,
+        ):
+            with flights.lock:
+                flights.cache.clear()
+                self.assertFalse(flights.inflight)
+        dc.reset_public_rate_limiter()
 
     def tearDown(self) -> None:
         with dc._track_artists_lock:
             dc._track_artists_cache.clear()
             self.assertFalse(dc._track_artists_flights.inflight)
-        with dc._search_tracks_flights.lock:
-            dc._search_tracks_flights.cache.clear()
-            self.assertFalse(dc._search_tracks_flights.inflight)
+        for flights in (
+            dc._search_tracks_flights,
+            dc._search_albums_flights,
+            dc._search_artists_flights,
+            dc._search_playlists_flights,
+        ):
+            with flights.lock:
+                flights.cache.clear()
+                self.assertFalse(flights.inflight)
+        dc.reset_public_rate_limiter()
 
     def test_simultaneous_credit_calls_fetch_detail_once(self) -> None:
         entered = threading.Event()
@@ -150,7 +164,7 @@ class DeezerSingleFlightTests(unittest.TestCase):
             public_get.assert_called_once_with("/track/10")
 
     def test_search_reuses_complete_result_for_exact_query_and_limit(self) -> None:
-        def fetch(path: str) -> dict:
+        def fetch(path: str, **_kwargs: object) -> dict:
             if path.startswith("/search?"):
                 return {"data": [_summary()]}
             return _detail()
@@ -159,13 +173,16 @@ class DeezerSingleFlightTests(unittest.TestCase):
             first = dc.search_tracks_public("Duet", limit=1)
             second = dc.search_tracks_public("Duet", limit=1)
             first[0]["artists"].clear()
-            self.assertEqual(len(second[0]["artists"]), 2)
+            self.assertEqual(len(second[0]["artists"]), 1)
             dc.search_tracks_public("duet", limit=1)
             dc.search_tracks_public("Duet", limit=2)
+            enriched = dc.search_tracks_public("Duet", limit=1, enrich=True)
+            self.assertEqual(len(enriched[0]["artists"]), 2)
 
         paths = [call.args[0] for call in public_get.call_args_list]
         self.assertEqual(paths.count("/track/10"), 1)
-        self.assertEqual(paths.count("/search?q=Duet&limit=1"), 1)
+        # Fast and enriched searches keep isolated cache entries.
+        self.assertEqual(paths.count("/search?q=Duet&limit=1"), 2)
         self.assertEqual(paths.count("/search?q=duet&limit=1"), 1)
         self.assertEqual(paths.count("/search?q=Duet&limit=2"), 1)
 
@@ -185,7 +202,7 @@ class DeezerSingleFlightTests(unittest.TestCase):
                     joined.set()
             return original_result(future, *args, **kwargs)
 
-        def fetch(path: str) -> dict:
+        def fetch(path: str, **_kwargs: object) -> dict:
             self.assertEqual(path, "/search?q=Duet&limit=1")
             entered.set()
             self.assertTrue(release.wait(2))
@@ -204,10 +221,10 @@ class DeezerSingleFlightTests(unittest.TestCase):
                     release.set()
                 self.assertEqual([future.result(timeout=2) for future in futures], [[], [], [], []])
 
-        public_get.assert_called_once_with("/search?q=Duet&limit=1")
+        public_get.assert_called_once_with("/search?q=Duet&limit=1", interactive=True)
 
     def test_public_get_rejects_invalid_json_and_non_object_response(self) -> None:
-        with patch.object(dc.requests, "get") as request:
+        with patch.object(dc._public_session, "get") as request:
             request.return_value.json.side_effect = ValueError("bad json")
             with self.assertRaisesRegex(dc.DeezerClientError, "invalid JSON for /search"):
                 dc._public_get("/search")

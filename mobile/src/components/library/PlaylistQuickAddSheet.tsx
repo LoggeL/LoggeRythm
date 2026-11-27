@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AccessibilityInfo,
@@ -7,15 +7,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useQueryClient } from '@tanstack/react-query';
+import { QueryObserver, useQueryClient } from '@tanstack/react-query';
+import { isRateLimitStatus, rateLimitRetryAfterSeconds } from '../../api/error';
 import type { Track } from '../../api/types';
 import { trackArtistLabel } from '../../api/trackArtists';
 import {
   invalidatePlaylistCaches,
+  isRemoteOffline,
+  musicQueries,
   musicRepository,
   optimisticallyAddPlaylistTrack,
   restorePlaylistCache,
 } from '../../data';
+import { strings } from '../../localization';
 import { libraryStrings } from '../../screens/libraryStrings';
 import { colors, layout, metrics, radii, spacing, typography } from '../../theme';
 import { AppText, Artwork, BottomSheet, IconButton } from '../ui';
@@ -31,7 +35,21 @@ export interface PlaylistQuickAddSheetProps {
   onClose: () => void;
 }
 
-const SEARCH_DEBOUNCE_MS = 280;
+export const QUICK_ADD_SEARCH_DEBOUNCE_MS = 280;
+const MIN_QUERY_CHARS = 2;
+
+export function formatQuickAddSearchError(cause: unknown): string {
+  if (isRemoteOffline(cause, 'idle')) {
+    return libraryStrings.common.offline;
+  }
+  if (isRateLimitStatus(cause)) {
+    const waitSec = rateLimitRetryAfterSeconds(cause);
+    return waitSec !== null
+      ? strings.search.rateLimitedWait(waitSec)
+      : strings.search.rateLimited;
+  }
+  return libraryStrings.common.loadFailed;
+}
 
 /**
  * Inline Quick-Add bottom sheet for editable playlists: search catalog tracks
@@ -49,44 +67,76 @@ export function PlaylistQuickAddSheet({
   const [results, setResults] = useState<Track[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorRetryable, setErrorRetryable] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [wasVisible, setWasVisible] = useState(visible);
+  const handledRetryNonceRef = useRef(0);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(() => new Set());
+  const trimmedQuery = query.trim();
+  const searchable = Array.from(trimmedQuery).length >= MIN_QUERY_CHARS;
+
+  if (wasVisible !== visible) {
+    setWasVisible(visible);
+    if (!visible && searching) {
+      setSearching(false);
+    }
+  }
 
   const handleQueryChange = (value: string) => {
     setQuery(value);
-    if (value.trim().length < 2) {
+    if (Array.from(value.trim()).length < MIN_QUERY_CHARS) {
       setResults([]);
       setSearching(false);
       setError(null);
+      setErrorRetryable(false);
     }
   };
 
   useEffect(() => {
-    if (!visible) return undefined;
-    const trimmed = query.trim();
-    if (trimmed.length < 2) return undefined;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
+    if (!visible || !searchable) return undefined;
+    let cancelled = false;
+    let unsubscribe: (() => void) | null = null;
+    const forceRefresh = retryNonce !== handledRetryNonceRef.current;
+    handledRetryNonceRef.current = retryNonce;
+    const delayMs = forceRefresh ? 0 : QUICK_ADD_SEARCH_DEBOUNCE_MS;
+    const baseOptions = musicQueries.searchTracks(scope, trimmedQuery);
+    const options = forceRefresh ? { ...baseOptions, staleTime: 0 } : baseOptions;
+    const runSearch = () => {
+      if (cancelled) return;
       setSearching(true);
       setError(null);
-      void musicRepository
-        .searchTracks(trimmed, controller.signal)
-        .then((tracks) => {
-          if (!controller.signal.aborted) setResults(tracks.slice(0, 20));
-        })
-        .catch((cause: unknown) => {
-          if (controller.signal.aborted) return;
-          setError(cause instanceof Error ? cause.message : libraryStrings.common.loadFailed);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setSearching(false);
-        });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
+      setErrorRetryable(false);
+      const observer = new QueryObserver(queryClient, options);
+      const handleResult = (result: ReturnType<typeof observer.getCurrentResult>) => {
+        if (cancelled || result.fetchStatus === 'fetching') return;
+        if (result.status === 'success') {
+          setResults(result.data.slice(0, 20));
+          setError(null);
+          setErrorRetryable(false);
+          setSearching(false);
+        } else if (result.status === 'error') {
+          setResults([]);
+          setError(formatQuickAddSearchError(result.error));
+          setErrorRetryable(true);
+          setSearching(false);
+        }
+      };
+      unsubscribe = observer.subscribe(handleResult);
+      if (forceRefresh) {
+        void observer.refetch({ cancelRefetch: false }).catch(() => undefined);
+      } else {
+        handleResult(observer.getCurrentResult());
+      }
     };
-  }, [query, visible]);
+    const timer = delayMs === 0 ? null : setTimeout(runSearch, delayMs);
+    if (timer === null) runSearch();
+    return () => {
+      cancelled = true;
+      if (timer !== null) clearTimeout(timer);
+      unsubscribe?.();
+    };
+  }, [queryClient, retryNonce, scope, searchable, trimmedQuery, visible]);
 
   // The field is focused on open and the keyboard does not resize the sheet:
   // without the spacer it covers the field and the results.
@@ -98,6 +148,7 @@ export function PlaylistQuickAddSheet({
     if (existingTrackIds.has(track.id) || addedIds.has(track.id)) return;
     setAddingId(track.id);
     setError(null);
+    setErrorRetryable(false);
     const snapshot = await optimisticallyAddPlaylistTrack(queryClient, scope, playlistId, track);
     try {
       await musicRepository.addToPlaylist(playlistId, track);
@@ -117,6 +168,7 @@ export function PlaylistQuickAddSheet({
       console.error('[LoggeRythm] Quick-add to playlist failed:', cause);
       restorePlaylistCache(queryClient, scope, playlistId, snapshot);
       setError(libraryStrings.playlist.quickAddFailed);
+      setErrorRetryable(false);
     } finally {
       setAddingId(null);
     }
@@ -162,6 +214,15 @@ export function PlaylistQuickAddSheet({
           tone="danger"
           live="assertive"
           message={error}
+          retry={
+            errorRetryable && searchable
+              ? {
+                  testID: 'playlist-quick-add-retry',
+                  busy: searching,
+                  onRetry: () => setRetryNonce((value) => value + 1),
+                }
+              : undefined
+          }
         />
       ) : null}
 

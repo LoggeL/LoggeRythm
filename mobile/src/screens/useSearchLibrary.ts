@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { rateLimitRetryAfterSeconds } from '../api/error';
 import type { Track } from '../api/types';
 import { createCachedPlaylistDetailsStore, musicQueries } from '../data';
 import { useOfflineDownloads } from '../offline/hooks';
@@ -25,6 +26,7 @@ interface SearchLibraryInput {
 /** The liked songs are missing from, or possibly outdated in, the instant matches. */
 export interface SearchLibraryLikesIssue {
   kind: SearchRemoteIssueKind;
+  retryAfterSeconds: number | null;
   retryBusy: boolean;
   retry: () => void;
 }
@@ -96,6 +98,7 @@ export function useSearchLibrary({
       ? null
       : {
         kind: likesIssueKind,
+        retryAfterSeconds: rateLimitRetryAfterSeconds(likesQuery.error),
         retryBusy: likesQuery.fetchStatus === 'fetching',
         retry: () => { void likesQuery.refetch(); },
       },

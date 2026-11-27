@@ -10,6 +10,7 @@ import {
 import { deezerPlaylistPath, playlistPath } from "@/lib/slugs";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { matchLibraryTracks } from "@/lib/libraryMatch";
+import { partitionRateLimitFailures } from "@/lib/rateLimit";
 import { usePlayerStore } from "@/store/player";
 import { useConnectStore } from "@/store/connect";
 import { useUiModalsStore } from "@/store/uiModals";
@@ -17,6 +18,7 @@ import { toast } from "@/store/toast";
 import { PlayIcon, CloseIcon } from "@/components/icons";
 import CoverPlaceholder from "@/components/CoverPlaceholder";
 import SearchField from "@/components/SearchField";
+import SearchRateLimitAlert from "@/components/SearchRateLimitAlert";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useSearchInput } from "@/hooks/useSearchInput";
 import { useSearchNavigation } from "@/hooks/useSearchNavigation";
@@ -101,10 +103,13 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
 
   const commandMode = isCommandQuery(search.input);
   const enabled = !commandMode && !search.preparing && search.query.length >= SEARCH_MIN_LENGTH;
-  const tracks = useQuery({ ...searchTracksOptions(search.query), enabled });
-  const artists = useQuery({ ...searchArtistsOptions(search.query), enabled });
-  const albums = useQuery({ ...searchAlbumsOptions(search.query), enabled });
-  const playlists = useQuery({ ...searchPlaylistsOptions(search.query), enabled });
+  // Pass `""` while disabled so superseded in-flight catalog requests abort
+  // immediately when typing resumes or `>` command mode starts.
+  const activeQuery = enabled ? search.query : "";
+  const tracks = useQuery({ ...searchTracksOptions(activeQuery), enabled });
+  const artists = useQuery({ ...searchArtistsOptions(activeQuery), enabled });
+  const albums = useQuery({ ...searchAlbumsOptions(activeQuery), enabled });
+  const playlists = useQuery({ ...searchPlaylistsOptions(activeQuery), enabled });
   const sources = [
     { label: "Titel", result: tracks }, { label: "Künstler", result: artists },
     { label: "Alben", result: albums }, { label: "Playlists", result: playlists },
@@ -143,10 +148,14 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
       followedArtistMatches.length === 0 &&
       commandMatches.length === 0 &&
       sources.every(({ result }) => result.isSuccess && result.data.length === 0));
+  const localActive = !commandMode && term.length >= SEARCH_MIN_LENGTH;
   const failures = [
-    ...(!commandMode && term.length >= SEARCH_MIN_LENGTH && library.likes.isError ? [{ label: "Lieblingssongs", result: library.likes }] : []),
+    ...(localActive && library.likes.isError ? [{ label: "Lieblingssongs", result: library.likes }] : []),
+    ...(localActive && ownPlaylistsQuery?.isError ? [{ label: "Deine Playlists", result: ownPlaylistsQuery }] : []),
+    ...(localActive && followingQuery?.isError ? [{ label: "Gefolgte Künstler", result: followingQuery }] : []),
     ...(enabled ? sources.filter(({ result }) => result.isError) : []),
   ];
+  const { rateLimit: rateLimitFailure, other: otherFailures } = partitionRateLimitFailures(failures);
 
   useEffect(() => {
     panelRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
@@ -369,7 +378,18 @@ export function PaletteDialog({ onClose }: { onClose: () => void }) {
           {empty && <div role="status" className="px-5 pb-8 pt-7 sm:px-6">
             <p className="font-display text-xl font-extrabold tracking-[-0.03em] [overflow-wrap:anywhere]">Keine Treffer für „{term}“</p>
           </div>}
-          {failures.map(({ label, result }) => <div key={label} role="alert" className="error-panel mx-3 mt-3 flex flex-wrap items-center justify-between gap-3">
+          {rateLimitFailure && (
+            <SearchRateLimitAlert
+              className="mx-3 mt-3"
+              labels={rateLimitFailure.labels}
+              error={rateLimitFailure.error}
+              retryAfterSec={rateLimitFailure.retryAfterSec}
+              retryAfterAt={rateLimitFailure.retryAfterAt}
+              isFetching={rateLimitFailure.isFetching}
+              onRetry={rateLimitFailure.refetch}
+            />
+          )}
+          {otherFailures.map(({ label, result }) => <div key={label} role="alert" className="error-panel mx-3 mt-3 flex flex-wrap items-center justify-between gap-3">
             <p className="min-w-0 [overflow-wrap:anywhere]">{label} konnten nicht geladen werden: {result.error?.message}</p>
             <button type="button" className="action-secondary min-h-9 px-4 text-xs max-sm:min-h-11" disabled={result.isFetching} onClick={() => void result.refetch()}>Erneut versuchen</button>
           </div>)}

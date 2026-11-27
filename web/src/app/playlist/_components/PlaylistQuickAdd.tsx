@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SEARCH_MIN_LENGTH, searchTracksOptions } from "@/lib/catalogQueries";
+import { isRateLimitError } from "@/lib/rateLimit";
 import { trackArtistLabel } from "@/lib/trackArtists";
 import { formatTime } from "@/lib/format";
 import { useSearchInput } from "@/hooks/useSearchInput";
 import { useAddToPlaylist } from "@/hooks/useLibrary";
 import { toast } from "@/store/toast";
 import SearchField from "@/components/SearchField";
+import SearchRateLimitAlert from "@/components/SearchRateLimitAlert";
 import Cover from "@/components/ui/Cover";
 import QueryError from "@/components/ui/QueryError";
 import { CheckIcon, PlusIcon, SpinnerIcon } from "@/components/icons";
@@ -29,7 +31,7 @@ export default function PlaylistQuickAdd({
   const addToPlaylist = useAddToPlaylist();
   const [addingId, setAddingId] = useState<string | null>(null);
   const enabled = !search.preparing && search.query.length >= SEARCH_MIN_LENGTH;
-  const query = useQuery({ ...searchTracksOptions(search.query), enabled });
+  const query = useQuery({ ...searchTracksOptions(enabled ? search.query : ""), enabled });
   const tracks = enabled && !query.isError ? (query.data ?? []).slice(0, 8) : [];
 
   function handleAdd(track: Track) {
@@ -64,7 +66,19 @@ export default function PlaylistQuickAdd({
         }}
       />
 
-      {enabled && query.isError && <QueryError label="Suchergebnisse" query={query} className="mt-3 max-w-xl" />}
+      {enabled && query.isError && (
+        isRateLimitError(query.error) ? (
+          <SearchRateLimitAlert
+            className="mt-3 max-w-xl"
+            labels={["Suchergebnisse"]}
+            error={query.error}
+            isFetching={query.isFetching}
+            onRetry={() => query.refetch()}
+          />
+        ) : (
+          <QueryError label="Suchergebnisse" query={query} className="mt-3 max-w-xl" />
+        )
+      )}
 
       {search.input.trim().length >= SEARCH_MIN_LENGTH && (search.preparing || query.isLoading) && (
         <div role="status" aria-label="Suche läuft" className="mt-3 flex max-w-2xl flex-col gap-1">

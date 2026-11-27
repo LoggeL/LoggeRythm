@@ -69,11 +69,6 @@ function collectCachedTracks(queryClient: QueryClient, scope?: QueryScope): Trac
   })) {
     pushList(moodTracks);
   }
-  for (const [, searchTracks] of queryClient.getQueriesData<Track[]>({
-    queryKey: [...queryKeys.search.root(), 'track'],
-  })) {
-    pushList(searchTracks);
-  }
   for (const [, artist] of queryClient.getQueriesData<ArtistDetail>({
     queryKey: [...queryKeys.catalog.root(), 'artist'],
   })) {
@@ -87,8 +82,13 @@ function collectCachedTracks(queryClient: QueryClient, scope?: QueryScope): Trac
     }
   }
 
-  // Private/account-scoped caches are inspected strictly for the requested scope.
+  // Account/origin-scoped caches (including search) are inspected strictly for the requested scope.
   if (scope !== undefined) {
+    for (const [, searchTracks] of queryClient.getQueriesData<Track[]>({
+      queryKey: [...queryKeys.search.scoped(scope), 'track'],
+    })) {
+      pushList(searchTracks);
+    }
     pushList(queryClient.getQueryData<Track[]>(queryKeys.library.likes(scope)));
     pushShelves(queryClient.getQueryData<HomeShelf[]>(queryKeys.home.mixes(scope)));
     pushShelves(queryClient.getQueryData<HomeShelf[]>(queryKeys.home.becauseYouListened(scope)));
@@ -148,18 +148,20 @@ export function findCachedAlbumSummary(
     if (match !== undefined) return match;
   }
 
-  for (const [, cards] of queryClient.getQueriesData<AlbumCard[]>({
-    queryKey: [...queryKeys.search.root(), 'album'],
-  })) {
-    const match = cards?.find((card) => String(card.id) === id);
-    if (match !== undefined) {
-      return {
-        id: match.id,
-        title: match.title,
-        artist: match.artistName,
-        cover: match.artworkUrl ?? '',
-        release_date: '',
-      };
+  if (scope !== undefined) {
+    for (const [, cards] of queryClient.getQueriesData<AlbumCard[]>({
+      queryKey: [...queryKeys.search.scoped(scope), 'album'],
+    })) {
+      const match = cards?.find((card) => String(card.id) === id);
+      if (match !== undefined) {
+        return {
+          id: match.id,
+          title: match.title,
+          artist: match.artistName,
+          cover: match.artworkUrl ?? '',
+          release_date: '',
+        };
+      }
     }
   }
 
@@ -192,13 +194,13 @@ export function findCachedArtistSummary(
     const followed = queryClient.getQueryData<ArtistSummary[]>(queryKeys.follows.artists(scope));
     const fromFollowed = followed?.find((artist) => String(artist.id) === id);
     if (fromFollowed !== undefined) return fromFollowed;
-  }
 
-  for (const [, artists] of queryClient.getQueriesData<ArtistSummary[]>({
-    queryKey: [...queryKeys.search.root(), 'artist'],
-  })) {
-    const match = artists?.find((artist) => String(artist.id) === id);
-    if (match !== undefined) return match;
+    for (const [, artists] of queryClient.getQueriesData<ArtistSummary[]>({
+      queryKey: [...queryKeys.search.scoped(scope), 'artist'],
+    })) {
+      const match = artists?.find((artist) => String(artist.id) === id);
+      if (match !== undefined) return match;
+    }
   }
 
   for (const [, artist] of queryClient.getQueriesData<ArtistDetail>({

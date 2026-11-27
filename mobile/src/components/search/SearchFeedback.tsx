@@ -1,8 +1,10 @@
 import React from 'react';
+import { rateLimitRetryAfterSeconds } from '../../api/error';
 import { strings } from '../../localization';
 import type { SearchEntity } from '../../screens/searchModel';
 import type {
   SearchAggregateRemoteState,
+  SearchRemoteIssue,
   SearchRemoteIssueKind,
 } from '../../screens/searchRemoteState';
 import {
@@ -23,11 +25,44 @@ function isOffline(kind: SearchRemoteIssueKind): boolean {
 }
 
 function isCached(kind: SearchRemoteIssueKind): boolean {
-  return kind === 'cached-offline' || kind === 'cached-refresh-error';
+  return (
+    kind === 'cached-offline'
+    || kind === 'cached-refresh-error'
+    || kind === 'cached-rate-limited'
+  );
+}
+
+function isRateLimited(kind: SearchRemoteIssueKind): boolean {
+  return kind === 'rate-limited' || kind === 'cached-rate-limited';
+}
+
+function maxRetryAfterSeconds(issues: readonly SearchRemoteIssue[]): number | null {
+  let max: number | null = null;
+  for (const issue of issues) {
+    const seconds = rateLimitRetryAfterSeconds(issue.error);
+    if (seconds !== null && (max === null || seconds > max)) {
+      max = seconds;
+    }
+  }
+  return max;
 }
 
 /** Localized wording for one failed result type or metadata group. */
-export function searchIssueMessage(kind: SearchRemoteIssueKind, label: string): string {
+export function searchIssueMessage(
+  kind: SearchRemoteIssueKind,
+  label: string,
+  retryAfterSeconds: number | null = null,
+): string {
+  if (isRateLimited(kind)) {
+    if (isCached(kind)) {
+      return retryAfterSeconds !== null
+        ? strings.search.remoteCachedRateLimitedWait(label, retryAfterSeconds)
+        : strings.search.remoteCachedRateLimited(label);
+    }
+    return retryAfterSeconds !== null
+      ? strings.search.remoteRateLimitedWait(label, retryAfterSeconds)
+      : strings.search.remoteRateLimited(label);
+  }
   if (isOffline(kind)) {
     return isCached(kind)
       ? strings.search.remoteCachedOffline(label)
@@ -52,6 +87,7 @@ interface SearchLibraryLikesNoticeProps {
   kind: SearchRemoteIssueKind;
   retryBusy: boolean;
   onRetry: () => void;
+  retryAfterSeconds?: number | null;
 }
 
 /**
@@ -63,13 +99,16 @@ export function SearchLibraryLikesNotice({
   kind,
   retryBusy,
   onRetry,
+  retryAfterSeconds = null,
 }: SearchLibraryLikesNoticeProps) {
   const label = strings.navigation.likedSongs;
-  const message = isCached(kind)
-    ? searchIssueMessage(kind, label)
-    : isOffline(kind)
-      ? strings.search.libraryLikesOffline
-      : strings.search.libraryLikesLoadFailed;
+  const message = isRateLimited(kind)
+    ? searchIssueMessage(kind, label, retryAfterSeconds)
+    : isCached(kind)
+      ? searchIssueMessage(kind, label)
+      : isOffline(kind)
+        ? strings.search.libraryLikesOffline
+        : strings.search.libraryLikesLoadFailed;
   return (
     <SearchErrorNotice
       testID={`search-library-likes-${kind}`}
@@ -90,7 +129,7 @@ interface SearchResultsFeedbackProps {
   tvMode?: boolean;
 }
 
-/** Per-type failures with their own retry, then at most one progress/stale line. */
+/** Per-type failures with their own retry (deduping shared 429s), then at most one progress/stale line. */
 export function SearchResultsFeedback({
   state,
   owners,
@@ -99,17 +138,54 @@ export function SearchResultsFeedback({
 }: SearchResultsFeedbackProps) {
   const loading = state.loadingKeys.length > 0;
   const quiet = state.issues.length === 0 && !loading;
+  const ownedIssues = state.issues
+    .map((issue) => ({
+      issue,
+      owner: owners.find((candidate) => candidate.key === issue.key),
+    }))
+    .filter((entry): entry is { issue: SearchRemoteIssue; owner: SearchIssueOwner } =>
+      entry.owner !== undefined);
+  const rateLimitedEntries = ownedIssues.filter(({ issue }) => isRateLimited(issue.kind));
+  const collapseRateLimited = rateLimitedEntries.length >= 2;
+  const individualEntries = collapseRateLimited
+    ? ownedIssues.filter(({ issue }) => !isRateLimited(issue.kind))
+    : ownedIssues;
+  const collapsedRetryAfter = collapseRateLimited
+    ? maxRetryAfterSeconds(rateLimitedEntries.map(({ issue }) => issue))
+    : null;
+  const collapsedAllCached = collapseRateLimited
+    && rateLimitedEntries.every(({ issue }) => isCached(issue.kind));
+  const collapsedMessage = collapsedAllCached
+    ? searchIssueMessage('cached-rate-limited', strings.search.tabs.all, collapsedRetryAfter)
+    : collapsedRetryAfter !== null
+      ? strings.search.rateLimitedWait(collapsedRetryAfter)
+      : strings.search.rateLimited;
+
   return (
     <>
-      {state.issues.map((issue) => {
-        const owner = owners.find((candidate) => candidate.key === issue.key);
-        if (owner === undefined) return null;
+      {collapseRateLimited ? (
+        <SearchErrorNotice
+          testID="search-results-rate-limited"
+          message={collapsedMessage}
+          actionLabel={strings.search.retrySection(strings.search.tabs.all)}
+          actionBusy={rateLimitedEntries.some(({ owner }) => owner.fetching)}
+          onAction={() => {
+            for (const { owner } of rateLimitedEntries) owner.retry();
+          }}
+          liveRegion={collapsedAllCached ? 'polite' : 'assertive'}
+        />
+      ) : null}
+      {individualEntries.map(({ issue, owner }) => {
         const label = strings.search.tabs[owner.key];
         return (
           <SearchErrorNotice
             key={`${owner.key}:${issue.kind}`}
             testID={`search-results-${owner.key}-${issue.kind}`}
-            message={searchIssueMessage(issue.kind, label)}
+            message={searchIssueMessage(
+              issue.kind,
+              label,
+              rateLimitRetryAfterSeconds(issue.error),
+            )}
             actionLabel={strings.search.retrySection(label)}
             actionBusy={owner.fetching}
             onAction={owner.retry}
@@ -162,14 +238,18 @@ export function SearchMetadataFeedback({
   const title = strings.search.metadataTitle;
   if (state.issues.length > 0) {
     const blocking = state.issues.some(({ kind }) => !isCached(kind));
+    const rateLimited = state.issues.some(({ kind }) => isRateLimited(kind));
     const offline = state.issues.some(({ kind }) => isOffline(kind));
-    const message = blocking
-      ? offline
-        ? strings.search.remoteOffline(title)
-        : strings.search.remoteLoadFailed(title)
-      : offline
-        ? strings.search.remoteCachedOffline(title)
-        : strings.search.remoteCachedRefreshFailed(title);
+    const waitSec = rateLimited ? maxRetryAfterSeconds(state.issues) : null;
+    const message = rateLimited
+      ? searchIssueMessage(blocking ? 'rate-limited' : 'cached-rate-limited', title, waitSec)
+      : blocking
+        ? offline
+          ? strings.search.remoteOffline(title)
+          : strings.search.remoteLoadFailed(title)
+        : offline
+          ? strings.search.remoteCachedOffline(title)
+          : strings.search.remoteCachedRefreshFailed(title);
     return (
       <SearchErrorNotice
         testID="search-metadata-error"

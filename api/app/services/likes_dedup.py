@@ -208,12 +208,21 @@ def upsert_deduped_like(
     deezer_id: str,
     track: Track,
     *,
-    resolve_isrc: Callable[[str], str] = dc.track_isrc,
-    resolve_record_type: Callable[[str], str] = dc.album_record_type,
-    resolve_track: Callable[[str], dict] = dc.track_public,
+    resolve_isrc: Callable[[str], str] | None = None,
+    resolve_record_type: Callable[[str], str] | None = None,
+    resolve_track: Callable[[str], dict] | None = None,
 ) -> Like:
     """Insert or merge a like so the same recording can never be liked twice."""
-    isrc = _resolve_incoming_isrc(deezer_id, track.isrc, resolve_isrc)
+    isrc_resolver = dc.track_isrc if resolve_isrc is None else resolve_isrc
+    record_type_resolver = (
+        dc.album_record_type if resolve_record_type is None else resolve_record_type
+    )
+    track_resolver = dc.track_public if resolve_track is None else resolve_track
+
+    isrc = _resolve_incoming_isrc(deezer_id, track.isrc, isrc_resolver)
+    track = dc.hydrate_track_for_persistence(track, track_id=deezer_id)
+    if not isrc:
+        isrc = normalize_isrc(track.isrc)
     target = track_descriptor(deezer_id, track, isrc_override=isrc)
 
     for attempt in range(2):
@@ -247,7 +256,7 @@ def upsert_deduped_like(
             survivor = matches[0]
         else:
             groups = group_duplicates(matches, lambda row: like_descriptor(row))
-            record_types = resolve_record_types_for_groups(groups, resolve_record_type)
+            record_types = resolve_record_types_for_groups(groups, record_type_resolver)
             _, survivor, _ = pick_preferred_entry(groups[0], record_types)
 
         best_created_at = max(
@@ -262,8 +271,8 @@ def upsert_deduped_like(
         replace_with_incoming = _prefer_incoming_over_existing(
             survivor,
             target,
-            resolve_record_type=resolve_record_type,
-            resolve_track=resolve_track,
+            resolve_record_type=record_type_resolver,
+            resolve_track=track_resolver,
         )
 
         # Delete losers BEFORE updating survivor.deezer_id / survivor.isrc so

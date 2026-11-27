@@ -210,6 +210,9 @@ vi.mock('../components/player/NowPlayingTabs', () => ({
   MemoNowPlayingTabs: 'NowPlayingTabs',
 }));
 vi.mock('./QueueScreen', () => ({ QueueSurface: 'QueueSurface' }));
+vi.mock('./useHydratedTrackCredits', () => ({
+  useHydratedTrackCredits: <T,>(track: T) => track,
+}));
 
 type Element = React.ReactElement<Record<string, unknown> & { children?: React.ReactNode }>;
 type RenderedPath = { element: Element; ancestors: Element[] };

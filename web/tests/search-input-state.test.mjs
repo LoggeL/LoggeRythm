@@ -86,3 +86,41 @@ test("unknown URL filters use the visible default controls", () => {
     query: "Roads", tab: "all", sort: "relevance",
   });
 });
+
+test("stale internal URL acknowledgement (63 -> 71 -> 72) never clobbers newer draft or newer commit", () => {
+  // Case A: URL=63 -> debounce 71 -> user types 72 (uncommitted) -> async URL ack 71 arrives.
+  let state = createSearchInput("Search fixture 63", "/search");
+  state = reduce(state, { type: "input", value: "Search fixture 71" });
+  state = reduce(state, { type: "debounce", expected: "Search fixture 71" });
+  state = reduce(state, { type: "input", value: "Search fixture 72" });
+  state = reduce(state, { type: "source", source: "Search fixture 71", scope: "/search" });
+  assert.equal(state.input, "Search fixture 72");
+  assert.equal(state.query, "Search fixture 71");
+  assert.equal(state.source, "Search fixture 71");
+  state = reduce(state, { type: "debounce", expected: "Search fixture 72" });
+  assert.equal(state.query, "Search fixture 72");
+
+  // Case B: URL=63 -> commit 71 -> user types AND commits 72 before async URL ack 71 arrives.
+  let fast = createSearchInput("Search fixture 63", "/search");
+  fast = reduce(fast, { type: "input", value: "Search fixture 71" });
+  fast = reduce(fast, { type: "debounce", expected: "Search fixture 71" });
+  fast = reduce(fast, { type: "input", value: "Search fixture 72" });
+  fast = reduce(fast, { type: "submit" });
+  assert.equal(fast.query, "Search fixture 72");
+  // Delayed URL ack for 71 arrives after 72 already committed.
+  fast = reduce(fast, { type: "source", source: "Search fixture 71", scope: "/search" });
+  assert.equal(fast.input, "Search fixture 72");
+  assert.equal(fast.query, "Search fixture 72");
+  assert.equal(fast.source, "Search fixture 71");
+  // Final URL ack for 72 arrives and drains pending acks.
+  fast = reduce(fast, { type: "source", source: "Search fixture 72", scope: "/search" });
+  assert.equal(fast.input, "Search fixture 72");
+  assert.equal(fast.query, "Search fixture 72");
+  assert.deepEqual(fast.pending, []);
+
+  // Once acks are drained, a genuine external navigation to an older term still replaces a draft.
+  fast = reduce(fast, { type: "input", value: "unfinished draft" });
+  fast = reduce(fast, { type: "source", source: "Search fixture 71", scope: "/search" });
+  assert.equal(fast.input, "Search fixture 71");
+  assert.equal(fast.query, "Search fixture 71");
+});

@@ -89,7 +89,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
         : artistSummary(artist.data),
     onResult: setRuntimeError,
   });
-  const songSearch = useArtistSongSearch(artistId, artistName);
+  const songSearch = useArtistSongSearch(scope, artistId, artistName);
   // The account's likes cache is what every heart control updates optimistically,
   // so the liked block follows a like/unlike made anywhere in the app at once.
   const likes = useQuery(musicQueries.likes(scope));
@@ -350,6 +350,7 @@ export default function ArtistScreen(props: ArtistScreenProps) {
           artistName={detail.name}
           input={songSearch.input}
           onChangeInput={songSearch.setInput}
+          onSubmit={songSearch.submit}
           query={songSearch.query}
           search={songSearch.search}
           resultCount={songSearch.results.length}

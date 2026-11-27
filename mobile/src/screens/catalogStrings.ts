@@ -11,6 +11,10 @@ export interface CatalogScreenStrings {
     refreshing: string;
     stale: string;
     cachedRefreshFailed: string;
+    rateLimited: string;
+    rateLimitedWait: (seconds: number) => string;
+    cachedRateLimited: string;
+    cachedRateLimitedWait: (seconds: number) => string;
     empty: string;
     play: string;
     playAll: string;
@@ -118,6 +122,11 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       refreshing: 'Inhalte werden aktualisiert…',
       stale: 'Gespeicherte Inhalte werden angezeigt.',
       cachedRefreshFailed: 'Aktualisierung fehlgeschlagen. Gespeicherte Inhalte bleiben sichtbar.',
+      rateLimited: 'Zu viele Anfragen. Bitte warte kurz und versuche es erneut.',
+      rateLimitedWait: (seconds) => `Zu viele Anfragen. Versuche es in ${seconds} Sek. erneut.`,
+      cachedRateLimited: 'Zu viele Anfragen. Gespeicherte Inhalte bleiben sichtbar.',
+      cachedRateLimitedWait: (seconds) =>
+        `Zu viele Anfragen. Versuche es in ${seconds} Sek. erneut. Gespeicherte Inhalte bleiben sichtbar.`,
       empty: 'Hier sind gerade keine Inhalte verfügbar.',
       play: 'Abspielen',
       playAll: 'Alle abspielen',
@@ -228,6 +237,11 @@ export const catalogScreenCatalogs: Readonly<Record<AppLocale, CatalogScreenStri
       refreshing: 'Refreshing content…',
       stale: 'Showing saved content.',
       cachedRefreshFailed: 'Refresh failed. Saved content remains visible.',
+      rateLimited: 'Too many requests. Wait a moment and try again.',
+      rateLimitedWait: (seconds) => `Too many requests. Try again in ${seconds} s.`,
+      cachedRateLimited: 'Too many requests. Saved content remains visible.',
+      cachedRateLimitedWait: (seconds) =>
+        `Too many requests. Try again in ${seconds} s. Saved content remains visible.`,
       empty: 'There is nothing available here right now.',
       play: 'Play',
       playAll: 'Play all',

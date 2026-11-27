@@ -1,4 +1,5 @@
 import SearchField from "@/components/SearchField";
+import SearchRateLimitAlert from "@/components/SearchRateLimitAlert";
 import EmptyState from "@/components/ui/EmptyState";
 import { NextIcon, PlusIcon, SearchIcon } from "@/components/icons";
 import { trackArtistLabel } from "@/lib/trackArtists";
@@ -27,7 +28,7 @@ export default function PartySearch({
   onAdd: (track: Track) => void | Promise<void>;
   onAddNext?: (track: Track) => void | Promise<void>;
 }) {
-  const { query, results, searching, searchedTerm, error } = search;
+  const { query, results, searching, searchedTerm, error, rateLimitError } = search;
   return (
     <section id="party-search" aria-labelledby="party-search-title" className="min-w-0 scroll-mt-24">
       <h2 id="party-search-title" className="mb-3 font-display text-[1.625rem] font-bold leading-tight tracking-tight">
@@ -51,6 +52,14 @@ export default function PartySearch({
 
       <div className="mt-4 empty:hidden">
         {searching && <PartyTrackRowsSkeleton label="Titel werden gesucht…" />}
+        {rateLimitError && (
+          <SearchRateLimitAlert
+            labels={["Titelsuche"]}
+            error={rateLimitError}
+            isFetching={searching}
+            onRetry={search.run}
+          />
+        )}
         {error && (
           <div className="error-panel flex flex-wrap items-center justify-between gap-3">
             <p role="alert" className="min-w-0">

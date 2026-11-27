@@ -1722,6 +1722,10 @@ def add_track(
     )
     if exists is not None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+    try:
+        track = dc.hydrate_track_for_persistence(track)
+    except dc.DeezerClientError as exc:
+        raise to_http(exc) from exc
     next_pos = db.scalar(
         select(func.coalesce(func.max(PlaylistTrack.position), -1)).where(
             PlaylistTrack.playlist_id == pl.id
@@ -1776,6 +1780,7 @@ def add_tracks_bulk(
         if track.id in existing:
             continue
         existing.add(track.id)
+        track = dc.enrich_track_from_cache(track)
         pos += 1
         db.add(
             PlaylistTrack(

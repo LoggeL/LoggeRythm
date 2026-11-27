@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../api/error';
 import {
   clearAccountQueryState,
   clearAccountQueryStateBoundary,
@@ -6,6 +7,7 @@ import {
   invalidateListeningStats,
   musicCacheScope,
   QUERY_STALE_TIMES,
+  shouldRetryQuery,
 } from './queryClient';
 import { queryKeys } from './queryKeys';
 
@@ -118,7 +120,7 @@ describe('music query client boundaries', () => {
 
   it('aborts an in-flight replacement and ignores its late non-cooperative result', async () => {
     const client = createMusicQueryClient();
-    const queryKey = queryKeys.search.tracks('replacement');
+    const queryKey = queryKeys.search.tracks('scope-a', 'replacement');
     client.setQueryData(queryKey, [{ id: 'last-good' }]);
 
     let resolveLate!: (value: { id: string }[]) => void;
@@ -230,11 +232,26 @@ describe('music query client boundaries', () => {
     expect(client.getQueryDefaults(queryKeys.storage.cachedTrackIds()).staleTime).toBe(
       QUERY_STALE_TIMES.cachedTrackIds,
     );
-    expect(client.getQueryDefaults(queryKeys.search.tracks('radiohead')).staleTime).toBe(
+    expect(client.getQueryDefaults(queryKeys.search.tracks('scope-a', 'radiohead')).staleTime).toBe(
       QUERY_STALE_TIMES.search,
     );
     expect(client.getQueryDefaults(queryKeys.party.state('scope-a', 'ABC')).staleTime).toBe(
       QUERY_STALE_TIMES.party,
     );
+  });
+
+  it('never auto-retries HTTP 429, 4xx, or cancelled requests while retrying transient 5xx/network once', () => {
+    expect(shouldRetryQuery(0, new ApiError(429, '', 'Rate limited', { retryAfterSeconds: 12 }))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiError(400, '', 'Bad request'))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiError(401, '', 'Unauthorized'))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiError(404, '', 'Not found'))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiError(0, '', 'GET https://music.test/api/search was cancelled'))).toBe(false);
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    expect(shouldRetryQuery(0, abortError)).toBe(false);
+
+    expect(shouldRetryQuery(0, new ApiError(502, '', 'Bad gateway'))).toBe(true);
+    expect(shouldRetryQuery(0, new ApiError(0, '', 'Network request failed'))).toBe(true);
+    expect(shouldRetryQuery(1, new ApiError(502, '', 'Bad gateway'))).toBe(false);
   });
 });

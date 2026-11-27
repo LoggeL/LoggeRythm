@@ -139,4 +139,39 @@ describe('API request deadline through the response body', () => {
       message: expect.stringContaining('returned invalid JSON'),
     });
   });
+
+  it('preserves full HTTP 429 Retry-After header seconds and HTTP-date without clamping', async () => {
+    const { apiRequest } = await import('./client');
+    const { parseRetryAfterSeconds } = await import('./error');
+
+    mocks.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'Deezer rate limit reached. Retry after 120s.' }), {
+        status: 429,
+        headers: { 'Retry-After': '120' },
+      }),
+    );
+    await expect(apiRequest('/api/search?q=daft&type=track')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 429,
+      retryAfterSeconds: 120,
+      message: expect.stringContaining('Deezer rate limit reached. Retry after 120s.'),
+    });
+
+    const nowMs = Date.UTC(2026, 10, 27, 4, 0, 0);
+    const futureHttpDate = new Date(nowMs + 95_000).toUTCString();
+    expect(parseRetryAfterSeconds(futureHttpDate, nowMs)).toBe(95);
+    expect(parseRetryAfterSeconds(null, nowMs)).toBeNull();
+    expect(parseRetryAfterSeconds('not-a-date', nowMs)).toBeNull();
+
+    mocks.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'Rate limited', retry_after_s: 42 }), {
+        status: 429,
+      }),
+    );
+    await expect(apiRequest('/api/search?q=punk&type=track')).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 429,
+      retryAfterSeconds: 42,
+    });
+  });
 });

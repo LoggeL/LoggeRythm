@@ -26,6 +26,8 @@ const EMPTY_ARTISTS: readonly ArtistSummary[] = [];
 const EMPTY_PLAYLISTS: readonly PlaylistSearchResult[] = [];
 
 interface SearchResultsInput {
+  /** Server-origin + account cache boundary for remote search queries. */
+  accountScope: string;
   /** The published (debounced) query identity. */
   query: string;
   /** The input still equals `query`; nothing is fetched otherwise. */
@@ -58,6 +60,7 @@ function limited<T>(items: readonly T[], tab: SearchTab, entity: SearchEntity): 
  * owner of server state; this hook only derives what the screen shows.
  */
 export function useSearchResults({
+  accountScope,
   query,
   ready,
   tab,
@@ -69,19 +72,19 @@ export function useSearchResults({
   const wanted = useMemo(() => wantedSearchEntities(tab), [tab]);
 
   const tracksQuery = useQuery({
-    ...musicQueries.searchTracks(query),
+    ...musicQueries.searchTracks(accountScope, query),
     enabled: ready && wanted.track,
   });
   const albumsQuery = useQuery({
-    ...musicQueries.searchAlbums(query),
+    ...musicQueries.searchAlbums(accountScope, query),
     enabled: ready && wanted.album,
   });
   const artistsQuery = useQuery({
-    ...musicQueries.searchArtists(query),
+    ...musicQueries.searchArtists(accountScope, query),
     enabled: ready && wanted.artist,
   });
   const playlistsQuery = useQuery({
-    ...musicQueries.searchPlaylists(query),
+    ...musicQueries.searchPlaylists(accountScope, query),
     enabled: ready && wanted.playlist,
   });
 

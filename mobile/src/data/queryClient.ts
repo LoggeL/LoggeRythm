@@ -1,6 +1,29 @@
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys, type QueryScope } from './queryKeys';
 
+/**
+ * Never auto-retry client/rate-limit rejections (4xx, including HTTP 429) or
+ * aborted/cancelled fetches; allow one retry only for transient transport/5xx errors.
+ */
+export function shouldRetryQuery(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 1) return false;
+  if (error instanceof Error && error.name === 'AbortError') return false;
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    if (typeof status === 'number') {
+      if (status >= 400 && status < 500) return false;
+      if (
+        status === 0
+        && error instanceof Error
+        && error.message.endsWith('was cancelled')
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
@@ -37,7 +60,7 @@ export function createMusicQueryClient(): QueryClient {
       queries: {
         staleTime: QUERY_STALE_TIMES.default,
         gcTime: 30 * MINUTE,
-        retry: 1,
+        retry: shouldRetryQuery,
         refetchOnMount: true,
         refetchOnReconnect: true,
         refetchOnWindowFocus: false,

@@ -111,9 +111,14 @@ class LikesApiContractTests(unittest.TestCase):
         self.api.dependency_overrides[get_current_user] = lambda: self.user
         self.api.dependency_overrides[get_db] = lambda: self.db
         self._isrc_patch = patch.object(dc, "track_isrc", return_value="DEQ322000111")
+        self._credits_patch = patch.object(
+            dc, "_full_public_artist_refs", return_value=[{"id": "92203912", "name": "Ghøstkid"}]
+        )
         self._isrc_patch.start()
+        self._credits_patch.start()
 
     def tearDown(self) -> None:
+        self._credits_patch.stop()
         self._isrc_patch.stop()
         self.db.close()
         self.engine.dispose()

@@ -152,8 +152,8 @@ class DeezerCatalogDedupeTests(unittest.TestCase):
             dc._track_isrc_flights.cache.clear()
         with dc._album_record_type_flights.lock:
             dc._album_record_type_flights.cache.clear()
-        with dc._search_tracks_flights.lock:
-            dc._search_tracks_flights.cache.clear()
+        dc.clear_search_caches()
+        dc.reset_public_rate_limiter()
 
     def test_search_tracks_public_deduplicates_single_and_album_keeping_album(self) -> None:
         search_payload = {
@@ -179,7 +179,36 @@ class DeezerCatalogDedupeTests(unittest.TestCase):
             ]
         }
 
-        def fake_get(path: str) -> dict:
+        # Cold fast search deduplicates by inline ISRC in 1 upstream call (no /track or /album fan-out).
+        with patch.object(dc, "_public_get", return_value=search_payload) as cold_get:
+            cold_tracks = dc.search_tracks_public("Linkin Park Emptiness Machine", limit=10)
+        self.assertEqual(len(cold_tracks), 1)
+        self.assertEqual(cold_tracks[0]["isrc"], "USWB12403464")
+        cold_get.assert_called_once_with(
+            "/search?q=Linkin+Park+Emptiness+Machine&limit=10",
+            interactive=True,
+        )
+
+        # When album record types are already cached, fast search prefers Album with still 1 call.
+        dc.clear_search_caches()
+        dc._album_record_type_flights.put("1001", "single")
+        dc._album_record_type_flights.put("1002", "album")
+        with patch.object(dc, "_public_get", return_value=search_payload) as warm_get:
+            warm_tracks = dc.search_tracks_public("Linkin Park Emptiness Machine", limit=10)
+        self.assertEqual(len(warm_tracks), 1)
+        self.assertEqual(warm_tracks[0]["id"], "3068802261")
+        self.assertEqual(warm_tracks[0]["album"], "From Zero")
+        warm_get.assert_called_once_with(
+            "/search?q=Linkin+Park+Emptiness+Machine&limit=10",
+            interactive=True,
+        )
+
+        # Enriched search resolves uncached /track and /album types and keeps Album over Single.
+        dc.clear_search_caches()
+        with dc._album_record_type_flights.lock:
+            dc._album_record_type_flights.cache.clear()
+
+        def fake_get(path: str, **_kwargs: object) -> dict:
             if path.startswith("/search?"):
                 return search_payload
             if path == "/track/2978105041":
@@ -201,7 +230,7 @@ class DeezerCatalogDedupeTests(unittest.TestCase):
             raise AssertionError(f"Unexpected path {path}")
 
         with patch.object(dc, "_public_get", side_effect=fake_get):
-            tracks = dc.search_tracks_public("Linkin Park Emptiness Machine", limit=10)
+            tracks = dc.search_tracks_public("Linkin Park Emptiness Machine", limit=10, enrich=True)
 
         self.assertEqual(len(tracks), 1)
         self.assertEqual(tracks[0]["id"], "3068802261")
@@ -278,8 +307,13 @@ class LikesDeduplicationDatabaseTests(unittest.TestCase):
         self.api.dependency_overrides[get_current_user] = lambda: self.user
         self.api.dependency_overrides[get_db] = lambda: self.db
         self.client = TestClient(self.api)
+        self._credits_patch = patch.object(
+            dc, "_full_public_artist_refs", return_value=[]
+        )
+        self._credits_patch.start()
 
     def tearDown(self) -> None:
+        self._credits_patch.stop()
         self.client.close()
         self.db.close()
         self.engine.dispose()

@@ -51,14 +51,60 @@ const BASE = "/api";
 // Cold personalized discovery resolves many provider records before replying.
 const DISCOVERY_TIMEOUT_MS = 90_000;
 
+type ApiErrorMeta = {
+  retryAfterSec?: number | null;
+  retryAfterAt?: number | null;
+};
+
+/**
+ * Parse an HTTP `Retry-After` header (delta-seconds or RFC HTTP-date) into
+ * whole seconds, or `null` when absent/unparseable.
+ */
+export function parseRetryAfterHeader(
+  value: string | null | undefined,
+  nowMs = Date.now(),
+): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+    const seconds = Number(trimmed);
+    if (!Number.isFinite(seconds) || seconds < 0) return null;
+    return seconds === 0 ? 0 : Math.max(1, Math.ceil(seconds));
+  }
+  const timestamp = Date.parse(trimmed);
+  if (!Number.isFinite(timestamp)) return null;
+  const deltaSec = Math.ceil((timestamp - nowMs) / 1000);
+  return deltaSec > 0 ? deltaSec : 0;
+}
+
+/** Extract an explicit numeric `retry_after` / `retry_after_sec` from a JSON error body. */
+export function parseRetryAfterBody(body: unknown): number | null {
+  if (!body || typeof body !== "object") return null;
+  const record = body as Record<string, unknown>;
+  for (const key of ["retry_after", "retry_after_sec"]) {
+    const raw = record[key];
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) {
+      return raw === 0 ? 0 : Math.max(1, Math.ceil(raw));
+    }
+  }
+  return null;
+}
+
 class ApiError extends Error {
   status: number;
   /** Full parsed error body from the server (may carry error_type/traceback). */
   body?: unknown;
-  constructor(status: number, message: string, body?: unknown) {
+  /** Server-requested wait in seconds (from `Retry-After` header or 429 payload). */
+  retryAfterSec: number | null;
+  /** Epoch ms when the server-requested `Retry-After` cooldown expires. */
+  retryAfterAt: number | null;
+  constructor(status: number, message: string, body?: unknown, meta?: ApiErrorMeta) {
     super(message);
     this.status = status;
     this.body = body;
+    this.retryAfterSec = meta?.retryAfterSec ?? null;
+    this.retryAfterAt = meta?.retryAfterAt ?? null;
     this.name = "ApiError";
   }
 }
@@ -100,6 +146,8 @@ async function req<T>(
     // Keep the deadline active until the body has arrived, not just the headers.
     const text = await res.text();
     if (!res.ok) {
+      const nowMs = Date.now();
+      const headerRetryAfter = parseRetryAfterHeader(res.headers.get("retry-after"), nowMs);
       let body: unknown = text;
       let message = text || res.statusText || `HTTP ${res.status}`;
       if (isHtmlResponse(res, text)) {
@@ -110,14 +158,21 @@ async function req<T>(
         try {
           body = JSON.parse(text);
         } catch {
-          throw new ApiError(res.status, `API ${path}: HTTP ${res.status} mit ungültiger JSON-Fehlerantwort`, text);
+          const retryMeta = headerRetryAfter !== null
+            ? { retryAfterSec: headerRetryAfter, retryAfterAt: nowMs + headerRetryAfter * 1000 }
+            : undefined;
+          throw new ApiError(res.status, `API ${path}: HTTP ${res.status} mit ungültiger JSON-Fehlerantwort`, text, retryMeta);
         }
         if (body && typeof body === "object") {
           if ("detail" in body && typeof body.detail === "string") message = body.detail;
           else if ("message" in body && typeof body.message === "string") message = body.message;
         }
       }
-      throw new ApiError(res.status, `API ${path}: ${message}`, body);
+      const retryAfterSec = headerRetryAfter ?? parseRetryAfterBody(body);
+      const retryMeta = retryAfterSec !== null
+        ? { retryAfterSec, retryAfterAt: nowMs + retryAfterSec * 1000 }
+        : undefined;
+      throw new ApiError(res.status, `API ${path}: ${message}`, body, retryMeta);
     }
     if (res.status === 204) return undefined as T;
     if (!res.headers.get("content-type")?.includes("application/json")) {
@@ -186,7 +241,8 @@ export const api = {
   genres: () => req<Genre[]>(`/genres`),
   genre: (id: string) => req<GenreDetail>(`/genres/${encodeURIComponent(id)}`),
   newReleases: () => req<AlbumSummary[]>(`/new-releases`),
-  track: (id: string) => req<Track>(`/tracks/${encodeURIComponent(id)}`),
+  track: (id: string, signal?: AbortSignal) =>
+    req<Track>(`/tracks/${encodeURIComponent(id)}`, { signal }),
   trackAudioMeta: (id: string) =>
     req<unknown>(`/tracks/${encodeURIComponent(id)}/audio-meta`, { timeoutMs: 60_000 }),
   album: (id: string) => req<Album>(`/albums/${encodeURIComponent(id)}`),
@@ -523,10 +579,14 @@ export const api = {
     }),
 
   // Batched Last.fm play counts → { [trackId]: { plays, listeners } }
-  trackPlays: (tracks: { id: string; artist: string; title: string }[]) =>
+  trackPlays: (
+    tracks: { id: string; artist: string; title: string }[],
+    signal?: AbortSignal,
+  ) =>
     req<Record<string, { plays: number; listeners: number }>>(`/track-plays`, {
       method: "POST",
       body: JSON.stringify({ tracks }),
+      signal,
     }),
 
   // Admin system status / health & usage
