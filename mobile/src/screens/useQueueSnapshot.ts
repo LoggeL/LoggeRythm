@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Track } from '../api/types';
 import { getQueueSnapshot, isContextShuffleEnabled } from '../player/controller';
-import { mediaItemToTrack } from '../player/mediaItem';
+import { mediaItemIsRadio, mediaItemToTrack } from '../player/mediaItem';
 import Player, { Event } from '../player/player';
 import {
   queueContextOf,
@@ -17,6 +17,8 @@ export interface QueueSnapshotRow {
   origin: QueueOrigin;
   context: QueueContextMetadata | null;
   originalContextOrder: number | null;
+  /** A track-radio row: the queue extends itself with similar tracks near its end. */
+  radio: boolean;
   track: Track;
 }
 
@@ -80,6 +82,7 @@ export function useQueueSnapshot(): QueueSnapshotController {
             origin: queueOriginOf(item),
             context: queueContextOf(item),
             originalContextOrder: queueOriginalContextOrderOf(item),
+            radio: mediaItemIsRadio(item),
             track,
           };
         });

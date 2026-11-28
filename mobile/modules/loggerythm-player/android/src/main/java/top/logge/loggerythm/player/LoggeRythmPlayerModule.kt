@@ -243,6 +243,7 @@ internal fun applyPlayerCommand(
       LoggeRythmPlayerRuntime.clearQueueHeaders()
     }
     PlayerCommand.DisableGlobalShuffle,
+    is PlayerCommand.SetAutoRadioEnabled,
     is PlayerCommand.SetQueuePersistenceState,
     is PlayerCommand.SetCommands,
     is PlayerCommand.SleepAfterTime,
@@ -1284,6 +1285,7 @@ class LoggeRythmPlayerModule(
       )
     })
     put("shuffleEnabled", player.shuffleModeEnabled)
+    put("autoRadioEnabled", LoggeRythmAutoRadioPreference.isEnabled(reactApplicationContext))
     put("sleepTimer", when (val timer = persistedPublicState.sleepTimer) {
       null -> JSONObject.NULL
       is LoggeRythmPersistedSleepSnapshot.Time -> JSONObject().apply {

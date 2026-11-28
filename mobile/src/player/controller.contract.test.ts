@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
   playing: false,
   shuffle: false,
   repeatMode: undefined as unknown as RepeatMode,
+  autoRadio: false,
+  isAutoRadioEnabled: vi.fn(),
   getQueue: vi.fn(),
   getActiveMediaItem: vi.fn(),
   getActiveMediaItemIndex: vi.fn(),
@@ -92,6 +94,7 @@ vi.mock('./player', async () => {
       getRepeatMode: mocks.getRepeatMode,
       setRepeatMode: mocks.setRepeatMode,
       setQueuePersistenceState: mocks.setQueuePersistenceState,
+      isAutoRadioEnabled: mocks.isAutoRadioEnabled,
     },
     Event,
     RepeatMode,
@@ -195,6 +198,8 @@ describe('controller Phase-0 queue contract', () => {
     mocks.playing = false;
     mocks.shuffle = false;
     mocks.repeatMode = RepeatMode.Off;
+    mocks.autoRadio = false;
+    mocks.isAutoRadioEnabled.mockImplementation(() => mocks.autoRadio);
     mocks.getQueue.mockImplementation(() => [...mocks.queue]);
     mocks.getActiveMediaItem.mockImplementation(() =>
       mocks.activeIndex === null ? null : (mocks.queue[mocks.activeIndex] ?? null),
@@ -629,6 +634,56 @@ describe('controller Phase-0 queue contract', () => {
       'context',
     ]);
     expect(mocks.addMediaItems).not.toHaveBeenCalled();
+  });
+
+  it('continues a finished album as its own track radio when Autoplay is on', async () => {
+    const album = { type: 'album' as const, id: 'album-1', label: 'Album One' };
+    const albumItem = (id: string, order: number) => withQueueProductMetadata(
+      media(id, 'context', false),
+      { origin: 'context', context: album, originalContextOrder: order, stableId: `album:${id}` },
+    );
+    mocks.queue = [albumItem('a1', 0), albumItem('a2', 1)];
+    mocks.activeIndex = 1;
+    mocks.autoRadio = true;
+    mocks.getRadio.mockResolvedValueOnce([track('a1'), track('r1'), track('r2')]);
+
+    const completion = await prepareRadioPlaybackCompletionItems(
+      radioJournalEvent(mocks.queue[1]),
+      4_000,
+    );
+
+    expect(mocks.getRadio).toHaveBeenCalledWith('a2', undefined, 4_000);
+    expect(completion.map((item) => (item.extras?.track as Track).id)).toEqual(['r1', 'r2']);
+    expect(completion.every((item) => item.extras?.radio === true)).toBe(true);
+    expect(completion.map((item) => item.extras?.queueContextType)).toEqual(['radio', 'radio']);
+    expect(completion[0].extras?.queueContextLabel).toContain('Track a2');
+  });
+
+  it('never extends a non-radio queue with Autoplay off, repeat on, or inside a party', async () => {
+    const plain = media('plain', 'context', false);
+    mocks.queue = [plain];
+    mocks.activeIndex = 0;
+
+    mocks.autoRadio = false;
+    await expect(prepareRadioPlaybackCompletionItems(radioJournalEvent(plain), 4_000))
+      .resolves.toEqual([]);
+
+    mocks.autoRadio = true;
+    mocks.repeatMode = RepeatMode.All;
+    await expect(prepareRadioPlaybackCompletionItems(radioJournalEvent(plain), 4_000))
+      .resolves.toEqual([]);
+
+    mocks.repeatMode = RepeatMode.Off;
+    const partyItem = withQueueProductMetadata(media('party', 'context', false), {
+      origin: 'context',
+      context: { type: 'party', id: 'ABC', label: 'Party' },
+      originalContextOrder: 0,
+      stableId: 'party:ABC:1',
+    });
+    mocks.queue = [partyItem];
+    await expect(prepareRadioPlaybackCompletionItems(radioJournalEvent(partyItem), 4_000))
+      .resolves.toEqual([]);
+    expect(mocks.getRadio).not.toHaveBeenCalled();
   });
 
   it('binds RADIO discovery and stream headers to the claim request authority', async () => {

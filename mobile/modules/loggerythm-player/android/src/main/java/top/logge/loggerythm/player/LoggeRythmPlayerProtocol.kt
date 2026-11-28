@@ -103,6 +103,7 @@ internal sealed interface PlayerCommand {
   data class SleepAfterTime(val durationMs: Long, val fadeOutMs: Long) : PlayerCommand
   data class SleepAfterMediaItemAtIndex(val index: Int) : PlayerCommand
   data object CancelSleepTimer : PlayerCommand
+  data class SetAutoRadioEnabled(val enabled: Boolean) : PlayerCommand
   data object Stop : PlayerCommand
   data object ClearQueue : PlayerCommand
   data object RefreshSnapshot : PlayerCommand
@@ -223,6 +224,11 @@ internal class LoggeRythmPlayerProtocol(privateRoots: List<File>) {
         )
       }
       "cancelSleepTimer" -> emptyPayload(payload, PlayerCommand.CancelSleepTimer)
+      "setAutoRadioEnabled" -> {
+        requireExactKeys(payload, setOf("enabled"), setOf("enabled"))
+        val enabled = optionalBoolean(payload, "enabled") ?: fail("auto-radio-state-invalid")
+        PlayerCommand.SetAutoRadioEnabled(enabled)
+      }
       "stop" -> emptyPayload(payload, PlayerCommand.Stop)
       "clearQueue" -> emptyPayload(payload, PlayerCommand.ClearQueue)
       "refreshSnapshot" -> emptyPayload(payload, PlayerCommand.RefreshSnapshot)

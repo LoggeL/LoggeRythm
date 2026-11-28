@@ -5,11 +5,14 @@ import {
   Pressable,
   SectionList,
   StyleSheet,
+  Switch,
   View,
   type SectionListRenderItemInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
+import { useAutoRadioEnabled, usePlayerIsSetup, useRepeatMode, RepeatMode } from '../player/player';
+import { changeAutoplay } from '../components/profile/AutoplayPanel';
 import { useQuery } from '@tanstack/react-query';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import AppIcon, { type AppIconName } from '../components/AppIcon';
@@ -64,8 +67,10 @@ import {
   buildQueuePresentation,
   contextLabelForSection,
   type IndexedQueueRow,
+  queueTailContinuation,
   type QueuePresentationSection,
   type QueueSectionKind,
+  type QueueTailContinuation,
 } from './queuePresentation';
 import { moveRow, queueDragRange } from './queueDragModel';
 import { resolveQueueSnapshotVisualState } from './queueSnapshotState';
@@ -271,6 +276,86 @@ function QueueTool({
 }
 
 const keyExtractor = (entry: IndexedQueueRow<QueueSnapshotRow>) => entry.row.stableId;
+/**
+ * The end of the queue says what follows it, so the switch into track radio
+ * never comes as a surprise. Autoplay can be flipped right here as well.
+ */
+export function QueueTailFooter({
+  continuation,
+  autoplayReady,
+  autoplayBusy,
+  autoplayError,
+  onAutoplayChange,
+}: {
+  continuation: QueueTailContinuation;
+  autoplayReady: boolean;
+  autoplayBusy: boolean;
+  autoplayError: string | null;
+  onAutoplayChange: (enabled: boolean) => void;
+}) {
+  const active = continuation !== 'stop';
+  const title = continuation === 'radio'
+    ? strings.queue.radioContinuesTitle
+    : continuation === 'autoplay'
+      ? strings.queue.autoplayNextTitle
+      : strings.queue.autoplayOffTitle;
+  const detail = continuation === 'radio'
+    ? strings.queue.radioContinuesDetail
+    : continuation === 'autoplay'
+      ? strings.queue.autoplayNextDetail
+      : strings.queue.autoplayOffDetail;
+  const switchDisabled = !autoplayReady || autoplayBusy;
+  return (
+    <View testID="queue-tail" style={styles.tailWrap}>
+      <View
+        testID={`queue-tail-${continuation}`}
+        style={[styles.tail, active ? styles.tailActive : null]}
+      >
+        <View accessible={false} style={[styles.tailGlyph, active ? styles.tailGlyphActive : null]}>
+          <AppIcon
+            name={active ? 'radio-tower' : 'stop-circle-outline'}
+            color={active ? colors.accentSoft : colors.textSecondary}
+            size={20}
+          />
+        </View>
+        <View accessible accessibilityRole="text" style={styles.tailCopy}>
+          <AppText variant="bodyStrong" color={active ? 'accent' : 'primary'} numberOfLines={1}>
+            {title}
+          </AppText>
+          <AppText variant="callout" color="secondary">{detail}</AppText>
+        </View>
+        {continuation === 'radio' ? null : (
+          <Switch
+            testID="queue-autoplay-switch"
+            accessibilityLabel={strings.profile.autoplayToggle}
+            accessibilityState={{
+              disabled: switchDisabled,
+              busy: autoplayBusy,
+              checked: continuation === 'autoplay',
+            }}
+            disabled={switchDisabled}
+            value={continuation === 'autoplay'}
+            onValueChange={onAutoplayChange}
+            trackColor={{ false: colors.border, true: colors.accentSolid }}
+            thumbColor={continuation === 'autoplay' ? colors.accentSoft : colors.textSecondary}
+          />
+        )}
+      </View>
+      {autoplayError !== null ? (
+        <AppText
+          testID="queue-autoplay-error"
+          variant="callout"
+          color="danger"
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+          style={styles.tailError}
+        >
+          {autoplayError}
+        </AppText>
+      ) : null}
+    </View>
+  );
+}
 
 /** Shared queue implementation used by both the root modal and Now Playing tab. */
 export function QueueSurface({
@@ -330,6 +415,7 @@ export function QueueSurface({
   const queue = useMemo(() => {
     if (remotePlayback === null) return localQueue;
     const remoteRows: QueueSnapshotRow[] = remotePlayback.queue.map((track, idx) => ({
+      radio: false,
       stableId: `remote:${idx}:${track.id}`,
       track,
       origin: remotePlayback.origins[idx] === 'manual' ? 'manual' : 'context',
@@ -348,6 +434,12 @@ export function QueueSurface({
   const shuffle = remotePlayback !== null ? remotePlayback.shuffle : localShuffle;
   const [mutationPending, setMutationPending] = useState(false);
   const mutationLock = useRef(false);
+  const autoRadioEnabled = useAutoRadioEnabled();
+  const playerSetUp = usePlayerIsSetup();
+  const repeatMode = useRepeatMode();
+  const [autoplayBusy, setAutoplayBusy] = useState(false);
+  const [autoplayError, setAutoplayError] = useState<string | null>(null);
+  const autoplayLock = useRef(false);
   // A dropped row is shown at its new place while the native move is being
   // confirmed. The override belongs to one snapshot: the next read replaces it.
   const [droppedOrder, setDroppedOrder] = useState<{
@@ -591,8 +683,34 @@ export function QueueSurface({
       : rows.findIndex((candidate) => candidate.stableId === draggingId);
 
   const upcomingCount = presentation.upcomingCount;
-  const upcomingContextCount =
-    presentation.sections.find((section) => section.kind === 'context')?.data.length ?? 0;
+  const upcomingContextCount = presentation.sections
+    .filter((section) => section.kind === 'context')
+    .reduce((total, section) => total + section.data.length, 0);
+  const lastRow = rows.length === 0 ? null : rows[rows.length - 1];
+  const tailContinuation = queueTailContinuation({
+    lastRowIsRadio: lastRow === null || queue.activeIndex === null ? null : lastRow.radio,
+    autoRadioEnabled,
+    repeatOff: repeatMode === RepeatMode.Off,
+    partyQueue: followedParty !== null || lastRow?.context?.type === 'party',
+  });
+  const changeTailAutoplay = (enabled: boolean) => {
+    if (autoplayLock.current) return;
+    autoplayLock.current = true;
+    setAutoplayBusy(true);
+    setAutoplayError(null);
+    changeAutoplay(enabled).then(
+      () => AccessibilityInfo.announceForAccessibility(
+        enabled ? strings.profile.autoplayEnabled : strings.profile.autoplayDisabled,
+      ),
+      (cause: unknown) => {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        setAutoplayError(`${strings.profile.autoplayFailed} (${detail})`);
+      },
+    ).finally(() => {
+      autoplayLock.current = false;
+      setAutoplayBusy(false);
+    });
+  };
   const canToggleShuffle = queue.activeIndex !== null && (shuffle || upcomingContextCount > 1);
   const canClearUpcoming = upcomingCount > 0;
   const transparent = embedded ? styles.transparent : null;
@@ -780,6 +898,17 @@ export function QueueSurface({
               ListEmptyComponent={listEmpty}
               renderSectionHeader={renderSectionHeader}
               renderItem={renderItem}
+              ListFooterComponent={
+                remotePlayback !== null || tailContinuation === null || rows.length === 0 ? null : (
+                  <QueueTailFooter
+                    continuation={tailContinuation}
+                    autoplayReady={playerSetUp}
+                    autoplayBusy={autoplayBusy}
+                    autoplayError={autoplayError}
+                    onAutoplayChange={changeTailAutoplay}
+                  />
+                )
+              }
             />
             <View
               testID="queue-drag-layer"
@@ -926,4 +1055,27 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xs,
   },
   sectionTitle: { flex: 1 },
+  tailWrap: { paddingTop: spacing.lg, gap: spacing.xs },
+  tail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radii.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: colors.fill,
+  },
+  tailActive: { backgroundColor: colors.accentSubtle, borderColor: colors.accentSolid },
+  tailGlyph: {
+    width: layout.artwork.xs,
+    height: layout.artwork.xs,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.fillStrong,
+  },
+  tailGlyphActive: { backgroundColor: colors.backgroundElevated },
+  tailCopy: { flex: 1, minWidth: 0 },
+  tailError: { paddingHorizontal: spacing.xs },
 });

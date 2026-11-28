@@ -1,4 +1,5 @@
 import React from 'react';
+import AutoplayPanel from '../components/profile/AutoplayPanel';
 import PlaybackSettingsPanel from '../components/profile/PlaybackSettingsPanel';
 import { ProfileSettingsShell } from '../components/profile/ProfileChrome';
 import { SleepTimerPanel } from '../components/profile/ProfileSections';
@@ -10,7 +11,10 @@ import { SleepTimerPanel } from '../components/profile/ProfileSections';
  */
 export default function PlaybackSettingsScreen() {
   const playbackPanel = <PlaybackSettingsPanel hideHeader />;
-  const sleepPanel = <SleepTimerPanel />;
+  const deviceSettings = <>
+    <AutoplayPanel />
+    <SleepTimerPanel />
+  </>;
 
   return (
     <ProfileSettingsShell
@@ -18,10 +22,10 @@ export default function PlaybackSettingsScreen() {
       scrollTestID="profile-playback-scroll"
       tvScope="profile-playback"
       tvLeft={playbackPanel}
-      tvRight={sleepPanel}
+      tvRight={deviceSettings}
     >
       {playbackPanel}
-      {sleepPanel}
+      {deviceSettings}
     </ProfileSettingsShell>
   );
 }

@@ -65,6 +65,7 @@ export type NativePlayerCommandName =
   | 'setQueuePersistenceState'
   | 'setCommands'
   | 'setShuffleEnabled'
+  | 'setAutoRadioEnabled'
   | 'sleepAfterTime'
   | 'sleepAfterMediaItemAtIndex'
   | 'cancelSleepTimer';
@@ -101,6 +102,7 @@ export const NATIVE_COMMAND_TRANSLATION = deepFreeze({
   },
   setCommands: { nativeName: 'setCommands', support: 'vertical-slice' },
   setShuffleEnabled: { nativeName: 'setShuffleEnabled', support: 'vertical-slice' },
+  setAutoRadioEnabled: { nativeName: 'setAutoRadioEnabled', support: 'vertical-slice' },
   sleepAfterTime: { nativeName: 'sleepAfterTime', support: 'vertical-slice' },
   sleepAfterMediaItemAtIndex: {
     nativeName: 'sleepAfterMediaItemAtIndex',
@@ -192,6 +194,7 @@ export interface NativeSnapshotV1 {
     contextShuffleRestoreOrder: string[];
   };
   shuffleEnabled: boolean;
+  autoRadioEnabled: boolean;
   sleepTimer:
     | null
     | { type: 'time'; remainingMs: number; fadeOutMs: number }
@@ -1127,6 +1130,10 @@ export class NativeBackedPlayerPort implements PlayerPort {
     return this.visible.shuffleEnabled;
   }
 
+  isAutoRadioEnabled(): boolean {
+    return this.visible.autoRadioEnabled;
+  }
+
   getSleepTimer(): SleepTimerState {
     return this.visible.sleepTimer;
   }
@@ -1191,6 +1198,13 @@ export class NativeBackedPlayerPort implements PlayerPort {
     this.enqueue('setShuffleEnabled', (snapshot) => nextSnapshot(snapshot, {
       shuffleEnabled: false,
     }), { enabled: false });
+  }
+
+  setAutoRadioEnabled(enabled: boolean): void {
+    if (typeof enabled !== 'boolean') throw new TypeError('Autoplay state must be boolean');
+    this.enqueue('setAutoRadioEnabled', (snapshot) => nextSnapshot(snapshot, {
+      autoRadioEnabled: enabled,
+    }), { enabled });
   }
 
   setBrowseTree(categories: readonly BrowseCategory[]): Promise<void> {
@@ -1761,6 +1775,9 @@ export class NativeBackedPlayerPort implements PlayerPort {
     if (typeof raw.shuffleEnabled !== 'boolean') {
       throw new TypeError('Native shuffle state is invalid');
     }
+    if (typeof raw.autoRadioEnabled !== 'boolean') {
+      throw new TypeError('Native autoplay state is invalid');
+    }
     const decodedQueuePersistence = decodeNativeQueuePersistence(
       raw.queuePersistence,
       stableQueue.length,
@@ -1798,6 +1815,7 @@ export class NativeBackedPlayerPort implements PlayerPort {
       repeatMode: raw.repeatMode as RepeatMode,
       queuePersistence,
       shuffleEnabled: raw.shuffleEnabled,
+      autoRadioEnabled: raw.autoRadioEnabled,
       sleepTimer,
     });
   }

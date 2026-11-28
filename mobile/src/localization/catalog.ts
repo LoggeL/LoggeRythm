@@ -258,6 +258,12 @@ export interface StringCatalog {
     languageChanging: string;
     languageChanged: (language: string) => string;
     languageChangeFailed: string;
+    autoplayTitle: string;
+    autoplaySubtitle: string;
+    autoplayToggle: string;
+    autoplayEnabled: string;
+    autoplayDisabled: string;
+    autoplayFailed: string;
     editTitle: string;
     displayName: string;
     email: string;
@@ -838,6 +844,12 @@ export interface StringCatalog {
     removed: (title: string) => string;
     nowPlayingSection: string;
     upNextSection: string;
+    autoplayNextTitle: string;
+    autoplayNextDetail: string;
+    autoplayOffTitle: string;
+    autoplayOffDetail: string;
+    radioContinuesTitle: string;
+    radioContinuesDetail: string;
   };
   party: {
     eyebrow: string;
@@ -1304,6 +1316,13 @@ export const de: StringCatalog = {
     languageChanging: 'Sprache wird gespeichert…',
     languageChanged: (language) => `Sprache auf ${language} geändert.`,
     languageChangeFailed: 'Die Sprache konnte nicht gespeichert werden.',
+    autoplayTitle: 'Autoplay',
+    autoplaySubtitle:
+      'Wenn die Warteschlange zu Ende ist, geht es mit dem Titelradio des letzten Titels weiter.',
+    autoplayToggle: 'Autoplay mit Titelradio',
+    autoplayEnabled: 'Autoplay ist an. Nach der Warteschlange läuft das Titelradio weiter.',
+    autoplayDisabled: 'Autoplay ist aus. Die Wiedergabe stoppt nach dem letzten Titel.',
+    autoplayFailed: 'Autoplay konnte nicht umgestellt werden.',
     editTitle: 'Kontodaten bearbeiten',
     displayName: 'Anzeigename',
     email: 'E-Mail-Adresse',
@@ -1920,6 +1939,12 @@ export const de: StringCatalog = {
     removed: (title) => `„${title}“ wurde aus der Warteschlange entfernt.`,
     nowPlayingSection: 'Jetzt läuft',
     upNextSection: 'Als Nächstes',
+    autoplayNextTitle: 'Danach: Titelradio',
+    autoplayNextDetail: 'Wenn die Warteschlange endet, laufen automatisch ähnliche Titel weiter.',
+    autoplayOffTitle: 'Autoplay ist aus',
+    autoplayOffDetail: 'Die Wiedergabe stoppt nach dem letzten Titel.',
+    radioContinuesTitle: 'Titelradio läuft weiter',
+    radioContinuesDetail: 'Ähnliche Titel werden automatisch nachgeladen.',
   },
   party: {
     eyebrow: 'Gemeinsam hören',
@@ -2316,6 +2341,12 @@ export const en: StringCatalog = {
     languageChanging: 'Saving language…',
     languageChanged: (language) => `Language changed to ${language}.`,
     languageChangeFailed: 'The language could not be saved.',
+    autoplayTitle: 'Autoplay',
+    autoplaySubtitle: 'When your queue ends, the track radio of the last track keeps playing.',
+    autoplayToggle: 'Autoplay with track radio',
+    autoplayEnabled: 'Autoplay is on. Track radio continues after the queue.',
+    autoplayDisabled: 'Autoplay is off. Playback stops after the last track.',
+    autoplayFailed: 'Autoplay could not be changed.',
     editTitle: 'Edit account details', displayName: 'Display name', email: 'Email address',
     newPassword: 'New password', confirmPassword: 'Confirm new password',
     passwordHint: 'Leave blank to keep your current password.', save: 'Save changes',
@@ -2838,6 +2869,12 @@ export const en: StringCatalog = {
     removed: (title) => `${title} was removed from the queue.`,
     nowPlayingSection: 'Now playing',
     upNextSection: 'Up next',
+    autoplayNextTitle: 'Then: track radio',
+    autoplayNextDetail: 'When the queue ends, similar tracks keep playing automatically.',
+    autoplayOffTitle: 'Autoplay is off',
+    autoplayOffDetail: 'Playback stops after the last track.',
+    radioContinuesTitle: 'Track radio keeps going',
+    radioContinuesDetail: 'Similar tracks are added automatically.',
   },
   party: {
     eyebrow: 'Listening together',

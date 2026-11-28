@@ -1334,6 +1334,30 @@ export function cycleRepeat(): RepeatMode {
   return nextMode;
 }
 
+/**
+ * Autoplay: once a queue runs out, native keeps playing the song radio of the
+ * track near its tail. The value is a device preference owned by the native
+ * player service, so it also applies without the UI (Android Auto, notification).
+ */
+export function isAutoRadioEnabled(): boolean {
+  return Player.isAutoRadioEnabled();
+}
+
+export function setAutoRadioEnabled(enabled: boolean): void {
+  Player.setAutoRadioEnabled(enabled);
+}
+
+/**
+ * Mirrors the native near-tail rule: an explicit song radio always extends
+ * itself; any other queue only with Autoplay on, repeat off and outside a party.
+ */
+export function radioExtensionEligible(item: MediaItem): boolean {
+  if (mediaItemIsRadio(item)) return true;
+  return Player.isAutoRadioEnabled()
+    && Player.getRepeatMode() === RepeatMode.Off
+    && queueContextOf(item)?.type !== 'party';
+}
+
 export function isContextShuffleEnabled(): boolean {
   return contextShuffleEnabled;
 }
@@ -1772,7 +1796,7 @@ export async function prepareRadioPlaybackCompletionItems(
   const initialTrack = mediaItemToTrack(initialActive);
   if (
     initialActive.mediaId !== event.activeMediaId
-    || !mediaItemIsRadio(initialActive)
+    || !radioExtensionEligible(initialActive)
     || initial.items.length - initial.activeIndex > 2
     || initialTrack?.id !== event.track.id
   ) {
@@ -1797,7 +1821,7 @@ export async function prepareRadioPlaybackCompletionItems(
   const currentTrack = mediaItemToTrack(currentActive);
   if (
     currentActive.mediaId !== event.activeMediaId
-    || !mediaItemIsRadio(currentActive)
+    || !radioExtensionEligible(currentActive)
     || current.items.length - current.activeIndex > 2
     || currentTrack?.id !== seed.id
   ) {
@@ -1811,11 +1835,11 @@ export async function prepareRadioPlaybackCompletionItems(
   const fresh = uniqueTracksNotInQueue(similar, existing, 5);
   if (fresh.length === 0) return [];
   const sources = await mediaSources(fresh, requestAuthority);
-  const context = queueContextOf(currentActive) ?? {
-    type: 'radio' as const,
-    id: seed.id,
-    label: strings.queue.trackRadioContext(seed.title),
-  };
+  // Autoplay turns the end of an album/playlist into a song radio of its own, so
+  // the appended tracks never pose as more of the album they follow.
+  const context = mediaItemIsRadio(currentActive)
+    ? queueContextOf(currentActive) ?? trackRadioContext(seed)
+    : trackRadioContext(seed);
   const firstOrder = nextOriginalContextOrder(current.items);
   return fresh.map((track, index) => mapMediaItemToNativeQueueItem(
     queueMediaItem(track, sources[index], {

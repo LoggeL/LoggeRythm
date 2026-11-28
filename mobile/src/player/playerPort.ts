@@ -115,6 +115,8 @@ export interface PlayerSnapshot {
   progress: Readonly<Progress>;
   repeatMode: RepeatMode;
   shuffleEnabled: boolean;
+  /** Device preference: a non-radio queue continues with song radio once it runs out. */
+  autoRadioEnabled: boolean;
   playbackSpeed: number;
   volume: number;
   sleepTimer: SleepTimerState;
@@ -372,6 +374,7 @@ export type PlayerPortCommandName =
   | 'setCommands'
   | 'setRepeatMode'
   | 'setShuffleEnabled'
+  | 'setAutoRadioEnabled'
   | 'sleepAfterTime'
   | 'sleepAfterMediaItemAtIndex'
   | 'cancelSleepTimer';
@@ -436,6 +439,7 @@ export interface PlayerPort {
   getQueuePersistenceState(): Readonly<QueuePersistenceState>;
   getRepeatMode(): RepeatMode;
   isShuffleEnabled(): boolean;
+  isAutoRadioEnabled(): boolean;
   getSleepTimer(): SleepTimerState;
 
   setQueuePersistenceState(state: QueuePersistenceState): void;
@@ -445,6 +449,7 @@ export interface PlayerPort {
   setNotificationFavoriteState(mediaId: string | null, liked: boolean | null): Promise<void>;
   setRepeatMode(mode: RepeatMode): void;
   setShuffleEnabled(enabled: boolean): void;
+  setAutoRadioEnabled(enabled: boolean): void;
   setBrowseTree(categories: readonly BrowseCategory[]): Promise<void>;
   sleepAfterTime(seconds: number, options?: { fadeOutSeconds?: number }): void;
   sleepAfterMediaItemAtIndex(index?: number): void;

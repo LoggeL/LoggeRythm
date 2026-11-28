@@ -72,6 +72,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
   ProfileEditForm: 'ProfileEditForm',
   SleepTimerPanel: 'SleepTimerPanel',
 }));
+vi.mock('../components/profile/AutoplayPanel', () => ({ default: 'AutoplayPanel' }));
 vi.mock('../components/profile/PlaybackSettingsPanel', () => ({ default: 'PlaybackSettingsPanel' }));
 vi.mock('../components/profile/ConnectSettingsPanel', () => ({ default: 'ConnectSettingsPanel' }));
 vi.mock('../components/profile/StorageCachePanel', () => ({ default: 'StorageCachePanel' }));

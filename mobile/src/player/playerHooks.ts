@@ -202,6 +202,19 @@ export function useIsPlaying(): boolean {
   return usePlayerSelector((player) => player.isPlaying());
 }
 
+export function useRepeatMode(): RepeatMode {
+  return usePlayerSelector((player) => player.getRepeatMode());
+}
+
+/** Autoplay preference as last reported by the native player (false until it is set up). */
+export function useAutoRadioEnabled(): boolean {
+  return usePlayerSelector((player) => player.isAutoRadioEnabled());
+}
+
+export function usePlayerIsSetup(): boolean {
+  return usePlayerSelector((player) => player.getSnapshot().isSetup);
+}
+
 export function usePlaybackState(): PlaybackState {
   return usePlayerSelector((player) => player.getPlaybackState());
 }
