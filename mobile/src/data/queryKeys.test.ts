@@ -72,6 +72,16 @@ describe('music query keys', () => {
       queryKeys.party.state(8, 'ABC123'),
     );
     expect(queryKeys.admin.status(7)).not.toEqual(queryKeys.admin.status(8));
+    expect(queryKeys.admin.usage(7, '7d')).not.toEqual(queryKeys.admin.usage(7, '30d'));
+    expect(queryKeys.admin.usage(7, 'all')).not.toEqual(queryKeys.admin.usage(8, 'all'));
+    expect(queryKeys.admin.userUsage(7, 2, '30d')).toEqual([
+      'music',
+      'admin',
+      '7',
+      'usage-user',
+      '2',
+      '30d',
+    ]);
   });
 
   it('keys lyrics, imports, cache ids, and play-count request metadata exactly', () => {

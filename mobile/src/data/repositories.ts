@@ -4,7 +4,10 @@ import type {
   AdminInvite,
   AdminStatus,
   AdminStorageInfo,
+  AdminUsageOverviewResponse,
+  AdminUsageRange,
   AdminUser,
+  AdminUserUsageDetailResponse,
   AlbumDetail,
   AlbumSummary,
   ArtistAbout,
@@ -241,6 +244,12 @@ export interface AdminRepository {
   cleanupAdminStorage(): Promise<StorageCleanupResult>;
   getAdminInvites(signal?: AbortSignal): Promise<AdminInvite[]>;
   createAdminInvite(): Promise<AdminInvite>;
+  getAdminUsage(range?: AdminUsageRange, signal?: AbortSignal): Promise<AdminUsageOverviewResponse>;
+  getAdminUserUsage(
+    userId: number,
+    range?: AdminUsageRange,
+    signal?: AbortSignal,
+  ): Promise<AdminUserUsageDetailResponse>;
 }
 
 export interface PlayerRepository {
@@ -382,4 +391,6 @@ export const musicRepository: MusicRepository = {
   cleanupAdminStorage: api.cleanupAdminStorage,
   getAdminInvites: api.getAdminInvites,
   createAdminInvite: api.createAdminInvite,
+  getAdminUsage: api.getAdminUsage,
+  getAdminUserUsage: api.getAdminUserUsage,
 };

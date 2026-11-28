@@ -5,7 +5,6 @@ import { NAV_LATERAL } from "@/lib/morph";
 import { useState, type DragEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { usePlaylists, useDeletePlaylist, useAddToPlaylist } from "@/hooks/useLibrary";
-import { useMe } from "@/hooks/useAuth";
 import { api } from "@/lib/api";
 import { parseDraggedTrack, TRACK_DRAG_MIME } from "@/lib/trackDrag";
 import {
@@ -14,7 +13,6 @@ import {
   PlusIcon,
   LibraryIcon,
   ClockIcon,
-  VisualizerIcon,
   UsersIcon,
   LogOutIcon,
   TrashIcon,
@@ -53,8 +51,6 @@ function ActiveMarker({ travels = false }: { travels?: boolean }) {
 
 function PrimaryNav() {
   const pathname = usePathname();
-  const { data: me } = useMe();
-  const usageActive = pathname === "/admin/usage" || pathname.startsWith("/admin/usage/");
   return (
     <nav aria-label="Hauptnavigation" className="flex flex-col px-3">
       <Link href="/" transitionTypes={NAV_LATERAL} className="mb-5 flex items-center gap-2.5 px-2 pt-5 transition-opacity hover:opacity-80">
@@ -78,18 +74,6 @@ function PrimaryNav() {
           </Link>
         );
       })}
-      {me?.is_admin && (
-        <Link
-          href="/admin/usage"
-          transitionTypes={NAV_LATERAL}
-          aria-current={usageActive ? "page" : undefined}
-          className={`font-display relative mt-2 flex min-h-11 items-center gap-3.5 rounded-[var(--radius-control)] border-t border-hairline px-2 pt-2 text-[17px] font-bold tracking-tight transition-colors ${usageActive ? "text-foreground" : "text-muted hover:text-foreground"}`}
-        >
-          {usageActive && <ActiveMarker travels />}
-          <VisualizerIcon width={21} height={21} className={usageActive ? "text-accent" : ""} />
-          Nutzung
-        </Link>
-      )}
     </nav>
   );
 }

@@ -4,7 +4,7 @@ import { canonicalDeezerIds, normalizeSearchQuery, queryKeys, type QueryScope } 
 import { releaseRadarTracks } from './releaseRadar';
 import { musicRepository, type MusicRepository } from './repositories';
 import type {
-  DeezerId,
+  AdminUsageRange, DeezerId,
   ImportJobStatus,
   StatsInsightsRange,
   TrackPlayQuery,
@@ -459,6 +459,18 @@ export function createMusicQueryOptions(repository: MusicRepository = musicRepos
       return queryOptions({
         queryKey: queryKeys.admin.invites(scope),
         queryFn: ({ signal }) => repository.getAdminInvites(signal),
+      });
+    },
+    adminUsage(scope: QueryScope, range: AdminUsageRange) {
+      return queryOptions({
+        queryKey: queryKeys.admin.usage(scope, range),
+        queryFn: ({ signal }) => repository.getAdminUsage(range, signal),
+      });
+    },
+    adminUserUsage(scope: QueryScope, userId: number, range: AdminUsageRange) {
+      return queryOptions({
+        queryKey: queryKeys.admin.userUsage(scope, userId, range),
+        queryFn: ({ signal }) => repository.getAdminUserUsage(userId, range, signal),
       });
     },
   };

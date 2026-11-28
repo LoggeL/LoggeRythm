@@ -1078,3 +1078,170 @@ export interface StorageCleanupResult {
   removed: number;
   freed_bytes: number;
 }
+
+export type AdminUsageRange = '7d' | '30d' | 'all';
+
+export type AdminTrackRequestSource =
+  | 'stream'
+  | 'preload'
+  | 'playlist_export'
+  | 'party_preload'
+  | 'radar_preload'
+  | 'lyrics_ai';
+
+export interface AdminOverviewStorage {
+  cached_tracks: number;
+  total_audio_bytes: number;
+  exclusive_audio_bytes: number;
+  exclusive_audio_tracks: number;
+  shared_audio_bytes: number;
+  shared_audio_tracks: number;
+  unattributed_audio_bytes: number;
+  unattributed_audio_tracks: number;
+  directly_attributed_tracks: number;
+  directly_attributed_bytes: number;
+  upload_bytes: number;
+  disk_total: number;
+  disk_used: number;
+  disk_free: number;
+  retention_days: number;
+}
+
+export interface AdminUsageOverview {
+  total_users: number;
+  approved_users: number;
+  pending_users: number;
+  active_users: number;
+  total_plays: number;
+  total_listening_sec: number;
+  unique_tracks_played: number;
+  tracks_requested: number;
+  tracks_materialized: number;
+  materialized_bytes: number;
+  online_connect_devices: number;
+  online_connect_users: number;
+  active_parties: number;
+  storage: AdminOverviewStorage;
+}
+
+export interface AdminUserStorage {
+  exclusive_bytes: number;
+  exclusive_tracks: number;
+  shared_bytes: number;
+  shared_tracks: number;
+  accessed_bytes: number;
+  accessed_tracks: number;
+  materialized_bytes: number;
+  materialized_tracks: number;
+  pinned_bytes: number;
+  pinned_tracks: number;
+  upload_bytes: number;
+}
+
+export interface AdminUserStorageBreakdown extends AdminUserStorage {
+  total_cache_bytes: number;
+}
+
+export interface AdminUserLibrary {
+  likes: number;
+  playlists: number;
+  public_playlists: number;
+  playlist_tracks: number;
+  follows: number;
+  party_tracks_added: number;
+  party_hosted: number;
+  import_jobs: number;
+  import_tracks_matched: number;
+}
+
+export interface AdminUserUsageSummary {
+  id: number;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  is_admin: boolean;
+  is_approved: boolean;
+  created_at: string | null;
+  last_active_at: string | null;
+  plays: number;
+  listening_sec: number;
+  unique_tracks: number;
+  tracks_requested: number;
+  tracks_materialized: number;
+  materialized_bytes: number;
+  storage: AdminUserStorage;
+  library: AdminUserLibrary;
+  online_devices: number;
+  is_playing_now: boolean;
+  active_device_name: string | null;
+  active_party_code: string | null;
+}
+
+export interface AdminUsageOverviewResponse {
+  range: AdminUsageRange;
+  generated_at: string;
+  request_tracking_since: string | null;
+  overview: AdminUsageOverview;
+  users: AdminUserUsageSummary[];
+}
+
+export interface AdminRequestSourceStat {
+  source: AdminTrackRequestSource;
+  requests: number;
+  materialized: number;
+  materialized_bytes: number;
+}
+
+export interface AdminConnectDevice {
+  device_id: string;
+  name: string;
+  device_type: ConnectDeviceType;
+  is_active: boolean;
+  party_code: string | null;
+  connected_at: string;
+  last_seen_at: string;
+}
+
+export interface AdminStatEntry {
+  key: string;
+  label: string;
+  sublabel: string;
+  cover: string;
+  count: number;
+}
+
+export interface AdminRecentPlay {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  cover: string;
+  duration_sec: number;
+  played_at: string;
+}
+
+export interface AdminRecentTrackRequest {
+  deezer_id: string;
+  title: string;
+  artist: string;
+  cover: string;
+  source: AdminTrackRequestSource;
+  materialized: boolean;
+  size_bytes: number;
+  requested_at: string;
+  is_currently_stored: boolean;
+}
+
+export interface AdminUserUsageDetailResponse {
+  range: AdminUsageRange;
+  generated_at: string;
+  request_tracking_since: string | null;
+  user: AdminUserUsageSummary;
+  storage_breakdown: AdminUserStorageBreakdown;
+  requests_by_source: AdminRequestSourceStat[];
+  active_devices: AdminConnectDevice[];
+  top_tracks: AdminStatEntry[];
+  top_artists: AdminStatEntry[];
+  recent_plays: AdminRecentPlay[];
+  recent_requests: AdminRecentTrackRequest[];
+}

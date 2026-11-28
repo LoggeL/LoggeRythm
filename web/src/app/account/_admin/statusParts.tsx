@@ -1,5 +1,5 @@
 import type { ReactElement, ReactNode } from "react";
-import type { IconProps } from "./icons";
+import type { IconProps } from "./statusIcons";
 
 export type StatusTone = "ok" | "critical" | "neutral";
 

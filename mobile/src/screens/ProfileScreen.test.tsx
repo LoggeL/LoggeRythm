@@ -90,6 +90,7 @@ vi.mock('../components/profile/ProfileSections', () => ({
   ProfileIdentityCard: 'ProfileIdentityCard',
   SleepTimerPanel: 'SleepTimerPanel',
 }));
+vi.mock('../components/profile/AdminHubPanel', () => ({ default: 'AdminHubPanel' }));
 vi.mock('../components/profile/ProfileOverviewNavigation', () => ({
   ProfileQuickActions: 'ProfileQuickActions',
   ProfileSettingsMenu: 'ProfileSettingsMenu',
@@ -270,6 +271,19 @@ describe('ProfileScreen overview', () => {
       'ListeningStatsPanel',
     ]);
     expect(elements(tree).some((el) => el.type === ProfileBackgroundUpdateCheck)).toBe(false);
+  });
+
+  it('exposes the administration panel only to administrators on phone and TV', () => {
+    const auth = mocks.useAuth();
+    for (const isTv of [false, true]) {
+      mocks.tvEnv.isTv = isTv;
+      for (const isAdmin of [false, true]) {
+        mocks.useAuth.mockReturnValue({ ...auth, user: { ...auth.user, is_admin: isAdmin } });
+        const panel = elements(renderOverview(false, false).tree).find((el) => el.type === 'AdminHubPanel');
+        expect(Boolean(panel)).toBe(isAdmin);
+        if (panel) expect(panel.props.currentUserId).toBe(auth.user.id);
+      }
+    }
   });
 
   it('opens and closes quick Sleep Timer and Audio Effects sheets and tracks TV checkpoints', () => {

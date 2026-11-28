@@ -19,7 +19,9 @@ import {
   getAdminInvites,
   getAdminStatus,
   getAdminStorage,
+  getAdminUsage,
   getAdminUsers,
+  getAdminUserUsage,
   getAlbum,
   getBecauseYouListened,
   getCachedTrackIds,
@@ -616,6 +618,8 @@ describe('web-parity endpoint contracts', () => {
     cleanupAdminStorage();
     getAdminInvites();
     createAdminInvite();
+    getAdminUsage('7d');
+    getAdminUserUsage(9, '30d');
 
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(
       1,
@@ -628,11 +632,23 @@ describe('web-parity endpoint contracts', () => {
     expect(mocks.apiRequest).toHaveBeenNthCalledWith(3, '/api/admin/users/5', {
       method: 'DELETE',
     });
-    for (const call of [4, 5, 6, 7, 8]) {
+    for (const call of [4, 5, 6, 7, 8, 9, 10]) {
       expect(mocks.apiRequest.mock.calls[call - 1]?.[1]).toEqual(
         expect.objectContaining({ decode: expect.any(Function) }),
       );
     }
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(
+      9,
+      '/api/admin/usage?range=7d',
+      expect.objectContaining({ decode: expect.any(Function) }),
+    );
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(
+      10,
+      '/api/admin/usage/users/9?range=30d',
+      expect.objectContaining({ decode: expect.any(Function) }),
+    );
+    expect(() => getAdminUsage('invalid' as never)).toThrow(/Unsupported admin usage range/);
+    expect(() => getAdminUserUsage(0, 'all')).toThrow(/positive integer userId/);
   });
 
   it('requests Wrapped analytics with encoded range, signal, and strict decoder', () => {

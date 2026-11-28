@@ -5,7 +5,7 @@ import { Suspense, useRef, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMe } from "@/hooks/useAuth";
 import EmptyState from "@/components/ui/EmptyState";
-import { ClockIcon, StatusIcon, UserIcon, VisualizerIcon } from "@/components/icons";
+import { ClockIcon, LockIcon, StatusIcon, UserIcon, VisualizerIcon } from "@/components/icons";
 import ListeningStats from "@/components/profile/ListeningStats";
 import AdministrationTab from "./AdministrationTab";
 import PlaybackTab from "./PlaybackTab";
@@ -77,11 +77,19 @@ function AccountContent() {
 
   const tabs = TABS.filter((item) => !item.adminOnly || me.is_admin);
   const requested = searchParams.get("tab");
-  const tab: AccountTab = tabs.find((item) => item.key === requested)?.key ?? "stats";
+  const deniedAdmin = requested === "admin" && !me.is_admin;
+  const tab: AccountTab = deniedAdmin
+    ? "admin"
+    : (tabs.find((item) => item.key === requested)?.key ?? "stats");
 
   function selectTab(next: AccountTab) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", next);
+    if (next !== "admin") {
+      params.delete("section");
+      params.delete("range");
+      params.delete("user");
+    }
     router.replace(`/account?${params.toString()}`, { scroll: false });
   }
 
@@ -94,8 +102,10 @@ function AccountContent() {
     tabRefs.current[nextIndex]?.focus();
   }
 
+  const wideLayout = tab === "admin" && !deniedAdmin;
+
   return (
-    <div className="mx-auto flex w-full max-w-5xl min-w-0 flex-col gap-7">
+    <div className={`mx-auto flex w-full min-w-0 flex-col gap-7 ${wideLayout ? "max-w-6xl" : "max-w-5xl"}`}>
       <ProfileHeader me={me} />
 
       {error && (
@@ -108,34 +118,60 @@ function AccountContent() {
       )}
 
       <div role="tablist" aria-label="Kontobereiche" className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        {tabs.map((item, index) => (
-          <button
-            key={item.key}
-            ref={(element) => {
-              tabRefs.current[index] = element;
-            }}
-            id={`account-tab-${item.key}`}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.key}
-            aria-controls="account-panel"
-            tabIndex={tab === item.key ? 0 : -1}
-            onClick={() => selectTab(item.key)}
-            onKeyDown={(event) => onTabKeyDown(event, index)}
-            className="filter-chip min-h-11 shrink-0 px-4 sm:min-h-10"
-          >
-            {item.icon}
-            {item.label}
-          </button>
-        ))}
+        {tabs.map((item, index) => {
+          const selected = !deniedAdmin && tab === item.key;
+          return (
+            <button
+              key={item.key}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={`account-tab-${item.key}`}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              aria-controls="account-panel"
+              tabIndex={selected || (deniedAdmin && index === 0) ? 0 : -1}
+              onClick={() => selectTab(item.key)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className="filter-chip min-h-11 shrink-0 px-4 sm:min-h-10"
+            >
+              {item.icon}
+              {item.label}
+            </button>
+          );
+        })}
       </div>
 
-      <section id="account-panel" role="tabpanel" aria-labelledby={`account-tab-${tab}`} tabIndex={-1} className="min-w-0 outline-none">
+      <section
+        id="account-panel"
+        role={deniedAdmin ? undefined : "tabpanel"}
+        aria-labelledby={deniedAdmin ? undefined : `account-tab-${tab}`}
+        tabIndex={-1}
+        className="min-w-0 outline-none"
+      >
         <div key={tab} className="animate-in">
-          {tab === "stats" && <ListeningStats />}
-          {tab === "playback" && <PlaybackTab />}
-          {tab === "profile" && <ProfileTab me={me} />}
-          {tab === "admin" && <AdministrationTab />}
+          {deniedAdmin ? (
+            <EmptyState
+              className="mx-auto max-w-xl"
+              icon={<LockIcon />}
+              title="Nur für Administratoren"
+              action={
+                <button type="button" onClick={() => selectTab("stats")} className="action-primary">
+                  Zum Hörprofil
+                </button>
+              }
+            >
+              Die Verwaltung ist ausschließlich für Administratoren zugänglich.
+            </EmptyState>
+          ) : (
+            <>
+              {tab === "stats" && <ListeningStats />}
+              {tab === "playback" && <PlaybackTab />}
+              {tab === "profile" && <ProfileTab me={me} />}
+              {tab === "admin" && <AdministrationTab />}
+            </>
+          )}
         </div>
       </section>
     </div>

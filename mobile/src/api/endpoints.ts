@@ -7,7 +7,9 @@ import {
   decodeAdminInvites,
   decodeAdminStatus,
   decodeAdminStorageInfo,
+  decodeAdminUsageOverview,
   decodeAdminUsers,
+  decodeAdminUserUsageDetail,
   decodeAlbum,
   decodeAlbumSummaries,
   decodeArtistAbout,
@@ -65,7 +67,10 @@ import type {
   AdminInvite,
   AdminStatus,
   AdminStorageInfo,
+  AdminUsageOverviewResponse,
+  AdminUsageRange,
   AdminUser,
+  AdminUserUsageDetailResponse,
   AlbumDetail,
   AlbumSummary,
   ArtistAbout,
@@ -1230,4 +1235,43 @@ export function createAdminInvite(): Promise<AdminInvite> {
     method: 'POST',
     decode: decodeAdminInviteResult,
   });
+}
+
+function assertAdminUsageRange(range: AdminUsageRange): AdminUsageRange {
+  if (range !== '7d' && range !== '30d' && range !== 'all') {
+    throw new Error(`Unsupported admin usage range: ${String(range)}`);
+  }
+  return range;
+}
+
+export function getAdminUsage(
+  range: AdminUsageRange = 'all',
+  signal?: AbortSignal,
+): Promise<AdminUsageOverviewResponse> {
+  const validRange = assertAdminUsageRange(range);
+  return apiRequest<AdminUsageOverviewResponse>(
+    `/api/admin/usage?range=${encodeURIComponent(validRange)}`,
+    {
+      signal,
+      decode: decodeAdminUsageOverview,
+    },
+  );
+}
+
+export function getAdminUserUsage(
+  userId: number,
+  range: AdminUsageRange = 'all',
+  signal?: AbortSignal,
+): Promise<AdminUserUsageDetailResponse> {
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    throw new Error('Admin user usage requires a positive integer userId');
+  }
+  const validRange = assertAdminUsageRange(range);
+  return apiRequest<AdminUserUsageDetailResponse>(
+    `/api/admin/usage/users/${pathSegment(userId)}?range=${encodeURIComponent(validRange)}`,
+    {
+      signal,
+      decode: decodeAdminUserUsageDetail,
+    },
+  );
 }

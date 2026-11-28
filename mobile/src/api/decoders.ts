@@ -1,10 +1,25 @@
 import type {
   AddedTracksResult,
+  AdminConnectDevice,
   AdminInvite,
+  AdminOverviewStorage,
+  AdminRecentPlay,
+  AdminRecentTrackRequest,
+  AdminRequestSourceStat,
+  AdminStatEntry,
   AdminStatus,
   AdminStorageInfo,
   AdminStorageItem,
+  AdminTrackRequestSource,
+  AdminUsageOverview,
+  AdminUsageOverviewResponse,
+  AdminUsageRange,
   AdminUser,
+  AdminUserLibrary,
+  AdminUserStorage,
+  AdminUserStorageBreakdown,
+  AdminUserUsageDetailResponse,
+  AdminUserUsageSummary,
   AlbumDetail,
   AlbumSummary,
   ArtistAbout,
@@ -1334,6 +1349,454 @@ export function decodeStorageCleanupResult(value: unknown): StorageCleanupResult
   return {
     removed: nonNegativeInteger(source.removed, 'StorageCleanupResult.removed'),
     freed_bytes: nonNegativeInteger(source.freed_bytes, 'StorageCleanupResult.freed_bytes'),
+  };
+}
+
+const ADMIN_USAGE_RANGES = ['7d', '30d', 'all'] as const satisfies readonly AdminUsageRange[];
+const ADMIN_TRACK_REQUEST_SOURCES = [
+  'stream',
+  'preload',
+  'playlist_export',
+  'party_preload',
+  'radar_preload',
+  'lyrics_ai',
+] as const satisfies readonly AdminTrackRequestSource[];
+
+function nonEmptyString(value: unknown, path: string): string {
+  const parsed = string(value, path).trim();
+  if (parsed.length === 0) throw new Error(`${path} must be a non-empty string`);
+  return parsed;
+}
+
+function isoTimestamp(value: unknown, path: string): string {
+  const parsed = nonEmptyString(value, path);
+  if (Number.isNaN(Date.parse(parsed))) {
+    throw new Error(`${path} must be a valid ISO-8601 timestamp`);
+  }
+  return parsed;
+}
+
+function nullableIsoTimestamp(value: unknown, path: string): string | null {
+  return value === null ? null : isoTimestamp(value, path);
+}
+
+function canonicalStatId(value: unknown, path: string, allowEmpty = false): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!allowEmpty && trimmed.length === 0) {
+      throw new Error(`${path} must be a non-empty id`);
+    }
+    return trimmed;
+  }
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) {
+    return String(value);
+  }
+  throw new Error(`${path} must be a string or safe non-negative integer`);
+}
+
+function decodeAdminOverviewStorage(value: unknown, path: string): AdminOverviewStorage {
+  const source = object(value, path);
+  const storage: AdminOverviewStorage = {
+    cached_tracks: nonNegativeInteger(source.cached_tracks, `${path}.cached_tracks`),
+    total_audio_bytes: nonNegativeInteger(source.total_audio_bytes, `${path}.total_audio_bytes`),
+    exclusive_audio_bytes: nonNegativeInteger(
+      source.exclusive_audio_bytes,
+      `${path}.exclusive_audio_bytes`,
+    ),
+    exclusive_audio_tracks: nonNegativeInteger(
+      source.exclusive_audio_tracks,
+      `${path}.exclusive_audio_tracks`,
+    ),
+    shared_audio_bytes: nonNegativeInteger(source.shared_audio_bytes, `${path}.shared_audio_bytes`),
+    shared_audio_tracks: nonNegativeInteger(
+      source.shared_audio_tracks,
+      `${path}.shared_audio_tracks`,
+    ),
+    unattributed_audio_bytes: nonNegativeInteger(
+      source.unattributed_audio_bytes,
+      `${path}.unattributed_audio_bytes`,
+    ),
+    unattributed_audio_tracks: nonNegativeInteger(
+      source.unattributed_audio_tracks,
+      `${path}.unattributed_audio_tracks`,
+    ),
+    directly_attributed_tracks: nonNegativeInteger(
+      source.directly_attributed_tracks,
+      `${path}.directly_attributed_tracks`,
+    ),
+    directly_attributed_bytes: nonNegativeInteger(
+      source.directly_attributed_bytes,
+      `${path}.directly_attributed_bytes`,
+    ),
+    upload_bytes: nonNegativeInteger(source.upload_bytes, `${path}.upload_bytes`),
+    disk_total: positiveInteger(source.disk_total, `${path}.disk_total`),
+    disk_used: nonNegativeInteger(source.disk_used, `${path}.disk_used`),
+    disk_free: nonNegativeInteger(source.disk_free, `${path}.disk_free`),
+    retention_days: nonNegativeInteger(source.retention_days, `${path}.retention_days`),
+  };
+
+  if (
+    storage.exclusive_audio_bytes + storage.shared_audio_bytes + storage.unattributed_audio_bytes
+    !== storage.total_audio_bytes
+  ) {
+    throw new Error(
+      `${path}.total_audio_bytes must equal exclusive_audio_bytes + shared_audio_bytes + unattributed_audio_bytes`,
+    );
+  }
+  if (
+    storage.exclusive_audio_tracks + storage.shared_audio_tracks + storage.unattributed_audio_tracks
+    !== storage.cached_tracks
+  ) {
+    throw new Error(
+      `${path}.cached_tracks must equal exclusive_audio_tracks + shared_audio_tracks + unattributed_audio_tracks`,
+    );
+  }
+  if (storage.directly_attributed_tracks > storage.cached_tracks) {
+    throw new Error(`${path}.directly_attributed_tracks must not exceed cached_tracks`);
+  }
+  if (storage.directly_attributed_bytes > storage.total_audio_bytes) {
+    throw new Error(`${path}.directly_attributed_bytes must not exceed total_audio_bytes`);
+  }
+  if (storage.disk_used > storage.disk_total) {
+    throw new Error(`${path}.disk_used must not exceed disk_total`);
+  }
+  return storage;
+}
+
+function decodeAdminUsageOverviewData(value: unknown, path: string): AdminUsageOverview {
+  const source = object(value, path);
+  const overview: AdminUsageOverview = {
+    total_users: nonNegativeInteger(source.total_users, `${path}.total_users`),
+    approved_users: nonNegativeInteger(source.approved_users, `${path}.approved_users`),
+    pending_users: nonNegativeInteger(source.pending_users, `${path}.pending_users`),
+    active_users: nonNegativeInteger(source.active_users, `${path}.active_users`),
+    total_plays: nonNegativeInteger(source.total_plays, `${path}.total_plays`),
+    total_listening_sec: nonNegativeInteger(
+      source.total_listening_sec,
+      `${path}.total_listening_sec`,
+    ),
+    unique_tracks_played: nonNegativeInteger(
+      source.unique_tracks_played,
+      `${path}.unique_tracks_played`,
+    ),
+    tracks_requested: nonNegativeInteger(source.tracks_requested, `${path}.tracks_requested`),
+    tracks_materialized: nonNegativeInteger(
+      source.tracks_materialized,
+      `${path}.tracks_materialized`,
+    ),
+    materialized_bytes: nonNegativeInteger(source.materialized_bytes, `${path}.materialized_bytes`),
+    online_connect_devices: nonNegativeInteger(
+      source.online_connect_devices,
+      `${path}.online_connect_devices`,
+    ),
+    online_connect_users: nonNegativeInteger(
+      source.online_connect_users,
+      `${path}.online_connect_users`,
+    ),
+    active_parties: nonNegativeInteger(source.active_parties, `${path}.active_parties`),
+    storage: decodeAdminOverviewStorage(source.storage, `${path}.storage`),
+  };
+
+  if (overview.approved_users + overview.pending_users !== overview.total_users) {
+    throw new Error(`${path}.total_users must equal approved_users + pending_users`);
+  }
+  if (overview.active_users > overview.total_users) {
+    throw new Error(`${path}.active_users must not exceed total_users`);
+  }
+  if (overview.tracks_materialized > overview.tracks_requested) {
+    throw new Error(`${path}.tracks_materialized must not exceed tracks_requested`);
+  }
+  if (overview.online_connect_users > overview.total_users) {
+    throw new Error(`${path}.online_connect_users must not exceed total_users`);
+  }
+  if (overview.online_connect_users > overview.online_connect_devices) {
+    throw new Error(`${path}.online_connect_users must not exceed online_connect_devices`);
+  }
+  return overview;
+}
+
+function decodeAdminUserStorage(value: unknown, path: string): AdminUserStorage {
+  const source = object(value, path);
+  const storage: AdminUserStorage = {
+    exclusive_bytes: nonNegativeInteger(source.exclusive_bytes, `${path}.exclusive_bytes`),
+    exclusive_tracks: nonNegativeInteger(source.exclusive_tracks, `${path}.exclusive_tracks`),
+    shared_bytes: nonNegativeInteger(source.shared_bytes, `${path}.shared_bytes`),
+    shared_tracks: nonNegativeInteger(source.shared_tracks, `${path}.shared_tracks`),
+    accessed_bytes: nonNegativeInteger(source.accessed_bytes, `${path}.accessed_bytes`),
+    accessed_tracks: nonNegativeInteger(source.accessed_tracks, `${path}.accessed_tracks`),
+    materialized_bytes: nonNegativeInteger(source.materialized_bytes, `${path}.materialized_bytes`),
+    materialized_tracks: nonNegativeInteger(
+      source.materialized_tracks,
+      `${path}.materialized_tracks`,
+    ),
+    pinned_bytes: nonNegativeInteger(source.pinned_bytes, `${path}.pinned_bytes`),
+    pinned_tracks: nonNegativeInteger(source.pinned_tracks, `${path}.pinned_tracks`),
+    upload_bytes: nonNegativeInteger(source.upload_bytes, `${path}.upload_bytes`),
+  };
+
+  if (storage.exclusive_bytes + storage.shared_bytes !== storage.accessed_bytes) {
+    throw new Error(`${path}.accessed_bytes must equal exclusive_bytes + shared_bytes`);
+  }
+  if (storage.exclusive_tracks + storage.shared_tracks !== storage.accessed_tracks) {
+    throw new Error(`${path}.accessed_tracks must equal exclusive_tracks + shared_tracks`);
+  }
+  return storage;
+}
+
+function decodeAdminUserStorageBreakdown(
+  value: unknown,
+  path: string,
+): AdminUserStorageBreakdown {
+  const source = object(value, path);
+  const base = decodeAdminUserStorage(source, path);
+  const totalCacheBytes = nonNegativeInteger(source.total_cache_bytes, `${path}.total_cache_bytes`);
+  if (base.accessed_bytes > totalCacheBytes) {
+    throw new Error(`${path}.accessed_bytes must not exceed total_cache_bytes`);
+  }
+  if (base.materialized_bytes > totalCacheBytes) {
+    throw new Error(`${path}.materialized_bytes must not exceed total_cache_bytes`);
+  }
+  if (base.pinned_bytes > totalCacheBytes) {
+    throw new Error(`${path}.pinned_bytes must not exceed total_cache_bytes`);
+  }
+  return { ...base, total_cache_bytes: totalCacheBytes };
+}
+
+function decodeAdminUserLibrary(value: unknown, path: string): AdminUserLibrary {
+  const source = object(value, path);
+  const library: AdminUserLibrary = {
+    likes: nonNegativeInteger(source.likes, `${path}.likes`),
+    playlists: nonNegativeInteger(source.playlists, `${path}.playlists`),
+    public_playlists: nonNegativeInteger(source.public_playlists, `${path}.public_playlists`),
+    playlist_tracks: nonNegativeInteger(source.playlist_tracks, `${path}.playlist_tracks`),
+    follows: nonNegativeInteger(source.follows, `${path}.follows`),
+    party_tracks_added: nonNegativeInteger(source.party_tracks_added, `${path}.party_tracks_added`),
+    party_hosted: nonNegativeInteger(source.party_hosted, `${path}.party_hosted`),
+    import_jobs: nonNegativeInteger(source.import_jobs, `${path}.import_jobs`),
+    import_tracks_matched: nonNegativeInteger(
+      source.import_tracks_matched,
+      `${path}.import_tracks_matched`,
+    ),
+  };
+  if (library.public_playlists > library.playlists) {
+    throw new Error(`${path}.public_playlists must not exceed playlists`);
+  }
+  return library;
+}
+
+function decodeAdminUserUsageSummary(value: unknown, path: string): AdminUserUsageSummary {
+  const source = object(value, path);
+  const tracksRequested = nonNegativeInteger(source.tracks_requested, `${path}.tracks_requested`);
+  const tracksMaterialized = nonNegativeInteger(
+    source.tracks_materialized,
+    `${path}.tracks_materialized`,
+  );
+  if (tracksMaterialized > tracksRequested) {
+    throw new Error(`${path}.tracks_materialized must not exceed tracks_requested`);
+  }
+  const rawDisplayName = nullableString(source.display_name, `${path}.display_name`);
+  const displayName = rawDisplayName === null ? null : rawDisplayName.trim() || null;
+
+  return {
+    id: nonNegativeInteger(source.id, `${path}.id`),
+    email: nonEmptyString(source.email, `${path}.email`),
+    display_name: displayName,
+    avatar_url: nullableString(source.avatar_url, `${path}.avatar_url`),
+    is_admin: boolean(source.is_admin, `${path}.is_admin`),
+    is_approved: boolean(source.is_approved, `${path}.is_approved`),
+    created_at: nullableIsoTimestamp(source.created_at, `${path}.created_at`),
+    last_active_at: nullableIsoTimestamp(source.last_active_at, `${path}.last_active_at`),
+    plays: nonNegativeInteger(source.plays, `${path}.plays`),
+    listening_sec: nonNegativeInteger(source.listening_sec, `${path}.listening_sec`),
+    unique_tracks: nonNegativeInteger(source.unique_tracks, `${path}.unique_tracks`),
+    tracks_requested: tracksRequested,
+    tracks_materialized: tracksMaterialized,
+    materialized_bytes: nonNegativeInteger(source.materialized_bytes, `${path}.materialized_bytes`),
+    storage: decodeAdminUserStorage(source.storage, `${path}.storage`),
+    library: decodeAdminUserLibrary(source.library, `${path}.library`),
+    online_devices: nonNegativeInteger(source.online_devices, `${path}.online_devices`),
+    is_playing_now: boolean(source.is_playing_now, `${path}.is_playing_now`),
+    active_device_name: nullableString(source.active_device_name, `${path}.active_device_name`),
+    active_party_code: nullableString(source.active_party_code, `${path}.active_party_code`),
+  };
+}
+
+function decodeAdminRequestSourceStat(value: unknown, path: string): AdminRequestSourceStat {
+  const source = object(value, path);
+  const requests = nonNegativeInteger(source.requests, `${path}.requests`);
+  const materialized = nonNegativeInteger(source.materialized, `${path}.materialized`);
+  if (materialized > requests) {
+    throw new Error(`${path}.materialized must not exceed requests`);
+  }
+  return {
+    source: literal(source.source, `${path}.source`, ADMIN_TRACK_REQUEST_SOURCES),
+    requests,
+    materialized,
+    materialized_bytes: nonNegativeInteger(source.materialized_bytes, `${path}.materialized_bytes`),
+  };
+}
+
+function decodeAdminConnectDevice(value: unknown, path: string): AdminConnectDevice {
+  const source = object(value, path);
+  return {
+    device_id: nonEmptyString(source.device_id, `${path}.device_id`),
+    name: nonEmptyString(source.name, `${path}.name`),
+    device_type: literal(source.device_type, `${path}.device_type`, CONNECT_DEVICE_TYPES),
+    is_active: boolean(source.is_active, `${path}.is_active`),
+    party_code: nullableString(source.party_code, `${path}.party_code`),
+    connected_at: isoTimestamp(source.connected_at, `${path}.connected_at`),
+    last_seen_at: isoTimestamp(source.last_seen_at, `${path}.last_seen_at`),
+  };
+}
+
+function decodeAdminStatEntry(
+  value: unknown,
+  path: string,
+  allowEmptyKey: boolean,
+): AdminStatEntry {
+  const source = object(value, path);
+  return {
+    key: canonicalStatId(source.key, `${path}.key`, allowEmptyKey),
+    label: string(source.label, `${path}.label`).trim(),
+    sublabel: string(source.sublabel, `${path}.sublabel`).trim(),
+    cover: string(source.cover, `${path}.cover`).trim(),
+    count: positiveInteger(source.count, `${path}.count`),
+  };
+}
+
+function decodeAdminRecentPlay(value: unknown, path: string): AdminRecentPlay {
+  const source = object(value, path);
+  return {
+    id: canonicalStatId(source.id, `${path}.id`),
+    title: string(source.title, `${path}.title`).trim(),
+    artist: string(source.artist, `${path}.artist`).trim(),
+    album: string(source.album, `${path}.album`).trim(),
+    cover: string(source.cover, `${path}.cover`).trim(),
+    duration_sec: nonNegativeInteger(source.duration_sec, `${path}.duration_sec`),
+    played_at: isoTimestamp(source.played_at, `${path}.played_at`),
+  };
+}
+
+function decodeAdminRecentTrackRequest(value: unknown, path: string): AdminRecentTrackRequest {
+  const source = object(value, path);
+  return {
+    deezer_id: canonicalStatId(source.deezer_id, `${path}.deezer_id`),
+    title: string(source.title, `${path}.title`).trim(),
+    artist: string(source.artist, `${path}.artist`).trim(),
+    cover: string(source.cover, `${path}.cover`).trim(),
+    source: literal(source.source, `${path}.source`, ADMIN_TRACK_REQUEST_SOURCES),
+    materialized: boolean(source.materialized, `${path}.materialized`),
+    size_bytes: nonNegativeInteger(source.size_bytes, `${path}.size_bytes`),
+    requested_at: isoTimestamp(source.requested_at, `${path}.requested_at`),
+    is_currently_stored: boolean(source.is_currently_stored, `${path}.is_currently_stored`),
+  };
+}
+
+export function decodeAdminUsageOverview(value: unknown): AdminUsageOverviewResponse {
+  const source = object(value, 'AdminUsageOverviewResponse');
+  const range = literal(source.range, 'AdminUsageOverviewResponse.range', ADMIN_USAGE_RANGES);
+  const generatedAt = isoTimestamp(source.generated_at, 'AdminUsageOverviewResponse.generated_at');
+  const trackingSince = nullableIsoTimestamp(
+    source.request_tracking_since,
+    'AdminUsageOverviewResponse.request_tracking_since',
+  );
+  const overview = decodeAdminUsageOverviewData(
+    source.overview,
+    'AdminUsageOverviewResponse.overview',
+  );
+  const users = array(source.users, 'AdminUsageOverviewResponse.users', decodeAdminUserUsageSummary);
+
+  if (users.length !== overview.total_users) {
+    throw new Error(
+      `AdminUsageOverviewResponse.users length (${users.length}) must equal overview.total_users (${overview.total_users})`,
+    );
+  }
+  const exclusiveBytesSum = users.reduce((sum, entry) => sum + entry.storage.exclusive_bytes, 0);
+  if (exclusiveBytesSum !== overview.storage.exclusive_audio_bytes) {
+    throw new Error(
+      `AdminUsageOverviewResponse.users exclusive_bytes sum (${exclusiveBytesSum}) must equal overview.storage.exclusive_audio_bytes (${overview.storage.exclusive_audio_bytes})`,
+    );
+  }
+  const exclusiveTracksSum = users.reduce((sum, entry) => sum + entry.storage.exclusive_tracks, 0);
+  if (exclusiveTracksSum !== overview.storage.exclusive_audio_tracks) {
+    throw new Error(
+      `AdminUsageOverviewResponse.users exclusive_tracks sum (${exclusiveTracksSum}) must equal overview.storage.exclusive_audio_tracks (${overview.storage.exclusive_audio_tracks})`,
+    );
+  }
+
+  return {
+    range,
+    generated_at: generatedAt,
+    request_tracking_since: trackingSince,
+    overview,
+    users,
+  };
+}
+
+export function decodeAdminUserUsageDetail(value: unknown): AdminUserUsageDetailResponse {
+  const source = object(value, 'AdminUserUsageDetailResponse');
+  const range = literal(source.range, 'AdminUserUsageDetailResponse.range', ADMIN_USAGE_RANGES);
+  const generatedAt = isoTimestamp(
+    source.generated_at,
+    'AdminUserUsageDetailResponse.generated_at',
+  );
+  const trackingSince = nullableIsoTimestamp(
+    source.request_tracking_since,
+    'AdminUserUsageDetailResponse.request_tracking_since',
+  );
+  const user = decodeAdminUserUsageSummary(source.user, 'AdminUserUsageDetailResponse.user');
+  const storageBreakdown = decodeAdminUserStorageBreakdown(
+    source.storage_breakdown,
+    'AdminUserUsageDetailResponse.storage_breakdown',
+  );
+
+  if (storageBreakdown.exclusive_bytes !== user.storage.exclusive_bytes) {
+    throw new Error(
+      'AdminUserUsageDetailResponse.storage_breakdown.exclusive_bytes must equal user.storage.exclusive_bytes',
+    );
+  }
+  if (storageBreakdown.accessed_bytes !== user.storage.accessed_bytes) {
+    throw new Error(
+      'AdminUserUsageDetailResponse.storage_breakdown.accessed_bytes must equal user.storage.accessed_bytes',
+    );
+  }
+
+  return {
+    range,
+    generated_at: generatedAt,
+    request_tracking_since: trackingSince,
+    user,
+    storage_breakdown: storageBreakdown,
+    requests_by_source: array(
+      source.requests_by_source,
+      'AdminUserUsageDetailResponse.requests_by_source',
+      decodeAdminRequestSourceStat,
+    ),
+    active_devices: array(
+      source.active_devices,
+      'AdminUserUsageDetailResponse.active_devices',
+      decodeAdminConnectDevice,
+    ),
+    top_tracks: array(
+      source.top_tracks,
+      'AdminUserUsageDetailResponse.top_tracks',
+      (entry, path) => decodeAdminStatEntry(entry, path, false),
+    ),
+    top_artists: array(
+      source.top_artists,
+      'AdminUserUsageDetailResponse.top_artists',
+      (entry, path) => decodeAdminStatEntry(entry, path, true),
+    ),
+    recent_plays: array(
+      source.recent_plays,
+      'AdminUserUsageDetailResponse.recent_plays',
+      decodeAdminRecentPlay,
+    ),
+    recent_requests: array(
+      source.recent_requests,
+      'AdminUserUsageDetailResponse.recent_requests',
+      decodeAdminRecentTrackRequest,
+    ),
   };
 }
 

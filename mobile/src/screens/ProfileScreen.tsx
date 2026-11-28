@@ -6,6 +6,7 @@ import { resolveServerUrl } from '../api/url';
 import { useAuth } from '../auth/AuthContext';
 import { showDevicePicker } from '../components/connect/devicePicker';
 import { AudioEffectsSheet } from '../components/player/AudioEffectsSheet';
+import AdminHubPanel from '../components/profile/AdminHubPanel';
 import AndroidUpdateCard from '../components/profile/AndroidUpdateCard';
 import { ProfileBottomSafeSpacer } from '../components/profile/ProfileChrome';
 import {
@@ -167,6 +168,7 @@ export default function ProfileScreen({
       onOpenDevices={openDevices}
     />
   );
+  const adminPanel = user.is_admin ? <AdminHubPanel scope={scope} apiBase={apiBase} currentUserId={user.id} /> : null;
   const settingsMenu = (
     <ProfileSettingsMenu
       onOpenPlaybackSettings={onOpenPlaybackSettings}
@@ -233,6 +235,7 @@ export default function ProfileScreen({
               </View>
               <View style={styles.tvColumn}>
                 {statsPanel}
+                {adminPanel}
               </View>
             </View>
           </ScrollView>
@@ -266,6 +269,7 @@ export default function ProfileScreen({
         {quickActions}
         {settingsMenu}
         {statsPanel}
+        {adminPanel}
       </ScrollView>
       <ProfileBottomSafeSpacer />
       {quickSheets}

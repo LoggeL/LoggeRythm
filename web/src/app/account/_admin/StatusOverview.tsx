@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SystemStatus } from "@/types";
-import { ContentIcon, DiskIcon, KeyIcon, PlugIcon, ServerIcon, UsersIcon } from "./icons";
+import { ContentIcon, DiskIcon, KeyIcon, PlugIcon, ServerIcon, UsersIcon } from "./statusIcons";
+import { buildAdminSectionHref } from "./sections";
 import { formatBytes } from "./statusModel";
 import { formatNumber, Metric, MetricGrid, Panel, Pill, Row, Signal, TONE_FILL, ToneGlyph, type StatusTone } from "./statusParts";
 
@@ -185,7 +186,7 @@ export function StatusBody({ status }: { status: SystemStatus }) {
                 ? `Automatische Löschung nach ${status.storage.retention_days} inaktiven Tagen, außer gelikten Titeln und Titeln in Playlists`
                 : "Keine automatische Löschung"}
             </span>
-            <Link href="/account?tab=admin" className={linkClass}>
+            <Link href={buildAdminSectionHref("storage")} className={linkClass}>
               Speicher verwalten
             </Link>
           </div>
@@ -200,7 +201,7 @@ export function StatusBody({ status }: { status: SystemStatus }) {
           </dl>
           {status.users.pending > 0 && (
             <div className="border-t border-hairline pt-1">
-              <Link href="/account?tab=admin" className={`${linkClass} whitespace-normal`}>
+              <Link href={buildAdminSectionHref("users")} className={`${linkClass} whitespace-normal`}>
                 {formatNumber(status.users.pending)} ausstehende {status.users.pending === 1 ? "Freigabe" : "Freigaben"} bearbeiten
               </Link>
             </div>
