@@ -1,0 +1,7 @@
+# Offline DJ-transition analysis prototype. Separate venv; never imported by the API process.
+beat-this==1.1.0
+torch>=2.4
+numpy
+scipy
+soundfile
+soxr
