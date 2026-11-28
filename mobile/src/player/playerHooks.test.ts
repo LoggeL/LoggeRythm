@@ -169,6 +169,7 @@ describe('first-party player hooks', () => {
             contextShuffleEnabled: false,
             contextShuffleRestoreOrder: [],
           },
+          autoRadioEnabled: true,
           shuffleEnabled: false,
           sleepTimer: null,
           queue: [

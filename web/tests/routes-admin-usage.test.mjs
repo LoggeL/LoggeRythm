@@ -102,9 +102,6 @@ const stubs = {
   ),
   "@/lib/morph": moduleUrl("export const NAV_LATERAL = ['nav-lateral'];"),
   "@/lib/slugs": moduleUrl("export const playlistPath = (p) => `/playlist/${p.id}`;"),
-  "@/lib/playlistPermissions": moduleUrl(
-    "export const isOwnedLibraryPlaylist = () => true; export const sidebarPlaylistMeta = () => '0 Titel';",
-  ),
   "@/hooks/useDialogFocus": moduleUrl("export function useDialogFocus() {}"),
   "@/hooks/useAuth": moduleUrl(`
     export const useMe = () => {
@@ -154,6 +151,7 @@ const stubs = {
 };
 
 await compileInto(stubs, [
+  ["@/lib/playlistPermissions", "src/lib/playlistPermissions.ts"],
   ["@/lib/adminUsage", "src/lib/adminUsage.ts"],
   ["@/components/Avatar", "src/components/Avatar.tsx"],
   ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],

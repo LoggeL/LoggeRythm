@@ -695,7 +695,7 @@ export async function playTrackWithRadio(
     queueMediaItem(track, sources[index], {
       mediaId: nextMediaId('radio', track),
       origin: 'context',
-      radio: mediaItemIsRadio(currentActive),
+      radio: true,
       context,
       originalContextOrder: firstOrder + index,
       stableId: contextStableId(context, firstOrder + index, track),
@@ -1864,7 +1864,7 @@ export async function prepareRadioPlaybackCompletionItems(
     queueMediaItem(track, sources[index], {
       mediaId: nextMediaId('radio', track),
       origin: 'context',
-      radio: true,
+      radio: mediaItemIsRadio(currentActive),
       context,
       originalContextOrder: firstOrder + index,
       stableId: contextStableId(context, firstOrder + index, track),

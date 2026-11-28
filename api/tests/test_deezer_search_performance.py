@@ -468,6 +468,16 @@ class LazyCreditsReuseAndEnrichedCallersTests(unittest.TestCase):
     def tearDown(self) -> None:
         _reset_all_deezer_state()
 
+    def test_withdrawn_track_can_only_be_saved_when_locally_available(self) -> None:
+        track = Track(id="1234", title="Cached song", artist="Artist")
+        with (
+            patch.object(dc, "_full_public_artist_refs", side_effect=dc.TrackUnavailable(track.id)),
+            patch("app.services.storage.is_ready", side_effect=[False, True]),
+        ):
+            with self.assertRaises(dc.TrackUnavailable):
+                dc.hydrate_track_for_persistence(track)
+            self.assertEqual(dc.hydrate_track_for_persistence(track), track)
+
     def test_like_and_playlist_writes_reuse_cached_full_credits_and_loudness_with_zero_extra_calls(self) -> None:
         detail = {
             **_search_track(2947516331, title="Die With A Smile", artist="Lady Gaga", isrc="USUM72409273"),

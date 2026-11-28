@@ -177,6 +177,7 @@ describe('thematic profile settings screens', () => {
     expect(nodes.some((el) => el.props.testID === 'profile-playback-screen')).toBe(true);
     const playbackPanel = nodes.find((el) => el.type === 'PlaybackSettingsPanel');
     expect(playbackPanel?.props.hideHeader).toBe(true);
+    expect(nodes.some((el) => el.type === 'AutoplayPanel')).toBe(true);
     expect(nodes.some((el) => el.type === 'SleepTimerPanel')).toBe(true);
     expect(nodes.some((el) => el.props.testID === 'profile-bottom-safe-spacer')).toBe(true);
   });

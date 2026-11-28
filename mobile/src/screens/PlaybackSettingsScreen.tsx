@@ -11,10 +11,12 @@ import { SleepTimerPanel } from '../components/profile/ProfileSections';
  */
 export default function PlaybackSettingsScreen() {
   const playbackPanel = <PlaybackSettingsPanel hideHeader />;
-  const deviceSettings = <>
-    <AutoplayPanel />
-    <SleepTimerPanel />
-  </>;
+  const deviceSettings = (
+    <>
+      <AutoplayPanel />
+      <SleepTimerPanel />
+    </>
+  );
 
   return (
     <ProfileSettingsShell

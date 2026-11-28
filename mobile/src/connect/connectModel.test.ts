@@ -145,6 +145,7 @@ describe('Connect model', () => {
       isPlaying: true,
       progress: { position: 42, duration: 224, buffered: 60, cached: 0 },
       repeatMode: RepeatMode.All,
+      autoRadioEnabled: true,
       shuffleEnabled: false,
       playbackSpeed: 1,
       volume: 1,

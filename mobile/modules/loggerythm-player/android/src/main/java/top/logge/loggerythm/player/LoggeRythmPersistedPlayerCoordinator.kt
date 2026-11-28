@@ -2716,13 +2716,13 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       radioDedupeGeneration = queueGeneration
       radioDedupeMediaIds.clear()
     }
-    val radioNearTail = radioExtensionEligible(
+    val radioNearTail = player.mediaItemCount - activeIndex <= 2 &&
+      activeMediaId !in radioDedupeMediaIds &&
+      radioExtensionEligible(
         source.extrasJson,
         LoggeRythmAutoRadioPreference.isEnabled(appContext),
         player.repeatMode,
-      ) &&
-        player.mediaItemCount - activeIndex <= 2 &&
-        activeMediaId !in radioDedupeMediaIds
+      )
 
     enqueuePlaybackJournalOperation(
       start = { operationTicket ->

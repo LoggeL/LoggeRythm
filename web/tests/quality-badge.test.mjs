@@ -76,6 +76,8 @@ const playerState = {
 };
 
 const stubs = {
+  "@/hooks/useHydratedTrack": moduleUrl("export const useHydratedTrack = track => track;"),
+  "@/lib/trackArtists": moduleUrl("export const trackArtistLabel = track => track.artist;"),
   react: reactUrl,
   "react-dom": moduleUrl("export function createPortal(node) { return node; }"),
   "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"),

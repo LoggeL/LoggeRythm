@@ -99,6 +99,21 @@ beforeEach(() => {
   usePlayerStore.setState(usePlayerStore.getInitialState(), true);
 });
 
+test("listen mode survives ordinary frames and resets on a new Jam or host promotion", () => {
+  const store = usePartyStore.getState();
+  const party = makeParty({ is_host: false });
+  store.applyPartyState(party);
+  store.setListenLocally(false);
+  store.applyPartyState(party);
+  assert.equal(usePartyStore.getState().listenLocally, false);
+  store.setActiveCode("BBB222");
+  assert.equal(usePartyStore.getState().listenLocally, true);
+  store.applyPartyState(party);
+  store.setListenLocally(false);
+  store.applyPartyState({ ...party, is_host: true });
+  assert.equal(usePartyStore.getState().listenLocally, true);
+});
+
 test("host never broadcasts PATCH /playback when no party track is selected or local player is detached", () => {
   const emptyParty = makeParty({ tracks: [], current_index: -1, is_playing: false });
   // Regression for: API /party/YBA7W0/playback: Select a party track before starting playback

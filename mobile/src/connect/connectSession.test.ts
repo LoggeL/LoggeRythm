@@ -97,6 +97,7 @@ function playerSnapshot(overrides: Partial<PlayerSnapshot> = {}): PlayerSnapshot
     isPlaying: false,
     progress: { position: 12, duration: 429, buffered: 0, cached: 0 },
     repeatMode: RepeatMode.Off,
+    autoRadioEnabled: true,
     shuffleEnabled: false,
     playbackSpeed: 1,
     volume: 1,

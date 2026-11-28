@@ -37,6 +37,7 @@ const reactUrl = import.meta.resolve("react");
 const noopComponent = moduleUrl("export default function Stub() { return null; }");
 
 const stubs = {
+  "@/hooks/useHydratedTrack": moduleUrl("export const useHydratedTrack = track => track;"),
   react: reactUrl,
   "react-dom": import.meta.resolve("react-dom"),
   "react/jsx-runtime": import.meta.resolve("react/jsx-runtime"),

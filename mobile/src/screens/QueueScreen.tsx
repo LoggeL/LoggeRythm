@@ -400,7 +400,8 @@ export function QueueSurface({
   const partyState = usePartySession();
   const connectState = useActiveConnectSnapshot();
   // While a party steers the player its queue is the party's: edit it there.
-  const followedParty = partyState.detached || partyState.controlOnly ? null : partyState.party;
+  const bannerParty = partyState.detached ? null : partyState.party;
+  const followedParty = partyState.controlOnly ? null : bannerParty;
   const remoteActiveDevice = connectState.isControllingRemote ? connectState.activeDevice : null;
   const remotePlayback =
     connectState.isControllingRemote && connectState.state !== null
@@ -802,25 +803,14 @@ export function QueueSurface({
         />
       ) : null}
 
-      {partyState.controlOnly && partyState.party && !partyState.detached ? (
-        <PartyNotice
-          testID="queue-party-control-only"
-          tone="info"
-          message={strings.party.controlOnly}
-          actionLabel={strings.party.openParty}
-          onAction={() => onOpenParty(partyState.party!.code)}
-        />
-      ) : null}
-      {followedParty !== null ? (
+      {bannerParty !== null ? (
         <PartyNotice
           testID="queue-party-active"
           tone="info"
-          title={strings.party.activeTitle(
-            followedParty.name.trim() === '' ? null : followedParty.name,
-          )}
-          message={strings.party.queueLocked}
+          title={strings.party.activeTitle(bannerParty.name.trim() === '' ? null : bannerParty.name)}
+          message={partyState.controlOnly ? strings.party.controlOnly : strings.party.queueLocked}
           actionLabel={strings.party.openParty}
-          onAction={() => onOpenParty(followedParty.code)}
+          onAction={() => onOpenParty(bannerParty.code)}
         />
       ) : (
         <View style={styles.tools}>

@@ -1759,6 +1759,7 @@ export const de: StringCatalog = {
     bookkeepingFailedTitle: 'Wiedergabedaten konnten nicht aktualisiert werden',
     bookkeepingFailedMessage:
       'Wiedergabe und Warteschlange bleiben verfügbar. Hörverlauf oder Radio konnten nicht aktualisiert werden.',
+    trackCreditsFailed: 'Mitwirkende des Titels konnten nicht geladen werden.',
     commandRejectedTitle:
       'Die Änderung an der Warteschlange konnte nicht angewendet werden',
     recovery: {
@@ -2969,7 +2970,6 @@ export const en: StringCatalog = {
     bookkeepingFailedTitle: 'Playback data could not be updated',
     bookkeepingFailedMessage:
       'Playback and the queue remain available. Listening history or radio could not be updated.',
-    trackCreditsFailed: 'Mitwirkende des Titels konnten nicht geladen werden.',
     trackCreditsFailed: 'Could not load the track credits.',
     commandRejectedTitle: 'The queue change could not be applied',
     recovery: {

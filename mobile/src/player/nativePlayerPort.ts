@@ -405,6 +405,7 @@ function snapshotsSemanticallyEqual(
     || left.playbackState !== right.playbackState
     || left.isPlaying !== right.isPlaying
     || left.repeatMode !== right.repeatMode
+    || left.autoRadioEnabled !== right.autoRadioEnabled
     || left.shuffleEnabled !== right.shuffleEnabled
     || left.playbackSpeed !== right.playbackSpeed
     || left.volume !== right.volume
