@@ -69,6 +69,7 @@ export interface PartySessionDependencies {
   repository: PartySessionRepository;
   openStream(code: string, handlers: PartyStreamHandlers): Promise<() => void>;
   player: PartySessionPlayer;
+  releaseQueue(code: string): Promise<void>;
   syncQueue(target: PartyQueueTarget): Promise<PartyQueueSyncResult>;
   activePartyItemId(code: string): number | null;
   now(): number;
@@ -160,7 +161,10 @@ export class PartySession {
 
   /** True while the app follows an active party (queue actions route to the Jam). */
   isFollowingParty(): boolean {
-    return this.state.code !== null && this.state.party !== null && !this.state.detached;
+    const { code, party, detached, controlOnly } = this.state;
+    if (code === null || party === null || detached) return false;
+    return !controlOnly || this.deps.player.getSnapshot().queue.length === 0
+      || this.deps.activePartyItemId(code) !== null;
   }
 
   canControlPlayback(): boolean {
@@ -297,6 +301,7 @@ export class PartySession {
         this.deps.player.pause();
       }
       this.publish({ ...this.state, controlOnly: true, detached: false, playbackError: null });
+      this.scheduleSync(engine);
       return;
     }
     engine.synced = false;
@@ -633,7 +638,7 @@ export class PartySession {
 
   /** Serialised, latest-wins mirror of the party queue into the player. */
   private scheduleSync(engine: Engine): void {
-    if (this.state.detached || this.state.controlOnly) return;
+    if (this.state.detached) return;
     if (engine.syncing) {
       engine.syncQueued = true;
       return;
@@ -648,14 +653,22 @@ export class PartySession {
             party === null
             || this.engine !== engine
             || this.state.detached
-            || this.state.controlOnly
           ) {
             return;
+          }
+          if (this.state.controlOnly) {
+            await this.deps.releaseQueue(engine.code);
+            engine.synced = false;
+            if (this.engine === engine && this.state.playbackError !== null) {
+              this.publish({ ...this.state, playbackError: null });
+            }
+            continue;
           }
           const forceRemote = engine.forceApplyRemotePlayback;
           engine.forceApplyRemotePlayback = false;
           const result = await this.deps.syncQueue(this.target(party, forceRemote));
           if (this.engine !== engine) return;
+          if (this.state.controlOnly) continue;
           if (forceRemote && result === 'unchanged' && party.current_index >= 0) {
             const snap = this.deps.player.getSnapshot();
             const wants = intendsToPlay(snap);

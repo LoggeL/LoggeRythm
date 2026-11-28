@@ -400,7 +400,7 @@ export function QueueSurface({
   const partyState = usePartySession();
   const connectState = useActiveConnectSnapshot();
   // While a party steers the player its queue is the party's: edit it there.
-  const followedParty = partyState.detached ? null : partyState.party;
+  const followedParty = partyState.detached || partyState.controlOnly ? null : partyState.party;
   const remoteActiveDevice = connectState.isControllingRemote ? connectState.activeDevice : null;
   const remotePlayback =
     connectState.isControllingRemote && connectState.state !== null
@@ -802,6 +802,15 @@ export function QueueSurface({
         />
       ) : null}
 
+      {partyState.controlOnly && partyState.party && !partyState.detached ? (
+        <PartyNotice
+          testID="queue-party-control-only"
+          tone="info"
+          message={strings.party.controlOnly}
+          actionLabel={strings.party.openParty}
+          onAction={() => onOpenParty(partyState.party!.code)}
+        />
+      ) : null}
       {followedParty !== null ? (
         <PartyNotice
           testID="queue-party-active"

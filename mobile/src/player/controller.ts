@@ -1145,6 +1145,26 @@ export function activePartyItemId(code: string): number | null {
   return itemId;
 }
 
+/** Remove this Jam's entries without interrupting any active personal track. */
+export async function releasePartyQueue(code: string): Promise<void> {
+  const prefix = `party:${stableIdPart(code)}:`;
+  const { items } = getQueueSnapshot();
+  const ids = items.map(queueStableIdOf);
+  const keep = ids.filter((id) => !id.startsWith(prefix));
+  if (keep.length === ids.length) return;
+  if (keep.length === 0) {
+    await clearLocalQueue();
+    return;
+  }
+  queueGeneration += 1;
+  for (let index = ids.length - 1; index >= 0; index--) {
+    if (ids[index].startsWith(prefix)) Player.removeMediaItem(index);
+  }
+  await waitForNativeQueueMutation('Party queue release', () =>
+    sameIds(getQueueSnapshot().items.map(queueStableIdOf), keep));
+  persistContextShuffleState();
+}
+
 /**
  * Make the native queue mirror a party. The whole queue is replaced in one
  * native step, so removals, additions and reorders never restart the running

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Track } from '../api/types';
 import {
   activePartyItemId,
+  releasePartyQueue,
   partyQueueStableId,
   syncPartyQueue,
   type PartyQueueTarget,
@@ -19,6 +20,7 @@ const player = vi.hoisted(() => ({
   getProgress: vi.fn(),
   replaceQueue: vi.fn(),
   clear: vi.fn(),
+  removeMediaItem: vi.fn((index: number) => { player.queue.splice(index, 1); }),
   pause: vi.fn(),
   isShuffleEnabled: vi.fn(),
   setQueuePersistenceState: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock('./player', async () => {
       getProgress: player.getProgress,
       replaceQueue: player.replaceQueue,
       clear: player.clear,
+      removeMediaItem: player.removeMediaItem,
       pause: player.pause,
       isShuffleEnabled: player.isShuffleEnabled,
       setQueuePersistenceState: player.setQueuePersistenceState,
@@ -169,6 +172,18 @@ describe('party queue sync', () => {
     await expect(syncPartyQueue(target({ entries: [], currentIndex: -1 }))).resolves.toBe('cleared');
     expect(player.clear).toHaveBeenCalledOnce();
     await expect(syncPartyQueue(target({ entries: [], currentIndex: -1 }))).resolves.toBe('unchanged');
+  });
+
+  it('releases only this party and retains a personal track in a mixed queue', async () => {
+    await syncPartyQueue(target());
+    const personal = contextItem('300', 'context:album:1:0:300');
+    player.queue.unshift(personal);
+    player.activeIndex = 0;
+    await releasePartyQueue('OTHER1');
+    expect(player.queue).toHaveLength(4);
+    await releasePartyQueue('ABC123');
+    expect(player.queue).toEqual([personal]);
+    expect(player.clear).not.toHaveBeenCalled();
   });
 
   it('rejects impossible targets loudly', async () => {

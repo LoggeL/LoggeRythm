@@ -132,6 +132,7 @@ function harness(initialActive: number | null = 1) {
       pause: vi.fn(),
       seekTo: vi.fn(),
     },
+    releaseQueue: vi.fn(async () => undefined),
     syncQueue: vi.fn(async (_target: PartyQueueTarget): Promise<PartyQueueSyncResult> => 'replaced'),
     activePartyItemId: vi.fn(() => state.activeItemId),
     now: vi.fn(() => NOW),
@@ -452,6 +453,8 @@ describe('PartySession', () => {
     h.session.setControlOnly(true);
     expect(h.deps.player.pause).toHaveBeenCalledOnce();
     expect(h.session.getSnapshot().controlOnly).toBe(true);
+    await h.settle();
+    expect(h.deps.releaseQueue).toHaveBeenCalledWith('ABC123');
     h.deps.syncQueue.mockClear();
     h.state.activeItemId = 999;
     h.tick(PARTY_FOLLOW_INTERVAL_MS);
