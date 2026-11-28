@@ -2,8 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { SEARCH_MIN_LENGTH, searchTracksOptions } from "@/lib/catalogQueries";
+import { isRateLimitError } from "@/lib/rateLimit";
 import { useSearchInput } from "@/hooks/useSearchInput";
 import SearchField from "@/components/SearchField";
+import SearchRateLimitAlert from "@/components/SearchRateLimitAlert";
 import PopularTrackTable from "@/components/PopularTrackTable";
 import { RowListSkeleton } from "@/components/Skeleton";
 import SectionHeader from "@/components/ui/SectionHeader";
@@ -27,10 +29,22 @@ export default function ArtistSongSearch({ artistId, artistName }: { artistId: s
           onCompositionEnd: () => search.setComposing(false),
         }}
       />
-      {enabled && result.isError && <div role="alert" className="error-panel mb-4 flex flex-wrap items-center justify-between gap-3">
-        Songs konnten nicht geladen werden: {result.error.message}
-        <button type="button" className="action-secondary min-h-9 px-4 text-xs" disabled={result.isFetching} onClick={() => void result.refetch()}>{result.isFetching ? "Wird geladen…" : "Erneut versuchen"}</button>
-      </div>}
+      {enabled && result.isError && (
+        isRateLimitError(result.error) ? (
+          <SearchRateLimitAlert
+            className="mb-4"
+            labels={["Songs"]}
+            error={result.error}
+            isFetching={result.isFetching}
+            onRetry={() => result.refetch()}
+          />
+        ) : (
+          <div role="alert" className="error-panel mb-4 flex flex-wrap items-center justify-between gap-3">
+            Songs konnten nicht geladen werden: {result.error.message}
+            <button type="button" className="action-secondary min-h-9 px-4 text-xs" disabled={result.isFetching} onClick={() => void result.refetch()}>{result.isFetching ? "Wird geladen…" : "Erneut versuchen"}</button>
+          </div>
+        )
+      )}
       {waiting ? <RowListSkeleton count={4} />
         : results.length > 0 ? <PopularTrackTable tracks={results} context={artistName} />
         : enabled && result.isSuccess ? <p role="status" className="py-2 text-sm text-muted">Keine Songs von {artistName} für „{search.query}“ gefunden.</p>

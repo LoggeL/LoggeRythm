@@ -66,26 +66,26 @@ const canonicalFollowInput = ['3', '1', '3'];
 const READ_FACTORY_CASES: readonly ReadFactoryCase[] = [
   {
     factory: 'searchTracks', repositoryMethod: 'searchTracks',
-    option: (queries) => queries.searchTracks('  Kraftwerk  '),
-    expectedKey: ['music', 'search', 'track', 'Kraftwerk'],
+    option: (queries) => queries.searchTracks('  account-a  ', '  Kraftwerk  '),
+    expectedKey: ['music', 'search', 'scope', 'account-a', 'track', 'Kraftwerk'],
     expectedArguments: (signal) => ['Kraftwerk', signal], enabled: true,
   },
   {
     factory: 'searchAlbums', repositoryMethod: 'searchAlbums',
-    option: (queries) => queries.searchAlbums('  Kraftwerk  '),
-    expectedKey: ['music', 'search', 'album', 'Kraftwerk'],
+    option: (queries) => queries.searchAlbums('  account-a  ', '  Kraftwerk  '),
+    expectedKey: ['music', 'search', 'scope', 'account-a', 'album', 'Kraftwerk'],
     expectedArguments: (signal) => ['Kraftwerk', signal], enabled: true,
   },
   {
     factory: 'searchArtists', repositoryMethod: 'searchArtists',
-    option: (queries) => queries.searchArtists('  Kraftwerk  '),
-    expectedKey: ['music', 'search', 'artist', 'Kraftwerk'],
+    option: (queries) => queries.searchArtists('  account-a  ', '  Kraftwerk  '),
+    expectedKey: ['music', 'search', 'scope', 'account-a', 'artist', 'Kraftwerk'],
     expectedArguments: (signal) => ['Kraftwerk', signal], enabled: true,
   },
   {
     factory: 'searchPlaylists', repositoryMethod: 'searchPlaylists',
-    option: (queries) => queries.searchPlaylists('  Kraftwerk  '),
-    expectedKey: ['music', 'search', 'playlist', 'Kraftwerk'],
+    option: (queries) => queries.searchPlaylists('  account-a  ', '  Kraftwerk  '),
+    expectedKey: ['music', 'search', 'scope', 'account-a', 'playlist', 'Kraftwerk'],
     expectedArguments: (signal) => ['Kraftwerk', signal], enabled: true,
   },
   {
@@ -412,13 +412,13 @@ describe('music query options', () => {
     expect(queries.releaseRadar('account-a').select).toBe(select);
   });
 
-  it('uses normalized search text for both the key and repository request', async () => {
+  it('uses outer-trimmed scoped search text for both the key and repository request', async () => {
     const searchTracks = vi.fn(async () => []);
     const queries = createMusicQueryOptions({ searchTracks } as unknown as MusicRepository);
-    const option = queries.searchTracks('  Kraftwerk  ');
+    const option = queries.searchTracks('account-a', '  Kraftwerk  ');
     const controller = new AbortController();
 
-    expect(option.queryKey).toEqual(['music', 'search', 'track', 'Kraftwerk']);
+    expect(option.queryKey).toEqual(['music', 'search', 'scope', 'account-a', 'track', 'Kraftwerk']);
     expect(option.enabled).toBe(true);
     await option.queryFn!(queryContext(controller.signal));
     expect(searchTracks).toHaveBeenCalledWith('Kraftwerk', controller.signal);
@@ -437,10 +437,10 @@ describe('music query options', () => {
     } as unknown as MusicRepository);
     const controller = new AbortController();
 
-    await queries.searchTracks('  Boards of Canada  ').queryFn!(queryContext(controller.signal));
-    await queries.searchAlbums('  Boards of Canada  ').queryFn!(queryContext(controller.signal));
-    await queries.searchArtists('  Boards of Canada  ').queryFn!(queryContext(controller.signal));
-    await queries.searchPlaylists('  Boards of Canada  ').queryFn!(queryContext(controller.signal));
+    await queries.searchTracks('account-a', '  Boards of Canada  ').queryFn!(queryContext(controller.signal));
+    await queries.searchAlbums('account-a', '  Boards of Canada  ').queryFn!(queryContext(controller.signal));
+    await queries.searchArtists('account-a', '  Boards of Canada  ').queryFn!(queryContext(controller.signal));
+    await queries.searchPlaylists('account-a', '  Boards of Canada  ').queryFn!(queryContext(controller.signal));
 
     expect(searchTracks).toHaveBeenCalledWith('Boards of Canada', controller.signal);
     expect(searchAlbums).toHaveBeenCalledWith('Boards of Canada', controller.signal);
@@ -456,17 +456,17 @@ describe('music query options', () => {
     const queries = createMusicQueryOptions({ searchAlbums } as unknown as MusicRepository);
     const controller = new AbortController();
 
-    const result = await queries.searchAlbums('Album').queryFn!(queryContext(controller.signal));
+    const result = await queries.searchAlbums('account-a', 'Album').queryFn!(queryContext(controller.signal));
     expect(result).toBe(cards);
     expect(searchAlbums).toHaveBeenCalledWith('Album', controller.signal);
   });
 
   it('disables empty searches instead of issuing a broad accidental request', () => {
     const queries = createMusicQueryOptions({} as MusicRepository);
-    expect(queries.searchTracks('   ').enabled).toBe(false);
-    expect(queries.searchAlbums('\n').enabled).toBe(false);
-    expect(queries.searchArtists('\t').enabled).toBe(false);
-    expect(queries.searchPlaylists(' ').enabled).toBe(false);
+    expect(queries.searchTracks('account-a', '   ').enabled).toBe(false);
+    expect(queries.searchAlbums('account-a', '\n').enabled).toBe(false);
+    expect(queries.searchArtists('account-a', '\t').enabled).toBe(false);
+    expect(queries.searchPlaylists('account-a', ' ').enabled).toBe(false);
     expect(queries.playlistInviteCandidates('account-a', 9, '  ').enabled).toBe(false);
     expect(queries.playlistInviteCandidates('account-a', 9, ' Ju ').enabled).toBe(true);
   });

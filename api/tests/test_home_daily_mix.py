@@ -52,7 +52,7 @@ class FakeDeezer:
         self.same_track = same_track or {}
         self.calls: list[str] = []
 
-    def __call__(self, query: str, limit: int = 1) -> list[dict]:
+    def __call__(self, query: str, limit: int = 1, *, enrich: bool = False) -> list[dict]:
         self.calls.append(query)
         if query in self.misses:
             return []

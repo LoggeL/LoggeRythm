@@ -43,7 +43,7 @@ const stubs = {
     `import {createElement} from ${JSON.stringify(reactUrl)}; export default function Link({href, children, ...props}) { return createElement("a", {...props, href}, children); }`,
   ),
   "@tanstack/react-query": moduleUrl(
-    `export function useQuery(options) { const fixture = globalThis.__searchScreenFixture; fixture.requests.push(options); const entity = options.queryKey[1]; const error = fixture.errors[entity]; const loading = fixture.loading.includes(entity); return {data: fixture.data[entity] ?? [], isError: !!error, error: error ? new Error(error) : null, isLoading: loading, isFetching: loading, isSuccess: options.enabled && !error && !loading, refetch: async () => {fixture.retries.push(entity);}}; }`,
+    `export function useQuery(options) { const fixture = globalThis.__searchScreenFixture; fixture.requests.push(options); const entity = options.queryKey[1]; const rawError = fixture.errors[entity]; const error = !rawError ? null : rawError instanceof Error ? rawError : typeof rawError === 'object' ? Object.assign(new Error(rawError.message ?? 'HTTP ' + rawError.status), rawError) : new Error(rawError); const loading = fixture.loading.includes(entity); return {data: fixture.data[entity] ?? [], isError: !!error, error, isLoading: loading, isFetching: loading, isSuccess: options.enabled && !error && !loading, refetch: async () => {fixture.retries.push(entity);}}; }`,
   ),
   "@/lib/catalogQueries": moduleUrl(
     `export const SEARCH_MIN_LENGTH = 2; const options = (entity) => (query) => ({queryKey: ['search', entity, query.trim()]}); export const searchTracksOptions = options('track'); export const searchAlbumsOptions = options('album'); export const searchArtistsOptions = options('artist'); export const searchPlaylistsOptions = options('playlist');`,
@@ -65,6 +65,7 @@ const stubs = {
   ),
   // The library index is the real one, built from the fixture's saved songs.
   "@/lib/libraryMatch": new URL("../src/lib/libraryMatch.ts", import.meta.url).href,
+  "@/lib/rateLimit": new URL("../src/lib/rateLimit.ts", import.meta.url).href,
   "@/hooks/useLibraryTracks": moduleUrl(
     `import {indexLibraryTracks} from ${JSON.stringify(new URL("../src/lib/libraryMatch.ts", import.meta.url).href)}; export const useLibraryTracks = () => { const fixture = globalThis.__searchScreenFixture; return {index: indexLibraryTracks(fixture.library), likes: fixture.likes}; };`,
   ),
@@ -106,6 +107,7 @@ await compileInto(stubs, [
   ["@/components/ui/Cover", "src/components/ui/Cover.tsx"],
   ["@/components/ui/EmptyState", "src/components/ui/EmptyState.tsx"],
   ["@/components/ui/QueryError", "src/components/ui/QueryError.tsx"],
+  ["@/components/SearchRateLimitAlert", "src/components/SearchRateLimitAlert.tsx"],
   ["@/components/browse/BrowseTile", "src/components/browse/BrowseTile.tsx"],
   ["./ResultCards", "src/app/search/_components/ResultCards.tsx"],
   ["./_components/ResultCards", "src/app/search/_components/ResultCards.tsx"],
@@ -521,4 +523,57 @@ test("choosing the playing top hit again toggles playback instead of restarting 
   assert.equal(fixture.toggles, 1);
   assert.deepEqual(fixture.played, []);
   assert.deepEqual(fixture.radio, []);
+});
+
+test("preparing, single-entity tabs, and import detach disabled query keys immediately to cancel stale fetches", () => {
+  screen({ input: "new", query: "old", preparing: true });
+  assert.deepEqual(
+    fixture.requests.map((r) => [r.queryKey[1], r.queryKey[2], r.enabled]),
+    [
+      ["track", "", false],
+      ["album", "", false],
+      ["artist", "", false],
+      ["playlist", "", false],
+    ],
+  );
+  screen({ query: "Queen", tab: "track" });
+  assert.deepEqual(
+    fixture.requests.map((r) => [r.queryKey[1], r.queryKey[2], r.enabled]),
+    [
+      ["track", "Queen", true],
+      ["album", "", false],
+      ["artist", "", false],
+      ["playlist", "", false],
+    ],
+  );
+  screen({ query: "Queen", importing: true });
+  assert.ok(fixture.requests.every((r) => r.queryKey[2] === "" && !r.enabled));
+});
+
+test("simultaneous HTTP 429 rate limits consolidate into one alert with Retry-After countdown and combined retry", async () => {
+  const rateLimit = { status: 429, retryAfterSec: 7, message: "Deezer rate limit reached. Retry after 7s." };
+  const html = screen({
+    query: "Queen",
+    errors: { track: rateLimit, album: rateLimit, artist: rateLimit, playlist: rateLimit },
+  });
+  assert.equal((html.match(/role="alert"/g) ?? []).length, 1);
+  assert.match(html, /Titel, Alben, Künstler und Playlists: Anfragelimit erreicht – bitte in 7 Sekunden erneut versuchen/);
+  assert.match(html, /Erneut versuchen \(7 s\)/);
+  const retryButton = fixture.buttons.find((button) => button.children === "Erneut versuchen (7 s)");
+  assert.equal(retryButton.disabled, true);
+  assert.doesNotMatch(html, /Keine Ergebnisse/);
+
+  // Once cooldown is 0 (or absent), Retry is enabled and refetches every rate-limited section.
+  const readyLimit = { status: 429, retryAfterSec: 0, message: "Deezer rate limit reached" };
+  const mixed = screen({
+    query: "Queen",
+    errors: { track: readyLimit, artist: readyLimit, playlist: "HTTP 503" },
+  });
+  assert.equal((mixed.match(/role="alert"/g) ?? []).length, 2);
+  assert.match(mixed, /Titel und Künstler: Anfragelimit war vorübergehend erreicht/);
+  assert.match(mixed, /Playlists konnten nicht geladen werden: HTTP 503/);
+  const readyButton = fixture.buttons.find((button) => button.children === "Erneut versuchen" && !button.disabled);
+  readyButton.onClick();
+  await new Promise(setImmediate);
+  assert.deepEqual(fixture.retries, ["track", "artist"]);
 });

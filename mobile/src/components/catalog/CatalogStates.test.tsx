@@ -240,6 +240,49 @@ describe('Catalog remote-state presentation', () => {
     )).toBe(false);
   });
 
+  it('surfaces HTTP 429 rate limits with full Retry-After on blocking and cached boundaries', () => {
+    const rateLimitError = { status: 429, retryAfterSeconds: 45, message: '429' };
+    const blocked = CatalogQueryBoundary({
+      id: 'artist-song-search-state',
+      hasData: false,
+      empty: false,
+      isPending: false,
+      isFetching: false,
+      isStale: true,
+      fetchStatus: 'idle',
+      error: rateLimitError,
+      loadingLabel: catalogStrings.artist.searchSongsLoading,
+      emptyLabel: catalogStrings.artist.searchSongsEmpty('daft'),
+      errorLabel: catalogStrings.artist.searchSongsFailed,
+      onRetry: vi.fn(),
+      children: React.createElement('SongRows'),
+    });
+    const blockedAlert = byTestId(blocked, 'artist-song-search-state-error');
+    expect(elements(blockedAlert).some(
+      (element) => element.props.children === catalogStrings.common.rateLimitedWait(45),
+    )).toBe(true);
+
+    const cached = CatalogQueryBoundary({
+      id: 'artist-song-search-state',
+      hasData: true,
+      empty: false,
+      isPending: false,
+      isFetching: false,
+      isStale: true,
+      fetchStatus: 'idle',
+      error: rateLimitError,
+      loadingLabel: catalogStrings.artist.searchSongsLoading,
+      emptyLabel: catalogStrings.artist.searchSongsEmpty('daft'),
+      errorLabel: catalogStrings.artist.searchSongsFailed,
+      onRetry: vi.fn(),
+      children: React.createElement('SongRows', { testID: 'song-rows' }),
+    });
+    const cachedAlert = byTestId(cached, 'artist-song-search-state-cached-error');
+    expect(elements(cachedAlert).some(
+      (element) => element.props.children === catalogStrings.common.cachedRateLimitedWait(45),
+    )).toBe(true);
+  });
+
   it('shapes the loading placeholder like the content it stands in for', () => {
     const loading = { hasData: false, isPending: true, isFetching: true, fetchStatus: 'fetching' } as const;
 

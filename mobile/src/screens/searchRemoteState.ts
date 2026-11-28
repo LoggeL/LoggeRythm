@@ -1,3 +1,4 @@
+import { isRateLimitStatus } from '../api/error';
 import {
   resolveRemoteVisualState,
   type RemoteFetchStatus,
@@ -24,8 +25,10 @@ export interface SearchRemoteEntry {
 export type SearchRemoteIssueKind =
   | 'offline'
   | 'hard-error'
+  | 'rate-limited'
   | 'cached-offline'
-  | 'cached-refresh-error';
+  | 'cached-refresh-error'
+  | 'cached-rate-limited';
 
 export interface SearchRemoteIssue {
   key: string;
@@ -77,9 +80,13 @@ export function searchRemoteEntry(
  */
 export function searchRemoteIssueKind(query: SearchRemoteQueryLike): SearchRemoteIssueKind | null {
   const { visual } = searchRemoteEntry('supporting-query', query, 0);
-  if (visual.body === 'offline' || visual.body === 'hard-error') return visual.body;
-  if (visual.notice === 'cached-offline' || visual.notice === 'cached-refresh-error') {
-    return visual.notice;
+  if (visual.body === 'offline') return 'offline';
+  if (visual.body === 'hard-error') {
+    return isRateLimitStatus(query.error) ? 'rate-limited' : 'hard-error';
+  }
+  if (visual.notice === 'cached-offline') return 'cached-offline';
+  if (visual.notice === 'cached-refresh-error') {
+    return isRateLimitStatus(query.error) ? 'cached-rate-limited' : 'cached-refresh-error';
   }
   return null;
 }
@@ -105,13 +112,22 @@ export function resolveSearchAggregateRemoteState(
     if (entry.visual.notice === 'refreshing') refreshingKeys.push(entry.key);
     if (entry.visual.notice === 'stale') staleKeys.push(entry.key);
 
-    if (entry.visual.body === 'offline' || entry.visual.body === 'hard-error') {
-      issues.push({ key: entry.key, kind: entry.visual.body, error: entry.error });
-    } else if (
-      entry.visual.notice === 'cached-offline'
-      || entry.visual.notice === 'cached-refresh-error'
-    ) {
-      issues.push({ key: entry.key, kind: entry.visual.notice, error: entry.error });
+    if (entry.visual.body === 'offline') {
+      issues.push({ key: entry.key, kind: 'offline', error: entry.error });
+    } else if (entry.visual.body === 'hard-error') {
+      issues.push({
+        key: entry.key,
+        kind: isRateLimitStatus(entry.error) ? 'rate-limited' : 'hard-error',
+        error: entry.error,
+      });
+    } else if (entry.visual.notice === 'cached-offline') {
+      issues.push({ key: entry.key, kind: 'cached-offline', error: entry.error });
+    } else if (entry.visual.notice === 'cached-refresh-error') {
+      issues.push({
+        key: entry.key,
+        kind: isRateLimitStatus(entry.error) ? 'cached-rate-limited' : 'cached-refresh-error',
+        error: entry.error,
+      });
     }
   }
 

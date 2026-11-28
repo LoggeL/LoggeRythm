@@ -7,6 +7,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { isRateLimitStatus, rateLimitRetryAfterSeconds } from '../../api/error';
 import {
   resolveRemoteVisualState,
   type RemoteNotice,
@@ -103,6 +104,7 @@ function CatalogLoading({ testID, label, shape, padded }: CatalogLoadingProps) {
 interface CatalogBlockingProps {
   id: string;
   body: 'offline' | 'hard-error';
+  error: unknown;
   errorLabel: string;
   retryLabel: string;
   retryBusy: boolean;
@@ -111,10 +113,24 @@ interface CatalogBlockingProps {
   padded: boolean;
 }
 
+function catalogRateLimitMessage(error: unknown, cached: boolean): string | null {
+  if (!isRateLimitStatus(error)) return null;
+  const waitSec = rateLimitRetryAfterSeconds(error);
+  if (cached) {
+    return waitSec !== null
+      ? catalogStrings.common.cachedRateLimitedWait(waitSec)
+      : catalogStrings.common.cachedRateLimited;
+  }
+  return waitSec !== null
+    ? catalogStrings.common.rateLimitedWait(waitSec)
+    : catalogStrings.common.rateLimited;
+}
+
 /** The one blocking failure presentation: offline or error, always retryable. */
 function CatalogBlocking({
   id,
   body,
+  error,
   errorLabel,
   retryLabel,
   retryBusy,
@@ -123,13 +139,14 @@ function CatalogBlocking({
   padded,
 }: CatalogBlockingProps) {
   const offline = body === 'offline';
+  const rateLimitMessage = offline ? null : catalogRateLimitMessage(error, false);
   return (
     <ErrorState
       testID={`${id}-${offline ? 'offline' : 'error'}`}
       retryTestID={`${id}-retry`}
       kind={offline ? 'offline' : 'error'}
       layout={page ? 'page' : 'inline'}
-      message={offline ? catalogStrings.common.offline : errorLabel}
+      message={offline ? catalogStrings.common.offline : (rateLimitMessage ?? errorLabel)}
       onRetry={onRetry}
       retryBusy={retryBusy}
       retryLabel={retryBusy ? catalogStrings.common.retrying : catalogStrings.common.retry}
@@ -142,6 +159,7 @@ function CatalogBlocking({
 interface CatalogNoticeProps {
   id: string;
   notice: RemoteNotice;
+  error: unknown;
   retryLabel: string;
   retryBusy: boolean;
   onRetry: () => void;
@@ -154,6 +172,7 @@ interface CatalogNoticeProps {
 function CatalogNotice({
   id,
   notice,
+  error,
   retryLabel,
   retryBusy,
   onRetry,
@@ -163,6 +182,7 @@ function CatalogNotice({
   const inset = padded ? styles.inset : undefined;
   if (notice === 'cached-offline' || notice === 'cached-refresh-error') {
     const offline = notice === 'cached-offline';
+    const rateLimitMessage = offline ? null : catalogRateLimitMessage(error, true);
     return (
       <View
         testID={`${id}-${offline ? 'cached-offline' : 'cached-error'}`}
@@ -173,7 +193,7 @@ function CatalogNotice({
         <AppText variant="callout" color="warning">
           {offline
             ? catalogStrings.common.cachedOffline
-            : catalogStrings.common.cachedRefreshFailed}
+            : (rateLimitMessage ?? catalogStrings.common.cachedRefreshFailed)}
         </AppText>
         <RetryButton
           testID={`${id}-retry`}
@@ -254,6 +274,7 @@ export function CatalogPageGate({
       <CatalogBlocking
         id={id}
         body={visual.body}
+        error={error}
         errorLabel={catalogStrings.common.loadFailed}
         retryLabel={catalogStrings.common.retry}
         retryBusy={fetchStatus === 'fetching'}
@@ -299,6 +320,7 @@ export function CatalogContentStatus({
     <CatalogNotice
       id={id}
       notice={visual.notice}
+      error={error}
       retryLabel={retryLabel}
       retryBusy={fetchStatus === 'fetching'}
       onRetry={onRetry}
@@ -364,6 +386,7 @@ function CatalogBoundaryBody({
         <CatalogBlocking
           id={id}
           body={visual.body}
+          error={error}
           errorLabel={errorLabel}
           retryLabel={retryLabel}
           retryBusy={retryBusy}
@@ -384,6 +407,7 @@ function CatalogBoundaryBody({
       <CatalogNotice
         id={id}
         notice={visual.notice}
+        error={error}
         retryLabel={retryLabel}
         retryBusy={retryBusy}
         onRetry={onRetry}

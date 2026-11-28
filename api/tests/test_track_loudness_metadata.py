@@ -157,12 +157,16 @@ class TrackLoudnessMetadataTests(unittest.TestCase):
                 db.commit()
 
                 # Like with inline gain
-                likes_router.add_like(
-                    "901",
-                    Track(id="901", title="Measured", artist="A", loudness_gain_db=-6.0),
-                    user=user,
-                    db=db,
-                )
+                with (
+                    patch.object(dc, "track_isrc", return_value=""),
+                    patch.object(dc, "_full_public_artist_refs", return_value=[]),
+                ):
+                    likes_router.add_like(
+                        "901",
+                        Track(id="901", title="Measured", artist="A", loudness_gain_db=-6.0),
+                        user=user,
+                        db=db,
+                    )
                 liked = likes_router.list_likes(user=user, db=db)
                 self.assertEqual(len(liked), 1)
                 self.assertEqual(liked[0].loudness_gain_db, -6.0)
@@ -174,12 +178,13 @@ class TrackLoudnessMetadataTests(unittest.TestCase):
                 pl = Playlist(user_id=user.id, name="Test")
                 db.add(pl)
                 db.commit()
-                playlists_router.add_track(
-                    pl.id,
-                    Track(id="901", title="Measured", artist="A"),
-                    user=user,
-                    db=db,
-                )
+                with patch.object(dc, "_full_public_artist_refs", return_value=[]):
+                    playlists_router.add_track(
+                        pl.id,
+                        Track(id="901", title="Measured", artist="A"),
+                        user=user,
+                        db=db,
+                    )
                 detail = playlists_router.get_playlist(pl.id, user=user, db=db)
                 self.assertEqual(detail.tracks[0].loudness_gain_db, -6.2)
                 self.assertEqual(detail.tracks[0].loudness_lufs, -7.8)

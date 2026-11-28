@@ -34,6 +34,7 @@ from app.schemas.playlist import (
     PlaylistUpdate,
 )
 from app.schemas.track import Track
+from app.services import deezer_client as dc
 
 def _sample_track(track_id: str, title: str = "Song", cover: str = "") -> Track:
     return Track(
@@ -170,8 +171,11 @@ class CollaborativePlaylistTests(unittest.TestCase):
         self.outsider = self._add_user("outsider@example.com", "Outsider")
         self.pending = self._add_user("pending@example.com", "Pending", approved=False)
         self.db.commit()
+        self._credits_patch = patch.object(dc, "_full_public_artist_refs", return_value=[])
+        self._credits_patch.start()
 
     def tearDown(self) -> None:
+        self._credits_patch.stop()
         self.db.close()
         self.engine.dispose()
 

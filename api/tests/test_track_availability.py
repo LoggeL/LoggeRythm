@@ -65,7 +65,11 @@ class MatchTrackTest(unittest.TestCase):
                 dc.match_track("Sweet Dreams (Are Made of This)", "Eurythmics", "GBARL0300589"),
                 playable,
             )
-        search.assert_called_once_with("Eurythmics Sweet Dreams (Are Made of This)", limit=1)
+        search.assert_called_once_with(
+            "Eurythmics Sweet Dreams (Are Made of This)",
+            limit=1,
+            enrich=True,
+        )
 
     def test_search_failure_raises_instead_of_unmatched(self) -> None:
         with patch.object(dc, "search_tracks_public", side_effect=dc.RateLimited("quota")):

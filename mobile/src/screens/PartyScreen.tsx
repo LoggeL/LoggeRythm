@@ -2,7 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { PartyMember, Track } from '../api/types';
+import type { PartyMember } from '../api/types';
+import { useAuth } from '../auth/AuthContext';
 import {
   ConnectedPartyNowPlayingCard,
   ConnectedPartyQueueRow,
@@ -21,12 +22,14 @@ import { PartyKioskModal } from '../components/party/PartyKioskModal';
 import { spotifyImportInputStyle } from '../components/search/SpotifyImportForm';
 import { ActionButton, AppText, EmptyState, ErrorState, SectionHeader } from '../components/ui';
 import { getApiBase, getCurrentApiBase } from '../config';
+import { musicCacheScope } from '../data';
 import { musicRepository } from '../data/repositories';
 import { useBackHandler } from '../hooks/useBackHandler';
 import { useBottomInset } from '../hooks/useBottomInset';
 import { strings } from '../localization';
 import { wave2Strings } from '../localization/wave2Strings';
 import { partyErrorDetail } from '../party/partyErrors';
+import { isPartySearchableQuery, usePartySearch } from '../party/usePartySearch';
 import {
   canControlPartyPlayback,
   movedPartyIds,
@@ -37,57 +40,6 @@ import { partySession, usePartySession } from '../party/partyRuntime';
 import { PlaybackState, usePlaybackState } from '../player/player';
 import { colors, layout, spacing } from '../theme';
 import { TvFocusScope, useTvEnvironment, useTvFocusReturn } from '../tv';
-
-const SEARCH_DEBOUNCE_MS = 300;
-
-interface PartySearchState {
-  query: string;
-  results: Track[];
-  loading: boolean;
-  error: string | null;
-}
-
-/** Debounced song search; only the newest request may update the results. */
-function usePartySearch(): [PartySearchState, (query: string) => void] {
-  const [state, setState] = useState<PartySearchState>({
-    query: '',
-    results: [],
-    loading: false,
-    error: null,
-  });
-  const controller = useRef<AbortController | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    controller.current?.abort();
-    if (timer.current !== null) clearTimeout(timer.current);
-  }, []);
-  const search = (query: string) => {
-    controller.current?.abort();
-    controller.current = null;
-    if (timer.current !== null) clearTimeout(timer.current);
-    const trimmed = query.trim();
-    if (trimmed === '') {
-      setState({ query, results: [], loading: false, error: null });
-      return;
-    }
-    setState((previous) => ({ ...previous, query, loading: true, error: null }));
-    timer.current = setTimeout(() => {
-      const request = new AbortController();
-      controller.current = request;
-      musicRepository.searchTracks(trimmed, request.signal).then(
-        (results) => {
-          if (controller.current !== request) return;
-          setState({ query, results, loading: false, error: null });
-        },
-        (error: unknown) => {
-          if (controller.current !== request) return;
-          setState({ query, results: [], loading: false, error: partyErrorDetail(error) });
-        },
-      );
-    }, SEARCH_DEBOUNCE_MS);
-  };
-  return [state, search];
-}
 
 interface PartyScreenProps {
   /** Already validated with normalizePartyCode. */
@@ -102,13 +54,17 @@ function PartyBottomSafeSpacer() {
 }
 
 export default function PartyScreen({ code, onClose }: PartyScreenProps) {
+  const { user } = useAuth();
   const session = usePartySession();
   const playbackState = usePlaybackState();
   const isFocused = useIsFocused();
   const bottomInset = useBottomInset({ hasTabBar: false });
   const tv = useTvEnvironment();
   useTvFocusReturn({ scope: 'party', active: isFocused, enabled: tv.isTv });
-  const [search, setQuery] = usePartySearch();
+  const searchScope = user !== null
+    ? musicCacheScope(getCurrentApiBase(), user.id)
+    : getCurrentApiBase();
+  const [search, setQuery, retrySearch] = usePartySearch(searchScope);
   const [pending, setPending] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -621,14 +577,25 @@ export default function PartyScreen({ code, onClose }: PartyScreenProps) {
           tone="danger"
           message={strings.party.searchFailed(search.error)}
           actionLabel={strings.party.reload}
-          onAction={() => setQuery(search.query)}
+          onAction={retrySearch}
         />
       ) : null}
-      {!search.loading && search.error === null && search.query.trim() !== '' && search.results.length === 0 ? (
-        <AppText testID="party-search-empty" variant="callout" color="secondary" style={styles.inlineStatus}>
-          {strings.party.searchEmpty(search.query.trim())}
-        </AppText>
-      ) : null}
+      {!search.loading
+        && search.error === null
+        && search.query.trim() !== ''
+        && !isPartySearchableQuery(search.query) ? (
+          <AppText testID="party-search-minimum-hint" variant="callout" color="secondary" style={styles.inlineStatus}>
+            {strings.search.minimumQueryHint}
+          </AppText>
+        ) : null}
+      {!search.loading
+        && search.error === null
+        && isPartySearchableQuery(search.query)
+        && search.results.length === 0 ? (
+          <AppText testID="party-search-empty" variant="callout" color="secondary" style={styles.inlineStatus}>
+            {strings.party.searchEmpty(search.query.trim())}
+          </AppText>
+        ) : null}
       {search.results.map((track) => (
         <ConnectedPartySearchResultRow
           key={track.id}

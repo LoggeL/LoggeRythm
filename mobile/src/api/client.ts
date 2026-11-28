@@ -11,7 +11,7 @@ import {
   ensureApiCompatibility,
   resetApiCompatibilityCheck,
 } from './compatibility';
-import { ApiError } from './error';
+import { ApiError, extractRetryAfterSeconds } from './error';
 import type { AudioQualityTier, DeezerId } from './types';
 import {
   decodeStoredSession,
@@ -514,10 +514,12 @@ export async function apiRequest<T>(path: string, opts: RequestOptions<T> = {}):
       if (res.status === 401 && !opts.noAuth && requestSession !== null) {
         invalidationAuthority = await invalidateSession(requestAuthority);
       }
+      const retryAfterSeconds = extractRetryAfterSeconds(res.headers.get('retry-after'), text);
       const error = new ApiError(
         res.status,
         text,
         `${method} ${path} returned ${res.status}: ${errorDetail(text, res.statusText)}`,
+        { retryAfterSeconds },
       );
       if (invalidationAuthority !== null) {
         apiErrorInvalidationAuthorities.set(error, invalidationAuthority);

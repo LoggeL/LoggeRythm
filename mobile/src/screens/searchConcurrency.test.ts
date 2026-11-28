@@ -45,6 +45,8 @@ function queryClient(): QueryClient {
   });
 }
 
+const TEST_SCOPE = 'https://music.test::user:7';
+
 describe('search concurrency and offline cache policy', () => {
   it('aborts a superseded request and never publishes its late result under the replacement query', async () => {
     const oldResponse = deferred<Track[]>();
@@ -61,7 +63,7 @@ describe('search concurrency and offline cache policy', () => {
     const queries = createMusicQueryOptions({ searchTracks } as unknown as MusicRepository);
     const client = queryClient();
     const observer = new QueryObserver(client, {
-      ...queries.searchTracks('old query'),
+      ...queries.searchTracks(TEST_SCOPE, 'old query'),
       retry: false,
     });
     const publishedIds: string[][] = [];
@@ -72,11 +74,11 @@ describe('search concurrency and offline cache policy', () => {
     await vi.waitFor(() => expect(searchTracks).toHaveBeenCalledOnce());
     expect(oldSignal).toBeInstanceOf(AbortSignal);
 
-    await client.cancelQueries({ queryKey: queryKeys.search.root() });
+    await client.cancelQueries({ queryKey: queryKeys.search.scoped(TEST_SCOPE) });
     expect(oldSignal?.aborted).toBe(true);
     const replacementStartedAt = publishedIds.length;
     observer.setOptions({
-      ...queries.searchTracks('new query'),
+      ...queries.searchTracks(TEST_SCOPE, 'new query'),
       retry: false,
     });
     await vi.waitFor(() => expect(searchTracks).toHaveBeenCalledTimes(2));
@@ -94,8 +96,8 @@ describe('search concurrency and offline cache policy', () => {
 
     expect(observer.getCurrentResult().data?.map(({ id }) => id)).toEqual(['new']);
     expect(publishedIds.slice(replacementStartedAt)).not.toContainEqual(['old']);
-    expect(client.getQueryData(queryKeys.search.tracks('old query'))).toBeUndefined();
-    expect(client.getQueryData(queryKeys.search.tracks('new query'))).toEqual([
+    expect(client.getQueryData(queryKeys.search.tracks(TEST_SCOPE, 'old query'))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.search.tracks(TEST_SCOPE, 'new query'))).toEqual([
       track('new', 'New result'),
     ]);
 
@@ -120,7 +122,7 @@ describe('search concurrency and offline cache policy', () => {
     const queries = createMusicQueryOptions({ searchTracks } as unknown as MusicRepository);
     const client = queryClient();
     const disabledOptions = (query: string) => ({
-      ...queries.searchTracks(query),
+      ...queries.searchTracks(TEST_SCOPE, query),
       enabled: false,
       retry: false as const,
     });
@@ -141,7 +143,7 @@ describe('search concurrency and offline cache policy', () => {
     const unrelatedFailure = await observer.refetch();
     expect(unrelatedFailure.status).toBe('error');
     expect(unrelatedFailure.data).toBeUndefined();
-    expect(client.getQueryData(queryKeys.search.tracks('different query'))).toBeUndefined();
+    expect(client.getQueryData(queryKeys.search.tracks(TEST_SCOPE, 'different query'))).toBeUndefined();
 
     observer.setOptions(disabledOptions('same query'));
     expect(observer.getCurrentResult().data).toEqual([initial]);

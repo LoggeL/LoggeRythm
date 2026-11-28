@@ -44,15 +44,24 @@ def _with_field(entity: dict, field: str, value: object) -> dict:
 
 
 class CatalogSearchProviderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        dc.clear_search_caches()
+        dc.reset_public_rate_limiter()
+
+    def tearDown(self) -> None:
+        dc.clear_search_caches()
+        dc.reset_public_rate_limiter()
+
     def test_queries_are_trimmed_and_encoded_for_public_catalog_transport(self) -> None:
         for kind, method, path, limit, entity, *_rest in _CATALOGS:
             with self.subTest(kind=kind):
+                dc.clear_search_caches()
                 with (
                     patch.object(dc, "_public_get", return_value={"data": [entity]}) as get,
                     patch.object(dc.deezer, "deezer_search", side_effect=AssertionError("Catalog search must use shared public transport")),
                 ):
                     self.assertEqual(len(getattr(dc, method)("  artist & title  ")), 1)
-                get.assert_called_once_with(f"{path}?q=artist+%26+title&limit={limit}")
+                get.assert_called_once_with(f"{path}?q=artist+%26+title&limit={limit}", interactive=True)
 
     def test_blank_catalog_queries_do_not_contact_provider(self) -> None:
         for kind, method, *_rest in _CATALOGS:
@@ -87,7 +96,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
                 with self.subTest(kind=kind, payload=payload):
                     response = Mock()
                     response.json.return_value = payload
-                    with patch.object(dc.requests, "get", return_value=response):
+                    with patch.object(dc._public_session, "get", return_value=response):
                         with self.assertRaises(dc.DeezerClientError):
                             getattr(dc, method)("needle")
 
@@ -103,6 +112,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
 
             for value in (9, "9"):
                 with self.subTest(kind=kind, value=value):
+                    dc.clear_search_caches()
                     payload = {"data": [_with_field(entity, "id", value)]}
                     with patch.object(dc, "_public_get", return_value=payload):
                         self.assertEqual(getattr(dc, method)("needle")[0]["id"], "9")
@@ -112,6 +122,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
         for kind, method, _path, _limit, entity, label, *_rest in _CATALOGS:
             for value in invalid:
                 with self.subTest(kind=kind, value=value):
+                    dc.clear_search_caches()
                     payload = {"data": [_with_field(entity, label, value)]}
                     with patch.object(dc, "_public_get", return_value=payload):
                         with self.assertRaises(dc.DeezerClientError):
@@ -121,15 +132,19 @@ class CatalogSearchProviderTests(unittest.TestCase):
         maximum = 2**53 - 1
         for kind, method, _path, _limit, entity, *_rest in _CATALOGS:
             with self.subTest(kind=kind):
+                dc.clear_search_caches()
                 with patch.object(dc, "_public_get", return_value={"data": [_with_field(entity, "id", maximum)]}):
                     self.assertEqual(getattr(dc, method)("needle")[0]["id"], str(maximum))
+                dc.clear_search_caches()
                 with patch.object(dc, "_public_get", return_value={"data": [_with_field(entity, "id", maximum + 1)]}):
                     with self.assertRaises(dc.DeezerClientError):
                         getattr(dc, method)("needle")
 
         playlist = _CATALOGS[2][4]
+        dc.clear_search_caches()
         with patch.object(dc, "_public_get", return_value={"data": [_with_field(playlist, "nb_tracks", maximum)]}):
             self.assertEqual(dc.search_playlists("needle")[0]["track_count"], maximum)
+        dc.clear_search_caches()
         with patch.object(dc, "_public_get", return_value={"data": [_with_field(playlist, "nb_tracks", maximum + 1)]}):
             with self.assertRaises(dc.DeezerClientError):
                 dc.search_playlists("needle")
@@ -138,6 +153,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
         track_id = "9" * 5000
         for kind, method, _path, _limit, entity, *_rest in _CATALOGS:
             with self.subTest(kind=kind):
+                dc.clear_search_caches()
                 with patch.object(dc, "_public_get", return_value={"data": [_with_field(entity, "id", track_id)]}):
                     result = getattr(dc, method)("needle")[0]
                 self.assertEqual(result["id"], track_id)
@@ -152,6 +168,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
         album = _CATALOGS[0][4]
         for value in invalid:
             with self.subTest(value=value):
+                dc.clear_search_caches()
                 with patch.object(dc, "_public_get", return_value={"data": [_with_field(album, "artist", value)]}):
                     with self.assertRaises(dc.DeezerClientError):
                         dc.search_albums("needle")
@@ -160,6 +177,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
         playlist = _CATALOGS[2][4]
         for value in (_MISSING, None, True, False, -1, "8", 8.5, "", [], {}):
             with self.subTest(value=value):
+                dc.clear_search_caches()
                 payload = {"data": [_with_field(playlist, "nb_tracks", value)]}
                 with patch.object(dc, "_public_get", return_value=payload):
                     with self.assertRaises(dc.DeezerClientError):
@@ -167,6 +185,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
 
         for value in (0, 8):
             with self.subTest(value=value):
+                dc.clear_search_caches()
                 payload = {"data": [_with_field(playlist, "nb_tracks", value)]}
                 with patch.object(dc, "_public_get", return_value=payload):
                     self.assertEqual(dc.search_playlists("needle")[0]["track_count"], value)
@@ -175,6 +194,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
         for kind, method, _path, _limit, entity, _label, artwork_fields, artwork_output in _CATALOGS:
             for value in (_MISSING, None, ""):
                 with self.subTest(kind=kind, value=value):
+                    dc.clear_search_caches()
                     item = deepcopy(entity)
                     for field in artwork_fields:
                         item = _with_field(item, field, value)
@@ -186,6 +206,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
             for field in artwork_fields:
                 for value in (0, False, [], {}, 7):
                     with self.subTest(kind=kind, field=field, value=value):
+                        dc.clear_search_caches()
                         item = _with_field(entity, artwork_fields[0], "https://example.invalid/preferred.jpg")
                         item[field] = value
                         with patch.object(dc, "_public_get", return_value={"data": [item]}):
@@ -196,6 +217,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
         for kind, method, _path, _limit, entity, _label, artwork_fields, artwork_output in _CATALOGS:
             for offset, field in enumerate(artwork_fields):
                 with self.subTest(kind=kind, field=field):
+                    dc.clear_search_caches()
                     item = deepcopy(entity)
                     item.update({candidate: None for candidate in artwork_fields[:offset]})
                     item.update({candidate: f"https://example.invalid/{candidate}.jpg" for candidate in artwork_fields[offset:]})
@@ -205,6 +227,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
     def test_album_search_keeps_existing_track_shaped_projection(self) -> None:
         for album_id in (101, "101"):
             with self.subTest(album_id=album_id):
+                dc.clear_search_caches()
                 album = {"id": album_id, "title": "Album", "artist": {"name": "Artist"}, "cover_medium": "https://example.invalid/album.jpg"}
                 with patch.object(dc, "_public_get", return_value={"data": [album]}):
                     self.assertEqual(dc.search_albums("needle"), [{
@@ -223,7 +246,7 @@ class CatalogSearchProviderTests(unittest.TestCase):
             self.assertEqual(dc.search_tracks_public("  needle  ", 1), [])
             self.assertEqual(dc.search_tracks_public("needle", 1), [])
             self.assertEqual(dc.search_tracks_public(" \t ", 1), [])
-        get.assert_called_once_with("/search?q=needle&limit=1")
+        get.assert_called_once_with("/search?q=needle&limit=1", interactive=True)
 
 
 class CatalogSearchHttpTests(unittest.TestCase):
@@ -236,6 +259,14 @@ class CatalogSearchHttpTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.client.close()
+
+    def setUp(self) -> None:
+        dc.clear_search_caches()
+        dc.reset_public_rate_limiter()
+
+    def tearDown(self) -> None:
+        dc.clear_search_caches()
+        dc.reset_public_rate_limiter()
 
     def test_unsupported_search_type_is_422_even_with_empty_query(self) -> None:
         with (

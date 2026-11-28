@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
+import { QueryClient } from "@tanstack/react-query";
 
 const fixture = {
   hooks: [],
   cursor: 0,
+  queryClient: null,
+  queryObservers: new Map(),
   requests: [],
   added: [],
   addedNext: [],
@@ -31,10 +34,30 @@ const moduleUrl = (source) => `data:text/javascript;base64,${Buffer.from(source)
 const reactStub = moduleUrl(`
   export const use = (value) => value;
   export function useEffect() {}
+  export function useEffectEvent(fn) { return fn; }
+  export function useCallback(fn) { return fn; }
   export function useImperativeHandle() {}
   export function useSyncExternalStore(_subscribe, _client, server) { return server(); }
   export function useRef(value) { const f = globalThis.__partySearchFixture; const index = f.cursor++; return f.hooks[index] ??= {current: value}; }
   export function useState(initial) { const f = globalThis.__partySearchFixture; const index = f.cursor++; if (!(index in f.hooks)) f.hooks[index] = typeof initial === 'function' ? initial() : initial; return [f.hooks[index], (value) => {f.hooks[index] = typeof value === 'function' ? value(f.hooks[index]) : value;}]; }
+`);
+const reactQueryStub = moduleUrl(`
+  import { QueryObserver } from ${JSON.stringify(import.meta.resolve("@tanstack/react-query"))};
+  export function queryOptions(options) { return options; }
+  export function useQuery(options) {
+    const f = globalThis.__partySearchFixture;
+    const slot = f.cursor++;
+    let entry = f.queryObservers.get(slot);
+    if (!entry) {
+      const observer = new QueryObserver(f.queryClient, options);
+      const unsub = observer.subscribe(() => {});
+      entry = { observer, unsub };
+      f.queryObservers.set(slot, entry);
+    } else {
+      entry.observer.setOptions(options);
+    }
+    return entry.observer.getOptimisticResult(f.queryClient.defaultQueryOptions(options));
+  }
 `);
 const iconStub = moduleUrl(`
   export function PlayIcon() {return null;}
@@ -130,14 +153,31 @@ const sessionUrl = await compile(party("usePartySession.ts"), {
   "@/store/toast": toastStub,
   "../requests": requestsUrl,
 });
+const partyApiStub = moduleUrl(`export const api = { search(term, kind, signal) {
+  let resolve, reject;
+  const promise = new Promise((complete, fail) => {
+    resolve = complete;
+    reject = fail;
+    signal?.addEventListener("abort", () => fail(signal.reason), { once: true });
+  });
+  globalThis.__partySearchFixture.requests.push({term, kind, signal, resolve, reject});
+  return promise;
+}};`);
+const rateLimitUrl = new URL("../src/lib/rateLimit.ts", import.meta.url).href;
+const catalogQueriesUrl = await compile("../src/lib/catalogQueries.ts", {
+  "@tanstack/react-query": reactQueryStub,
+  "@/lib/api": partyApiStub,
+});
+const rateLimitAlertUrl = await compile("../src/components/SearchRateLimitAlert.tsx", {
+  react: reactStub,
+  "react/jsx-runtime": jsxRuntime,
+  "@/lib/rateLimit": rateLimitUrl,
+});
 const searchUrl = await compile(party("usePartySearch.ts"), {
   react: reactStub,
-  "@/lib/api": moduleUrl(`export const api = { search(term, kind, signal) {
-    let resolve, reject;
-    const promise = new Promise((complete, fail) => {resolve = complete; reject = fail;});
-    globalThis.__partySearchFixture.requests.push({term, kind, signal, resolve, reject});
-    return promise;
-  }};`),
+  "@tanstack/react-query": reactQueryStub,
+  "@/lib/catalogQueries": catalogQueriesUrl,
+  "@/lib/rateLimit": rateLimitUrl,
   "../requests": requestsUrl,
 });
 const shareLinkUrl = await compile(party("useShareLink.ts"), {
@@ -158,6 +198,7 @@ const trackRowUrl = await compile(party("PartyTrackRow.tsx"), {
 const searchPanelUrl = await compile(party("PartySearch.tsx"), {
   "react/jsx-runtime": jsxRuntime,
   "@/components/SearchField": fieldUrl,
+  "@/components/SearchRateLimitAlert": rateLimitAlertUrl,
   "@/components/ui/EmptyState": nullStub,
   "@/components/icons": iconStub,
   "@/lib/trackArtists": artistsStub,
@@ -217,9 +258,13 @@ const { default: PartyPage } = await import(pageUrl);
 const { default: PartyLoadBadge } = await import(loadBadgeUrl);
 
 function setup(partyOverride = {}) {
+  for (const entry of fixture.queryObservers.values()) entry.unsub();
+  fixture.queryObservers.clear();
+  fixture.queryClient?.clear();
   Object.assign(fixture, {
     hooks: [],
     cursor: 0,
+    queryClient: new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     requests: [],
     added: [],
     addedNext: [],
@@ -287,10 +332,10 @@ test("party field retains explicit submit, renders CacheMarker on hits, and supp
   assert.equal(screen.field.trailing.props.type, "submit");
   assert.equal(screen.field.trailing.props.disabled, false);
   submit(screen);
+  assert.equal(render().field.inputProps["aria-busy"], true);
   assert.equal(fixture.requests.length, 1);
   assert.equal(fixture.requests[0].term, "Queen");
   assert.equal(fixture.requests[0].kind, "track");
-  assert.equal(render().field.inputProps["aria-busy"], true);
   fixture.requests[0].resolve([track]);
   await flush();
   const after = render();
@@ -332,8 +377,10 @@ test("party clear immediately aborts a pending request and rejects its late resu
   setup();
   render().field.onValueChange("Queen");
   submit(render());
+  assert.equal(render().field.inputProps["aria-busy"], true);
   const request = fixture.requests[0];
   render().field.onClear();
+  render();
   assert.equal(request.signal.aborted, true);
   const cleared = render();
   assert.equal(cleared.field.value, "");
@@ -349,6 +396,7 @@ test("party clear removes completed search actions and prior search failures", a
   setup();
   render().field.onValueChange("Queen");
   submit(render());
+  render();
   fixture.requests[0].resolve([track]);
   await flush();
   assert.equal(render().actions.length, 1);
@@ -356,6 +404,7 @@ test("party clear removes completed search actions and prior search failures", a
   assert.equal(render().actions.length, 0);
   render().field.onValueChange("Unavailable");
   submit(render());
+  render();
   fixture.requests[1].reject(new Error("HTTP 503"));
   await flush();
   assert.match(render().alerts[0].props.children, /HTTP 503/);
@@ -367,11 +416,14 @@ test("editing party input cancels the old request without starting a new one", a
   setup();
   render().field.onValueChange("Queen");
   submit(render());
+  render();
   const first = fixture.requests[0];
   render().field.onValueChange("Daft Punk");
+  render();
   assert.equal(first.signal.aborted, true);
   assert.equal(fixture.requests.length, 1);
   submit(render());
+  render();
   const second = fixture.requests[1];
   first.resolve([track]);
   await flush();
@@ -392,7 +444,40 @@ test("party Enter submit waits until IME composition finishes", async () => {
   screen.input.onCompositionEnd({currentTarget: fixture.input});
   screen = render();
   submit(screen);
+  render();
   assert.equal(fixture.requests[0].term, "東京");
   fixture.requests[0].resolve([]);
   await flush();
+});
+
+test("party search reuses fresh shared catalog cache without duplicate network requests", async () => {
+  setup();
+  fixture.queryClient.setQueryData(["search", "track", "Queen"], [track]);
+  render().field.onValueChange("  Queen  ");
+  submit(render());
+  const after = render();
+  assert.equal(fixture.requests.length, 0);
+  assert.equal(after.actions.length, 1);
+  assert.match(after.actions[0].props["aria-label"], /Song/);
+});
+
+test("party search surfaces HTTP 429 with Retry-After guidance and cooldown retry", async () => {
+  setup();
+  render().field.onValueChange("Queen");
+  submit(render());
+  render();
+  fixture.requests[0].reject(
+    Object.assign(new Error("API /search?q=Queen&type=track: Deezer rate limit reached. Retry after 9s."), {
+      status: 429,
+      retryAfterSec: 9,
+    }),
+  );
+  await flush();
+  const after = render();
+  assert.equal(after.alerts.length, 1);
+  const text = after.alerts[0].props.children[0].props.children;
+  assert.match(text, /Titelsuche: Anfragelimit erreicht – bitte in 9 Sekunden erneut versuchen/);
+  const button = after.alerts[0].props.children[1].props;
+  assert.equal(button.disabled, true);
+  assert.equal(button.children, "Erneut versuchen (9 s)");
 });

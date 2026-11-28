@@ -1,7 +1,7 @@
 import { normalizeSignInApiBase } from '../config';
 import { ensureApiCompatibility } from './compatibility';
 import { decodePartyState, decodeTrackList } from './decoders';
-import { ApiError } from './error';
+import { ApiError, extractRetryAfterSeconds } from './error';
 import type { PartyState, Track, TrackInput } from './types';
 
 const PARTY_GUEST_COOKIE = 'sf_party_guest';
@@ -100,10 +100,12 @@ async function guestFetch<T>(params: {
   }
 
   if (!res.ok) {
+    const retryAfterSeconds = extractRetryAfterSeconds(res.headers.get('retry-after'), text);
     throw new ApiError(
       res.status,
       text,
       `${method} ${path} returned ${res.status}: ${errorDetail(text, res.statusText)}`,
+      { retryAfterSeconds },
     );
   }
   if (expectNoContent || res.status === 204) {

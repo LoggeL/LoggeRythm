@@ -10,19 +10,31 @@ must call them via starlette.concurrency.run_in_threadpool.
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import date, datetime, timedelta
+from http import cookiejar
+from typing import TYPE_CHECKING
 from urllib.parse import quote_plus
 
 import requests
+from requests.adapters import HTTPAdapter
 
 from ..config import DEEZER_ARL, DEEZER_PUBLIC_API, DEEZER_QUALITY
 from . import deezer
+from .deezer_rate_limit import (
+    DeezerRateLimiter,
+    RateLimitBudgetExceeded,
+    parse_retry_after,
+)
 from .singleflight_cache import SingleFlightTtlCache
 from .track_identity import dedupe_tracks, normalize_isrc
+
+if TYPE_CHECKING:
+    from ..schemas.track import Track
 
 
 # --- error taxonomy -------------------------------------------------------
@@ -41,9 +53,27 @@ class TrackUnavailable(DeezerClientError):
 class RateLimited(DeezerClientError):
     """Deezer signalled a rate limit / quota error."""
 
+    def __init__(self, message: str = "", *, retry_after_sec: float | None = None):
+        super().__init__(message)
+        self.retry_after_sec = (
+            float(retry_after_sec)
+            if retry_after_sec is not None
+            and math.isfinite(retry_after_sec)
+            and retry_after_sec > 0
+            else None
+        )
+
 
 class DecryptFailed(DeezerClientError):
     """Download succeeded but decryption/storage failed."""
+
+
+def _rewrap_deezer_error(exc: DeezerClientError, context: str) -> DeezerClientError:
+    """Add context to a DeezerClientError while preserving rate-limit metadata."""
+    message = f"{context}: {exc}"
+    if isinstance(exc, RateLimited):
+        return RateLimited(message, retry_after_sec=exc.retry_after_sec)
+    return type(exc)(message)
 
 
 # --- session lifecycle ----------------------------------------------------
@@ -302,40 +332,161 @@ def track_public(deezer_id: str) -> dict:
 
 
 # --- public Deezer API browse (no auth) -----------------------------------
-def _public_get(path: str, _retries: int = 3) -> dict:
-    """GET the public Deezer API, retrying with backoff on rate limits.
+_PUBLIC_HTTP_TIMEOUT = (3.05, 8.0)
+_INTERACTIVE_SEARCH_RETRIES = 1
+_INTERACTIVE_MAX_WAIT_SEC = 1.5
+_BULK_DEFAULT_RETRIES = 3
+_BULK_MAX_WAIT_SEC = 5.0
+_PUBLIC_ACCESS_SCOPE = "public"
 
-    Bulk operations (e.g. importing a long playlist) hammer the public API and
-    routinely hit its quota; transparent retry keeps those imports robust.
+
+class _RejectAllCookies(cookiejar.DefaultCookiePolicy):
+    """Prevent the anonymous public API session from storing or sending cookies."""
+
+    def set_ok(self, cookie, request):  # type: ignore[override]
+        return False
+
+    def return_ok(self, cookie, request):  # type: ignore[override]
+        return False
+
+
+def _build_public_session() -> requests.Session:
+    """Pooled keep-alive session dedicated to unauthenticated public Deezer reads."""
+    sess = requests.Session()
+    sess.cookies.set_policy(_RejectAllCookies())
+    sess.headers.update(
+        {
+            "Accept": "application/json",
+            "User-Agent": deezer.USER_AGENT,
+        }
+    )
+    adapter = HTTPAdapter(pool_connections=16, pool_maxsize=32)
+    sess.mount("https://", adapter)
+    sess.mount("http://", adapter)
+    return sess
+
+
+_public_session = _build_public_session()
+_public_rate_limiter = DeezerRateLimiter()
+
+
+def reset_public_rate_limiter() -> None:
+    """Reset the shared public Deezer pacer and cooldown window (tests/benchmarks)."""
+    _public_rate_limiter.reset()
+
+
+def _extract_retry_after(resp: object) -> float | None:
+    headers = getattr(resp, "headers", None)
+    if headers is None:
+        return None
+    getter = getattr(headers, "get", None)
+    if not callable(getter):
+        return None
+    return parse_retry_after(getter("Retry-After"))
+
+
+def _public_get(
+    path: str,
+    _retries: int | None = None,
+    *,
+    interactive: bool = False,
+) -> dict:
+    """GET the public Deezer API with shared pacing, cooldown, and Retry-After handling.
+
+    Interactive search calls pass ``interactive=True`` so long rate limits fail
+    fast and loudly with HTTP 429 + full ``Retry-After`` instead of stalling
+    users or hammering Deezer. Bulk callers retain bounded retries while
+    honoring the same shared cooldown window.
     """
-    try:
-        resp = requests.get(f"{DEEZER_PUBLIC_API}{path}", timeout=15)
-        resp.raise_for_status()
-        data = resp.json()
-    except ValueError as e:
-        raise DeezerClientError(f"Public Deezer API returned invalid JSON for {path}: {e}") from e
-    except requests.exceptions.RequestException as e:
-        raise DeezerClientError(f"Public Deezer API request failed: {e}") from e
-    if not isinstance(data, dict):
-        raise DeezerClientError(
-            f"Public Deezer API returned {type(data).__name__} for {path}; expected an object"
-        )
-    if "error" in data:
-        err = data["error"]
-        if not isinstance(err, dict):
-            raise DeezerClientError(
-                f"Public Deezer API returned an invalid error object for {path}: {err!r}"
+    retries_left = (
+        _retries
+        if _retries is not None
+        else (_INTERACTIVE_SEARCH_RETRIES if interactive else _BULK_DEFAULT_RETRIES)
+    )
+    max_wait_sec = _INTERACTIVE_MAX_WAIT_SEC if interactive else _BULK_MAX_WAIT_SEC
+    next_acquire_wait = max_wait_sec
+
+    while True:
+        try:
+            _public_rate_limiter.acquire(max_wait_sec=next_acquire_wait)
+        except RateLimitBudgetExceeded as exc:
+            raise RateLimited(
+                f"Public Deezer API rate limited before {path}: {exc}",
+                retry_after_sec=exc.retry_after_sec,
+            ) from exc
+        next_acquire_wait = max_wait_sec
+
+        try:
+            resp = _public_session.get(
+                f"{DEEZER_PUBLIC_API}{path}",
+                timeout=_PUBLIC_HTTP_TIMEOUT,
             )
-        code = err.get("code")
-        if code == 4:  # rate limited / quota
-            if _retries > 0:
-                time.sleep(0.6 * (4 - _retries))  # 0.6s, 1.2s, 1.8s
-                return _public_get(path, _retries - 1)
-            raise RateLimited(str(err))
-        if code in (800, 300):
-            raise TrackUnavailable(str(err))
-        raise DeezerClientError(str(err))
-    return data
+        except requests.exceptions.RequestException as e:
+            err_resp = getattr(e, "response", None)
+            if err_resp is not None and getattr(err_resp, "status_code", None) == 429:
+                delay = _public_rate_limiter.record_rate_limit(
+                    _extract_retry_after(err_resp)
+                )
+                if retries_left > 0 and delay <= max_wait_sec:
+                    retries_left -= 1
+                    next_acquire_wait = max(max_wait_sec, delay + 0.25)
+                    continue
+                raise RateLimited(
+                    f"Public Deezer API rate limit reached (HTTP 429) for {path}",
+                    retry_after_sec=delay,
+                ) from e
+            raise DeezerClientError(f"Public Deezer API request failed: {e}") from e
+
+        status_code = getattr(resp, "status_code", None)
+        if status_code == 429:
+            delay = _public_rate_limiter.record_rate_limit(_extract_retry_after(resp))
+            if retries_left > 0 and delay <= max_wait_sec:
+                retries_left -= 1
+                next_acquire_wait = max(max_wait_sec, delay + 0.25)
+                continue
+            raise RateLimited(
+                f"Public Deezer API rate limit reached (HTTP 429) for {path}",
+                retry_after_sec=delay,
+            )
+        if status_code == 404:
+            raise TrackUnavailable(f"Public Deezer API returned HTTP 404 for {path}")
+
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except ValueError as e:
+            raise DeezerClientError(
+                f"Public Deezer API returned invalid JSON for {path}: {e}"
+            ) from e
+        except requests.exceptions.RequestException as e:
+            raise DeezerClientError(f"Public Deezer API request failed: {e}") from e
+
+        if not isinstance(data, dict):
+            raise DeezerClientError(
+                f"Public Deezer API returned {type(data).__name__} for {path}; expected an object"
+            )
+        if "error" in data:
+            err = data["error"]
+            if not isinstance(err, dict):
+                raise DeezerClientError(
+                    f"Public Deezer API returned an invalid error object for {path}: {err!r}"
+                )
+            code = err.get("code")
+            if code == 4:  # rate limited / quota
+                delay = _public_rate_limiter.record_rate_limit(
+                    _extract_retry_after(resp)
+                )
+                if retries_left > 0 and delay <= max_wait_sec:
+                    retries_left -= 1
+                    next_acquire_wait = max(max_wait_sec, delay + 0.25)
+                    continue
+                raise RateLimited(str(err), retry_after_sec=delay)
+            if code in (800, 300):
+                raise TrackUnavailable(str(err))
+            raise DeezerClientError(str(err))
+
+        _public_rate_limiter.record_success()
+        return data
 
 
 _TRACK_ARTISTS_TTL_SEC = 24 * 3600
@@ -368,10 +519,16 @@ _album_record_type_flights = SingleFlightTtlCache[str, str](
 )
 
 
-def _cache_track_detail_meta(track_id: str, detail: dict) -> None:
+def _cache_track_detail_meta(
+    track_id: str,
+    detail: dict,
+    *,
+    authoritative_isrc: bool = True,
+) -> None:
     """Persist gain, bpm, explicit, release_date, and ISRC from /track/{id}."""
     isrc = normalize_isrc(detail.get("isrc"))
-    _track_isrc_flights.put(track_id, isrc)
+    if isrc or authoritative_isrc:
+        _track_isrc_flights.put(track_id, isrc)
     meta = {
         **_loudness_fields(detail),
         **_extra_track_fields(detail),
@@ -380,11 +537,89 @@ def _cache_track_detail_meta(track_id: str, detail: dict) -> None:
     _track_detail_meta_flights.put(track_id, meta)
 
 
+def enrich_track_from_cache(track: Track, *, track_id: str | None = None) -> Track:
+    """Merge already-cached full credits, ISRC, and loudness onto ``track`` with 0 network calls."""
+    tid = str(track_id or track.id or "").strip()
+    if not tid:
+        return track
+
+    updates: dict[str, object] = {}
+    if len(track.artists) <= 1:
+        hit, cached_refs = _track_artists_flights.peek(tid)
+        if hit and cached_refs and len(cached_refs) >= len(track.artists):
+            from ..schemas.track import ArtistRef
+
+            refs = [
+                ArtistRef(id=str(ref.get("id", "") or ""), name=str(ref.get("name", "") or ""))
+                for ref in cached_refs
+                if isinstance(ref, dict) and ref.get("name")
+            ]
+            if refs:
+                updates["artists"] = refs
+
+    if not normalize_isrc(track.isrc):
+        hit, cached_isrc = _track_isrc_flights.peek(tid)
+        if hit and cached_isrc:
+            updates["isrc"] = cached_isrc
+
+    meta_hit, cached_meta = _track_detail_meta_flights.peek(tid)
+    if meta_hit and isinstance(cached_meta, dict):
+        for key in ("loudness_gain_db", "loudness_lufs", "loudness_peak", "bpm", "explicit"):
+            if getattr(track, key) is None and cached_meta.get(key) is not None:
+                updates[key] = cached_meta[key]
+        if not track.release_date and cached_meta.get("release_date"):
+            updates["release_date"] = cached_meta["release_date"]
+
+    return track.model_copy(update=updates) if updates else track
+
+
+def hydrate_track_for_persistence(track: Track, *, track_id: str | None = None) -> Track:
+    """Hydrate a single Deezer track on demand before persisting it to Likes/Playlists.
+
+    - Reuses cached credits/ISRC/loudness immediately when warm (0 upstream calls).
+    - When a cold single-artist search hit (``len(artists) <= 1``) is persisted
+      directly without an intermediate detail fetch, loads ONLY that one track
+      via singleflight ``_full_public_artist_refs(tid)`` so guest/featured
+      performer credits are preserved permanently.
+    - Locally stored, withdrawn catalog entries (``TrackUnavailable``) keep their track
+      metadata; rate limits and other provider failures raise loudly.
+    """
+    enriched = enrich_track_from_cache(track, track_id=track_id)
+    tid = str(track_id or enriched.id or "").strip()
+    if not tid or not tid.isdigit() or len(enriched.artists) > 1:
+        return enriched
+    hit, _cached_refs = _track_artists_flights.peek(tid)
+    if hit:
+        return enriched
+    try:
+        refs = _full_public_artist_refs(tid)
+    except TrackUnavailable:
+        from . import storage
+
+        if storage.is_ready(tid):
+            return enriched
+        raise
+    # Merge directly in case ``_full_public_artist_refs`` was mocked without
+    # populating ``_track_artists_flights``, and still pick up any cached meta.
+    hydrated = enrich_track_from_cache(enriched, track_id=tid)
+    if len(hydrated.artists) <= 1 and refs:
+        from ..schemas.track import ArtistRef
+
+        parsed_refs = [
+            ArtistRef(id=str(ref.get("id", "") or ""), name=str(ref.get("name", "") or ""))
+            for ref in refs
+            if isinstance(ref, dict) and ref.get("name")
+        ]
+        if parsed_refs:
+            hydrated = hydrated.model_copy(update={"artists": parsed_refs})
+    return hydrated
+
+
 def _validated_track_detail(track_id: str, *, context: str) -> dict:
     try:
         detail = _public_get(f"/track/{track_id}")
     except DeezerClientError as e:
-        raise type(e)(f"{context}: {e}") from e
+        raise _rewrap_deezer_error(e, context) from e
 
     if not isinstance(detail, dict):
         raise DeezerClientError(
@@ -461,8 +696,8 @@ def album_record_type(album_id: str) -> str:
         try:
             detail = _public_get(f"/album/{aid}")
         except DeezerClientError as e:
-            raise type(e)(
-                f"Could not load release type for album {aid}: {e}"
+            raise _rewrap_deezer_error(
+                e, f"Could not load release type for album {aid}"
             ) from e
         if not isinstance(detail, dict):
             raise DeezerClientError(
@@ -474,15 +709,30 @@ def album_record_type(album_id: str) -> str:
     return _album_record_type_flights.get(aid, load)
 
 
+def _peek_album_record_type(album_id: str) -> str:
+    """Return cached album ``record_type`` without contacting Deezer."""
+    aid = str(album_id or "").strip()
+    if not aid or not aid.isdigit():
+        return ""
+    hit, record_type = _album_record_type_flights.peek(aid)
+    return record_type if hit and record_type else ""
+
+
 def dedupe_public_tracks(
     tracks: list[dict],
     *,
     preserve_fields: tuple[str, ...] = (),
+    fetch_record_types: bool = True,
 ) -> list[dict]:
-    """Merge duplicate recordings across Singles/EPs/Albums (Album > EP > Single)."""
+    """Merge duplicate recordings across Singles/EPs/Albums (Album > EP > Single).
+
+    When ``fetch_record_types`` is False (fast search path), uses only already
+    cached album ``record_type`` values and falls back to Deezer popularity
+    ``rank`` without blocking on ``/album/{id}`` requests.
+    """
     return dedupe_tracks(
         tracks,
-        resolve_record_type=album_record_type,
+        resolve_record_type=album_record_type if fetch_record_types else _peek_album_record_type,
         preserve_fields=preserve_fields,
     )
 
@@ -491,13 +741,18 @@ def normalize_public_tracks(
     items: list[dict],
     *,
     require_isrc: bool = False,
+    enrich_missing_details: bool = True,
 ) -> list[dict]:
-    """Normalize track summaries without losing secondary performers.
+    """Normalize track summaries while preserving performer credits and metadata.
 
-    Inline ``contributors`` are used when an endpoint supplies them. Missing
-    lists are enriched concurrently from the authoritative per-track endpoint;
-    errors name the affected track and abort the response instead of returning
-    a plausible-looking, incomplete single-artist result.
+    Inline ``contributors`` and already-cached per-track credits/metadata are
+    always reused with zero extra upstream requests. When
+    ``enrich_missing_details`` is True (detail/browse/discovery/import paths),
+    tracks missing ``contributors`` (or ``isrc`` when ``require_isrc=True``)
+    are enriched concurrently from ``/track/{id}`` and errors abort loudly.
+    When ``enrich_missing_details`` is False (interactive ``/search`` path),
+    no secondary ``/track/{id}`` requests are fired; tracks use their primary
+    artist plus any already-cached full credits/metadata.
     """
     if not items:
         return []
@@ -510,28 +765,88 @@ def normalize_public_tracks(
     seen_missing_isrc: set[str] = set()
 
     for item in items:
+        if not isinstance(item, dict):
+            raise DeezerClientError(
+                f"Cannot normalize public track list: expected object, got {type(item).__name__}"
+            )
         track_id = str(item.get("id", "") or "")
         if not track_id:
             raise DeezerClientError(
                 "Cannot normalize public track list: an item has no track id"
             )
+        raw_artist = item.get("artist")
+        if raw_artist is not None and not isinstance(raw_artist, dict):
+            raise DeezerClientError(
+                f"Deezer track {track_id} has an invalid artist object"
+            )
+        raw_album = item.get("album")
+        if raw_album is not None and not isinstance(raw_album, dict):
+            raise DeezerClientError(
+                f"Deezer track {track_id} has an invalid album object"
+            )
+        contributors = item.get("contributors")
+        if contributors is not None and (
+            not isinstance(contributors, list)
+            or any(not isinstance(contributor, dict) for contributor in contributors)
+        ):
+            raise DeezerClientError(
+                f"Deezer track {track_id} has an invalid contributor list"
+            )
+
         isrc = normalize_isrc(item.get("isrc"))
         if isrc:
             inline_isrcs[track_id] = isrc
             _track_isrc_flights.put(track_id, isrc)
+
         refs = _artist_refs(item, {})
         if refs:
             inline_refs[track_id] = refs
-            if require_isrc and not isrc and track_id not in seen_missing_isrc:
+            _track_artists_flights.put(track_id, refs)
+            if any(
+                item.get(field) not in (None, "")
+                for field in (
+                    "gain",
+                    "GAIN",
+                    "loudness_gain_db",
+                    "bpm",
+                    "BPM",
+                    "release_date",
+                )
+            ):
+                _cache_track_detail_meta(
+                    track_id, item, authoritative_isrc=bool(isrc)
+                )
+            if (
+                enrich_missing_details
+                and require_isrc
+                and not isrc
+                and track_id not in seen_missing_isrc
+            ):
                 hit, cached_isrc = _track_isrc_flights.peek(track_id)
                 if hit and cached_isrc is not None:
                     inline_isrcs[track_id] = cached_isrc
                 else:
                     seen_missing_isrc.add(track_id)
                     missing_isrc_ids.append(track_id)
-        elif track_id not in seen_missing:
-            seen_missing.add(track_id)
-            missing_ids.append(track_id)
+        else:
+            hit, cached_refs = _track_artists_flights.peek(track_id)
+            if hit and cached_refs:
+                inline_refs[track_id] = cached_refs
+                if (
+                    enrich_missing_details
+                    and require_isrc
+                    and not isrc
+                    and track_id not in seen_missing_isrc
+                ):
+                    isrc_hit, cached_isrc = _track_isrc_flights.peek(track_id)
+                    if isrc_hit and cached_isrc is not None:
+                        inline_isrcs[track_id] = cached_isrc
+                    else:
+                        seen_missing_isrc.add(track_id)
+                        missing_isrc_ids.append(track_id)
+            elif enrich_missing_details and track_id not in seen_missing:
+                seen_missing.add(track_id)
+                missing_ids.append(track_id)
 
     fetched_refs: dict[str, list[dict]] = {}
     if missing_ids:
@@ -559,7 +874,9 @@ def normalize_public_tracks(
     for item in items:
         track_id = str(item["id"])
         enriched = dict(item)
-        enriched["contributors"] = inline_refs.get(track_id) or fetched_refs[track_id]
+        resolved_refs = inline_refs.get(track_id) or fetched_refs.get(track_id)
+        if resolved_refs:
+            enriched["contributors"] = resolved_refs
         resolved_isrc = inline_isrcs.get(track_id) or fetched_isrcs.get(track_id, "")
         if not resolved_isrc:
             hit, cached_isrc = _track_isrc_flights.peek(track_id)
@@ -584,44 +901,127 @@ def normalize_public_tracks(
     return normalized
 
 
-_SEARCH_TRACKS_TTL_SEC = 15
-_search_tracks_flights = SingleFlightTtlCache[tuple[str, int], list[dict]](
-    ttl_seconds=_SEARCH_TRACKS_TTL_SEC,
-    max_entries=256,
-    max_inflight=128,
+_SEARCH_CACHE_TTL_SEC = 60
+_SEARCH_CACHE_MAX_ENTRIES = 512
+_SEARCH_CACHE_MAX_INFLIGHT = 64
+# Keep alias for existing tests that inspect the track search TTL constant.
+_SEARCH_TRACKS_TTL_SEC = _SEARCH_CACHE_TTL_SEC
+
+SearchCacheKey = tuple[str, str, str, int, bool]
+
+_search_tracks_flights = SingleFlightTtlCache[SearchCacheKey, list[dict]](
+    ttl_seconds=_SEARCH_CACHE_TTL_SEC,
+    max_entries=_SEARCH_CACHE_MAX_ENTRIES,
+    max_inflight=_SEARCH_CACHE_MAX_INFLIGHT,
+)
+_search_albums_flights = SingleFlightTtlCache[SearchCacheKey, list[dict]](
+    ttl_seconds=_SEARCH_CACHE_TTL_SEC,
+    max_entries=_SEARCH_CACHE_MAX_ENTRIES,
+    max_inflight=_SEARCH_CACHE_MAX_INFLIGHT,
+)
+_search_artists_flights = SingleFlightTtlCache[SearchCacheKey, list[dict]](
+    ttl_seconds=_SEARCH_CACHE_TTL_SEC,
+    max_entries=_SEARCH_CACHE_MAX_ENTRIES,
+    max_inflight=_SEARCH_CACHE_MAX_INFLIGHT,
+)
+_search_playlists_flights = SingleFlightTtlCache[SearchCacheKey, list[dict]](
+    ttl_seconds=_SEARCH_CACHE_TTL_SEC,
+    max_entries=_SEARCH_CACHE_MAX_ENTRIES,
+    max_inflight=_SEARCH_CACHE_MAX_INFLIGHT,
 )
 
 
-def search_tracks_public(query: str, limit: int = 40) -> list[dict]:
-    """Track search with complete ordered performer credits."""
-    if limit < 1 or limit > 100:
+def clear_search_caches() -> None:
+    """Clear all public catalog search caches (tests/benchmarks)."""
+    for flights in (
+        _search_tracks_flights,
+        _search_albums_flights,
+        _search_artists_flights,
+        _search_playlists_flights,
+    ):
+        with flights.lock:
+            flights.cache.clear()
+
+
+def _search_cache_key(
+    *,
+    entity: str,
+    query: str,
+    limit: int,
+    enrich: bool = False,
+) -> SearchCacheKey:
+    """Build a boundary-safe cache key over active public-search dimensions.
+
+    Uses outer trim only (preserving case and internal whitespace) and encodes
+    the anonymous ``public`` access scope, catalog entity, upstream limit, and
+    enrichment mode so distinct boundaries never collide.
+    """
+    return (
+        _PUBLIC_ACCESS_SCOPE,
+        entity,
+        query.strip(),
+        limit,
+        bool(enrich),
+    )
+
+
+def search_tracks_public(
+    query: str,
+    limit: int = 40,
+    *,
+    enrich: bool = False,
+) -> list[dict]:
+    """Track search over the public Deezer API with singleflight & boundary-safe caching.
+
+    By default (``enrich=False``), issues a single ``/search`` call and reuses
+    any already-cached per-track credits/metadata and album release types with
+    zero blocking N+1 requests. Callers needing authoritative full credits
+    (imports, recommendations) pass ``enrich=True`` explicitly.
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > 100:
         raise ValueError(f"search track limit must be between 1 and 100, got {limit}")
-    query = query.strip()
-    if not query:
+    trimmed = query.strip()
+    if not trimmed:
         return []
+    key = _search_cache_key(
+        entity="track",
+        query=trimmed,
+        limit=limit,
+        enrich=enrich,
+    )
+
     def load() -> list[dict]:
-        data = _public_get(f"/search?q={quote_plus(query)}&limit={limit}")
+        data = _public_get(
+            f"/search?q={quote_plus(trimmed)}&limit={limit}",
+            interactive=not enrich,
+        )
         items = data.get("data")
         if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
             raise DeezerClientError(
-                f"Public Deezer track search returned invalid data for query {query!r}"
+                f"Public Deezer track search returned invalid data for query {trimmed!r}"
             )
-        return dedupe_public_tracks(normalize_public_tracks(items))
+        normalized = normalize_public_tracks(
+            items, enrich_missing_details=enrich
+        )
+        return dedupe_public_tracks(
+            normalized, fetch_record_types=enrich
+        )
 
-    # A normalized response can be enriched by several track-detail requests.
-    # Cache the complete result briefly and keep each caller's copy independent.
-    return deepcopy(_search_tracks_flights.get((query, limit), load))
+    return deepcopy(_search_tracks_flights.get(key, load))
 
 
 def _search_items(query: str, entity: str, *, limit: int) -> list[dict]:
-    data = _public_get(f"/search/{entity}?q={quote_plus(query)}&limit={limit}")
+    data = _public_get(
+        f"/search/{entity}?q={quote_plus(query)}&limit={limit}",
+        interactive=True,
+    )
     items = data.get("data")
     context = f"Public Deezer {entity} search"
     if not isinstance(items, list):
         raise DeezerClientError(f"{context}: data must be an array")
-    for index, item in enumerate(items):
+    for idx, item in enumerate(items):
         if not isinstance(item, dict):
-            raise DeezerClientError(f"{context}: data[{index}] must be an object")
+            raise DeezerClientError(f"{context}: data[{idx}] must be an object")
     return items
 
 
@@ -657,64 +1057,82 @@ def _search_artwork(item: dict, prefix: str, context: str) -> str:
 
 def search_albums(query: str) -> list[dict]:
     """Public album search, retaining the catalog's existing Track projection."""
-    query = query.strip()
-    if not query:
+    trimmed = query.strip()
+    if not trimmed:
         return []
-    out = []
-    for index, item in enumerate(_search_items(query, "album", limit=25)):
-        context = f"Public Deezer album search: data[{index}]"
-        album_id = _search_id(item, context)
-        title = _search_text(item, "title", context)
-        artist = item.get("artist")
-        if not isinstance(artist, dict):
-            raise DeezerClientError(f"{context}: artist must be an object")
-        out.append({
-            "id": album_id,
-            "title": title,
-            "artist": _search_text(artist, "name", f"{context}.artist"),
-            "album": title,
-            "album_id": item["id"],
-            "cover": _search_artwork(item, "cover", context),
-            "duration_sec": 0,
-            "preview_url": None,
-        })
-    return out
+    key = _search_cache_key(entity="album", query=trimmed, limit=25)
+
+    def load() -> list[dict]:
+        out = []
+        for idx, item in enumerate(_search_items(trimmed, "album", limit=25)):
+            context = f"Public Deezer album search: data[{idx}]"
+            album_id = _search_id(item, context)
+            title = _search_text(item, "title", context)
+            artist = item.get("artist")
+            if not isinstance(artist, dict):
+                raise DeezerClientError(f"{context}: artist must be an object")
+            record_type = item.get("record_type")
+            if isinstance(record_type, str) and record_type.strip():
+                _album_record_type_flights.put(album_id, record_type.strip().lower())
+            out.append({
+                "id": album_id,
+                "title": title,
+                "artist": _search_text(artist, "name", f"{context}.artist"),
+                "album": title,
+                "album_id": item["id"],
+                "cover": _search_artwork(item, "cover", context),
+                "duration_sec": 0,
+                "preview_url": None,
+            })
+        return out
+
+    return deepcopy(_search_albums_flights.get(key, load))
 
 
 def search_artists(query: str) -> list[dict]:
-    query = query.strip()
-    if not query:
+    trimmed = query.strip()
+    if not trimmed:
         return []
-    out = []
-    for index, item in enumerate(_search_items(query, "artist", limit=24)):
-        context = f"Public Deezer artist search: data[{index}]"
-        out.append({
-            "id": _search_id(item, context),
-            "name": _search_text(item, "name", context),
-            "picture": _search_artwork(item, "picture", context),
-        })
-    return out
+    key = _search_cache_key(entity="artist", query=trimmed, limit=24)
+
+    def load() -> list[dict]:
+        out = []
+        for idx, item in enumerate(_search_items(trimmed, "artist", limit=24)):
+            context = f"Public Deezer artist search: data[{idx}]"
+            out.append({
+                "id": _search_id(item, context),
+                "name": _search_text(item, "name", context),
+                "picture": _search_artwork(item, "picture", context),
+            })
+        return out
+
+    return deepcopy(_search_artists_flights.get(key, load))
 
 
 def search_playlists(query: str) -> list[dict]:
-    query = query.strip()
-    if not query:
+    trimmed = query.strip()
+    if not trimmed:
         return []
-    out = []
-    for index, item in enumerate(_search_items(query, "playlist", limit=24)):
-        context = f"Public Deezer playlist search: data[{index}]"
-        count = item.get("nb_tracks")
-        if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 2**53 - 1:
-            raise DeezerClientError(
-                f"{context}: nb_tracks must be a nonnegative integer safe for JavaScript clients"
-            )
-        out.append({
-            "id": _search_id(item, context),
-            "title": _search_text(item, "title", context),
-            "cover": _search_artwork(item, "picture", context),
-            "track_count": count,
-        })
-    return out
+    key = _search_cache_key(entity="playlist", query=trimmed, limit=24)
+
+    def load() -> list[dict]:
+        out = []
+        for idx, item in enumerate(_search_items(trimmed, "playlist", limit=24)):
+            context = f"Public Deezer playlist search: data[{idx}]"
+            count = item.get("nb_tracks")
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 2**53 - 1:
+                raise DeezerClientError(
+                    f"{context}: nb_tracks must be a nonnegative integer safe for JavaScript clients"
+                )
+            out.append({
+                "id": _search_id(item, context),
+                "title": _search_text(item, "title", context),
+                "cover": _search_artwork(item, "picture", context),
+                "track_count": count,
+            })
+        return out
+
+    return deepcopy(_search_playlists_flights.get(key, load))
 
 
 def charts() -> list[dict]:
@@ -829,8 +1247,8 @@ def _album_release_date(album_id: str) -> date:
                 f"Deezer no longer has the album ({e})"
             ) from e
         except DeezerClientError as e:
-            raise type(e)(
-                f"Could not load the release date of editorial pick album {album_id}: {e}"
+            raise _rewrap_deezer_error(
+                e, f"Could not load the release date of editorial pick album {album_id}"
             ) from e
         if detail.get("record_type"):
             _album_record_type_flights.put(
@@ -997,7 +1415,7 @@ def match_track(title: str, artist: str, isrc: str = "") -> dict | None:
     query = f"{artist} {title}".strip()
     if not query:
         return None
-    results = search_tracks_public(query, limit=1)
+    results = search_tracks_public(query, limit=1, enrich=True)
     return results[0] if results else None
 
 

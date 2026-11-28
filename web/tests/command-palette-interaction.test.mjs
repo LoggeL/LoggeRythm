@@ -10,6 +10,8 @@ const stubs = {
   react: moduleUrl(`
     export function useRef(value) { const f = globalThis.__paletteFixture; const index = f.cursor++; return f.hooks[index] ??= {current: value}; }
     export function useId() { return useRef('palette-list').current; }
+    export function useCallback(fn) { return fn; }
+    export function useSyncExternalStore(_sub, _client, server) { return server(); }
     export function useState(initial) { const f = globalThis.__paletteFixture; const index = f.cursor++; if (!(index in f.hooks)) f.hooks[index] = initial; return [f.hooks[index], (value) => {f.hooks[index] = typeof value === 'function' ? value(f.hooks[index]) : value;}]; }
     export function useEffect(callback, deps) { const f = globalThis.__paletteFixture; const index = f.cursor++; f.nextEffects.push({index, callback, deps}); }
   `),
@@ -17,8 +19,9 @@ const stubs = {
   "next/navigation": moduleUrl("export function useRouter() {return {push: (url) => globalThis.__paletteFixture.routes.push(url)};}"),
   "@tanstack/react-query": moduleUrl(`export function useQuery(options) {
     const f = globalThis.__paletteFixture; f.requests.push(options);
-    const entity = options.queryKey[1]; const error = f.errors[entity];
-    return {data: f.data[entity], isError: !!error, error: error ? new Error(error) : null, isFetching: !!f.fetching[entity], isSuccess: options.enabled && !error && !!f.data[entity], refetch: () => {f.retries.push(entity);}};
+    const entity = options.queryKey[1]; const rawError = f.errors[entity];
+    const error = !rawError ? null : rawError instanceof Error ? rawError : typeof rawError === 'object' ? Object.assign(new Error(rawError.message ?? 'HTTP ' + rawError.status), rawError) : new Error(rawError);
+    return {data: f.data[entity], isError: !!error, error, isFetching: !!f.fetching[entity], isSuccess: options.enabled && !error && !!f.data[entity], refetch: () => {f.retries.push(entity);}};
   }`),
   "@/lib/catalogQueries": moduleUrl(`
     export const SEARCH_MIN_LENGTH = 2;
@@ -33,8 +36,9 @@ const stubs = {
   "@/store/connect": moduleUrl("export const useConnectStore = { getState: () => ({ setSelectorOpen() {} }) };"),
   "@/store/uiModals": moduleUrl("export const useUiModalsStore = { getState: () => ({ setSleepTimerOpen() {}, setAudioEffectsOpen() {}, toggleCinemaMode() {}, setShortcutsOpen() {}, cycleVisualizer() {} }) };"),
   "@/store/toast": moduleUrl("export const toast = { info() {}, success() {}, error() {} };"),
-  "@/hooks/useLibrary": moduleUrl("export const usePlaylists = () => ({ data: globalThis.__paletteFixture.playlists ?? [] });"),
-  "@/hooks/useFollows": moduleUrl("export const useFollowing = () => ({ data: globalThis.__paletteFixture.following ?? [] });"),
+  "@/hooks/useLibrary": moduleUrl("export const usePlaylists = () => globalThis.__paletteFixture.ownPlaylistsQuery ?? { data: globalThis.__paletteFixture.playlists ?? [], isError: false, error: null, isFetching: false, refetch() {} };"),
+  "@/hooks/useFollows": moduleUrl("export const useFollowing = () => globalThis.__paletteFixture.followingQuery ?? { data: globalThis.__paletteFixture.following ?? [], isError: false, error: null, isFetching: false, refetch() {} };"),
+  "@/lib/rateLimit": new URL("../src/lib/rateLimit.ts", import.meta.url).href,
   "@/components/icons": moduleUrl("export function SearchIcon() {return null;} export const CloseIcon = SearchIcon; export const PlayIcon = SearchIcon;"),
   "@/components/CoverPlaceholder": moduleUrl("export default function CoverPlaceholder() {return null;}"),
   "@/components/SearchField": moduleUrl("export default function SearchField() {return null;}"),
@@ -47,6 +51,13 @@ const stubs = {
   "@/hooks/useLibraryTracks": moduleUrl(`import {indexLibraryTracks} from ${JSON.stringify(new URL("../src/lib/libraryMatch.ts", import.meta.url).href)}; export function useLibraryTracks() {const f = globalThis.__paletteFixture; return {index: indexLibraryTracks(f.library), likes: f.likes};}`),
   "./commandPaletteModel": new URL("../src/components/commandPaletteModel.ts", import.meta.url).href,
 };
+const rateLimitAlertSource = await readFile(new URL("../src/components/SearchRateLimitAlert.tsx", import.meta.url), "utf8");
+const rateLimitAlertCompiled = ts.transpileModule(rateLimitAlertSource, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext } }).outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
+  assert.ok(stubs[name], `Unmocked rateLimitAlert import: ${name}`);
+  return `from ${JSON.stringify(stubs[name])}`;
+});
+stubs["@/components/SearchRateLimitAlert"] = moduleUrl(rateLimitAlertCompiled);
+
 const source = await readFile(new URL("../src/components/CommandPalette.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.ESNext } }).outputText.replace(/from (["'])([^"']+)\1/g, (_match, _quote, name) => {
   assert.ok(stubs[name], `Unmocked palette import: ${name}`);
@@ -58,7 +69,7 @@ function unmount() {
   for (const effect of fixture.effects) effect?.cleanup?.();
   fixture.effects = [];
 }
-function setup({ input = "Queen", query = input.trim(), preparing = false, data = {}, errors = {}, fetching = {}, recent = [], library = [], likesError = null } = {}) {
+function setup({ input = "Queen", query = input.trim(), preparing = false, data = {}, errors = {}, fetching = {}, recent = [], library = [], likesError = null, playlistsError = null, followingError = null } = {}) {
   unmount();
   Object.assign(fixture, {
     hooks: [], effects: [], cursor: 0, nextEffects: [], data, errors, fetching,
@@ -72,6 +83,8 @@ function setup({ input = "Queen", query = input.trim(), preparing = false, data 
   };
   fixture.library = library;
   fixture.likes = { isError: !!likesError, error: likesError ? new Error(likesError) : null, isFetching: false, refetch: () => {fixture.retries.push("likes");} };
+  fixture.ownPlaylistsQuery = { data: [], isError: !!playlistsError, error: playlistsError ? new Error(playlistsError) : null, isFetching: false, refetch: () => {fixture.retries.push("own-playlists");} };
+  fixture.followingQuery = { data: [], isError: !!followingError, error: followingError ? new Error(followingError) : null, isFetching: false, refetch: () => {fixture.retries.push("following");} };
   fixture.history = {
     recent, remember: (value) => fixture.remembered.push(value), remove: (value) => { fixture.history.recent = fixture.history.recent.filter((entry) => entry !== value); }, clear: () => { fixture.history.recent = []; },
   };
@@ -84,6 +97,9 @@ function setup({ input = "Queen", query = input.trim(), preparing = false, data 
 function nodes(node, predicate, found = []) {
   if (!node || typeof node !== "object") return found;
   if (Array.isArray(node)) { for (const child of node) nodes(child, predicate, found); return found; }
+  if (typeof node.type === "function" && node.type.name === "SearchRateLimitAlert") {
+    return nodes(node.type(node.props), predicate, found);
+  }
   if (predicate(node)) found.push(node);
   nodes(node.props?.children, predicate, found);
   return found;
@@ -250,4 +266,29 @@ test("a failed liked-songs request is reported with its cause and can be retried
   assert.deepEqual(fixture.retries, ["likes"]);
   setup({ input: "q", likesError: "HTTP 500" });
   assert.equal(render().alerts.length, 0);
+});
+test("failed playlists and followed-artists queries are surfaced loudly with retry instead of swallowed", () => {
+  setup({ input: "queen", query: "", preparing: true, playlistsError: "HTTP 502", followingError: "HTTP 503" });
+  const screen = render();
+  assert.equal(screen.alerts.length, 2);
+  assert.match(screen.alerts[0].props.children[0].props.children.join(""), /Deine Playlists konnten nicht geladen werden: HTTP 502/);
+  assert.match(screen.alerts[1].props.children[0].props.children.join(""), /Gefolgte Künstler konnten nicht geladen werden: HTTP 503/);
+  const retries = screen.buttons.filter((button) => button.children === "Erneut versuchen");
+  retries[0].onClick();
+  retries[1].onClick();
+  assert.deepEqual(fixture.retries, ["own-playlists", "following"]);
+});
+test("preparing and command mode detach catalog query keys immediately to abort superseded requests", () => {
+  setup({ input: "> sleep", query: "Queen", preparing: false });
+  render();
+  assert.ok(fixture.requests.every((request) => !request.enabled && request.queryKey[2] === ""));
+});
+test("simultaneous 429 rate limits in command palette consolidate into one alert with Retry-After", () => {
+  const rateLimit = { status: 429, retryAfterSec: 4, message: "Deezer rate limit reached. Retry after 4s." };
+  setup({ errors: { track: rateLimit, artist: rateLimit, album: rateLimit, playlist: rateLimit } });
+  const screen = render();
+  assert.equal(screen.alerts.length, 1);
+  assert.match(screen.alerts[0].props.children[0].props.children, /Titel, Künstler, Alben und Playlists: Anfragelimit erreicht – bitte in 4 Sekunden erneut versuchen/);
+  const retryButton = screen.buttons.find((button) => button.children === "Erneut versuchen (4 s)");
+  assert.equal(retryButton.disabled, true);
 });

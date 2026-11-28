@@ -695,7 +695,7 @@ export async function playTrackWithRadio(
     queueMediaItem(track, sources[index], {
       mediaId: nextMediaId('radio', track),
       origin: 'context',
-      radio: true,
+      radio: mediaItemIsRadio(currentActive),
       context,
       originalContextOrder: firstOrder + index,
       stableId: contextStableId(context, firstOrder + index, track),
@@ -1857,9 +1857,8 @@ export async function prepareRadioPlaybackCompletionItems(
   const sources = await mediaSources(fresh, requestAuthority);
   // Autoplay turns the end of an album/playlist into a song radio of its own, so
   // the appended tracks never pose as more of the album they follow.
-  const context = mediaItemIsRadio(currentActive)
-    ? queueContextOf(currentActive) ?? trackRadioContext(seed)
-    : trackRadioContext(seed);
+  const seedContext = queueContextOf(currentActive);
+  const context = seedContext?.type === 'radio' ? seedContext : trackRadioContext(seed);
   const firstOrder = nextOriginalContextOrder(current.items);
   return fresh.map((track, index) => mapMediaItemToNativeQueueItem(
     queueMediaItem(track, sources[index], {

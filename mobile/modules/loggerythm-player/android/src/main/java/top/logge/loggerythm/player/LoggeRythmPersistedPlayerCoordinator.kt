@@ -1324,8 +1324,11 @@ internal class LoggeRythmPersistedPlayerCoordinator(
               LoggeRythmAutoRadioPreference.isEnabled(appContext),
               player.repeatMode,
             )
-        } catch (_: Exception) {
-          false
+        } catch (error: Exception) {
+          playbackEventJournal.abort(mutation)
+          settle(Result.failure(error))
+          finishPlaybackJournalOperation(operationTicket)
+          return@enqueuePlaybackJournalOperation
         }
         val liveEventStillCurrent =
           LoggeRythmPlayerRuntime.currentQueueGeneration() == event.queueGeneration &&
@@ -2713,17 +2716,13 @@ internal class LoggeRythmPersistedPlayerCoordinator(
       radioDedupeGeneration = queueGeneration
       radioDedupeMediaIds.clear()
     }
-    val radioNearTail = try {
-      radioExtensionEligible(
+    val radioNearTail = radioExtensionEligible(
         source.extrasJson,
         LoggeRythmAutoRadioPreference.isEnabled(appContext),
         player.repeatMode,
       ) &&
         player.mediaItemCount - activeIndex <= 2 &&
         activeMediaId !in radioDedupeMediaIds
-    } catch (_: Exception) {
-      false
-    }
 
     enqueuePlaybackJournalOperation(
       start = { operationTicket ->

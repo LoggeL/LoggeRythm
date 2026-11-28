@@ -3,15 +3,19 @@ import { api } from "@/lib/api";
 
 export const SEARCH_DEBOUNCE_MS = 250;
 export const SEARCH_MIN_LENGTH = 2;
-export const SEARCH_STALE_TIME = 60_000;
+export const SEARCH_STALE_TIME = 5 * 60_000;
 
+/** Trim outer whitespace only; preserves case and internal spaces (e.g. quoted phrases). */
 export function normalizeCatalogQuery(query: string): string {
   return query.trim();
 }
 
 type SearchEntity = "track" | "album" | "artist" | "playlist";
 
-/** Route search and quick search share one request and one cached result. */
+/**
+ * Route search, quick search, artist search, playlist quick-add and party
+ * search share one in-flight request and one cached result per entity/term.
+ */
 export function catalogSearchKey(entity: SearchEntity, query: string) {
   return ["search", entity, normalizeCatalogQuery(query)] as const;
 }

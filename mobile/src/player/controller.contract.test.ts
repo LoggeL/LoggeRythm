@@ -654,7 +654,14 @@ describe('controller Phase-0 queue contract', () => {
 
     expect(mocks.getRadio).toHaveBeenCalledWith('a2', undefined, 4_000);
     expect(completion.map((item) => (item.extras?.track as Track).id)).toEqual(['r1', 'r2']);
-    expect(completion.every((item) => item.extras?.radio === true)).toBe(true);
+    expect(completion.every((item) => item.extras?.radio === false)).toBe(true);
+    const continuation = { ...media('r1'), extras: completion[0].extras };
+    mocks.queue = [continuation];
+    mocks.activeIndex = 0;
+    mocks.autoRadio = false;
+    await expect(prepareRadioPlaybackCompletionItems(radioJournalEvent(continuation), 4_000))
+      .resolves.toEqual([]);
+    expect(mocks.getRadio).toHaveBeenCalledTimes(1);
     expect(completion.map((item) => item.extras?.queueContextType)).toEqual(['radio', 'radio']);
     expect(completion[0].extras?.queueContextLabel).toContain('Track a2');
   });

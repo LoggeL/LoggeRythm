@@ -17,14 +17,17 @@ export function useTrackPlays(tracks: Track[]): Record<string, TrackPlays> {
     artist: t.artist,
     title: t.title,
   }));
-  const ids = items.map((i) => i.id).join(",");
+  // Sort IDs so reordering the exact same tracks (e.g. search Sort dropdown)
+  // reuses the cached play counts instead of firing duplicate requests.
+  const ids = items.map((i) => i.id).sort().join(",");
 
   const { data } = useQuery({
     queryKey: ["track-plays", ids],
-    queryFn: () => api.trackPlays(items),
+    queryFn: ({ signal }) => api.trackPlays(items, signal),
     enabled: items.length > 0,
     staleTime: 1000 * 60 * 30,
     gcTime: 1000 * 60 * 60,
+    retry: false,
   });
 
   return data ?? {};

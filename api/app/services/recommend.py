@@ -53,7 +53,7 @@ def _resolve_queries(queries: list[str], limit: int) -> list[dict]:
         # Each search may also fetch authoritative performer credits. Nested
         # per-shelf pools must share this limit rather than multiply bursts.
         with _DEEZER_RESOLVE_SLOTS:
-            hits = dc.search_tracks_public(query, limit=1)
+            hits = dc.search_tracks_public(query, limit=1, enrich=True)
         return hits[0] if hits else None
 
     hits = run_jobs(

@@ -63,6 +63,7 @@ const found = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(track);
 
 function useSearch(libraryTrackIds: ReadonlySet<string>, tab: 'all' | 'track' = 'all') {
   return useSearchResults({
+    accountScope: 'https://music.test::user:7',
     query: 'track',
     ready: true,
     tab,

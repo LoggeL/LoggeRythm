@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { AUDIO_QUALITY_META } from "@/lib/audioIntelligence";
 import { useMe } from "@/hooks/useAuth";
+import { useHydratedTrack } from "@/hooks/useHydratedTrack";
+import { trackArtistLabel } from "@/lib/trackArtists";
 import { usePlayerStore, currentTrack } from "@/store/player";
 import { canControlActiveVolume, useConnectStore } from "@/store/connect";
 import { canControlPartyPlayback, usePartyStore } from "@/store/party";
@@ -477,7 +479,7 @@ function MiniPlayer({
                 </span>
                 <span data-swap-part="text" className="min-w-0">
                   <span className="font-display block truncate text-sm font-bold tracking-tight">{shown.title}</span>
-                  <span className="block truncate text-xs text-muted">{shown.artist}</span>
+                  <span className="block truncate text-xs text-muted">{trackArtistLabel(shown)}</span>
                 </span>
               </span>
             )}
@@ -500,7 +502,8 @@ function MiniPlayer({
  * PlaybackEngine, and everything here reads from the player store.
  */
 export default function PlayerBar({ offlineOnly = false }: { offlineOnly?: boolean }) {
-  const track = usePlayerStore(currentTrack);
+  const rawTrack = usePlayerStore(currentTrack);
+  const track = useHydratedTrack(rawTrack, !offlineOnly);
   const nowPlayingOpen = usePlayerStore((s) => s.nowPlayingOpen);
   // The mini player rises in when playback starts, not when a page loads with a
   // restored track: a restored session loads paused, while starting playback
@@ -516,7 +519,7 @@ export default function PlayerBar({ offlineOnly = false }: { offlineOnly?: boole
   const miniEntered = useCallback(() => setEnterMini(false), []);
   return (
     <>
-      {nowPlayingOpen && track && <NowPlaying onClose={closeNowPlaying} />}
+      {nowPlayingOpen && track && <NowPlaying onClose={closeNowPlaying} offlineOnly={offlineOnly} />}
       <footer aria-label="Musikplayer" className="like-celebration-surface relative z-20 shrink-0 bg-backdrop">
         <PlayerErrors />
         <DesktopBar track={track} offlineOnly={offlineOnly} />

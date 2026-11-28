@@ -58,7 +58,7 @@ describe('cacheSeed', () => {
       release_date: '2025-04-01',
     });
 
-    // Search album cards
+    // Search album cards stay isolated to their origin/account scope
     const albumCards: AlbumCard[] = [
       {
         id: '88',
@@ -67,8 +67,10 @@ describe('cacheSeed', () => {
         artworkUrl: 'https://cdn.test/solar.jpg',
       },
     ];
-    client.setQueryData(queryKeys.search.albums('solar'), albumCards);
-    expect(findCachedAlbumSummary(client, '88')).toEqual({
+    client.setQueryData(queryKeys.search.albums('scope-a', 'solar'), albumCards);
+    expect(findCachedAlbumSummary(client, '88')).toBeNull();
+    expect(findCachedAlbumSummary(client, '88', 'scope-b')).toBeNull();
+    expect(findCachedAlbumSummary(client, '88', 'scope-a')).toEqual({
       id: '88',
       title: 'Solar Echoes',
       artist: 'Orbit',

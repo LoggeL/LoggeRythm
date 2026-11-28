@@ -19,7 +19,20 @@ export function canonicalDeezerIds(ids: readonly DeezerId[]): DeezerId[] {
 export function trackPlaySignature(
   tracks: readonly TrackPlayQuery[],
 ): readonly (readonly [DeezerId, string, string])[] {
-  return tracks.map(({ id, artist, title }) => [id, artist, title] as const);
+  const seen = new Set<string>();
+  const unique: TrackPlayQuery[] = [];
+  for (const track of tracks) {
+    const key = `${track.id}\0${track.artist}\0${track.title}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(track);
+  }
+  unique.sort((left, right) =>
+    left.id.localeCompare(right.id)
+    || left.artist.localeCompare(right.artist)
+    || left.title.localeCompare(right.title),
+  );
+  return unique.map(({ id, artist, title }) => [id, artist, title] as const);
 }
 
 const root = ['music'] as const;
@@ -28,14 +41,16 @@ export const queryKeys = {
   root,
   search: {
     root: () => [...root, 'search'] as const,
-    tracks: (query: string) =>
-      [...queryKeys.search.root(), 'track', normalizeSearchQuery(query)] as const,
-    albums: (query: string) =>
-      [...queryKeys.search.root(), 'album', normalizeSearchQuery(query)] as const,
-    artists: (query: string) =>
-      [...queryKeys.search.root(), 'artist', normalizeSearchQuery(query)] as const,
-    playlists: (query: string) =>
-      [...queryKeys.search.root(), 'playlist', normalizeSearchQuery(query)] as const,
+    scoped: (scope: QueryScope) =>
+      [...queryKeys.search.root(), 'scope', scalar(scope, 'search scope')] as const,
+    tracks: (scope: QueryScope, query: string) =>
+      [...queryKeys.search.scoped(scope), 'track', normalizeSearchQuery(query)] as const,
+    albums: (scope: QueryScope, query: string) =>
+      [...queryKeys.search.scoped(scope), 'album', normalizeSearchQuery(query)] as const,
+    artists: (scope: QueryScope, query: string) =>
+      [...queryKeys.search.scoped(scope), 'artist', normalizeSearchQuery(query)] as const,
+    playlists: (scope: QueryScope, query: string) =>
+      [...queryKeys.search.scoped(scope), 'playlist', normalizeSearchQuery(query)] as const,
   },
   catalog: {
     root: () => [...root, 'catalog'] as const,

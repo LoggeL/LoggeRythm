@@ -59,6 +59,8 @@ const PRIVATE_QUERY_ROOTS = new Set<string>([
   "admin-status",
   "admin-usage",
   "admin-usage-user",
+  "search",
+  "track-plays",
 ]);
 
 export function isPersistedQueryKey(queryKey: readonly unknown[]): boolean {

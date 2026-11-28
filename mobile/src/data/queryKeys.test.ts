@@ -7,17 +7,32 @@ import {
 } from './queryKeys';
 
 describe('music query keys', () => {
-  it('normalizes search queries and keeps entity result caches separate', () => {
+  it('outer-trims search queries while preserving case, internal whitespace, and scope isolation', () => {
     expect(normalizeSearchQuery('  Daft Punk  ')).toBe('Daft Punk');
-    expect(queryKeys.search.tracks('  Daft Punk  ')).toEqual([
+    expect(normalizeSearchQuery('  Daft   Punk  ')).toBe('Daft   Punk');
+    expect(queryKeys.search.tracks('scope-a', '  Daft Punk  ')).toEqual([
       'music',
       'search',
+      'scope',
+      'scope-a',
       'track',
       'Daft Punk',
     ]);
-    expect(queryKeys.search.albums('Daft Punk')).not.toEqual(
-      queryKeys.search.tracks('Daft Punk'),
+    // Case and internal whitespace remain distinct per search cache contract.
+    expect(queryKeys.search.tracks('scope-a', 'Daft Punk')).not.toEqual(
+      queryKeys.search.tracks('scope-a', 'daft punk'),
     );
+    expect(queryKeys.search.tracks('scope-a', 'Daft  Punk')).not.toEqual(
+      queryKeys.search.tracks('scope-a', 'Daft Punk'),
+    );
+    // Different server origins / accounts never share search cache entries.
+    expect(queryKeys.search.tracks('https://a.test::user:1', 'daft punk')).not.toEqual(
+      queryKeys.search.tracks('https://b.test::user:1', 'daft punk'),
+    );
+    expect(queryKeys.search.albums('scope-a', 'Daft Punk')).not.toEqual(
+      queryKeys.search.tracks('scope-a', 'Daft Punk'),
+    );
+    expect(() => queryKeys.search.tracks('   ', 'daft')).toThrow('search scope must not be empty');
   });
 
   it('scopes private discovery, follows, stats, and settings by account', () => {
@@ -105,6 +120,17 @@ describe('music query keys', () => {
     ]);
     expect(trackPlaySignature([{ id: '12', artist: 'A', title: 'T' }])).toEqual([
       ['12', 'A', 'T'],
+    ]);
+    // Reordering (e.g. client-side SearchSort changes) must not fork the play-count cache.
+    expect(
+      trackPlaySignature([
+        { id: '20', artist: 'B', title: 'Beta' },
+        { id: '10', artist: 'A', title: 'Alpha' },
+        { id: '20', artist: 'B', title: 'Beta' },
+      ]),
+    ).toEqual([
+      ['10', 'A', 'Alpha'],
+      ['20', 'B', 'Beta'],
     ]);
   });
 });
